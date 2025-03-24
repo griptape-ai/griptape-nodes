@@ -1,3 +1,4 @@
+import importlib.metadata
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,8 @@ def _find_config_files(filename: str, extension: str) -> list[Path]:
 class Script(BaseModel):
     name: str
     relative_file_path: str
+    engine_version_created_with: str
+    node_libraries_referenced: list[str]
     description: str | None = None
     image: str | None = None
     internal: bool = False
@@ -55,21 +58,29 @@ class AppInitializationComplete(BaseModel):
                 name="Prompt an image",
                 relative_file_path="scripts/prompt_an_image.py",
                 internal=True,
+                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
+                node_libraries_referenced=["Griptape Nodes Library"],
             ),
             Script(
                 name="Coloring Book",
                 relative_file_path="scripts/coloring_book.py",
                 internal=True,
+                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
+                node_libraries_referenced=["Griptape Nodes Library"],
             ),
             Script(
                 name="Render logs",
                 relative_file_path="scripts/render_logs.py",
                 internal=True,
+                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
+                node_libraries_referenced=["Griptape Nodes Library"],
             ),
             Script(
                 name="Comfyui flow batch",
                 relative_file_path="scripts/comfyui_flow_batch.py",
                 internal=True,
+                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
+                node_libraries_referenced=["Griptape Nodes Library"],
             ),
         ]
     )
