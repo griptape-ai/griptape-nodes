@@ -56,28 +56,28 @@ class AppInitializationComplete(BaseModel):
         default_factory=lambda: [
             Script(
                 name="Prompt an image",
-                relative_file_path="scripts/prompt_an_image.py",
+                relative_file_path="griptape_nodes/scripts/prompt_an_image.py",
                 internal=True,
                 engine_version_created_with=importlib.metadata.version("griptape_nodes"),
                 node_libraries_referenced=["Griptape Nodes Library"],
             ),
             Script(
                 name="Coloring Book",
-                relative_file_path="scripts/coloring_book.py",
+                relative_file_path="griptape_nodes/scripts/coloring_book.py",
                 internal=True,
                 engine_version_created_with=importlib.metadata.version("griptape_nodes"),
                 node_libraries_referenced=["Griptape Nodes Library"],
             ),
             Script(
                 name="Render logs",
-                relative_file_path="scripts/render_logs.py",
+                relative_file_path="griptape_nodes/scripts/render_logs.py",
                 internal=True,
                 engine_version_created_with=importlib.metadata.version("griptape_nodes"),
                 node_libraries_referenced=["Griptape Nodes Library"],
             ),
             Script(
-                name="Comfyui flow batch",
-                relative_file_path="scripts/comfyui_flow_batch.py",
+                name="Comfyui flow branch",
+                relative_file_path="griptape_nodes/scripts/comfyui_flow_branch.py",
                 internal=True,
                 engine_version_created_with=importlib.metadata.version("griptape_nodes"),
                 node_libraries_referenced=["Griptape Nodes Library"],
