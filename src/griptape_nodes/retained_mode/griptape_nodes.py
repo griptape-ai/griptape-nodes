@@ -11,6 +11,7 @@ from re import Pattern
 from typing import Any, TextIO, TypeVar, cast
 
 from dotenv import load_dotenv
+from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterControlType, ParameterMode
 from griptape_nodes.exe_types.flow import ControlFlow
@@ -2850,23 +2851,12 @@ class LibraryManager:
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # App just got init'd. See if there are library JSONs to load!
-        default_libraries_section = (
-            "app_events_internal.on_app_initialization_complete.paths_to_library_json_files_to_register"
-        )
-        self._load_libraries_from_config_category(
-            config_category=default_libraries_section, load_as_default_library=True
-        )
-
-        # Now load the user libraries (they don't get special "default library" treatment)
-        user_libraries_section = "app_events.on_app_initialization_complete.paths_to_library_json_files_to_register"
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         self._load_libraries_from_config_category(config_category=user_libraries_section, load_as_default_library=False)
 
         # See if there are script JSONs to load!
-        user_script_section = "app_events.on_app_initialization_complete.scripts_to_register"
-        self._register_scripts_from_config(config_section=user_script_section, location_default=False)
-        default_script_section = "app_events_internal.on_app_initialization_complete.scripts_to_register"
-        self._register_scripts_from_config(config_section=default_script_section, location_default=True)
-        # See if there are user JSONs to load!
+        default_script_section = "app_events.on_app_initialization_complete.scripts_to_register"
+        self._register_scripts_from_config(config_section=default_script_section)
 
     def _load_libraries_from_config_category(self, config_category: str, load_as_default_library: bool) -> None:  # noqa: FBT001
         config_mgr = GriptapeNodes().ConfigManager()
@@ -2880,13 +2870,13 @@ class LibraryManager:
                 )
                 GriptapeNodes().handle_request(library_load_request)
 
-    def _register_scripts_from_config(self, config_section: str, location_default: bool) -> None:  # noqa: FBT001
+    def _register_scripts_from_config(self, config_section: str) -> None:
         config_mgr = GriptapeNodes().ConfigManager()
         scripts_to_register = config_mgr.get_config_value(config_section)
         if scripts_to_register is not None:
             for script in scripts_to_register:
-                if location_default:
-                    file_path = Path.cwd().joinpath(script["relative_file_path"])
+                if script["internal"]:
+                    file_path = xdg_data_home().joinpath(script["relative_file_path"])
                     script_register_request = RegisterScriptRequest(
                         script_name=script["name"],
                         file_path=str(file_path),
@@ -2895,9 +2885,11 @@ class LibraryManager:
                     )
                     GriptapeNodes().handle_request(script_register_request)
                 else:
+                    config_manager = GriptapeNodes.get_instance()._config_manager
+                    full_path = config_manager.workspace_path.joinpath(script["relative_file_path"])
                     script_register_request = RegisterScriptRequest(
                         script_name=script["name"],
-                        file_path=script["relative_file_path"],
+                        file_path=str(full_path),
                         description=script["description"],
                         image=script["image"],
                     )
