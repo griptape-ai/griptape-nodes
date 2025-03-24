@@ -161,7 +161,7 @@ def sse_listener() -> None:
 
             def auth(request: httpx.Request) -> httpx.Request:
                 service = "Nodes"
-                value = "NODES_API_KEY"
+                value = "NODES_API_TOKEN"
                 api_token = GriptapeNodes.get_instance().ConfigManager().get_config_value(f"env.{service}.{value}")
                 request.headers.update({"Accept": "text/event-stream", "Authorization": f"Bearer {api_token}"})
                 return request
