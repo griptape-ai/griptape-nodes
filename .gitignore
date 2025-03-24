@@ -171,4 +171,10 @@ cython_debug/
 .ruff_cache/
 
 # PyPI configuration file
-.pypirc
+.pypircpersonal_node_library/
+griptape_nodes_user_config.json
+griptape_nodes_config.json
+
+# MacOS
+.DS_Store
+

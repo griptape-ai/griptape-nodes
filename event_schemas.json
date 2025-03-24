@@ -1,0 +1,4959 @@
+[
+  "EventBase",
+  {
+    "properties": {},
+    "title": "EventBase",
+    "type": "object"
+  }
+],
+[
+  "EventRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      }
+    },
+    "title": "EventRequest",
+    "type": "object"
+  }
+],
+[
+  "EventResult",
+  {
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      }
+    },
+    "required": [
+      "details"
+    ],
+    "title": "EventResult",
+    "type": "object"
+  }
+],
+[
+  "EventResult_Success",
+  {
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      }
+    },
+    "required": [
+      "details"
+    ],
+    "title": "EventResult_Success",
+    "type": "object"
+  }
+],
+[
+  "EventResult_Failure",
+  {
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      }
+    },
+    "required": [
+      "details"
+    ],
+    "title": "EventResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "ExecutionEventBase",
+  {
+    "properties": {},
+    "title": "ExecutionEventBase",
+    "type": "object"
+  }
+],
+[
+  "CreateConnectionRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "source_node_name": {
+        "title": "Source Node Name",
+        "type": "string"
+      },
+      "source_parameter_name": {
+        "title": "Source Parameter Name",
+        "type": "string"
+      },
+      "target_node_name": {
+        "title": "Target Node Name",
+        "type": "string"
+      },
+      "target_parameter_name": {
+        "title": "Target Parameter Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "source_node_name",
+      "source_parameter_name",
+      "target_node_name",
+      "target_parameter_name"
+    ],
+    "title": "CreateConnectionRequest",
+    "type": "object"
+  }
+],
+[
+  "CreateConnectionResult_Success",
+  {
+    "$defs": {
+      "CreateConnectionRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "source_node_name": {
+            "title": "Source Node Name",
+            "type": "string"
+          },
+          "source_parameter_name": {
+            "title": "Source Parameter Name",
+            "type": "string"
+          },
+          "target_node_name": {
+            "title": "Target Node Name",
+            "type": "string"
+          },
+          "target_parameter_name": {
+            "title": "Target Parameter Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_node_name",
+          "source_parameter_name",
+          "target_node_name",
+          "target_parameter_name"
+        ],
+        "title": "CreateConnectionRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/CreateConnectionRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "CreateConnectionResult_Success",
+    "type": "object"
+  }
+],
+[
+  "CreateConnectionResult_Failure",
+  {
+    "$defs": {
+      "CreateConnectionRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "source_node_name": {
+            "title": "Source Node Name",
+            "type": "string"
+          },
+          "source_parameter_name": {
+            "title": "Source Parameter Name",
+            "type": "string"
+          },
+          "target_node_name": {
+            "title": "Target Node Name",
+            "type": "string"
+          },
+          "target_parameter_name": {
+            "title": "Target Parameter Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_node_name",
+          "source_parameter_name",
+          "target_node_name",
+          "target_parameter_name"
+        ],
+        "title": "CreateConnectionRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/CreateConnectionRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "CreateConnectionResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "DeleteConnectionRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "source_node_name": {
+        "title": "Source Node Name",
+        "type": "string"
+      },
+      "source_parameter_name": {
+        "title": "Source Parameter Name",
+        "type": "string"
+      },
+      "target_node_name": {
+        "title": "Target Node Name",
+        "type": "string"
+      },
+      "target_parameter_name": {
+        "title": "Target Parameter Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "source_node_name",
+      "source_parameter_name",
+      "target_node_name",
+      "target_parameter_name"
+    ],
+    "title": "DeleteConnectionRequest",
+    "type": "object"
+  }
+],
+[
+  "DeleteConnectionResult_Success",
+  {
+    "$defs": {
+      "DeleteConnectionRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "source_node_name": {
+            "title": "Source Node Name",
+            "type": "string"
+          },
+          "source_parameter_name": {
+            "title": "Source Parameter Name",
+            "type": "string"
+          },
+          "target_node_name": {
+            "title": "Target Node Name",
+            "type": "string"
+          },
+          "target_parameter_name": {
+            "title": "Target Parameter Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_node_name",
+          "source_parameter_name",
+          "target_node_name",
+          "target_parameter_name"
+        ],
+        "title": "DeleteConnectionRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/DeleteConnectionRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "DeleteConnectionResult_Success",
+    "type": "object"
+  }
+],
+[
+  "DeleteConnectionResult_Failure",
+  {
+    "$defs": {
+      "DeleteConnectionRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "source_node_name": {
+            "title": "Source Node Name",
+            "type": "string"
+          },
+          "source_parameter_name": {
+            "title": "Source Parameter Name",
+            "type": "string"
+          },
+          "target_node_name": {
+            "title": "Target Node Name",
+            "type": "string"
+          },
+          "target_parameter_name": {
+            "title": "Target Parameter Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_node_name",
+          "source_parameter_name",
+          "target_node_name",
+          "target_parameter_name"
+        ],
+        "title": "DeleteConnectionRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/DeleteConnectionRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "DeleteConnectionResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "ListConnectionsForNodeRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "node_name"
+    ],
+    "title": "ListConnectionsForNodeRequest",
+    "type": "object"
+  }
+],
+[
+  "ListConnectionsForNodeResult_Success",
+  {
+    "$defs": {
+      "IncomingConnection": {
+        "properties": {
+          "source_node_name": {
+            "title": "Source Node Name",
+            "type": "string"
+          },
+          "source_parameter_name": {
+            "title": "Source Parameter Name",
+            "type": "string"
+          },
+          "target_parameter_name": {
+            "title": "Target Parameter Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_node_name",
+          "source_parameter_name",
+          "target_parameter_name"
+        ],
+        "title": "IncomingConnection",
+        "type": "object"
+      },
+      "ListConnectionsForNodeRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_name"
+        ],
+        "title": "ListConnectionsForNodeRequest",
+        "type": "object"
+      },
+      "OutgoingConnection": {
+        "properties": {
+          "source_parameter_name": {
+            "title": "Source Parameter Name",
+            "type": "string"
+          },
+          "target_node_name": {
+            "title": "Target Node Name",
+            "type": "string"
+          },
+          "target_parameter_name": {
+            "title": "Target Parameter Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_parameter_name",
+          "target_node_name",
+          "target_parameter_name"
+        ],
+        "title": "OutgoingConnection",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/ListConnectionsForNodeRequest"
+      },
+      "incoming_connections": {
+        "items": {
+          "$ref": "#/$defs/IncomingConnection"
+        },
+        "title": "Incoming Connections",
+        "type": "array"
+      },
+      "outgoing_connections": {
+        "items": {
+          "$ref": "#/$defs/OutgoingConnection"
+        },
+        "title": "Outgoing Connections",
+        "type": "array"
+      }
+    },
+    "required": [
+      "details",
+      "request",
+      "incoming_connections",
+      "outgoing_connections"
+    ],
+    "title": "ListConnectionsForNodeResult_Success",
+    "type": "object"
+  }
+],
+[
+  "ListConnectionsForNodeResult_Failure",
+  {
+    "$defs": {
+      "ListConnectionsForNodeRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_name"
+        ],
+        "title": "ListConnectionsForNodeRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/ListConnectionsForNodeRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "ListConnectionsForNodeResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "ResolveNodeRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      },
+      "debug_mode": {
+        "default": false,
+        "title": "Debug Mode",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "node_name"
+    ],
+    "title": "ResolveNodeRequest",
+    "type": "object"
+  }
+],
+[
+  "ResolveNodeResult_Success",
+  {
+    "$defs": {
+      "ResolveNodeRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "debug_mode": {
+            "default": false,
+            "title": "Debug Mode",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "node_name"
+        ],
+        "title": "ResolveNodeRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/ResolveNodeRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "ResolveNodeResult_Success",
+    "type": "object"
+  }
+],
+[
+  "ResolveNodeResult_Failure",
+  {
+    "$defs": {
+      "ResolveNodeRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "debug_mode": {
+            "default": false,
+            "title": "Debug Mode",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "node_name"
+        ],
+        "title": "ResolveNodeRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/ResolveNodeRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "ResolveNodeResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "StartFlowRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "flow_name": {
+        "title": "Flow Name",
+        "type": "string"
+      },
+      "debug_mode": {
+        "default": false,
+        "title": "Debug Mode",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "flow_name",
+    ],
+    "title": "StartFlowRequest",
+    "type": "object"
+  }
+],
+[
+  "StartFlowResult_Success",
+  {
+    "$defs": {
+      "StartFlowRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          },
+          "debug_mode": {
+            "default": false,
+            "title": "Debug Mode",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "flow_name",
+        ],
+        "title": "StartFlowRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/StartFlowRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "StartFlowResult_Success",
+    "type": "object"
+  }
+],
+[
+  "StartFlowResult_Failure",
+  {
+    "$defs": {
+      "StartFlowRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          },
+          "debug_mode": {
+            "default": false,
+            "title": "Debug Mode",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "flow_name",
+        ],
+        "title": "StartFlowRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/StartFlowRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "StartFlowResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "CancelFlowRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "flow_name": {
+        "title": "Flow Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "flow_name"
+    ],
+    "title": "CancelFlowRequest",
+    "type": "object"
+  }
+],
+[
+  "CancelFlowResult_Success",
+  {
+    "$defs": {
+      "CancelFlowRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_name"
+        ],
+        "title": "CancelFlowRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/CancelFlowRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "CancelFlowResult_Success",
+    "type": "object"
+  }
+],
+[
+  "CancelFlowResult_Failure",
+  {
+    "$defs": {
+      "CancelFlowRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_name"
+        ],
+        "title": "CancelFlowRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/CancelFlowRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "CancelFlowResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "UnresolveFlowRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "flow_name": {
+        "title": "Flow Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "flow_name"
+    ],
+    "title": "UnresolveFlowRequest",
+    "type": "object"
+  }
+],
+[
+  "UnresolveFlowResult_Failure",
+  {
+    "$defs": {
+      "UnresolveFlowRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_name"
+        ],
+        "title": "UnresolveFlowRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/UnresolveFlowRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "UnresolveFlowResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "UnresolveFlowResult_Success",
+  {
+    "$defs": {
+      "UnresolveFlowRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_name"
+        ],
+        "title": "UnresolveFlowRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/UnresolveFlowRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "UnresolveFlowResult_Success",
+    "type": "object"
+  }
+],
+[
+  "SingleExecutionStepRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "flow_name": {
+        "title": "Flow Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "flow_name"
+    ],
+    "title": "SingleExecutionStepRequest",
+    "type": "object"
+  }
+],
+[
+  "SingleExecutionStepResult_Success",
+  {
+    "$defs": {
+      "SingleExecutionStepRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_name"
+        ],
+        "title": "SingleExecutionStepRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/SingleExecutionStepRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "SingleExecutionStepResult_Success",
+    "type": "object"
+  }
+],
+[
+  "SingleExecutionStepResult_Failure",
+  {
+    "$defs": {
+      "SingleExecutionStepRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_name"
+        ],
+        "title": "SingleExecutionStepRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/SingleExecutionStepRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "SingleExecutionStepResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "SingleNodeStepRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "flow_name": {
+        "title": "Flow Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "flow_name"
+    ],
+    "title": "SingleNodeStepRequest",
+    "type": "object"
+  }
+],
+[
+  "SingleNodeStepResult_Success",
+  {
+    "$defs": {
+      "SingleNodeStepRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_name"
+        ],
+        "title": "SingleNodeStepRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/SingleNodeStepRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "SingleNodeStepResult_Success",
+    "type": "object"
+  }
+],
+[
+  "SingleNodeStepResult_Failure",
+  {
+    "$defs": {
+      "SingleNodeStepRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_name"
+        ],
+        "title": "SingleNodeStepRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/SingleNodeStepRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "SingleNodeStepResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "ContinueExecutionStepRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "flow_name": {
+        "title": "Flow Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "flow_name"
+    ],
+    "title": "ContinueExecutionStepRequest",
+    "type": "object"
+  }
+],
+[
+  "ContinueExecutionStepResult_Success",
+  {
+    "$defs": {
+      "ContinueExecutionStepRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_name"
+        ],
+        "title": "ContinueExecutionStepRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/ContinueExecutionStepRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "ContinueExecutionStepResult_Success",
+    "type": "object"
+  }
+],
+[
+  "ContinueExecutionStepResult_Failure",
+  {
+    "$defs": {
+      "ContinueExecutionStepRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_name"
+        ],
+        "title": "ContinueExecutionStepRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/ContinueExecutionStepRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "ContinueExecutionStepResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "CurrentControlNodeEvent",
+  {
+    "properties": {
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "node_name"
+    ],
+    "title": "CurrentControlNodeEvent",
+    "type": "object"
+  }
+],
+[
+  "CurrentDataNodeEvent",
+  {
+    "properties": {
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "node_name"
+    ],
+    "title": "CurrentDataNodeEvent",
+    "type": "object"
+  }
+],
+[
+  "SelectedControlOutputEvent",
+  {
+    "properties": {
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      },
+      "selected_output_parameter_name": {
+        "title": "Selected Output Parameter Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "node_name",
+      "selected_output_parameter_name"
+    ],
+    "title": "SelectedControlOutputEvent",
+    "type": "object"
+  }
+],
+[
+  "ParameterSpotlightEvent",
+  {
+    "properties": {
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      },
+      "parameter_name": {
+        "title": "Parameter Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "node_name",
+      "parameter_name"
+    ],
+    "title": "ParameterSpotlightEvent",
+    "type": "object"
+  }
+],
+[
+  "ControlFlowResolvedEvent",
+  {
+    "properties": {
+      "end_node_name": {
+        "title": "End Node Name",
+        "type": "string"
+      },
+      "parameter_output_values": {
+        "title": "Parameter Output Values",
+        "type": "object"
+      }
+    },
+    "required": [
+      "end_node_name",
+      "parameter_output_values"
+    ],
+    "title": "ControlFlowResolvedEvent",
+    "type": "object"
+  }
+],
+[
+  "NodeResolvedEvent",
+  {
+    "properties": {
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      },
+      "parameter_output_values": {
+        "title": "Parameter Output Values",
+        "type": "object"
+      }
+    },
+    "required": [
+      "node_name",
+      "parameter_output_values"
+    ],
+    "title": "NodeResolvedEvent",
+    "type": "object"
+  }
+],
+[
+  "ParameterValueUpdateEvent",
+  {
+    "properties": {
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      },
+      "parameter_name": {
+        "title": "Parameter Name",
+        "type": "string"
+      },
+      "value": {
+        "title": "Value"
+      }
+    },
+    "required": [
+      "node_name",
+      "parameter_name",
+      "value"
+    ],
+    "title": "ParameterValueUpdateEvent",
+    "type": "object"
+  }
+],
+[
+  "CreateFlowRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "parent_flow_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Parent Flow Name"
+      },
+      "flow_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Flow Name"
+      }
+    },
+    "required": [
+      "parent_flow_name"
+    ],
+    "title": "CreateFlowRequest",
+    "type": "object"
+  }
+],
+[
+  "CreateFlowResult_Success",
+  {
+    "$defs": {
+      "CreateFlowRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parent_flow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Flow Name"
+          },
+          "flow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Flow Name"
+          }
+        },
+        "required": [
+          "parent_flow_name"
+        ],
+        "title": "CreateFlowRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/CreateFlowRequest"
+      },
+      "flow_name": {
+        "title": "Flow Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "details",
+      "request",
+      "flow_name"
+    ],
+    "title": "CreateFlowResult_Success",
+    "type": "object"
+  }
+],
+[
+  "CreateFlowResult_Failure",
+  {
+    "$defs": {
+      "CreateFlowRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parent_flow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Flow Name"
+          },
+          "flow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Flow Name"
+          }
+        },
+        "required": [
+          "parent_flow_name"
+        ],
+        "title": "CreateFlowRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/CreateFlowRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "CreateFlowResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "DeleteFlowRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "flow_name": {
+        "title": "Flow Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "flow_name"
+    ],
+    "title": "DeleteFlowRequest",
+    "type": "object"
+  }
+],
+[
+  "DeleteFlowResult_Success",
+  {
+    "$defs": {
+      "DeleteFlowRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_name"
+        ],
+        "title": "DeleteFlowRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/DeleteFlowRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "DeleteFlowResult_Success",
+    "type": "object"
+  }
+],
+[
+  "DeleteFlowResult_Failure",
+  {
+    "$defs": {
+      "DeleteFlowRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_name"
+        ],
+        "title": "DeleteFlowRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/DeleteFlowRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "DeleteFlowResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "ListNodesInFlowRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "flow_name": {
+        "title": "Flow Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "flow_name"
+    ],
+    "title": "ListNodesInFlowRequest",
+    "type": "object"
+  }
+],
+[
+  "ListNodesInFlowResult_Success",
+  {
+    "$defs": {
+      "ListNodesInFlowRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_name"
+        ],
+        "title": "ListNodesInFlowRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "node_names": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Node Names",
+        "type": "array"
+      },
+      "request": {
+        "$ref": "#/$defs/ListNodesInFlowRequest"
+      }
+    },
+    "required": [
+      "details",
+      "node_names",
+      "request"
+    ],
+    "title": "ListNodesInFlowResult_Success",
+    "type": "object"
+  }
+],
+[
+  "ListNodesInFlowResult_Failure",
+  {
+    "$defs": {
+      "ListNodesInFlowRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "flow_name": {
+            "title": "Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_name"
+        ],
+        "title": "ListNodesInFlowRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/ListNodesInFlowRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "ListNodesInFlowResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "ListFlowsInFlowRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "parent_flow_name": {
+        "title": "Parent Flow Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "parent_flow_name"
+    ],
+    "title": "ListFlowsInFlowRequest",
+    "type": "object"
+  }
+],
+[
+  "ListFlowsInFlowResult_Success",
+  {
+    "$defs": {
+      "ListFlowsInFlowRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parent_flow_name": {
+            "title": "Parent Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent_flow_name"
+        ],
+        "title": "ListFlowsInFlowRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "flow_names": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Flow Names",
+        "type": "array"
+      },
+      "request": {
+        "$ref": "#/$defs/ListFlowsInFlowRequest"
+      }
+    },
+    "required": [
+      "details",
+      "flow_names",
+      "request"
+    ],
+    "title": "ListFlowsInFlowResult_Success",
+    "type": "object"
+  }
+],
+[
+  "ListFlowsInFlowResult_Failure",
+  {
+    "$defs": {
+      "ListFlowsInFlowRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parent_flow_name": {
+            "title": "Parent Flow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent_flow_name"
+        ],
+        "title": "ListFlowsInFlowRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/ListFlowsInFlowRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "ListFlowsInFlowResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "ListRegisteredLibrariesRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      }
+    },
+    "title": "ListRegisteredLibrariesRequest",
+    "type": "object"
+  }
+],
+[
+  "ListRegisteredLibrariesResult_Success",
+  {
+    "$defs": {
+      "ListRegisteredLibrariesRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          }
+        },
+        "title": "ListRegisteredLibrariesRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "libraries": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Libraries",
+        "type": "array"
+      },
+      "request": {
+        "$ref": "#/$defs/ListRegisteredLibrariesRequest"
+      }
+    },
+    "required": [
+      "details",
+      "libraries",
+      "request"
+    ],
+    "title": "ListRegisteredLibrariesResult_Success",
+    "type": "object"
+  }
+],
+[
+  "ListRegisteredLibrariesResult_Failure",
+  {
+    "$defs": {
+      "ListRegisteredLibrariesRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          }
+        },
+        "title": "ListRegisteredLibrariesRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/ListRegisteredLibrariesRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "ListRegisteredLibrariesResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "ListNodeTypesInLibraryRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "library": {
+        "title": "Library",
+        "type": "string"
+      }
+    },
+    "required": [
+      "library"
+    ],
+    "title": "ListNodeTypesInLibraryRequest",
+    "type": "object"
+  }
+],
+[
+  "ListNodeTypesInLibraryResult_Success",
+  {
+    "$defs": {
+      "ListNodeTypesInLibraryRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "library": {
+            "title": "Library",
+            "type": "string"
+          }
+        },
+        "required": [
+          "library"
+        ],
+        "title": "ListNodeTypesInLibraryRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/ListNodeTypesInLibraryRequest"
+      },
+      "node_types": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Node Types",
+        "type": "array"
+      }
+    },
+    "required": [
+      "details",
+      "request",
+      "node_types"
+    ],
+    "title": "ListNodeTypesInLibraryResult_Success",
+    "type": "object"
+  }
+],
+[
+  "ListNodeTypesInLibraryResult_Failure",
+  {
+    "$defs": {
+      "ListNodeTypesInLibraryRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "library": {
+            "title": "Library",
+            "type": "string"
+          }
+        },
+        "required": [
+          "library"
+        ],
+        "title": "ListNodeTypesInLibraryRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/ListNodeTypesInLibraryRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "ListNodeTypesInLibraryResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "GetNodeMetadataFromLibraryRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "library": {
+        "title": "Library",
+        "type": "string"
+      },
+      "node_type": {
+        "title": "Node Type",
+        "type": "string"
+      }
+    },
+    "required": [
+      "library",
+      "node_type"
+    ],
+    "title": "GetNodeMetadataFromLibraryRequest",
+    "type": "object"
+  }
+],
+[
+  "GetNodeMetadataFromLibraryResult_Success",
+  {
+    "$defs": {
+      "GetNodeMetadataFromLibraryRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "library": {
+            "title": "Library",
+            "type": "string"
+          },
+          "node_type": {
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "library",
+          "node_type"
+        ],
+        "title": "GetNodeMetadataFromLibraryRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/GetNodeMetadataFromLibraryRequest"
+      },
+      "metadata": {
+        "title": "Metadata",
+        "type": "object"
+      }
+    },
+    "required": [
+      "details",
+      "request",
+      "metadata"
+    ],
+    "title": "GetNodeMetadataFromLibraryResult_Success",
+    "type": "object"
+  }
+],
+[
+  "GetNodeMetadataFromLibraryResult_Failure",
+  {
+    "$defs": {
+      "GetNodeMetadataFromLibraryRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "library": {
+            "title": "Library",
+            "type": "string"
+          },
+          "node_type": {
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "library",
+          "node_type"
+        ],
+        "title": "GetNodeMetadataFromLibraryRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/GetNodeMetadataFromLibraryRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "GetNodeMetadataFromLibraryResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "CreateNodeRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "library_and_node_type": {
+        "title": "Library And Node Type",
+        "type": "string"
+      },
+      "node_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Node Name"
+      },
+      "override_parent_flow_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Override Parent Flow Name"
+      },
+      "metadata": {
+        "anyOf": [
+          {
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Metadata"
+      }
+    },
+    "required": [
+      "library_and_node_type"
+    ],
+    "title": "CreateNodeRequest",
+    "type": "object"
+  }
+],
+[
+  "CreateNodeResult_Success",
+  {
+    "$defs": {
+      "CreateNodeRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "library_and_node_type": {
+            "title": "Library And Node Type",
+            "type": "string"
+          },
+          "node_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Node Name"
+          },
+          "override_parent_flow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Override Parent Flow Name"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Metadata"
+          }
+        },
+        "required": [
+          "library_and_node_type"
+        ],
+        "title": "CreateNodeRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/CreateNodeRequest"
+      }
+    },
+    "required": [
+      "details",
+      "node_name",
+      "request"
+    ],
+    "title": "CreateNodeResult_Success",
+    "type": "object"
+  }
+],
+[
+  "CreateNodeResult_Failure",
+  {
+    "$defs": {
+      "CreateNodeRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "library_and_node_type": {
+            "title": "Library And Node Type",
+            "type": "string"
+          },
+          "node_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Node Name"
+          },
+          "override_parent_flow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Override Parent Flow Name"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Metadata"
+          }
+        },
+        "required": [
+          "library_and_node_type"
+        ],
+        "title": "CreateNodeRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/CreateNodeRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "CreateNodeResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "DeleteNodeRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "node_name"
+    ],
+    "title": "DeleteNodeRequest",
+    "type": "object"
+  }
+],
+[
+  "DeleteNodeResult_Success",
+  {
+    "$defs": {
+      "DeleteNodeRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_name"
+        ],
+        "title": "DeleteNodeRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/DeleteNodeRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "DeleteNodeResult_Success",
+    "type": "object"
+  }
+],
+[
+  "DeleteNodeResult_Failure",
+  {
+    "$defs": {
+      "DeleteNodeRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_name"
+        ],
+        "title": "DeleteNodeRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/DeleteNodeRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "DeleteNodeResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "GetNodeResolutionStateRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "node_name"
+    ],
+    "title": "GetNodeResolutionStateRequest",
+    "type": "object"
+  }
+],
+[
+  "GetNodeResolutionStateResult_Success",
+  {
+    "$defs": {
+      "GetNodeResolutionStateRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_name"
+        ],
+        "title": "GetNodeResolutionStateRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "state": {
+        "title": "State",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/GetNodeResolutionStateRequest"
+      }
+    },
+    "required": [
+      "details",
+      "state",
+      "request"
+    ],
+    "title": "GetNodeResolutionStateResult_Success",
+    "type": "object"
+  }
+],
+[
+  "GetNodeResolutionStateResult_Failure",
+  {
+    "$defs": {
+      "GetNodeResolutionStateRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_name"
+        ],
+        "title": "GetNodeResolutionStateRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/GetNodeResolutionStateRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "GetNodeResolutionStateResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "ListParametersOnNodeRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "node_name"
+    ],
+    "title": "ListParametersOnNodeRequest",
+    "type": "object"
+  }
+],
+[
+  "ListParametersOnNodeResult_Success",
+  {
+    "$defs": {
+      "ListParametersOnNodeRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_name"
+        ],
+        "title": "ListParametersOnNodeRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/ListParametersOnNodeRequest"
+      },
+      "parameter_names": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Parameter Names",
+        "type": "array"
+      }
+    },
+    "required": [
+      "details",
+      "request",
+      "parameter_names"
+    ],
+    "title": "ListParametersOnNodeResult_Success",
+    "type": "object"
+  }
+],
+[
+  "ListParametersOnNodeResult_Failure",
+  {
+    "$defs": {
+      "ListParametersOnNodeRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_name"
+        ],
+        "title": "ListParametersOnNodeRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/ListParametersOnNodeRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "ListParametersOnNodeResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "GetNodeMetadataRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "node_name"
+    ],
+    "title": "GetNodeMetadataRequest",
+    "type": "object"
+  }
+],
+[
+  "GetNodeMetadataResult_Success",
+  {
+    "$defs": {
+      "GetNodeMetadataRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_name"
+        ],
+        "title": "GetNodeMetadataRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/GetNodeMetadataRequest"
+      },
+      "metadata": {
+        "title": "Metadata",
+        "type": "object"
+      }
+    },
+    "required": [
+      "details",
+      "request",
+      "metadata"
+    ],
+    "title": "GetNodeMetadataResult_Success",
+    "type": "object"
+  }
+],
+[
+  "GetNodeMetadataResult_Failure",
+  {
+    "$defs": {
+      "GetNodeMetadataRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_name"
+        ],
+        "title": "GetNodeMetadataRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/GetNodeMetadataRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "GetNodeMetadataResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "SetNodeMetadataRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      },
+      "metadata": {
+        "title": "Metadata",
+        "type": "object"
+      }
+    },
+    "required": [
+      "node_name",
+      "metadata"
+    ],
+    "title": "SetNodeMetadataRequest",
+    "type": "object"
+  }
+],
+[
+  "SetNodeMetadataResult_Success",
+  {
+    "$defs": {
+      "SetNodeMetadataRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "metadata": {
+            "title": "Metadata",
+            "type": "object"
+          }
+        },
+        "required": [
+          "node_name",
+          "metadata"
+        ],
+        "title": "SetNodeMetadataRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/SetNodeMetadataRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "SetNodeMetadataResult_Success",
+    "type": "object"
+  }
+],
+[
+  "SetNodeMetadataResult_Failure",
+  {
+    "$defs": {
+      "SetNodeMetadataRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "metadata": {
+            "title": "Metadata",
+            "type": "object"
+          }
+        },
+        "required": [
+          "node_name",
+          "metadata"
+        ],
+        "title": "SetNodeMetadataRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/SetNodeMetadataRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "SetNodeMetadataResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "AddParameterToNodeRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "parameter_name": {
+        "title": "Parameter Name",
+        "type": "string"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      },
+      "allowed_types": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Allowed Types",
+        "type": "array"
+      },
+      "default_value": {
+        "anyOf": [
+          {},
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Default Value"
+      },
+      "tooltip": {
+        "title": "Tooltip",
+        "type": "string"
+      },
+      "tooltip_as_input": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Tooltip As Input"
+      },
+      "tooltip_as_property": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Tooltip As Property"
+      },
+      "tooltip_as_output": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Tooltip As Output"
+      },
+      "mode_allowed_input": {
+        "default": true,
+        "title": "Mode Allowed Input",
+        "type": "boolean"
+      },
+      "mode_allowed_property": {
+        "default": true,
+        "title": "Mode Allowed Property",
+        "type": "boolean"
+      },
+      "mode_allowed_output": {
+        "default": true,
+        "title": "Mode Allowed Output",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "parameter_name",
+      "node_name",
+      "allowed_types",
+      "default_value",
+      "tooltip"
+    ],
+    "title": "AddParameterToNodeRequest",
+    "type": "object"
+  }
+],
+[
+  "AddParameterToNodeResult_Success",
+  {
+    "$defs": {
+      "AddParameterToNodeRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parameter_name": {
+            "title": "Parameter Name",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "allowed_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Types",
+            "type": "array"
+          },
+          "default_value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Value"
+          },
+          "tooltip": {
+            "title": "Tooltip",
+            "type": "string"
+          },
+          "tooltip_as_input": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltip As Input"
+          },
+          "tooltip_as_property": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltip As Property"
+          },
+          "tooltip_as_output": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltip As Output"
+          },
+          "mode_allowed_input": {
+            "default": true,
+            "title": "Mode Allowed Input",
+            "type": "boolean"
+          },
+          "mode_allowed_property": {
+            "default": true,
+            "title": "Mode Allowed Property",
+            "type": "boolean"
+          },
+          "mode_allowed_output": {
+            "default": true,
+            "title": "Mode Allowed Output",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "parameter_name",
+          "node_name",
+          "allowed_types",
+          "default_value",
+          "tooltip"
+        ],
+        "title": "AddParameterToNodeRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/AddParameterToNodeRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "AddParameterToNodeResult_Success",
+    "type": "object"
+  }
+],
+[
+  "AddParameterToNodeResult_Failure",
+  {
+    "$defs": {
+      "AddParameterToNodeRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parameter_name": {
+            "title": "Parameter Name",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "allowed_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Types",
+            "type": "array"
+          },
+          "default_value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Value"
+          },
+          "tooltip": {
+            "title": "Tooltip",
+            "type": "string"
+          },
+          "tooltip_as_input": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltip As Input"
+          },
+          "tooltip_as_property": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltip As Property"
+          },
+          "tooltip_as_output": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltip As Output"
+          },
+          "mode_allowed_input": {
+            "default": true,
+            "title": "Mode Allowed Input",
+            "type": "boolean"
+          },
+          "mode_allowed_property": {
+            "default": true,
+            "title": "Mode Allowed Property",
+            "type": "boolean"
+          },
+          "mode_allowed_output": {
+            "default": true,
+            "title": "Mode Allowed Output",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "parameter_name",
+          "node_name",
+          "allowed_types",
+          "default_value",
+          "tooltip"
+        ],
+        "title": "AddParameterToNodeRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/AddParameterToNodeRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "AddParameterToNodeResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "RemoveParameterFromNodeRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "parameter_name": {
+        "title": "Parameter Name",
+        "type": "string"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "parameter_name",
+      "node_name"
+    ],
+    "title": "RemoveParameterFromNodeRequest",
+    "type": "object"
+  }
+],
+[
+  "RemoveParameterFromNodeResult_Success",
+  {
+    "$defs": {
+      "RemoveParameterFromNodeRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parameter_name": {
+            "title": "Parameter Name",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parameter_name",
+          "node_name"
+        ],
+        "title": "RemoveParameterFromNodeRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/RemoveParameterFromNodeRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "RemoveParameterFromNodeResult_Success",
+    "type": "object"
+  }
+],
+[
+  "RemoveParameterFromNodeResult_Failure",
+  {
+    "$defs": {
+      "RemoveParameterFromNodeRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parameter_name": {
+            "title": "Parameter Name",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parameter_name",
+          "node_name"
+        ],
+        "title": "RemoveParameterFromNodeRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/RemoveParameterFromNodeRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "RemoveParameterFromNodeResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "SetParameterValueRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "parameter_name": {
+        "title": "Parameter Name",
+        "type": "string"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      },
+      "value": {
+        "title": "Value"
+      }
+    },
+    "required": [
+      "parameter_name",
+      "node_name",
+      "value"
+    ],
+    "title": "SetParameterValueRequest",
+    "type": "object"
+  }
+],
+[
+  "SetParameterValueResult_Success",
+  {
+    "$defs": {
+      "SetParameterValueRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parameter_name": {
+            "title": "Parameter Name",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "required": [
+          "parameter_name",
+          "node_name",
+          "value"
+        ],
+        "title": "SetParameterValueRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/SetParameterValueRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "SetParameterValueResult_Success",
+    "type": "object"
+  }
+],
+[
+  "SetParameterValueResult_Failure",
+  {
+    "$defs": {
+      "SetParameterValueRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parameter_name": {
+            "title": "Parameter Name",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "required": [
+          "parameter_name",
+          "node_name",
+          "value"
+        ],
+        "title": "SetParameterValueRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/SetParameterValueRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "SetParameterValueResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "GetParameterDetailsRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "parameter_name": {
+        "title": "Parameter Name",
+        "type": "string"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "parameter_name",
+      "node_name"
+    ],
+    "title": "GetParameterDetailsRequest",
+    "type": "object"
+  }
+],
+[
+  "GetParameterDetailsResult_Success",
+  {
+    "$defs": {
+      "GetParameterDetailsRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parameter_name": {
+            "title": "Parameter Name",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parameter_name",
+          "node_name"
+        ],
+        "title": "GetParameterDetailsRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/GetParameterDetailsRequest"
+      },
+      "allowed_types": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Allowed Types",
+        "type": "array"
+      },
+      "default_value": {
+        "anyOf": [
+          {},
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Default Value"
+      },
+      "tooltip": {
+        "title": "Tooltip",
+        "type": "string"
+      },
+      "tooltip_as_input": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Tooltip As Input"
+      },
+      "tooltip_as_property": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Tooltip As Property"
+      },
+      "tooltip_as_output": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Tooltip As Output"
+      },
+      "mode_allowed_input": {
+        "title": "Mode Allowed Input",
+        "type": "boolean"
+      },
+      "mode_allowed_property": {
+        "title": "Mode Allowed Property",
+        "type": "boolean"
+      },
+      "mode_allowed_output": {
+        "title": "Mode Allowed Output",
+        "type": "boolean"
+      },
+      "is_user_defined": {
+        "title": "Is User Defined",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "details",
+      "request",
+      "allowed_types",
+      "default_value",
+      "tooltip",
+      "tooltip_as_input",
+      "tooltip_as_property",
+      "tooltip_as_output",
+      "mode_allowed_input",
+      "mode_allowed_property",
+      "mode_allowed_output",
+      "is_user_defined"
+    ],
+    "title": "GetParameterDetailsResult_Success",
+    "type": "object"
+  }
+],
+[
+  "GetParameterDetailsResult_Failure",
+  {
+    "$defs": {
+      "GetParameterDetailsRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parameter_name": {
+            "title": "Parameter Name",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parameter_name",
+          "node_name"
+        ],
+        "title": "GetParameterDetailsRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/GetParameterDetailsRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "GetParameterDetailsResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "AlterParameterDetailsRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "parameter_name": {
+        "title": "Parameter Name",
+        "type": "string"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      },
+      "allowed_types": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Allowed Types"
+      },
+      "default_value": {
+        "anyOf": [
+          {},
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Default Value"
+      },
+      "tooltip": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Tooltip"
+      },
+      "tooltip_as_input": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Tooltip As Input"
+      },
+      "tooltip_as_property": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Tooltip As Property"
+      },
+      "tooltip_as_output": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Tooltip As Output"
+      },
+      "mode_allowed_input": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Mode Allowed Input"
+      },
+      "mode_allowed_property": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Mode Allowed Property"
+      },
+      "mode_allowed_output": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Mode Allowed Output"
+      }
+    },
+    "required": [
+      "parameter_name",
+      "node_name"
+    ],
+    "title": "AlterParameterDetailsRequest",
+    "type": "object"
+  }
+],
+[
+  "AlterParameterDetailsResult_Success",
+  {
+    "$defs": {
+      "AlterParameterDetailsRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parameter_name": {
+            "title": "Parameter Name",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "allowed_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Allowed Types"
+          },
+          "default_value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Default Value"
+          },
+          "tooltip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltip"
+          },
+          "tooltip_as_input": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltip As Input"
+          },
+          "tooltip_as_property": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltip As Property"
+          },
+          "tooltip_as_output": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltip As Output"
+          },
+          "mode_allowed_input": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode Allowed Input"
+          },
+          "mode_allowed_property": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode Allowed Property"
+          },
+          "mode_allowed_output": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode Allowed Output"
+          }
+        },
+        "required": [
+          "parameter_name",
+          "node_name"
+        ],
+        "title": "AlterParameterDetailsRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/AlterParameterDetailsRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "AlterParameterDetailsResult_Success",
+    "type": "object"
+  }
+],
+[
+  "AlterParameterDetailsResult_Failure",
+  {
+    "$defs": {
+      "AlterParameterDetailsRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parameter_name": {
+            "title": "Parameter Name",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "allowed_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Allowed Types"
+          },
+          "default_value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Default Value"
+          },
+          "tooltip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltip"
+          },
+          "tooltip_as_input": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltip As Input"
+          },
+          "tooltip_as_property": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltip As Property"
+          },
+          "tooltip_as_output": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltip As Output"
+          },
+          "mode_allowed_input": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode Allowed Input"
+          },
+          "mode_allowed_property": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode Allowed Property"
+          },
+          "mode_allowed_output": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode Allowed Output"
+          }
+        },
+        "required": [
+          "parameter_name",
+          "node_name"
+        ],
+        "title": "AlterParameterDetailsRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/AlterParameterDetailsRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "AlterParameterDetailsResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "GetParameterValueRequest",
+  {
+    "properties": {
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Request Id"
+      },
+      "parameter_name": {
+        "title": "Parameter Name",
+        "type": "string"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "parameter_name",
+      "node_name"
+    ],
+    "title": "GetParameterValueRequest",
+    "type": "object"
+  }
+],
+[
+  "GetParameterValueResult_Success",
+  {
+    "$defs": {
+      "GetParameterValueRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parameter_name": {
+            "title": "Parameter Name",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parameter_name",
+          "node_name"
+        ],
+        "title": "GetParameterValueRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "data_type": {
+        "title": "Data Type",
+        "type": "string"
+      },
+      "value": {
+        "title": "Value"
+      },
+      "request": {
+        "$ref": "#/$defs/GetParameterValueRequest"
+      }
+    },
+    "required": [
+      "details",
+      "data_type",
+      "value",
+      "request"
+    ],
+    "title": "GetParameterValueResult_Success",
+    "type": "object"
+  }
+],
+[
+  "GetParameterValueResult_Failure",
+  {
+    "$defs": {
+      "GetParameterValueRequest": {
+        "properties": {
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "parameter_name": {
+            "title": "Parameter Name",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parameter_name",
+          "node_name"
+        ],
+        "title": "GetParameterValueRequest",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/$defs/GetParameterValueRequest"
+      }
+    },
+    "required": [
+      "details",
+      "request"
+    ],
+    "title": "GetParameterValueResult_Failure",
+    "type": "object"
+  }
+],
+[
+  "OnParameterValueChanged",
+  {
+    "properties": {
+      "details": {
+        "title": "Details",
+        "type": "string"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      },
+      "parameter_name": {
+        "title": "Parameter Name",
+        "type": "string"
+      },
+      "data_type": {
+        "title": "Data Type",
+        "type": "string"
+      },
+      "value": {
+        "title": "Value"
+      }
+    },
+    "required": [
+      "details",
+      "node_name",
+      "parameter_name",
+      "data_type",
+      "value"
+    ],
+    "title": "OnParameterValueChanged",
+    "type": "object"
+  }
+],

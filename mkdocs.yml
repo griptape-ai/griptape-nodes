@@ -1,0 +1,4 @@
+site_name: Griptape Nodes 
+site_url: https://docs.griptapenodes.com/
+theme:
+  name: material

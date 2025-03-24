@@ -1,0 +1,460 @@
+{
+  "name": "Griptape Nodes Library",
+  "metadata": {
+    "author": "Griptape, Inc.",
+    "description": "Default nodes for Griptape Nodes.",
+    "version": "1.0.0",
+    "tags": [
+      "Griptape",
+      "AI"
+    ]
+  },
+  "categories": [
+    {
+      "Agent": {
+        "color": "border-red-500",
+        "title": "Agent",
+        "description": "Nodes related to Agents.",
+        "icon": "UserCircle"
+      }
+    },
+    {
+      "Rules": {
+        "color": "border-amber-500",
+        "title": "Rules",
+        "description": "Basic nodes.",
+        "icon": "Scale"
+      }
+    },
+    {
+      "Image": {
+        "color": "border-purple-500",
+        "title": "Image",
+        "description": "Basic nodes.",
+        "icon": "Image"
+      }
+    },
+    {
+      "Drivers": {
+        "color": "border-lime-500",
+        "title": "Drivers",
+        "description": "Utility nodes like save, etc., etc.",
+        "icon": "Truck"
+      }
+    },
+    {
+      "Tools": {
+        "color": "border-cyan-500",
+        "title": "Tools",
+        "description": "Tools an agent can use.",
+        "icon": "Wrench"
+      }
+    },
+    {
+      "Utility": {
+        "color": "border-gray-500",
+        "title": "Utility",
+        "description": "Utility nodes like save, etc., etc.",
+        "icon": "Cog"
+      }
+    },
+    {
+      "Comfy": {
+        "color": "border-gray-500",
+        "title": "ComfyNodes",
+        "description": "Run Comfy Workflwos",
+        "icon": "Cog"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "class_name": "gnRunAgent",
+      "file_path": "griptape_nodes_library/agent.py",
+      "metadata": {
+        "category": "Agent",
+        "description": "Griptape Agent that can execute prompts and use tools",
+        "display_name": "Run Agent"
+      }
+    },
+    {
+      "class_name": "gnSimpleAgent",
+      "file_path": "griptape_nodes_library/simple_agent.py",
+      "metadata": {
+        "category": "Agent",
+        "description": "Runs a previously created Griptape Agent with new prompts",
+        "display_name": "Simple Agent"
+      }
+    },
+    {
+      "class_name": "gnAnthropicPromptDriver",
+      "file_path": "griptape_nodes_library/drivers/anthropic_prompt_driver.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "Anthropic Claude prompt driver for Griptape Agents",
+        "display_name": "Anthropic Prompt Driver"
+      }
+    },
+    {
+      "class_name": "gnOpenAiAudioTranscriptionDriver",
+      "file_path": "griptape_nodes_library/drivers/audio_transcription_drivers.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "OpenAI Transcription driver for processing provided audio",
+        "display_name": "OpenAI Audio Transcription Driver"
+      }
+    },
+    {
+      "class_name": "gnAzureOpenAiChatPromptDriver",
+      "file_path": "griptape_nodes_library/drivers/azure_openai_chat_prompt_driver.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "Azure OpenAI prompt driver for Griptape agents",
+        "display_name": "Azure OpenAI Chat Prompt Driver"
+      }
+    },
+    {
+      "class_name": "gnAzureOpenAiImageDriver",
+      "file_path": "griptape_nodes_library/drivers/azure_openai_image_driver.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "Azure OpenAI image generation driver for Griptape agents",
+        "display_name": "Azure OpenAI image generation driver"
+      }
+    },
+    {
+      "class_name": "gnCoherePromptDriver",
+      "file_path": "griptape_nodes_library/drivers/cohere_prompt_driver.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "Cohere prompt driver for Griptape agents",
+        "display_name": "Cohere Prompt Driver"
+      }
+    },
+    {
+      "class_name": "gnGriptapeCloudPromptDriver",
+      "file_path": "griptape_nodes_library/drivers/griptape_cloud_prompt_driver.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "Griptape Cloud Prompt Driver",
+        "display_name": "Griptape Cloud Prompt Driver"
+      }
+    },
+    {
+      "class_name": "gnOllamaEmbeddingDriver",
+      "file_path": "griptape_nodes_library/drivers/ollama_embedding_driver.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "Ollama embedding driver for local embeddings",
+        "display_name": "Ollama Embedding Driver"
+      }
+    },
+    {
+      "class_name": "gnOllamaPromptDriver",
+      "file_path": "griptape_nodes_library/drivers/ollama_prompt_driver.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "Prompt driver for Ollama (local!)",
+        "display_name": "Ollama Prompt Driver"
+      }
+    },
+    {
+      "class_name": "gnOpenAiChatPromptDriver",
+      "file_path": "griptape_nodes_library/drivers/openai_chat_prompt_driver.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "OpenAI chat prompt driver (default)",
+        "display_name": "OpenAI Chat Prompt Driver"
+      }
+    },
+    {
+      "class_name": "gnOpenAiImageDriver",
+      "file_path": "griptape_nodes_library/drivers/openai_image_driver.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "OpenAI image generation driver (dall-e-3)",
+        "display_name": "OpenAI Image Driver"
+      }
+    },
+    {
+      "class_name": "gnBaseWebSearchDriver",
+      "file_path": "griptape_nodes_library/drivers/web_search_drivers.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "Web search driver (Duck Duck Go)",
+        "display_name": "Base Web Search Driver"
+      }
+    },
+    {
+      "class_name": "gnDuckDuckGoWebSearchDriver",
+      "file_path": "griptape_nodes_library/drivers/web_search_drivers.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "Web search driver (Duck Duck Go)",
+        "display_name": "Duck Duck Go Web Search Driver"
+      }
+    },
+    {
+      "class_name": "gnRuleSet",
+      "file_path": "griptape_nodes_library/rules/base_ruleset.py",
+      "metadata": {
+        "category": "Rules",
+        "description": "Creates behavioral ruleset for Griptape agents",
+        "display_name": "Rule Set"
+      }
+    },
+    {
+      "class_name": "gnAudioTranscriptionTool",
+      "file_path": "griptape_nodes_library/tools/audio_transcription_tool.py",
+      "metadata": {
+        "category": "Tools",
+        "description": "Transcribes audio files using configurable drivers",
+        "display_name": "Audio Transcription"
+      }
+    },
+    {
+      "class_name": "gnCalculatorTool",
+      "file_path": "griptape_nodes_library/tools/calculator_tool.py",
+      "metadata": {
+        "category": "Tools",
+        "display_name": "Calculator Tool",
+        "description": "Performs mathematical operations via CalculatorTool"
+      }
+    },
+    {
+      "class_name": "gnDateTimeTool",
+      "file_path": "griptape_nodes_library/tools/date_time_tool.py",
+      "metadata": {
+        "category": "Tools",
+        "display_name": "DateTime Tool",
+        "description": "Gives the agent access to DateTime"
+      }
+    },
+    {
+      "class_name": "gnExtractionTool",
+      "file_path": "griptape_nodes_library/tools/extraction_tool.py",
+      "metadata": {
+        "category": "Tools",
+        "description": "Extracts structured data from text in CSV or JSON format",
+        "display_name": "Extraction"
+      }
+    },
+    {
+      "class_name": "gnFileManagerTool",
+      "file_path": "griptape_nodes_library/tools/file_manager_tool.py",
+      "metadata": {
+        "category": "Tools",
+        "description": "Provides file system operations for Griptape agents",
+        "display_name": "File Manager"
+      }
+    },
+    {
+      "class_name": "gnPromptSummaryTool",
+      "file_path": "griptape_nodes_library/tools/prompt_summary_tool.py",
+      "metadata": {
+        "category": "Tools",
+        "description": "Summarizes text using prompt-based summarization",
+        "display_name": "Prompt Summary"
+      }
+    },
+    {
+      "class_name": "gnQueryTool",
+      "file_path": "griptape_nodes_library/tools/query_tool.py",
+      "metadata": {
+        "category": "Tools",
+        "description": "Query tool optimized for different LLM providers",
+        "display_name": "Query"
+      }
+    },
+    {
+      "class_name": "gnRagTool",
+      "file_path": "griptape_nodes_library/tools/rag_tool.py",
+      "metadata": {
+        "category": "Tools",
+        "description": "Implements retrieval-augmented generation with rules",
+        "display_name": "R.A.G."
+      }
+    },
+    {
+      "class_name": "gnToolListNode",
+      "file_path": "griptape_nodes_library/tools/tool_list.py",
+      "metadata": {
+        "category": "Tools",
+        "description": "Combines multiple tools into a single list for agents to use",
+        "display_name": "Tool List"
+      }
+    },
+    {
+      "class_name": "gnVectorStoreTool",
+      "file_path": "griptape_nodes_library/tools/vector_store_tool.py",
+      "metadata": {
+        "category": "Tools",
+        "description": " Provides vector database search capabilities",
+        "display_name": "Vector Store"
+      }
+    },
+    {
+      "class_name": "gnWebScraperTool",
+      "file_path": "griptape_nodes_library/tools/web_scraper_tool.py",
+      "metadata": {
+        "category": "Tools",
+        "description": "Extracts content from websites",
+        "display_name": "Web Scraper"
+      }
+    },
+    {
+      "class_name": "gnWebSearchTool",
+      "file_path": "griptape_nodes_library/tools/web_search_tool.py",
+      "metadata": {
+        "category": "Tools",
+        "description": "Searches the web using configurable search drivers",
+        "display_name": "Web Search"
+      }
+    },
+    {
+      "class_name": "gnDictNode",
+      "file_path": "griptape_nodes_library/create_dict.py",
+      "metadata": {
+        "category": "Utility",
+        "description": "Create a dictionary with key-value pairs",
+        "display_name": "Dict Node"
+      }
+    },
+    {
+      "class_name": "gnCreateImage",
+      "file_path": "griptape_nodes_library/create_image.py",
+      "metadata": {
+        "category": "Image",
+        "description": "Generates images using configurable image drivers",
+        "display_name": "Create Image"
+      }
+    },
+    {
+      "class_name": "gnCreateString",
+      "file_path": "griptape_nodes_library/create_string.py",
+      "metadata": {
+        "category": "Utility",
+        "description": "Creates and outputs a simple string value",
+        "display_name": "Create String"
+      }
+    },
+    {
+      "class_name": "gnEndFlow",
+      "file_path": "griptape_nodes_library/end_flow.py",
+      "metadata": {
+        "category": "Utility",
+        "description": "Termination point for control flow graphs",
+        "display_name": "End Flow"
+      }
+    },
+    {
+      "class_name": "gnKeyValuePairNode",
+      "file_path": "griptape_nodes_library/key_value_pair.py",
+      "metadata": {
+        "category": "Utility",
+        "description": "Creates a dictionary from a single key-value input",
+        "display_name": "Key Value Pair"
+      }
+    },
+    {
+      "class_name": "LoadImage",
+      "file_path": "griptape_nodes_library/load_image.py",
+      "metadata": {
+        "category": "Image",
+        "description": "Loads and displays an image file or artifact",
+        "display_name": "Load Image"
+      }
+    },
+    {
+      "class_name": "gnLoadTextNode",
+      "file_path": "griptape_nodes_library/load_text.py",
+      "metadata": {
+        "category": "Utility",
+        "description": "Loads text content from files",
+        "display_name": "Load Text"
+      }
+    },
+    {
+      "class_name": "gnMergeDictionaryNode",
+      "file_path": "griptape_nodes_library/merge_dict.py",
+      "metadata": {
+        "category": "Utility",
+        "description": "Combines multiple dictionaries",
+        "display_name": "Merge Dictionary"
+      }
+    },
+    {
+      "class_name": "gnMergeTextsNode",
+      "file_path": "griptape_nodes_library/merge_texts.py",
+      "metadata": {
+        "category": "Utility",
+        "description": "Joins multiple text inputs with a configurable separator",
+        "display_name": "Merge Texts"
+      }
+    },
+    {
+      "class_name": "gnSaveTextNode",
+      "file_path": "griptape_nodes_library/save_text.py",
+      "metadata": {
+        "category": "Utility",
+        "description": "Saves text content to a file",
+        "display_name": "Save Text"
+      }
+    },
+    {
+      "class_name": "gnStartFlow",
+      "file_path": "griptape_nodes_library/start_flow.py",
+      "metadata": {
+        "category": "Utility",
+        "description": "Entry point for control flow graphs",
+        "display_name": "Start Flow"
+      }
+    },
+    {
+      "class_name": "gnStringListNode",
+      "file_path": "griptape_nodes_library/string_list.py",
+      "metadata": {
+        "category": "Utility",
+        "description": "Creates and manages lists of string values",
+        "display_name": "String List"
+      }
+    },
+    {
+      "class_name": "ComfyUIImageGenerationNode",
+      "file_path": "griptape_nodes_library/comfy_nodes.py",
+      "metadata": {
+        "category": "Comfy",
+        "description": "Runs ComfyUI workflow to generate images from prompts",
+        "display_name": "ComfyUI Image Generation"
+      }
+    },
+    {
+      "class_name": "ComfyUIFluxWorkflowNode",
+      "file_path": "griptape_nodes_library/comfy_nodes.py",
+      "metadata": {
+        "category": "Comfy",
+        "description": "Executes ComfyUI Flux workflow for image generation",
+        "display_name": "ComfyUI Flux Workflow"
+      }
+    },
+    {
+      "class_name": "ComfyUIPhotographerComparison",
+      "file_path": "griptape_nodes_library/comfy_nodes.py",
+      "metadata": {
+        "category": "Comfy",
+        "description": "Compares different photographer styles using ComfyUI",
+        "display_name": "ComfyUI Photographer Comparison"
+      }
+    },
+    {
+      "class_name": "LoadFileFromDataLakeNode",
+      "file_path": "griptape_nodes_library/comfy_nodes.py",
+      "metadata": {
+        "category": "Comfy",
+        "description": "Loads assets from cloud storage buckets",
+        "display_name": "Load From Data Lake"
+      }
+    }
+  ]
+}
+
