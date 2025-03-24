@@ -2289,10 +2289,12 @@ class ScriptManager:
     def on_register_script_request(self, request: RegisterScriptRequest) -> ResultPayload:
         try:
             script = ScriptRegistry.generate_new_script(
-                request.script_name,
-                request.file_path,
-                request.description,
-                request.image,
+                name=request.script_name,
+                relative_file_path=request.file_path,
+                engine_version_created_with=request.engine_version_created_with,
+                node_libraries_referenced=request.node_libraries_referenced,
+                description=request.description,
+                image=request.image,
             )
         except Exception as e:
             print(f"Failed to register script with name {request.script_name}. Error: {e}")
@@ -2341,6 +2343,8 @@ class ScriptManager:
         relative_file_path = f"{file_name}.py"
         file_path = config_manager.workspace_path.joinpath(relative_file_path)
         created_flows = []
+        node_libraries_used = set()
+
         try:
             with file_path.open("w") as file:
                 file.write("from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes\n")
@@ -2359,11 +2363,34 @@ class ScriptManager:
                     file.write(code_string + "\n")
                     # Save the parameters
                     handle_parameter_creation_saving(file, node, flow_name)
+
+                    # See if this node uses a library we need to know about.
+                    library_used = node.metadata["library"]
+                    node_libraries_used.add(library_used)
                 # Now all nodes AND parameters have been created
                 file.write(connection_request_scripts)
         except Exception as e:
-            print(f"Failed to save scene, exception: {e}")
+            details = f"Failed to save scene, exception: {e}"
+            print(details)  # TODO(griptape): Move to Log
             return SaveSceneResult_Failure()
+
+        # Get the engine version.
+        engine_version_request = GetEngineVersion_Request()
+        engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
+        if not engine_version_result.succeeded():
+            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version."
+            print(details)  # TODO(griptape): Move to Log
+            return SaveSceneResult_Failure()
+        try:
+            engine_version_success = cast("GetEngineVersionResult_Success", engine_version_result)
+            engine_version = (
+                f"{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
+            )
+        except Exception as err:
+            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version: {err}"
+            print(details)  # TODO(griptape): Move to Log
+            return SaveSceneResult_Failure()
+
         # save the created scene to a personal json file
         if file_name not in ScriptRegistry.list_scripts():
             script = {
@@ -2371,6 +2398,8 @@ class ScriptManager:
                 "relative_file_path": relative_file_path,
                 "image": None,
                 "description": None,
+                "engine_version_created_with": engine_version,
+                "node_libraries_referenced": list(node_libraries_used),
             }
             config_manager.save_user_script_json(script)
             ScriptRegistry.generate_new_script(**script)
@@ -2906,6 +2935,8 @@ class LibraryManager:
                         file_path=str(file_path),
                         description=script["description"],
                         image=script["image"],
+                        engine_version_created_with=script["engine_version_created_with"],
+                        node_libraries_referenced=script["node_libraries_referenced"],
                     )
                     GriptapeNodes().handle_request(script_register_request)
                 else:
@@ -2916,6 +2947,8 @@ class LibraryManager:
                         file_path=str(full_path),
                         description=script["description"],
                         image=script["image"],
+                        engine_version_created_with=script["engine_version_created_with"],
+                        node_libraries_referenced=script["node_libraries_referenced"],
                     )
                     GriptapeNodes().handle_request(script_register_request)
 

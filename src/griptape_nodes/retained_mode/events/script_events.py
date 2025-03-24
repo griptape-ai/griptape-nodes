@@ -67,6 +67,8 @@ class RunScriptFromRegistryResult_Failure(ResultPayload_Failure):
 class RegisterScriptRequest(RequestPayload):
     script_name: str
     file_path: str
+    engine_version_created_with: str
+    node_libraries_referenced: list[str]
     description: str | None = None
     image: str | None = None
 
