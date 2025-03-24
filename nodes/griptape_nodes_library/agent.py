@@ -98,7 +98,7 @@ class gnRunAgent(ControlNode):
         exceptions = []
         api_key = self.getenv(SERVICE,API_KEY_ENV_VAR)
         if not api_key:
-            msg="OPENAI_API_KEY is not defined"
+            msg=f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
         try:

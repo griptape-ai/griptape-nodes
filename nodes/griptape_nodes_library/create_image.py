@@ -89,7 +89,7 @@ class gnCreateImage(ControlNode):
         if self.parameter_values.get("agent", None) and self.parameter_values.get("driver", None):
             return None
         if not api_key:
-            msg="OPENAI_API_KEY is not defined"
+            msg=f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
         try:

@@ -1,3 +1,4 @@
+import anthropic
 from griptape.drivers.prompt.anthropic import AnthropicPromptDriver
 from rich import print
 
@@ -59,3 +60,17 @@ class gnAnthropicPromptDriver(gnBasePromptDriver):
         print("\n\n")
 
         self.parameter_output_values["driver"] = AnthropicPromptDriver(**kwargs)
+
+    def validate_node(self) -> list[Exception] | None:
+        exceptions = []
+        api_key = self.getenv(SERVICE, API_KEY_ENV_VAR)
+        if not api_key:
+            msg=f"{API_KEY_ENV_VAR} is not defined"
+            exceptions.append(KeyError(msg))
+            return exceptions
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            client.models.list()
+        except anthropic.APIError as e:
+            exceptions.append(e)
+        return exceptions if exceptions else None
