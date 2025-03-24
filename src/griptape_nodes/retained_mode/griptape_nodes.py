@@ -996,6 +996,29 @@ class FlowManager:
             result = DeleteConnectionResult_Failure()
             return result
 
+        # TEMP HACK: SWAP BACK Data connections appear to reverse Source and Target. TODO(griptape): Let's reconcile this. SWAP BACK
+        if ParameterControlType.__name__ not in source_param.allowed_types:
+            temp_node = source_node
+            temp_param = source_param
+            source_node = target_node
+            source_param = target_param
+            target_node = temp_node
+            target_param = temp_param
+
+        # Let the source make any internal handling decisions now that the Connection has been REMOVED.
+        source_node.handle_outgoing_connection_removed(
+            source_parameter=source_param,
+            target_node=target_node,
+            target_parameter=target_param,
+        )
+
+        # And target.
+        target_node.handle_incoming_connection_removed(
+            source_node=source_node,
+            source_parameter=source_param,
+            target_parameter=target_param,
+        )
+
         details = f'Connection "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}" deleted.'
         print(details)  # TODO(griptape): Move to Log
 
@@ -2408,6 +2431,7 @@ def handle_parameter_creation_saving(file: TextIO, node: NodeBase, flow_name: st
             diff = manage_alter_details(parameter, type(node))
             if diff:
                 diff["node_name"] = node.name
+                diff["parameter_name"] = parameter.name
                 creation_request = AlterParameterDetailsRequest.create(**diff)
                 code_string = f"GriptapeNodes().handle_request({creation_request})"
                 file.write(code_string + "\n")
