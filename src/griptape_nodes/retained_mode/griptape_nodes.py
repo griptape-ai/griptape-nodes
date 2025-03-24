@@ -78,6 +78,9 @@ from griptape_nodes.retained_mode.events.execution_events import (
     UnresolveFlowRequest,
     UnresolveFlowResult_Failure,
     UnresolveFlowResult_Success,
+    ValidateFlowDependenciesRequest,
+    ValidateFlowDependenciesResult_Failure,
+    ValidateFlowDependenciesResult_Success,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowRequest,
@@ -515,6 +518,7 @@ class FlowManager:
 
         event_manager.assign_manager_to_request_type(GetFlowStateRequest, self.on_get_flow_state_request)
         event_manager.assign_manager_to_request_type(GetIsFlowRunningRequest, self.on_get_is_flow_running_request)
+        event_manager.assign_manager_to_request_type(ValidateFlowDependenciesRequest, self.on_validate_flow_dependencies_request)
         # events that happen after a flow is ran
         event_manager.add_listener_to_app_event(AppExecutionEvent, self.on_app_execution_event)
 
@@ -1022,7 +1026,7 @@ class FlowManager:
             flow_node_name = request.flow_node_name
             flow_node = (
                 GriptapeNodes.get_instance()
-                .ObjectManager()
+                ._object_manager
                 .attempt_get_object_by_name_as_type(flow_node_name, NodeBase)
             )
             if not flow_node:
@@ -1175,8 +1179,8 @@ class FlowManager:
         print(details)  # TODO(griptape): Move to Log
         return ContinueExecutionStepResult_Success()
 
-    def on_unresolve_flow_request(self, event: UnresolveFlowRequest) -> ResultPayload:
-        flow_name = event.flow_name
+    def on_unresolve_flow_request(self, request: UnresolveFlowRequest) -> ResultPayload:
+        flow_name = request.flow_name
         if not flow_name:
             details = "Failed to unresolve flow because no flow name was provided"
             print(details)  # TODO(griptape): Move to Log
@@ -1200,6 +1204,35 @@ class FlowManager:
         # Handle all events from the execution engine
         # TODO(kate): Should this somehow be modified to be specific events for the gui?
         GriptapeNodes.handle_request(event.request)
+
+    def on_validate_flow_dependencies_request(self, request:ValidateFlowDependenciesRequest) -> ResultPayload:
+        flow_name = request.flow_name
+        # get the flow name
+        flow = self.get_flow_by_name(flow_name)
+        if not flow:
+            details = f"Failed to validate flow because flow with name {flow_name} does not exist."
+            print(details)  # TODO(griptape): Move to Log
+            return ValidateFlowDependenciesResult_Failure()
+        if request.flow_node_name:
+            flow_node_name = request.flow_node_name
+            flow_node = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(flow_node_name,NodeBase)
+            if not flow_node:
+                details=f"Provided node with name {flow_node_name} does not exist"
+                print(details)
+                return ValidateFlowDependenciesResult_Failure()
+            # Gets all nodes in that connected group to be ran
+            nodes = flow.get_all_connected_nodes(flow_node)
+        else:
+            nodes = flow.nodes.values()
+        # If we're just running the whole flow
+        all_exceptions = []
+        for node in nodes:
+            exceptions = node.validate_node()
+            if exceptions:
+                all_exceptions = all_exceptions + exceptions
+        if all_exceptions:
+            return ValidateFlowDependenciesResult_Success(validation_succeeded=False, exceptions=all_exceptions)
+        return ValidateFlowDependenciesResult_Success(validation_succeeded=True)
 
 
 class NodeManager:
@@ -2407,6 +2440,7 @@ def handle_parameter_creation_saving(file: TextIO, node: NodeBase, flow_name: st
             diff = manage_alter_details(parameter, type(node))
             if diff:
                 diff["node_name"] = node.name
+                diff["parameter_name"] = parameter.name
                 creation_request = AlterParameterDetailsRequest.create(**diff)
                 code_string = f"GriptapeNodes().handle_request({creation_request})"
                 file.write(code_string + "\n")

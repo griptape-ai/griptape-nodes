@@ -5,6 +5,7 @@ from griptape.tasks import PromptImageGenerationTask
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+import openai
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
@@ -80,9 +81,23 @@ class gnCreateImage(ControlNode):
             )
         )
 
-    def getenv(self, service: str, value: str) -> str:
-        api_key = self.config.get_config_value(f"env.{service}.{value}")
-        return api_key
+    def validate_node(self) -> list[Exception] | None:
+        # TODO(kate): Figure out how to wrap this so it's easily repeatable
+        exceptions = []
+        api_key = self.getenv(SERVICE,API_KEY_ENV_VAR)
+        # No need for the api key. These exceptions caught on other nodes.
+        if self.parameter_values.get("agent", None) and self.parameter_values.get("driver", None):
+            return None
+        if not api_key:
+            msg="OPENAI_API_KEY is not defined"
+            exceptions.append(KeyError(msg))
+            return exceptions
+        try:
+            client = openai.OpenAI(api_key=api_key)
+            client.models.list()
+        except openai.AuthenticationError as e:
+            exceptions.append(e)
+        return exceptions if exceptions else None
 
     def process(self) -> None:
         # Get the parameters from the node

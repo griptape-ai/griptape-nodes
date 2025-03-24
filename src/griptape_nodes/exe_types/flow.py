@@ -337,3 +337,47 @@ class ControlFlow:
     def stop_flow_breakpoint(self, node: NodeBase) -> None:
         # This will prevent the flow from continuing on.
         node.stop_flow = True
+
+    def get_connections_on_node(self, node:NodeBase) -> list[NodeBase] | None:
+        # get all of the connection ids
+        connected_nodes = []
+        # Handle outgoing connections
+        if node.name in self.connections.outgoing_index:
+            outgoing_params = self.connections.outgoing_index[node.name]
+            outgoing_connection_ids = []
+            for connection_ids in outgoing_params.values():
+                outgoing_connection_ids = outgoing_connection_ids + connection_ids
+            for connection_id in outgoing_connection_ids:
+                connection = self.connections.connections[connection_id]
+                if connection.source_node not in connected_nodes:
+                    connected_nodes.append(connection.target_node)
+        # Handle incoming connections
+        if node.name in self.connections.incoming_index:
+            incoming_params = self.connections.incoming_index[node.name]
+            incoming_connection_ids = []
+            for connection_ids in incoming_params.values():
+                incoming_connection_ids = incoming_connection_ids + connection_ids
+            for connection_id in incoming_connection_ids:
+                connection = self.connections.connections[connection_id]
+                if connection.source_node not in connected_nodes:
+                    connected_nodes.append(connection.source_node)
+        # Return all connected nodes. No duplicates
+        return connected_nodes
+
+
+    def get_all_connected_nodes(self, node:NodeBase) -> list[NodeBase]:
+        discovered = {}
+        processed = {}
+        queue = Queue()
+        queue.put(node)
+        discovered[node] = True
+        while not queue.empty():
+            curr_node = queue.get()
+            processed[curr_node] = True
+            next_nodes = self.get_connections_on_node(curr_node)
+            if next_nodes:
+                for next_node in next_nodes:
+                    if next_node not in discovered:
+                        discovered[next_node] = True
+                        queue.put(next_node)
+        return list(processed.keys())

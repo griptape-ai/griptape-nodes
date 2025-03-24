@@ -3,10 +3,13 @@ from griptape.utils import Stream
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterUIOptions
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+import openai
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 DEFAULT_MODEL = "gpt-4o"
-
+SERVICE = "OpenAI"
+API_KEY_ENV_VAR = "OPENAI_API_KEY"
 
 class gnSimpleAgent(ControlNode):
     def __init__(self, **kwargs) -> None:
@@ -50,6 +53,22 @@ class gnSimpleAgent(ControlNode):
                 ),
             )
         )
+
+    # Same here as gnRunAgent. TODO(kate):package into one
+    def validate_node(self) -> list[Exception] | None:
+        # Items here are openai api key
+        exceptions = []
+        api_key = GriptapeNodes.get_instance()._config_manager.get_config_value(f"env.{SERVICE}.{API_KEY_ENV_VAR}")
+        if not api_key:
+            msg="OPENAI_API_KEY is not defined"
+            exceptions.append(KeyError(msg))
+            return exceptions
+        try:
+            client = openai.OpenAI(api_key=api_key)
+            client.models.list()
+        except openai.AuthenticationError as e:
+            exceptions.append(e)
+        return exceptions if exceptions else None
 
     def process(self) -> None:
         # Get input values

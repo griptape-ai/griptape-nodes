@@ -182,6 +182,25 @@ class GetIsFlowRunningResult_Success(ResultPayload_Success):
 class GetIsFlowRunningResult_Failure(ResultPayload_Failure):
     pass
 
+# Validates that the flow they are trying to run has all it's dependencies
+@dataclass
+@PayloadRegistry.register
+class ValidateFlowDependenciesRequest(RequestPayload):
+    # Same inputs as StartFlow
+    flow_name: str
+    flow_node_name: str | None = None
+
+@dataclass
+@PayloadRegistry.register
+class ValidateFlowDependenciesResult_Success(ResultPayload_Success):
+    validation_succeeded: bool
+    exceptions: list[Exception] | None = None
+
+# if it doesn't have a dependency we want
+@dataclass
+@PayloadRegistry.register
+class ValidateFlowDependenciesResult_Failure(ResultPayload_Failure):
+    pass
 
 # Execution Events! These are sent FROM the EE to the User/GUI. HOW MANY DO WE NEED?
 @dataclass
