@@ -9,7 +9,7 @@ version/set: ## Set version.
 .PHONY: version/commit
 version/commit: ## Commit version bump.
 	@git add pyproject.toml
-	@git commit -m "Version bump v$$(uv version -s)"
+	@git commit -m "Version bump v$$(make version/get)"
 	
 .PHONY: publish
 publish: ## Push git tag and publish version to PyPI.
