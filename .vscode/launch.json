@@ -21,7 +21,7 @@
             "program": "src/griptape_nodes/__init__.py",
             "console": "integratedTerminal",
             "env": {
-                "PYTHONPATH": "${workspaceRoot}"
+                "PYTHONPATH": "${workspaceRoot}/src"
             }
         }
     ]

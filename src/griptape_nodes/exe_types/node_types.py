@@ -4,7 +4,6 @@ from enum import Enum, auto
 from typing import Any, Self
 
 from griptape.events import BaseEvent
-
 from griptape_nodes.exe_types.core_types import (
     ControlParameter_Input,
     ControlParameter_Output,
@@ -12,7 +11,6 @@ from griptape_nodes.exe_types.core_types import (
     ParameterControlType,
     ParameterMode,
 )
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 class NodeResolutionState(Enum):
@@ -232,10 +230,6 @@ class NodeBase(ABC):
     # if not implemented, it will return no issues.
     def validate_node(self) -> list[Exception] | None:
         return None
-
-    def getenv(self, service: str, value: str) -> str:
-        api_key = GriptapeNodes.get_instance()._config_manager.get_config_value(f"env.{service}.{value}")
-        return api_key
 
 
 class ControlNode(NodeBase):

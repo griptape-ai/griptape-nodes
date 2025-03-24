@@ -3,6 +3,7 @@ from griptape.drivers.prompt.anthropic import AnthropicPromptDriver
 from rich import print
 
 from griptape_nodes_library.drivers.base_prompt_driver import gnBasePromptDriver
+from nodes.griptape_nodes_library.utils.env_utils import getenv
 
 DEFAULT_MODEL = "claude-3-5-sonnet-latest"
 API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
@@ -27,7 +28,7 @@ class gnAnthropicPromptDriver(gnBasePromptDriver):
 
         # Initialize kwargs with required parameters
         kwargs = {}
-        kwargs["api_key"] = self.getenv(service=SERVICE, value=API_KEY_ENV_VAR)
+        kwargs["api_key"] = getenv(service=SERVICE, value=API_KEY_ENV_VAR)
         kwargs["model"] = self.valid_or_fallback("model", DEFAULT_MODEL)
 
         # Handle optional parameters
@@ -63,7 +64,7 @@ class gnAnthropicPromptDriver(gnBasePromptDriver):
 
     def validate_node(self) -> list[Exception] | None:
         exceptions = []
-        api_key = self.getenv(SERVICE, API_KEY_ENV_VAR)
+        api_key = getenv(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
             msg=f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))

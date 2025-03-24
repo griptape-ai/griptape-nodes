@@ -7,6 +7,7 @@ from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 import openai
 from griptape_nodes_library.utils.error_utils import try_throw_error
+from nodes.griptape_nodes_library.utils.env_utils import getenv
 
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
 SERVICE = "OpenAI"
@@ -84,7 +85,7 @@ class gnCreateImage(ControlNode):
     def validate_node(self) -> list[Exception] | None:
         # TODO(kate): Figure out how to wrap this so it's easily repeatable
         exceptions = []
-        api_key = self.getenv(SERVICE,API_KEY_ENV_VAR)
+        api_key = getenv(SERVICE,API_KEY_ENV_VAR)
         # No need for the api key. These exceptions caught on other nodes.
         if self.parameter_values.get("agent", None) and self.parameter_values.get("driver", None):
             return None
@@ -119,7 +120,7 @@ class gnCreateImage(ControlNode):
         else:
             driver = OpenAiImageGenerationDriver(
                 model=params.get("model", DEFAULT_MODEL),
-                api_key=self.getenv(service=SERVICE, value=API_KEY_ENV_VAR),
+                api_key=getenv(service=SERVICE, value=API_KEY_ENV_VAR),
             )
         kwargs["image_generation_driver"] = driver
 
