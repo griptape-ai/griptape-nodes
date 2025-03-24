@@ -69,6 +69,6 @@ rm -rf "$TMP_DIR"
 echo ""
 echo "Installation complete!"
 echo ""
-echo "Run `griptape-nodes` (or just `gtn`) to start the engine."
+echo "Run 'griptape-nodes' (or just 'gtn') to start the engine."
 echo ""
 
