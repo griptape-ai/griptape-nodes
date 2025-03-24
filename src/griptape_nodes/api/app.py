@@ -162,8 +162,17 @@ def sse_listener() -> None:
             def auth(request: httpx.Request) -> httpx.Request:
                 service = "Nodes"
                 value = "NODES_API_KEY"
-                api_token = GriptapeNodes.get_instance().ConfigManager().get_config_value(f"env.{service}.{value}")
-                request.headers.update({"Accept": "text/event-stream", "Authorization": f"Bearer {api_token}"})
+                api_token = (
+                    GriptapeNodes.get_instance()
+                    .ConfigManager()
+                    .get_config_value(f"griptape.api_keys.{service}.{value}")
+                )
+                request.headers.update(
+                    {
+                        "Accept": "text/event-stream",
+                        "Authorization": f"Bearer {api_token}",
+                    }
+                )
                 return request
 
             with httpx.stream("get", endpoint, auth=auth, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout

@@ -13,7 +13,7 @@ To start the flask app:
 `make run`
 
 To start the engine using SSE (Server Sent Events) to the remote Griptape Nodes API:
-`NODES_API_TOKEN=<your_token> DEBUG=false uv run griptape-nodes`
+`NODES_API_KEY=<your_key> DEBUG=false uv run griptape-nodes`
 
 # Engine Commands
 
