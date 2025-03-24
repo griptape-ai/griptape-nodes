@@ -78,9 +78,14 @@ from griptape_nodes.retained_mode.events.execution_events import (
     UnresolveFlowRequest,
     UnresolveFlowResult_Failure,
     UnresolveFlowResult_Success,
+)
+from griptape_nodes.retained_mode.events.validation_events import (
     ValidateFlowDependenciesRequest,
     ValidateFlowDependenciesResult_Failure,
     ValidateFlowDependenciesResult_Success,
+    ValidateNodeDependenciesRequest,
+    ValidateNodeDependenciesResult_Failure,
+    ValidateNodeDependenciesResult_Success
 )
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowRequest,
@@ -1234,7 +1239,6 @@ class FlowManager:
             return ValidateFlowDependenciesResult_Success(validation_succeeded=False, exceptions=all_exceptions)
         return ValidateFlowDependenciesResult_Success(validation_succeeded=True)
 
-
 class NodeManager:
     _name_to_parent_flow_name: dict[str, str]
 
@@ -1266,6 +1270,7 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(SetParameterValueRequest, self.on_set_parameter_value_request)
         event_manager.assign_manager_to_request_type(ResolveNodeRequest, self.on_resolve_from_node_request)
         event_manager.assign_manager_to_request_type(GetAllNodeInfoRequest, self.on_get_all_node_info_request)
+        event_manager.assign_manager_to_request_type(ValidateNodeDependenciesRequest, self.on_validate_node_dependencies_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old node name and its parent.
@@ -2192,6 +2197,17 @@ class NodeManager:
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         print(details)  # TODO(griptape): Move to Log
         return ResolveNodeResult_Success()
+
+    def on_validate_node_dependencies_request(self, request:ValidateNodeDependenciesRequest) -> ResultPayload:
+        node_name = request.node_name
+        obj_manager = GriptapeNodes.get_instance()._object_manager
+        node = obj_manager.attempt_get_object_by_name_as_type(node_name, NodeBase)
+        if not node:
+            details = f'Failed to validate node dependencies. Node with "{node_name}" does not exist.'
+            print(details)
+            return ValidateFlowDependenciesResult_Failure()
+        exceptions = node.validate_node()
+        return ValidateFlowDependenciesResult_Success(validation_succeeded=(exceptions is None), exceptions=exceptions if exceptions else None)
 
 
 class ScriptManager:
