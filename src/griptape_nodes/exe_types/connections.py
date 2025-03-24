@@ -41,8 +41,8 @@ class Connections:
             errormsg = f"Input Connection not allowed on Parameter '{target_parameter.name}'."
             raise ValueError(errormsg)
         # Handle multiple inputs on parameters and multiple outputs on controls
-        if self.connection_allowed(source_node, source_parameter, True) and self.connection_allowed(
-            target_node, target_parameter, False
+        if self.connection_allowed(source_node, source_parameter,source=True) and self.connection_allowed(
+            target_node, target_parameter, source=False
         ):
             connection = Connection(source_node, source_parameter, target_node, target_parameter)
             # New index management.
@@ -61,8 +61,11 @@ class Connections:
         msg = "Connection not allowed because of multiple connections on the same parameter input or control output parameter"
         raise ValueError(msg)
 
-    def connection_allowed(self, node: NodeBase, parameter: Parameter, source: bool) -> bool:  # noqa: FBT001
+    def connection_allowed(self, node: NodeBase, parameter: Parameter, *, source: bool) -> bool:
         # True if allowed, false if not
+        # Here are the rules:
+        # A Control Parameter can have multiple connections as an input, but only one output.
+        # A Data Parameter can have one connection as input, but multiple outputs.
         if source and ParameterControlType.__name__ in parameter.allowed_types:
             connections = self.outgoing_index
             connections_from_node = connections.get(node.name, {})

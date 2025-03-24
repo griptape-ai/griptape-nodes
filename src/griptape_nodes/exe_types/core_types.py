@@ -150,8 +150,12 @@ class Parameter:
         # Original code continues here...
         # Can't just do a string compare as we'll whiff on things like "list" not matching "List"
         test_type = TypeValidator.convert_to_type(type_as_str)
+        if test_type is Any:
+            return True
         for allowed_type_str in self.allowed_types:
             allowed_type = TypeValidator.convert_to_type(allowed_type_str)
+            if allowed_type is Any:
+                return True
             if allowed_type == test_type:
                 return True
         return False

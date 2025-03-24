@@ -384,6 +384,15 @@
       }
     },
     {
+      "class_name": "gnReroute",
+      "file_path": "griptape_nodes_library/utils/reroute.py",
+      "metadata": {
+        "category": "Utility",
+        "description": "Passes data through, for visual organization",
+        "display_name": "Reroute"
+      }
+    },
+    {
       "class_name": "gnMergeTextsNode",
       "file_path": "griptape_nodes_library/merge_texts.py",
       "metadata": {
@@ -457,4 +466,3 @@
     }
   ]
 }
-
