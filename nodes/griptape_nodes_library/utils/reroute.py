@@ -28,9 +28,11 @@ class gnReroute(DataNode):
     @staticmethod
     def intersection_of_allowed_types(*allowed_type_lists) -> list[str]:  # noqa: C901
         """Intersects allowed types lists.
+
         Find intersection of N lists with special rules:
         1. Preserve order where possible
         2. "Any" is a wildcard that matches any string.
+
         Args:
             *allowed_type_lists: Variable number of string lists
         Returns:

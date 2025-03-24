@@ -41,7 +41,7 @@ class Connections:
             errormsg = f"Input Connection not allowed on Parameter '{target_parameter.name}'."
             raise ValueError(errormsg)
         # Handle multiple inputs on parameters and multiple outputs on controls
-        if self.connection_allowed(source_node, source_parameter,source=True) and self.connection_allowed(
+        if self.connection_allowed(source_node, source_parameter, source=True) and self.connection_allowed(
             target_node, target_parameter, source=False
         ):
             connection = Connection(source_node, source_parameter, target_node, target_parameter)
