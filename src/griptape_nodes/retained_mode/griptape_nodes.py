@@ -16,7 +16,7 @@ from xdg_base_dirs import xdg_data_home
 from griptape_nodes.exe_types.core_types import Parameter, ParameterControlType, ParameterMode
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import NodeBase, NodeResolutionState
-from griptape_nodes.exe_types.type_validator import TypeValidator
+from griptape_nodes.exe_types.type_validator import TypeValidationError, TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.node_library.script_registry import ScriptRegistry
 from griptape_nodes.retained_mode.events.app_events import (
@@ -1912,10 +1912,15 @@ class NodeManager:
         data_value_type = type(data_value)
         data_value_type_str = None
         for allowed_type_str in parameter.allowed_types:
-            allowed_type = TypeValidator.convert_to_type(allowed_type_str)
-            if allowed_type == data_value_type:
-                data_value_type_str = allowed_type_str
-                break
+            try:
+                allowed_type = TypeValidator.convert_to_type(allowed_type_str)
+                if allowed_type == data_value_type:
+                    data_value_type_str = allowed_type_str
+                    break
+            except TypeValidationError as e:
+                details = f"Failed to Get Parameter Value. {e}"
+                GriptapeNodes.get_logger().error(details)
+                return GetParameterValueResult_Failure()
 
         # TODO(griptape): Handle for dict type
 
