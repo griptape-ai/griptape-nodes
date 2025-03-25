@@ -103,12 +103,11 @@ class Connections:
             return connection.source_node, connection.source_parameter
         return None
 
-    def remove_connection(self, node: NodeBase, parameter: Parameter) -> bool:
-        if ParameterControlType.__name__ in parameter.allowed_types:
+    def remove_connection(self, source_node: str, source_parameter: str, target_node:str, target_parameter:str) -> bool:
             # Remove from outgoing
             try:
                 # use copy to prevent modifying the list while it's iterating
-                outgoing_parameter_connections = self.outgoing_index[node.name][parameter.name].copy()
+                outgoing_parameter_connections = self.outgoing_index[source_node][source_parameter].copy()
             except Exception as e:
                 print(f"Cannot remove connection that does not exist: {e}")
                 return False
@@ -117,23 +116,12 @@ class Connections:
                     print("Cannot remove connection does not exist")
                     return False
                 connection = self.connections[connection_id]
-                target_node = connection.target_node.name
-                target_parameter = connection.target_parameter.name
-                self._remove_connection(connection_id, node.name, parameter.name, target_node, target_parameter)
-        else:
-            # Remove from outgoing
-            try:
-                incoming_parameter_connections = self.incoming_index[node.name][parameter.name].copy()
-            except Exception:
-                return False
-            for connection_id in incoming_parameter_connections:
-                if connection_id not in self.connections:
-                    return False
-                connection = self.connections[connection_id]
-                source_node = connection.source_node.name
-                source_parameter = connection.source_parameter.name
-                self._remove_connection(connection_id, source_node, source_parameter, node.name, parameter.name)
-        return True
+                test_target_node = connection.target_node.name
+                test_target_parameter = connection.target_parameter.name
+                if test_target_node == target_node and test_target_parameter == target_parameter:
+                    self._remove_connection(connection_id, source_node, source_parameter, test_target_node, test_target_parameter)
+                    return True
+            return False
 
     def _remove_connection(
         self, connection_id: int, source_node: str, source_param: str, target_node: str, target_param: str

@@ -50,10 +50,10 @@ class ControlFlow:
         source_node: NodeBase,
         source_parameter: Parameter,
         target_node: NodeBase,
-        target_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter
     ) -> bool:
         if source_node.name in self.nodes and target_node.name in self.nodes:
-            return self.connections.remove_connection(source_node, source_parameter)
+            return self.connections.remove_connection(source_node.name, source_parameter.name,target_node.name,target_parameter.name)
         return False
 
     def has_connection(
@@ -64,11 +64,12 @@ class ControlFlow:
         target_parameter: Parameter,
     ) -> bool:
         if source_node.name in self.nodes and target_node.name in self.nodes:
-            connected_node_tuple = self.connections.get_connected_node(source_node, source_parameter)
+            connected_node_tuple = self.get_connected_output_parameters(node=source_node, param=source_parameter)
             if connected_node_tuple is not None:
-                connected_node, connected_param = connected_node_tuple
-                if connected_node is target_node and connected_param is target_parameter:
-                    return True
+                for connected_node_values in connected_node_tuple:
+                    connected_node, connected_param = connected_node_values
+                    if connected_node is target_node and connected_param is target_parameter:
+                        return True
         return False
 
     def start_flow(self, start_node: NodeBase | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
