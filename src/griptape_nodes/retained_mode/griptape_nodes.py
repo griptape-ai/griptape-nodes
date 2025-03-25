@@ -155,12 +155,16 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     AlterParameterDetailsRequest,
     AlterParameterDetailsResult_Failure,
     AlterParameterDetailsResult_Success,
+    GetCompatibleParametersRequest,
+    GetCompatibleParametersResult_Failure,
+    GetCompatibleParametersResult_Success,
     GetParameterDetailsRequest,
     GetParameterDetailsResult_Failure,
     GetParameterDetailsResult_Success,
     GetParameterValueRequest,
     GetParameterValueResult_Failure,
     GetParameterValueResult_Success,
+    ParameterAndMode,
     RemoveParameterFromNodeRequest,
     RemoveParameterFromNodeResult_Failure,
     RemoveParameterFromNodeResult_Success,
@@ -707,6 +711,66 @@ class FlowManager:
 
         # Let the Node Manager know about the change, too.
         GriptapeNodes.NodeManager().handle_flow_rename(old_name=old_name, new_name=new_name)
+
+    def on_get_compatible_parameters_request(self, request: GetCompatibleParametersRequest) -> ResultPayload:
+        # Vet the node
+        try:
+            node = GriptapeNodes.NodeManager().get_node_by_name(request.node_name)
+        except KeyError as err:
+            details = f"Attempted to get compatible parameters for node '{request.node_name}', but that node does not exist. Error: {err}."
+            print(details)  # TODO(griptape): Move to Log
+
+            result = GetCompatibleParametersResult_Failure()
+            return result
+
+        # Vet the parameter.
+        request_param = node.get_parameter_by_name(request.parameter_name)
+        if request_param is None:
+            details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}', but that no Parameter with that name could not be found."
+            print(details)  # TODO(griptape): Move to Log
+
+            result = GetCompatibleParametersResult_Failure()
+            return result
+
+        # Get the parent flows.
+        try:
+            flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(request.node_name)
+        except KeyError as err:
+            details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}', but the node's parent flow could not be found: {err}"
+            print(details)  # TODO(griptape): Move to Log
+            result = GetCompatibleParametersResult_Failure()
+            return result
+
+        # Iterate through all nodes in this Flow (yes, this restriction still sucks)
+        list_nodes_in_flow_request = ListNodesInFlowRequest(flow_name=flow_name)
+        list_nodes_in_flow_result = GriptapeNodes.FlowManager().on_list_nodes_in_flow_request(
+            list_nodes_in_flow_request
+        )
+        if not list_nodes_in_flow_result.succeeded():
+            details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}'. Failed due to inability to list nodes in parent flow '{flow_name}'."
+            print(details)  # TODO(griptape): Move to Log
+            return GetCompatibleParametersResult_Failure()
+
+        try:
+            list_nodes_in_flow_success = cast("ListNodesInFlowResult_Success", list_nodes_in_flow_result)
+        except Exception as err:
+            details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}'. Failed due to {err}"
+            print(details)  # TODO(griptape): Move to Log
+            return GetCompatibleParametersResult_Failure()
+
+        # Walk through all nodes that are NOT us to find compatible Parameters.
+        valid_parameters_by_node = {}
+        for node_name in list_nodes_in_flow_success.node_names:
+            if node_name != request.node_name:
+                # TODO: Get Node by Name
+                # TODO: Get Parameter from Node
+                # TODO: Compare ParameterModes
+                # TODO: Determine source and target based on input mode
+                # TODO: Compare types for compatibility
+
+        details = f"Successfully got compatible parameters for '{request.node_name}.{request.parameter_name}'."
+        print(details)  # TODO(griptape): Move to Log
+        return GetCompatibleParametersResult_Success(valid_parameters_by_node=valid_parameters_by_node)
 
     def on_create_connection_request(self, request: CreateConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901 TODO(griptape): resolve
         # Vet the two nodes first.
@@ -1257,6 +1321,9 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(SetParameterValueRequest, self.on_set_parameter_value_request)
         event_manager.assign_manager_to_request_type(ResolveNodeRequest, self.on_resolve_from_node_request)
         event_manager.assign_manager_to_request_type(GetAllNodeInfoRequest, self.on_get_all_node_info_request)
+        event_manager.assign_manager_to_request_type(
+            GetCompatibleParametersRequest, self.on_get_compatible_parameters_request
+        )
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old node name and its parent.
