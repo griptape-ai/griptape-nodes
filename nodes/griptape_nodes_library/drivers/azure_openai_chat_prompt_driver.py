@@ -65,3 +65,6 @@ class gnAzureOpenAiChatPromptDriver(gnBasePromptDriver):
 
         # Set the output
         self.parameter_output_values["driver"] = AzureOpenAiChatPromptDriver(**kwargs)
+
+    def validate_node(self) -> list[Exception] | None:
+        return super().validate_node()

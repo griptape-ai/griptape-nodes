@@ -320,7 +320,7 @@ class RetainedMode:
                 final_param_name = base_param_name
             except Exception as e:
                 details = f"Invalid list index format in parameter name: '{param_name}'. Error: {e}."
-                print(details)  # TODO(griptape): Move to Log
+                GriptapeNodes.get_logger().error(details)
                 # TODO(griptape): what to do here?
         return (final_param_name, index)
 
