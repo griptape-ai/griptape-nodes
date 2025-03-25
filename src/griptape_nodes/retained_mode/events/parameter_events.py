@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 from pydantic import Field
 
@@ -196,3 +196,28 @@ class OnParameterValueChanged(ResultPayload_Success):
     parameter_name: str
     data_type: str
     value: Any
+
+
+@dataclass
+@PayloadRegistry.register
+class GetCompatibleParametersRequest(RequestPayload):
+    node_name: str
+    parameter_name: str
+    is_output: bool
+
+
+class ParameterAndMode(NamedTuple):
+    parameter_name: str
+    is_output: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class GetCompatibleParametersResult_Success(ResultPayload_Success):
+    valid_parameters_by_node: dict[str, list[ParameterAndMode]]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetCompatibleParametersResult_Failure(ResultPayload_Failure):
+    pass

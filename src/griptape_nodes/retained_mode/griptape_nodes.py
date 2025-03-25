@@ -154,12 +154,16 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     AlterParameterDetailsRequest,
     AlterParameterDetailsResult_Failure,
     AlterParameterDetailsResult_Success,
+    GetCompatibleParametersRequest,
+    GetCompatibleParametersResult_Failure,
+    GetCompatibleParametersResult_Success,
     GetParameterDetailsRequest,
     GetParameterDetailsResult_Failure,
     GetParameterDetailsResult_Success,
     GetParameterValueRequest,
     GetParameterValueResult_Failure,
     GetParameterValueResult_Success,
+    ParameterAndMode,
     RemoveParameterFromNodeRequest,
     RemoveParameterFromNodeResult_Failure,
     RemoveParameterFromNodeResult_Success,
@@ -1251,7 +1255,7 @@ class FlowManager:
         flow = self.get_flow_by_name(flow_name)
         if not flow:
             details = f"Failed to validate flow because flow with name {flow_name} does not exist."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return ValidateFlowDependenciesResult_Failure()
         if request.flow_node_name:
             flow_node_name = request.flow_node_name
@@ -1260,7 +1264,7 @@ class FlowManager:
             )
             if not flow_node:
                 details = f"Provided node with name {flow_node_name} does not exist"
-                print(details)
+                GriptapeNodes.get_logger().error(details)
                 return ValidateFlowDependenciesResult_Failure()
             # Gets all nodes in that connected group to be ran
             nodes = flow.get_all_connected_nodes(flow_node)
@@ -1308,6 +1312,9 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(SetParameterValueRequest, self.on_set_parameter_value_request)
         event_manager.assign_manager_to_request_type(ResolveNodeRequest, self.on_resolve_from_node_request)
         event_manager.assign_manager_to_request_type(GetAllNodeInfoRequest, self.on_get_all_node_info_request)
+        event_manager.assign_manager_to_request_type(
+            GetCompatibleParametersRequest, self.on_get_compatible_parameters_request
+        )
         event_manager.assign_manager_to_request_type(
             ValidateNodeDependenciesRequest, self.on_validate_node_dependencies_request
         )
@@ -2169,6 +2176,103 @@ class NodeManager:
         )
         return result
 
+    def on_get_compatible_parameters_request(self, request: GetCompatibleParametersRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+        # Vet the node
+        try:
+            node = GriptapeNodes.NodeManager().get_node_by_name(request.node_name)
+        except KeyError as err:
+            details = f"Attempted to get compatible parameters for node '{request.node_name}', but that node does not exist. Error: {err}."
+            GriptapeNodes.get_logger().error(details)
+            return GetCompatibleParametersResult_Failure()
+
+        # Vet the parameter.
+        request_param = node.get_parameter_by_name(request.parameter_name)
+        if request_param is None:
+            details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}', but that no Parameter with that name could not be found."
+            GriptapeNodes.get_logger().error(details)
+            return GetCompatibleParametersResult_Failure()
+
+        # Figure out the mode we're going for, and if this parameter supports the mode.
+        request_mode = ParameterMode.OUTPUT if request.is_output else ParameterMode.INPUT
+        # Does this parameter support that?
+        if request_mode not in request_param.allowed_modes:
+            details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}' as '{request_mode}', but the Parameter didn't support that type of input/output."
+            GriptapeNodes.get_logger().error(details)
+            return GetCompatibleParametersResult_Failure()
+
+        # Get the parent flows.
+        try:
+            flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(request.node_name)
+        except KeyError as err:
+            details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}', but the node's parent flow could not be found: {err}"
+            GriptapeNodes.get_logger().error(details)
+            return GetCompatibleParametersResult_Failure()
+
+        # Iterate through all nodes in this Flow (yes, this restriction still sucks)
+        list_nodes_in_flow_request = ListNodesInFlowRequest(flow_name=flow_name)
+        list_nodes_in_flow_result = GriptapeNodes.FlowManager().on_list_nodes_in_flow_request(
+            list_nodes_in_flow_request
+        )
+        if not list_nodes_in_flow_result.succeeded():
+            details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}'. Failed due to inability to list nodes in parent flow '{flow_name}'."
+            GriptapeNodes.get_logger().error(details)
+            return GetCompatibleParametersResult_Failure()
+
+        try:
+            list_nodes_in_flow_success = cast("ListNodesInFlowResult_Success", list_nodes_in_flow_result)
+        except Exception as err:
+            details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}'. Failed due to {err}"
+            GriptapeNodes.get_logger().error(details)
+            return GetCompatibleParametersResult_Failure()
+
+        # Walk through all nodes that are NOT us to find compatible Parameters.
+        valid_parameters_by_node = {}
+        for test_node_name in list_nodes_in_flow_success.node_names:
+            if test_node_name != request.node_name:
+                # Get node by name
+                try:
+                    test_node = GriptapeNodes.NodeManager().get_node_by_name(test_node_name)
+                except KeyError as err:
+                    details = f"Attempted to get compatible parameters for node '{request.node_name}', and sought to test against {test_node_name}, but that node does not exist. Error: {err}."
+                    GriptapeNodes.get_logger().error(details)
+                    return GetCompatibleParametersResult_Failure()
+
+                # Get Parameters from Node
+                for test_param in test_node.parameters:
+                    # Are we compatible from an input/output perspective?
+                    fits_mode = False
+                    if request_mode == ParameterMode.INPUT:
+                        fits_mode = ParameterMode.OUTPUT in test_param.allowed_modes
+                    else:
+                        fits_mode = ParameterMode.INPUT in test_param.allowed_modes
+
+                    if fits_mode:
+                        # Compare types for compatibility
+                        any_types_matched = False
+                        request_types_allowed = request_param.allowed_types
+                        for request_type_allowed in request_types_allowed:
+                            if test_param.is_type_allowed(request_type_allowed):
+                                any_types_matched = True
+                                break
+
+                        if any_types_matched:
+                            param_and_mode = ParameterAndMode(
+                                parameter_name=test_param.name, is_output=not request.is_output
+                            )
+                            # Add the test param to our dictionary.
+                            if test_node_name in valid_parameters_by_node:
+                                # Append this parameter to the list
+                                compatible_list = valid_parameters_by_node[test_node_name]
+                                compatible_list.append(param_and_mode)
+                            else:
+                                # Create new
+                                compatible_list = [param_and_mode]
+                                valid_parameters_by_node[test_node_name] = compatible_list
+
+        details = f"Successfully got compatible parameters for '{request.node_name}.{request.parameter_name}'."
+        GriptapeNodes.get_logger().info(details)
+        return GetCompatibleParametersResult_Success(valid_parameters_by_node=valid_parameters_by_node)
+
     def get_node_by_name(self, name: str) -> NodeBase:
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -2245,7 +2349,7 @@ class NodeManager:
         node = obj_manager.attempt_get_object_by_name_as_type(node_name, NodeBase)
         if not node:
             details = f'Failed to validate node dependencies. Node with "{node_name}" does not exist.'
-            print(details)
+            GriptapeNodes.get_logger().error(details)
             return ValidateFlowDependenciesResult_Failure()
         exceptions = node.validate_node()
         return ValidateFlowDependenciesResult_Success(
