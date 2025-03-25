@@ -1,4 +1,6 @@
+import importlib.metadata
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field
 from pydantic_settings import (
@@ -8,7 +10,7 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
     YamlConfigSettingsSource,
 )
-from xdg_base_dirs import xdg_config_dirs, xdg_config_home
+from xdg_base_dirs import xdg_config_dirs, xdg_config_home, xdg_data_home
 
 
 def _find_config_files(filename: str, extension: str) -> list[Path]:
@@ -21,13 +23,13 @@ def _find_config_files(filename: str, extension: str) -> list[Path]:
         config_files.append(current_path / f"{filename}.{extension}")
         current_path = current_path.parent
 
-    # Add `gt_nodes/` inside home directory
+    # Search `GriptapeNodes/` inside home directory
     config_files.append(home / "GriptapeNodes" / f"{filename}.{extension}")
 
-    # Add XDG_CONFIG_HOME (e.g., `~/.config/griptape_nodes/griptape_nodes_config.yaml`)
+    # Search XDG_CONFIG_HOME (e.g., `~/.config/griptape_nodes/griptape_nodes_config.yaml`)
     config_files.append(xdg_config_home() / "griptape_nodes" / f"{filename}.{extension}")
 
-    # Add XDG_CONFIG_DIRS (e.g., `/etc/xdg/griptape_nodes/gt_nodes.yaml`)
+    # Search XDG_CONFIG_DIRS (e.g., `/etc/xdg/griptape_nodes/gt_nodes.yaml`)
     config_files.extend([Path(xdg_dir) / "griptape_nodes" / f"{filename}.{extension}" for xdg_dir in xdg_config_dirs()])
 
     # Reverse the list so that the most specific paths are checked first
@@ -39,13 +41,49 @@ def _find_config_files(filename: str, extension: str) -> list[Path]:
 class Script(BaseModel):
     name: str
     relative_file_path: str
+    engine_version_created_with: str
+    node_libraries_referenced: list[str]
     description: str | None = None
     image: str | None = None
+    internal: bool = False
 
 
 class AppInitializationComplete(BaseModel):
-    paths_to_library_json_files_to_register: list[str] = Field(default_factory=list)
-    scripts_to_register: list[Script] = Field(default_factory=list)
+    libraries_to_register: list[str] = Field(
+        default_factory=lambda: [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")]
+    )
+    scripts_to_register: list[Script] = Field(
+        default_factory=lambda: [
+            Script(
+                name="Prompt an image",
+                relative_file_path="griptape_nodes/scripts/prompt_an_image.py",
+                internal=True,
+                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
+                node_libraries_referenced=["Griptape Nodes Library"],
+            ),
+            Script(
+                name="Coloring Book",
+                relative_file_path="griptape_nodes/scripts/coloring_book.py",
+                internal=True,
+                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
+                node_libraries_referenced=["Griptape Nodes Library"],
+            ),
+            Script(
+                name="Render logs",
+                relative_file_path="griptape_nodes/scripts/render_logs.py",
+                internal=True,
+                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
+                node_libraries_referenced=["Griptape Nodes Library"],
+            ),
+            Script(
+                name="Comfyui flow branch",
+                relative_file_path="griptape_nodes/scripts/comfyui_flow_branch.py",
+                internal=True,
+                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
+                node_libraries_referenced=["Griptape Nodes Library"],
+            ),
+        ]
+    )
 
 
 class AppEvents(BaseModel):
@@ -76,37 +114,10 @@ class AppEvents(BaseModel):
     )
 
 
-class AppEventsInternal(BaseModel):
-    on_app_initialization_complete: AppInitializationComplete = Field(
-        default_factory=lambda: AppInitializationComplete(
-            paths_to_library_json_files_to_register=["nodes/griptape_nodes_library.json"],
-            scripts_to_register=[
-                Script(
-                    name="Prompt an image",
-                    relative_file_path="scripts/prompt_an_image.py",
-                ),
-                Script(
-                    name="Coloring Book",
-                    relative_file_path="scripts/coloring_book.py",
-                ),
-                Script(
-                    name="Render logs",
-                    relative_file_path="scripts/render_logs.py",
-                ),
-                Script(
-                    name="Comfyui flow batch",
-                    relative_file_path="scripts/comfyui_flow_branch.py",
-                ),
-            ],
-        )
-    )
-
-
 class Settings(BaseSettings):
     workspace_directory: str = Field(default=str(Path().cwd()))
     app_events: AppEvents = Field(default_factory=AppEvents)
-    app_events_internal: AppEventsInternal = Field(default_factory=AppEventsInternal)
-    env: dict[str, dict] = Field(
+    env: dict[str, Any] = Field(
         default_factory=lambda: {
             "Griptape": {"GT_CLOUD_API_KEY": "$GT_CLOUD_API_KEY"},
             "OpenAI": {"OPENAI_API_KEY": "$OPENAI_API_KEY"},

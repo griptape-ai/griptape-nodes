@@ -95,6 +95,24 @@ class NodeBase(ABC):
         """Callback after a Connection has been established OUT of this Node."""
         return
 
+    def handle_incoming_connection_removed(
+        self,
+        source_node: Self,  # noqa: ARG002
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+    ) -> None:
+        """Callback after a Connection TO this Node was REMOVED."""
+        return
+
+    def handle_outgoing_connection_removed(
+        self,
+        source_parameter: Parameter,  # noqa: ARG002
+        target_node: Self,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+    ) -> None:
+        """Callback after a Connection OUT of this Node was REMOVED."""
+        return
+
     def on_griptape_event(self, event: BaseEvent) -> None:  # noqa: ARG002
         """Callback for when a Griptape Event comes destined for this Node."""
         return

@@ -10,7 +10,7 @@ class NodesApiFakeSocket:
 
     def emit(self, *args, **kwargs) -> None:  # noqa: ARG002 # drop-in replacement workaround
         service = "Nodes"
-        value = "NODES_API_KEY"
+        value = "GRIPTAPE_NODES_API_KEY"
         api_token = (
             GriptapeNodes.get_instance().ConfigManager().get_config_value(f"griptape.api_keys.{service}.{value}")
         )

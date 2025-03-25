@@ -129,7 +129,6 @@ class Parameter:
     tooltip_as_output: str | None = None
     settable: bool = True
     user_defined: bool = False
-    validations: bool = True  # This exists to accelerate early prototyping and node work.  We shouldn't be refactoring this piecemeal, but come back to it with a larger clearer set of needs
     allowed_modes: set = field(
         default_factory=lambda: {
             ParameterMode.OUTPUT,
@@ -143,23 +142,20 @@ class Parameter:
     prev: Parameter | None = None
 
     def is_type_allowed(self, type_as_str: str) -> bool:
-        # Skip validation if validations is False
-        if not self.validations:
-            return True
-
         # Original code continues here...
         # Can't just do a string compare as we'll whiff on things like "list" not matching "List"
         test_type = TypeValidator.convert_to_type(type_as_str)
+        if test_type is Any:
+            return True
         for allowed_type_str in self.allowed_types:
             allowed_type = TypeValidator.convert_to_type(allowed_type_str)
+            if allowed_type is Any:
+                return True
             if allowed_type == test_type:
                 return True
         return False
 
     def is_value_allowed(self, value: Any) -> bool:
-        if not self.validations:  # TEMP FOR DEV - JO
-            return True  # TEMP FOR DEV - JO
-
         for allowed_type_str in self.allowed_types:
             if TypeValidator.is_instance(value, allowed_type_str):
                 return True
@@ -170,7 +166,7 @@ class Parameter:
         return False
 
     def set_default_value(self, value: Any) -> None:
-        if not self.validations or self.is_value_allowed(value):
+        if self.is_value_allowed(value):
             self.default_value = value
         else:
             errormsg = "Type does not match allowed value types"

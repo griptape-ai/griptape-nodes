@@ -161,7 +161,7 @@ def sse_listener() -> None:
 
             def auth(request: httpx.Request) -> httpx.Request:
                 service = "Nodes"
-                value = "NODES_API_KEY"
+                value = "GRIPTAPE_NODES_API_KEY"
                 api_token = (
                     GriptapeNodes.get_instance()
                     .ConfigManager()

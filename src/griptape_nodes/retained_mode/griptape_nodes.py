@@ -11,6 +11,7 @@ from re import Pattern
 from typing import Any, TextIO, TypeVar, cast
 
 from dotenv import load_dotenv
+from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterControlType, ParameterMode
 from griptape_nodes.exe_types.flow import ControlFlow
@@ -1003,6 +1004,29 @@ class FlowManager:
 
             result = DeleteConnectionResult_Failure()
             return result
+
+        # TEMP HACK: SWAP BACK Data connections appear to reverse Source and Target. TODO(griptape): Let's reconcile this. SWAP BACK
+        if ParameterControlType.__name__ not in source_param.allowed_types:
+            temp_node = source_node
+            temp_param = source_param
+            source_node = target_node
+            source_param = target_param
+            target_node = temp_node
+            target_param = temp_param
+
+        # Let the source make any internal handling decisions now that the Connection has been REMOVED.
+        source_node.handle_outgoing_connection_removed(
+            source_parameter=source_param,
+            target_node=target_node,
+            target_parameter=target_param,
+        )
+
+        # And target.
+        target_node.handle_incoming_connection_removed(
+            source_node=source_node,
+            source_parameter=source_param,
+            target_parameter=target_param,
+        )
 
         details = f'Connection "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}" deleted.'
         print(details)  # TODO(griptape): Move to Log
@@ -2319,10 +2343,12 @@ class ScriptManager:
     def on_register_script_request(self, request: RegisterScriptRequest) -> ResultPayload:
         try:
             script = ScriptRegistry.generate_new_script(
-                request.script_name,
-                request.file_path,
-                request.description,
-                request.image,
+                name=request.script_name,
+                relative_file_path=request.file_path,
+                engine_version_created_with=request.engine_version_created_with,
+                node_libraries_referenced=request.node_libraries_referenced,
+                description=request.description,
+                image=request.image,
             )
         except Exception as e:
             print(f"Failed to register script with name {request.script_name}. Error: {e}")
@@ -2371,6 +2397,8 @@ class ScriptManager:
         relative_file_path = f"{file_name}.py"
         file_path = config_manager.workspace_path.joinpath(relative_file_path)
         created_flows = []
+        node_libraries_used = set()
+
         try:
             with file_path.open("w") as file:
                 file.write("from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes\n")
@@ -2389,11 +2417,34 @@ class ScriptManager:
                     file.write(code_string + "\n")
                     # Save the parameters
                     handle_parameter_creation_saving(file, node, flow_name)
+
+                    # See if this node uses a library we need to know about.
+                    library_used = node.metadata["library"]
+                    node_libraries_used.add(library_used)
                 # Now all nodes AND parameters have been created
                 file.write(connection_request_scripts)
         except Exception as e:
-            print(f"Failed to save scene, exception: {e}")
+            details = f"Failed to save scene, exception: {e}"
+            print(details)  # TODO(griptape): Move to Log
             return SaveSceneResult_Failure()
+
+        # Get the engine version.
+        engine_version_request = GetEngineVersion_Request()
+        engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
+        if not engine_version_result.succeeded():
+            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version."
+            print(details)  # TODO(griptape): Move to Log
+            return SaveSceneResult_Failure()
+        try:
+            engine_version_success = cast("GetEngineVersionResult_Success", engine_version_result)
+            engine_version = (
+                f"{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
+            )
+        except Exception as err:
+            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version: {err}"
+            print(details)  # TODO(griptape): Move to Log
+            return SaveSceneResult_Failure()
+
         # save the created scene to a personal json file
         if file_name not in ScriptRegistry.list_scripts():
             script = {
@@ -2401,6 +2452,8 @@ class ScriptManager:
                 "relative_file_path": relative_file_path,
                 "image": None,
                 "description": None,
+                "engine_version_created_with": engine_version,
+                "node_libraries_referenced": list(node_libraries_used),
             }
             config_manager.save_user_script_json(script)
             ScriptRegistry.generate_new_script(**script)
@@ -2905,23 +2958,12 @@ class LibraryManager:
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # App just got init'd. See if there are library JSONs to load!
-        default_libraries_section = (
-            "app_events_internal.on_app_initialization_complete.paths_to_library_json_files_to_register"
-        )
-        self._load_libraries_from_config_category(
-            config_category=default_libraries_section, load_as_default_library=True
-        )
-
-        # Now load the user libraries (they don't get special "default library" treatment)
-        user_libraries_section = "app_events.on_app_initialization_complete.paths_to_library_json_files_to_register"
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         self._load_libraries_from_config_category(config_category=user_libraries_section, load_as_default_library=False)
 
         # See if there are script JSONs to load!
-        user_script_section = "app_events.on_app_initialization_complete.scripts_to_register"
-        self._register_scripts_from_config(config_section=user_script_section, location_default=False)
-        default_script_section = "app_events_internal.on_app_initialization_complete.scripts_to_register"
-        self._register_scripts_from_config(config_section=default_script_section, location_default=True)
-        # See if there are user JSONs to load!
+        default_script_section = "app_events.on_app_initialization_complete.scripts_to_register"
+        self._register_scripts_from_config(config_section=default_script_section)
 
     def _load_libraries_from_config_category(self, config_category: str, load_as_default_library: bool) -> None:  # noqa: FBT001
         config_mgr = GriptapeNodes().ConfigManager()
@@ -2935,26 +2977,32 @@ class LibraryManager:
                 )
                 GriptapeNodes().handle_request(library_load_request)
 
-    def _register_scripts_from_config(self, config_section: str, location_default: bool) -> None:  # noqa: FBT001
+    def _register_scripts_from_config(self, config_section: str) -> None:
         config_mgr = GriptapeNodes().ConfigManager()
         scripts_to_register = config_mgr.get_config_value(config_section)
         if scripts_to_register is not None:
             for script in scripts_to_register:
-                if location_default:
-                    file_path = Path.cwd().joinpath(script["relative_file_path"])
+                if script["internal"]:
+                    file_path = xdg_data_home().joinpath(script["relative_file_path"])
                     script_register_request = RegisterScriptRequest(
                         script_name=script["name"],
                         file_path=str(file_path),
                         description=script["description"],
                         image=script["image"],
+                        engine_version_created_with=script["engine_version_created_with"],
+                        node_libraries_referenced=script["node_libraries_referenced"],
                     )
                     GriptapeNodes().handle_request(script_register_request)
                 else:
+                    config_manager = GriptapeNodes.get_instance()._config_manager
+                    full_path = config_manager.workspace_path.joinpath(script["relative_file_path"])
                     script_register_request = RegisterScriptRequest(
                         script_name=script["name"],
-                        file_path=script["relative_file_path"],
+                        file_path=str(full_path),
                         description=script["description"],
                         image=script["image"],
+                        engine_version_created_with=script["engine_version_created_with"],
+                        node_libraries_referenced=script["node_libraries_referenced"],
                     )
                     GriptapeNodes().handle_request(script_register_request)
 

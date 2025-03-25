@@ -14,10 +14,12 @@ class ScriptRegistry(SingletonMixin):
 
     # Create a new script with everything we'd need
     @classmethod
-    def generate_new_script(
+    def generate_new_script(  # noqa: PLR0913
         cls,
         name: str,
         relative_file_path: str,
+        engine_version_created_with: str,
+        node_libraries_referenced: list[str],
         description: str | None = None,
         image: str | None = None,
     ) -> Script:
@@ -26,7 +28,15 @@ class ScriptRegistry(SingletonMixin):
             # TODO(griptape): Should we rename scripts here?
             msg = f"Script with name {name} already registered."
             raise KeyError(msg)
-        script = Script(name, relative_file_path, instance._registry_key, description, image)
+        script = Script(
+            name=name,
+            relative_file_path=relative_file_path,
+            registry_key=instance._registry_key,
+            description=description,
+            image=image,
+            engine_version_created_with=engine_version_created_with,
+            node_libraries_referenced=node_libraries_referenced,
+        )
         instance._scripts[name] = script
         return script
 
@@ -66,13 +76,17 @@ class Script:
 
     name: str
     relative_file_path: str
+    engine_version_created_with: str
+    node_libraries_referenced: list[str]
     description: str | None
     image: str | None  # TODO(griptape): Make work with real images
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         relative_file_path: str,
+        engine_version_created_with: str,
+        node_libraries_referenced: list[str],
         registry_key: ScriptRegistry._RegistryKey,
         description: str | None = None,
         image: str | None = None,
@@ -90,6 +104,8 @@ class Script:
         self.relative_file_path = relative_file_path
         self.description = description
         self.image = image
+        self.engine_version_created_with = engine_version_created_with
+        self.node_libraries_referenced = node_libraries_referenced
 
     def get_script_metadata(self) -> dict:
         return {
@@ -97,4 +113,6 @@ class Script:
             "file_path": self.relative_file_path,
             "description": self.description,
             "image": self.image,
+            "engine_version_created_with": self.engine_version_created_with,
+            "node_libraries_referenced": self.node_libraries_referenced,
         }
