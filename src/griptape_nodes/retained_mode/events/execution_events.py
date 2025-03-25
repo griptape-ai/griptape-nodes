@@ -28,7 +28,7 @@ class ResolveNodeResult_Success(ResultPayload_Success):
 @dataclass
 @PayloadRegistry.register
 class ResolveNodeResult_Failure(ResultPayload_Failure):
-    pass
+    validation_exceptions: list[Exception] | None = None
 
 
 @dataclass
@@ -48,7 +48,7 @@ class StartFlowResult_Success(ResultPayload_Success):
 @dataclass
 @PayloadRegistry.register
 class StartFlowResult_Failure(ResultPayload_Failure):
-    pass
+    validation_exceptions: list[Exception] | None = None
 
 
 @dataclass
