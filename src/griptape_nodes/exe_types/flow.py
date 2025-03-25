@@ -224,7 +224,7 @@ class ControlFlow:
                     connections.append((connection.source_node, connection.source_parameter))
         return connections
 
-    def get_connected_output_from_node(self, node: NodeBase) -> list[tuple[NodeBase, Parameter]]:
+    def get_connected_output_from_node(self, node: NodeBase) -> list[tuple[NodeBase, Parameter]] | None:
         connections = []
         if node.name in self.connections.outgoing_index:
             connection_ids = [
@@ -233,9 +233,9 @@ class ControlFlow:
             for connection_id in connection_ids:
                 connection = self.connections.connections[connection_id]
                 connections.append((connection.target_node, connection.target_parameter))
-        return connections
+        return connections if connections else None
 
-    def get_connected_input_from_node(self, node: NodeBase) -> list[tuple[NodeBase, Parameter]]:
+    def get_connected_input_from_node(self, node: NodeBase) -> list[tuple[NodeBase, Parameter]] | None:
         connections = []
         if node.name in self.connections.incoming_index:
             connection_ids = [
@@ -244,7 +244,7 @@ class ControlFlow:
             for connection_id in connection_ids:
                 connection = self.connections.connections[connection_id]
                 connections.append((connection.source_node, connection.source_parameter))
-        return connections
+        return connections if connections else None
 
     def get_start_node_queue(self) -> Queue | None:  # noqa: C901, PLR0912
         # check all nodes in flow
@@ -379,3 +379,18 @@ class ControlFlow:
                         discovered[next_node] = True
                         queue.put(next_node)
         return list(processed.keys())
+
+    def get_node_dependencies(self, node:NodeBase) -> list[NodeBase]:
+        node_list = [node]
+        node_queue = Queue()
+        node_queue.put(node)
+        input_connections = self.get_connected_input_from_node(node)
+        while not node_queue.empty():
+            curr_node = node_queue.get()
+            input_connections = self.get_connected_input_from_node(curr_node)
+            if input_connections:
+                for input_node, input_parameter in input_connections:
+                    if not isinstance(input_parameter, ParameterControlType) and input_node not in node_list:
+                        node_list.append(input_node)
+                        node_queue.put(input_node)
+        return node_list
