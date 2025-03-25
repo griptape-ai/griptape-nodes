@@ -1356,7 +1356,8 @@ class NodeManager:
                 specific_library_name=request.specific_library_name,
                 metadata=request.metadata,
             )
-        except KeyError as err:
+        # modifying to exception to try to catch all possible issues with node creation.
+        except Exception as err:
             details = f"Could not create Node '{final_node_name}' of type '{request.node_type}': {err}"
             GriptapeNodes.get_logger().error(details)
 
