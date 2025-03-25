@@ -2372,8 +2372,6 @@ class NodeManager:
             details = f'Failed to validate node dependencies. Node with "{node_name}" does not exist.'
             GriptapeNodes.get_logger().error(details)
             return ValidateNodeDependenciesResult_Failure()
-        # TODO (kate): I think I need to get all of the dependencies here.
-        # unfortunately - i think i need to get flow here.
         try:
             flow_name = self.get_node_parent_flow_by_name(node_name)
         except Exception:
