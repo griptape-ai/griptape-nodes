@@ -1216,21 +1216,21 @@ class FlowManager:
         flow_name = event.flow_name
         if not flow_name:
             details = "Failed to unresolve flow because no flow name was provided"
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return UnresolveFlowResult_Failure()
         flow = self.get_flow_by_name(flow_name)
         if not flow:
             details = f"Failed to unresolve flow because flow with name {flow_name} does not exist."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return UnresolveFlowResult_Failure()
         try:
             flow.unresolve_whole_flow()
         except Exception as e:
             details = f"Failed to unresolve flow. An exception occurred: {e}."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return UnresolveFlowResult_Failure()
         details = f"Unresolved flow with name {flow_name}"
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
         return UnresolveFlowResult_Success()
 
     def on_app_execution_event(self, event: AppExecutionEvent) -> None:
@@ -1353,7 +1353,7 @@ class NodeManager:
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
         if node is None:
             details = f"Attempted to delete a Node '{request.node_name}', but no such Node was found."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = DeleteNodeResult_Failure()
             return result
@@ -1366,7 +1366,7 @@ class NodeManager:
         list_connections_result = GriptapeNodes().handle_request(request=list_node_connections_request)
         if isinstance(list_connections_result, ResultPayload_Failure):
             details = f"Attempted to delete a Node '{request.node_name}'. Failed because it could not gather Connections to the Node."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = DeleteNodeResult_Failure()
             return result
@@ -1383,7 +1383,7 @@ class NodeManager:
                 details = (
                     f"Attempted to delete a Node '{request.node_name}'. Failed when attempting to delete Connection."
                 )
-                print(details)  # TODO(griptape): Move to Log
+                GriptapeNodes.get_logger().error(details)
 
                 result = DeleteNodeResult_Failure()
                 return result
@@ -1401,7 +1401,7 @@ class NodeManager:
                 details = (
                     f"Attempted to delete a Node '{request.node_name}'. Failed when attempting to delete Connection."
                 )
-                print(details)  # TODO(griptape): Move to Log
+                GriptapeNodes.get_logger().error(details)
 
                 result = DeleteNodeResult_Failure()
                 return result
@@ -1414,7 +1414,7 @@ class NodeManager:
         del self._name_to_parent_flow_name[request.node_name]
 
         details = f"Successfully deleted Node '{request.node_name}'."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = DeleteNodeResult_Success()
         return result
@@ -1426,14 +1426,14 @@ class NodeManager:
         node = obj_mgr.attempt_get_object_by_name_as_type(event.node_name, NodeBase)
         if node is None:
             details = f"Attempted to get resolution state for a Node '{event.node_name}', but no such Node was found."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             result = GetNodeResolutionStateResult_Failure()
             return result
 
         node_state = node.state
 
         details = f"Successfully got resolution state for Node '{event.node_name}'."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = GetNodeResolutionStateResult_Success(
             state=node_state.name,
@@ -1447,14 +1447,14 @@ class NodeManager:
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
         if node is None:
             details = f"Attempted to get metadata for a Node '{request.node_name}', but no such Node was found."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = GetNodeMetadataResult_Failure()
             return result
 
         metadata = node.metadata
         details = f"Successfully retrieved metadata for a Node '{request.node_name}'."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = GetNodeMetadataResult_Success(
             metadata=metadata,
@@ -1468,14 +1468,14 @@ class NodeManager:
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
         if node is None:
             details = f"Attempted to set metadata for a Node '{request.node_name}', but no such Node was found."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = SetNodeMetadataResult_Failure()
             return result
 
         node.metadata = request.metadata
         details = f"Successfully set metadata for a Node '{request.node_name}'."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = SetNodeMetadataResult_Success()
         return result
@@ -1487,7 +1487,7 @@ class NodeManager:
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
         if node is None:
             details = f"Attempted to list Connections for a Node '{request.node_name}', but no such Node was found."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = ListConnectionsForNodeResult_Failure()
             return result
@@ -1527,7 +1527,7 @@ class NodeManager:
             ]
 
         details = f"Successfully listed all Connections to and from Node '{node.name}'."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = ListConnectionsForNodeResult_Success(
             incoming_connections=incoming_connections_list,
@@ -1542,7 +1542,7 @@ class NodeManager:
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
         if node is None:
             details = f"Attempted to list Parameters for a Node '{request.node_name}', but no such Node was found."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = ListParametersOnNodeResult_Failure()
             return result
@@ -1550,7 +1550,7 @@ class NodeManager:
         ret_list = [param.name for param in node.parameters]
 
         details = f"Params on {node.name} = {ret_list}"
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = ListParametersOnNodeResult_Success(
             parameter_names=ret_list,
@@ -1564,7 +1564,7 @@ class NodeManager:
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
         if node is None:
             details = f"Attempted to add Parameter '{request.parameter_name}' to a Node '{request.node_name}', but no such Node was found."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = AddParameterToNodeResult_Failure()
             return result
@@ -1572,7 +1572,7 @@ class NodeManager:
         # Does the Node already have a parameter by this name?
         if node.get_parameter_by_name(request.parameter_name) is not None:
             details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{request.node_name}'. Failed because it already had a Parameter with that name on it. Parameter names must be unique within the Node."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = AddParameterToNodeResult_Failure()
             return result
@@ -1581,7 +1581,7 @@ class NodeManager:
         # If a Parameter is intended for Control, it needs to have that be the exclusive type.
         if ParameterControlType.__name__ in request.allowed_types and len(request.allowed_types) != 1:
             details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{request.node_name}'. Failed because it had 'ParameterControlType' with other types allowed. If a Parameter is intended for control, it must only accept that type."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = AddParameterToNodeResult_Failure()
             return result
@@ -1592,7 +1592,7 @@ class NodeManager:
 
         if len(invalid_type_list) > 0:
             details = f"Attempted to add Parameter '{request.parameter_name}' but the following allowed types were not valid: {invalid_type_list!s}."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = AddParameterToNodeResult_Failure()
             return result
@@ -1622,11 +1622,11 @@ class NodeManager:
             node.add_parameter(new_param)
         except Exception as e:
             details = f"Couldn't add parameter with name {request.parameter_name} to node. Error: {e}"
-            print(details)
+            GriptapeNodes.get_logger().error(details)
             return AddParameterToNodeResult_Failure()
 
         details = f"Successfully added Parameter '{request.parameter_name}' to Node '{request.node_name}'."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = AddParameterToNodeResult_Success()
         return result
@@ -1638,7 +1638,7 @@ class NodeManager:
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
         if node is None:
             details = f"Attempted to remove Parameter '{request.parameter_name}' from a Node '{request.node_name}', but no such Node was found."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = RemoveParameterFromNodeResult_Failure()
             return result
@@ -1647,7 +1647,7 @@ class NodeManager:
         parameter = node.get_parameter_by_name(request.parameter_name)
         if parameter is None:
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because it didn't have a Parameter with that name on it."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = RemoveParameterFromNodeResult_Failure()
             return result
@@ -1655,7 +1655,7 @@ class NodeManager:
         # No tricky stuff, users!
         if parameter.user_defined is False:
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be removed from a Node."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = RemoveParameterFromNodeResult_Failure()
             return result
@@ -1665,7 +1665,7 @@ class NodeManager:
         list_connections_result = GriptapeNodes().handle_request(request=list_node_connections_request)
         if isinstance(list_connections_result, ListConnectionsForNodeResult_Failure):
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because we were unable to get a list of Connections for the Parameter's Node."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = RemoveParameterFromNodeResult_Failure()
             return result
@@ -1684,7 +1684,7 @@ class NodeManager:
                 delete_result = GriptapeNodes.handle_request(delete_request)
                 if isinstance(delete_result, DeleteConnectionResult_Failure):
                     details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because we were unable to delete a Connection for that Parameter."
-                    print(details)  # Move to Log
+                    GriptapeNodes.get_logger().error(details)
 
                     result = RemoveParameterFromNodeResult_Failure()
 
@@ -1700,7 +1700,7 @@ class NodeManager:
                 delete_result = GriptapeNodes.handle_request(delete_request)
                 if isinstance(delete_result, DeleteConnectionResult_Failure):
                     details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because we were unable to delete a Connection for that Parameter."
-                    print(details)  # TODO(griptape): Move to Log
+                    GriptapeNodes.get_logger().error(details)
 
                     result = RemoveParameterFromNodeResult_Failure()
 
@@ -1708,7 +1708,7 @@ class NodeManager:
         node.remove_parameter(parameter)
 
         details = f"Successfully removed Parameter '{request.parameter_name}' from Node '{request.node_name}'."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = RemoveParameterFromNodeResult_Success()
         return result
@@ -1720,7 +1720,7 @@ class NodeManager:
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
         if node is None:
             details = f"Attempted to get details for Parameter '{request.parameter_name}' from a Node '{request.node_name}', but no such Node was found."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = GetParameterDetailsResult_Failure()
             return result
@@ -1729,7 +1729,7 @@ class NodeManager:
         parameter = node.get_parameter_by_name(request.parameter_name)
         if parameter is None:
             details = f"Attempted to get details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because it didn't have a Parameter with that name on it."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = GetParameterDetailsResult_Failure()
             return result
@@ -1741,7 +1741,7 @@ class NodeManager:
         allows_output = ParameterMode.OUTPUT in modes_allowed
 
         details = f"Successfully got details for Parameter '{request.parameter_name}' from Node '{request.node_name}'."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = GetParameterDetailsResult_Success(
             allowed_types=parameter.allowed_types,
@@ -1765,7 +1765,7 @@ class NodeManager:
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
         if node is None:
             details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}', but no such Node was found."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = AlterParameterDetailsResult_Failure()
             return result
@@ -1774,7 +1774,7 @@ class NodeManager:
         parameter = node.get_parameter_by_name(request.parameter_name)
         if parameter is None:
             details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because it didn't have a Parameter with that name on it."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = AlterParameterDetailsResult_Failure()
             return result
@@ -1783,7 +1783,7 @@ class NodeManager:
         if parameter.user_defined is False and request.request_id:
             # TODO(griptape): there may be SOME properties on a non-user-defined Parameter that can be changed
             details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be removed from a Node."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = AlterParameterDetailsResult_Failure()
             return result
@@ -1800,7 +1800,7 @@ class NodeManager:
 
             if len(invalid_type_list) > 0:
                 details = f"Attempted to alter Parameter '{request.parameter_name}' but the following allowed types were not valid: {invalid_type_list!s}."
-                print(details)  # TODO(griptape): Move to Log
+                GriptapeNodes.get_logger().error(details)
 
                 result = AddParameterToNodeResult_Failure()
                 return result
@@ -1841,7 +1841,7 @@ class NodeManager:
         details = (
             f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{request.node_name}'."
         )
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = AlterParameterDetailsResult_Success()
         return result
@@ -1857,14 +1857,14 @@ class NodeManager:
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
         if node is None:
             details = f'"{request.node_name}" not found'
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return GetParameterValueResult_Failure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
         if parameter is None:
             details = f'"{request.node_name}.{param_name}" not found'
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return GetParameterValueResult_Failure()
 
         # Values are actually stored on the NODE, so let's ask them.
@@ -1896,12 +1896,11 @@ class NodeManager:
 
         if data_value_type_str is None:
             data_value_type_str = str(data_value_type)
-            print(
-                f"WARNING: Could not find data value type '{data_value_type_str}' in the list of data types allowed by Parameter '{param_name}'; letting Python do the conversion."
-            )
+            details = f"WARNING: Could not find data value type '{data_value_type_str}' in the list of data types allowed by Parameter '{param_name}'; letting Python do the conversion."
+            GriptapeNodes.get_logger().warning(details)
         # Cool.
         details = f"{request.node_name}.{request.parameter_name} = {data_value}"
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = GetParameterValueResult_Success(
             data_type=data_value_type_str,
@@ -1921,14 +1920,14 @@ class NodeManager:
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
         if node is None:
             details = f'"{request.node_name}" not found'
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return SetParameterValueResult_Failure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
         if parameter is None:
             details = f'"{request.node_name}.{param_name}" not found'
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = SetParameterValueResult_Failure()
             return result
@@ -1936,7 +1935,7 @@ class NodeManager:
         # Validate that parameters can be set at all
         if not parameter.settable:
             details = f'"{request.node_name}.{request.parameter_name}" is not settable'
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             result = SetParameterValueResult_Failure()
             return result
 
@@ -1947,7 +1946,7 @@ class NodeManager:
             isinstance(object_created, dict) and "type" in object_created
         ):
             details = f'set_value for "{request.node_name}.{request.parameter_name}" failed.  type "{object_created.__class__.__name__}" not in allowed types:{parameter.allowed_types}'
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = SetParameterValueResult_Failure()
             return result
@@ -1956,18 +1955,18 @@ class NodeManager:
             parent_flow_name = self.get_node_parent_flow_by_name(node.name)
         except KeyError:
             details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Parent flow does not exist. Could not unresolve future nodes.'
-            print(details)
+            GriptapeNodes.get_logger().error(details)
             return SetParameterValueResult_Failure()
         parent_flow = obj_mgr.attempt_get_object_by_name_as_type(parent_flow_name, ControlFlow)
         if not parent_flow:
             details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Parent flow does not exist. Could not unresolve future nodes.'
-            print(details)
+            GriptapeNodes.get_logger().error(details)
             return SetParameterValueResult_Failure()
         try:
             parent_flow.connections.unresolve_future_nodes(node)
         except Exception as e:
             details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Exception: {e}'
-            print(details)
+            GriptapeNodes.get_logger().error(details)
             return SetParameterValueResult_Failure()
 
         # Values are actually stored on the NODE.
@@ -1992,7 +1991,7 @@ class NodeManager:
 
         # Cool.
         details = f'"{request.node_name}.{request.parameter_name}" = {object_created}'
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = SetParameterValueResult_Success()
         return result
@@ -2009,7 +2008,7 @@ class NodeManager:
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
         if node is None:
             details = f"Attempted to get all info for Node named '{request.node_name}', but no such Node was found."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = GetAllNodeInfoResult_Failure()
             return result
@@ -2020,7 +2019,7 @@ class NodeManager:
             details = (
                 f"Attempted to get all info for Node named '{request.node_name}', but failed getting the metadata."
             )
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = GetAllNodeInfoResult_Failure()
             return result
@@ -2031,7 +2030,7 @@ class NodeManager:
         )
         if not get_resolution_state_result.succeeded():
             details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting the resolution state."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = GetAllNodeInfoResult_Failure()
             return result
@@ -2042,7 +2041,7 @@ class NodeManager:
         )
         if not list_connections_result.succeeded():
             details = f"Attempted to get all info for Node named '{request.node_name}', but failed listing all connections for it."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = GetAllNodeInfoResult_Failure()
             return result
@@ -2051,7 +2050,7 @@ class NodeManager:
         list_parameters_result = GriptapeNodes.NodeManager().on_list_parameters_on_node_request(list_parameters_request)
         if not list_parameters_result.succeeded():
             details = f"Attempted to get all info for Node named '{request.node_name}', but failed listing all Parameters on it."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = GetAllNodeInfoResult_Failure()
             return result
@@ -2064,7 +2063,7 @@ class NodeManager:
             list_parameters_success = cast("ListParametersOnNodeResult_Success", list_parameters_result)
         except Exception as err:
             details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = GetAllNodeInfoResult_Failure()
             return result
@@ -2083,7 +2082,7 @@ class NodeManager:
 
             if not get_parameter_details_result.succeeded():
                 details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting details for Parameter '{param_name}'."
-                print(details)  # TODO(griptape): Move to Log
+                GriptapeNodes.get_logger().error(details)
 
                 result = GetAllNodeInfoResult_Failure()
                 return result
@@ -2098,7 +2097,7 @@ class NodeManager:
 
             if not get_parameter_value_result.succeeded():
                 details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting value for Parameter '{param_name}'."
-                print(details)  # TODO(griptape): Move to Log
+                GriptapeNodes.get_logger().error(details)
 
                 result = GetAllNodeInfoResult_Failure()
                 return result
@@ -2109,7 +2108,7 @@ class NodeManager:
                 get_parameter_value_success = cast("GetParameterValueResult_Success", get_parameter_value_result)
             except Exception as err:
                 details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
-                print(details)  # TODO(griptape): Move to Log
+                GriptapeNodes.get_logger().error(details)
 
                 result = GetAllNodeInfoResult_Failure()
                 return result
@@ -2120,7 +2119,7 @@ class NodeManager:
             )
 
         details = f"Successfully got all node info for node '{request.node_name}'."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
         result = GetAllNodeInfoResult_Success(
             metadata=get_metadata_success.metadata,
             node_resolution_state=get_resolution_state_success.state,
@@ -2151,14 +2150,14 @@ class NodeManager:
 
         if not node_name:
             details = "No Node name was provided. Failed to resolve node."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             return ResolveNodeResult_Failure()
         try:
             node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
         except KeyError:
             details = f'Resolve failure. "{node_name}" does not exist.'
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             return ResolveNodeResult_Failure()
         # try to get the flow parent of this node
@@ -2166,7 +2165,7 @@ class NodeManager:
             flow_name = self._name_to_parent_flow_name[node_name]
         except KeyError:
             details = f'Failed to fetch parent flow for "{node_name}"'
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             return ResolveNodeResult_Failure()
         try:
@@ -2174,28 +2173,29 @@ class NodeManager:
             flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
         except KeyError:
             details = f'Failed to fetch parent flow for "{node_name}"'
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             return ResolveNodeResult_Failure()
 
         if flow is None:
             details = f'Failed to fetch parent flow for "{node_name}"'
+            GriptapeNodes.get_logger().error(details)
             return ResolveNodeResult_Failure()
         try:
             flow.connections.unresolve_future_nodes(node)
         except Exception:
             details = f'Failed to mark future nodes dirty. Unable to kick off flow from "{node_name}"'
-            print(details)
+            GriptapeNodes.get_logger().error(details)
             return ResolveNodeResult_Failure()
         try:
             flow.resolve_singular_node(node, debug_mode)
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             return ResolveNodeResult_Failure()
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
         return ResolveNodeResult_Success()
 
 
@@ -2253,7 +2253,7 @@ class ScriptManager:
         complete_file_path = ScriptRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         if not Path(complete_file_path).is_file():
             details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
-            print(details)
+            GriptapeNodes.get_logger().error(details)
             return RunScriptFromScratchResult_Failure()
 
         try:
@@ -2261,14 +2261,16 @@ class ScriptManager:
             GriptapeNodes.clear_data()
         except Exception as e:
             details = f"Failed to clear the existing context when trying to run '{complete_file_path}'. Exception: {e}"
-            print(details)
+            GriptapeNodes.get_logger().error(details)
             return RunScriptFromScratchResult_Failure()
 
         # Run the file, goddamn it
         success, details = self.run_script(relative_file_path=relative_file_path)
-        print(details)
         if success:
+            GriptapeNodes.get_logger().info(details)
             return RunScriptFromScratchResult_Success()
+
+        GriptapeNodes.get_logger().error(details)
         return RunScriptFromScratchResult_Failure()
 
     def on_run_script_with_current_state_request(self, request: RunScriptWithCurrentStateRequest) -> ResultPayload:
@@ -2276,12 +2278,14 @@ class ScriptManager:
         complete_file_path = ScriptRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         if not Path(complete_file_path).is_file():
             details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
-            print(details)
+            GriptapeNodes.get_logger().error(details)
             return RunScriptWithCurrentStateResult_Failure()
         success, details = self.run_script(relative_file_path=relative_file_path)
-        print(details)
+
         if success:
+            GriptapeNodes.get_logger().info(details)
             return RunScriptWithCurrentStateResult_Success()
+        GriptapeNodes.get_logger().error(details)
         return RunScriptWithCurrentStateResult_Failure()
 
     def on_run_script_from_registry_request(self, request: RunScriptFromRegistryRequest) -> ResultPayload:
@@ -2289,15 +2293,18 @@ class ScriptManager:
         try:
             script = ScriptRegistry.get_script_by_name(request.script_name)
         except KeyError as e:
-            print(e)
+            GriptapeNodes.get_logger().error(e)
             return RunScriptFromRegistryResult_Failure()
         # get file_path from script
         relative_file_path = script.relative_file_path
         # run file
         success, details = self.run_script(relative_file_path=relative_file_path)
-        print(details)
+
         if success:
+            GriptapeNodes.get_logger().info(details)
             return RunScriptFromRegistryResult_Success()
+
+        GriptapeNodes.get_logger().error(details)
         return RunScriptFromRegistryResult_Failure()
 
     def on_register_script_request(self, request: RegisterScriptRequest) -> ResultPayload:
@@ -2311,7 +2318,8 @@ class ScriptManager:
                 image=request.image,
             )
         except Exception as e:
-            print(f"Failed to register script with name {request.script_name}. Error: {e}")
+            details = f"Failed to register script with name {request.script_name}. Error: {e}"
+            GriptapeNodes.get_logger().error(details)
             return RegisterScriptResult_Failure()
         return RegisterScriptResult_Success(script_name=script.name)
 
@@ -2319,7 +2327,8 @@ class ScriptManager:
         try:
             scripts = ScriptRegistry.list_scripts()
         except Exception:
-            print("Failed to list all scripts.")
+            details = "Failed to list all scripts."
+            GriptapeNodes.get_logger().error(details)
             return ListAllScriptsResult_Failure()
         return ListAllScriptsResult_Success(scripts=scripts)
 
@@ -2327,20 +2336,23 @@ class ScriptManager:
         try:
             script = ScriptRegistry.delete_script_by_name(request.name)
         except Exception as e:
-            print(f"Failed to remove script from registry with name {request.name}. Exception: {e}")
+            details = f"Failed to remove script from registry with name {request.name}. Exception: {e}"
+            GriptapeNodes.get_logger().error(details)
             return DeleteScriptResult_Failure()
         config_manager = GriptapeNodes.get_instance()._config_manager
         try:
             config_manager.delete_user_script(script.__dict__)
         except Exception as e:
-            print(f"Failed to remove script from user config with name {request.name}. Exception: {e}")
+            details = f"Failed to remove script from user config with name {request.name}. Exception: {e}"
+            GriptapeNodes.get_logger().error(details)
             return DeleteScriptResult_Failure()
         # delete the actual file
         full_path = config_manager.workspace_path.joinpath(script.relative_file_path)
         try:
             full_path.unlink()
         except Exception as e:
-            print(f"Failed to delete script file with path {script.relative_file_path}. Exception: {e}")
+            details = f"Failed to delete script file with path {script.relative_file_path}. Exception: {e}"
+            GriptapeNodes.get_logger().error(details)
             return DeleteScriptResult_Failure()
         return DeleteScriptResult_Success()
 
@@ -2385,7 +2397,7 @@ class ScriptManager:
                 file.write(connection_request_scripts)
         except Exception as e:
             details = f"Failed to save scene, exception: {e}"
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return SaveSceneResult_Failure()
 
         # Get the engine version.
@@ -2393,7 +2405,7 @@ class ScriptManager:
         engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
         if not engine_version_result.succeeded():
             details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return SaveSceneResult_Failure()
         try:
             engine_version_success = cast("GetEngineVersionResult_Success", engine_version_result)
@@ -2402,7 +2414,7 @@ class ScriptManager:
             )
         except Exception as err:
             details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version: {err}"
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return SaveSceneResult_Failure()
 
         # save the created scene to a personal json file
@@ -2582,7 +2594,7 @@ class LibraryManager:
         event_copy = snapshot_list.copy()
 
         details = "Successfully retrieved the list of registered libraries."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = ListRegisteredLibrariesResult_Success(
             libraries=event_copy,
@@ -2595,7 +2607,7 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to list node types in a Library named '{request.library}'. Failed because no Library with that name was registered."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = ListNodeTypesInLibraryResult_Failure()
             return result
@@ -2605,7 +2617,7 @@ class LibraryManager:
         event_copy = snapshot_list.copy()
 
         details = f"Successfully retrieved the list of node types in the Library named '{request.library}'."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = ListNodeTypesInLibraryResult_Success(
             node_types=event_copy,
@@ -2618,15 +2630,17 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get metadata for Library '{request.library}'. Failed because no Library with that name was registered."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = GetLibraryMetadataResult_Failure()
             return result
 
         # Get the metadata off of it.
         metadata = library.get_metadata()
+        details = f"Successfully retrieved metadata for Library '{request.library}'."
+        GriptapeNodes.get_logger().info(details)
+
         result = GetLibraryMetadataResult_Success(metadata=metadata)
-        print(f"Successfully retrieved metadata for Library '{request.library}'.")
         return result
 
     def get_node_metadata_from_library_request(self, request: GetNodeMetadataFromLibraryRequest) -> ResultPayload:
@@ -2635,7 +2649,7 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get node metadata for a node type '{request.node_type}' in a Library named '{request.library}'. Failed because no Library with that name was registered."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = GetNodeMetadataFromLibraryResult_Failure()
             return result
@@ -2645,13 +2659,13 @@ class LibraryManager:
             metadata = library.get_node_metadata(node_type=request.node_type)
         except KeyError:
             details = f"Attempted to get node metadata for a node type '{request.node_type}' in a Library named '{request.library}'. Failed because no node type of that name could be found in the Library."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
 
             result = GetNodeMetadataFromLibraryResult_Failure()
             return result
 
         details = f"Successfully retrieved node metadata for a node type '{request.node_type}' in a Library named '{request.library}'."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
 
         result = GetNodeMetadataFromLibraryResult_Success(
             metadata=metadata,
@@ -2664,7 +2678,7 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get categories in a Library named '{request.library}'. Failed because no Library with that name was registered."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             result = ListCategoriesInLibraryResult_Failure()
             return result
 
@@ -2680,9 +2694,8 @@ class LibraryManager:
 
         # Check if the file exists
         if not json_path.exists():
-            print(
-                f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
-            )  # TODO(griptape): Move to Log
+            details = f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
+            GriptapeNodes.get_logger().error(details)
             return RegisterLibraryFromFileResult_Failure()
 
         # Load the JSON
@@ -2695,9 +2708,8 @@ class LibraryManager:
             library_metadata = library_data.get("metadata", {})
             nodes_metadata = library_data.get("nodes", [])
         except KeyError as e:
-            print(
-                f"Attempted to load Library JSON file from '{file_path}'. Failed because it was missing required field in library metadata: {e}"
-            )  # TODO(griptape): Move to Log
+            details = f"Attempted to load Library JSON file from '{file_path}'. Failed because it was missing required field in library metadata: {e}"
+            GriptapeNodes.get_logger().error(details)
             return RegisterLibraryFromFileResult_Failure()
 
         categories = library_data.get("categories", None)
@@ -2717,9 +2729,8 @@ class LibraryManager:
             )
         except KeyError as err:
             # Library already exists
-            print(
-                f"Attempted to load Library JSON file from '{file_path}'. Failed because a Library '{library_name}' already exists. Error: {err}."
-            )  # TODO(griptape): Move to Log
+            details = f"Attempted to load Library JSON file from '{file_path}'. Failed because a Library '{library_name}' already exists. Error: {err}."
+            GriptapeNodes.get_logger().error(details)
             return RegisterLibraryFromFileResult_Failure()
 
         # Update library metadata
@@ -2744,13 +2755,13 @@ class LibraryManager:
                 library.register_new_node_type(node_class, metadata=node_metadata)
 
             except (KeyError, ImportError, AttributeError) as e:
-                print(
-                    f"Attempted to load Library JSON file from '{file_path}'. Failed due to an error loading node {node_meta.get('class_name', 'unknown')}: {e}"
-                )  # TODO(griptape): MOVE TO LOG
+                details = f"Attempted to load Library JSON file from '{file_path}'. Failed due to an error loading node {node_meta.get('class_name', 'unknown')}: {e}"
+                GriptapeNodes.get_logger().error(details)
                 return RegisterLibraryFromFileResult_Failure()
 
         # Success!
-        print(f"Successfully loaded Library '{library_name}' from JSON file at {file_path}")
+        details = f"Successfully loaded Library '{library_name}' from JSON file at {file_path}"
+        GriptapeNodes.get_logger().info(details)
         return RegisterLibraryFromFileResult_Success(library_name=library_name)
 
     def get_all_info_for_all_libraries_request(self, request: GetAllInfoForAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
@@ -2759,7 +2770,7 @@ class LibraryManager:
 
         if not list_libraries_result.succeeded():
             details = "Attempted to get all info for all libraries, but listing the registered libraries failed."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return GetAllInfoForAllLibrariesResult_Failure()
 
         try:
@@ -2774,7 +2785,7 @@ class LibraryManager:
 
                 if not library_all_info_result.succeeded():
                     details = f"Attempted to get all info for all libraries, but failed when getting all info for library named '{library_name}'."
-                    print(details)  # TODO(griptape): Move to Log
+                    GriptapeNodes.get_logger().error(details)
                     return GetAllInfoForAllLibrariesResult_Failure()
 
                 library_all_info_success = cast("GetAllInfoForLibraryResult_Success", library_all_info_result)
@@ -2782,12 +2793,12 @@ class LibraryManager:
                 library_name_to_all_info[library_name] = library_all_info_success
         except Exception as err:
             details = f"Attempted to get all info for all libraries. Encountered error {err}."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return GetAllInfoForAllLibrariesResult_Failure()
 
         # We're home free now
         details = "Successfully retrieved all info for all libraries."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
         result = GetAllInfoForAllLibrariesResult_Success(library_name_to_library_info=library_name_to_all_info)
         return result
 
@@ -2797,7 +2808,7 @@ class LibraryManager:
             LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed because no Library with that name was registered."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             result = GetAllInfoForLibraryResult_Failure()
             return result
 
@@ -2806,7 +2817,7 @@ class LibraryManager:
 
         if not library_metadata_result.succeeded():
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed attempting to get the library's metadata."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return GetAllInfoForLibraryResult_Failure()
 
         list_categories_request = ListCategoriesInLibraryRequest(library=request.library)
@@ -2814,7 +2825,7 @@ class LibraryManager:
 
         if not list_categories_result.succeeded():
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed attempting to get the list of categories in the library."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return GetAllInfoForLibraryResult_Failure()
 
         node_type_list_request = ListNodeTypesInLibraryRequest(library=request.library)
@@ -2822,7 +2833,7 @@ class LibraryManager:
 
         if not node_type_list_result.succeeded():
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed attempting to get the list of node types in the library."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return GetAllInfoForLibraryResult_Failure()
 
         # Cast everyone to their success counterparts.
@@ -2834,7 +2845,7 @@ class LibraryManager:
             details = (
                 f"Attempted to get all library info for a Library named '{request.library}'. Encountered error: {err}."
             )
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return GetAllInfoForLibraryResult_Failure()
 
         # Now build the map of node types to metadata.
@@ -2845,21 +2856,21 @@ class LibraryManager:
 
             if not node_metadata_result.succeeded():
                 details = f"Attempted to get all library info for a Library named '{request.library}'. Failed attempting to get the metadata for a node type called '{node_type_name}'."
-                print(details)  # TODO(griptape): Move to Log
+                GriptapeNodes.get_logger().error(details)
                 return GetAllInfoForLibraryResult_Failure()
 
             try:
                 node_metadata_result_success = cast("GetNodeMetadataFromLibraryResult_Success", node_metadata_result)
             except Exception as err:
                 details = f"Attempted to get all library info for a Library named '{request.library}'. Encountered error: {err}."
-                print(details)  # TODO(griptape): Move to Log
+                GriptapeNodes.get_logger().error(details)
                 return GetAllInfoForLibraryResult_Failure()
 
             # Put it into the map.
             node_type_name_to_node_metadata_details[node_type_name] = node_metadata_result_success
 
         details = f"Successfully got all library info for a Library named '{request.library}'."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
         result = GetAllInfoForLibraryResult_Success(
             library_metadata_details=library_metadata_result_success,
             category_details=list_categories_result_success,

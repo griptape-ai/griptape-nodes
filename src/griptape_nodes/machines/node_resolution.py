@@ -225,9 +225,8 @@ class ExecuteNodeState(State):
             )
         )
         current_node.state = NodeResolutionState.RESOLVED
-        print(
-            f"{current_node.name} resolved. \n Inputs: {TypeValidator.safe_serialize(current_node.parameter_values)} \n Outputs: {TypeValidator.safe_serialize(current_node.parameter_output_values)}"
-        )
+        details = f"{current_node.name} resolved. \n Inputs: {TypeValidator.safe_serialize(current_node.parameter_values)} \n Outputs: {TypeValidator.safe_serialize(current_node.parameter_output_values)}"
+        print(details)
         # Output values should already be saved!
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
