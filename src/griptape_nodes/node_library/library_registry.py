@@ -5,6 +5,7 @@ from typing import Any, NamedTuple, Self, cast
 from griptape.mixins.singleton_mixin import SingletonMixin
 
 from griptape_nodes.exe_types.node_types import NodeBase
+from griptape_nodes.exe_types.type_validator import TypeValidationError, TypeValidator
 
 
 class LibraryNodeIdentifier(NamedTuple):
@@ -203,7 +204,6 @@ class Library:
         node_class = self._node_types.get(node_type)
         if not node_class:
             raise KeyError(self.name, node_type)
-
         # Inject the metadata ABOUT the node from the Library
         # into the node's metadata blob.
         if metadata is None:
@@ -212,8 +212,16 @@ class Library:
         metadata["library_node_metadata"] = library_node_metadata
         metadata["library"] = self.name
         metadata["node_type"] = node_type
-
-        return node_class(name=name, metadata=metadata)
+        node = node_class(name=name, metadata=metadata)
+        for parameter in node.parameters:
+            for type_str in parameter.allowed_types:
+                # This will throw an error if there is an unallowed type
+                try:
+                    TypeValidator.convert_to_type(type_str)
+                except TypeValidationError as e:
+                    msg = f"Failed to create node of type {node_type}: {e}"
+                    raise TypeValidationError(msg) from e
+        return node
 
     def get_registered_nodes(self) -> list[str]:
         """Get a list of all registered node types."""
