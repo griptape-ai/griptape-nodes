@@ -254,7 +254,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
     @classmethod
     def get_logger(cls) -> logging.Logger:
-        return LogManager().get_logger()
+        return GriptapeNodes.LogManager().get_logger()
 
     @classmethod
     def EventManager(cls) -> EventManager:
