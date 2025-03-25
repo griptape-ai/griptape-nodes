@@ -1401,7 +1401,7 @@ class NodeManager:
         try:
             parent_flow = GriptapeNodes().FlowManager().get_flow_by_name(parent_flow_name)
         except KeyError as err:
-            details= f"Attempted to delete a Node '{request.node_name}'. Error: {err}"
+            details = f"Attempted to delete a Node '{request.node_name}'. Error: {err}"
             GriptapeNodes.get_logger().error(details)
 
             result = DeleteNodeResult_Failure()
@@ -1899,7 +1899,8 @@ class NodeManager:
         result = AlterParameterDetailsResult_Success()
         return result
 
-    def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:
+    # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
+    def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:  # noqa: C901
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -2559,7 +2560,7 @@ class ScriptManager:
                     try:
                         handle_parameter_creation_saving(file, node, flow_name)
                     except Exception as e:
-                        details=f"Failed to save scene because failed to save parameter creation for node '{node.name}'. Error: {e}"
+                        details = f"Failed to save scene because failed to save parameter creation for node '{node.name}'. Error: {e}"
                         GriptapeNodes.get_logger().error(details)
                         return SaveSceneResult_Failure()
 
