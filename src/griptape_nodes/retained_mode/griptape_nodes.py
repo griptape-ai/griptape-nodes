@@ -914,7 +914,7 @@ class FlowManager:
 
         return result
 
-    def on_delete_connection_request(self, request: DeleteConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915, C901 TODO(griptape): resolve
+    def on_delete_connection_request(self, request: DeleteConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915 TODO(griptape): resolve
         # Vet the two nodes first.
         source_node = None
         try:
@@ -986,15 +986,6 @@ class FlowManager:
             result = DeleteConnectionResult_Failure()
             return result
 
-        # TEMP HACK: Data connections appear to reverse Source and Target. TODO(griptape): Let's reconcile this.
-        if ParameterControlType.__name__ not in source_param.allowed_types:
-            temp_node = source_node
-            temp_param = source_param
-            source_node = target_node
-            source_param = target_param
-            target_node = temp_node
-            target_param = temp_param
-
         # Vet that a Connection actually exists between them already.
         if not source_flow.has_connection(
             source_node=source_node,
@@ -1020,15 +1011,6 @@ class FlowManager:
 
             result = DeleteConnectionResult_Failure()
             return result
-
-        # TEMP HACK: SWAP BACK Data connections appear to reverse Source and Target. TODO(griptape): Let's reconcile this. SWAP BACK
-        if ParameterControlType.__name__ not in source_param.allowed_types:
-            temp_node = source_node
-            temp_param = source_param
-            source_node = target_node
-            source_param = target_param
-            target_node = temp_node
-            target_param = temp_param
 
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
         source_node.handle_outgoing_connection_removed(
