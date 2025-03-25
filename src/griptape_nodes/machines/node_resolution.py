@@ -184,6 +184,22 @@ class ExecuteNodeState(State):
                     data_type = parameter_value["type"]
                 else:
                     data_type = type(parameter_value).__name__
+
+                # Run through all converters
+                for converter in parameter.converters:
+                    parameter_value = converter(parameter_value)
+
+                # Run through all validators
+                try:
+                    for validator in parameter.validators:
+                        validator(parameter, parameter_value)
+                except Exception as e:
+                    msg = f"Canceling flow run. Node '{current_node.name}' failed to validate {parameter.name}: {e}"
+                    current_node.state = NodeResolutionState.UNRESOLVED
+                    context.flow.cancel_flow_run()
+                    raise RuntimeError(msg) from e
+
+                current_node.set_parameter_value(parameter.name, parameter_value)
                 EventBus.publish_event(
                     ExecutionGriptapeNodeEvent(
                         wrapped_event=ExecutionEvent(

@@ -4,7 +4,10 @@ from abc import ABC
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from griptape_nodes.exe_types.type_validator import TypeValidator
 
@@ -140,6 +143,8 @@ class Parameter:
     ui_options: ParameterUIOptions | None = None
     next: Parameter | None = None
     prev: Parameter | None = None
+    converters: list[Callable[[Any], Any]] = field(default_factory=list)
+    validators: list[Callable[[Parameter, Any], None]] = field(default_factory=list)
 
     def is_type_allowed(self, type_as_str: str) -> bool:
         # Original code continues here...
