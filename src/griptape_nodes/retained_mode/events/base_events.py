@@ -207,7 +207,10 @@ class EventResult(EventBase, Generic[P, R], ABC):
 
         # Handle result payload
         if is_dataclass(self.result):
-            result["result"] = asdict(self.result)
+            try:
+                result["result"] = asdict(self.result)
+            except TypeError:
+                result["result"] = self.result.__dict__
         elif hasattr(self.result, "__dict__"):
             result["result"] = self.result.__dict__
         else:
