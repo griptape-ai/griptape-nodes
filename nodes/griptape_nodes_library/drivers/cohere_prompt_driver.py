@@ -50,9 +50,9 @@ class gnCoherePromptDriver(gnBasePromptDriver):
     def validate_node(self) -> list[Exception] | None:
         # Items here are openai api key
         exceptions = []
-        api_key = getenv(SERVICE,API_KEY_ENV_VAR)
+        api_key = getenv(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
-            msg=f"{API_KEY_ENV_VAR} is not defined"
+            msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
         try:

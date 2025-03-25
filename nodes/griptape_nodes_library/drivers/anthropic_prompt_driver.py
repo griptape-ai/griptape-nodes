@@ -66,7 +66,7 @@ class gnAnthropicPromptDriver(gnBasePromptDriver):
         exceptions = []
         api_key = getenv(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
-            msg=f"{API_KEY_ENV_VAR} is not defined"
+            msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
         try:

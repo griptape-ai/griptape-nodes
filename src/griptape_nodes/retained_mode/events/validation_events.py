@@ -12,11 +12,13 @@ class ValidateFlowDependenciesRequest(RequestPayload):
     flow_name: str
     flow_node_name: str | None = None
 
+
 @dataclass
 @PayloadRegistry.register
 class ValidateFlowDependenciesResult_Success(ResultPayload_Success):
     validation_succeeded: bool
     exceptions: list[Exception] | None = None
+
 
 # if it doesn't have a dependency we want
 @dataclass
@@ -31,11 +33,13 @@ class ValidateNodeDependenciesRequest(RequestPayload):
     # Same inputs as StartFlow
     node_name: str
 
+
 @dataclass
 @PayloadRegistry.register
 class ValidateNodeDependenciesResult_Success(ResultPayload_Success):
     validation_succeeded: bool
     exceptions: list[Exception] | None = None
+
 
 # if it doesn't have a dependency we want
 @dataclass

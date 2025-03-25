@@ -1,13 +1,15 @@
+import openai
 from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
 from griptape.engines import CsvExtractionEngine, JsonExtractionEngine
 from griptape.rules import Rule
 from griptape.tools import ExtractionTool
-import openai
 
 from griptape_nodes_library.tools.base_tool import gnBaseTool
+from nodes.griptape_nodes_library.utils.env_utils import getenv
 
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
 SERVICE = "OpenAI"
+
 
 class gnExtractionTool(gnBaseTool):
     def process(self) -> None:
@@ -39,11 +41,11 @@ class gnExtractionTool(gnBaseTool):
 
     def validate_node(self) -> list[Exception] | None:
         exceptions = []
-        if self.parameter_values.get("prompt_driver",None):
+        if self.parameter_values.get("prompt_driver", None):
             return exceptions
-        api_key = self.getenv(SERVICE,API_KEY_ENV_VAR)
+        api_key = getenv(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
-            msg=f"{API_KEY_ENV_VAR} is not defined"
+            msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
         try:

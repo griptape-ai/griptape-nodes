@@ -338,7 +338,7 @@ class ControlFlow:
         # This will prevent the flow from continuing on.
         node.stop_flow = True
 
-    def get_connections_on_node(self, node:NodeBase) -> list[NodeBase] | None:
+    def get_connections_on_node(self, node: NodeBase) -> list[NodeBase] | None:
         # get all of the connection ids
         connected_nodes = []
         # Handle outgoing connections
@@ -364,8 +364,7 @@ class ControlFlow:
         # Return all connected nodes. No duplicates
         return connected_nodes
 
-
-    def get_all_connected_nodes(self, node:NodeBase) -> list[NodeBase]:
+    def get_all_connected_nodes(self, node: NodeBase) -> list[NodeBase]:
         discovered = {}
         processed = {}
         queue = Queue()

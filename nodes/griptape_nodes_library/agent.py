@@ -2,10 +2,10 @@ import openai
 from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
 from griptape.structures import Agent
 from griptape.utils import Stream
+
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterUIOptions
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
 from griptape_nodes_library.utils.error_utils import try_throw_error
 from nodes.griptape_nodes_library.utils.env_utils import getenv
 
@@ -97,9 +97,9 @@ class gnRunAgent(ControlNode):
     def validate_node(self) -> list[Exception] | None:
         # Items here are openai api key
         exceptions = []
-        api_key = getenv(SERVICE,API_KEY_ENV_VAR)
+        api_key = getenv(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
-            msg=f"{API_KEY_ENV_VAR} is not defined"
+            msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
         try:

@@ -1,5 +1,5 @@
-from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 import requests
+from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 
 from griptape_nodes_library.drivers.base_prompt_driver import gnBasePromptDriver
 from nodes.griptape_nodes_library.utils.env_utils import getenv
@@ -67,14 +67,14 @@ class gnGriptapeCloudPromptDriver(gnBasePromptDriver):
     def validate_node(self) -> list[Exception] | None:
         # Items here are openai api key
         exceptions = []
-        api_key = getenv(SERVICE,API_KEY_ENV_VAR)
+        api_key = getenv(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
-            msg=f"{API_KEY_ENV_VAR} is not defined"
+            msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
         run_url = "https://cloud.griptape.ai/api/structures"
         headers = {"Authorization": f"Bearer {api_key}"}
-        response = requests.get(url=run_url, headers=headers,timeout=30)
+        response = requests.get(url=run_url, headers=headers, timeout=30)
         response.raise_for_status()
         if response.status_code != SUCCESS:
             exceptions.append(response.json())

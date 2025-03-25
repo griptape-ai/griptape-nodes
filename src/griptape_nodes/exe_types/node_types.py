@@ -4,6 +4,7 @@ from enum import Enum, auto
 from typing import Any, Self
 
 from griptape.events import BaseEvent
+
 from griptape_nodes.exe_types.core_types import (
     ControlParameter_Input,
     ControlParameter_Output,
