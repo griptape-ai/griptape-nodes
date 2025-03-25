@@ -1,4 +1,5 @@
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
+import requests
 
 from griptape_nodes_library.drivers.base_prompt_driver import gnBasePromptDriver
 from nodes.griptape_nodes_library.utils.env_utils import getenv
@@ -6,6 +7,7 @@ from nodes.griptape_nodes_library.utils.env_utils import getenv
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "GriptapeCloud"
+SUCCESS = 200
 
 
 class gnGriptapeCloudPromptDriver(gnBasePromptDriver):
@@ -70,11 +72,12 @@ class gnGriptapeCloudPromptDriver(gnBasePromptDriver):
             msg=f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
-        try:
-            # TODO(kate): how to check? 
-            driver = GriptapeCloudPromptDriver()
-        except Exception as e:
-            exceptions.append(e)
+        run_url = "https://cloud.griptape.ai/api/structures"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        response = requests.get(url=run_url, headers=headers,timeout=30)
+        response.raise_for_status()
+        if response.status_code != SUCCESS:
+            exceptions.append(response.json())
         return exceptions if exceptions else None
 
 
