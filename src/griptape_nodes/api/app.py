@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextvars
 import json
-import logging
 import os
 import threading
 from time import sleep
@@ -44,7 +43,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-logger = logging.getLogger(__name__)
+logger = GriptapeNodes.get_instance().LogManager().get_logger()
 
 # This is a hack to allow the app to run in a non-websocket mode
 # without updating the event handling code.
@@ -186,7 +185,7 @@ def sse_listener() -> None:
                             logger.info("Engine is ready to receive events")
                         else:
                             process_event(json.loads(data))
-        except httpx.HTTPStatusError:
+        except (httpx.HTTPStatusError, httpx.RemoteProtocolError):
             logger.exception("Error while listening to SSE")
             sleep(5)
 
@@ -196,6 +195,13 @@ def run_sse_mode() -> None:
     sse_thread.start()
 
     setup_event_listeners()
+
+    # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
+    payload = app_events.AppInitializationComplete()
+    app_event = AppEvent(payload=payload)
+    EventBus.publish_event(
+        app_event  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
+    )
 
     check_event_queue()
 
@@ -216,7 +222,9 @@ def run_websocket_mode() -> None:
     # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
     payload = app_events.AppInitializationComplete()
     app_event = AppEvent(payload=payload)
-    EventBus.publish_event(app_event)  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
+    EventBus.publish_event(
+        app_event  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
+    )
 
     socket.start_background_task(run_with_context(check_event_queue))
     socket.run(app, debug=False)
