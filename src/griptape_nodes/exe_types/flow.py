@@ -46,14 +46,12 @@ class ControlFlow:
         return False
 
     def remove_connection(
-        self,
-        source_node: NodeBase,
-        source_parameter: Parameter,
-        target_node: NodeBase,
-        target_parameter: Parameter
+        self, source_node: NodeBase, source_parameter: Parameter, target_node: NodeBase, target_parameter: Parameter
     ) -> bool:
         if source_node.name in self.nodes and target_node.name in self.nodes:
-            return self.connections.remove_connection(source_node.name, source_parameter.name,target_node.name,target_parameter.name)
+            return self.connections.remove_connection(
+                source_node.name, source_parameter.name, target_node.name, target_parameter.name
+            )
         return False
 
     def has_connection(
