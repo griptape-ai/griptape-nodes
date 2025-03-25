@@ -191,6 +191,12 @@ from griptape_nodes.retained_mode.events.script_events import (
     SaveSceneResult_Failure,
     SaveSceneResult_Success,
 )
+from griptape_nodes.retained_mode.events.validation_events import (
+    ValidateFlowDependenciesRequest,
+    ValidateFlowDependenciesResult_Failure,
+    ValidateFlowDependenciesResult_Success,
+    ValidateNodeDependenciesRequest,
+)
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
@@ -516,6 +522,9 @@ class FlowManager:
 
         event_manager.assign_manager_to_request_type(GetFlowStateRequest, self.on_get_flow_state_request)
         event_manager.assign_manager_to_request_type(GetIsFlowRunningRequest, self.on_get_is_flow_running_request)
+        event_manager.assign_manager_to_request_type(
+            ValidateFlowDependenciesRequest, self.on_validate_flow_dependencies_request
+        )
         # events that happen after a flow is ran
         event_manager.add_listener_to_app_event(AppExecutionEvent, self.on_app_execution_event)
 
@@ -1044,10 +1053,8 @@ class FlowManager:
         # A node has been provided to either start or to run up to.
         if request.flow_node_name:
             flow_node_name = request.flow_node_name
-            flow_node = (
-                GriptapeNodes.get_instance()
-                .ObjectManager()
-                .attempt_get_object_by_name_as_type(flow_node_name, NodeBase)
+            flow_node = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(
+                flow_node_name, NodeBase
             )
             if not flow_node:
                 details = f"Provided node with name {flow_node_name} does not exist"
@@ -1199,8 +1206,8 @@ class FlowManager:
         print(details)  # TODO(griptape): Move to Log
         return ContinueExecutionStepResult_Success()
 
-    def on_unresolve_flow_request(self, event: UnresolveFlowRequest) -> ResultPayload:
-        flow_name = event.flow_name
+    def on_unresolve_flow_request(self, request: UnresolveFlowRequest) -> ResultPayload:
+        flow_name = request.flow_name
         if not flow_name:
             details = "Failed to unresolve flow because no flow name was provided"
             print(details)  # TODO(griptape): Move to Log
@@ -1224,6 +1231,37 @@ class FlowManager:
         # Handle all events from the execution engine
         # TODO(kate): Should this somehow be modified to be specific events for the gui?
         GriptapeNodes.handle_request(event.request)
+
+    def on_validate_flow_dependencies_request(self, request: ValidateFlowDependenciesRequest) -> ResultPayload:
+        flow_name = request.flow_name
+        # get the flow name
+        flow = self.get_flow_by_name(flow_name)
+        if not flow:
+            details = f"Failed to validate flow because flow with name {flow_name} does not exist."
+            print(details)  # TODO(griptape): Move to Log
+            return ValidateFlowDependenciesResult_Failure()
+        if request.flow_node_name:
+            flow_node_name = request.flow_node_name
+            flow_node = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(
+                flow_node_name, NodeBase
+            )
+            if not flow_node:
+                details = f"Provided node with name {flow_node_name} does not exist"
+                print(details)
+                return ValidateFlowDependenciesResult_Failure()
+            # Gets all nodes in that connected group to be ran
+            nodes = flow.get_all_connected_nodes(flow_node)
+        else:
+            nodes = flow.nodes.values()
+        # If we're just running the whole flow
+        all_exceptions = []
+        for node in nodes:
+            exceptions = node.validate_node()
+            if exceptions:
+                all_exceptions = all_exceptions + exceptions
+        if all_exceptions:
+            return ValidateFlowDependenciesResult_Success(validation_succeeded=False, exceptions=all_exceptions)
+        return ValidateFlowDependenciesResult_Success(validation_succeeded=True)
 
 
 class NodeManager:
@@ -1257,6 +1295,9 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(SetParameterValueRequest, self.on_set_parameter_value_request)
         event_manager.assign_manager_to_request_type(ResolveNodeRequest, self.on_resolve_from_node_request)
         event_manager.assign_manager_to_request_type(GetAllNodeInfoRequest, self.on_get_all_node_info_request)
+        event_manager.assign_manager_to_request_type(
+            ValidateNodeDependenciesRequest, self.on_validate_node_dependencies_request
+        )
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old node name and its parent.
@@ -2183,6 +2224,19 @@ class NodeManager:
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         print(details)  # TODO(griptape): Move to Log
         return ResolveNodeResult_Success()
+
+    def on_validate_node_dependencies_request(self, request: ValidateNodeDependenciesRequest) -> ResultPayload:
+        node_name = request.node_name
+        obj_manager = GriptapeNodes.get_instance()._object_manager
+        node = obj_manager.attempt_get_object_by_name_as_type(node_name, NodeBase)
+        if not node:
+            details = f'Failed to validate node dependencies. Node with "{node_name}" does not exist.'
+            print(details)
+            return ValidateFlowDependenciesResult_Failure()
+        exceptions = node.validate_node()
+        return ValidateFlowDependenciesResult_Success(
+            validation_succeeded=(exceptions is None), exceptions=exceptions if exceptions else None
+        )
 
 
 class ScriptManager:

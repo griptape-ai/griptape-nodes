@@ -246,6 +246,10 @@ class NodeBase(ABC):
     def process(self) -> None:
         pass
 
+    # if not implemented, it will return no issues.
+    def validate_node(self) -> list[Exception] | None:
+        return None
+
 
 class ControlNode(NodeBase):
     # Control Nodes may have one Control Input Port and at least one Control Output Port
