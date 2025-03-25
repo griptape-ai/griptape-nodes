@@ -1,5 +1,7 @@
 import logging
 
+from rich.logging import RichHandler
+
 
 class LogManager:
     def __init__(self) -> None:
@@ -7,9 +9,7 @@ class LogManager:
         root_logger.setLevel(logging.INFO)
 
         if not root_logger.hasHandlers():
-            console = logging.StreamHandler()
-            console.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
-            root_logger.addHandler(console)
+            root_logger.addHandler(RichHandler(show_time=True, show_path=False))
 
     def get_logger(self) -> logging.Logger:
         logger = logging.getLogger()
