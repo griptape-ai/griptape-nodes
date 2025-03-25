@@ -1255,7 +1255,7 @@ class FlowManager:
         flow = self.get_flow_by_name(flow_name)
         if not flow:
             details = f"Failed to validate flow because flow with name {flow_name} does not exist."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return ValidateFlowDependenciesResult_Failure()
         if request.flow_node_name:
             flow_node_name = request.flow_node_name
@@ -1264,7 +1264,7 @@ class FlowManager:
             )
             if not flow_node:
                 details = f"Provided node with name {flow_node_name} does not exist"
-                print(details)
+                GriptapeNodes.get_logger().error(details)
                 return ValidateFlowDependenciesResult_Failure()
             # Gets all nodes in that connected group to be ran
             nodes = flow.get_all_connected_nodes(flow_node)
@@ -2182,14 +2182,14 @@ class NodeManager:
             node = GriptapeNodes.NodeManager().get_node_by_name(request.node_name)
         except KeyError as err:
             details = f"Attempted to get compatible parameters for node '{request.node_name}', but that node does not exist. Error: {err}."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return GetCompatibleParametersResult_Failure()
 
         # Vet the parameter.
         request_param = node.get_parameter_by_name(request.parameter_name)
         if request_param is None:
             details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}', but that no Parameter with that name could not be found."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return GetCompatibleParametersResult_Failure()
 
         # Figure out the mode we're going for, and if this parameter supports the mode.
@@ -2197,7 +2197,7 @@ class NodeManager:
         # Does this parameter support that?
         if request_mode not in request_param.allowed_modes:
             details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}' as '{request_mode}', but the Parameter didn't support that type of input/output."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return GetCompatibleParametersResult_Failure()
 
         # Get the parent flows.
@@ -2205,7 +2205,7 @@ class NodeManager:
             flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(request.node_name)
         except KeyError as err:
             details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}', but the node's parent flow could not be found: {err}"
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return GetCompatibleParametersResult_Failure()
 
         # Iterate through all nodes in this Flow (yes, this restriction still sucks)
@@ -2215,14 +2215,14 @@ class NodeManager:
         )
         if not list_nodes_in_flow_result.succeeded():
             details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}'. Failed due to inability to list nodes in parent flow '{flow_name}'."
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return GetCompatibleParametersResult_Failure()
 
         try:
             list_nodes_in_flow_success = cast("ListNodesInFlowResult_Success", list_nodes_in_flow_result)
         except Exception as err:
             details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}'. Failed due to {err}"
-            print(details)  # TODO(griptape): Move to Log
+            GriptapeNodes.get_logger().error(details)
             return GetCompatibleParametersResult_Failure()
 
         # Walk through all nodes that are NOT us to find compatible Parameters.
@@ -2234,7 +2234,7 @@ class NodeManager:
                     test_node = GriptapeNodes.NodeManager().get_node_by_name(test_node_name)
                 except KeyError as err:
                     details = f"Attempted to get compatible parameters for node '{request.node_name}', and sought to test against {test_node_name}, but that node does not exist. Error: {err}."
-                    print(details)  # TODO(griptape): Move to Log
+                    GriptapeNodes.get_logger().error(details)
                     return GetCompatibleParametersResult_Failure()
 
                 # Get Parameters from Node
@@ -2270,7 +2270,7 @@ class NodeManager:
                                 valid_parameters_by_node[test_node_name] = compatible_list
 
         details = f"Successfully got compatible parameters for '{request.node_name}.{request.parameter_name}'."
-        print(details)  # TODO(griptape): Move to Log
+        GriptapeNodes.get_logger().info(details)
         return GetCompatibleParametersResult_Success(valid_parameters_by_node=valid_parameters_by_node)
 
     def get_node_by_name(self, name: str) -> NodeBase:
@@ -2349,7 +2349,7 @@ class NodeManager:
         node = obj_manager.attempt_get_object_by_name_as_type(node_name, NodeBase)
         if not node:
             details = f'Failed to validate node dependencies. Node with "{node_name}" does not exist.'
-            print(details)
+            GriptapeNodes.get_logger().error(details)
             return ValidateFlowDependenciesResult_Failure()
         exceptions = node.validate_node()
         return ValidateFlowDependenciesResult_Success(
