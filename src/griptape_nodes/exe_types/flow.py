@@ -380,11 +380,10 @@ class ControlFlow:
                         queue.put(next_node)
         return list(processed.keys())
 
-    def get_node_dependencies(self, node:NodeBase) -> list[NodeBase]:
+    def get_node_dependencies(self, node: NodeBase) -> list[NodeBase]:
         node_list = [node]
         node_queue = Queue()
         node_queue.put(node)
-        input_connections = self.get_connected_input_from_node(node)
         while not node_queue.empty():
             curr_node = node_queue.get()
             input_connections = self.get_connected_input_from_node(curr_node)
