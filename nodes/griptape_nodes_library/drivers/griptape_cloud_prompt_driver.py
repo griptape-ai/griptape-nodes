@@ -1,6 +1,7 @@
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 
 from griptape_nodes_library.drivers.base_prompt_driver import gnBasePromptDriver
+from nodes.griptape_nodes_library.utils.env_utils import getenv
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -60,6 +61,21 @@ class gnGriptapeCloudPromptDriver(gnBasePromptDriver):
 
         # Set the output
         self.parameter_output_values["driver"] = driver
+
+    def validate_node(self) -> list[Exception] | None:
+        # Items here are openai api key
+        exceptions = []
+        api_key = getenv(SERVICE,API_KEY_ENV_VAR)
+        if not api_key:
+            msg=f"{API_KEY_ENV_VAR} is not defined"
+            exceptions.append(KeyError(msg))
+            return exceptions
+        try:
+            # TODO(kate): how to check? 
+            driver = GriptapeCloudPromptDriver()
+        except Exception as e:
+            exceptions.append(e)
+        return exceptions if exceptions else None
 
 
 if __name__ == "__main__":

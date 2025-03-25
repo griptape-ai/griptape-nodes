@@ -1,7 +1,9 @@
 from griptape.drivers.image_generation.openai import OpenAiImageGenerationDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
+import openai
 from griptape_nodes_library.drivers.base_driver import gnBaseDriver
+from nodes.griptape_nodes_library.utils.env_utils import getenv
 
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
 SERVICE = "OpenAI"
@@ -57,6 +59,21 @@ class gnBaseImageDriver(gnBaseDriver):
 
         # Set the output
         self.parameter_output_values["driver"] = driver
+
+    def validate_node(self) -> list[Exception] | None:
+        # Items here are openai api key
+        exceptions = []
+        api_key = getenv(SERVICE,API_KEY_ENV_VAR)
+        if not api_key:
+            msg=f"{API_KEY_ENV_VAR} is not defined"
+            exceptions.append(KeyError(msg))
+            return exceptions
+        try:
+            client = openai.OpenAI(api_key=api_key)
+            client.models.list()
+        except openai.AuthenticationError as e:
+            exceptions.append(e)
+        return exceptions if exceptions else None
 
 
 if __name__ == "__main__":

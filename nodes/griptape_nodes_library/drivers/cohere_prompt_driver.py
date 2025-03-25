@@ -1,6 +1,8 @@
+import cohere
 from griptape.drivers.prompt.cohere import CoherePromptDriver
 
 from griptape_nodes_library.drivers.base_prompt_driver import gnBasePromptDriver
+from nodes.griptape_nodes_library.utils.env_utils import getenv
 
 DEFAULT_MODEL = "command-r-plus"
 API_KEY_ENV_VAR = "COHERE_API_KEY"
@@ -44,6 +46,21 @@ class gnCoherePromptDriver(gnBasePromptDriver):
             kwargs["extra_params"]["k"] = top_k
 
         self.parameter_output_values["driver"] = CoherePromptDriver(**kwargs)
+
+    def validate_node(self) -> list[Exception] | None:
+        # Items here are openai api key
+        exceptions = []
+        api_key = getenv(SERVICE,API_KEY_ENV_VAR)
+        if not api_key:
+            msg=f"{API_KEY_ENV_VAR} is not defined"
+            exceptions.append(KeyError(msg))
+            return exceptions
+        try:
+            co = cohere.Client(api_key)
+            co.list_custom_models()
+        except cohere.errors.UnauthorizedError as e:
+            exceptions.append(e)
+        return exceptions if exceptions else None
 
 
 if __name__ == "__main__":
