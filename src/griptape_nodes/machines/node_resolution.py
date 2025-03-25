@@ -121,7 +121,7 @@ class EvaluateParameterState(State):
 
 class ExecuteNodeState(State):
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901, PLR0912
+    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901, PLR0912, PLR0915
         current_node = context.focus_stack[-1]
         connections = context.flow.connections
         # Get the parameters that have input values
@@ -186,8 +186,14 @@ class ExecuteNodeState(State):
                     data_type = type(parameter_value).__name__
 
                 # Run through all converters
-                for converter in parameter.converters:
-                    parameter_value = converter(parameter_value)
+                try:
+                    for converter in parameter.converters:
+                        parameter_value = converter(parameter_value)
+                except Exception as e:
+                    msg = f"Canceling flow run. Node '{current_node.name}' failed to convert {parameter.name}: {e}"
+                    current_node.state = NodeResolutionState.UNRESOLVED
+                    context.flow.cancel_flow_run()
+                    raise RuntimeError(msg) from e
 
                 # Run through all validators
                 try:
