@@ -18,7 +18,7 @@ from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import NodeBase, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidationError, TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry
-from griptape_nodes.node_library.script_registry import LibraryAndLibVersion, ScriptRegistry
+from griptape_nodes.node_library.script_registry import LibraryNameAndVersion, ScriptRegistry
 from griptape_nodes.retained_mode.events.app_events import (
     AppExecutionEvent,
     AppInitializationComplete,
@@ -2586,7 +2586,7 @@ class ScriptManager:
                         details = f"Attempted to save scene '{relative_file_path}', but failed to get library version from metadata for library '{library_used}': {err}."
                         GriptapeNodes.get_logger().error(details)
                         return SaveSceneResult_Failure()
-                    library_and_version = LibraryAndLibVersion(
+                    library_and_version = LibraryNameAndVersion(
                         library_name=library_used, library_version=library_version
                     )
                     node_libraries_used.add(library_and_version)
