@@ -157,7 +157,7 @@ def sse_listener() -> None:
     while True:
         try:
             endpoint = urljoin(
-                os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/editors/request"
+                os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/engines/stream"
             )
 
             def auth(request: httpx.Request) -> httpx.Request:
