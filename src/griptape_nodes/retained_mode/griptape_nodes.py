@@ -2060,7 +2060,13 @@ class NodeManager:
             return SetParameterValueResult_Failure()
 
         # Values are actually stored on the NODE.
-        modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
+        try:
+            modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
+        except Exception as err:
+            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Exception: {err}'
+            GriptapeNodes.get_logger().error(details)
+            return SetParameterValueResult_Failure()
+
         if modified_parameters:
             for modified_parameter_name in modified_parameters:
                 modified_request = GetParameterDetailsRequest(modified_parameter_name, node.name)
