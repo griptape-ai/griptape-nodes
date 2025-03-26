@@ -1158,20 +1158,20 @@ class FlowManager:
             details = "Could not step flow. No flow name was provided."
             GriptapeNodes.get_logger().error(details)
 
-            return SingleNodeStepResult_Failure()
+            return SingleNodeStepResult_Failure(validation_exceptions=[])
         flow = self.get_flow_by_name(flow_name)
         if not flow:
             details = f"Could not step flow. No flow with name {flow_name} exists."
             GriptapeNodes.get_logger().error(details)
 
-            return SingleNodeStepResult_Failure()
+            return SingleNodeStepResult_Failure(validation_exceptions=[])
         try:
             flow.single_node_step()
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
             GriptapeNodes.get_logger().error(details)
 
-            return SingleNodeStepResult_Failure()
+            return SingleNodeStepResult_Failure(validation_exceptions=[])
 
         # All completed happily
         details = f"Successfully stepped flow with name {flow_name}"
@@ -1198,7 +1198,7 @@ class FlowManager:
             details = f"Could not step flow. Exception: {e}"
             GriptapeNodes.get_logger().error(details)
 
-            return SingleNodeStepResult_Failure()
+            return SingleNodeStepResult_Failure(validation_exceptions=[])
         details = f"Successfully granularly stepped flow with name {flow_name}"
         GriptapeNodes.get_logger().info(details)
 
