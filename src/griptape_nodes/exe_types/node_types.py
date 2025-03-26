@@ -110,7 +110,7 @@ class NodeBase(ABC):
         """Callback after a Connection OUT of this Node was REMOVED."""
         return
 
-    def before_value_set(self, param_name: str, value: Any) -> set[str] | None:  # noqa: ARG002
+    def before_value_set(self, parameter: Parameter, value: Any) -> set[str] | None:  # noqa: ARG002
         """Callback when a Parameter's value is ABOUT to be set.
 
         Custom nodes may elect to override the default behavior.
@@ -120,7 +120,7 @@ class NodeBase(ABC):
         ones have changed to cascade unresolved state.
 
         Args:
-            param_name: the name of the Parameter on this node that is about to be changed
+            parameter: the Parameter on this node that is about to be changed
             value: the value intended to be set (this has already been converted and validated)
 
         Returns:
@@ -131,7 +131,7 @@ class NodeBase(ABC):
         # Default behavior is to do nothing, and indicate no other modified Parameters.
         return None
 
-    def after_value_set(self, param_name: str, value: Any) -> set[str] | None:  # noqa: ARG002
+    def after_value_set(self, parameter: Parameter, value: Any) -> set[str] | None:  # noqa: ARG002
         """Callback AFTER a Parameter's value was set.
 
         Custom nodes may elect to override the default behavior.
@@ -141,7 +141,7 @@ class NodeBase(ABC):
         ones have changed to cascade unresolved state.
 
         Args:
-            param_name: the name of the Parameter on this node that was just changed
+            parameter: the Parameter on this node that was just changed
             value: the value that was set (this was already converted and validated)
 
         Returns:
@@ -241,26 +241,28 @@ class NodeBase(ABC):
             raise KeyError(err)
         # Perform any conversions to the value based on how the Parameter is configured.
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
-        # cause a calling object to alter its assumptions/behavior.
+        # cause a calling object to alter its assumptions/behavior. The value requested
+        # to be assigned will NOT be set.
         final_value = value
         for converter in parameter.converters:
             final_value = converter(final_value)
 
         # Validate the values next, based on how the Parameter is configured.
         # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
-        # cause a calling object to alter its assumptions/behavior.
+        # cause a calling object to alter its assumptions/behavior. The value requested
+        # to be assigned will NOT be set.
         for validator in parameter.validators:
             validator(parameter, final_value)
 
         # Allow custom node logic to prepare before the value is actually set.
         # Record any parameters modified for cascading.
-        modified_parameters_before = self.before_value_set(param_name=param_name, value=final_value)
+        modified_parameters_before = self.before_value_set(parameter=parameter, value=final_value)
 
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
 
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
-        modified_parameters_after = self.after_value_set(param_name=param_name, value=final_value)
+        modified_parameters_after = self.after_value_set(parameter=parameter, value=final_value)
 
         # Unify all modified parameters into one set. Except the None ones.
         if modified_parameters_before is None and modified_parameters_after is None:
