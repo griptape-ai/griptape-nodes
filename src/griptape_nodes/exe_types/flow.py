@@ -224,7 +224,7 @@ class ControlFlow:
                     connections.append((connection.source_node, connection.source_parameter))
         return connections
 
-    def get_connected_output_from_node(self, node: NodeBase) -> list[tuple[NodeBase, Parameter]] | None:
+    def get_connected_output_from_node(self, node: NodeBase) -> list[tuple[NodeBase, Parameter]]:
         connections = []
         if node.name in self.connections.outgoing_index:
             connection_ids = [
@@ -233,9 +233,9 @@ class ControlFlow:
             for connection_id in connection_ids:
                 connection = self.connections.connections[connection_id]
                 connections.append((connection.target_node, connection.target_parameter))
-        return connections if connections else None
+        return connections
 
-    def get_connected_input_from_node(self, node: NodeBase) -> list[tuple[NodeBase, Parameter]] | None:
+    def get_connected_input_from_node(self, node: NodeBase) -> list[tuple[NodeBase, Parameter]]:
         connections = []
         if node.name in self.connections.incoming_index:
             connection_ids = [
@@ -244,7 +244,7 @@ class ControlFlow:
             for connection_id in connection_ids:
                 connection = self.connections.connections[connection_id]
                 connections.append((connection.source_node, connection.source_parameter))
-        return connections if connections else None
+        return connections
 
     def get_start_node_queue(self) -> Queue | None:  # noqa: C901, PLR0912
         # check all nodes in flow

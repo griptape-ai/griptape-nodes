@@ -17,7 +17,7 @@ class ValidateFlowDependenciesRequest(RequestPayload):
 @PayloadRegistry.register
 class ValidateFlowDependenciesResult_Success(ResultPayload_Success):
     validation_succeeded: bool
-    exceptions: list[Exception] | None = None
+    exceptions: list[Exception]
 
 
 # if it doesn't have a dependency we want
@@ -38,7 +38,7 @@ class ValidateNodeDependenciesRequest(RequestPayload):
 @PayloadRegistry.register
 class ValidateNodeDependenciesResult_Success(ResultPayload_Success):
     validation_succeeded: bool
-    exceptions: list[Exception] | None = None
+    exceptions: list[Exception]
 
 
 # if it doesn't have a dependency we want
