@@ -120,8 +120,9 @@ class EvaluateParameterState(State):
 
 
 class ExecuteNodeState(State):
+    # TODO(kate): Can we refactor this method to make it a lot cleaner? might involve changing how parameter values are retrieved/stored.
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901, PLR0912
+    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901, PLR0912, PLR0915
         current_node = context.focus_stack[-1]
         connections = context.flow.connections
         # Get the parameters that have input values
@@ -159,7 +160,13 @@ class ExecuteNodeState(State):
                             value = source_node.parameter_values[source_port.name]
                         # Sets the value in the context!
                         if value:
-                            modified_parameters = current_node.set_parameter_value(parameter.name, value)
+                            try:
+                                modified_parameters = current_node.set_parameter_value(parameter.name, value)
+                            except Exception as e:
+                                msg = f"Canceling flow run. Node '{current_node.name}' failed to set value for {parameter.name}: {e}"
+                                current_node.state = NodeResolutionState.UNRESOLVED
+                                context.flow.cancel_flow_run()
+                                raise RuntimeError(msg) from e
                             if modified_parameters:
                                 for modified_parameter_name in modified_parameters:
                                     modified_request = GetParameterDetailsRequest(
@@ -176,7 +183,15 @@ class ExecuteNodeState(State):
             if use_set_value and parameter.name not in current_node.parameter_values:
                 # If a parameter value is not already set
                 value = parameter.default_value
-                modified_parameters = current_node.set_parameter_value(parameter.name, value)
+                try:
+                    modified_parameters = current_node.set_parameter_value(parameter.name, value)
+                except Exception as e:
+                    msg = (
+                        f"Canceling flow run. Node '{current_node.name}' failed to set value for {parameter.name}: {e}"
+                    )
+                    current_node.state = NodeResolutionState.UNRESOLVED
+                    context.flow.cancel_flow_run()
+                    raise RuntimeError(msg) from e
                 if modified_parameters:
                     for modified_parameter_name in modified_parameters:
                         # TODO(kate): Move to a different type of event
