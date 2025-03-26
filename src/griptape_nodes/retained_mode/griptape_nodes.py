@@ -876,14 +876,14 @@ class FlowManager:
             return CreateConnectionResult_Failure()
 
         # Let the source make any internal handling decisions now that the Connection has been made.
-        source_node.handle_outgoing_connection(
+        source_node.after_outgoing_connection(
             source_parameter=source_param,
             target_node=target_node,
             target_parameter=target_param,
         )
 
         # And target.
-        target_node.handle_incoming_connection(
+        target_node.after_incoming_connection(
             source_node=source_node,
             source_parameter=source_param,
             target_parameter=target_param,
@@ -1017,14 +1017,14 @@ class FlowManager:
             return result
 
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
-        source_node.handle_outgoing_connection_removed(
+        source_node.after_outgoing_connection_removed(
             source_parameter=source_param,
             target_node=target_node,
             target_parameter=target_param,
         )
 
         # And target.
-        target_node.handle_incoming_connection_removed(
+        target_node.after_incoming_connection_removed(
             source_node=source_node,
             source_parameter=source_param,
             target_parameter=target_param,
