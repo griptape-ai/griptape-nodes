@@ -3,7 +3,7 @@ from griptape.drivers.image_generation.openai import OpenAiImageGenerationDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes_library.drivers.base_driver import gnBaseDriver
-from nodes.griptape_nodes_library.utils.env_utils import getenv
+from griptape_nodes_library.utils.env_utils import getenv
 
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
 SERVICE = "OpenAI"
