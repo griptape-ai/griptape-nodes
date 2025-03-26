@@ -7,12 +7,32 @@ from typing import TYPE_CHECKING, Generic, TypeVar
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+
+class ParameterTypeBuiltin(Enum):
+    STR = "str"
+    BOOL = "bool"
+    INT = "int"
+    FLOAT = "float"
+    ANY = "any"
+    NONE = "none"
+
+
 class ParameterType:
-    
+    builtin_aliases = {
+        "str": ParameterTypeBuiltin.STR,
+        "string": ParameterTypeBuiltin.STR,
+        "bool": ParameterTypeBuiltin.BOOL,
+        "boolean": ParameterTypeBuiltin.BOOL,
+        "int": ParameterTypeBuiltin.INT,
+        "float": ParameterTypeBuiltin.FLOAT,
+        "any": ParameterTypeBuiltin.ANY,
+        "none": ParameterTypeBuiltin.NONE,
+    }
 
-
-
-
+    @classmethod
+    def attempt_get_builtin(cls, type_name: str) -> ParameterTypeBuiltin | None:
+        ret_val = ParameterType.builtin_aliases.get(type_name.lower())
+        return ret_val
 
 
 T = TypeVar("T")  # Generic type for component values
