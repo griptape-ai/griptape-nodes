@@ -153,7 +153,7 @@ class ExecuteNodeState(State):
                     if source_node and source_port:
                         value = None
                         if source_port.name in source_node.parameter_output_values:
-                        # This parameter output values is a dict for str and then parameters
+                            # This parameter output values is a dict for str and then parameters
                             value = source_node.parameter_output_values[source_port.name]
                         elif source_port.name in source_node.parameter_values:
                             value = source_node.parameter_values[source_port.name]
@@ -189,17 +189,6 @@ class ExecuteNodeState(State):
                     data_type = parameter_value["type"]
                 else:
                     data_type = type(parameter_value).__name__
-
-                try:
-                    current_node.set_parameter_value(parameter.name, parameter_value)
-                except Exception as e:
-                    msg = (
-                        f"Canceling flow run. Node '{current_node.name}' failed to set value for {parameter.name}: {e}"
-                    )
-                    current_node.state = NodeResolutionState.UNRESOLVED
-                    context.flow.cancel_flow_run()
-                    raise RuntimeError(msg) from e
-
                 EventBus.publish_event(
                     ExecutionGriptapeNodeEvent(
                         wrapped_event=ExecutionEvent(
