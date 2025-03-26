@@ -1103,6 +1103,11 @@ class FlowManager:
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             GriptapeNodes.get_logger().error(details)
+
+            # Cancel the flow run.
+            cancel_request = CancelFlowRequest(flow_name=flow_name)
+            GriptapeNodes.handle_request(cancel_request)
+
             return StartFlowResult_Failure(validation_exceptions=[])
 
         details = f"Successfully kicked off flow with name {flow_name}"
