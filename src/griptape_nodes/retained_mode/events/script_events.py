@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from griptape_nodes.node_library.script_registry import LibraryNameAndVersion
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayload_Failure,
@@ -68,7 +69,7 @@ class RegisterScriptRequest(RequestPayload):
     script_name: str
     file_path: str
     engine_version_created_with: str
-    node_libraries_referenced: list[str]
+    node_libraries_referenced: list[LibraryNameAndVersion]
     description: str | None = None
     image: str | None = None
 

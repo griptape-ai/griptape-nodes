@@ -1,9 +1,11 @@
 {
   "name": "Griptape Nodes Library",
+  "library_schema_version": "0.1.0",
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Default nodes for Griptape Nodes.",
-    "version": "1.0.0",
+    "library_version": "0.1.0",
+    "engine_version": "0.1.0",
     "tags": [
       "Griptape",
       "AI"
