@@ -121,7 +121,7 @@ class EvaluateParameterState(State):
 
 class ExecuteNodeState(State):
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901, PLR0912, PLR0915
+    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901, PLR0912
         current_node = context.focus_stack[-1]
         connections = context.flow.connections
         # Get the parameters that have input values
@@ -185,27 +185,16 @@ class ExecuteNodeState(State):
                 else:
                     data_type = type(parameter_value).__name__
 
-                # Run through all converters
                 try:
-                    for converter in parameter.converters:
-                        parameter_value = converter(parameter_value)
+                    current_node.set_parameter_value(parameter.name, parameter_value)
                 except Exception as e:
-                    msg = f"Canceling flow run. Node '{current_node.name}' failed to convert {parameter.name}: {e}"
+                    msg = (
+                        f"Canceling flow run. Node '{current_node.name}' failed to set value for {parameter.name}: {e}"
+                    )
                     current_node.state = NodeResolutionState.UNRESOLVED
                     context.flow.cancel_flow_run()
                     raise RuntimeError(msg) from e
 
-                # Run through all validators
-                try:
-                    for validator in parameter.validators:
-                        validator(parameter, parameter_value)
-                except Exception as e:
-                    msg = f"Canceling flow run. Node '{current_node.name}' failed to validate {parameter.name}: {e}"
-                    current_node.state = NodeResolutionState.UNRESOLVED
-                    context.flow.cancel_flow_run()
-                    raise RuntimeError(msg) from e
-
-                current_node.set_parameter_value(parameter.name, parameter_value)
                 EventBus.publish_event(
                     ExecutionGriptapeNodeEvent(
                         wrapped_event=ExecutionEvent(

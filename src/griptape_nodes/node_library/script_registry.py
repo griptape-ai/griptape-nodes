@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import NamedTuple
 
 from griptape.mixins.singleton_mixin import SingletonMixin
+
+
+class LibraryNameAndVersion(NamedTuple):
+    library_name: str
+    library_version: str
 
 
 class ScriptRegistry(SingletonMixin):
@@ -19,7 +25,7 @@ class ScriptRegistry(SingletonMixin):
         name: str,
         relative_file_path: str,
         engine_version_created_with: str,
-        node_libraries_referenced: list[str],
+        node_libraries_referenced: list[LibraryNameAndVersion],
         description: str | None = None,
         image: str | None = None,
     ) -> Script:
@@ -77,7 +83,7 @@ class Script:
     name: str
     relative_file_path: str
     engine_version_created_with: str
-    node_libraries_referenced: list[str]
+    node_libraries_referenced: list[LibraryNameAndVersion]
     description: str | None
     image: str | None  # TODO(griptape): Make work with real images
 
@@ -86,7 +92,7 @@ class Script:
         name: str,
         relative_file_path: str,
         engine_version_created_with: str,
-        node_libraries_referenced: list[str],
+        node_libraries_referenced: list[LibraryNameAndVersion],
         registry_key: ScriptRegistry._RegistryKey,
         description: str | None = None,
         image: str | None = None,

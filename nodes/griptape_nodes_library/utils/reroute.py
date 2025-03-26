@@ -98,7 +98,7 @@ class gnReroute(DataNode):
         intersection = gnReroute.intersection_of_allowed_types(*all_allowed_types)
         parameter.allowed_types = intersection
 
-    def handle_incoming_connection(
+    def after_incoming_connection(
         self,
         source_node: NodeBase,  # noqa: ARG002
         source_parameter: Parameter,
@@ -108,7 +108,7 @@ class gnReroute(DataNode):
         self.incoming_connection_params.append(source_parameter)
         self.update_allowed_types_based_on_connection_status(parameter=target_parameter)
 
-    def handle_outgoing_connection(
+    def after_outgoing_connection(
         self,
         source_parameter: Parameter,
         target_node: NodeBase,  # noqa: ARG002
@@ -118,7 +118,7 @@ class gnReroute(DataNode):
         self.outgoing_connection_params.append(target_parameter)
         self.update_allowed_types_based_on_connection_status(parameter=source_parameter)
 
-    def handle_incoming_connection_removed(
+    def after_incoming_connection_removed(
         self,
         source_node: NodeBase,  # noqa: ARG002
         source_parameter: Parameter,
@@ -128,7 +128,7 @@ class gnReroute(DataNode):
         self.incoming_connection_params.remove(source_parameter)
         self.update_allowed_types_based_on_connection_status(parameter=target_parameter)
 
-    def handle_outgoing_connection_removed(
+    def after_outgoing_connection_removed(
         self,
         source_parameter: Parameter,
         target_node: NodeBase,  # noqa: ARG002
