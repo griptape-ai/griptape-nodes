@@ -6,6 +6,7 @@ import os
 import threading
 from time import sleep
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urljoin
 
 import httpx
 from flask import Flask
@@ -18,7 +19,6 @@ from griptape.events import (
     FinishStructureRunEvent,
     TextChunkEvent,
 )
-from urllib.parse import urljoin
 
 from griptape_nodes.api.queue_manager import event_queue
 from griptape_nodes.api.routes.api import api_blueprint, process_event

@@ -1,8 +1,8 @@
 import json
 import os
+from urllib.parse import urljoin
 
 import httpx
-from urllib.parse import urljoin
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
