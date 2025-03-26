@@ -77,7 +77,7 @@ class NodeBase(ABC):
     ) -> bool:
         return True
 
-    def handle_incoming_connection(
+    def after_incoming_connection(
         self,
         source_node: Self,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
@@ -86,7 +86,7 @@ class NodeBase(ABC):
         """Callback after a Connection has been established TO this Node."""
         return
 
-    def handle_outgoing_connection(
+    def after_outgoing_connection(
         self,
         source_parameter: Parameter,  # noqa: ARG002
         target_node: Self,  # noqa: ARG002
@@ -95,7 +95,7 @@ class NodeBase(ABC):
         """Callback after a Connection has been established OUT of this Node."""
         return
 
-    def handle_incoming_connection_removed(
+    def after_incoming_connection_removed(
         self,
         source_node: Self,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
@@ -104,7 +104,7 @@ class NodeBase(ABC):
         """Callback after a Connection TO this Node was REMOVED."""
         return
 
-    def handle_outgoing_connection_removed(
+    def after_outgoing_connection_removed(
         self,
         source_parameter: Parameter,  # noqa: ARG002
         target_node: Self,  # noqa: ARG002
