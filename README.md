@@ -4,16 +4,6 @@
 
 Review the [CONTRIBUTING.md](CONTRIBUTING.md) file for how to get started with the project.
 
-# API Documentation
-
-Base URL: `http://127.0.0.1:5000/api`
-
-# API Documentation
-
-## Endpoint
-
-**POST** `/request`
-
 ### Request Structure
 
 All requests follow this general structure:
@@ -460,4 +450,10 @@ The program prints out appropriate error messages.
   "request_id": 3,
   "status": 200
 }
+```
+
+## Running with the Local API
+
+```env
+GRIPTAPE_NODES_API_BASE_URL=http://localhost:8001
 ```
