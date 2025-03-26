@@ -110,8 +110,8 @@ class NodeBase(ABC):
         """Callback after a Connection OUT of this Node was REMOVED."""
         return
 
-    def before_value_set(self, param_name: str, value: Any) -> list[str] | None:
-        """Callback when a Parameter's value is about to be set.
+    def before_value_set(self, param_name: str, value: Any) -> set[str] | None:  # noqa: ARG002
+        """Callback when a Parameter's value is ABOUT to be set.
 
         Custom nodes may elect to override the default behavior.
 
@@ -124,12 +124,32 @@ class NodeBase(ABC):
             value: the value intended to be set (this has already been converted and validated)
 
         Returns:
-            A list of parameter names within this node that were modified as a result
+            A set of parameter names within this node that were modified as a result
             of this assignment. The Parameter this was called on does NOT need to be
             part of the return.
         """
-        # Default behavior is to set the value as-is, and indicate no other modified Parameters.
-        self.parameter_values[param_name] = value
+        # Default behavior is to do nothing, and indicate no other modified Parameters.
+        return None
+
+    def after_value_set(self, param_name: str, value: Any) -> set[str] | None:  # noqa: ARG002
+        """Callback AFTER a Parameter's value was set.
+
+        Custom nodes may elect to override the default behavior.
+
+        Changing a Parameter may trigger other Parameters within the Node
+        to be changed. If other Parameters are changed, the engine needs a list of which
+        ones have changed to cascade unresolved state.
+
+        Args:
+            param_name: the name of the Parameter on this node that was just changed
+            value: the value that was set (this was already converted and validated)
+
+        Returns:
+            A set of parameter names within this node that were modified as a result
+            of this assignment. The Parameter this was called on does NOT need to be
+            part of the return.
+        """
+        # Default behavior is to do nothing, and indicate no other modified Parameters.
         return None
 
     def on_griptape_event(self, event: BaseEvent) -> None:  # noqa: ARG002
@@ -191,7 +211,7 @@ class NodeBase(ABC):
                 return parameter
         return None
 
-    def set_parameter_value(self, param_name: str, value: Any) -> list[str] | None:
+    def set_parameter_value(self, param_name: str, value: Any) -> set[str] | None:
         """Attempt to set a Parameter's value.
 
         The Node may choose to store a different value (or type) than what was passed in.
@@ -208,7 +228,7 @@ class NodeBase(ABC):
             value: the value intended to be set
 
         Returns:
-            A list of parameter names within this node that were modified as a result
+            A set of parameter names within this node that were modified as a result
             of this assignment. The Parameter this was called on does NOT need to be
             part of the return.
         """
@@ -227,10 +247,26 @@ class NodeBase(ABC):
         for validator in parameter.validators:
             validator(parameter, final_value)
 
-        # Let the node handle assignment logic. Default behavior is just to assign the value in-hand
-        # to the Parameter, which will return an empty list of modified parameters.
-        modified_parameters = self.before_value_set(param_name=param_name, value=final_value)
-        return modified_parameters
+        # Allow custom node logic to prepare before the value is actually set.
+        # Record any parameters modified for cascading.
+        modified_parameters_before = self.before_value_set(param_name=param_name, value=final_value)
+
+        # ACTUALLY SET THE NEW VALUE
+        self.parameter_values[param_name] = final_value
+
+        # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
+        modified_parameters_after = self.after_value_set(param_name=param_name, value=final_value)
+
+        # Unify all modified parameters into one set. Except the None ones.
+        if modified_parameters_before is None and modified_parameters_after is None:
+            return None
+        if modified_parameters_before is None:
+            return modified_parameters_after
+        if modified_parameters_after is None:
+            return modified_parameters_before
+
+        # Both non-empty? Return a new set that's the union.
+        return modified_parameters_before.union(modified_parameters_after)
 
     def get_parameter_value(self, param_name: str) -> Any:
         return self.parameter_values[param_name]
