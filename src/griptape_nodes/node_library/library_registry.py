@@ -213,14 +213,6 @@ class Library:
         metadata["library"] = self.name
         metadata["node_type"] = node_type
         node = node_class(name=name, metadata=metadata)
-        for parameter in node.parameters:
-            for type_str in parameter.allowed_types:
-                # This will throw an error if there is an unallowed type
-                try:
-                    TypeValidator.convert_to_type(type_str)
-                except TypeValidationError as e:
-                    msg = f"Failed to create node of type {node_type}: {e}"
-                    raise TypeValidationError(msg) from e
         return node
 
     def get_registered_nodes(self) -> list[str]:

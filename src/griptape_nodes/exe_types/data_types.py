@@ -7,6 +7,14 @@ from typing import TYPE_CHECKING, Generic, TypeVar
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+class ParameterType:
+    
+
+
+
+
+
+
 T = TypeVar("T")  # Generic type for component values
 
 

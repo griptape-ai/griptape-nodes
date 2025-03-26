@@ -124,7 +124,8 @@ class ParameterUIOptions:
 @dataclass
 class Parameter:
     name: str  # must be unique from other parameters in Node
-    allowed_types: list[str]
+    # allowed_types: list[str]
+    allowed_tags: list[str]
     tooltip: str  # Default tooltip
     default_value: Any = None
     tooltip_as_input: str | None = None
@@ -147,10 +148,7 @@ class Parameter:
     validators: list[Callable[[Parameter, Any], None]] = field(default_factory=list)
 
     def is_type_allowed(self, type_as_str: str) -> bool:
-        # Original code continues here...
-        # Can't just do a string compare as we'll whiff on things like "list" not matching "List"
-        test_type = TypeValidator.convert_to_type(type_as_str)
-        if test_type is Any:
+        if type_as_str == "Any":
             return True
         for allowed_type_str in self.allowed_types:
             allowed_type = TypeValidator.convert_to_type(allowed_type_str)
