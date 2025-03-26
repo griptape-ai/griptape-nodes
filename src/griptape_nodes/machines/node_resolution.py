@@ -141,7 +141,7 @@ class ExecuteNodeState(State):
             # This creates a new reference specifically for current_node
             current_node.parameter_output_values.pop(parameter_name)
         for parameter in current_node.parameters:
-            if ParameterControlType.__name__ in parameter.allowed_types:
+            if ParameterControlType.__name__ == parameter.output_type:
                 continue
             use_set_value = False
             if ParameterMode.INPUT in parameter.allowed_modes:

@@ -17,7 +17,8 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 class AddParameterToNodeRequest(RequestPayload):
     parameter_name: str
     node_name: str
-    allowed_types: list[str]
+    input_types: list[str]
+    output_type: str
     default_value: Any | None
     tooltip: str
     tooltip_as_input: str | None = None
@@ -105,7 +106,8 @@ class GetParameterDetailsRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetParameterDetailsResult_Success(ResultPayload_Success):
-    allowed_types: list[str]
+    input_types: list[str]
+    output_type: str | None
     default_value: Any | None
     tooltip: str
     tooltip_as_input: str | None
@@ -129,7 +131,8 @@ class GetParameterDetailsResult_Failure(ResultPayload_Failure):
 class AlterParameterDetailsRequest(RequestPayload):
     parameter_name: str
     node_name: str
-    allowed_types: list[str] | None = None
+    input_types: list[str] | None = None
+    output_type: str | None = None
     default_value: Any | None = None
     tooltip: str | None = None
     tooltip_as_input: str | None = None
@@ -179,7 +182,8 @@ class GetParameterValueRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetParameterValueResult_Success(ResultPayload_Success):
-    data_type: str
+    input_types: list[str]
+    output_type: str
     value: Any
 
 

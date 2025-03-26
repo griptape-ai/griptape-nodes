@@ -142,7 +142,7 @@ class PayloadConverter:
         params = [
             f'node_name="{payload.node_name}"',
             f'parameter_name="{payload.parameter_name}"',
-            f"allowed_types={payload.allowed_types}",  # No quotes as it's likely a list/object
+            f"input_types={payload.input_types}",  # No quotes as it's likely a list/object
             "edit=False",
         ]
 
@@ -177,7 +177,7 @@ class PayloadConverter:
         params = [
             f'node_name="{payload.node_name}"',
             f'parameter_name="{payload.parameter_name}"',
-            f"allowed_types={payload.allowed_types}",  # No quotes as it's likely a list/object
+            f"input_types={payload.input_types}",  # No quotes as it's likely a list/object
             "edit=True",
         ]
 

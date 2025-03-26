@@ -266,7 +266,7 @@ class ControlFlow:
             # if it's a control node, there could be a flow.
             control_param = False
             for parameter in node.parameters:
-                if ParameterControlType.__name__ in parameter.allowed_types:
+                if ParameterControlType.__name__ == parameter.output_type:
                     control_param = True
                     break
             if not control_param:
@@ -280,7 +280,7 @@ class ControlFlow:
                 has_control_connection = False
                 for param_name in cn_mgr.incoming_index[node.name]:
                     param = node.get_parameter_by_name(param_name)
-                    if param and ParameterControlType.__name__ in param.allowed_types:
+                    if param and ParameterControlType.__name__ == param.output_type:
                         # there is a control connection coming in
                         has_control_connection = True
                         break
@@ -325,7 +325,7 @@ class ControlFlow:
             parameters = self.connections.incoming_index[node.name]
             for parameter_name in parameters:
                 parameter = node.get_parameter_by_name(parameter_name)
-                if parameter and ParameterControlType.__name__ in parameter.allowed_types:
+                if parameter and ParameterControlType.__name__ == parameter.output_type:
                     # this is a control connection
                     connection_ids = self.connections.incoming_index[node.name][parameter_name]
                     for connection_id in connection_ids:

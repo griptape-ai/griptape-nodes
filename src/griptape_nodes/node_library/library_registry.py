@@ -5,7 +5,6 @@ from typing import Any, NamedTuple, Self, cast
 from griptape.mixins.singleton_mixin import SingletonMixin
 
 from griptape_nodes.exe_types.node_types import NodeBase
-from griptape_nodes.exe_types.type_validator import TypeValidationError, TypeValidator
 
 
 class LibraryNodeIdentifier(NamedTuple):

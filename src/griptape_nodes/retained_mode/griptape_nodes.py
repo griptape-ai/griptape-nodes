@@ -16,7 +16,7 @@ from xdg_base_dirs import xdg_data_home
 from griptape_nodes.exe_types.core_types import Parameter, ParameterControlType, ParameterMode
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import NodeBase, NodeResolutionState
-from griptape_nodes.exe_types.type_validator import TypeValidationError, TypeValidator
+from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.node_library.script_registry import LibraryNameAndVersion, ScriptRegistry
 from griptape_nodes.retained_mode.events.app_events import (
@@ -827,16 +827,9 @@ class FlowManager:
             result = CreateConnectionResult_Failure()
             return result
 
-        # Validate that at least ONE data type from the source is allowed by the target.
-        any_types_matched = False
-        source_types_allowed = source_param.allowed_types
-        for source_type_allowed in source_types_allowed:
-            if target_param.is_type_allowed(source_type_allowed):
-                any_types_matched = True
-                break
-
-        if not any_types_matched:
-            details = f'Connection failed on type mismatch "{request.source_node_name}.{request.source_parameter_name}" types({source_param.allowed_types}) to "{request.target_node_name}.{request.target_parameter_name}" types({target_param.allowed_types}) '
+        # Validate that the data type from the source is allowed by the target.
+        if not target_param.is_incoming_type_allowed(source_param.output_type):
+            details = f'Connection failed on type mismatch "{request.source_node_name}.{request.source_parameter_name}" type({source_param.output_type}) to "{request.target_node_name}.{request.target_parameter_name}" types({target_param.input_types}) '
             GriptapeNodes.get_logger().error(details)
 
             result = CreateConnectionResult_Failure()
@@ -1658,7 +1651,7 @@ class NodeManager:
 
         # Let's see if the Parameter is properly formed.
         # If a Parameter is intended for Control, it needs to have that be the exclusive type.
-        if ParameterControlType.__name__ in request.allowed_types and len(request.allowed_types) != 1:
+        if ParameterControlType.__name__ in request.input_types and len(request.input_types) != 1:
             details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{request.node_name}'. Failed because it had 'ParameterControlType' with other types allowed. If a Parameter is intended for control, it must only accept that type."
             GriptapeNodes.get_logger().error(details)
 
@@ -1676,7 +1669,8 @@ class NodeManager:
         # Let's roll, I guess.
         new_param = Parameter(
             name=request.parameter_name,
-            allowed_types=request.allowed_types,
+            input_types=request.input_types,
+            output_type=request.output_type,
             default_value=request.default_value,
             user_defined=True,
             tooltip=request.tooltip,
@@ -1812,7 +1806,8 @@ class NodeManager:
         GriptapeNodes.get_logger().info(details)
 
         result = GetParameterDetailsResult_Success(
-            allowed_types=parameter.allowed_types,
+            input_types=parameter.input_types,
+            output_type=parameter.output_type,
             default_value=parameter.default_value,
             tooltip=parameter.tooltip,
             tooltip_as_input=parameter.tooltip_as_input,
@@ -1826,7 +1821,7 @@ class NodeManager:
         )
         return result
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0912
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -1858,8 +1853,10 @@ class NodeManager:
 
         # TODO(griptape): Verify that we can get through all the OTHER tricky stuff before we proceed to actually making changes.
         # Now change all the values on the Parameter.
-        if request.allowed_types is not None:
-            parameter.allowed_types = request.allowed_types
+        if request.input_types is not None:
+            parameter.input_types = request.input_types
+        if request.output_type is not None:
+            parameter.output_type = request.output_type
         if request.default_value is not None:
             # TODO(griptape): vet that default value matches types allowed
             node.parameter_values[request.parameter_name] = request.default_value
@@ -1938,9 +1935,8 @@ class NodeManager:
         GriptapeNodes.get_logger().info(details)
 
         result = GetParameterValueResult_Success(
-            input_types=TODO,
-            output_type=TODO,
-            data_type=parameter.allowed_types,
+            input_types=parameter.input_types,
+            output_type=parameter.output_type,
             value=TypeValidator.safe_serialize(data_value),
         )
         return result
@@ -1982,7 +1978,7 @@ class NodeManager:
         if not parameter.is_value_allowed(object_created) and not (
             isinstance(object_created, dict) and "type" in object_created
         ):
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed.  type "{object_created.__class__.__name__}" not in allowed types:{parameter.allowed_types}'
+            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed.  type "{object_created.__class__.__name__}" not in allowed types:{parameter.input_types}'
             GriptapeNodes.get_logger().error(details)
 
             result = SetParameterValueResult_Failure()
@@ -2237,14 +2233,15 @@ class NodeManager:
 
                     if fits_mode:
                         # Compare types for compatibility
-                        any_types_matched = False
-                        request_types_allowed = request_param.allowed_types
-                        for request_type_allowed in request_types_allowed:
-                            if test_param.is_type_allowed(request_type_allowed):
-                                any_types_matched = True
-                                break
+                        types_compatible = False
+                        if request_mode == ParameterMode.INPUT:
+                            # See if THEIR inputs would accept MY output
+                            types_compatible = test_param.is_incoming_type_allowed(request_param.output_type)
+                        else:
+                            # See if MY inputs would accept THEIR output
+                            types_compatible = request_param.is_incoming_type_allowed(test_param.output_type)
 
-                        if any_types_matched:
+                        if types_compatible:
                             param_and_mode = ParameterAndMode(
                                 parameter_name=test_param.name, is_output=not request.is_output
                             )

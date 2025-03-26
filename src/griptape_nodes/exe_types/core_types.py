@@ -9,8 +9,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from griptape_nodes.exe_types.type_validator import TypeValidator
-
 
 # Types of Modes provided for Parameters
 class ParameterMode(Enum):
@@ -153,11 +151,10 @@ class ParameterUIOptions:
 @dataclass
 class Parameter:
     name: str  # must be unique from other parameters in Node
-    # allowed_types: list[str]
     # This is the list of types that the Parameter can accept, either externally or when internally treated as a property.
     # Today, we can accept multiple types for input, but only a single output type.
     input_types: list[str]
-    output_type: str
+    output_type: str | None
     tooltip: str  # Default tooltip
     default_value: Any = None
     tooltip_as_input: str | None = None
@@ -179,44 +176,20 @@ class Parameter:
     converters: list[Callable[[Any], Any]] = field(default_factory=list)
     validators: list[Callable[[Parameter, Any], None]] = field(default_factory=list)
 
-    def is_incoming_type_allowed(self, incoming_type_as_str: str) -> bool:
+    def is_incoming_type_allowed(self, incoming_type_as_str: str | None) -> bool:
+        if incoming_type_as_str is None:
+            return False
+
         # Is THEIR output compatible with ONE OF OUR inputs?
         incoming_type_as_str_lower = incoming_type_as_str.lower()
         for input_type in self.input_types:
             input_type_lower = input_type.lower()
             if (input_type_lower == ParameterTypeBuiltin.ANY) or (incoming_type_as_str_lower == input_type.lower()):
                 return True
-
-        return False
-
-    def is_type_allowed(self, type_as_str: str) -> bool:
-        type_as_str_lower = type_as_str.lower()
-        if type_as_str_lower == ParameterTypeBuiltin.ANY:
-            return True
-        for allowed_type_str in self.allowed_types:
-            allowed_type_str_lower = allowed_type_str.lower()
-            if allowed_type_str_lower == ParameterTypeBuiltin.ANY:
-                return True
-            if allowed_type_str_lower == type_as_str_lower:
-                return True
-        return False
-
-    def is_value_allowed(self, value: Any) -> bool:
-        for allowed_type_str in self.allowed_types:
-            if TypeValidator.is_instance(value, allowed_type_str):
-                return True
-            try:
-                print(f"Value not allowed {self.name}: {value=}, {allowed_type_str=}")
-            except Exception:
-                print(f"Value not allowed {self.name}: [error], {allowed_type_str=}")
         return False
 
     def set_default_value(self, value: Any) -> None:
-        if self.is_value_allowed(value):
-            self.default_value = value
-        else:
-            errormsg = "Type does not match allowed value types"
-            raise TypeError(errormsg)
+        self.default_value = value
 
     def get_mode(self) -> set:
         return self.allowed_modes
@@ -260,7 +233,8 @@ class Parameter:
 # Convenience classes to reduce boilerplate in node definitions
 @dataclass(kw_only=True)
 class ControlParameter(Parameter, ABC):
-    allowed_types: list[str] = field(default_factory=lambda: [ParameterControlType.__name__])
+    input_types: list[str] = field(default_factory=lambda: [ParameterControlType.__name__])
+    output_type: str | None = ParameterControlType.__name__
     default_value: Any = None
     settable: bool = False
 

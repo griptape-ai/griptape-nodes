@@ -186,7 +186,7 @@ class NodeBase(ABC):
         for parameter in self.parameters:
             if (
                 ParameterMode.INPUT in parameter.get_mode()
-                and ParameterControlType.__name__ not in parameter.allowed_types
+                and ParameterControlType.__name__ not in parameter.input_types
             ):
                 if not self.current_spotlight_parameter or prev_param is None:
                     # make a copy of the parameter and assign it to current spotlight
@@ -281,7 +281,7 @@ class NodeBase(ABC):
 
     def get_next_control_output(self) -> Parameter | None:
         for param in self.parameters:
-            if ParameterControlType.__name__ in param.allowed_types and ParameterMode.OUTPUT in param.allowed_modes:
+            if ParameterControlType.__name__ == param.output_type and ParameterMode.OUTPUT in param.allowed_modes:
                 return param
         return None
 
@@ -290,10 +290,10 @@ class NodeBase(ABC):
 
         Args:
             param_name: The name of the parameter to check
-            fallback: The fallback value to use if the parameter value is invalid or empty
+            fallback: The fallback value to use if the parameter value is empty
 
         Returns:
-            The valid parameter value or fallback
+            The parameter value or fallback
 
         Raises:
             ValueError: If neither the parameter value nor fallback is valid
@@ -306,28 +306,17 @@ class NodeBase(ABC):
 
         value = self.parameter_values.get(param_name, None)
 
-        # Check if value is empty or not allowed
-        if value is None:
-            is_empty = True
-            is_valid = False
-        else:
-            is_empty = value is None or (isinstance(value, str) and not value.strip())
-            is_valid = param.is_value_allowed(value)
-
-        # Return value if it's valid and not empty
-        if is_valid and not is_empty:
+        # Check if value is empty
+        if value is not None:
             return value
 
         # Try fallback if value is invalid or empty
         if fallback is None:
             return None
-        if param.is_value_allowed(fallback):
-            # Store the fallback value in parameter_values for future use
-            self.parameter_values[param_name] = fallback
-            return fallback
 
-        # No valid options available
-        return None
+        # Store the fallback value in parameter_values for future use
+        self.parameter_values[param_name] = fallback
+        return fallback
 
     # Abstract method to process the node. Must be defined by the type
     # Must save the values of the output parameters in NodeContext.
@@ -352,7 +341,7 @@ class ControlNode(NodeBase):
 
     def get_next_control_output(self) -> Parameter | None:
         for param in self.parameters:
-            if ParameterControlType.__name__ in param.allowed_types and ParameterMode.OUTPUT in param.allowed_modes:
+            if ParameterControlType.__name__ == param.output_type and ParameterMode.OUTPUT in param.allowed_modes:
                 return param
         return None
 

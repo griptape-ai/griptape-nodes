@@ -25,14 +25,16 @@ class gnRunAgent(ControlNode):
         self.add_parameter(
             Parameter(
                 name="agent",
-                allowed_types=["Agent"],
+                input_types=["Agent"],
+                output_type="Agent",
                 tooltip="",
             )
         )
         self.add_parameter(
             Parameter(
                 name="prompt_driver",
-                allowed_types=["BasePromptDriver"],
+                input_types=["BasePromptDriver"],
+                output_type="BasePromptDriver",
                 default_value=None,
                 tooltip="",
             )
@@ -40,17 +42,21 @@ class gnRunAgent(ControlNode):
         self.add_parameter(
             Parameter(
                 name="prompt_model",
-                allowed_types=["str"],
+                input_types=["str"],
+                output_type="str",
                 default_value=DEFAULT_MODEL,
                 tooltip="",
             )
         )
 
-        self.add_parameter(Parameter(name="tool", allowed_types=["BaseTool"], default_value=None, tooltip=""))
+        self.add_parameter(
+            Parameter(name="tool", input_types=["BaseTool"], output_type="BaseTool", default_value=None, tooltip="")
+        )
         self.add_parameter(
             Parameter(
                 name="tool_list",
-                allowed_types=["list[BaseTool]"],
+                input_types=["list[BaseTool]"],
+                output_type="list[BaseTool]",
                 default_value=None,
                 tooltip="",
             )
@@ -58,7 +64,8 @@ class gnRunAgent(ControlNode):
         self.add_parameter(
             Parameter(
                 name="ruleset",
-                allowed_types=["Ruleset"],
+                input_types=["Ruleset"],
+                output_type="Ruleset",
                 tooltip="",
             )
         )
@@ -66,7 +73,8 @@ class gnRunAgent(ControlNode):
         self.add_parameter(
             Parameter(
                 name="prompt",
-                allowed_types=["str"],
+                input_types=["str"],
+                output_type="str",
                 default_value="",
                 tooltip="",
                 ui_options=ParameterUIOptions(
@@ -80,7 +88,8 @@ class gnRunAgent(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output",
-                allowed_types=["str"],
+                input_types=["str"],
+                output_type="str",
                 default_value="",
                 tooltip="What the agent said.",
                 allowed_modes={ParameterMode.OUTPUT},
