@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 from enum import Enum, auto
 from typing import Any, Self
 
@@ -34,7 +33,6 @@ class NodeBase(ABC):
     parameter_values: dict[str, Any]
     parameter_output_values: dict[str, Any]
     stop_flow: bool = False
-    parameter_to_callback: dict[str, Callable[[Any], list[str]]]
 
     def __hash__(self) -> int:
         return hash(self.name)
@@ -54,27 +52,26 @@ class NodeBase(ABC):
             self.metadata = metadata
         self.parameter_values = {}
         self.parameter_output_values = {}
-        self.parameter_name_to_callback = {}
 
     def make_node_unresolved(self) -> None:
         self.state = NodeResolutionState.UNRESOLVED
 
-    # Callback to confirm allowing a Connection coming TO this Node.
     def allow_incoming_connection(
         self,
         source_node: Self,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> bool:
+        """Callback to confirm allowing a Connection coming TO this Node."""
         return True
 
-    # Callback to confirm allowing a Connection going OUT of this Node.
     def allow_outgoing_connection(
         self,
         source_parameter: Parameter,  # noqa: ARG002
         target_node: Self,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> bool:
+        """Callback to confirm allowing a Connection going OUT of this Node."""
         return True
 
     def after_incoming_connection(
@@ -113,6 +110,28 @@ class NodeBase(ABC):
         """Callback after a Connection OUT of this Node was REMOVED."""
         return
 
+    def before_value_set(self, param_name: str, value: Any) -> list[str] | None:
+        """Callback when a Parameter's value is about to be set.
+
+        Custom nodes may elect to override the default behavior.
+
+        Changing a Parameter may trigger other Parameters within the Node
+        to be changed. If other Parameters are changed, the engine needs a list of which
+        ones have changed to cascade unresolved state.
+
+        Args:
+            param_name: the name of the Parameter on this node that is about to be changed
+            value: the value intended to be set (this has already been converted and validated)
+
+        Returns:
+            A list of parameter names within this node that were modified as a result
+            of this assignment. The Parameter this was called on does NOT need to be
+            part of the return.
+        """
+        # Default behavior is to set the value as-is, and indicate no other modified Parameters.
+        self.parameter_values[param_name] = value
+        return None
+
     def on_griptape_event(self, event: BaseEvent) -> None:  # noqa: ARG002
         """Callback for when a Griptape Event comes destined for this Node."""
         return
@@ -124,18 +143,14 @@ class NodeBase(ABC):
         return False
 
     # TODO(griptape): Do i need to flag control/ not control parameters?
-    def add_parameter(self, param: Parameter, callback: Callable[[Any], list[str]] | None = None) -> None:
+    def add_parameter(self, param: Parameter) -> None:
         if self.does_name_exist(param.name):
             msg = "Cannot have duplicate names on parameters."
             raise ValueError(msg)
-        if callback:
-            self.parameter_name_to_callback[param.name] = callback
         self.parameters.append(param)
 
     def remove_parameter(self, param: Parameter) -> None:
         self.parameters.remove(param)
-        if param.name in self.parameter_name_to_callback:
-            del self.parameter_name_to_callback[param.name]
 
     def get_current_parameter(self) -> Parameter | None:
         return self.current_spotlight_parameter
@@ -177,15 +192,45 @@ class NodeBase(ABC):
         return None
 
     def set_parameter_value(self, param_name: str, value: Any) -> list[str] | None:
-        # Actually sets the parameter value
-        self.parameter_values[param_name] = value
-        if param_name in self.parameter_name_to_callback:
-            callback = self.parameter_name_to_callback[param_name]
-            # call the callback
-            # TODO(kate): Change this to be more robust if a callback doesn't return what we want
-            modified_parameters = callback(value)
-            return modified_parameters
-        return None
+        """Attempt to set a Parameter's value.
+
+        The Node may choose to store a different value (or type) than what was passed in.
+        Conversion callbacks on the Parameter may raise Exceptions, which will cancel
+        the value assignment. Similarly, validator callbacks may reject the value and
+        raise an Exception.
+
+        Changing a Parameter may trigger other Parameters within the Node
+        to be changed. If other Parameters are changed, the engine needs a list of which
+        ones have changed to cascade unresolved state.
+
+        Args:
+            param_name: the name of the Parameter on this node that is about to be changed
+            value: the value intended to be set
+
+        Returns:
+            A list of parameter names within this node that were modified as a result
+            of this assignment. The Parameter this was called on does NOT need to be
+            part of the return.
+        """
+        parameter = self.get_parameter_by_name(param_name)
+        if parameter is None:
+            err = f"Attempted to set value for Parameter '{param_name}' but no such Parameter could be found."
+            raise KeyError(err)
+        # Perform any conversions to the value based on how the Parameter is configured.
+        # THESE MAY RAISE EXCEPTIONS
+        final_value = value
+        for converter in parameter.converters:
+            final_value = converter(final_value)
+
+        # Validate the values next, based on how the Parameter is configured.
+        # THESE MAY RAISE EXCEPTIONS.
+        for validator in parameter.validators:
+            validator(parameter, final_value)
+
+        # Let the node handle assignment logic. Default behavior is just to assign the value in-hand
+        # to the Parameter, which will return an empty list of modified parameters.
+        modified_parameters = self.before_value_set(param_name=param_name, value=final_value)
+        return modified_parameters
 
     def get_parameter_value(self, param_name: str) -> Any:
         return self.parameter_values[param_name]
