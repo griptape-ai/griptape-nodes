@@ -1,4 +1,6 @@
 import json
+import os
+from urllib.parse import urljoin
 
 import httpx
 
@@ -16,7 +18,7 @@ class NodesApiFakeSocket:
         )
         body = {"type": args[0], "payload": json.loads(args[1])}
         response = httpx.post(
-            "https://api.nodes.griptape.ai/api/editors/request",
+            urljoin(os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/editors/request"),
             json=body,
             headers={"Authorization": f"Bearer {api_token}"},
             timeout=120,
