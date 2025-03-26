@@ -24,6 +24,35 @@ class ParameterControlType:
     pass
 
 
+class ParameterTypeBuiltin(Enum):
+    STR = "str"
+    BOOL = "bool"
+    INT = "int"
+    FLOAT = "float"
+    ANY = "any"
+    NONE = "none"
+    CONTROL_TYPE = "parametercontroltype"
+
+
+class ParameterType:
+    builtin_aliases = {
+        "str": ParameterTypeBuiltin.STR,
+        "string": ParameterTypeBuiltin.STR,
+        "bool": ParameterTypeBuiltin.BOOL,
+        "boolean": ParameterTypeBuiltin.BOOL,
+        "int": ParameterTypeBuiltin.INT,
+        "float": ParameterTypeBuiltin.FLOAT,
+        "any": ParameterTypeBuiltin.ANY,
+        "none": ParameterTypeBuiltin.NONE,
+        "parametercontroltype": ParameterTypeBuiltin.CONTROL_TYPE,
+    }
+
+    @classmethod
+    def attempt_get_builtin(cls, type_name: str) -> ParameterTypeBuiltin | None:
+        ret_val = ParameterType.builtin_aliases.get(type_name.lower())
+        return ret_val
+
+
 # Keys and values for the UI_Options schema.
 @dataclass
 class ParameterUIOptions:
@@ -125,7 +154,10 @@ class ParameterUIOptions:
 class Parameter:
     name: str  # must be unique from other parameters in Node
     # allowed_types: list[str]
-    allowed_tags: list[str]
+    # This is the list of types that the Parameter can accept, either externally or when internally treated as a property.
+    # Today, we can accept multiple types for input, but only a single output type.
+    input_types: list[str]
+    output_type: str
     tooltip: str  # Default tooltip
     default_value: Any = None
     tooltip_as_input: str | None = None
@@ -147,14 +179,25 @@ class Parameter:
     converters: list[Callable[[Any], Any]] = field(default_factory=list)
     validators: list[Callable[[Parameter, Any], None]] = field(default_factory=list)
 
+    def is_incoming_type_allowed(self, incoming_type_as_str: str) -> bool:
+        # Is THEIR output compatible with ONE OF OUR inputs?
+        incoming_type_as_str_lower = incoming_type_as_str.lower()
+        for input_type in self.input_types:
+            input_type_lower = input_type.lower()
+            if (input_type_lower == ParameterTypeBuiltin.ANY) or (incoming_type_as_str_lower == input_type.lower()):
+                return True
+
+        return False
+
     def is_type_allowed(self, type_as_str: str) -> bool:
-        if type_as_str == "Any":
+        type_as_str_lower = type_as_str.lower()
+        if type_as_str_lower == ParameterTypeBuiltin.ANY:
             return True
         for allowed_type_str in self.allowed_types:
-            allowed_type = TypeValidator.convert_to_type(allowed_type_str)
-            if allowed_type is Any:
+            allowed_type_str_lower = allowed_type_str.lower()
+            if allowed_type_str_lower == ParameterTypeBuiltin.ANY:
                 return True
-            if allowed_type == test_type:
+            if allowed_type_str_lower == type_as_str_lower:
                 return True
         return False
 

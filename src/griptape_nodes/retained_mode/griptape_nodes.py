@@ -1664,17 +1664,6 @@ class NodeManager:
 
             result = AddParameterToNodeResult_Failure()
             return result
-        # Make sure list of types are correct.
-        invalid_type_list = [
-            allowed_type for allowed_type in request.allowed_types if not TypeValidator.validate_type_spec(allowed_type)
-        ]
-
-        if len(invalid_type_list) > 0:
-            details = f"Attempted to add Parameter '{request.parameter_name}' but the following allowed types were not valid: {invalid_type_list!s}."
-            GriptapeNodes.get_logger().error(details)
-
-            result = AddParameterToNodeResult_Failure()
-            return result
 
         allowed_modes = set()
         if request.mode_allowed_input:
@@ -1870,20 +1859,6 @@ class NodeManager:
         # TODO(griptape): Verify that we can get through all the OTHER tricky stuff before we proceed to actually making changes.
         # Now change all the values on the Parameter.
         if request.allowed_types is not None:
-            # Convert from string to list of types.
-            invalid_type_list = [
-                allowed_type
-                for allowed_type in request.allowed_types
-                if not TypeValidator.validate_type_spec(allowed_type)
-            ]
-
-            if len(invalid_type_list) > 0:
-                details = f"Attempted to alter Parameter '{request.parameter_name}' but the following allowed types were not valid: {invalid_type_list!s}."
-                GriptapeNodes.get_logger().error(details)
-
-                result = AddParameterToNodeResult_Failure()
-                return result
-            # TODO(griptape): reconcile current value with types allowed
             parameter.allowed_types = request.allowed_types
         if request.default_value is not None:
             # TODO(griptape): vet that default value matches types allowed
@@ -1926,7 +1901,7 @@ class NodeManager:
         return result
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
-    def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:  # noqa: C901
+    def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -1958,37 +1933,14 @@ class NodeManager:
         else:
             data_value = node.parameter_values[param_name]
 
-        # Definitely a better way to do this.
-        data_value_type = type(data_value)
-        data_value_type_str = None
-        for allowed_type_str in parameter.allowed_types:
-            try:
-                allowed_type = TypeValidator.convert_to_type(allowed_type_str)
-                if allowed_type == data_value_type:
-                    data_value_type_str = allowed_type_str
-                    break
-            except TypeValidationError as e:
-                details = f"Failed to Get Parameter Value. {e}"
-                GriptapeNodes.get_logger().error(details)
-                return GetParameterValueResult_Failure()
-
-        # TODO(griptape): Handle for dict type
-
-        if not data_value_type_str and isinstance(data_value, dict) and "type" in data_value:
-            data_value_type_str = data_value["type"]
-            if "image" in data_value_type_str:
-                data_value_type_str = "ImageArtifact"
-
-        if data_value_type_str is None:
-            data_value_type_str = str(data_value_type)
-            details = f"WARNING: Could not find data value type '{data_value_type_str}' in the list of data types allowed by Parameter '{param_name}'; letting Python do the conversion."
-            GriptapeNodes.get_logger().warning(details)
         # Cool.
         details = f"{request.node_name}.{request.parameter_name} = {data_value}"
         GriptapeNodes.get_logger().info(details)
 
         result = GetParameterValueResult_Success(
-            data_type=data_value_type_str,
+            input_types=TODO,
+            output_type=TODO,
+            data_type=parameter.allowed_types,
             value=TypeValidator.safe_serialize(data_value),
         )
         return result
