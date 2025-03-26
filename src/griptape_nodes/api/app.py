@@ -18,6 +18,7 @@ from griptape.events import (
     FinishStructureRunEvent,
     TextChunkEvent,
 )
+from urllib.parse import urljoin
 
 from griptape_nodes.api.queue_manager import event_queue
 from griptape_nodes.api.routes.api import api_blueprint, process_event
@@ -155,8 +156,9 @@ def setup_event_listeners() -> None:
 def sse_listener() -> None:
     while True:
         try:
-            # TODO(griptape): make environment driven
-            endpoint = "https://api.nodes.griptape.ai/api/engines/stream"
+            endpoint = urljoin(
+                os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/editors/request"
+            )
 
             def auth(request: httpx.Request) -> httpx.Request:
                 service = "Nodes"
@@ -185,7 +187,7 @@ def sse_listener() -> None:
                             logger.info("Engine is ready to receive events")
                         else:
                             process_event(json.loads(data))
-        except (httpx.HTTPStatusError, httpx.RemoteProtocolError):
+        except Exception:
             logger.exception("Error while listening to SSE")
             sleep(5)
 
