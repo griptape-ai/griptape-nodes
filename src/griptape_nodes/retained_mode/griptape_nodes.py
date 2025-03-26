@@ -199,6 +199,8 @@ from griptape_nodes.retained_mode.events.validation_events import (
     ValidateFlowDependenciesResult_Failure,
     ValidateFlowDependenciesResult_Success,
     ValidateNodeDependenciesRequest,
+    ValidateNodeDependenciesResult_Failure,
+    ValidateNodeDependenciesResult_Success,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -1036,7 +1038,7 @@ class FlowManager:
         result = DeleteConnectionResult_Success()
         return result
 
-    def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:
+    def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: PLR0911 C901
         # which flow
         flow_name = request.flow_name
         debug_mode = request.debug_mode
@@ -1044,14 +1046,14 @@ class FlowManager:
             details = "Must provide flow name to start a flow."
             GriptapeNodes.get_logger().error(details)
 
-            return StartFlowResult_Failure()
+            return StartFlowResult_Failure(validation_exceptions=[])
         # get the flow by ID
         try:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Cannot start flow. Error: {err}"
             GriptapeNodes.get_logger().error(details)
-            return StartFlowResult_Failure()
+            return StartFlowResult_Failure(validation_exceptions=[])
         # A node has been provided to either start or to run up to.
         if request.flow_node_name:
             flow_node_name = request.flow_node_name
@@ -1061,14 +1063,14 @@ class FlowManager:
             if not flow_node:
                 details = f"Provided node with name {flow_node_name} does not exist"
                 GriptapeNodes.get_logger().error(details)
-                return StartFlowResult_Failure()
+                return StartFlowResult_Failure(validation_exceptions=[])
             # lets get the first control node in the flow!
             start_node = flow.get_start_node_from_node(flow_node)
             # if the start is not the node provided, set a breakpoint at the stop (we're running up until there)
             if not start_node:
                 details = f"Start node for node with name {flow_node_name} does not exist"
                 GriptapeNodes.get_logger().error(details)
-                return StartFlowResult_Failure()
+                return StartFlowResult_Failure(validation_exceptions=[])
             if start_node != flow_node:
                 flow_node.stop_flow = True
         else:
@@ -1076,12 +1078,32 @@ class FlowManager:
             # If there is a request, reinitialize the queue
             flow.get_start_node_queue()  # initialize the start flow queue!
             start_node = None
+        # Run Validation before starting a flow
+        result = self.on_validate_flow_dependencies_request(
+            ValidateFlowDependenciesRequest(flow_name=flow_name, flow_node_name=start_node.name if start_node else None)
+        )
+        try:
+            if not result.succeeded():
+                details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed"
+                GriptapeNodes.get_logger().error(details)
+                return StartFlowResult_Failure(validation_exceptions=[])
+            result = cast("ValidateFlowDependenciesResult_Success", result)
+
+            if not result.validation_succeeded:
+                details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed with {len(result.exceptions) if result.exceptions else 0} exceptions."
+                GriptapeNodes.get_logger().error(details)
+                return StartFlowResult_Failure(validation_exceptions=result.exceptions)
+        except Exception:
+            details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed"
+            GriptapeNodes.get_logger().error(details)
+            return StartFlowResult_Failure(validation_exceptions=[])
+        # By now, it has been validated with no exceptions.
         try:
             flow.start_flow(start_node, debug_mode)
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             GriptapeNodes.get_logger().error(details)
-            return StartFlowResult_Failure()
+            return StartFlowResult_Failure(validation_exceptions=[])
 
         details = f"Successfully kicked off flow with name {flow_name}"
         GriptapeNodes.get_logger().info(details)
@@ -1142,21 +1164,21 @@ class FlowManager:
             details = "Could not step flow. No flow name was provided."
             GriptapeNodes.get_logger().error(details)
 
-            return SingleNodeStepResult_Failure()
+            return SingleNodeStepResult_Failure(validation_exceptions=[])
         try:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Could not step flow. No flow with name {flow_name} exists. Error: {err}"
             GriptapeNodes.get_logger().error(details)
 
-            return SingleNodeStepResult_Failure()
+            return SingleNodeStepResult_Failure(validation_exceptions=[])
         try:
             flow.single_node_step()
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
             GriptapeNodes.get_logger().error(details)
 
-            return SingleNodeStepResult_Failure()
+            return SingleNodeStepResult_Failure(validation_exceptions=[])
 
         # All completed happily
         details = f"Successfully stepped flow with name {flow_name}"
@@ -1184,7 +1206,7 @@ class FlowManager:
             details = f"Could not step flow. Exception: {e}"
             GriptapeNodes.get_logger().error(details)
 
-            return SingleNodeStepResult_Failure()
+            return SingleNodeStepResult_Failure(validation_exceptions=[])
         details = f"Successfully granularly stepped flow with name {flow_name}"
         GriptapeNodes.get_logger().info(details)
 
@@ -1269,9 +1291,9 @@ class FlowManager:
             exceptions = node.validate_node()
             if exceptions:
                 all_exceptions = all_exceptions + exceptions
-        if all_exceptions:
-            return ValidateFlowDependenciesResult_Success(validation_succeeded=False, exceptions=all_exceptions)
-        return ValidateFlowDependenciesResult_Success(validation_succeeded=True)
+        return ValidateFlowDependenciesResult_Success(
+            validation_succeeded=len(all_exceptions) == 0, exceptions=all_exceptions
+        )
 
 
 class NodeManager:
@@ -2304,7 +2326,7 @@ class NodeManager:
             raise KeyError(msg)
         return self._name_to_parent_flow_name[node_name]
 
-    def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: PLR0911 TODO(griptape): resolve
+    def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: PLR0911 C901 TODO(griptape): resolve
         node_name = request.node_name
         debug_mode = request.debug_mode
 
@@ -2312,14 +2334,14 @@ class NodeManager:
             details = "No Node name was provided. Failed to resolve node."
             GriptapeNodes.get_logger().error(details)
 
-            return ResolveNodeResult_Failure()
+            return ResolveNodeResult_Failure(validation_exceptions=[])
         try:
             node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
         except KeyError:
             details = f'Resolve failure. "{node_name}" does not exist.'
             GriptapeNodes.get_logger().error(details)
 
-            return ResolveNodeResult_Failure()
+            return ResolveNodeResult_Failure(validation_exceptions=[])
         # try to get the flow parent of this node
         try:
             flow_name = self._name_to_parent_flow_name[node_name]
@@ -2327,7 +2349,7 @@ class NodeManager:
             details = f'Failed to fetch parent flow for "{node_name}"'
             GriptapeNodes.get_logger().error(details)
 
-            return ResolveNodeResult_Failure()
+            return ResolveNodeResult_Failure(validation_exceptions=[])
         try:
             obj_mgr = GriptapeNodes()._object_manager
             flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
@@ -2335,25 +2357,42 @@ class NodeManager:
             details = f'Failed to fetch parent flow for "{node_name}"'
             GriptapeNodes.get_logger().error(details)
 
-            return ResolveNodeResult_Failure()
+            return ResolveNodeResult_Failure(validation_exceptions=[])
 
         if flow is None:
             details = f'Failed to fetch parent flow for "{node_name}"'
             GriptapeNodes.get_logger().error(details)
-            return ResolveNodeResult_Failure()
+            return ResolveNodeResult_Failure(validation_exceptions=[])
         try:
             flow.connections.unresolve_future_nodes(node)
         except Exception:
             details = f'Failed to mark future nodes dirty. Unable to kick off flow from "{node_name}"'
             GriptapeNodes.get_logger().error(details)
-            return ResolveNodeResult_Failure()
+            return ResolveNodeResult_Failure(validation_exceptions=[])
+        # Validate here.
+        result = self.on_validate_node_dependencies_request(ValidateNodeDependenciesRequest(node_name=node_name))
+        try:
+            if not result.succeeded():
+                details = f"Failed to resolve node '{node_name}'. Flow Validation Failed"
+                GriptapeNodes.get_logger().error(details)
+                return StartFlowResult_Failure(validation_exceptions=[])
+            result = cast("ValidateNodeDependenciesResult_Success", result)
+
+            if not result.validation_succeeded:
+                details = f"Failed to resolve node '{node_name}'. Flow Validation Failed with {len(result.exceptions) if result.exceptions else 0} exceptions."
+                GriptapeNodes.get_logger().error(details)
+                return StartFlowResult_Failure(validation_exceptions=result.exceptions)
+        except Exception as e:
+            details = f"Failed to resolve node '{node_name}'. Flow Validation Failed. Error: {e}"
+            GriptapeNodes.get_logger().error(details)
+            return StartFlowResult_Failure(validation_exceptions=[])
         try:
             flow.resolve_singular_node(node, debug_mode)
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             GriptapeNodes.get_logger().error(details)
 
-            return ResolveNodeResult_Failure()
+            return ResolveNodeResult_Failure(validation_exceptions=[])
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         GriptapeNodes.get_logger().info(details)
         return ResolveNodeResult_Success()
@@ -2365,10 +2404,27 @@ class NodeManager:
         if not node:
             details = f'Failed to validate node dependencies. Node with "{node_name}" does not exist.'
             GriptapeNodes.get_logger().error(details)
-            return ValidateFlowDependenciesResult_Failure()
-        exceptions = node.validate_node()
-        return ValidateFlowDependenciesResult_Success(
-            validation_succeeded=(exceptions is None), exceptions=exceptions if exceptions else None
+            return ValidateNodeDependenciesResult_Failure()
+        try:
+            flow_name = self.get_node_parent_flow_by_name(node_name)
+        except Exception as e:
+            details = f'Failed to validate node dependencies. Node with "{node_name}" has no parent flow. Error: {e}'
+            GriptapeNodes.get_logger().error(details)
+            return ValidateNodeDependenciesResult_Failure()
+        flow = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+        if not flow:
+            details = f'Failed to validate node dependencies. Flow with "{flow_name}" does not exist.'
+            GriptapeNodes.get_logger().error(details)
+            return ValidateNodeDependenciesResult_Failure()
+        # Gets all dependent nodes
+        nodes = flow.get_node_dependencies(node)
+        all_exceptions = []
+        for dependent_node in nodes:
+            exceptions = dependent_node.validate_node()
+            if exceptions:
+                all_exceptions = all_exceptions + exceptions
+        return ValidateNodeDependenciesResult_Success(
+            validation_succeeded=(len(all_exceptions) == 0), exceptions=all_exceptions
         )
 
 

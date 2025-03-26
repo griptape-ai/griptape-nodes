@@ -379,3 +379,28 @@ class ControlFlow:
                         discovered[next_node] = True
                         queue.put(next_node)
         return list(processed.keys())
+
+    def get_node_dependencies(self, node: NodeBase) -> list[NodeBase]:
+        """Get all upstream nodes that the given node depends on.
+
+        This method performs a breadth-first search starting from the given node and working backwards through its non-control input connections to identify all nodes that must run before this node can be resolved.
+        It ignores control connections, since we're only focusing on node dependencies.
+
+        Args:
+            node (NodeBase): The node to find dependencies for
+
+        Returns:
+            list[NodeBase]: A list of all nodes that the given node depends on, including the node itself (as the first element)
+        """
+        node_list = [node]
+        node_queue = Queue()
+        node_queue.put(node)
+        while not node_queue.empty():
+            curr_node = node_queue.get()
+            input_connections = self.get_connected_input_from_node(curr_node)
+            if input_connections:
+                for input_node, input_parameter in input_connections:
+                    if not isinstance(input_parameter, ParameterControlType) and input_node not in node_list:
+                        node_list.append(input_node)
+                        node_queue.put(input_node)
+        return node_list
