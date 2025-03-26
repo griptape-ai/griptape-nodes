@@ -18,7 +18,7 @@ from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import NodeBase, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidationError, TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry
-from griptape_nodes.node_library.script_registry import ScriptRegistry
+from griptape_nodes.node_library.script_registry import LibraryAndLibVersion, ScriptRegistry
 from griptape_nodes.retained_mode.events.app_events import (
     AppExecutionEvent,
     AppInitializationComplete,
@@ -269,6 +269,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def EventManager(cls) -> EventManager:
         return GriptapeNodes.get_instance()._event_manager
+
+    @classmethod
+    def LibraryManager(cls) -> "LibraryManager":
+        return GriptapeNodes.get_instance()._library_manager
 
     @classmethod
     def ObjectManager(cls) -> "ObjectManager":
@@ -2525,7 +2529,7 @@ class ScriptManager:
             return DeleteScriptResult_Failure()
         return DeleteScriptResult_Success()
 
-    def on_save_scene_request(self, request: SaveSceneRequest) -> ResultPayload:
+    def on_save_scene_request(self, request: SaveSceneRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915
         obj_manager = GriptapeNodes.get_instance()._object_manager
         node_manager = GriptapeNodes.get_instance()._node_manager
         config_manager = GriptapeNodes.get_instance()._config_manager
@@ -2566,7 +2570,26 @@ class ScriptManager:
 
                     # See if this node uses a library we need to know about.
                     library_used = node.metadata["library"]
-                    node_libraries_used.add(library_used)
+                    # Get the library metadata so we can get the version.
+                    library_metadata_request = GetLibraryMetadataRequest(library=library_used)
+                    library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
+                        library_metadata_request
+                    )
+                    if not library_metadata_result.succeeded():
+                        details = f"Attempted to save scene '{relative_file_path}', but failed to get library metadata for library '{library_used}'."
+                        GriptapeNodes.get_logger().error(details)
+                        return SaveSceneResult_Failure()
+                    try:
+                        library_metadata_success = cast("GetLibraryMetadataResult_Success", library_metadata_result)
+                        library_version = library_metadata_success.metadata["library_version"]
+                    except Exception as err:
+                        details = f"Attempted to save scene '{relative_file_path}', but failed to get library version from metadata for library '{library_used}': {err}."
+                        GriptapeNodes.get_logger().error(details)
+                        return SaveSceneResult_Failure()
+                    library_and_version = LibraryAndLibVersion(
+                        library_name=library_used, library_version=library_version
+                    )
+                    node_libraries_used.add(library_and_version)
                 # Now all nodes AND parameters have been created
                 file.write(connection_request_scripts)
         except Exception as e:

@@ -12,6 +12,8 @@ from pydantic_settings import (
 )
 from xdg_base_dirs import xdg_config_dirs, xdg_config_home, xdg_data_home
 
+from griptape_nodes.node_library.script_registry import LibraryAndLibVersion
+
 
 def _find_config_files(filename: str, extension: str) -> list[Path]:
     home = Path.home()
@@ -42,7 +44,7 @@ class Script(BaseModel):
     name: str
     relative_file_path: str
     engine_version_created_with: str
-    node_libraries_referenced: list[str]
+    node_libraries_referenced: list[LibraryAndLibVersion]
     description: str | None = None
     image: str | None = None
     internal: bool = False
@@ -59,28 +61,28 @@ class AppInitializationComplete(BaseModel):
                 relative_file_path="griptape_nodes/scripts/prompt_an_image.py",
                 internal=True,
                 engine_version_created_with=importlib.metadata.version("griptape_nodes"),
-                node_libraries_referenced=["Griptape Nodes Library"],
+                node_libraries_referenced=[LibraryAndLibVersion("Griptape Nodes Library", "0.1.0")],
             ),
             Script(
                 name="Coloring Book",
                 relative_file_path="griptape_nodes/scripts/coloring_book.py",
                 internal=True,
                 engine_version_created_with=importlib.metadata.version("griptape_nodes"),
-                node_libraries_referenced=["Griptape Nodes Library"],
+                node_libraries_referenced=[LibraryAndLibVersion("Griptape Nodes Library", "0.1.0")],
             ),
             Script(
                 name="Render logs",
                 relative_file_path="griptape_nodes/scripts/render_logs.py",
                 internal=True,
                 engine_version_created_with=importlib.metadata.version("griptape_nodes"),
-                node_libraries_referenced=["Griptape Nodes Library"],
+                node_libraries_referenced=[LibraryAndLibVersion("Griptape Nodes Library", "0.1.0")],
             ),
             Script(
                 name="Comfyui flow branch",
                 relative_file_path="griptape_nodes/scripts/comfyui_flow_branch.py",
                 internal=True,
                 engine_version_created_with=importlib.metadata.version("griptape_nodes"),
-                node_libraries_referenced=["Griptape Nodes Library"],
+                node_libraries_referenced=[LibraryAndLibVersion("Griptape Nodes Library", "0.1.0")],
             ),
         ]
     )
