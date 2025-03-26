@@ -5,7 +5,7 @@ from griptape.rules import Rule
 from griptape.tools import ExtractionTool
 
 from griptape_nodes_library.tools.base_tool import gnBaseTool
-from nodes.griptape_nodes_library.utils.env_utils import getenv
+from griptape_nodes_library.utils.env_utils import getenv
 
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
 SERVICE = "OpenAI"
