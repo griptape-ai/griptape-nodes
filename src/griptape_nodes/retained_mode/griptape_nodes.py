@@ -1393,6 +1393,9 @@ class NodeManager:
             )
         # modifying to exception to try to catch all possible issues with node creation.
         except Exception as err:
+            import traceback
+
+            traceback.print_exc()
             details = f"Could not create Node '{final_node_name}' of type '{request.node_type}': {err}"
             GriptapeNodes.get_logger().error(details)
 

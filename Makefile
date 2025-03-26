@@ -72,6 +72,20 @@ check/types:
 check/spell:
 	@uv run typos 
 
+.PHONY: test  ## Run all tests.
+test: test/unit test/integration
+
+.PHONY: test/unit
+test/unit: ## Run unit tests.
+	@uv run pytest -n auto tests/unit
+
+.PHONY: test/integration
+test/integration: ## Run integration tests.
+	@uv run pytest -n auto tests/integration
+
+.PHONY: test/integration/%
+test/integration/%: ## Run specific integration tests.
+	@uv run pytest -n auto tests/integration -k $*
 
 .PHONY: docs
 docs: ## Build documentation.

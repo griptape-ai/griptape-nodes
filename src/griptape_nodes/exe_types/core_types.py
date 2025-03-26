@@ -4,12 +4,14 @@ from abc import ABC
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 from griptape_nodes.exe_types.type_validator import TypeValidator
+
+T = TypeVar("T", bound="Parameter")
 
 
 # Types of Modes provided for Parameters
@@ -121,8 +123,93 @@ class ParameterUIOptions:
         return self_dict == other_dict
 
 
+@dataclass(kw_only=True)
+class UIElement:
+    _stack: ClassVar[list[UIElement]] = []
+    element_id: str | None = None
+    children: list[UIElement] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        # If there's currently an active element, add this new element as a child
+        current = UIElement.get_current()
+        if current is not None:
+            current.add_child(self)
+
+    def __enter__(self) -> Self:
+        # Push this element onto the global stack
+        UIElement._stack.append(self)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        # Pop this element off the global stack
+        popped = UIElement._stack.pop()
+        if popped is not self:
+            msg = f"Expected to pop {self}, but got {popped}"
+            raise RuntimeError(msg)
+
+    def __repr__(self) -> str:
+        return f"UIElement({self.children=})"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Returns a nested dictionary representation of this node and its children.
+
+        Example:
+            {
+              "name": "container-1",
+              "children": [
+                { "name": "A", "children": [] },
+                ...
+              ]
+            }
+        """
+        return {
+            "element_id": self.element_id,
+            "children": [child.to_dict() for child in self.children],
+        }
+
+    def add_child(self, child: UIElement) -> None:
+        self.children.append(child)
+
+    def remove_child(self, child: UIElement | str) -> None:
+        ui_elements: list[UIElement] = [self]
+        for ui_element in ui_elements:
+            if child in ui_element.children:
+                ui_element.children.remove(child)
+                break
+            ui_elements.extend(ui_element.children)
+
+    def find_element_by_id(self, element_id: str) -> UIElement | None:
+        if self.element_id == element_id:
+            return self
+        for child in self.children:
+            found = child.find_element_by_id(element_id)
+            if found is not None:
+                return found
+        return None
+
+    def get_elements_by_type(self, element_type: type[T]) -> list[T]:
+        elements: list[T] = []
+        for child in self.children:
+            if isinstance(child, element_type):
+                elements.append(child)
+            elements.extend(child.get_elements_by_type(element_type))
+        return elements
+
+    @classmethod
+    def get_current(cls) -> UIElement | None:
+        """Return the element on top of the stack, or None if no active element."""
+        return cls._stack[-1] if cls._stack else None
+
+
+@dataclass(kw_only=True)
+class ParameterGroup(UIElement):
+    """UI element for a group of parameters."""
+
+    group_name: str
+
+
 @dataclass
-class Parameter:
+class Parameter(UIElement):
     name: str  # must be unique from other parameters in Node
     allowed_types: list[str]
     tooltip: str  # Default tooltip

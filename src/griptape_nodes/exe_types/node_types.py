@@ -10,6 +10,7 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterControlType,
     ParameterMode,
+    UIElement,
 )
 
 
@@ -25,7 +26,6 @@ class NodeBase(ABC):
     # Owned by a flow
     name: str
     metadata: dict[Any, Any]
-    parameters: list[Parameter]
 
     # Node Context Fields
     state: NodeResolutionState
@@ -33,6 +33,11 @@ class NodeBase(ABC):
     parameter_values: dict[str, Any]
     parameter_output_values: dict[str, Any]
     stop_flow: bool = False
+    root_ui_element: UIElement
+
+    @property
+    def parameters(self) -> list[Parameter]:
+        return self.root_ui_element.get_elements_by_type(Parameter)
 
     def __hash__(self) -> int:
         return hash(self.name)
@@ -45,13 +50,13 @@ class NodeBase(ABC):
     ) -> None:
         self.name = name
         self.state = state
-        self.parameters = []
         if metadata is None:
             self.metadata = {}
         else:
             self.metadata = metadata
         self.parameter_values = {}
         self.parameter_output_values = {}
+        self.root_ui_element = UIElement()
 
     def make_node_unresolved(self) -> None:
         self.state = NodeResolutionState.UNRESOLVED
@@ -166,15 +171,18 @@ class NodeBase(ABC):
                 return True
         return False
 
-    # TODO(griptape): Do i need to flag control/ not control parameters?
+    # TODO(james): Do i need to flag control/ not control parameters?
     def add_parameter(self, param: Parameter) -> None:
         if self.does_name_exist(param.name):
             msg = "Cannot have duplicate names on parameters."
             raise ValueError(msg)
-        self.parameters.append(param)
+        self.root_ui_element.add_child(param)
+
+    def add_ui_element(self, ui_element: UIElement) -> None:
+        self.root_ui_element.add_child(ui_element)
 
     def remove_parameter(self, param: Parameter) -> None:
-        self.parameters.remove(param)
+        self.root_ui_element.remove_child(param)
 
     def get_current_parameter(self) -> Parameter | None:
         return self.current_spotlight_parameter
