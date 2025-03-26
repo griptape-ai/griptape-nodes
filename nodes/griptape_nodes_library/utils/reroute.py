@@ -139,4 +139,4 @@ class gnReroute(DataNode):
         self.update_allowed_types_based_on_connection_status(parameter=source_parameter)
 
     def process(self) -> None:
-        self.parameter_output_values["passThru"] = self.parameter_values["passThru"]
+        pass
