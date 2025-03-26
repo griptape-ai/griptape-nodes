@@ -1182,7 +1182,8 @@ class FlowManager:
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
             GriptapeNodes.get_logger().error(details)
-
+            cancel_request = CancelFlowRequest(flow_name=flow_name)
+            GriptapeNodes.handle_request(cancel_request)
             return SingleNodeStepResult_Failure(validation_exceptions=[])
 
         # All completed happily
@@ -1210,7 +1211,8 @@ class FlowManager:
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
             GriptapeNodes.get_logger().error(details)
-
+            cancel_request = CancelFlowRequest(flow_name=flow_name)
+            GriptapeNodes.handle_request(cancel_request)
             return SingleNodeStepResult_Failure(validation_exceptions=[])
         details = f"Successfully granularly stepped flow with name {flow_name}"
         GriptapeNodes.get_logger().info(details)
@@ -1236,6 +1238,8 @@ class FlowManager:
         except Exception as e:
             details = f"Failed to continue execution step. An exception occurred: {e}."
             GriptapeNodes.get_logger().error(details)
+            cancel_request = CancelFlowRequest(flow_name=flow_name)
+            GriptapeNodes.handle_request(cancel_request)
             return ContinueExecutionStepResult_Failure()
         details = f"Successfully continued flow with name {flow_name}"
         GriptapeNodes.get_logger().info(details)
@@ -2402,7 +2406,8 @@ class NodeManager:
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             GriptapeNodes.get_logger().error(details)
-
+            cancel_request = CancelFlowRequest(flow_name=flow_name)
+            GriptapeNodes.handle_request(cancel_request)
             return ResolveNodeResult_Failure(validation_exceptions=[])
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         GriptapeNodes.get_logger().info(details)
