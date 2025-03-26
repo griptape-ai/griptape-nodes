@@ -219,6 +219,9 @@ class NodeBase(ABC):
         the value assignment. Similarly, validator callbacks may reject the value and
         raise an Exception.
 
+        Exceptions should be handled by the caller; this may result in canceling
+        a running Flow or forcing an upstream object to alter its assumptions.
+
         Changing a Parameter may trigger other Parameters within the Node
         to be changed. If other Parameters are changed, the engine needs a list of which
         ones have changed to cascade unresolved state.
@@ -237,13 +240,15 @@ class NodeBase(ABC):
             err = f"Attempted to set value for Parameter '{param_name}' but no such Parameter could be found."
             raise KeyError(err)
         # Perform any conversions to the value based on how the Parameter is configured.
-        # THESE MAY RAISE EXCEPTIONS
+        # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
+        # cause a calling object to alter its assumptions/behavior.
         final_value = value
         for converter in parameter.converters:
             final_value = converter(final_value)
 
         # Validate the values next, based on how the Parameter is configured.
-        # THESE MAY RAISE EXCEPTIONS.
+        # THESE MAY RAISE EXCEPTIONS. These can cause a running Flow to be canceled, or
+        # cause a calling object to alter its assumptions/behavior.
         for validator in parameter.validators:
             validator(parameter, final_value)
 
