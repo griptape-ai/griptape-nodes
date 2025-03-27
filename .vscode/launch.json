@@ -5,6 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python Debugger: Run Griptape Nodes App",
+            "type": "debugpy",
+            "request": "launch",
+            "python": ".venv/bin/python",
+            "module": "src.griptape_nodes.__init__",
+            "console": "integratedTerminal",
+        },
+        {
             "name": "Python Debugger: Current File",
             "type": "debugpy",
             "request": "launch",
@@ -12,16 +20,6 @@
             "console": "integratedTerminal",
             "env": {
                 "PYTHONPATH": "${workspaceRoot}"
-            }
-        },
-        {
-            "name": "Python Debugger: Run Griptape Nodes App",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "src/griptape_nodes/__init__.py",
-            "console": "integratedTerminal",
-            "env": {
-                "PYTHONPATH": "${workspaceRoot}/src"
             }
         }
     ]
