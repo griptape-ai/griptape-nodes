@@ -15,40 +15,10 @@ if ($API_KEY) {
 
     # Check if the file already exists
     if (Test-Path $ConfigFile) {
-        Write-Host "A config file already exists at '$ConfigFile'."
-        $response = Read-Host "Do you want to override it with the new API key? (y/n)"
-        switch -Wildcard ($response.ToLower()) {
-            'y' { 
-                '{
-  "griptape": {
-    "api_keys": {
-      "Nodes": {
-        "GRIPTAPE_NODES_API_KEY": "' + $API_KEY + '"
-      }
-    }
-  }
-}' | Out-File $ConfigFile
-                Write-Host "API key updated in $ConfigFile"
-            }
-            'yes' { 
-                '{
-  "griptape": {
-    "api_keys": {
-      "Nodes": {
-        "GRIPTAPE_NODES_API_KEY": "' + $API_KEY + '"
-      }
-    }
-  }
-}' | Out-File $ConfigFile
-                Write-Host "API key updated in $ConfigFile"
-            }
-            default {
-                Write-Host "Skipping config file update."
-            }
-        }
-    } else {
+        Write-Host "A config file already exists at '$ConfigFile', overwriting..."
+    } 
         # Write the API key to the config file
-        '{
+'{
   "griptape": {
     "api_keys": {
       "Nodes": {
@@ -57,8 +27,7 @@ if ($API_KEY) {
     }
   }
 }' | Out-File $ConfigFile
-        Write-Host "API key saved to $ConfigFile"
-    }
+    Write-Host "API key saved to $ConfigFile"
 } else {
     Write-Host "No API key provided. Skipping config file creation."
 }
