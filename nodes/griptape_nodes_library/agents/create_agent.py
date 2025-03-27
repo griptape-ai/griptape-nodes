@@ -44,7 +44,6 @@ class Agent(BaseAgent):
         else:
             agent = gtAgent().from_dict(agent_dict)
         # Otherwise, append rules and tools to the existing agent
-        # TODO
 
         prompt = params.get("prompt", None)
         if prompt:

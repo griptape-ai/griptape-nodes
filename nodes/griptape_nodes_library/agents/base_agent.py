@@ -2,6 +2,7 @@ from griptape.drivers.prompt.griptape_cloud import (
     GriptapeCloudPromptDriver as GtGriptapeCloudPromptDriver,
 )
 from griptape.structures import Agent as gtAgent
+
 from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
@@ -103,6 +104,7 @@ class BaseAgent(ControlNode):
         if agent:
             prompt_driver = agent.tasks[0].prompt_driver
             return prompt_driver.stream
+        return None
 
     def process(self) -> None:
         pass
