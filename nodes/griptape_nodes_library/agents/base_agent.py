@@ -51,7 +51,7 @@ class BaseAgent(ControlNode):
         )
         self.add_parameter(
             Parameter(
-                name="behaviorruleset",
+                name="behavior_rulesets",
                 allowed_types=["Ruleset"],
                 tooltip="",
                 allowed_modes={ParameterMode.INPUT},
