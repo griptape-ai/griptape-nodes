@@ -10,7 +10,7 @@ from websockets.sync.client import ClientConnection, connect
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.api.routes.api import process_event
 
-logger = logging.getLogger()
+logger = GriptapeNodes.get_logger()
 
 
 @define(kw_only=True)
