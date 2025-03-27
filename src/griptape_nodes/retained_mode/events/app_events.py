@@ -11,6 +11,24 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 @dataclass
 @PayloadRegistry.register
+class AppStartSessionRequest(RequestPayload):
+    session_id: str
+
+
+@dataclass
+@PayloadRegistry.register
+class AppStartSessionResult_Success(ResultPayload_Success):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class AppStartSessionResult_Failure(ResultPayload_Failure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
 class AppInitializationComplete(AppPayload):
     pass
 
