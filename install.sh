@@ -5,26 +5,24 @@ API_KEY="$1"
 
 # If an API key was passed, attempt to write it to the config file
 if [ -n "$API_KEY" ]; then
-    # Ensure the config directory exists
-    mkdir -p "$(dirname "$CONFIG_FILE")"
+  # Ensure the config directory exists
+  mkdir -p "$(dirname "$CONFIG_FILE")"
 
-    # Check if the file already exists
-    if [ -e "$CONFIG_FILE" ]; then
-        echo "A config file already exists at '$CONFIG_FILE', overwriting..."
-    fi
-    # Write the API key to the config file
-    echo '{
-  "griptape": {
-    "api_keys": {
-      "Nodes": {
-        "GRIPTAPE_NODES_API_KEY": "'"$API_KEY"'"
-      }
+  # Check if the file already exists
+  if [ -e "$CONFIG_FILE" ]; then
+    echo "A config file already exists at '$CONFIG_FILE', overwriting..."
+  fi
+  # Write the API key to the config file
+  echo '{
+  "env": {
+    "Griptape": {
+        "GT_CLOUD_API_KEY": "'"$API_KEY"'"
     }
   }
 }' >"$CONFIG_FILE"
-    echo "API key saved to $CONFIG_FILE"
+  echo "API key saved to $CONFIG_FILE"
 else
-    echo "No API key provided. Skipping config file creation."
+  echo "No API key provided. Skipping config file creation."
 fi
 
 echo ""
