@@ -1,0 +1,43 @@
+exclude-labels:
+  - ignore-for-release
+exclude-contributors:
+  - octocat
+
+categories:
+  - title: "✨ Enhancements"
+    labels:
+      - enhancement
+  - title: "🐛 Bug Fixes"
+    labels:
+      - bug
+  - title: "🚀 Performance Improvements"
+    labels:
+      - performance
+  - title: "📦 Dependencies"
+    labels:
+      - dependencies
+  - title: "📚 Documentation"
+    labels:
+      - documentation
+  - title: "Other Changes"
+    labels:
+      - "*"
+
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+change-template: "- $TITLE (#$NUMBER) by @$AUTHOR"
+version-resolver:
+  major:
+    labels:
+      - 'major'
+  minor:
+    labels:
+      - 'minor'
+  patch:
+    labels:
+      - 'patch'
+  default: patch
+template: |
+  ## What’s Changed
+
+  $CHANGES
