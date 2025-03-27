@@ -1,11 +1,16 @@
 import json
+import logging
 import os
+import threading
 from urllib.parse import urljoin
 
 from attrs import Factory, define, field
 from websockets.sync.client import ClientConnection, connect
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.api.routes.api import process_event
+
+logger = logging.getLogger()
 
 
 @define(kw_only=True)
@@ -31,6 +36,7 @@ class NodesApiSocketManager:
             ),
         ),
     )
+    nodes_app_url: str = field(default=os.getenv("GRIPTAPE_NODES_APP_URL", "https://nodes.griptape.ai"))
 
     def emit(self, *args, **kwargs) -> None:  # noqa: ARG002 # drop-in replacement workaround
         body = {"type": args[0], "payload": json.loads(args[1])}
@@ -39,5 +45,18 @@ class NodesApiSocketManager:
     def run(self, *args, **kwargs) -> None:
         pass
 
-    def start_background_task(self, *args, **kwargs) -> None:
-        pass
+    def start_background_task(self, *args, **kwargs) -> None:  # noqa: ARG002 # drop-in replacement workaround
+        threading.Thread(target=self._listen_for_events, daemon=True).start()
+
+    def _listen_for_events(self) -> None:
+        while True:
+            event_str = self.socket.recv()
+            event_str = event_str.decode("utf-8") if isinstance(event_str, bytes) else event_str
+            if event_str == "START":
+                logger.info("Engine is ready to receive events")
+                logger.info(
+                    "[bold green]Please visit [link=%s]%s[/link] in your browser.[/bold green]",
+                    self.nodes_app_url,
+                    self.nodes_app_url,
+                )
+            process_event(json.loads(event_str)["payload"])

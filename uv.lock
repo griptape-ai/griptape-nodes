@@ -250,7 +250,6 @@ source = { editable = "." }
 dependencies = [
     { name = "cohere" },
     { name = "griptape", extra = ["drivers-prompt-anthropic", "loaders-image"] },
-    { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
@@ -277,7 +276,6 @@ test = [
 requires-dist = [
     { name = "cohere", specifier = ">=5.14.0" },
     { name = "griptape", extras = ["drivers-prompt-anthropic", "loaders-image"], specifier = ">=1.5.0" },
-    { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pydantic-settings", specifier = ">=2.8.1" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
