@@ -44,9 +44,6 @@ if TYPE_CHECKING:
 logger = GriptapeNodes.get_instance().LogManager().get_logger()
 
 
-socket = NodesApiSocketManager()
-
-
 def run_with_context(func: Callable) -> Callable:
     ctx = contextvars.copy_context()
 
@@ -188,6 +185,9 @@ def sse_listener() -> None:
 
 
 def run_sse_mode() -> None:
+    global socket  # noqa: PLW0603 # Need to initialize the socket lazily here to avoid auth-ing too early
+
+    socket = NodesApiSocketManager()
     sse_thread = threading.Thread(target=sse_listener)
     sse_thread.start()
 
