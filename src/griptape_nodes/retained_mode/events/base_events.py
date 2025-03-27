@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 from griptape.artifacts import BaseArtifact
 from griptape.events import BaseEvent
 from griptape.structures import Structure
 from griptape.tools import BaseTool
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     import builtins
@@ -82,6 +82,13 @@ A = TypeVar("A", bound=AppPayload)
 
 class EventBase(BaseModel, ABC):
     """Abstract base class for all events."""
+
+    # Keeping here instead of in GriptapeNodes to avoid circular import hell.
+    # TODO(griptape): Move this to the singleton
+    _session_id: ClassVar[str | None] = None
+
+    # Instance variable with a default_factory that references the class variable
+    session_id: str | None = Field(default_factory=lambda: EventBase._session_id)
 
     # Custom JSON encoder for the payload
     class Config:
