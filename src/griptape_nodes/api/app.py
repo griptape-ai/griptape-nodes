@@ -151,6 +151,7 @@ def sse_listener() -> None:
             endpoint = urljoin(
                 os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/engines/stream"
             )
+            nodes_app_url = os.getenv("GRIPTAPE_NODES_APP_URL", "https://nodes.griptape.ai")
 
             def auth(request: httpx.Request) -> httpx.Request:
                 service = "Nodes"
@@ -177,6 +178,12 @@ def sse_listener() -> None:
                         data = line.removeprefix("data:").strip()
                         if data == "START":
                             logger.info("Engine is ready to receive events")
+                            logger.info(
+                                "[bold green]Please visit [link=%s]%s[/link] in your browser.[/bold green]",
+                                nodes_app_url,
+                                nodes_app_url,
+                            )
+
                         else:
                             process_event(json.loads(data))
         except Exception:
