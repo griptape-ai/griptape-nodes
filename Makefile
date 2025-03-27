@@ -79,14 +79,12 @@ test: test/unit test/integration
 .PHONY: test/unit
 test/unit: ## Run unit tests.
 	@uv run pytest -n auto tests/unit
+	@uv run pytest -n auto nodes/tests/unit
 
 .PHONY: test/integration
 test/integration: ## Run integration tests.
 	@uv run pytest -n auto tests/integration
-
-.PHONY: test/integration/%
-test/integration/%: ## Run specific integration tests.
-	@uv run pytest -n auto tests/integration -k $*
+	@uv run pytest -n auto nodes/tests/integration
 
 .PHONY: docs
 docs: ## Build documentation.

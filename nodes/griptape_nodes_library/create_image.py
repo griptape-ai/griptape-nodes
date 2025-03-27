@@ -1,4 +1,3 @@
-import openai
 from griptape.drivers.image_generation.openai import OpenAiImageGenerationDriver
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
@@ -9,8 +8,8 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.utils.env_utils import getenv
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
-API_KEY_ENV_VAR = "OPENAI_API_KEY"
-SERVICE = "OpenAI"
+API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
+SERVICE = "Griptape"
 DEFAULT_MODEL = "dall-e-3"
 DEFAULT_QUALITY = "hd"
 DEFAULT_STYLE = "natural"
@@ -93,11 +92,6 @@ class gnCreateImage(ControlNode):
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
-        try:
-            client = openai.OpenAI(api_key=api_key)
-            client.models.list()
-        except openai.AuthenticationError as e:
-            exceptions.append(e)
         return exceptions if exceptions else None
 
     def process(self) -> None:

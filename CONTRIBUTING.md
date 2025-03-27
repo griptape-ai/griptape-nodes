@@ -48,7 +48,7 @@
           "on_app_initialization_complete": {
             "libraries_to_register": [
               "nodes/griptape_nodes_library.json"
-            ],
+            ]
           }
         }
       }

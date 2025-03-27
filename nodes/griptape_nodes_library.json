@@ -125,6 +125,15 @@
       }
     },
     {
+      "class_name": "gnGriptapeCloudImageDriver",
+      "file_path": "griptape_nodes_library/drivers/griptape_cloud_image_driver.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "Azure OpenAI image generation driver for Griptape agents",
+        "display_name": "Azure OpenAI image generation driver"
+      }
+    },
+    {
       "class_name": "gnCoherePromptDriver",
       "file_path": "griptape_nodes_library/drivers/cohere_prompt_driver.py",
       "metadata": {
@@ -468,3 +477,4 @@
     }
   ]
 }
+

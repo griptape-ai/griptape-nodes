@@ -37,7 +37,7 @@ class gnOpenAiChatPromptDriver(gnBasePromptDriver):
         stream = params.get("stream", False)
         temperature = params.get("temperature", None)
         use_native_tools = params.get("use_native_tools", False)
-        max_tokens = params.get("max_tokens", None)
+        max_tokens = params.get("max_tokens", -1)
         max_attempts = params.get("max_attempts_on_fail", None)
         top_p = None if params.get("min_p", None) is None else 1 - float(params["min_p"])
 

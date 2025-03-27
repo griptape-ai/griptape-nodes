@@ -24,6 +24,10 @@ class gnPromptSummaryTool(gnBaseTool):
         # Get the prompt driver from parameters, will be None if not provided
         prompt_driver = self.parameter_values.get("prompt_driver", None)
 
+        if prompt_driver is None:
+            msg = "Prompt driver is required for PromptSummaryTool."
+            raise ValueError(msg)
+
         # Create the engine with the prompt driver (engine handles the summarization logic)
         engine = PromptSummaryEngine(prompt_driver=prompt_driver)
 

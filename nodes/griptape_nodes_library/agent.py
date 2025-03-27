@@ -1,4 +1,3 @@
-import openai
 from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
 from griptape.structures import Agent
 from griptape.utils import Stream
@@ -15,8 +14,8 @@ from griptape_nodes_library.utils.env_utils import getenv
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 DEFAULT_MODEL = "gpt-4o"
-API_KEY_ENV_VAR = "OPENAI_API_KEY"
-SERVICE = "OpenAI"
+API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
+SERVICE = "Griptape"
 
 
 class gnRunAgent(ControlNode):
@@ -89,7 +88,7 @@ class gnRunAgent(ControlNode):
             )
         self.add_node_element(tools_group)
 
-    # Only requires a valid OPENAI_API_KEY
+    # Only requires a valid GT_CLOUD_API_KEY
     def validate_node(self) -> list[Exception] | None:
         # Items here are openai api key
         exceptions = []
@@ -98,11 +97,6 @@ class gnRunAgent(ControlNode):
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
-        try:
-            client = openai.OpenAI(api_key=api_key)
-            client.models.list()
-        except openai.AuthenticationError as e:
-            exceptions.append(e)
         return exceptions if exceptions else None
 
     def process(self) -> None:
