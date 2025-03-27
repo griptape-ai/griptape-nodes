@@ -180,12 +180,12 @@ class BaseNodeElement:
                 break
             ui_elements.extend(ui_element.children)
 
-    def get_element_by_id(self, element_id: str) -> BaseNodeElement | None:
+    def find_element_by_id(self, element_id: str) -> BaseNodeElement | None:
         if self.element_id == element_id:
             return self
 
         for child in self.children:
-            found = child.get_element_by_id(element_id)
+            found = child.find_element_by_id(element_id)
             if found is not None:
                 return found
         return None
