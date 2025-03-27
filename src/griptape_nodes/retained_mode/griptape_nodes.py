@@ -22,6 +22,9 @@ from griptape_nodes.node_library.script_registry import LibraryNameAndVersion, S
 from griptape_nodes.retained_mode.events.app_events import (
     AppExecutionEvent,
     AppInitializationComplete,
+    AppStartSessionRequest,
+    AppStartSessionResult_Failure,
+    AppStartSessionResult_Success,
     GetEngineVersion_Request,
     GetEngineVersionResult_Failure,
     GetEngineVersionResult_Success,
@@ -238,9 +241,15 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
             self._operation_depth_manager = OperationDepthManager(self._config_manager)
 
+            # Start with an empty session ID.
+            self._session_id = None
+
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
                 GetEngineVersion_Request, self.handle_engine_version_request
+            )
+            self._event_manager.assign_manager_to_request_type(
+                AppStartSessionRequest, self.handle_session_start_request
             )
 
     @classmethod
@@ -259,6 +268,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     def broadcast_app_event(cls, app_event: AppPayload) -> None:
         event_mgr = GriptapeNodes.get_instance()._event_manager
         return event_mgr.broadcast_app_event(app_event)
+
+    @classmethod
+    def get_session_id(cls) -> str | None:
+        return GriptapeNodes.get_instance()._session_id
 
     @classmethod
     def LogManager(cls) -> LogManager:
@@ -344,6 +357,18 @@ class GriptapeNodes(metaclass=SingletonMeta):
             details = f"Attempted to get engine version. Failed due to '{err}'."
             GriptapeNodes.get_logger().error(details)
             return GetEngineVersionResult_Failure()
+
+    def handle_session_start_request(self, request: AppStartSessionRequest) -> RequestPayload:
+        # Do we already have one?
+        if self._session_id is not None:
+            details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID in place."
+            GriptapeNodes.get_logger().error(details)
+            return AppStartSessionResult_Failure()
+
+        self._session_id = request.session_id
+        # TODO(griptape): Do we want to broadcast that a session started?
+
+        return AppStartSessionResult_Success()
 
 
 OBJ_TYPE = TypeVar("OBJ_TYPE")
