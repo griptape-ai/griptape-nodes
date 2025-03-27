@@ -54,14 +54,15 @@ def run_with_context(func: Callable) -> Callable:
 
 
 # Define methods for events etc
-def process_request(event: EventRequest) -> None:
+def process_request(event: EventRequest | AppEvent) -> None:
     # make the request with this event
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-    # my start flow requests don't go through here well.
-    request_payload = event.request
-    GriptapeNodes().handle_request(request_payload)
-    # All event sending is taking place
+    if isinstance(event, EventRequest):
+        request_payload = event.request
+        GriptapeNodes().handle_request(request_payload)
+    else:
+        process_app_event(event)
 
 
 def send_event(event: GriptapeNodeEvent) -> None:
@@ -146,6 +147,7 @@ def setup_event_listeners() -> None:
 
 
 def sse_listener() -> None:
+    init = False
     while True:
         try:
             endpoint = urljoin(
@@ -171,6 +173,13 @@ def sse_listener() -> None:
 
             with httpx.stream("get", endpoint, auth=auth, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout
                 response.raise_for_status()
+                if not init:
+                    # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
+                    payload = app_events.AppInitializationComplete()
+                    app_event = AppEvent(payload=payload)
+                    event_queue.put(app_event)
+                    init = True
+
                 for line in response.iter_lines():
                     if not line.strip():
                         continue
@@ -199,13 +208,6 @@ def run_sse_mode() -> None:
     sse_thread.start()
 
     setup_event_listeners()
-
-    # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
-    payload = app_events.AppInitializationComplete()
-    app_event = AppEvent(payload=payload)
-    EventBus.publish_event(
-        app_event  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
-    )
 
     check_event_queue()
 
