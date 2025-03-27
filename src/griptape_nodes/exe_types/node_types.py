@@ -5,12 +5,12 @@ from typing import Any, Self
 from griptape.events import BaseEvent
 
 from griptape_nodes.exe_types.core_types import (
+    BaseNodeElement,
     ControlParameter_Input,
     ControlParameter_Output,
     Parameter,
     ParameterControlType,
     ParameterMode,
-    UIElement,
 )
 
 
@@ -33,7 +33,7 @@ class NodeBase(ABC):
     parameter_values: dict[str, Any]
     parameter_output_values: dict[str, Any]
     stop_flow: bool = False
-    root_ui_element: UIElement
+    root_ui_element: BaseNodeElement
 
     @property
     def parameters(self) -> list[Parameter]:
@@ -56,7 +56,7 @@ class NodeBase(ABC):
             self.metadata = metadata
         self.parameter_values = {}
         self.parameter_output_values = {}
-        self.root_ui_element = UIElement()
+        self.root_ui_element = BaseNodeElement()
 
     def make_node_unresolved(self) -> None:
         self.state = NodeResolutionState.UNRESOLVED
@@ -178,7 +178,7 @@ class NodeBase(ABC):
             raise ValueError(msg)
         self.root_ui_element.add_child(param)
 
-    def add_ui_element(self, ui_element: UIElement) -> None:
+    def add_ui_element(self, ui_element: BaseNodeElement) -> None:
         self.root_ui_element.add_child(ui_element)
 
     def remove_parameter(self, param: Parameter) -> None:

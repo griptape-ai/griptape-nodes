@@ -1,35 +1,35 @@
 import pytest
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, UIElement
+from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, ParameterGroup
 
 
-class TestUIElement:
+class TestBaseNodeElement:
     @pytest.fixture
-    def ui_element(self) -> UIElement:
-        with UIElement() as root:
-            with UIElement():
-                UIElement()
-                with UIElement():
-                    UIElement(element_id="leaf1")
-            with UIElement():
-                UIElement(element_id="leaf2")
+    def ui_element(self) -> BaseNodeElement:
+        with BaseNodeElement() as root:
+            with BaseNodeElement():
+                BaseNodeElement()
+                with BaseNodeElement():
+                    BaseNodeElement(element_id="leaf1")
+            with BaseNodeElement():
+                BaseNodeElement(element_id="leaf2")
 
         return root
 
     def test_init(self) -> None:
-        assert UIElement()
+        assert BaseNodeElement()
 
-        with UIElement() as root:
-            child = UIElement()
+        with BaseNodeElement() as root:
+            child = BaseNodeElement()
 
             assert root.children == [child]
 
     def test__enter__(self) -> None:
-        with UIElement() as ui:
+        with BaseNodeElement() as ui:
             assert ui
 
     def test__repr__(self) -> None:
-        assert repr(UIElement()) == "UIElement(self.children=[])"
+        assert repr(BaseNodeElement()) == "BaseNodeElement(self.children=[])"
 
     def test_to_dict(self, ui_element) -> None:
         assert ui_element.to_dict() == {
@@ -47,7 +47,7 @@ class TestUIElement:
         }
 
     def test_add_child(self, ui_element) -> None:
-        ui_element.find_element_by_id("leaf1").add_child(UIElement(element_id="leaf3"))
+        ui_element.find_element_by_id("leaf1").add_child(BaseNodeElement(element_id="leaf3"))
 
         assert ui_element.to_dict() == {
             "element_id": None,
@@ -100,7 +100,7 @@ class TestUIElement:
         }
 
     def test_get_current(self) -> None:
-        with UIElement() as ui:
+        with BaseNodeElement() as ui:
             assert ui
             assert ui.get_current() == ui
         assert ui.get_current() is None

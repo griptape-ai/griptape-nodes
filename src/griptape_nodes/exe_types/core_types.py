@@ -124,31 +124,32 @@ class ParameterUIOptions:
 
 
 @dataclass(kw_only=True)
-class UIElement:
-    _stack: ClassVar[list[UIElement]] = []
+class BaseNodeElement:
     element_id: str | None = None
-    children: list[UIElement] = field(default_factory=list)
+    children: list[BaseNodeElement] = field(default_factory=list)
+
+    _stack: ClassVar[list[BaseNodeElement]] = []
 
     def __post_init__(self) -> None:
         # If there's currently an active element, add this new element as a child
-        current = UIElement.get_current()
+        current = BaseNodeElement.get_current()
         if current is not None:
             current.add_child(self)
 
     def __enter__(self) -> Self:
         # Push this element onto the global stack
-        UIElement._stack.append(self)
+        BaseNodeElement._stack.append(self)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         # Pop this element off the global stack
-        popped = UIElement._stack.pop()
+        popped = BaseNodeElement._stack.pop()
         if popped is not self:
             msg = f"Expected to pop {self}, but got {popped}"
             raise RuntimeError(msg)
 
     def __repr__(self) -> str:
-        return f"UIElement({self.children=})"
+        return f"BaseNodeElement({self.children=})"
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
@@ -167,18 +168,18 @@ class UIElement:
             "children": [child.to_dict() for child in self.children],
         }
 
-    def add_child(self, child: UIElement) -> None:
+    def add_child(self, child: BaseNodeElement) -> None:
         self.children.append(child)
 
-    def remove_child(self, child: UIElement | str) -> None:
-        ui_elements: list[UIElement] = [self]
+    def remove_child(self, child: BaseNodeElement | str) -> None:
+        ui_elements: list[BaseNodeElement] = [self]
         for ui_element in ui_elements:
             if child in ui_element.children:
                 ui_element.children.remove(child)
                 break
             ui_elements.extend(ui_element.children)
 
-    def find_element_by_id(self, element_id: str) -> UIElement | None:
+    def find_element_by_id(self, element_id: str) -> BaseNodeElement | None:
         if self.element_id == element_id:
             return self
         for child in self.children:
@@ -196,20 +197,20 @@ class UIElement:
         return elements
 
     @classmethod
-    def get_current(cls) -> UIElement | None:
+    def get_current(cls) -> BaseNodeElement | None:
         """Return the element on top of the stack, or None if no active element."""
         return cls._stack[-1] if cls._stack else None
 
 
 @dataclass(kw_only=True)
-class ParameterGroup(UIElement):
+class ParameterGroup(BaseNodeElement):
     """UI element for a group of parameters."""
 
     group_name: str
 
 
 @dataclass
-class Parameter(UIElement):
+class Parameter(BaseNodeElement):
     name: str  # must be unique from other parameters in Node
     allowed_types: list[str]
     tooltip: str  # Default tooltip
