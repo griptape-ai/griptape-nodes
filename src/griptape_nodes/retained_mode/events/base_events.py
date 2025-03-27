@@ -83,6 +83,8 @@ A = TypeVar("A", bound=AppPayload)
 class EventBase(BaseModel, ABC):
     """Abstract base class for all events."""
 
+    session_id: str | None = None
+
     # Custom JSON encoder for the payload
     class Config:
         arbitrary_types_allowed = True
