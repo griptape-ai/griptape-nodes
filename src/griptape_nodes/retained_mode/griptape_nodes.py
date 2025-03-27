@@ -36,6 +36,7 @@ from griptape_nodes.retained_mode.events.arbitrary_python_events import (
 )
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
+    EventBase,
     RequestPayload,
     ResultPayload,
     ResultPayload_Failure,
@@ -241,9 +242,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
             self._operation_depth_manager = OperationDepthManager(self._config_manager)
 
-            # Start with an empty session ID.
-            self._session_id = None
-
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
                 GetEngineVersion_Request, self.handle_engine_version_request
@@ -271,7 +269,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
     @classmethod
     def get_session_id(cls) -> str | None:
-        return GriptapeNodes.get_instance()._session_id
+        return EventBase._session_id
 
     @classmethod
     def LogManager(cls) -> LogManager:
@@ -358,14 +356,14 @@ class GriptapeNodes(metaclass=SingletonMeta):
             GriptapeNodes.get_logger().error(details)
             return GetEngineVersionResult_Failure()
 
-    def handle_session_start_request(self, request: AppStartSessionRequest) -> RequestPayload:
+    def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:
         # Do we already have one?
-        if self._session_id is not None:
+        if EventBase._session_id is not None:
             details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID in place."
             GriptapeNodes.get_logger().error(details)
             return AppStartSessionResult_Failure()
 
-        self._session_id = request.session_id
+        EventBase._session_id = request.session_id
         # TODO(griptape): Do we want to broadcast that a session started?
 
         return AppStartSessionResult_Success()
