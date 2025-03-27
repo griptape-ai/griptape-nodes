@@ -32,7 +32,7 @@ class Agent(BaseAgent):
             kwargs["tools"] = tools
 
         # Get any rules
-        rulesets = self.valid_or_fallback("behavior_rulesets", None)
+        rulesets = self.valid_or_fallback("rulesets", None)
         if rulesets:
             kwargs["rulesets"] = [rulesets]
 

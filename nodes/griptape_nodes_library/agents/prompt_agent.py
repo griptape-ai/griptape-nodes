@@ -16,7 +16,7 @@ class PromptAgent(Agent):
         super().__init__(**kwargs)
 
         # Remove unused inputs
-        param = self.get_parameter_by_name("ruleset")
+        param = self.get_parameter_by_name("rulesets")
         if param:
             self.remove_parameter(param)
         param = self.get_parameter_by_name("tool_list")
