@@ -61,7 +61,7 @@
    ```
 
    To start the engine using SSE (Server Sent Events) to the remote Griptape Nodes API:
-   `GRIPTAPE_NODES_API_KEY=<your_key> DEBUG=false make run`
+   `GT_CLOUD_API_KEY=<your_key> make run`
 
 1. Navigate to the URL provided in the terminal.
 

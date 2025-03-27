@@ -159,13 +159,9 @@ def sse_listener() -> None:
             nodes_app_url = os.getenv("GRIPTAPE_NODES_APP_URL", "https://nodes.griptape.ai")
 
             def auth(request: httpx.Request) -> httpx.Request:
-                service = "Nodes"
-                value = "GRIPTAPE_NODES_API_KEY"
-                api_token = (
-                    GriptapeNodes.get_instance()
-                    .ConfigManager()
-                    .get_config_value(f"griptape.api_keys.{service}.{value}")
-                )
+                service = "Griptape"
+                value = "GT_CLOUD_API_KEY"
+                api_token = GriptapeNodes.get_instance().ConfigManager().get_config_value(f"env.{service}.{value}")
                 request.headers.update(
                     {
                         "Accept": "text/event-stream",

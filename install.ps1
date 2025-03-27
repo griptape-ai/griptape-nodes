@@ -19,12 +19,10 @@ if ($API_KEY) {
     } 
         # Write the API key to the config file
 '{
-  "griptape": {
-    "api_keys": {
-      "Nodes": {
-        "GRIPTAPE_NODES_API_KEY": "' + $API_KEY + '"
+  "env": {
+      "Griptape": {
+        "GT_CLOUD_API_KEY": "' + $API_KEY + '"
       }
-    }
   }
 }' | Out-File $ConfigFile
     Write-Host "API key saved to $ConfigFile"

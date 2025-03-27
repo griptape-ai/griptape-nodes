@@ -23,9 +23,7 @@ class NodesApiSocketManager:
                 ),
                 additional_headers={
                     "Authorization": f"Bearer {
-                        GriptapeNodes.get_instance()
-                        .ConfigManager()
-                        .get_config_value('griptape.api_keys.Nodes.GRIPTAPE_NODES_API_KEY')
+                        GriptapeNodes.get_instance().ConfigManager().get_config_value('env.Griptape.GT_CLOUD_API_KEY')
                     }"
                 },
             ),
