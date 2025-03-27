@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from abc import ABC
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -125,7 +126,7 @@ class ParameterUIOptions:
 
 @dataclass(kw_only=True)
 class BaseNodeElement:
-    element_id: str | None = None
+    element_id: str = field(default_factory=lambda: str(uuid.uuid4().hex))
     children: list[BaseNodeElement] = field(default_factory=list)
 
     _stack: ClassVar[list[BaseNodeElement]] = []
@@ -179,21 +180,22 @@ class BaseNodeElement:
                 break
             ui_elements.extend(ui_element.children)
 
-    def find_element_by_id(self, element_id: str) -> BaseNodeElement | None:
+    def get_element_by_id(self, element_id: str) -> BaseNodeElement | None:
         if self.element_id == element_id:
             return self
+
         for child in self.children:
-            found = child.find_element_by_id(element_id)
+            found = child.get_element_by_id(element_id)
             if found is not None:
                 return found
         return None
 
-    def get_elements_by_type(self, element_type: type[T]) -> list[T]:
+    def find_elements_by_type(self, element_type: type[T]) -> list[T]:
         elements: list[T] = []
         for child in self.children:
             if isinstance(child, element_type):
                 elements.append(child)
-            elements.extend(child.get_elements_by_type(element_type))
+            elements.extend(child.find_elements_by_type(element_type))
         return elements
 
     @classmethod

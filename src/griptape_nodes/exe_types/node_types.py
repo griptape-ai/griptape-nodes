@@ -37,7 +37,7 @@ class NodeBase(ABC):
 
     @property
     def parameters(self) -> list[Parameter]:
-        return self.root_ui_element.get_elements_by_type(Parameter)
+        return self.root_ui_element.find_elements_by_type(Parameter)
 
     def __hash__(self) -> int:
         return hash(self.name)

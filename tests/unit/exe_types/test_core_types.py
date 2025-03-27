@@ -1,3 +1,5 @@
+from unittest.mock import ANY
+
 import pytest
 
 from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, ParameterGroup
@@ -33,31 +35,31 @@ class TestBaseNodeElement:
 
     def test_to_dict(self, ui_element) -> None:
         assert ui_element.to_dict() == {
-            "element_id": None,
+            "element_id": ANY,
             "children": [
                 {
-                    "element_id": None,
+                    "element_id": ANY,
                     "children": [
-                        {"element_id": None, "children": []},
-                        {"element_id": None, "children": [{"element_id": "leaf1", "children": []}]},
+                        {"element_id": ANY, "children": []},
+                        {"element_id": ANY, "children": [{"element_id": "leaf1", "children": []}]},
                     ],
                 },
-                {"element_id": None, "children": [{"element_id": "leaf2", "children": []}]},
+                {"element_id": ANY, "children": [{"element_id": "leaf2", "children": []}]},
             ],
         }
 
     def test_add_child(self, ui_element) -> None:
-        ui_element.find_element_by_id("leaf1").add_child(BaseNodeElement(element_id="leaf3"))
+        ui_element.get_element_by_id("leaf1").add_child(BaseNodeElement(element_id="leaf3"))
 
         assert ui_element.to_dict() == {
-            "element_id": None,
+            "element_id": ANY,
             "children": [
                 {
-                    "element_id": None,
+                    "element_id": ANY,
                     "children": [
-                        {"element_id": None, "children": []},
+                        {"element_id": ANY, "children": []},
                         {
-                            "element_id": None,
+                            "element_id": ANY,
                             "children": [
                                 {
                                     "element_id": "leaf1",
@@ -69,33 +71,33 @@ class TestBaseNodeElement:
                         },
                     ],
                 },
-                {"element_id": None, "children": [{"element_id": "leaf2", "children": []}]},
+                {"element_id": ANY, "children": [{"element_id": "leaf2", "children": []}]},
             ],
         }
 
     def test_find_element_by_id(self, ui_element) -> None:
-        assert ui_element.find_element_by_id("leaf1").element_id == "leaf1"
-        assert ui_element.find_element_by_id("leaf2").element_id == "leaf2"
+        assert ui_element.get_element_by_id("leaf1").element_id == "leaf1"
+        assert ui_element.get_element_by_id("leaf2").element_id == "leaf2"
 
     def test_remove_child(self, ui_element) -> None:
-        element_to_remove = ui_element.find_element_by_id("leaf1")
+        element_to_remove = ui_element.get_element_by_id("leaf1")
 
         ui_element.remove_child(element_to_remove)
 
         assert ui_element.to_dict() == {
-            "element_id": None,
+            "element_id": ANY,
             "children": [
                 {
-                    "element_id": None,
+                    "element_id": ANY,
                     "children": [
-                        {"element_id": None, "children": []},
+                        {"element_id": ANY, "children": []},
                         {
-                            "element_id": None,
+                            "element_id": ANY,
                             "children": [],
                         },
                     ],
                 },
-                {"element_id": None, "children": [{"element_id": "leaf2", "children": []}]},
+                {"element_id": ANY, "children": [{"element_id": "leaf2", "children": []}]},
             ],
         }
 
