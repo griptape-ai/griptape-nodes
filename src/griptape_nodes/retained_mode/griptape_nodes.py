@@ -2823,6 +2823,43 @@ class ArbitraryCodeExecManager:
         return result
 
 
+from pydantic import BaseModel
+
+
+class LibrarySchema_0_1_0(BaseModel):
+    class LibraryMetadata(BaseModel):
+        author: str
+        description: str
+        library_version: str
+        engine_version: str
+        tags: list[str]
+
+    class CategoryDetail(BaseModel):
+        color: str
+        title: str
+        description: str
+        icon: str
+
+    class Category(BaseModel):
+        category_title: dict[str, "LibrarySchema_0_1_0.CategoryDetail"]
+
+    class NodeMetadata(BaseModel):
+        category: str
+        description: str
+        display_name: str
+
+    class Node(BaseModel):
+        class_name: str
+        file_path: str
+        metadata: "LibrarySchema_0_1_0.NodeMetadata"
+
+    name: str
+    library_schema_version: str
+    metadata: "LibrarySchema_0_1_0.LibraryMetadata"
+    categories: list["LibrarySchema_0_1_0.Category"]
+    nodes: list["LibrarySchema_0_1_0.Node"]
+
+
 class LibraryManager:
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(
@@ -2975,6 +3012,11 @@ class LibraryManager:
             details = f"Attempted to load Library JSON file. Failed because the file at path {json_path} was improperly formatted."
             GriptapeNodes.get_logger().error(details)
             return RegisterLibraryFromFileResult_Failure()
+
+        # Attempt to map to the schema
+        json_string = json_path.read_text()
+        validated_library = LibrarySchema_0_1_0.model_validate_json(json_string)
+
         # Extract library information
         try:
             library_name = library_data["name"]
