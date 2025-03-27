@@ -3013,16 +3013,16 @@ class LibraryManager:
         for node_meta in nodes_metadata:
             try:
                 class_name = node_meta["class_name"]
-                file_path = node_meta["file_path"]
+                node_file_path = node_meta["file_path"]
                 node_metadata = node_meta.get("metadata", {})
 
                 # Resolve relative path to absolute path
-                file_path = Path(file_path)
-                if not file_path.is_absolute():
-                    file_path = base_dir / file_path
+                node_file_path = Path(node_file_path)
+                if not node_file_path.is_absolute():
+                    node_file_path = base_dir / node_file_path
 
                 # Dynamically load the module containing the node class
-                node_class = self._load_class_from_file(file_path, class_name)
+                node_class = self._load_class_from_file(node_file_path, class_name)
 
                 # Register the node type with the library
                 library.register_new_node_type(node_class, metadata=node_metadata)
