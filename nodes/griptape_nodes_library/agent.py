@@ -59,7 +59,7 @@ class gnRunAgent(ControlNode):
                     )
                 ),
             )
-        self.add_ui_element(group)
+        self.add_node_element(group)
 
         with ParameterGroup(group_name="Agent Tools"):
             Parameter(name="tool", allowed_types=["BaseTool"], default_value=None, tooltip="")
@@ -87,7 +87,7 @@ class gnRunAgent(ControlNode):
                     )
                 ),
             )
-        self.add_ui_element(group)
+        self.add_node_element(group)
 
     # Only requires a valid OPENAI_API_KEY
     def validate_node(self) -> list[Exception] | None:

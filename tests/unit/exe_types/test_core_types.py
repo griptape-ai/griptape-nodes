@@ -25,7 +25,7 @@ class TestBaseNodeElement:
         with BaseNodeElement() as root:
             child = BaseNodeElement()
 
-            assert root.children == [child]
+            assert root._children == [child]
 
     def test__enter__(self) -> None:
         with BaseNodeElement() as ui:

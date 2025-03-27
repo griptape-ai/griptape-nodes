@@ -127,9 +127,13 @@ class ParameterUIOptions:
 @dataclass(kw_only=True)
 class BaseNodeElement:
     element_id: str = field(default_factory=lambda: str(uuid.uuid4().hex))
-    children: list[BaseNodeElement] = field(default_factory=list)
 
+    _children: list[BaseNodeElement] = field(default_factory=list)
     _stack: ClassVar[list[BaseNodeElement]] = []
+
+    @property
+    def children(self) -> list[BaseNodeElement]:
+        return self._children
 
     def __post_init__(self) -> None:
         # If there's currently an active element, add this new element as a child
@@ -166,25 +170,25 @@ class BaseNodeElement:
         """
         return {
             "element_id": self.element_id,
-            "children": [child.to_dict() for child in self.children],
+            "children": [child.to_dict() for child in self._children],
         }
 
     def add_child(self, child: BaseNodeElement) -> None:
-        self.children.append(child)
+        self._children.append(child)
 
     def remove_child(self, child: BaseNodeElement | str) -> None:
         ui_elements: list[BaseNodeElement] = [self]
         for ui_element in ui_elements:
-            if child in ui_element.children:
-                ui_element.children.remove(child)
+            if child in ui_element._children:
+                ui_element._children.remove(child)
                 break
-            ui_elements.extend(ui_element.children)
+            ui_elements.extend(ui_element._children)
 
     def find_element_by_id(self, element_id: str) -> BaseNodeElement | None:
         if self.element_id == element_id:
             return self
 
-        for child in self.children:
+        for child in self._children:
             found = child.find_element_by_id(element_id)
             if found is not None:
                 return found
@@ -192,7 +196,7 @@ class BaseNodeElement:
 
     def find_elements_by_type(self, element_type: type[T]) -> list[T]:
         elements: list[T] = []
-        for child in self.children:
+        for child in self._children:
             if isinstance(child, element_type):
                 elements.append(child)
             elements.extend(child.find_elements_by_type(element_type))

@@ -176,13 +176,16 @@ class NodeBase(ABC):
         if self.does_name_exist(param.name):
             msg = "Cannot have duplicate names on parameters."
             raise ValueError(msg)
-        self.root_ui_element.add_child(param)
-
-    def add_ui_element(self, ui_element: BaseNodeElement) -> None:
-        self.root_ui_element.add_child(ui_element)
+        self.add_node_element(param)
 
     def remove_parameter(self, param: Parameter) -> None:
-        self.root_ui_element.remove_child(param)
+        self.remove_node_element(param)
+
+    def add_node_element(self, ui_element: BaseNodeElement) -> None:
+        self.root_ui_element.add_child(ui_element)
+
+    def remove_node_element(self, ui_element: BaseNodeElement) -> None:
+        self.root_ui_element.remove_child(ui_element)
 
     def get_current_parameter(self) -> Parameter | None:
         return self.current_spotlight_parameter
