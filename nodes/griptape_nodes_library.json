@@ -71,8 +71,8 @@
   ],
   "nodes": [
     {
-      "class_name": "gnRunAgent",
-      "file_path": "griptape_nodes_library/agent.py",
+      "class_name": "Agent",
+      "file_path": "griptape_nodes_library/agents/create_agent.py",
       "metadata": {
         "category": "Agent",
         "description": "Griptape Agent that can execute prompts and use tools",
@@ -80,8 +80,8 @@
       }
     },
     {
-      "class_name": "gnSimpleAgent",
-      "file_path": "griptape_nodes_library/simple_agent.py",
+      "class_name": "PromptAgent",
+      "file_path": "griptape_nodes_library/agents/prompt_agent.py",
       "metadata": {
         "category": "Agent",
         "description": "Runs a previously created Griptape Agent with new prompts",
