@@ -1553,8 +1553,9 @@ class NodeManager:
 
             result = SetNodeMetadataResult_Failure()
             return result
-
-        node.metadata = request.metadata
+        # We can't completely overwrite metadata.
+        for key, value in request.metadata.items():
+            node.metadata[key] = value
         details = f"Successfully set metadata for a Node '{request.node_name}'."
         GriptapeNodes.get_logger().info(details)
 
