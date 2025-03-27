@@ -19,11 +19,27 @@ if ($API_KEY) {
         $response = Read-Host "Do you want to override it with the new API key? (y/n)"
         switch -Wildcard ($response.ToLower()) {
             'y' { 
-                '{"env": {"GRIPTAPE_NODES_API_KEY": "' + $API_KEY + '"}}' | Out-File $ConfigFile
+                '{
+  "griptape": {
+    "api_keys": {
+      "Nodes": {
+        "GRIPTAPE_NODES_API_KEY": "' + $API_KEY + '"
+      }
+    }
+  }
+}' | Out-File $ConfigFile
                 Write-Host "API key updated in $ConfigFile"
             }
             'yes' { 
-                '{"env": {"GRIPTAPE_NODES_API_KEY": "' + $API_KEY + '"}}' | Out-File $ConfigFile
+                '{
+  "griptape": {
+    "api_keys": {
+      "Nodes": {
+        "GRIPTAPE_NODES_API_KEY": "' + $API_KEY + '"
+      }
+    }
+  }
+}' | Out-File $ConfigFile
                 Write-Host "API key updated in $ConfigFile"
             }
             default {
@@ -32,13 +48,17 @@ if ($API_KEY) {
         }
     } else {
         # Write the API key to the config file
-        '{"env": {"GRIPTAPE_NODES_API_KEY": "' + $API_KEY + '"}}' | Out-File $ConfigFile
+        '{
+  "griptape": {
+    "api_keys": {
+      "Nodes": {
+        "GRIPTAPE_NODES_API_KEY": "' + $API_KEY + '"
+      }
+    }
+  }
+}' | Out-File $ConfigFile
         Write-Host "API key saved to $ConfigFile"
     }
-
-    # This matches the final overwrite in the original script:
-    '{"env": {"GRIPTAPE_NODES_API_KEY": "' + $API_KEY + '"}}' | Out-File $ConfigFile
-    Write-Host "API key saved to $ConfigFile"
 } else {
     Write-Host "No API key provided. Skipping config file creation."
 }
@@ -61,7 +81,6 @@ if (-not $Env:XDG_DATA_HOME) {
 Write-Host "`nInstalling Griptape Nodes Library...`n"
 $RepoName = "griptape-nodes"
 $TmpDir = New-TemporaryFile
-# Convert the temporary file to an actual directory path
 Remove-Item $TmpDir
 New-Item -ItemType Directory -Path $TmpDir | Out-Null
 
