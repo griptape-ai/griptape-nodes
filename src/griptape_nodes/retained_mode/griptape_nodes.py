@@ -1835,6 +1835,7 @@ class NodeManager:
         GriptapeNodes.get_logger().info(details)
 
         result = GetParameterDetailsResult_Success(
+            element_id=parameter.element_id,
             allowed_types=parameter.allowed_types,
             default_value=parameter.default_value,
             tooltip=parameter.tooltip,
@@ -2228,6 +2229,7 @@ class NodeManager:
             node_resolution_state=get_resolution_state_success.state,
             connections=list_connections_success,
             parameter_name_to_info=parameter_name_to_info,
+            root_node_element=node.root_ui_element.to_dict(),
         )
         return result
 

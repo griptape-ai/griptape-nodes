@@ -127,6 +127,7 @@ class ParameterUIOptions:
 @dataclass(kw_only=True)
 class BaseNodeElement:
     element_id: str = field(default_factory=lambda: str(uuid.uuid4().hex))
+    element_type: str = field(default_factory=lambda: BaseNodeElement.__name__)
 
     _children: list[BaseNodeElement] = field(default_factory=list)
     _stack: ClassVar[list[BaseNodeElement]] = []
@@ -161,15 +162,16 @@ class BaseNodeElement:
 
         Example:
             {
-              "name": "container-1",
+              "element_id": "container-1",
               "children": [
-                { "name": "A", "children": [] },
+                { "element_id": "A", "children": [] },
                 ...
               ]
             }
         """
         return {
             "element_id": self.element_id,
+            "element_type": self.__class__.__name__,
             "children": [child.to_dict() for child in self._children],
         }
 

@@ -37,21 +37,29 @@ class TestBaseNodeElement:
     def test_to_dict(self, ui_element) -> None:
         assert ui_element.to_dict() == {
             "element_id": ANY,
+            "element_type": "BaseNodeElement",
             "children": [
                 {
                     "element_id": ANY,
+                    "element_type": "BaseNodeElement",
                     "children": [
-                        {"element_id": ANY, "children": []},
-                        {"element_id": ANY, "children": [{"element_id": "leaf1", "children": []}]},
+                        {"element_id": ANY, "element_type": "BaseNodeElement", "children": []},
+                        {
+                            "element_id": ANY,
+                            "element_type": "BaseNodeElement",
+                            "children": [{"element_id": "leaf1", "element_type": "BaseNodeElement", "children": []}],
+                        },
                     ],
                 },
                 {
                     "element_id": ANY,
+                    "element_type": "BaseNodeElement",
                     "children": [
-                        {"element_id": "leaf2", "children": []},
+                        {"element_id": "leaf2", "element_type": "BaseNodeElement", "children": []},
                         {
-                            "children": [],
                             "element_id": "parameter",
+                            "element_type": "Parameter",
+                            "children": [],
                         },
                     ],
                 },
@@ -63,18 +71,22 @@ class TestBaseNodeElement:
 
         assert ui_element.to_dict() == {
             "element_id": ANY,
+            "element_type": "BaseNodeElement",
             "children": [
                 {
                     "element_id": ANY,
+                    "element_type": "BaseNodeElement",
                     "children": [
-                        {"element_id": ANY, "children": []},
+                        {"element_id": ANY, "element_type": "BaseNodeElement", "children": []},
                         {
                             "element_id": ANY,
+                            "element_type": "BaseNodeElement",
                             "children": [
                                 {
                                     "element_id": "leaf1",
+                                    "element_type": "BaseNodeElement",
                                     "children": [
-                                        {"element_id": "leaf3", "children": []},
+                                        {"element_id": "leaf3", "element_type": "BaseNodeElement", "children": []},
                                     ],
                                 }
                             ],
@@ -83,11 +95,13 @@ class TestBaseNodeElement:
                 },
                 {
                     "element_id": ANY,
+                    "element_type": "BaseNodeElement",
                     "children": [
-                        {"element_id": "leaf2", "children": []},
+                        {"element_id": "leaf2", "element_type": "BaseNodeElement", "children": []},
                         {
                             "children": [],
                             "element_id": "parameter",
+                            "element_type": "Parameter",
                         },
                     ],
                 },
@@ -110,24 +124,29 @@ class TestBaseNodeElement:
 
         assert ui_element.to_dict() == {
             "element_id": ANY,
+            "element_type": "BaseNodeElement",
             "children": [
                 {
                     "element_id": ANY,
+                    "element_type": "BaseNodeElement",
                     "children": [
-                        {"element_id": ANY, "children": []},
+                        {"element_id": ANY, "element_type": "BaseNodeElement", "children": []},
                         {
                             "element_id": ANY,
+                            "element_type": "BaseNodeElement",
                             "children": [],
                         },
                     ],
                 },
                 {
                     "element_id": ANY,
+                    "element_type": "BaseNodeElement",
                     "children": [
-                        {"element_id": "leaf2", "children": []},
+                        {"element_id": "leaf2", "element_type": "BaseNodeElement", "children": []},
                         {
-                            "children": [],
                             "element_id": "parameter",
+                            "element_type": "Parameter",
+                            "children": [],
                         },
                     ],
                 },
