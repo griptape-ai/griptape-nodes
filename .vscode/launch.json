@@ -18,11 +18,9 @@
             "name": "Python Debugger: Run Griptape Nodes App",
             "type": "debugpy",
             "request": "launch",
-            "program": "src/griptape_nodes/__init__.py",
+            "python": ".venv/bin/python",
+            "module": "src.griptape_nodes.__init__",
             "console": "integratedTerminal",
-            "env": {
-                "PYTHONPATH": "${workspaceRoot}/src"
-            }
         }
     ]
 }
