@@ -11,7 +11,7 @@ class TestBaseNodeElement:
         with BaseNodeElement() as root:
             with BaseNodeElement():
                 BaseNodeElement()
-                with BaseNodeElement():
+                with ParameterGroup(group_name="group1"):
                     BaseNodeElement(element_id="leaf1")
             with BaseNodeElement():
                 BaseNodeElement(element_id="leaf2")
@@ -46,7 +46,8 @@ class TestBaseNodeElement:
                         {"element_id": ANY, "element_type": "BaseNodeElement", "children": []},
                         {
                             "element_id": ANY,
-                            "element_type": "BaseNodeElement",
+                            "element_type": "ParameterGroup",
+                            "group_name": "group1",
                             "children": [{"element_id": "leaf1", "element_type": "BaseNodeElement", "children": []}],
                         },
                     ],
@@ -80,7 +81,8 @@ class TestBaseNodeElement:
                         {"element_id": ANY, "element_type": "BaseNodeElement", "children": []},
                         {
                             "element_id": ANY,
-                            "element_type": "BaseNodeElement",
+                            "element_type": "ParameterGroup",
+                            "group_name": "group1",
                             "children": [
                                 {
                                     "element_id": "leaf1",
@@ -133,7 +135,8 @@ class TestBaseNodeElement:
                         {"element_id": ANY, "element_type": "BaseNodeElement", "children": []},
                         {
                             "element_id": ANY,
-                            "element_type": "BaseNodeElement",
+                            "element_type": "ParameterGroup",
+                            "group_name": "group1",
                             "children": [],
                         },
                     ],

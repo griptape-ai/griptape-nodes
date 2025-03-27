@@ -163,8 +163,14 @@ class BaseNodeElement:
         Example:
             {
               "element_id": "container-1",
+              "element_type": "ParameterGroup",
+              "group_name": "Group 1",
               "children": [
-                { "element_id": "A", "children": [] },
+                {
+                    "element_id": "A",
+                    "element_type": "Parameter",
+                    "children": []
+                },
                 ...
               ]
             }
@@ -215,6 +221,31 @@ class ParameterGroup(BaseNodeElement):
     """UI element for a group of parameters."""
 
     group_name: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Returns a nested dictionary representation of this node and its children.
+
+        Example:
+            {
+              "element_id": "container-1",
+              "element_type": "ParameterGroup",
+              "group_name": "Group 1",
+              "children": [
+                {
+                    "element_id": "A",
+                    "element_type": "Parameter",
+                    "children": []
+                },
+                ...
+              ]
+            }
+        """
+        return {
+            "element_id": self.element_id,
+            "element_type": self.__class__.__name__,
+            "group_name": self.group_name,
+            "children": [child.to_dict() for child in self._children],
+        }
 
 
 @dataclass

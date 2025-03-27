@@ -35,7 +35,7 @@ class gnRunAgent(ControlNode):
                 tooltip="",
             )
         )
-        with ParameterGroup(group_name="Agent Config") as group:
+        with ParameterGroup(group_name="Agent Config") as config_group:
             Parameter(
                 name="prompt_driver",
                 allowed_types=["BasePromptDriver"],
@@ -59,9 +59,9 @@ class gnRunAgent(ControlNode):
                     )
                 ),
             )
-        self.add_node_element(group)
+        self.add_node_element(config_group)
 
-        with ParameterGroup(group_name="Agent Tools"):
+        with ParameterGroup(group_name="Agent Tools") as tools_group:
             Parameter(name="tool", allowed_types=["BaseTool"], default_value=None, tooltip="")
             Parameter(
                 name="tool_list",
@@ -87,7 +87,7 @@ class gnRunAgent(ControlNode):
                     )
                 ),
             )
-        self.add_node_element(group)
+        self.add_node_element(tools_group)
 
     # Only requires a valid OPENAI_API_KEY
     def validate_node(self) -> list[Exception] | None:
