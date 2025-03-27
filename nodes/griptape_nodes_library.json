@@ -197,7 +197,7 @@
       }
     },
     {
-      "class_name": "gnRuleSet",
+      "class_name": "Ruleset",
       "file_path": "griptape_nodes_library/rules/base_ruleset.py",
       "metadata": {
         "category": "Rules",
