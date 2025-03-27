@@ -5,6 +5,8 @@ from urllib.parse import urljoin
 from attrs import Factory, define, field
 from websockets.sync.client import ClientConnection, connect
 
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
 
 @define(kw_only=True)
 class NodesApiSocketManager:
@@ -19,7 +21,13 @@ class NodesApiSocketManager:
                     .replace("https", "wss"),
                     "/api/editors/ws",  # TODO(matt): this is the destination path for events. reevaluate if we do bi-directional communication
                 ),
-                additional_headers={"Authorization": f"Bearer {os.getenv('GRIPTAPE_NODES_API_KEY')}"},
+                additional_headers={
+                    "Authorization": f"Bearer {
+                        GriptapeNodes.get_instance()
+                        .ConfigManager()
+                        .get_config_value('griptape.api_keys.Nodes.GRIPTAPE_NODES_API_KEY')
+                    }"
+                },
             ),
         ),
     )
