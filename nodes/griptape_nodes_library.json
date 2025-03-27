@@ -13,12 +13,11 @@
   },
   "categories": [
     {
-      "Agent": {
-        "color": "border-red-500",
-        "title": "Agent",
-        "description": "Nodes related to Agents.",
-        "icon": "UserCircle"
-      }
+      "id": "Agent",
+      "color": "border-red-500",
+      "title": "Agent",
+      "description": "Nodes related to Agents.",
+      "icon": "UserCircle"
     },
     {
       "Rules": {

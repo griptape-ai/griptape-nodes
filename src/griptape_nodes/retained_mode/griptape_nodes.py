@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import importlib.util
 import io
 import json
@@ -2826,7 +2828,8 @@ class ArbitraryCodeExecManager:
 from pydantic import BaseModel
 
 
-class LibrarySchema_0_1_0(BaseModel):
+# TODO: Move each schema into a directory named by its version
+class LibrarySchema(BaseModel):
     class LibraryMetadata(BaseModel):
         author: str
         description: str
@@ -2834,14 +2837,12 @@ class LibrarySchema_0_1_0(BaseModel):
         engine_version: str
         tags: list[str]
 
-    class CategoryDetail(BaseModel):
+    class Category(BaseModel):
+        id: str
         color: str
         title: str
         description: str
         icon: str
-
-    class Category(BaseModel):
-        category_title: dict[str, "LibrarySchema_0_1_0.CategoryDetail"]
 
     class NodeMetadata(BaseModel):
         category: str
@@ -2851,13 +2852,13 @@ class LibrarySchema_0_1_0(BaseModel):
     class Node(BaseModel):
         class_name: str
         file_path: str
-        metadata: "LibrarySchema_0_1_0.NodeMetadata"
+        metadata: LibrarySchema.NodeMetadata
 
     name: str
     library_schema_version: str
-    metadata: "LibrarySchema_0_1_0.LibraryMetadata"
-    categories: list["LibrarySchema_0_1_0.Category"]
-    nodes: list["LibrarySchema_0_1_0.Node"]
+    metadata: LibrarySchema.LibraryMetadata
+    categories: list[LibrarySchema.Category]
+    nodes: list[LibrarySchema.Node]
 
 
 class LibraryManager:
@@ -3015,7 +3016,7 @@ class LibraryManager:
 
         # Attempt to map to the schema
         json_string = json_path.read_text()
-        validated_library = LibrarySchema_0_1_0.model_validate_json(json_string)
+        validated_library = LibrarySchema.model_validate_json(json_string)
 
         # Extract library information
         try:
