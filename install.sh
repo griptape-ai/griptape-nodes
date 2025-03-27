@@ -10,26 +10,18 @@ if [ -n "$API_KEY" ]; then
 
     # Check if the file already exists
     if [ -e "$CONFIG_FILE" ]; then
-        echo "A config file already exists at '$CONFIG_FILE'."
-        printf "Do you want to override it with the new API key? (y/n) "
-        read -r RESPONSE
-        case "$RESPONSE" in
-            [yY][eE][sS]|[yY])
-                echo "{\"env\": {\"GRIPTAPE_NODES_API_KEY\": \"$API_KEY\"}}" > "$CONFIG_FILE"
-                echo "API key updated in $CONFIG_FILE"
-                ;;
-            *)
-                echo "Skipping config file update."
-                ;;
-        esac
-    else
-        # Write the API key to the config file
-        echo "{\"env\": {\"GRIPTAPE_NODES_API_KEY\": \"$API_KEY\"}}" > "$CONFIG_FILE"
-        echo "API key saved to $CONFIG_FILE"
+        echo "A config file already exists at '$CONFIG_FILE', overwriting..."
     fi
-
     # Write the API key to the config file
-    echo "{\"env\": {\"GRIPTAPE_NODES_API_KEY\": \"$API_KEY\"}}" > "$CONFIG_FILE"
+    echo '{
+  "griptape": {
+    "api_keys": {
+      "Nodes": {
+        "GRIPTAPE_NODES_API_KEY": "'"$API_KEY"'"
+      }
+    }
+  }
+}' >"$CONFIG_FILE"
     echo "API key saved to $CONFIG_FILE"
 else
     echo "No API key provided. Skipping config file creation."
@@ -44,7 +36,6 @@ echo ""
 echo "Installing Griptape Nodes Engine..."
 echo ""
 uv tool install --force --python python3.13 --from git+https://github.com/griptape-ai/griptape-nodes.git@latest griptape_nodes
-
 
 # Install Griptape Nodes Library + Scripts
 : "${XDG_DATA_HOME:="$HOME/.local/share"}"
@@ -63,7 +54,7 @@ mkdir -p "$XDG_DATA_HOME/griptape_nodes"
 cp -R $REPO_NAME/nodes/ "$XDG_DATA_HOME/griptape_nodes/nodes"
 cp -R $REPO_NAME/scripts/ "$XDG_DATA_HOME/griptape_nodes/scripts"
 
-cd - > /dev/null
+cd - >/dev/null
 rm -rf "$TMP_DIR"
 
 echo ""
@@ -71,4 +62,3 @@ echo "Installation complete!"
 echo ""
 echo "Run 'griptape-nodes' (or just 'gtn') to start the engine."
 echo ""
-
