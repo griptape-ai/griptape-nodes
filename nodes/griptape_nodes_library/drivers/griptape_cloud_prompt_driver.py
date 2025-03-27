@@ -6,7 +6,7 @@ from griptape_nodes_library.utils.env_utils import getenv
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
-SERVICE = "GriptapeCloud"
+SERVICE = "Griptape"
 SUCCESS = 200
 
 
