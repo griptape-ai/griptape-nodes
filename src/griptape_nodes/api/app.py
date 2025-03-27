@@ -1,14 +1,8 @@
 from __future__ import annotations
 
 import contextvars
-import json
-import os
-import threading
-from time import sleep
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urljoin
 
-import httpx
 from griptape.events import (
     BaseEvent,
     EventBus,
@@ -18,7 +12,6 @@ from griptape.events import (
 )
 
 from griptape_nodes.api.queue_manager import event_queue
-from griptape_nodes.api.routes.api import process_event
 from griptape_nodes.api.routes.nodes_api_socket_manager import NodesApiSocketManager
 
 # This import is necessary to register all events, even if not technically used
@@ -145,59 +138,10 @@ def setup_event_listeners() -> None:
     EventBus.add_event_listener(event_listener=EventListener(on_event=process_app_event, event_types=[AppEvent]))  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
 
 
-def sse_listener() -> None:
-    while True:
-        try:
-            endpoint = urljoin(
-                os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/engines/stream"
-            )
-            nodes_app_url = os.getenv("GRIPTAPE_NODES_APP_URL", "https://nodes.griptape.ai")
-
-            def auth(request: httpx.Request) -> httpx.Request:
-                service = "Nodes"
-                value = "GRIPTAPE_NODES_API_KEY"
-                api_token = (
-                    GriptapeNodes.get_instance()
-                    .ConfigManager()
-                    .get_config_value(f"griptape.api_keys.{service}.{value}")
-                )
-                request.headers.update(
-                    {
-                        "Accept": "text/event-stream",
-                        "Authorization": f"Bearer {api_token}",
-                    }
-                )
-                return request
-
-            with httpx.stream("get", endpoint, auth=auth, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout
-                response.raise_for_status()
-                for line in response.iter_lines():
-                    if not line.strip():
-                        continue
-                    if line.startswith("data:"):
-                        data = line.removeprefix("data:").strip()
-                        if data == "START":
-                            logger.info("Engine is ready to receive events")
-                            logger.info(
-                                "[bold green]Please visit [link=%s]%s[/link] in your browser.[/bold green]",
-                                nodes_app_url,
-                                nodes_app_url,
-                            )
-
-                        else:
-                            process_event(json.loads(data))
-        except Exception:
-            logger.exception("Error while listening to SSE")
-            sleep(5)
-
-
-def run_sse_mode() -> None:
+def run() -> None:
     global socket  # noqa: PLW0603 # Need to initialize the socket lazily here to avoid auth-ing too early
 
     socket = NodesApiSocketManager()
-    sse_thread = threading.Thread(target=sse_listener)
-    sse_thread.start()
-
     setup_event_listeners()
 
     # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
@@ -206,9 +150,10 @@ def run_sse_mode() -> None:
     EventBus.publish_event(
         app_event  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
     )
+    socket.start_background_task()
 
     check_event_queue()
 
 
 def main() -> None:
-    run_sse_mode()
+    run()
