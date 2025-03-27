@@ -54,15 +54,12 @@ def run_with_context(func: Callable) -> Callable:
 
 
 # Define methods for events etc
-def process_request(event: EventRequest | AppEvent) -> None:
+def process_request(event: EventRequest) -> None:
     # make the request with this event
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-    if isinstance(event, EventRequest):
-        request_payload = event.request
-        GriptapeNodes().handle_request(request_payload)
-    else:
-        process_app_event(event)
+    request_payload = event.request
+    GriptapeNodes().handle_request(request_payload)
 
 
 def send_event(event: GriptapeNodeEvent) -> None:
@@ -122,7 +119,13 @@ def check_event_queue() -> None:
     while True:
         if not event_queue.empty():
             event = event_queue.get()
-            process_request(event)
+            if isinstance(event, EventRequest):
+                process_request(event)
+            elif isinstance(event, AppEvent):
+                process_app_event(event)
+            else:
+                logger.warning("Unknown event type encountered: '%s'.", type(event))
+
             event_queue.task_done()
 
 
