@@ -80,8 +80,8 @@
       }
     },
     {
-      "class_name": "PromptAgent",
-      "file_path": "griptape_nodes_library/agents/prompt_agent.py",
+      "class_name": "RunAgent",
+      "file_path": "griptape_nodes_library/agents/run_agent.py",
       "metadata": {
         "category": "Agent",
         "description": "Runs a previously created Griptape Agent with new prompts",
