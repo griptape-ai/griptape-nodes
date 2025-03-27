@@ -1061,7 +1061,7 @@ class FlowManager:
         result = DeleteConnectionResult_Success()
         return result
 
-    def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: PLR0911 C901
+    def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         # which flow
         flow_name = request.flow_name
         debug_mode = request.debug_mode
@@ -1113,7 +1113,10 @@ class FlowManager:
             result = cast("ValidateFlowDependenciesResult_Success", result)
 
             if not result.validation_succeeded:
-                details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed with {len(result.exceptions) if result.exceptions else 0} exceptions."
+                details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed."
+                if len(result.exceptions) > 0:
+                    for exception in result.exceptions:
+                        details = f"{details}\n\t{exception}"
                 GriptapeNodes.get_logger().error(details)
                 return StartFlowResult_Failure(validation_exceptions=result.exceptions)
         except Exception:
@@ -2365,7 +2368,7 @@ class NodeManager:
             raise KeyError(msg)
         return self._name_to_parent_flow_name[node_name]
 
-    def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: PLR0911 C901 TODO(griptape): resolve
+    def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
         node_name = request.node_name
         debug_mode = request.debug_mode
 
@@ -2418,7 +2421,10 @@ class NodeManager:
             result = cast("ValidateNodeDependenciesResult_Success", result)
 
             if not result.validation_succeeded:
-                details = f"Failed to resolve node '{node_name}'. Flow Validation Failed with {len(result.exceptions) if result.exceptions else 0} exceptions."
+                details = f"Failed to resolve node '{node_name}'. Flow Validation Failed."
+                if len(result.exceptions) > 0:
+                    for exception in result.exceptions:
+                        details = f"{details}\n\t{exception}"
                 GriptapeNodes.get_logger().error(details)
                 return StartFlowResult_Failure(validation_exceptions=result.exceptions)
         except Exception as e:
