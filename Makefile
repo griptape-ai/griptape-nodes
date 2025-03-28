@@ -7,6 +7,7 @@ version/set: ## Set version.
 	@uvx --from=toml-cli toml set --toml-path=pyproject.toml project.version ${v}
 	@git add pyproject.toml
 	@git commit -m "chore: bump v$$(make version/get)"
+	@uv lock
 
 .PHONY: publish
 publish: ## Push git tag and publish version to PyPI.
