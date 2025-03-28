@@ -1,10 +1,10 @@
 from griptape.rules import Rule, Ruleset
 from griptape.tools import RagTool
 
-from griptape_nodes_library.tools.tools import gnBaseTool
+from griptape_nodes_library.tools.tools import BaseToolNode
 
 
-class gnRagTool(gnBaseTool):
+class RagToolNode(BaseToolNode):
     def process(self) -> None:
         description = self.parameter_values.get("description", "Contains information.")
         off_prompt = self.parameter_values.get("off_prompt", False)

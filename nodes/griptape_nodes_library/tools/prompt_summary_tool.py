@@ -1,13 +1,13 @@
 from griptape.engines import PromptSummaryEngine
 from griptape.tools import PromptSummaryTool
 
-from griptape_nodes_library.tools.tools import gnBaseTool
+from griptape_nodes_library.tools.tools import BaseToolNode
 
 
-class gnPromptSummaryTool(gnBaseTool):
+class FileManagerToolNode(BaseToolNode):
     """A tool generator class that creates a configured PromptSummaryTool.
 
-    This class extends gnBaseTool to create a tool specifically for summarizing text.
+    This class extends BaseToolNode to create a tool specifically for summarizing text.
     It configures a PromptSummaryEngine with an optional prompt driver and wraps it
     in a PromptSummaryTool.
     """

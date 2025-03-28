@@ -5,7 +5,7 @@ from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
-class gnBaseDriver(DataNode):
+class BaseDriverNode(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.config = GriptapeNodes.ConfigManager()

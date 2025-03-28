@@ -4,7 +4,7 @@ from griptape_nodes.exe_types.core_types import ControlParameter_Output
 from griptape_nodes.exe_types.node_types import StartNode
 
 
-class gnStartFlow(StartNode):
+class SimpleAgentNode(StartNode):
     def __init__(
         self,
         name: str,

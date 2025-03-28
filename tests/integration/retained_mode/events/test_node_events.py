@@ -15,7 +15,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 class TestNodeEvents:
     @pytest.fixture
     def create_node_result(self, flow) -> Any:  # noqa: ARG002
-        request = CreateNodeRequest(node_type="gnRunAgent", override_parent_flow_name="canvas")
+        request = CreateNodeRequest(node_type="RunAgentNode", override_parent_flow_name="canvas")
         result = GriptapeNodes.handle_request(request)
 
         return result
@@ -27,7 +27,7 @@ class TestNodeEvents:
         assert isinstance(result, GetAllNodeInfoResult_Success)
 
         assert EventResult_Success(request=request, result=result).dict() == {
-            "request": {"request_id": None, "node_name": "gnRunAgent_1"},
+            "request": {"request_id": None, "node_name": "RunAgentNode_1"},
             "result": {
                 "metadata": {
                     "library_node_metadata": {
@@ -36,7 +36,7 @@ class TestNodeEvents:
                         "display_name": "Run Agent",
                     },
                     "library": "Griptape Nodes Library",
-                    "node_type": "gnRunAgent",
+                    "node_type": "RunAgentNode",
                 },
                 "node_resolution_state": "UNRESOLVED",
                 "connections": {"incoming_connections": [], "outgoing_connections": []},

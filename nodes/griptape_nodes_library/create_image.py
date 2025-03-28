@@ -15,7 +15,7 @@ DEFAULT_QUALITY = "hd"
 DEFAULT_STYLE = "natural"
 
 
-class gnCreateImage(ControlNode):
+class CreateImageNode(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 

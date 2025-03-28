@@ -4,7 +4,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode, NodeBase
 
 
-class gnReroute(DataNode):
+class RerouteNode(DataNode):
     # Track the incoming and outgoing connections to choose our allowed types.
     # I'd use sets for faster removal but I don't know if I want to hash Parameter objects
     incoming_connection_params: list[Parameter]
@@ -95,7 +95,7 @@ class gnReroute(DataNode):
             allowed_types = outgoing_connection_param.allowed_types
             all_allowed_types.append(allowed_types)
 
-        intersection = gnReroute.intersection_of_allowed_types(*all_allowed_types)
+        intersection = RerouteNode.intersection_of_allowed_types(*all_allowed_types)
         parameter.allowed_types = intersection
 
     def after_incoming_connection(

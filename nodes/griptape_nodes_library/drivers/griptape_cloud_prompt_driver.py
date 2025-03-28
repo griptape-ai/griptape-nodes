@@ -1,6 +1,6 @@
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 
-from griptape_nodes_library.drivers.base_prompt_driver import gnBasePromptDriver
+from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
 from griptape_nodes_library.utils.env_utils import getenv
 
 DEFAULT_MODEL = "gpt-4o"
@@ -9,7 +9,7 @@ SERVICE = "Griptape"
 SUCCESS = 200
 
 
-class gnGriptapeCloudPromptDriver(gnBasePromptDriver):
+class GriptapeCloudPromptDriverNode(BasePromptDriverNode):
     """Node for Griptape Cloud Prompt Driver.
 
     This node creates a Griptape Cloud prompt driver and outputs its configuration.
@@ -76,5 +76,5 @@ class gnGriptapeCloudPromptDriver(gnBasePromptDriver):
 
 
 if __name__ == "__main__":
-    drv = gnGriptapeCloudPromptDriver(name="simpleClear")
+    drv = GriptapeCloudPromptDriverNode(name="simpleClear")
     drv.process()

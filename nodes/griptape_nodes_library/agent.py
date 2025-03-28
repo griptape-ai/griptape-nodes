@@ -18,7 +18,7 @@ API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 
 
-class gnRunAgent(ControlNode):
+class RunAgentNode(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -146,7 +146,7 @@ class gnRunAgent(ControlNode):
 
 
 if __name__ == "__main__":
-    agt = gnRunAgent(name="gnRunAgent_1")
+    agt = RunAgentNode(name="RunAgentNode_1")
     agt.parameter_values["prompt"] = "Hey there"
     try:
         agt.process()

@@ -4,7 +4,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Parame
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class gnRuleSet(DataNode):
+class RulesetNode(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -53,4 +53,4 @@ class gnRuleSet(DataNode):
 
 
 if __name__ == "__main__":
-    gnRuleSet(name="gnRuleSet_1").process()
+    RulesetNode(name="RulesetNode_1").process()

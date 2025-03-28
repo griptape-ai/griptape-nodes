@@ -1,13 +1,13 @@
 from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
 
-from griptape_nodes_library.drivers.base_prompt_driver import gnBasePromptDriver
+from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
 SERVICE = "OpenAI"
 
 
-class gnOpenAiChatPromptDriver(gnBasePromptDriver):
+class OpenAiChatPromptDriverNode(BasePromptDriverNode):
     """Node for OpenAi Prompt Driver.
 
     This node creates an OpenAi prompt driver and outputs its configuration.
