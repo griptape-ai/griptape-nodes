@@ -6,8 +6,8 @@ from griptape.events import BaseEvent
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
-    ControlParameter_Input,
-    ControlParameter_Output,
+    ControlParameterInput,
+    ControlParameterOutput,
     Parameter,
     ParameterControlType,
     ParameterMode,
@@ -355,8 +355,8 @@ class ControlNode(BaseNode):
     # Control Nodes may have one Control Input Port and at least one Control Output Port
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata=metadata)
-        control_parameter_in = ControlParameter_Input()
-        control_parameter_out = ControlParameter_Output()
+        control_parameter_in = ControlParameterInput()
+        control_parameter_out = ControlParameterOutput()
 
         self.parameters.append(control_parameter_in)
         self.parameters.append(control_parameter_out)

@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from griptape_nodes.node_library.script_registry import LibraryNameAndVersion
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultPayload_Failure,
-    ResultPayload_Success,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -17,13 +17,13 @@ class RunScriptFromScratchRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptFromScratchResult_Success(ResultPayload_Success):
+class RunScriptFromScratchResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptFromScratchResult_Failure(ResultPayload_Failure):
+class RunScriptFromScratchResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -35,13 +35,13 @@ class RunScriptWithCurrentStateRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptWithCurrentStateResult_Success(ResultPayload_Success):
+class RunScriptWithCurrentStateResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptWithCurrentStateResult_Failure(ResultPayload_Failure):
+class RunScriptWithCurrentStateResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -53,13 +53,13 @@ class RunScriptFromRegistryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptFromRegistryResult_Success(ResultPayload_Success):
+class RunScriptFromRegistryResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptFromRegistryResult_Failure(ResultPayload_Failure):
+class RunScriptFromRegistryResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -76,13 +76,13 @@ class RegisterScriptRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RegisterScriptResult_Success(ResultPayload_Success):
+class RegisterScriptResultSuccess(ResultPayloadSuccess):
     script_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class RegisterScriptResult_Failure(ResultPayload_Failure):
+class RegisterScriptResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -94,13 +94,13 @@ class ListAllScriptsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListAllScriptsResult_Success(ResultPayload_Success):
+class ListAllScriptsResultSuccess(ResultPayloadSuccess):
     scripts: dict
 
 
 @dataclass
 @PayloadRegistry.register
-class ListAllScriptsResult_Failure(ResultPayload_Failure):
+class ListAllScriptsResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -112,13 +112,13 @@ class DeleteScriptRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteScriptResult_Success(ResultPayload_Success):
+class DeleteScriptResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class DeleteScriptResult_Failure(ResultPayload_Failure):
+class DeleteScriptResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -130,11 +130,11 @@ class SaveSceneRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SaveSceneResult_Success(ResultPayload_Success):
+class SaveSceneResultSuccess(ResultPayloadSuccess):
     file_path: str
 
 
 @dataclass
 @PayloadRegistry.register
-class SaveSceneResult_Failure(ResultPayload_Failure):
+class SaveSceneResultFailure(ResultPayloadFailure):
     pass

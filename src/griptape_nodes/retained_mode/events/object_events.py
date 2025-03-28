@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultPayload_Failure,
-    ResultPayload_Success,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -18,11 +18,11 @@ class RenameObjectRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RenameObjectResult_Success(ResultPayload_Success):
+class RenameObjectResultSuccess(ResultPayloadSuccess):
     final_name: str  # May not be the same as what was requested, if that bool was set
 
 
 @dataclass
 @PayloadRegistry.register
-class RenameObjectResult_Failure(ResultPayload_Failure):
+class RenameObjectResultFailure(ResultPayloadFailure):
     next_available_name: str | None

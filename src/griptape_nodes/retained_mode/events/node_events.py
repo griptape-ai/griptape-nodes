@@ -3,13 +3,13 @@ from dataclasses import dataclass
 from griptape_nodes.exe_types.core_types import BaseNodeElement
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultPayload_Failure,
-    ResultPayload_Success,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
 )
-from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeResult_Success
+from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeResultSuccess
 from griptape_nodes.retained_mode.events.parameter_events import (
-    GetParameterDetailsResult_Success,
-    GetParameterValueResult_Success,
+    GetParameterDetailsResultSuccess,
+    GetParameterValueResultSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -26,13 +26,13 @@ class CreateNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CreateNodeResult_Success(ResultPayload_Success):
+class CreateNodeResultSuccess(ResultPayloadSuccess):
     node_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class CreateNodeResult_Failure(ResultPayload_Failure):
+class CreateNodeResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -44,13 +44,13 @@ class DeleteNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteNodeResult_Success(ResultPayload_Success):
+class DeleteNodeResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class DeleteNodeResult_Failure(ResultPayload_Failure):
+class DeleteNodeResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -62,13 +62,13 @@ class GetNodeResolutionStateRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeResolutionStateResult_Success(ResultPayload_Success):
+class GetNodeResolutionStateResultSuccess(ResultPayloadSuccess):
     state: str
 
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeResolutionStateResult_Failure(ResultPayload_Failure):
+class GetNodeResolutionStateResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -80,13 +80,13 @@ class ListParametersOnNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListParametersOnNodeResult_Success(ResultPayload_Success):
+class ListParametersOnNodeResultSuccess(ResultPayloadSuccess):
     parameter_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListParametersOnNodeResult_Failure(ResultPayload_Failure):
+class ListParametersOnNodeResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -98,13 +98,13 @@ class GetNodeMetadataRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeMetadataResult_Success(ResultPayload_Success):
+class GetNodeMetadataResultSuccess(ResultPayloadSuccess):
     metadata: dict
 
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeMetadataResult_Failure(ResultPayload_Failure):
+class GetNodeMetadataResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -117,13 +117,13 @@ class SetNodeMetadataRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SetNodeMetadataResult_Success(ResultPayload_Success):
+class SetNodeMetadataResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class SetNodeMetadataResult_Failure(ResultPayload_Failure):
+class SetNodeMetadataResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -137,21 +137,21 @@ class GetAllNodeInfoRequest(RequestPayload):
 
 @dataclass
 class ParameterInfoValue:
-    details: GetParameterDetailsResult_Success
-    value: GetParameterValueResult_Success
+    details: GetParameterDetailsResultSuccess
+    value: GetParameterValueResultSuccess
 
 
 @dataclass
 @PayloadRegistry.register
-class GetAllNodeInfoResult_Success(ResultPayload_Success):
+class GetAllNodeInfoResultSuccess(ResultPayloadSuccess):
     metadata: dict
     node_resolution_state: str
-    connections: ListConnectionsForNodeResult_Success
+    connections: ListConnectionsForNodeResultSuccess
     parameter_name_to_info: dict[str, ParameterInfoValue]
     root_node_element: BaseNodeElement
 
 
 @dataclass
 @PayloadRegistry.register
-class GetAllNodeInfoResult_Failure(ResultPayload_Failure):
+class GetAllNodeInfoResultFailure(ResultPayloadFailure):
     pass

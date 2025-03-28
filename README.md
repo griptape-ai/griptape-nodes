@@ -46,9 +46,9 @@ Responses follow this structure:
 
 ```json
 {
-  "event_type": "EventResult_Success",
+  "event_type": "EventResultSuccess",
   "request_type": "StartFlowRequest",
-  "result_type": "StartFlowResult_Success",
+  "result_type": "StartFlowResultSuccess",
   "request": {
     "request_id": 1,
     "flow_name": "canvas",
@@ -63,9 +63,9 @@ Responses follow this structure:
 
 ```json
 {
-  "event_type": "EventResult_Failure",
+  "event_type": "EventResultFailure",
   "request_type": "StartFlowRequest", 
-  "result_type": "StartFlowResult_Failure",
+  "result_type": "StartFlowResultFailure",
   "request": {
     "request_id": 2,
     "flow_name": "canvas",
@@ -85,11 +85,11 @@ Responses follow this structure:
 
   - `python_string`: (string) The Python code to execute
 
-- **Result Success Response**: `RunArbitraryPythonStringResult_Success`
+- **Result Success Response**: `RunArbitraryPythonStringResultSuccess`
 
   - `python_output`: (string) Output of the executed Python code
 
-- **Result Failure Response**: `RunArbitraryPythonStringResult_Failure`
+- **Result Failure Response**: `RunArbitraryPythonStringResultFailure`
 
   - `python_output`: (string) Error message
 
@@ -101,7 +101,7 @@ Responses follow this structure:
 
   - `category_and_key`: (string) The configuration category and key
 
-- **Result Success Response**: `GetConfigValueResult_Success`
+- **Result Success Response**: `GetConfigValueResultSuccess`
 
   - `value`: (any) The configuration value
 
@@ -117,7 +117,7 @@ Responses follow this structure:
 
   - `category`: (optional string) The configuration category to retrieve
 
-- **Result Success Response**: `GetConfigCategoryResult_Success`
+- **Result Success Response**: `GetConfigCategoryResultSuccess`
 
   - `contents`: (dictionary[str, Any]) Configuration contents for the specified category
 
@@ -151,7 +151,7 @@ Responses follow this structure:
 
   - `node_name`: (string) Name of the node to list connections for
 
-- **Result Success Response**: `ListConnectionsForNodeResult_Success`
+- **Result Success Response**: `ListConnectionsForNodeResultSuccess`
 
   - `incoming_connections`: (list[IncomingConnection]) Incoming connections to the node
     - type of `IncomingConnection`:
@@ -173,7 +173,7 @@ Responses follow this structure:
   - `parent_flow_name`: (optional string) Name of the parent flow
   - `flow_name`: (optional string) Name of the new flow
 
-- **Result Success Response**: `CreateFlowResult_Success`
+- **Result Success Response**: `CreateFlowResultSuccess`
 
   - `flow_name`: (string) Name of the created flow
 
@@ -188,7 +188,7 @@ Responses follow this structure:
 
   - `flow_name`: (string) Name of the flow
 
-- **Result Success Response**: `ListNodesInFlowResult_Success`
+- **Result Success Response**: `ListNodesInFlowResultSuccess`
 
   - `node_names`: (list[string]) Names of nodes in the flow
 
@@ -198,7 +198,7 @@ Responses follow this structure:
 
   - `parent_flow_name`: (string) Name of the parent flow
 
-- **Result Success Response**: `ListFlowsInFlowResult_Success`
+- **Result Success Response**: `ListFlowsInFlowResultSuccess`
 
   - `flow_names`: (list) Names of flows in the parent flow
 
@@ -208,7 +208,7 @@ Responses follow this structure:
 
 - **Request Payload**: `ListRegisteredLibrariesRequest`
 
-- **Result Success Response**: `ListRegisteredLibrariesResult_Success`
+- **Result Success Response**: `ListRegisteredLibrariesResultSuccess`
 
   - `libraries`: (list) Names of registered libraries
 
@@ -218,7 +218,7 @@ Responses follow this structure:
 
   - `library`: (string) Name of the library
 
-- **Result Success Response**: `ListNodeTypesInLibraryResult_Success`
+- **Result Success Response**: `ListNodeTypesInLibraryResultSuccess`
 
   - `node_types`: (list) Names of node types in the library
 
@@ -229,7 +229,7 @@ Responses follow this structure:
   - `library`: (string) Name of the library
   - `node_type`: (string) Name of the node type
 
-- **Result Success Response**: `GetNodeMetadataFromLibraryResult_Success`
+- **Result Success Response**: `GetNodeMetadataFromLibraryResultSuccess`
 
   - `metadata`: (dictionary) Metadata for the specified node type
 
@@ -244,7 +244,7 @@ Responses follow this structure:
   - `override_parent_flow_name`: (optional string) Parent flow name
   - `metadata`: (optional dictionary) Node metadata
 
-- **Result Success Response**: `CreateNodeResult_Success`
+- **Result Success Response**: `CreateNodeResultSuccess`
 
   - `node_name`: (string) Name of the created node
 
@@ -259,7 +259,7 @@ Responses follow this structure:
 
   - `node_name`: (string) Name of the node
 
-- **Result Success Response**: `GetNodeResolutionStateResult_Success`
+- **Result Success Response**: `GetNodeResolutionStateResultSuccess`
 
   - `state`: (string) Current resolution state of the node
 
@@ -269,7 +269,7 @@ Responses follow this structure:
 
   - `node_name`: (string) Name of the node
 
-- **Result Success Response**: `ListParametersOnNodeResult_Success`
+- **Result Success Response**: `ListParametersOnNodeResultSuccess`
 
   - `parameter_names`: (list) Names of parameters on the node
 
@@ -279,7 +279,7 @@ Responses follow this structure:
 
   - `node_name`: (string) Name of the node
 
-- **Result Success Response**: `GetNodeMetadataResult_Success`
+- **Result Success Response**: `GetNodeMetadataResultSuccess`
 
   - `metadata`: (dictionary) Metadata of the node
 
@@ -321,7 +321,7 @@ Responses follow this structure:
   - `parameter_name`: (string) Name of the parameter
   - `node_name`: (string) Name of the node
 
-- **Result Success Response**: `GetParameterDetailsResult_Success`
+- **Result Success Response**: `GetParameterDetailsResultSuccess`
 
   - Detailed parameter configuration information
 
@@ -339,7 +339,7 @@ Responses follow this structure:
   - `parameter_name`: (string) Name of the parameter
   - `node_name`: (string) Name of the node
 
-- **Result Success Response**: `GetParameterValueResult_Success`
+- **Result Success Response**: `GetParameterValueResultSuccess`
 
   - `data_type`: (string) Data type of the parameter
   - `value`: (any) Current value of the parameter
@@ -377,7 +377,7 @@ Responses follow this structure:
   - `start_node_name`: (string) Name of the starting node
   - `debug_mode`: (boolean) Enable debug mode
 
-- **Result Success Response**: `StartFlowResult_Success`
+- **Result Success Response**: `StartFlowResultSuccess`
 
   - `current_node_name`: (string) Name of the current node
 
@@ -414,7 +414,7 @@ Responses follow this structure:
 
   - `flow_name`: (string) Name of the flow
 
-- **Result Success Response**: `GetFlowStateResult_Success`
+- **Result Success Response**: `GetFlowStateResultSuccess`
 
   - `control_node`: (string) Current control node
   - `resolving_node`: (string or null) Current resolving node

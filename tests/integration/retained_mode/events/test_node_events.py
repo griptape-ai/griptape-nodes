@@ -3,11 +3,11 @@ from unittest.mock import ANY
 
 import pytest
 
-from griptape_nodes.retained_mode.events.base_events import EventResult_Success
+from griptape_nodes.retained_mode.events.base_events import EventResultSuccess
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
     GetAllNodeInfoRequest,
-    GetAllNodeInfoResult_Success,
+    GetAllNodeInfoResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -24,9 +24,9 @@ class TestNodeEvents:
         request = GetAllNodeInfoRequest(node_name=create_node_result.node_name)
         result = GriptapeNodes.handle_request(request)
 
-        assert isinstance(result, GetAllNodeInfoResult_Success)
+        assert isinstance(result, GetAllNodeInfoResultSuccess)
 
-        assert EventResult_Success(request=request, result=result).dict() == {
+        assert EventResultSuccess(request=request, result=result).dict() == {
             "request": {"request_id": None, "node_name": "RunAgentNode_1"},
             "result": {
                 "metadata": {
@@ -264,7 +264,7 @@ class TestNodeEvents:
                 },
             },
             "retained_mode": None,
-            "event_type": "EventResult_Success",
+            "event_type": "EventResultSuccess",
             "request_type": "GetAllNodeInfoRequest",
-            "result_type": "GetAllNodeInfoResult_Success",
+            "result_type": "GetAllNodeInfoResultSuccess",
         }
