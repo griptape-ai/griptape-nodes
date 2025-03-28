@@ -5,7 +5,7 @@ import logging
 import re
 import sys
 from contextlib import redirect_stdout
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from re import Pattern
 from typing import Any, TextIO, TypeVar, cast
@@ -359,11 +359,15 @@ class GriptapeNodes(metaclass=SingletonMeta):
     def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:
         # Do we already have one?
         if BaseEvent._session_id is not None:
-            details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID in place."
+            details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID `{BaseEvent._session_id}' in place."
             GriptapeNodes.get_logger().error(details)
             return AppStartSessionResultFailure()
 
         BaseEvent._session_id = request.session_id
+
+        details = f"Session '{request.session_id}' started at {datetime.now(tz=UTC)}."
+        GriptapeNodes.get_logger().info(details)
+
         # TODO(griptape): Do we want to broadcast that a session started?
 
         return AppStartSessionResultSuccess()
