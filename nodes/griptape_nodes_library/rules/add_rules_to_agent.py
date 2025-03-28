@@ -5,6 +5,7 @@ from griptape.structures import Agent as gtAgent
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -14,6 +15,8 @@ SERVICE = "Griptape"
 class AddRulesetToAgent(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+
+        self.config = GriptapeNodes.ConfigManager()
 
         self.add_parameter(
             Parameter(
@@ -30,6 +33,10 @@ class AddRulesetToAgent(ControlNode):
                 allowed_modes={ParameterMode.INPUT},
             )
         )
+
+    def getkey(self, value: str) -> str:
+        key = self.config.get_config_value(value)
+        return key
 
     def process(self) -> None:
         # Get input values

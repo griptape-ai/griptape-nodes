@@ -2,6 +2,7 @@ from griptape.drivers.prompt.griptape_cloud import (
     GriptapeCloudPromptDriver as GtGriptapeCloudPromptDriver,
 )
 from griptape.structures import Agent as gtAgent
+from griptape.tasks import PromptTask
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -22,8 +23,6 @@ class BaseAgent(ControlNode):
 
         self.config = GriptapeNodes.ConfigManager()
 
-        self.category = "Agent"
-        self.description = "Create an agent and run it."
         self.add_parameter(
             Parameter(
                 name="agent",
@@ -101,10 +100,13 @@ class BaseAgent(ControlNode):
         )
 
     def is_stream(self, agent: gtAgent) -> bool:
-        if agent:
-            prompt_driver = agent.tasks[0].prompt_driver
-            return prompt_driver.stream
-        return None
+        if agent and agent.tasks:
+            task = agent.tasks[0]
+            if isinstance(task, PromptTask):
+                prompt_driver = task.prompt_driver
+                return prompt_driver.stream
+            return False
+        return False
 
     def process(self) -> None:
         pass
