@@ -1,4 +1,4 @@
-from griptape.drivers.image_generation.openai import OpenAiImageGenerationDriver
+from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
 
@@ -112,7 +112,7 @@ class CreateImageNode(ControlNode):
         if driver_val:
             driver = driver_val
         else:
-            driver = OpenAiImageGenerationDriver(
+            driver = GriptapeCloudImageGenerationDriver(
                 model=params.get("model", DEFAULT_MODEL),
                 api_key=getenv(service=SERVICE, value=API_KEY_ENV_VAR),
             )
