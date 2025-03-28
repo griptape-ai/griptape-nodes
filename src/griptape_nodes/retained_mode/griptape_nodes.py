@@ -5,7 +5,7 @@ import logging
 import re
 import sys
 from contextlib import redirect_stdout
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from re import Pattern
 from typing import Any, TextIO, TypeVar, cast
@@ -365,7 +365,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
         BaseEvent._session_id = request.session_id
 
-        details = f"Session '{request.session_id}' started at {datetime.now()}."  # noqa: DTZ005
+        details = f"Session '{request.session_id}' started at {datetime.now(tz=UTC)}."
         GriptapeNodes.get_logger().info(details)
 
         # TODO(griptape): Do we want to broadcast that a session started?
