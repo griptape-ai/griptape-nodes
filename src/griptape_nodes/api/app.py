@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-logger = GriptapeNodes.get_instance().LogManager().get_logger()
+logger = GriptapeNodes.get_instance().LogManager().get_logger(event_handler=False)
 
 
 def run_with_context(func: Callable) -> Callable:
@@ -175,12 +175,6 @@ def sse_listener() -> None:
 
             with httpx.stream("get", endpoint, auth=auth, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout
                 response.raise_for_status()
-                if not init:
-                    # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
-                    payload = app_events.AppInitializationComplete()
-                    app_event = AppEvent(payload=payload)
-                    event_queue.put(app_event)
-                    init = True
 
                 for line in response.iter_lines():
                     if not line.strip():
@@ -194,12 +188,24 @@ def sse_listener() -> None:
                                 nodes_app_url,
                                 nodes_app_url,
                             )
+                            if not init:
+                                # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
+                                payload = app_events.AppInitializationComplete()
+                                app_event = AppEvent(payload=payload)
+                                event_queue.put(app_event)
+                                init = True
 
                         else:
-                            process_event(json.loads(data))
+                            try:
+                                process_event(json.loads(data))
+                            except Exception:
+                                logger.exception("Error processing event, skipping.")
+                    else:
+                        logger.warning("Unexpected line received: %s, skipping.", line)
         except Exception:
-            logger.exception("Error while listening to SSE")
-            sleep(5)
+            logger.warning("Error while listening for events. Retrying in 2 seconds.")
+            sleep(2)
+            init = False
 
 
 def run_sse_mode() -> None:
