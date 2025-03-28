@@ -252,7 +252,7 @@
       }
     },
     {
-      "class_name": "FileManagerToolNode",
+      "class_name": "PromptSummaryTool",
       "file_path": "griptape_nodes_library/tools/prompt_summary_tool.py",
       "metadata": {
         "category": "Tools",
@@ -369,7 +369,7 @@
       }
     },
     {
-      "class_name": "LoadImageNode",
+      "class_name": "LoadTextNode",
       "file_path": "griptape_nodes_library/load_text.py",
       "metadata": {
         "category": "Utility",
@@ -414,7 +414,7 @@
       }
     },
     {
-      "class_name": "SimpleAgentNode",
+      "class_name": "StartFlowNode",
       "file_path": "griptape_nodes_library/start_flow.py",
       "metadata": {
         "category": "Utility",
