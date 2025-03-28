@@ -313,24 +313,30 @@ class Parameter(BaseNodeElement):
     )
     options: list[Any] | None = None
     ui_options: ParameterUIOptions | None = None
-    converters: list[Callable[[Any], Any]] = field(default_factory=list)
-    validators: list[Callable[[Parameter, Any], None]] = field(default_factory=list)
+
+    # Lists of callbacks of converters and validators.
+    # These are called in order (e.g., converter[0] runs, then passes to converter[1], etc.)
+    converters: list[Callable[[Any], Any]]
+    validators: list[Callable[[Parameter, Any], None]]
 
     # The types this Parameter accepts for inputs and for output.
     # The rules for this are a rather arcane combination; see the functions below for how these are interpreted.
     # We use @property getters/setters to access these with some arcanum.
-    _type: str | None = field(init=False, repr=False, default=None)
-    _types: list[str] | None = None
-    _output_type: str | None = None
+    _type: str | None
+    _types: list[str] | None
+    _output_type: str | None
 
     # These two are used during node resolution; don't require customers to play with them.
     next: Parameter | None = None
     prev: Parameter | None = None
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         tooltip: str,
+        type: str | None = None,
+        types: list[str] | None = None,
+        output_type: str | None = None,
         default_value: Any = None,
         tooltip_as_input: str | None = None,
         tooltip_as_property: str | None = None,
@@ -343,7 +349,37 @@ class Parameter(BaseNodeElement):
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
     ):
-        pass
+        self.name = name
+        self.tooltip = tooltip
+        self.default_value = default_value
+        self.tooltip_as_input = tooltip_as_input
+        self.tooltip_as_property = tooltip_as_property
+        self.tooltip_as_output = tooltip_as_output
+        self.settable = settable
+        self.user_defined = user_defined
+        self.options = options
+        self.ui_options = ui_options
+
+        # Special handling for the modes and callbacks.
+        if allowed_modes is None:
+            self.allowed_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
+        else:
+            self.allowed_modes = allowed_modes
+
+        if converters is None:
+            self.converters = []
+        else:
+            self.converters = converters
+
+        if validators is None:
+            self.validators = []
+        else:
+            self.validators = validators
+
+        # Use the property setters for special logic
+        self.type = type
+        self.types = types
+        self.output_type = output_type
 
     @property
     def type(self) -> str | None:

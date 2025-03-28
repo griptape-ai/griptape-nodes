@@ -142,7 +142,7 @@ class ExecuteNodeState(State):
             # This creates a new reference specifically for current_node
             current_node.parameter_output_values.pop(parameter_name)
         for parameter in current_node.parameters:
-            if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
+            if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
                 continue
             use_set_value = False
             if ParameterMode.INPUT in parameter.allowed_modes:

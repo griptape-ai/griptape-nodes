@@ -1694,18 +1694,18 @@ class NodeManager:
         has_control_type = False
         has_non_control_types = False
         if request.type is not None:
-            if request.type.lower() == ParameterTypeBuiltin.CONTROL_TYPE.value:
+            if request.type.lower() == ParameterTypeBuiltin.CONTROL_TYPE.value.lower():
                 has_control_type = True
             else:
                 has_non_control_types = True
         if request.types is not None:
             for test_type in request.types:
-                if test_type.lower == ParameterTypeBuiltin.CONTROL_TYPE.value:
+                if test_type.lower == ParameterTypeBuiltin.CONTROL_TYPE.value.lower():
                     has_control_type = True
                 else:
                     has_non_control_types = True
         if request.output_type is not None:
-            if request.output_type.lower() == ParameterTypeBuiltin.CONTROL_TYPE.value:
+            if request.output_type.lower() == ParameterTypeBuiltin.CONTROL_TYPE.value.lower():
                 has_control_type = True
             else:
                 has_non_control_types = True
