@@ -33,7 +33,7 @@ class ParameterTypeBuiltin(Enum):
 
 
 class ParameterType:
-    builtin_aliases = {
+    _builtin_aliases = {
         "str": ParameterTypeBuiltin.STR,
         "string": ParameterTypeBuiltin.STR,
         "bool": ParameterTypeBuiltin.BOOL,
@@ -45,9 +45,30 @@ class ParameterType:
         "parametercontroltype": ParameterTypeBuiltin.CONTROL_TYPE,
     }
 
-    @classmethod
-    def attempt_get_builtin(cls, type_name: str) -> ParameterTypeBuiltin | None:
-        ret_val = ParameterType.builtin_aliases.get(type_name.lower())
+    @staticmethod
+    def attempt_get_builtin(type_name: str) -> ParameterTypeBuiltin | None:
+        ret_val = ParameterType._builtin_aliases.get(type_name.lower())
+        return ret_val
+
+    @staticmethod
+    def are_types_compatible(source_type: str | None, target_type: str | None) -> bool:
+        if source_type is None or target_type is None:
+            return False
+
+        ret_val = False
+        source_type_lower = source_type.lower()
+        target_type_lower = target_type.lower()
+
+        # If either are None, bail.
+        if ParameterTypeBuiltin.NONE.value in (source_type_lower, target_type_lower):
+            ret_val = False
+        elif target_type_lower == ParameterTypeBuiltin.ANY.value:
+            # If the TARGET accepts Any, we're good. Not always true the other way 'round.
+            ret_val = True
+        else:
+            # Do a compare.
+            ret_val = source_type_lower == target_type_lower
+
         return ret_val
 
 
@@ -151,12 +172,12 @@ class ParameterUIOptions:
 @dataclass
 class Parameter:
     name: str  # must be unique from other parameters in Node
+
     # This is the list of types that the Parameter can accept, either externally or when internally treated as a property.
     # Today, we can accept multiple types for input, but only a single output type.
-    input_types: list[str]
-    output_type: str | None
     tooltip: str  # Default tooltip
     default_value: Any = None
+
     tooltip_as_input: str | None = None
     tooltip_as_property: str | None = None
     tooltip_as_output: str | None = None
@@ -176,17 +197,103 @@ class Parameter:
     converters: list[Callable[[Any], Any]] = field(default_factory=list)
     validators: list[Callable[[Parameter, Any], None]] = field(default_factory=list)
 
-    def is_incoming_type_allowed(self, incoming_type_as_str: str | None) -> bool:
-        if incoming_type_as_str is None:
-            return False
+    # The types this Parameter accepts for inputs and for output.
+    # The rules for this are a rather arcane combination; see the functions below for how these are interpreted.
+    # We use @property getters/setters to access these with some arcanum.
+    _type: str | None = None
+    _types: list[str] | None = None
+    _output_type: str | None = None
 
-        # Is THEIR output compatible with ONE OF OUR inputs?
-        incoming_type_as_str_lower = incoming_type_as_str.lower()
-        for input_type in self.input_types:
-            input_type_lower = input_type.lower()
-            if (input_type_lower == ParameterTypeBuiltin.ANY) or (incoming_type_as_str_lower == input_type.lower()):
-                return True
-        return False
+    @property
+    def type(self) -> str | None:
+        return self._type
+
+    @type.setter
+    def type(self, new_type) -> None:
+        if new_type is not None:
+            # See if it's an alias to a builtin first.
+            builtin = ParameterType.attempt_get_builtin(new_type)
+            if builtin is not None:
+                self._type = builtin.value
+                return
+        self._type = new_type
+
+    @property
+    def types(self) -> list[str] | None:
+        return self._types
+
+    @types.setter
+    def types(self, new_types) -> None:
+        if new_types is None:
+            self._types = None
+        else:
+            self._types = []
+            for new_type in new_types:
+                # See if it's an alias to a builtin first.
+                builtin = ParameterType.attempt_get_builtin(new_type)
+                if builtin is not None:
+                    self._types.append(builtin.value)
+                else:
+                    self._types.append(new_type)
+
+    @property
+    def output_type(self) -> str | None:
+        return self._output_type
+
+    @output_type.setter
+    def output_type(self, new_type) -> None:
+        if new_type is not None:
+            # See if it's an alias to a builtin first.
+            builtin = ParameterType.attempt_get_builtin(new_type)
+            if builtin is not None:
+                self._output_type = builtin.value
+                return
+        self._output_type = new_type
+
+    # Will this type be allowed as an input?
+    def is_incoming_type_allowed(self, incoming_type: str | None) -> bool:
+        ret_val = False
+
+        if self._type is not None:
+            if self._types:
+                # Case 1: Both type and types are specified. Check type first, then types.
+                if ParameterType.are_types_compatible(source_type=incoming_type, target_type=self._type):
+                    ret_val = True
+                else:
+                    for test_type in self._types:
+                        if ParameterType.are_types_compatible(source_type=incoming_type, target_type=test_type):
+                            ret_val = True
+                            break
+            else:
+                # Case 2: type is set, but not types.
+                ret_val = ParameterType.are_types_compatible(source_type=incoming_type, target_type=self.type)
+        elif self.types:
+            # Case 3: types is specified, but not type.
+            for test_type in self.types:
+                if ParameterType.are_types_compatible(source_type=incoming_type, target_type=test_type):
+                    ret_val = True
+                    break
+        else:
+            # Case 4: neither is set. Treat as a string.
+            ret_val = ParameterType.are_types_compatible(
+                source_type=incoming_type, target_type=ParameterTypeBuiltin.STR.value
+            )
+
+        return ret_val
+
+    # What's the output type?
+    def get_allowed_output_type(self) -> str | None:
+        if ParameterMode.OUTPUT not in self.allowed_modes:
+            return None
+
+        if self.output_type:
+            return self.output_type
+        if self.types:
+            return self.types[0]
+        if self.type:
+            return self.type
+        # Otherwise, return a string.
+        return ParameterTypeBuiltin.STR.value
 
     def set_default_value(self, value: Any) -> None:
         self.default_value = value
