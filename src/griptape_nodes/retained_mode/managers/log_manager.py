@@ -10,7 +10,7 @@ from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 class EventLogHandler(logging.Handler):
     def emit(self, record) -> None:
         EventBus.publish_event(
-            AppEvent(
+            AppEvent(  # pyright: ignore[reportArgumentType]
                 payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)
             )
         )
