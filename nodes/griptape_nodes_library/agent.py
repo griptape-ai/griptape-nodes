@@ -1,4 +1,4 @@
-from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
+from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.utils import Stream
 
@@ -112,7 +112,7 @@ class RunAgentNode(ControlNode):
         model = self.valid_or_fallback("prompt_model", DEFAULT_MODEL)
 
         kwargs["prompt_driver"] = self.valid_or_fallback(
-            "prompt_driver", OpenAiChatPromptDriver(model=model, stream=True, api_key=api_key)
+            "prompt_driver", GriptapeCloudPromptDriver(model=model, stream=True, api_key=api_key)
         )
         agent = params.get("agent", None)
         if not agent:
