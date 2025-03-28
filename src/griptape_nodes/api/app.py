@@ -29,8 +29,8 @@ from griptape_nodes.retained_mode.events import (
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
     EventRequest,
-    EventResult_Failure,
-    EventResult_Success,
+    EventResultFailure,
+    EventResultSuccess,
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     GriptapeNodeEvent,
@@ -65,9 +65,9 @@ def process_request(event: EventRequest) -> None:
 def send_event(event: GriptapeNodeEvent) -> None:
     # Emit the result back to the GUI
     result_event = event.wrapped_event
-    if isinstance(result_event, EventResult_Success):
+    if isinstance(result_event, EventResultSuccess):
         dest_socket = "success_result"
-    elif isinstance(result_event, EventResult_Failure):
+    elif isinstance(result_event, EventResultFailure):
         dest_socket = "failure_result"
     else:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."

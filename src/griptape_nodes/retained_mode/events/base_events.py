@@ -40,7 +40,7 @@ class ResultPayload(Payload, ABC):
 
 
 # Success result payload abstract base class
-class ResultPayload_Success(ResultPayload, ABC):
+class ResultPayloadSuccess(ResultPayload, ABC):
     """Abstract base class for success result payloads."""
 
     def succeeded(self) -> bool:
@@ -53,7 +53,7 @@ class ResultPayload_Success(ResultPayload, ABC):
 
 
 # Failure result payload abstract base class
-class ResultPayload_Failure(ResultPayload, ABC):
+class ResultPayloadFailure(ResultPayload, ABC):
     """Abstract base class for failure result payloads."""
 
     def succeeded(self) -> bool:
@@ -295,7 +295,7 @@ class EventResult(BaseEvent, Generic[P, R], ABC):
         return cls(request=request_payload, result=result_payload)
 
 
-class EventResult_Success(EventResult[P, R]):
+class EventResultSuccess(EventResult[P, R]):
     """Success result event."""
 
     def succeeded(self) -> bool:
@@ -307,7 +307,7 @@ class EventResult_Success(EventResult[P, R]):
         return True
 
 
-class EventResult_Failure(EventResult[P, R]):
+class EventResultFailure(EventResult[P, R]):
     """Failure result event."""
 
     def succeeded(self) -> bool:
@@ -356,15 +356,15 @@ def deserialize_event(json_data) -> BaseEvent:
             return EventRequest.from_dict(data, request_type)
         msg = f"Cannot deserialize EventRequest: unknown payload type {request_type_name}"
         raise ValueError(msg)
-    if event_type == "EventResult_Success":
+    if event_type == "EventResultSuccess":
         if request_type and result_type:
-            return EventResult_Success.from_dict(data, request_type, result_type)
-        msg = f"Cannot deserialize EventResult_Success: unknown payload types request={request_type_name}, result={result_type_name}"
+            return EventResultSuccess.from_dict(data, request_type, result_type)
+        msg = f"Cannot deserialize EventResultSuccess: unknown payload types request={request_type_name}, result={result_type_name}"
         raise ValueError(msg)
-    if event_type == "EventResult_Failure":
+    if event_type == "EventResultFailure":
         if request_type and result_type:
-            return EventResult_Failure.from_dict(data, request_type, result_type)
-        msg = f"Cannot deserialize EventResult_Failure: unknown payload types request={request_type_name}, result={result_type_name}"
+            return EventResultFailure.from_dict(data, request_type, result_type)
+        msg = f"Cannot deserialize EventResultFailure: unknown payload types request={request_type_name}, result={result_type_name}"
         raise ValueError(msg)
     msg = f"Unknown/unsupported event type '{event_type}' encountered."
     raise TypeError(msg)

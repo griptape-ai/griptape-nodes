@@ -6,8 +6,8 @@ from pydantic import Field
 from griptape_nodes.exe_types.core_types import ParameterMode, ParameterUIOptions
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultPayload_Failure,
-    ResultPayload_Success,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -46,13 +46,13 @@ class AddParameterToNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AddParameterToNodeResult_Success(ResultPayload_Success):
+class AddParameterToNodeResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class AddParameterToNodeResult_Failure(ResultPayload_Failure):
+class AddParameterToNodeResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -65,13 +65,13 @@ class RemoveParameterFromNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RemoveParameterFromNodeResult_Success(ResultPayload_Success):
+class RemoveParameterFromNodeResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class RemoveParameterFromNodeResult_Failure(ResultPayload_Failure):
+class RemoveParameterFromNodeResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -85,13 +85,13 @@ class SetParameterValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SetParameterValueResult_Success(ResultPayload_Success):
+class SetParameterValueResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class SetParameterValueResult_Failure(ResultPayload_Failure):
+class SetParameterValueResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -104,7 +104,7 @@ class GetParameterDetailsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterDetailsResult_Success(ResultPayload_Success):
+class GetParameterDetailsResultSuccess(ResultPayloadSuccess):
     element_id: str
     allowed_types: list[str]
     default_value: Any | None
@@ -121,7 +121,7 @@ class GetParameterDetailsResult_Success(ResultPayload_Success):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterDetailsResult_Failure(ResultPayload_Failure):
+class GetParameterDetailsResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -160,13 +160,13 @@ class AlterParameterDetailsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AlterParameterDetailsResult_Success(ResultPayload_Success):
+class AlterParameterDetailsResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class AlterParameterDetailsResult_Failure(ResultPayload_Failure):
+class AlterParameterDetailsResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -179,20 +179,20 @@ class GetParameterValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterValueResult_Success(ResultPayload_Success):
+class GetParameterValueResultSuccess(ResultPayloadSuccess):
     data_type: str
     value: Any
 
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterValueResult_Failure(ResultPayload_Failure):
+class GetParameterValueResultFailure(ResultPayloadFailure):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class OnParameterValueChanged(ResultPayload_Success):
+class OnParameterValueChanged(ResultPayloadSuccess):
     node_name: str
     parameter_name: str
     data_type: str
@@ -214,11 +214,11 @@ class ParameterAndMode(NamedTuple):
 
 @dataclass
 @PayloadRegistry.register
-class GetCompatibleParametersResult_Success(ResultPayload_Success):
+class GetCompatibleParametersResultSuccess(ResultPayloadSuccess):
     valid_parameters_by_node: dict[str, list[ParameterAndMode]]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetCompatibleParametersResult_Failure(ResultPayload_Failure):
+class GetCompatibleParametersResultFailure(ResultPayloadFailure):
     pass
