@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class gnMergeDictionaryNode(DataNode):
+class MergeDictNode(DataNode):
     """Merge multiple dictionaries, with later dictionaries overwriting values from earlier ones."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:

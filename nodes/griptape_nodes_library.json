@@ -71,7 +71,7 @@
   ],
   "nodes": [
     {
-      "class_name": "gnRunAgent",
+      "class_name": "RunAgentNode",
       "file_path": "griptape_nodes_library/agent.py",
       "metadata": {
         "category": "Agent",
@@ -80,7 +80,7 @@
       }
     },
     {
-      "class_name": "gnSimpleAgent",
+      "class_name": "SimpleAgentNode",
       "file_path": "griptape_nodes_library/simple_agent.py",
       "metadata": {
         "category": "Agent",
@@ -89,7 +89,7 @@
       }
     },
     {
-      "class_name": "gnAnthropicPromptDriver",
+      "class_name": "AnthropicPromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/anthropic_prompt_driver.py",
       "metadata": {
         "category": "Drivers",
@@ -98,7 +98,7 @@
       }
     },
     {
-      "class_name": "gnOpenAiAudioTranscriptionDriver",
+      "class_name": "OpenAiAudioTranscriptionDriverNode",
       "file_path": "griptape_nodes_library/drivers/audio_transcription_drivers.py",
       "metadata": {
         "category": "Drivers",
@@ -107,7 +107,7 @@
       }
     },
     {
-      "class_name": "gnAzureOpenAiChatPromptDriver",
+      "class_name": "BaseAudioTranscriptionDriverNode",
       "file_path": "griptape_nodes_library/drivers/azure_openai_chat_prompt_driver.py",
       "metadata": {
         "category": "Drivers",
@@ -116,7 +116,7 @@
       }
     },
     {
-      "class_name": "gnAzureOpenAiImageDriver",
+      "class_name": "AzureOpenAiChatPromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/azure_openai_image_driver.py",
       "metadata": {
         "category": "Drivers",
@@ -125,7 +125,16 @@
       }
     },
     {
-      "class_name": "gnCoherePromptDriver",
+      "class_name": "GriptapeCloudImageDriverNode",
+      "file_path": "griptape_nodes_library/drivers/griptape_cloud_image_driver.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "Azure OpenAI image generation driver for Griptape agents",
+        "display_name": "Azure OpenAI image generation driver"
+      }
+    },
+    {
+      "class_name": "CoherePromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/cohere_prompt_driver.py",
       "metadata": {
         "category": "Drivers",
@@ -134,7 +143,7 @@
       }
     },
     {
-      "class_name": "gnGriptapeCloudPromptDriver",
+      "class_name": "GriptapeCloudPromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/griptape_cloud_prompt_driver.py",
       "metadata": {
         "category": "Drivers",
@@ -143,7 +152,7 @@
       }
     },
     {
-      "class_name": "gnOllamaEmbeddingDriver",
+      "class_name": "OllamaEmbeddingDriverNode",
       "file_path": "griptape_nodes_library/drivers/ollama_embedding_driver.py",
       "metadata": {
         "category": "Drivers",
@@ -152,7 +161,7 @@
       }
     },
     {
-      "class_name": "gnOllamaPromptDriver",
+      "class_name": "OllamaPromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/ollama_prompt_driver.py",
       "metadata": {
         "category": "Drivers",
@@ -161,7 +170,7 @@
       }
     },
     {
-      "class_name": "gnOpenAiChatPromptDriver",
+      "class_name": "OpenAiChatPromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/openai_chat_prompt_driver.py",
       "metadata": {
         "category": "Drivers",
@@ -170,7 +179,7 @@
       }
     },
     {
-      "class_name": "gnOpenAiImageDriver",
+      "class_name": "OpenAiImageDriverNode",
       "file_path": "griptape_nodes_library/drivers/openai_image_driver.py",
       "metadata": {
         "category": "Drivers",
@@ -179,7 +188,7 @@
       }
     },
     {
-      "class_name": "gnBaseWebSearchDriver",
+      "class_name": "BaseWebSearchDriverNode",
       "file_path": "griptape_nodes_library/drivers/web_search_drivers.py",
       "metadata": {
         "category": "Drivers",
@@ -188,7 +197,7 @@
       }
     },
     {
-      "class_name": "gnDuckDuckGoWebSearchDriver",
+      "class_name": "DuckDuckGoWebSearchDriverNode",
       "file_path": "griptape_nodes_library/drivers/web_search_drivers.py",
       "metadata": {
         "category": "Drivers",
@@ -197,16 +206,16 @@
       }
     },
     {
-      "class_name": "gnRuleSet",
+      "class_name": "RulesetNode",
       "file_path": "griptape_nodes_library/rules/base_ruleset.py",
       "metadata": {
         "category": "Rules",
         "description": "Creates behavioral ruleset for Griptape agents",
-        "display_name": "Rule Set"
+        "display_name": "Ruleset"
       }
     },
     {
-      "class_name": "gnAudioTranscriptionTool",
+      "class_name": "AudioTranscriptionToolNode",
       "file_path": "griptape_nodes_library/tools/audio_transcription_tool.py",
       "metadata": {
         "category": "Tools",
@@ -215,7 +224,7 @@
       }
     },
     {
-      "class_name": "gnCalculatorTool",
+      "class_name": "CalculatorToolNode",
       "file_path": "griptape_nodes_library/tools/calculator_tool.py",
       "metadata": {
         "category": "Tools",
@@ -224,7 +233,7 @@
       }
     },
     {
-      "class_name": "gnDateTimeTool",
+      "class_name": "DateTimeToolNode",
       "file_path": "griptape_nodes_library/tools/date_time_tool.py",
       "metadata": {
         "category": "Tools",
@@ -233,7 +242,7 @@
       }
     },
     {
-      "class_name": "gnExtractionTool",
+      "class_name": "ExtractionToolNode",
       "file_path": "griptape_nodes_library/tools/extraction_tool.py",
       "metadata": {
         "category": "Tools",
@@ -242,7 +251,7 @@
       }
     },
     {
-      "class_name": "gnFileManagerTool",
+      "class_name": "FileManagerToolNode",
       "file_path": "griptape_nodes_library/tools/file_manager_tool.py",
       "metadata": {
         "category": "Tools",
@@ -251,7 +260,7 @@
       }
     },
     {
-      "class_name": "gnPromptSummaryTool",
+      "class_name": "FileManagerToolNode",
       "file_path": "griptape_nodes_library/tools/prompt_summary_tool.py",
       "metadata": {
         "category": "Tools",
@@ -260,7 +269,7 @@
       }
     },
     {
-      "class_name": "gnQueryTool",
+      "class_name": "QueryToolNode",
       "file_path": "griptape_nodes_library/tools/query_tool.py",
       "metadata": {
         "category": "Tools",
@@ -269,7 +278,7 @@
       }
     },
     {
-      "class_name": "gnRagTool",
+      "class_name": "RagToolNode",
       "file_path": "griptape_nodes_library/tools/rag_tool.py",
       "metadata": {
         "category": "Tools",
@@ -278,7 +287,7 @@
       }
     },
     {
-      "class_name": "gnToolListNode",
+      "class_name": "ToolListNode",
       "file_path": "griptape_nodes_library/tools/tool_list.py",
       "metadata": {
         "category": "Tools",
@@ -287,7 +296,7 @@
       }
     },
     {
-      "class_name": "gnVectorStoreTool",
+      "class_name": "VectorStoreToolNode",
       "file_path": "griptape_nodes_library/tools/vector_store_tool.py",
       "metadata": {
         "category": "Tools",
@@ -296,7 +305,7 @@
       }
     },
     {
-      "class_name": "gnWebScraperTool",
+      "class_name": "WebScraperToolNode",
       "file_path": "griptape_nodes_library/tools/web_scraper_tool.py",
       "metadata": {
         "category": "Tools",
@@ -305,7 +314,7 @@
       }
     },
     {
-      "class_name": "gnWebSearchTool",
+      "class_name": "WebSearchToolNode",
       "file_path": "griptape_nodes_library/tools/web_search_tool.py",
       "metadata": {
         "category": "Tools",
@@ -314,7 +323,7 @@
       }
     },
     {
-      "class_name": "gnDictNode",
+      "class_name": "DictNode",
       "file_path": "griptape_nodes_library/create_dict.py",
       "metadata": {
         "category": "Utility",
@@ -323,7 +332,7 @@
       }
     },
     {
-      "class_name": "gnCreateImage",
+      "class_name": "CreateImageNode",
       "file_path": "griptape_nodes_library/create_image.py",
       "metadata": {
         "category": "Image",
@@ -332,7 +341,7 @@
       }
     },
     {
-      "class_name": "gnCreateString",
+      "class_name": "CreateStringNode",
       "file_path": "griptape_nodes_library/create_string.py",
       "metadata": {
         "category": "Utility",
@@ -341,7 +350,7 @@
       }
     },
     {
-      "class_name": "gnEndFlow",
+      "class_name": "EndFlowNode",
       "file_path": "griptape_nodes_library/end_flow.py",
       "metadata": {
         "category": "Utility",
@@ -350,7 +359,7 @@
       }
     },
     {
-      "class_name": "gnKeyValuePairNode",
+      "class_name": "KeyValuePairNode",
       "file_path": "griptape_nodes_library/key_value_pair.py",
       "metadata": {
         "category": "Utility",
@@ -359,7 +368,7 @@
       }
     },
     {
-      "class_name": "LoadImage",
+      "class_name": "LoadImageNode",
       "file_path": "griptape_nodes_library/load_image.py",
       "metadata": {
         "category": "Image",
@@ -368,7 +377,7 @@
       }
     },
     {
-      "class_name": "gnLoadTextNode",
+      "class_name": "LoadImageNode",
       "file_path": "griptape_nodes_library/load_text.py",
       "metadata": {
         "category": "Utility",
@@ -377,7 +386,7 @@
       }
     },
     {
-      "class_name": "gnMergeDictionaryNode",
+      "class_name": "MergeDictNode",
       "file_path": "griptape_nodes_library/merge_dict.py",
       "metadata": {
         "category": "Utility",
@@ -386,7 +395,7 @@
       }
     },
     {
-      "class_name": "gnReroute",
+      "class_name": "RerouteNode",
       "file_path": "griptape_nodes_library/utils/reroute.py",
       "metadata": {
         "category": "Utility",
@@ -395,7 +404,7 @@
       }
     },
     {
-      "class_name": "gnMergeTextsNode",
+      "class_name": "MergeTextsNode",
       "file_path": "griptape_nodes_library/merge_texts.py",
       "metadata": {
         "category": "Utility",
@@ -404,7 +413,7 @@
       }
     },
     {
-      "class_name": "gnSaveTextNode",
+      "class_name": "SaveTextNode",
       "file_path": "griptape_nodes_library/save_text.py",
       "metadata": {
         "category": "Utility",
@@ -413,7 +422,7 @@
       }
     },
     {
-      "class_name": "gnStartFlow",
+      "class_name": "SimpleAgentNode",
       "file_path": "griptape_nodes_library/start_flow.py",
       "metadata": {
         "category": "Utility",
@@ -422,7 +431,7 @@
       }
     },
     {
-      "class_name": "gnStringListNode",
+      "class_name": "StringListNode",
       "file_path": "griptape_nodes_library/string_list.py",
       "metadata": {
         "category": "Utility",

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from griptape.events import EventBus
 
 from griptape_nodes.exe_types.core_types import ParameterMode, ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import NodeBase, NodeResolutionState
+from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.retained_mode.events.app_events import AppExecutionEvent
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 # This is on a per-node basis
 class ResolutionContext:
     flow: ControlFlow
-    focus_stack: list[NodeBase]
+    focus_stack: list[BaseNode]
     paused: bool
 
     def __init__(self, flow: ControlFlow) -> None:
@@ -300,7 +300,7 @@ class NodeResolutionMachine(FSM[ResolutionContext]):
         resolution_context = ResolutionContext(flow)  # Gets the flow
         super().__init__(resolution_context)
 
-    def resolve_node(self, node: NodeBase) -> None:
+    def resolve_node(self, node: BaseNode) -> None:
         self._context.focus_stack.append(node)
         self.start(InitializeSpotlightState)
 

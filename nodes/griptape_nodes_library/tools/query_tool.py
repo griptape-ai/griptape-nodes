@@ -8,7 +8,7 @@ from griptape.tools import QueryTool
 from griptape.utils.decorators import activity
 from schema import Literal, Schema
 
-from griptape_nodes_library.tools.tools import gnBaseTool
+from griptape_nodes_library.tools.tools import BaseToolNode
 
 
 @define(kw_only=True)
@@ -53,7 +53,7 @@ class GeminiQueryTool(QueryTool):
         return ErrorArtifact("query output is empty")
 
 
-class gnQueryTool(gnBaseTool):
+class QueryToolNode(BaseToolNode):
     """A tool generator class that creates an query tool based on the provided prompt driver.
 
     Create either a specialized GeminiQueryTool when using a Google prompt driver, or a

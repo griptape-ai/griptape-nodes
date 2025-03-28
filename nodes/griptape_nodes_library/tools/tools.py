@@ -5,7 +5,7 @@ from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class gnBaseTool(DataNode):
+class BaseToolNode(DataNode):
     """Base tool node for creating Griptape tools.
 
     This node provides a generic implementation for initializing Griptape tools with configurable parameters.
@@ -38,7 +38,7 @@ class gnBaseTool(DataNode):
         self.parameter_output_values["tool"] = tool
 
 
-class gnCalculatorTool(gnBaseTool):
+class CalculatorToolNode(BaseToolNode):
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", False)
 
@@ -49,7 +49,7 @@ class gnCalculatorTool(gnBaseTool):
         self.parameter_output_values["tool"] = tool
 
 
-class gnDateTimeTool(gnBaseTool):
+class DateTimeToolNode(BaseToolNode):
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", False)
 
@@ -60,7 +60,7 @@ class gnDateTimeTool(gnBaseTool):
         self.parameter_output_values["tool"] = tool
 
 
-class gnWebSearchTool(gnBaseTool):
+class WebSearchToolNode(BaseToolNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.add_parameter(

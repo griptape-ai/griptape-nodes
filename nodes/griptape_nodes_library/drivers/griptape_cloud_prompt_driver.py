@@ -1,7 +1,6 @@
-import requests
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 
-from griptape_nodes_library.drivers.base_prompt_driver import gnBasePromptDriver
+from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
 from griptape_nodes_library.utils.env_utils import getenv
 
 DEFAULT_MODEL = "gpt-4o"
@@ -10,7 +9,7 @@ SERVICE = "Griptape"
 SUCCESS = 200
 
 
-class gnGriptapeCloudPromptDriver(gnBasePromptDriver):
+class GriptapeCloudPromptDriverNode(BasePromptDriverNode):
     """Node for Griptape Cloud Prompt Driver.
 
     This node creates a Griptape Cloud prompt driver and outputs its configuration.
@@ -72,15 +71,10 @@ class gnGriptapeCloudPromptDriver(gnBasePromptDriver):
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
-        run_url = "https://cloud.griptape.ai/api/structures"
-        headers = {"Authorization": f"Bearer {api_key}"}
-        response = requests.get(url=run_url, headers=headers, timeout=30)
-        response.raise_for_status()
-        if response.status_code != SUCCESS:
-            exceptions.append(response.json())
+
         return exceptions if exceptions else None
 
 
 if __name__ == "__main__":
-    drv = gnGriptapeCloudPromptDriver(name="simpleClear")
+    drv = GriptapeCloudPromptDriverNode(name="simpleClear")
     drv.process()

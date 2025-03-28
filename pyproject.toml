@@ -1,6 +1,6 @@
 [project]
 name = "griptape_nodes"
-version = "0.2.3"
+version = "0.3.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -16,18 +16,9 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = [
-    "mdformat>=0.7.22",
-    "pyright>=1.1.396",
-    "ruff>=0.11.0",
-    "typos>=1.30.2",
-]
+dev = ["mdformat>=0.7.22", "pyright>=1.1.396", "ruff>=0.11.0", "typos>=1.30.2"]
 docs = ["mkdocs-material>=9.6.9", "mkdocs>=1.5.2"]
-test = [
-    "pytest>=8.3.5",
-    "pytest-mock>=3.14.0",
-    "pytest-xdist>=3.6.1",
-]
+test = ["pytest>=8.3.5", "pytest-mock>=3.14.0", "pytest-xdist>=3.6.1"]
 
 [project.scripts]
 griptape-nodes = "griptape_nodes:main"
@@ -39,6 +30,9 @@ build-backend = "hatchling.build"
 
 [tool.ruff]
 line-length = 120
+
+[tool.uv.sources]
+griptape = { git = "https://github.com/griptape-ai/griptape.git", branch = "main" }
 
 [tool.ruff.format]
 exclude = [".venv"]
@@ -68,7 +62,6 @@ ignore = [
   "SIM110", # Intentional
   "D105",   # Intentional
   "N999",   # TODO(griptape): discuss with team
-  "N801",   # Too hard
   "N802",   # TODO(griptape): discuss with team
   "TRY002", # TODO(griptape): discuss with team
   "RUF012", # TODO(griptape): discuss with team
@@ -79,6 +72,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "D104"]
+"nodes/tests/*" = ["S101", "D104"]
 
 [tool.ruff.lint.flake8-annotations]
 mypy-init-return = true

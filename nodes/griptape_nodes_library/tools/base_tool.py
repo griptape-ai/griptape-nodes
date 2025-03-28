@@ -4,7 +4,7 @@ from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class gnBaseTool(DataNode):
+class BaseToolNode(DataNode):
     """Base tool node for creating Griptape tools.
 
     This node provides a generic implementation for initializing Griptape tools with configurable parameters.

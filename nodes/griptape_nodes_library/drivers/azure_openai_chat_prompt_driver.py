@@ -1,6 +1,6 @@
 from griptape.drivers.prompt.azure_openai_chat_prompt_driver import AzureOpenAiChatPromptDriver
 
-from griptape_nodes_library.drivers.base_prompt_driver import gnBasePromptDriver
+from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
 
 # Available models
 # "gpt-4o", "gpt-4", "gpt-3.5-turbo-16k", "gpt-3.5-turbo"
@@ -11,7 +11,7 @@ API_KEY_ENV_VAR = "AZURE_OPENAI_API_KEY"
 SERVICE = "Microsoft Azure"
 
 
-class gnAzureOpenAiChatPromptDriver(gnBasePromptDriver):
+class BaseAudioTranscriptionDriverNode(BasePromptDriverNode):
     """Node for Azure OpenAI Chat Prompt Driver.
 
     This node creates an Azure OpenAI chat prompt driver and outputs its configuration.

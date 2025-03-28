@@ -1,10 +1,10 @@
 from griptape.drivers.prompt.dummy import DummyPromptDriver
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterUIOptions
-from griptape_nodes_library.drivers.base_driver import gnBaseDriver
+from griptape_nodes_library.drivers.base_driver import BaseDriverNode
 
 
-class gnBasePromptDriver(gnBaseDriver):
+class BasePromptDriverNode(BaseDriverNode):
     """Node for Base Prompt Driver.
 
     This node creates a base prompt driver and outputs its configuration.

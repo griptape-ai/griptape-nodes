@@ -1,10 +1,10 @@
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import DataNode, NodeBase
+from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 
 
-class gnReroute(DataNode):
+class RerouteNode(DataNode):
     # Track the incoming and outgoing connections to choose our allowed types.
     # I'd use sets for faster removal but I don't know if I want to hash Parameter objects
     incoming_connection_params: list[Parameter]
@@ -95,12 +95,12 @@ class gnReroute(DataNode):
             allowed_types = outgoing_connection_param.allowed_types
             all_allowed_types.append(allowed_types)
 
-        intersection = gnReroute.intersection_of_allowed_types(*all_allowed_types)
+        intersection = RerouteNode.intersection_of_allowed_types(*all_allowed_types)
         parameter.allowed_types = intersection
 
     def after_incoming_connection(
         self,
-        source_node: NodeBase,  # noqa: ARG002
+        source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,
         target_parameter: Parameter,
     ) -> None:
@@ -111,7 +111,7 @@ class gnReroute(DataNode):
     def after_outgoing_connection(
         self,
         source_parameter: Parameter,
-        target_node: NodeBase,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
@@ -120,7 +120,7 @@ class gnReroute(DataNode):
 
     def after_incoming_connection_removed(
         self,
-        source_node: NodeBase,  # noqa: ARG002
+        source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,
         target_parameter: Parameter,
     ) -> None:
@@ -131,7 +131,7 @@ class gnReroute(DataNode):
     def after_outgoing_connection_removed(
         self,
         source_parameter: Parameter,
-        target_node: NodeBase,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""

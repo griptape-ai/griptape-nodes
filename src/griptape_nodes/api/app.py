@@ -29,8 +29,8 @@ from griptape_nodes.retained_mode.events import (
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
     EventRequest,
-    EventResult_Failure,
-    EventResult_Success,
+    EventResultFailure,
+    EventResultSuccess,
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     GriptapeNodeEvent,
@@ -65,9 +65,9 @@ def process_request(event: EventRequest) -> None:
 def send_event(event: GriptapeNodeEvent) -> None:
     # Emit the result back to the GUI
     result_event = event.wrapped_event
-    if isinstance(result_event, EventResult_Success):
+    if isinstance(result_event, EventResultSuccess):
         dest_socket = "success_result"
-    elif isinstance(result_event, EventResult_Failure):
+    elif isinstance(result_event, EventResultFailure):
         dest_socket = "failure_result"
     else:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."
@@ -117,16 +117,19 @@ def process_app_event(event: AppEvent) -> None:
 
 def check_event_queue() -> None:
     while True:
-        if not event_queue.empty():
-            event = event_queue.get()
-            if isinstance(event, EventRequest):
-                process_request(event)
-            elif isinstance(event, AppEvent):
-                process_app_event(event)
-            else:
-                logger.warning("Unknown event type encountered: '%s'.", type(event))
+        try:
+            if not event_queue.empty():
+                event = event_queue.get()
+                if isinstance(event, EventRequest):
+                    process_request(event)
+                elif isinstance(event, AppEvent):
+                    process_app_event(event)
+                else:
+                    logger.warning("Unknown event type encountered: '%s'.", type(event))
 
-            event_queue.task_done()
+                event_queue.task_done()
+        except KeyboardInterrupt:
+            break
 
 
 def setup_event_listeners() -> None:

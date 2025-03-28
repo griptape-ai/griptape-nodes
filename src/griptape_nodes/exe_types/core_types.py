@@ -536,7 +536,7 @@ class ControlParameter(Parameter, ABC):
 
 
 @dataclass(kw_only=True)
-class ControlParameter_Input(ControlParameter):
+class ControlParameterInput(ControlParameter):
     name: str = "exec_in"
     tooltip: str = "Connection from previous node in the execution chain"
     allowed_modes: set = field(
@@ -547,7 +547,7 @@ class ControlParameter_Input(ControlParameter):
 
 
 @dataclass
-class ControlParameter_Output(ControlParameter):
+class ControlParameterOutput(ControlParameter):
     name: str = "exec_out"
     tooltip: str = "Connection to the next node in the execution chain"
     allowed_modes: set = field(

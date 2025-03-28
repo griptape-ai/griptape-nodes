@@ -8,7 +8,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import ControlNode
 
 
-class gnSaveTextNode(ControlNode):
+class SaveTextNode(ControlNode):
     """Save text to a file."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
