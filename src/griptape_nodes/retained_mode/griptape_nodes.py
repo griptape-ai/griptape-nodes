@@ -365,7 +365,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
         BaseEvent._session_id = request.session_id
 
-        details = f"Session '{request.session_id}' started at {datetime.now}."
+        details = f"Session '{request.session_id}' started at {datetime.now()}."  # noqa: DTZ005
         GriptapeNodes.get_logger().info(details)
 
         # TODO(griptape): Do we want to broadcast that a session started?
