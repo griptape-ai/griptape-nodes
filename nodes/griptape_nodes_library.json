@@ -134,7 +134,7 @@
       }
     },
     {
-      "class_name": "CoherePromptDriverNodeNode",
+      "class_name": "CoherePromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/cohere_prompt_driver.py",
       "metadata": {
         "category": "Drivers",
@@ -215,7 +215,7 @@
       }
     },
     {
-      "class_name": "AudioTranscriptionNodeToolNode",
+      "class_name": "AudioTranscriptionToolNode",
       "file_path": "griptape_nodes_library/tools/audio_transcription_tool.py",
       "metadata": {
         "category": "Tools",
