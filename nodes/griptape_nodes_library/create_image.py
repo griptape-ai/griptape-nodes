@@ -101,7 +101,7 @@ class CreateImageNode(ControlNode):
         workspace_path = self.config.workspace_path
         images_dir = workspace_path / "Images/"
 
-        agent = params.get("agent", Agent(stream=True))
+        agent = params.get("agent", Agent(tasks=[]))
         prompt = params.get("prompt", "")
 
         # Initialize driver kwargs with required parameters

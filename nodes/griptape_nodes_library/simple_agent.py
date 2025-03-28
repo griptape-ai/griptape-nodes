@@ -1,3 +1,4 @@
+from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.utils import Stream
 
@@ -71,7 +72,7 @@ class SimpleAgentNode(ControlNode):
 
         agent = params.get("agent", None)
         if not agent:
-            agent = Agent(stream=True)
+            agent = Agent(prompt_driver=GriptapeCloudPromptDriver(api_key=getenv(SERVICE, API_KEY_ENV_VAR)))
 
         prompt = params.get("prompt", None)
         if prompt:
