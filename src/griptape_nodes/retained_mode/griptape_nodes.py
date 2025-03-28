@@ -22,6 +22,9 @@ from griptape_nodes.node_library.script_registry import LibraryNameAndVersion, S
 from griptape_nodes.retained_mode.events.app_events import (
     AppExecutionEvent,
     AppInitializationComplete,
+    AppStartSessionRequest,
+    AppStartSessionResult_Failure,
+    AppStartSessionResult_Success,
     GetEngineVersion_Request,
     GetEngineVersionResult_Failure,
     GetEngineVersionResult_Success,
@@ -33,6 +36,7 @@ from griptape_nodes.retained_mode.events.arbitrary_python_events import (
 )
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
+    EventBase,
     RequestPayload,
     ResultPayload,
     ResultPayload_Failure,
@@ -242,6 +246,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._event_manager.assign_manager_to_request_type(
                 GetEngineVersion_Request, self.handle_engine_version_request
             )
+            self._event_manager.assign_manager_to_request_type(
+                AppStartSessionRequest, self.handle_session_start_request
+            )
 
     @classmethod
     def get_instance(cls) -> "GriptapeNodes":
@@ -259,6 +266,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     def broadcast_app_event(cls, app_event: AppPayload) -> None:
         event_mgr = GriptapeNodes.get_instance()._event_manager
         return event_mgr.broadcast_app_event(app_event)
+
+    @classmethod
+    def get_session_id(cls) -> str | None:
+        return EventBase._session_id
 
     @classmethod
     def LogManager(cls) -> LogManager:
@@ -344,6 +355,18 @@ class GriptapeNodes(metaclass=SingletonMeta):
             details = f"Attempted to get engine version. Failed due to '{err}'."
             GriptapeNodes.get_logger().error(details)
             return GetEngineVersionResult_Failure()
+
+    def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:
+        # Do we already have one?
+        if EventBase._session_id is not None:
+            details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID in place."
+            GriptapeNodes.get_logger().error(details)
+            return AppStartSessionResult_Failure()
+
+        EventBase._session_id = request.session_id
+        # TODO(griptape): Do we want to broadcast that a session started?
+
+        return AppStartSessionResult_Success()
 
 
 OBJ_TYPE = TypeVar("OBJ_TYPE")
@@ -1031,7 +1054,7 @@ class FlowManager:
         result = DeleteConnectionResult_Success()
         return result
 
-    def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: PLR0911 C901
+    def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         # which flow
         flow_name = request.flow_name
         debug_mode = request.debug_mode
@@ -1083,7 +1106,10 @@ class FlowManager:
             result = cast("ValidateFlowDependenciesResult_Success", result)
 
             if not result.validation_succeeded:
-                details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed with {len(result.exceptions) if result.exceptions else 0} exceptions."
+                details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed."
+                if len(result.exceptions) > 0:
+                    for exception in result.exceptions:
+                        details = f"{details}\n\t{exception}"
                 GriptapeNodes.get_logger().error(details)
                 return StartFlowResult_Failure(validation_exceptions=result.exceptions)
         except Exception:
@@ -1096,6 +1122,11 @@ class FlowManager:
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             GriptapeNodes.get_logger().error(details)
+
+            # Cancel the flow run.
+            cancel_request = CancelFlowRequest(flow_name=flow_name)
+            GriptapeNodes.handle_request(cancel_request)
+
             return StartFlowResult_Failure(validation_exceptions=[])
 
         details = f"Successfully kicked off flow with name {flow_name}"
@@ -1170,7 +1201,8 @@ class FlowManager:
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
             GriptapeNodes.get_logger().error(details)
-
+            cancel_request = CancelFlowRequest(flow_name=flow_name)
+            GriptapeNodes.handle_request(cancel_request)
             return SingleNodeStepResult_Failure(validation_exceptions=[])
 
         # All completed happily
@@ -1198,7 +1230,8 @@ class FlowManager:
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
             GriptapeNodes.get_logger().error(details)
-
+            cancel_request = CancelFlowRequest(flow_name=flow_name)
+            GriptapeNodes.handle_request(cancel_request)
             return SingleNodeStepResult_Failure(validation_exceptions=[])
         details = f"Successfully granularly stepped flow with name {flow_name}"
         GriptapeNodes.get_logger().info(details)
@@ -1224,6 +1257,8 @@ class FlowManager:
         except Exception as e:
             details = f"Failed to continue execution step. An exception occurred: {e}."
             GriptapeNodes.get_logger().error(details)
+            cancel_request = CancelFlowRequest(flow_name=flow_name)
+            GriptapeNodes.handle_request(cancel_request)
             return ContinueExecutionStepResult_Failure()
         details = f"Successfully continued flow with name {flow_name}"
         GriptapeNodes.get_logger().info(details)
@@ -1537,8 +1572,9 @@ class NodeManager:
 
             result = SetNodeMetadataResult_Failure()
             return result
-
-        node.metadata = request.metadata
+        # We can't completely overwrite metadata.
+        for key, value in request.metadata.items():
+            node.metadata[key] = value
         details = f"Successfully set metadata for a Node '{request.node_name}'."
         GriptapeNodes.get_logger().info(details)
 
@@ -2003,7 +2039,13 @@ class NodeManager:
             return SetParameterValueResult_Failure()
 
         # Values are actually stored on the NODE.
-        modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
+        try:
+            modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
+        except Exception as err:
+            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Exception: {err}'
+            GriptapeNodes.get_logger().error(details)
+            return SetParameterValueResult_Failure()
+
         if modified_parameters:
             for modified_parameter_name in modified_parameters:
                 modified_request = GetParameterDetailsRequest(modified_parameter_name, node.name)
@@ -2275,7 +2317,7 @@ class NodeManager:
             raise KeyError(msg)
         return self._name_to_parent_flow_name[node_name]
 
-    def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: PLR0911 C901 TODO(griptape): resolve
+    def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
         node_name = request.node_name
         debug_mode = request.debug_mode
 
@@ -2328,7 +2370,10 @@ class NodeManager:
             result = cast("ValidateNodeDependenciesResult_Success", result)
 
             if not result.validation_succeeded:
-                details = f"Failed to resolve node '{node_name}'. Flow Validation Failed with {len(result.exceptions) if result.exceptions else 0} exceptions."
+                details = f"Failed to resolve node '{node_name}'. Flow Validation Failed."
+                if len(result.exceptions) > 0:
+                    for exception in result.exceptions:
+                        details = f"{details}\n\t{exception}"
                 GriptapeNodes.get_logger().error(details)
                 return StartFlowResult_Failure(validation_exceptions=result.exceptions)
         except Exception as e:
@@ -2340,7 +2385,8 @@ class NodeManager:
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             GriptapeNodes.get_logger().error(details)
-
+            cancel_request = CancelFlowRequest(flow_name=flow_name)
+            GriptapeNodes.handle_request(cancel_request)
             return ResolveNodeResult_Failure(validation_exceptions=[])
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         GriptapeNodes.get_logger().info(details)
@@ -2946,16 +2992,16 @@ class LibraryManager:
         for node_meta in nodes_metadata:
             try:
                 class_name = node_meta["class_name"]
-                file_path = node_meta["file_path"]
+                node_file_path = node_meta["file_path"]
                 node_metadata = node_meta.get("metadata", {})
 
                 # Resolve relative path to absolute path
-                file_path = Path(file_path)
-                if not file_path.is_absolute():
-                    file_path = base_dir / file_path
+                node_file_path = Path(node_file_path)
+                if not node_file_path.is_absolute():
+                    node_file_path = base_dir / node_file_path
 
                 # Dynamically load the module containing the node class
-                node_class = self._load_class_from_file(file_path, class_name)
+                node_class = self._load_class_from_file(node_file_path, class_name)
 
                 # Register the node type with the library
                 library.register_new_node_type(node_class, metadata=node_metadata)

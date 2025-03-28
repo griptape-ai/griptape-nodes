@@ -3,7 +3,7 @@ from griptape.drivers.audio_transcription.openai import OpenAiAudioTranscription
 from griptape.tools.audio_transcription.tool import AudioTranscriptionTool
 
 from griptape_nodes_library.tools.tools import gnBaseTool
-from nodes.griptape_nodes_library.utils.env_utils import getenv
+from griptape_nodes_library.utils.env_utils import getenv
 
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
 SERVICE = "OpenAI"

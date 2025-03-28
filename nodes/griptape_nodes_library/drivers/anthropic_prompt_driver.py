@@ -3,7 +3,7 @@ from griptape.drivers.prompt.anthropic import AnthropicPromptDriver
 from rich import print
 
 from griptape_nodes_library.drivers.base_prompt_driver import gnBasePromptDriver
-from nodes.griptape_nodes_library.utils.env_utils import getenv
+from griptape_nodes_library.utils.env_utils import getenv
 
 DEFAULT_MODEL = "claude-3-5-sonnet-latest"
 API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"

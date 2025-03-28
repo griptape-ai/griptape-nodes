@@ -120,6 +120,7 @@ class EvaluateParameterState(State):
 
 
 class ExecuteNodeState(State):
+    # TODO(kate): Can we refactor this method to make it a lot cleaner? might involve changing how parameter values are retrieved/stored.
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901, PLR0912
         current_node = context.focus_stack[-1]
@@ -150,18 +151,23 @@ class ExecuteNodeState(State):
                 if source_values:
                     source_node, source_port = source_values
                     # just check for node bc port doesn't matter
-                    if source_node and source_port and source_port.name in source_node.parameter_output_values:
-                        # This parameter output values is a dict for str and then parameters
-                        value = source_node.parameter_output_values[source_port.name]
+                    if source_node and source_port:
+                        value = None
+                        if source_port.name in source_node.parameter_output_values:
+                            # This parameter output values is a dict for str and then parameters
+                            value = source_node.parameter_output_values[source_port.name]
+                        elif source_port.name in source_node.parameter_values:
+                            value = source_node.parameter_values[source_port.name]
                         # Sets the value in the context!
-                        modified_parameters = current_node.set_parameter_value(parameter.name, value)
-                        if modified_parameters:
-                            for modified_parameter_name in modified_parameters:
-                                modified_request = GetParameterDetailsRequest(
-                                    modified_parameter_name, current_node.name
-                                )
-                                app_event = AppEvent(payload=AppExecutionEvent(modified_request))
-                                EventBus.publish_event(app_event)  # pyright: ignore[reportArgumentType]
+                        if value:
+                            modified_parameters = current_node.set_parameter_value(parameter.name, value)
+                            if modified_parameters:
+                                for modified_parameter_name in modified_parameters:
+                                    modified_request = GetParameterDetailsRequest(
+                                        modified_parameter_name, current_node.name
+                                    )
+                                    app_event = AppEvent(payload=AppExecutionEvent(modified_request))
+                                    EventBus.publish_event(app_event)  # pyright: ignore[reportArgumentType]
                 else:
                     use_set_value = ParameterMode.PROPERTY in parameter.allowed_modes
             # If the parameter DOES NOT have an input and has a property value- use the default value!
@@ -184,17 +190,6 @@ class ExecuteNodeState(State):
                     data_type = parameter_value["type"]
                 else:
                     data_type = type(parameter_value).__name__
-
-                try:
-                    current_node.set_parameter_value(parameter.name, parameter_value)
-                except Exception as e:
-                    msg = (
-                        f"Canceling flow run. Node '{current_node.name}' failed to set value for {parameter.name}: {e}"
-                    )
-                    current_node.state = NodeResolutionState.UNRESOLVED
-                    context.flow.cancel_flow_run()
-                    raise RuntimeError(msg) from e
-
                 EventBus.publish_event(
                     ExecutionGriptapeNodeEvent(
                         wrapped_event=ExecutionEvent(

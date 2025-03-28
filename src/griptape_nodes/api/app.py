@@ -9,9 +9,6 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urljoin
 
 import httpx
-from flask import Flask
-from flask_cors import CORS
-from flask_socketio import SocketIO
 from griptape.events import (
     BaseEvent,
     EventBus,
@@ -21,8 +18,8 @@ from griptape.events import (
 )
 
 from griptape_nodes.api.queue_manager import event_queue
-from griptape_nodes.api.routes.api import api_blueprint, process_event
-from griptape_nodes.api.routes.nodes_api_fake_socket import NodesApiFakeSocket
+from griptape_nodes.api.routes.api import process_event
+from griptape_nodes.api.routes.nodes_api_socket_manager import NodesApiSocketManager
 
 # This import is necessary to register all events, even if not technically used
 from griptape_nodes.retained_mode.events import (
@@ -46,10 +43,6 @@ if TYPE_CHECKING:
 
 logger = GriptapeNodes.get_instance().LogManager().get_logger()
 
-# This is a hack to allow the app to run in a non-websocket mode
-# without updating the event handling code.
-socket = NodesApiFakeSocket()
-
 
 def run_with_context(func: Callable) -> Callable:
     ctx = contextvars.copy_context()
@@ -65,10 +58,8 @@ def process_request(event: EventRequest) -> None:
     # make the request with this event
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-    # my start flow requests don't go through here well.
     request_payload = event.request
     GriptapeNodes().handle_request(request_payload)
-    # All event sending is taking place
 
 
 def send_event(event: GriptapeNodeEvent) -> None:
@@ -83,7 +74,6 @@ def send_event(event: GriptapeNodeEvent) -> None:
         raise TypeError(msg) from None
 
     event_json = result_event.json()
-
     socket.emit(dest_socket, event_json)
 
 
@@ -129,7 +119,13 @@ def check_event_queue() -> None:
     while True:
         if not event_queue.empty():
             event = event_queue.get()
-            process_request(event)
+            if isinstance(event, EventRequest):
+                process_request(event)
+            elif isinstance(event, AppEvent):
+                process_app_event(event)
+            else:
+                logger.warning("Unknown event type encountered: '%s'.", type(event))
+
             event_queue.task_done()
 
 
@@ -154,20 +150,18 @@ def setup_event_listeners() -> None:
 
 
 def sse_listener() -> None:
+    init = False
     while True:
         try:
             endpoint = urljoin(
                 os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/engines/stream"
             )
+            nodes_app_url = os.getenv("GRIPTAPE_NODES_APP_URL", "https://nodes.griptape.ai")
 
             def auth(request: httpx.Request) -> httpx.Request:
-                service = "Nodes"
-                value = "GRIPTAPE_NODES_API_KEY"
-                api_token = (
-                    GriptapeNodes.get_instance()
-                    .ConfigManager()
-                    .get_config_value(f"griptape.api_keys.{service}.{value}")
-                )
+                service = "Griptape"
+                value = "GT_CLOUD_API_KEY"
+                api_token = GriptapeNodes.get_instance().ConfigManager().get_config_value(f"env.{service}.{value}")
                 request.headers.update(
                     {
                         "Accept": "text/event-stream",
@@ -178,6 +172,13 @@ def sse_listener() -> None:
 
             with httpx.stream("get", endpoint, auth=auth, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout
                 response.raise_for_status()
+                if not init:
+                    # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
+                    payload = app_events.AppInitializationComplete()
+                    app_event = AppEvent(payload=payload)
+                    event_queue.put(app_event)
+                    init = True
+
                 for line in response.iter_lines():
                     if not line.strip():
                         continue
@@ -185,6 +186,12 @@ def sse_listener() -> None:
                         data = line.removeprefix("data:").strip()
                         if data == "START":
                             logger.info("Engine is ready to receive events")
+                            logger.info(
+                                "[bold green]Please visit [link=%s]%s[/link] in your browser.[/bold green]",
+                                nodes_app_url,
+                                nodes_app_url,
+                            )
+
                         else:
                             process_event(json.loads(data))
         except Exception:
@@ -193,47 +200,16 @@ def sse_listener() -> None:
 
 
 def run_sse_mode() -> None:
+    global socket  # noqa: PLW0603 # Need to initialize the socket lazily here to avoid auth-ing too early
+
+    socket = NodesApiSocketManager()
     sse_thread = threading.Thread(target=sse_listener)
     sse_thread.start()
 
     setup_event_listeners()
 
-    # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
-    payload = app_events.AppInitializationComplete()
-    app_event = AppEvent(payload=payload)
-    EventBus.publish_event(
-        app_event  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
-    )
-
     check_event_queue()
 
 
-def run_websocket_mode() -> None:
-    global socket  # noqa: PLW0603 Need to override the global socketio instance
-
-    # Allows CORS
-    app = Flask(__name__)
-    socket = SocketIO(app, cors_allowed_origins="*")
-    CORS(app, resources={r"/*": {"origins": "*"}})
-
-    # Pass in the app and allow CORS from all origins
-    # TODO(griptape): what about manage_session=False, async_handlers=False
-    setup_event_listeners()
-    app.register_blueprint(api_blueprint)
-
-    # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
-    payload = app_events.AppInitializationComplete()
-    app_event = AppEvent(payload=payload)
-    EventBus.publish_event(
-        app_event  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
-    )
-
-    socket.start_background_task(run_with_context(check_event_queue))
-    socket.run(app, debug=False)
-
-
 def main() -> None:
-    if os.getenv("DEBUG", "true").lower() == "true":
-        run_websocket_mode()
-    else:
-        run_sse_mode()
+    run_sse_mode()
