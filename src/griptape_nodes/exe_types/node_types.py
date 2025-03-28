@@ -11,6 +11,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterControlType,
     ParameterMode,
 )
+import logging
 
 
 class NodeResolutionState(Enum):
@@ -33,7 +34,7 @@ class NodeBase(ABC):
     parameter_values: dict[str, Any]
     parameter_output_values: dict[str, Any]
     stop_flow: bool = False
-
+    logger: logging.Logger
     def __hash__(self) -> int:
         return hash(self.name)
 

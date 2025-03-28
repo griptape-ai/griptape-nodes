@@ -206,6 +206,15 @@
       }
     },
     {
+      "class_name": "AddRulesetToAgent",
+      "file_path": "griptape_nodes_library/rules/add_ruleset_to_agent.py",
+      "metadata": {
+        "category": "Rules",
+        "description": "Add ruleset to an agent",
+        "display_name": "Add Ruleset to Agent"
+      }
+    },
+    {
       "class_name": "gnAudioTranscriptionTool",
       "file_path": "griptape_nodes_library/tools/audio_transcription_tool.py",
       "metadata": {

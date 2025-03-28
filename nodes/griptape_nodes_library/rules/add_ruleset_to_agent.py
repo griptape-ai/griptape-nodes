@@ -17,7 +17,7 @@ class AddRulesetToAgent(ControlNode):
         super().__init__(**kwargs)
 
         self.config = GriptapeNodes.ConfigManager()
-
+        self.logger = GriptapeNodes.get_logger()
         self.add_parameter(
             Parameter(
                 name="agent",
@@ -44,7 +44,7 @@ class AddRulesetToAgent(ControlNode):
         agent_dict = params.get("agent", None)
         ruleset = params.get("rulesets", None)
 
-        print("Trying to add rulesets to agent:")
+        self.logger.info("Trying to add rulesets to agent:")
 
         if not agent_dict:
             prompt_driver = GtGriptapeCloudPromptDriver(
@@ -53,8 +53,17 @@ class AddRulesetToAgent(ControlNode):
                 stream=True,
             )
             if ruleset:
-                gtAgent(prompt_driver=prompt_driver, rulesets=[ruleset])
+                agent_dict = gtAgent(prompt_driver=prompt_driver, rulesets=[ruleset]).to_dict()
+            else:
+                agent_dict = gtAgent(prompt_driver=prompt_driver).to_dict()   
 
         else:
-            current_agent_ruleset = agent_dict.get("rulesets", None)
-            print(current_agent_ruleset)
+            current_agent_ruleset = agent_dict.get("rulesets", [])
+            self.logger.info(current_agent_ruleset)
+            new_agent_ruleset = ruleset.to_dict()
+            self.logger.info(new_agent_ruleset)
+            current_agent_ruleset.extend(new_agent_ruleset)
+
+            agent_dict["rulesets"] = current_agent_ruleset
+        
+        self.parameter_output_values["agent"] = agent_dict
