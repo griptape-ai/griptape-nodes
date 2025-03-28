@@ -1867,7 +1867,8 @@ class NodeManager:
 
         result = GetParameterDetailsResultSuccess(
             element_id=parameter.element_id,
-            allowed_types=parameter.allowed_types,
+            input_types=parameter.get_all_input_types(),
+            output_type=parameter.output_type,
             default_value=parameter.default_value,
             tooltip=parameter.tooltip,
             tooltip_as_input=parameter.tooltip_as_input,

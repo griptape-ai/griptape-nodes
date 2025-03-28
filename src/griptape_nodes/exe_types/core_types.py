@@ -334,20 +334,21 @@ class Parameter(BaseNodeElement):
         self,
         name: str,
         tooltip: str,
-        type: str | None = None,
+        type: str | None = None,  # noqa: A002
         types: list[str] | None = None,
         output_type: str | None = None,
         default_value: Any = None,
         tooltip_as_input: str | None = None,
         tooltip_as_property: str | None = None,
         tooltip_as_output: str | None = None,
-        settable: bool = True,
-        user_defined: bool = False,
         allowed_modes: set[ParameterMode] | None = None,
         options: list[Any] | None = None,
         ui_options: ParameterUIOptions | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
+        *,
+        settable: bool = True,
+        user_defined: bool = False,
     ):
         self.name = name
         self.tooltip = tooltip

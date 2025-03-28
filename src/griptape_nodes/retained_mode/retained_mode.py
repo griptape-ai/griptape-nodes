@@ -227,7 +227,7 @@ class RetainedMode:
         parameter_name: str,
         default_value: Any | None,
         tooltip: str,
-        type: str | None = None,
+        type: str | None = None,  # noqa: A002
         types: list[str] | None = None,
         output_type: str | None = None,
         edit: bool = False,  # noqa: FBT001, FBT002
