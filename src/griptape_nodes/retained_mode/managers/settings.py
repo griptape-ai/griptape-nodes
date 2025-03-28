@@ -77,13 +77,6 @@ class AppInitializationComplete(BaseModel):
                 engine_version_created_with=importlib.metadata.version("griptape_nodes"),
                 node_libraries_referenced=[LibraryNameAndVersion("Griptape Nodes Library", "0.1.0")],
             ),
-            Script(
-                name="Comfyui flow branch",
-                relative_file_path="griptape_nodes/scripts/comfyui_flow_branch.py",
-                internal=True,
-                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
-                node_libraries_referenced=[LibraryNameAndVersion("Griptape Nodes Library", "0.1.0")],
-            ),
         ]
     )
 
