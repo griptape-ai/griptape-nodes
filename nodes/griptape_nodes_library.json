@@ -252,7 +252,7 @@
       }
     },
     {
-      "class_name": "PromptSummaryTool",
+      "class_name": "PromptSummaryToolNode",
       "file_path": "griptape_nodes_library/tools/prompt_summary_tool.py",
       "metadata": {
         "category": "Tools",
