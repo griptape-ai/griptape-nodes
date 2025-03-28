@@ -2,7 +2,11 @@
 
 ## Getting Started
 
-Review the [CONTRIBUTING.md](CONTRIBUTING.md) file for how to get started with the project.
+For getting started with using Griptape Nodes, please visit [griptapenodes.com](https://www.griptapenodes.com/).
+
+## Contributing
+
+If you would like to contribute to the Griptape Nodes Engine, please review the [CONTRIBUTING.md](CONTRIBUTING.md) file.
 
 ### Request Structure
 
