@@ -1,12 +1,11 @@
-import openai
-from griptape.drivers.image_generation.openai import OpenAiImageGenerationDriver
+from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes_library.drivers.base_driver import gnBaseDriver
 from griptape_nodes_library.utils.env_utils import getenv
 
-API_KEY_ENV_VAR = "OPENAI_API_KEY"
-SERVICE = "OpenAI"
+API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
+SERVICE = "Griptape"
 DEFAULT_MODEL = "dall-e-3"
 DEFAULT_QUALITY = "hd"
 DEFAULT_STYLE = "natural"
@@ -55,7 +54,7 @@ class gnBaseImageDriver(gnBaseDriver):
         kwargs["style"] = params.get("style", DEFAULT_STYLE)
 
         # Create the driver
-        driver = OpenAiImageGenerationDriver(**kwargs)
+        driver = GriptapeCloudImageGenerationDriver(**kwargs)
 
         # Set the output
         self.parameter_output_values["driver"] = driver
@@ -68,11 +67,6 @@ class gnBaseImageDriver(gnBaseDriver):
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
-        try:
-            client = openai.OpenAI(api_key=api_key)
-            client.models.list()
-        except openai.AuthenticationError as e:
-            exceptions.append(e)
         return exceptions if exceptions else None
 
 
