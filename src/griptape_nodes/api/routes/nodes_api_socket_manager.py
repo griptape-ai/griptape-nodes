@@ -45,6 +45,11 @@ class NodesApiSocketManager:
     def _connect(self) -> ClientConnection:
         while True:
             try:
+                api_key = GriptapeNodes.get_instance().ConfigManager().get_config_value("env.Griptape.GT_CLOUD_API_KEY")
+                if api_key is None:
+                    msg = "env.Griptape.GT_CLOUD_API_KEY is not set, please add this value to your griptape_nodes_config.json file."
+                    raise ValueError(msg) from None
+
                 return connect(
                     urljoin(
                         os.getenv("GRIPTAPE_NODES_API_BASE_URL", "wss://api.nodes.griptape.ai")
@@ -52,13 +57,7 @@ class NodesApiSocketManager:
                         .replace("https", "wss"),
                         "/api/editors/ws",  # TODO(matt): this is the destination path for events. reevaluate if we do bi-directional communication
                     ),
-                    additional_headers={
-                        "Authorization": f"Bearer {
-                            GriptapeNodes.get_instance()
-                            .ConfigManager()
-                            .get_config_value('env.Griptape.GT_CLOUD_API_KEY')
-                        }"
-                    },
+                    additional_headers={"Authorization": f"Bearer {api_key}"},
                     ping_timeout=None,
                 )
             except ConnectionError:
