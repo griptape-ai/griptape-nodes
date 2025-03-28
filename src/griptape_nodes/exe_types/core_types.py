@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import uuid
 from abc import ABC
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 from griptape_nodes.exe_types.type_validator import TypeValidator
+
+T = TypeVar("T", bound="Parameter")
 
 
 # Types of Modes provided for Parameters
@@ -121,8 +124,132 @@ class ParameterUIOptions:
         return self_dict == other_dict
 
 
+@dataclass(kw_only=True)
+class BaseNodeElement:
+    element_id: str = field(default_factory=lambda: str(uuid.uuid4().hex))
+    element_type: str = field(default_factory=lambda: BaseNodeElement.__name__)
+
+    _children: list[BaseNodeElement] = field(default_factory=list)
+    _stack: ClassVar[list[BaseNodeElement]] = []
+
+    @property
+    def children(self) -> list[BaseNodeElement]:
+        return self._children
+
+    def __post_init__(self) -> None:
+        # If there's currently an active element, add this new element as a child
+        current = BaseNodeElement.get_current()
+        if current is not None:
+            current.add_child(self)
+
+    def __enter__(self) -> Self:
+        # Push this element onto the global stack
+        BaseNodeElement._stack.append(self)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        # Pop this element off the global stack
+        popped = BaseNodeElement._stack.pop()
+        if popped is not self:
+            msg = f"Expected to pop {self}, but got {popped}"
+            raise RuntimeError(msg)
+
+    def __repr__(self) -> str:
+        return f"BaseNodeElement({self.children=})"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Returns a nested dictionary representation of this node and its children.
+
+        Example:
+            {
+              "element_id": "container-1",
+              "element_type": "ParameterGroup",
+              "group_name": "Group 1",
+              "children": [
+                {
+                    "element_id": "A",
+                    "element_type": "Parameter",
+                    "children": []
+                },
+                ...
+              ]
+            }
+        """
+        return {
+            "element_id": self.element_id,
+            "element_type": self.__class__.__name__,
+            "children": [child.to_dict() for child in self._children],
+        }
+
+    def add_child(self, child: BaseNodeElement) -> None:
+        self._children.append(child)
+
+    def remove_child(self, child: BaseNodeElement | str) -> None:
+        ui_elements: list[BaseNodeElement] = [self]
+        for ui_element in ui_elements:
+            if child in ui_element._children:
+                ui_element._children.remove(child)
+                break
+            ui_elements.extend(ui_element._children)
+
+    def find_element_by_id(self, element_id: str) -> BaseNodeElement | None:
+        if self.element_id == element_id:
+            return self
+
+        for child in self._children:
+            found = child.find_element_by_id(element_id)
+            if found is not None:
+                return found
+        return None
+
+    def find_elements_by_type(self, element_type: type[T]) -> list[T]:
+        elements: list[T] = []
+        for child in self._children:
+            if isinstance(child, element_type):
+                elements.append(child)
+            elements.extend(child.find_elements_by_type(element_type))
+        return elements
+
+    @classmethod
+    def get_current(cls) -> BaseNodeElement | None:
+        """Return the element on top of the stack, or None if no active element."""
+        return cls._stack[-1] if cls._stack else None
+
+
+@dataclass(kw_only=True)
+class ParameterGroup(BaseNodeElement):
+    """UI element for a group of parameters."""
+
+    group_name: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Returns a nested dictionary representation of this node and its children.
+
+        Example:
+            {
+              "element_id": "container-1",
+              "element_type": "ParameterGroup",
+              "group_name": "Group 1",
+              "children": [
+                {
+                    "element_id": "A",
+                    "element_type": "Parameter",
+                    "children": []
+                },
+                ...
+              ]
+            }
+        """
+        return {
+            "element_id": self.element_id,
+            "element_type": self.__class__.__name__,
+            "group_name": self.group_name,
+            "children": [child.to_dict() for child in self._children],
+        }
+
+
 @dataclass
-class Parameter:
+class Parameter(BaseNodeElement):
     name: str  # must be unique from other parameters in Node
     allowed_types: list[str]
     tooltip: str  # Default tooltip
