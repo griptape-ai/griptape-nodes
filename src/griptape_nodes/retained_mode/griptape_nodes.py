@@ -36,7 +36,7 @@ from griptape_nodes.retained_mode.events.arbitrary_python_events import (
 )
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
-    EventBase,
+    BaseEvent,
     RequestPayload,
     ResultPayload,
     ResultPayload_Failure,
@@ -269,7 +269,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
     @classmethod
     def get_session_id(cls) -> str | None:
-        return EventBase._session_id
+        return BaseEvent._session_id
 
     @classmethod
     def LogManager(cls) -> LogManager:
@@ -358,12 +358,12 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
     def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:
         # Do we already have one?
-        if EventBase._session_id is not None:
+        if BaseEvent._session_id is not None:
             details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID in place."
             GriptapeNodes.get_logger().error(details)
             return AppStartSessionResult_Failure()
 
-        EventBase._session_id = request.session_id
+        BaseEvent._session_id = request.session_id
         # TODO(griptape): Do we want to broadcast that a session started?
 
         return AppStartSessionResult_Success()

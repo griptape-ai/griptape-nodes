@@ -1,8 +1,8 @@
 [
-  "EventBase",
+  "BaseEvent",
   {
     "properties": {},
-    "title": "EventBase",
+    "title": "BaseEvent",
     "type": "object"
   }
 ],
@@ -76,10 +76,10 @@
   }
 ],
 [
-  "ExecutionEventBase",
+  "ExecutionBaseEvent",
   {
     "properties": {},
-    "title": "ExecutionEventBase",
+    "title": "ExecutionBaseEvent",
     "type": "object"
   }
 ],
