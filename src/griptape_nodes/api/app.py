@@ -16,6 +16,9 @@ from griptape.events import (
     FinishStructureRunEvent,
     TextChunkEvent,
 )
+from rich.align import Align
+from rich.console import Console
+from rich.panel import Panel
 
 from griptape_nodes.api.queue_manager import event_queue
 from griptape_nodes.api.routes.api import process_event
@@ -41,6 +44,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
+console = Console()
 logger = GriptapeNodes.get_instance().LogManager().get_logger(event_handler=False)
 
 
@@ -182,12 +186,17 @@ def sse_listener() -> None:
                     if line.startswith("data:"):
                         data = line.removeprefix("data:").strip()
                         if data == "START":
-                            logger.info("Engine is ready to receive events")
-                            logger.info(
-                                "[bold green]Please visit [link=%s]%s[/link] in your browser.[/bold green]",
-                                nodes_app_url,
-                                nodes_app_url,
+                            message = Panel(
+                                Align.center(
+                                    f"[bold green]Engine is ready to receive events[/bold green]\n"
+                                    f"[bold blue]Visit: [link={nodes_app_url}]{nodes_app_url}[/link][/bold blue]",
+                                    vertical="middle",
+                                ),
+                                title="🚀 Engine Started",
+                                border_style="green",
+                                padding=(1, 4),
                             )
+                            console.print(message)
                             if not init:
                                 # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
                                 payload = app_events.AppInitializationComplete()
