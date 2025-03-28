@@ -1,15 +1,20 @@
 import logging
 
+from griptape.events import EventBus
 from rich.logging import RichHandler
 
-from griptape.events import EventBus
 from griptape_nodes.retained_mode.events.base_events import AppEvent
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 
 
 class EventLogHandler(logging.Handler):
-    def emit(self, record):
-        EventBus.publish_event(AppEvent(payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)))
+    def emit(self, record) -> None:
+        EventBus.publish_event(
+            AppEvent(
+                payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)
+            )
+        )
+
 
 class LogManager:
     def __init__(self) -> None:
