@@ -252,6 +252,9 @@ class Parameter:
 
     # Will this type be allowed as an input?
     def is_incoming_type_allowed(self, incoming_type: str | None) -> bool:
+        if incoming_type is None:
+            return False
+
         ret_val = False
 
         if self._type is not None:
@@ -265,10 +268,10 @@ class Parameter:
                             ret_val = True
                             break
             else:
-                # Case 2: type is set, but not types.
+                # Case 2: type is set, but not types. Just check type.
                 ret_val = ParameterType.are_types_compatible(source_type=incoming_type, target_type=self.type)
         elif self.types:
-            # Case 3: types is specified, but not type.
+            # Case 3: types is specified, but not type. Just check types.
             for test_type in self.types:
                 if ParameterType.are_types_compatible(source_type=incoming_type, target_type=test_type):
                     ret_val = True
@@ -341,7 +344,7 @@ class Parameter:
 @dataclass(kw_only=True)
 class ControlParameter(Parameter, ABC):
     input_types: list[str] = field(default_factory=lambda: [ParameterControlType.__name__])
-    output_type: str | None = ParameterControlType.__name__
+    _output_type: str | None = ParameterControlType.__name__
     default_value: Any = None
     settable: bool = False
 
