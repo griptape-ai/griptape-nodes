@@ -63,8 +63,3 @@ class OllamaEmbeddingDriverNode(BaseEmbeddingDriverNode):
             kwargs["host"] = f"{base_url}:{port}"
 
         self.parameter_output_values["driver"] = OllamaEmbeddingDriver(**kwargs)
-
-
-if __name__ == "__main__":
-    drv = OllamaEmbeddingDriverNode(name="ollama_embedding_driver")
-    drv.process()
