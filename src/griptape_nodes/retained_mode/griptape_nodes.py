@@ -15,7 +15,7 @@ from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterControlType, ParameterMode
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import NodeBase, NodeResolutionState
+from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidationError, TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.node_library.script_registry import LibraryNameAndVersion, ScriptRegistry
@@ -413,7 +413,7 @@ class ObjectManager:
         match source_obj:
             case ControlFlow():
                 GriptapeNodes.FlowManager().handle_flow_rename(old_name=request.object_name, new_name=final_name)
-            case NodeBase():
+            case BaseNode():
                 GriptapeNodes.NodeManager().handle_node_rename(old_name=request.object_name, new_name=final_name)
             case _:
                 details = f"Attempted to rename an object named '{request.object_name}', but that object wasn't of a type supported for rename."
@@ -1081,7 +1081,7 @@ class FlowManager:
         if request.flow_node_name:
             flow_node_name = request.flow_node_name
             flow_node = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(
-                flow_node_name, NodeBase
+                flow_node_name, BaseNode
             )
             if not flow_node:
                 details = f"Provided node with name {flow_node_name} does not exist"
@@ -1310,7 +1310,7 @@ class FlowManager:
         if request.flow_node_name:
             flow_node_name = request.flow_node_name
             flow_node = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(
-                flow_node_name, NodeBase
+                flow_node_name, BaseNode
             )
             if not flow_node:
                 details = f"Provided node with name {flow_node_name} does not exist"
@@ -1453,7 +1453,7 @@ class NodeManager:
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
             details = f"Attempted to delete a Node '{request.node_name}', but no such Node was found."
             GriptapeNodes.get_logger().error(details)
@@ -1533,7 +1533,7 @@ class NodeManager:
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(event.node_name, NodeBase)
+        node = obj_mgr.attempt_get_object_by_name_as_type(event.node_name, BaseNode)
         if node is None:
             details = f"Attempted to get resolution state for a Node '{event.node_name}', but no such Node was found."
             GriptapeNodes.get_logger().error(details)
@@ -1554,7 +1554,7 @@ class NodeManager:
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
             details = f"Attempted to get metadata for a Node '{request.node_name}', but no such Node was found."
             GriptapeNodes.get_logger().error(details)
@@ -1575,7 +1575,7 @@ class NodeManager:
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
             details = f"Attempted to set metadata for a Node '{request.node_name}', but no such Node was found."
             GriptapeNodes.get_logger().error(details)
@@ -1595,7 +1595,7 @@ class NodeManager:
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
             details = f"Attempted to list Connections for a Node '{request.node_name}', but no such Node was found."
             GriptapeNodes.get_logger().error(details)
@@ -1657,7 +1657,7 @@ class NodeManager:
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
             details = f"Attempted to list Parameters for a Node '{request.node_name}', but no such Node was found."
             GriptapeNodes.get_logger().error(details)
@@ -1679,7 +1679,7 @@ class NodeManager:
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
             details = f"Attempted to add Parameter '{request.parameter_name}' to a Node '{request.node_name}', but no such Node was found."
             GriptapeNodes.get_logger().error(details)
@@ -1753,7 +1753,7 @@ class NodeManager:
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
             details = f"Attempted to remove Parameter '{request.parameter_name}' from a Node '{request.node_name}', but no such Node was found."
             GriptapeNodes.get_logger().error(details)
@@ -1835,7 +1835,7 @@ class NodeManager:
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
             details = f"Attempted to get details for Parameter '{request.parameter_name}' from a Node '{request.node_name}', but no such Node was found."
             GriptapeNodes.get_logger().error(details)
@@ -1881,7 +1881,7 @@ class NodeManager:
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
             details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}', but no such Node was found."
             GriptapeNodes.get_logger().error(details)
@@ -1974,7 +1974,7 @@ class NodeManager:
         param_name = request.parameter_name
 
         # Get the node
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
             details = f'"{request.node_name}" not found'
             GriptapeNodes.get_logger().error(details)
@@ -2042,7 +2042,7 @@ class NodeManager:
         param_name = request.parameter_name
 
         # Get the node
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
             details = f'"{request.node_name}" not found'
             GriptapeNodes.get_logger().error(details)
@@ -2136,7 +2136,7 @@ class NodeManager:
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, NodeBase)
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
             details = f"Attempted to get all info for Node named '{request.node_name}', but no such Node was found."
             GriptapeNodes.get_logger().error(details)
@@ -2357,10 +2357,10 @@ class NodeManager:
         GriptapeNodes.get_logger().info(details)
         return GetCompatibleParametersResult_Success(valid_parameters_by_node=valid_parameters_by_node)
 
-    def get_node_by_name(self, name: str) -> NodeBase:
+    def get_node_by_name(self, name: str) -> BaseNode:
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(name, NodeBase)
+        node = obj_mgr.attempt_get_object_by_name_as_type(name, BaseNode)
         if node is None:
             msg = f"Node '{name}' not found."
             raise ValueError(msg)
@@ -2451,7 +2451,7 @@ class NodeManager:
     def on_validate_node_dependencies_request(self, request: ValidateNodeDependenciesRequest) -> ResultPayload:
         node_name = request.node_name
         obj_manager = GriptapeNodes.get_instance()._object_manager
-        node = obj_manager.attempt_get_object_by_name_as_type(node_name, NodeBase)
+        node = obj_manager.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if not node:
             details = f'Failed to validate node dependencies. Node with "{node_name}" does not exist.'
             GriptapeNodes.get_logger().error(details)
@@ -2657,7 +2657,7 @@ class ScriptManager:
                 # Write all flows to a file, get back the strings for connections
                 connection_request_scripts = handle_flow_saving(file, obj_manager, created_flows)
                 # Now all of the flows have been created.
-                for node in obj_manager.get_filtered_subset(type=NodeBase).values():
+                for node in obj_manager.get_filtered_subset(type=BaseNode).values():
                     flow_name = node_manager.get_node_parent_flow_by_name(node.name)
                     creation_request = CreateNodeRequest(
                         node_type=node.__class__.__name__,
@@ -2777,7 +2777,7 @@ def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: 
     return connection_request_scripts
 
 
-def handle_parameter_creation_saving(file: TextIO, node: NodeBase, flow_name: str) -> None:
+def handle_parameter_creation_saving(file: TextIO, node: BaseNode, flow_name: str) -> None:
     for parameter in node.parameters:
         param_dict = vars(parameter)
         # Create the parameter, or alter it on the existing node
@@ -2801,7 +2801,7 @@ def handle_parameter_creation_saving(file: TextIO, node: NodeBase, flow_name: st
                 file.write(code_string + "\n")
 
 
-def handle_parameter_value_saving(parameter: Parameter, node: NodeBase, flow_name: str) -> str | None:
+def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, flow_name: str) -> str | None:
     flow_manager = GriptapeNodes()._flow_manager
     parent_flow = flow_manager.get_flow_by_name(flow_name)
     if not (
@@ -3186,7 +3186,7 @@ class LibraryManager:
         )
         return result
 
-    def _load_class_from_file(self, file_path: Path | str, class_name: str) -> type[NodeBase]:
+    def _load_class_from_file(self, file_path: Path | str, class_name: str) -> type[BaseNode]:
         """Dynamically load a class from a Python file.
 
         Args:
@@ -3228,9 +3228,9 @@ class LibraryManager:
             msg = f"Class '{class_name}' not found in module {file_path}"
             raise AttributeError(msg) from e
 
-        # Verify it's a NodeBase subclass
-        if not issubclass(node_class, NodeBase):
-            msg = f"{class_name} must inherit from NodeBase"
+        # Verify it's a BaseNode subclass
+        if not issubclass(node_class, BaseNode):
+            msg = f"{class_name} must inherit from BaseNode"
             raise TypeError(msg)
 
         return node_class
