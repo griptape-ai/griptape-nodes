@@ -117,16 +117,19 @@ def process_app_event(event: AppEvent) -> None:
 
 def check_event_queue() -> None:
     while True:
-        if not event_queue.empty():
-            event = event_queue.get()
-            if isinstance(event, EventRequest):
-                process_request(event)
-            elif isinstance(event, AppEvent):
-                process_app_event(event)
-            else:
-                logger.warning("Unknown event type encountered: '%s'.", type(event))
+        try:
+            if not event_queue.empty():
+                event = event_queue.get()
+                if isinstance(event, EventRequest):
+                    process_request(event)
+                elif isinstance(event, AppEvent):
+                    process_app_event(event)
+                else:
+                    logger.warning("Unknown event type encountered: '%s'.", type(event))
 
-            event_queue.task_done()
+                event_queue.task_done()
+        except KeyboardInterrupt:
+            break
 
 
 def setup_event_listeners() -> None:
