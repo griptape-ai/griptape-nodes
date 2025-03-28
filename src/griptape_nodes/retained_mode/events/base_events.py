@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 from griptape.artifacts import BaseArtifact
-from griptape.events import BaseEvent
+from griptape.events import BaseEvent as GtBaseEvent
 from griptape.structures import Structure
 from griptape.tools import BaseTool
 from pydantic import BaseModel, Field
@@ -80,7 +80,7 @@ E = TypeVar("E", bound=ExecutionPayload)
 A = TypeVar("A", bound=AppPayload)
 
 
-class EventBase(BaseModel, ABC):
+class BaseEvent(BaseModel, ABC):
     """Abstract base class for all events."""
 
     # Keeping here instead of in GriptapeNodes to avoid circular import hell.
@@ -88,7 +88,7 @@ class EventBase(BaseModel, ABC):
     _session_id: ClassVar[str | None] = None
 
     # Instance variable with a default_factory that references the class variable
-    session_id: str | None = Field(default_factory=lambda: EventBase._session_id)
+    session_id: str | None = Field(default_factory=lambda: BaseEvent._session_id)
 
     # Custom JSON encoder for the payload
     class Config:
@@ -127,7 +127,7 @@ class EventBase(BaseModel, ABC):
         """
 
 
-class EventRequest(EventBase, Generic[P]):
+class EventRequest(BaseEvent, Generic[P]):
     """Request event."""
 
     request: P
@@ -189,7 +189,7 @@ class EventRequest(EventBase, Generic[P]):
         return cls(request=request_payload)
 
 
-class EventResult(EventBase, Generic[P, R], ABC):
+class EventResult(BaseEvent, Generic[P, R], ABC):
     """Abstract base class for result events."""
 
     request: P
@@ -320,7 +320,7 @@ class EventResult_Failure(EventResult[P, R]):
 
 
 # Helper function to deserialize event from JSON
-def deserialize_event(json_data) -> EventBase:
+def deserialize_event(json_data) -> BaseEvent:
     """Deserialize an event from JSON or dict, using the payload type information embedded in the data.
 
     Args:
@@ -371,7 +371,7 @@ def deserialize_event(json_data) -> EventBase:
 
 
 # EXECUTION EVENT BASE (this event type is used for the execution of a Griptape Nodes flow)
-class ExecutionEvent(EventBase, Generic[E]):
+class ExecutionEvent(BaseEvent, Generic[E]):
     payload: E
 
     def __init__(self, **data) -> None:
@@ -432,7 +432,7 @@ class ExecutionEvent(EventBase, Generic[E]):
 
 
 # Events sent as part of the lifecycle of the Griptape Nodes application.
-class AppEvent(EventBase, Generic[A]):
+class AppEvent(BaseEvent, Generic[A]):
     payload: A
 
     def __init__(self, **data) -> None:
@@ -494,10 +494,10 @@ class AppEvent(EventBase, Generic[A]):
 
 
 @dataclass
-class GriptapeNodeEvent(BaseEvent):
+class GriptapeNodeEvent(GtBaseEvent):
     wrapped_event: EventResult
 
 
 @dataclass
-class ExecutionGriptapeNodeEvent(BaseEvent):
+class ExecutionGriptapeNodeEvent(GtBaseEvent):
     wrapped_event: ExecutionEvent = field()

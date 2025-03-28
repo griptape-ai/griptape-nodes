@@ -1,7 +1,7 @@
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import DataNode, NodeBase
+from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 
 
 class RerouteNode(DataNode):
@@ -100,7 +100,7 @@ class RerouteNode(DataNode):
 
     def after_incoming_connection(
         self,
-        source_node: NodeBase,  # noqa: ARG002
+        source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,
         target_parameter: Parameter,
     ) -> None:
@@ -111,7 +111,7 @@ class RerouteNode(DataNode):
     def after_outgoing_connection(
         self,
         source_parameter: Parameter,
-        target_node: NodeBase,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
@@ -120,7 +120,7 @@ class RerouteNode(DataNode):
 
     def after_incoming_connection_removed(
         self,
-        source_node: NodeBase,  # noqa: ARG002
+        source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,
         target_parameter: Parameter,
     ) -> None:
@@ -131,7 +131,7 @@ class RerouteNode(DataNode):
     def after_outgoing_connection_removed(
         self,
         source_parameter: Parameter,
-        target_node: NodeBase,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""

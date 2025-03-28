@@ -1,10 +1,10 @@
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import ControlParameter_Input
-from griptape_nodes.exe_types.node_types import NodeBase
+from griptape_nodes.exe_types.node_types import BaseNode
 
 
-class EndFlowNode(NodeBase):
+class EndFlowNode(BaseNode):
     def __init__(
         self,
         name: str,
