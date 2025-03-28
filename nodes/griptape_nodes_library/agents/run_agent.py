@@ -4,7 +4,7 @@ from griptape.drivers.prompt.griptape_cloud import (
 from griptape.structures import Agent as gtAgent
 from griptape.utils import Stream
 
-from nodes.griptape_nodes_library.agents.create_agent import Agent
+from nodes.griptape_nodes_library.agents.agent import Agent
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"

@@ -72,7 +72,7 @@
   "nodes": [
     {
       "class_name": "Agent",
-      "file_path": "griptape_nodes_library/agents/create_agent.py",
+      "file_path": "griptape_nodes_library/agents/agent.py",
       "metadata": {
         "category": "Agent",
         "description": "Griptape Agent that can execute prompts and use tools",
