@@ -93,6 +93,18 @@ Serve the documentation:
 make docs/serve
 ```
 
+Run unit tests:
+
+```shell
+make test/unit
+```
+
+Run integration tests:
+
+```shell
+make test/integration
+```
+
 # Engine Commands
 
 Install the engine using the following command:

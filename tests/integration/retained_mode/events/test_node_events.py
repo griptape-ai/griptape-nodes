@@ -1,0 +1,270 @@
+from typing import Any
+from unittest.mock import ANY
+
+import pytest
+
+from griptape_nodes.retained_mode.events.base_events import EventResult_Success
+from griptape_nodes.retained_mode.events.node_events import (
+    CreateNodeRequest,
+    GetAllNodeInfoRequest,
+    GetAllNodeInfoResult_Success,
+)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+
+class TestNodeEvents:
+    @pytest.fixture
+    def create_node_result(self, flow) -> Any:  # noqa: ARG002
+        request = CreateNodeRequest(node_type="gnRunAgent", override_parent_flow_name="canvas")
+        result = GriptapeNodes.handle_request(request)
+
+        return result
+
+    def test_GetAllNodeInfoResult(self, create_node_result) -> None:
+        request = GetAllNodeInfoRequest(node_name=create_node_result.node_name)
+        result = GriptapeNodes.handle_request(request)
+
+        assert isinstance(result, GetAllNodeInfoResult_Success)
+
+        assert EventResult_Success(request=request, result=result).dict() == {
+            "request": {"request_id": None, "node_name": "gnRunAgent_1"},
+            "result": {
+                "metadata": {
+                    "library_node_metadata": {
+                        "category": "Agent",
+                        "description": "Griptape Agent that can execute prompts and use tools",
+                        "display_name": "Run Agent",
+                    },
+                    "library": "Griptape Nodes Library",
+                    "node_type": "gnRunAgent",
+                },
+                "node_resolution_state": "UNRESOLVED",
+                "connections": {"incoming_connections": [], "outgoing_connections": []},
+                "parameter_name_to_info": {
+                    "agent": {
+                        "details": {
+                            "element_id": ANY,
+                            "allowed_types": ["Agent"],
+                            "default_value": None,
+                            "tooltip": "",
+                            "tooltip_as_input": None,
+                            "tooltip_as_property": None,
+                            "tooltip_as_output": None,
+                            "mode_allowed_input": True,
+                            "mode_allowed_property": True,
+                            "mode_allowed_output": True,
+                            "is_user_defined": False,
+                            "ui_options": None,
+                        },
+                        "value": {"data_type": "<class 'NoneType'>", "value": None},
+                    },
+                    "prompt_driver": {
+                        "details": {
+                            "element_id": ANY,
+                            "allowed_types": ["BasePromptDriver"],
+                            "default_value": None,
+                            "tooltip": "",
+                            "tooltip_as_input": None,
+                            "tooltip_as_property": None,
+                            "tooltip_as_output": None,
+                            "mode_allowed_input": True,
+                            "mode_allowed_property": True,
+                            "mode_allowed_output": True,
+                            "is_user_defined": False,
+                            "ui_options": None,
+                        },
+                        "value": {"data_type": "<class 'NoneType'>", "value": None},
+                    },
+                    "prompt_model": {
+                        "details": {
+                            "element_id": ANY,
+                            "allowed_types": ["str"],
+                            "default_value": "gpt-4o",
+                            "tooltip": "",
+                            "tooltip_as_input": None,
+                            "tooltip_as_property": None,
+                            "tooltip_as_output": None,
+                            "mode_allowed_input": True,
+                            "mode_allowed_property": True,
+                            "mode_allowed_output": True,
+                            "is_user_defined": False,
+                            "ui_options": None,
+                        },
+                        "value": {"data_type": "str", "value": "gpt-4o"},
+                    },
+                    "prompt": {
+                        "details": {
+                            "element_id": ANY,
+                            "allowed_types": ["str"],
+                            "default_value": "",
+                            "tooltip": "",
+                            "tooltip_as_input": None,
+                            "tooltip_as_property": None,
+                            "tooltip_as_output": None,
+                            "mode_allowed_input": True,
+                            "mode_allowed_property": True,
+                            "mode_allowed_output": True,
+                            "is_user_defined": False,
+                            "ui_options": {
+                                "string_type_options": {"multiline": True, "markdown": None, "placeholder_text": None},
+                                "boolean_type_options": None,
+                                "number_type_options": None,
+                                "simple_dropdown_options": None,
+                                "fancy_dropdown_options": None,
+                                "image_type_options": None,
+                                "video_type_options": None,
+                                "audio_type_options": None,
+                                "property_array_type_options": None,
+                                "list_container_options": None,
+                                "display": True,
+                            },
+                        },
+                        "value": {"data_type": "str", "value": ""},
+                    },
+                    "tool": {
+                        "details": {
+                            "element_id": ANY,
+                            "allowed_types": ["BaseTool"],
+                            "default_value": None,
+                            "tooltip": "",
+                            "tooltip_as_input": None,
+                            "tooltip_as_property": None,
+                            "tooltip_as_output": None,
+                            "mode_allowed_input": True,
+                            "mode_allowed_property": True,
+                            "mode_allowed_output": True,
+                            "is_user_defined": False,
+                            "ui_options": None,
+                        },
+                        "value": {"data_type": "<class 'NoneType'>", "value": None},
+                    },
+                    "tool_list": {
+                        "details": {
+                            "element_id": ANY,
+                            "allowed_types": ["list[BaseTool]"],
+                            "default_value": None,
+                            "tooltip": "",
+                            "tooltip_as_input": None,
+                            "tooltip_as_property": None,
+                            "tooltip_as_output": None,
+                            "mode_allowed_input": True,
+                            "mode_allowed_property": True,
+                            "mode_allowed_output": True,
+                            "is_user_defined": False,
+                            "ui_options": None,
+                        },
+                        "value": {"data_type": "<class 'NoneType'>", "value": None},
+                    },
+                    "ruleset": {
+                        "details": {
+                            "element_id": ANY,
+                            "allowed_types": ["Ruleset"],
+                            "default_value": None,
+                            "tooltip": "",
+                            "tooltip_as_input": None,
+                            "tooltip_as_property": None,
+                            "tooltip_as_output": None,
+                            "mode_allowed_input": True,
+                            "mode_allowed_property": True,
+                            "mode_allowed_output": True,
+                            "is_user_defined": False,
+                            "ui_options": None,
+                        },
+                        "value": {"data_type": "<class 'NoneType'>", "value": None},
+                    },
+                    "output": {
+                        "details": {
+                            "element_id": ANY,
+                            "allowed_types": ["str"],
+                            "default_value": "",
+                            "tooltip": "What the agent said.",
+                            "tooltip_as_input": None,
+                            "tooltip_as_property": None,
+                            "tooltip_as_output": None,
+                            "mode_allowed_input": False,
+                            "mode_allowed_property": False,
+                            "mode_allowed_output": True,
+                            "is_user_defined": False,
+                            "ui_options": {
+                                "string_type_options": {
+                                    "multiline": True,
+                                    "markdown": None,
+                                    "placeholder_text": "The agent response",
+                                },
+                                "boolean_type_options": None,
+                                "number_type_options": None,
+                                "simple_dropdown_options": None,
+                                "fancy_dropdown_options": None,
+                                "image_type_options": None,
+                                "video_type_options": None,
+                                "audio_type_options": None,
+                                "property_array_type_options": None,
+                                "list_container_options": None,
+                                "display": True,
+                            },
+                        },
+                        "value": {"data_type": "str", "value": ""},
+                    },
+                },
+                "root_node_element": {
+                    "element_id": ANY,
+                    "element_type": "BaseNodeElement",
+                    "children": [
+                        {"element_id": ANY, "element_type": "Parameter", "children": []},
+                        {
+                            "element_id": ANY,
+                            "element_type": "ParameterGroup",
+                            "group_name": "Agent Config",
+                            "children": [
+                                {
+                                    "element_id": ANY,
+                                    "element_type": "Parameter",
+                                    "children": [],
+                                },
+                                {
+                                    "element_id": ANY,
+                                    "element_type": "Parameter",
+                                    "children": [],
+                                },
+                                {
+                                    "element_id": ANY,
+                                    "element_type": "Parameter",
+                                    "children": [],
+                                },
+                            ],
+                        },
+                        {
+                            "element_id": ANY,
+                            "element_type": "ParameterGroup",
+                            "group_name": "Agent Tools",
+                            "children": [
+                                {
+                                    "element_id": ANY,
+                                    "element_type": "Parameter",
+                                    "children": [],
+                                },
+                                {
+                                    "element_id": ANY,
+                                    "element_type": "Parameter",
+                                    "children": [],
+                                },
+                                {
+                                    "element_id": ANY,
+                                    "element_type": "Parameter",
+                                    "children": [],
+                                },
+                                {
+                                    "element_id": ANY,
+                                    "element_type": "Parameter",
+                                    "children": [],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+            "retained_mode": None,
+            "event_type": "EventResult_Success",
+            "request_type": "GetAllNodeInfoRequest",
+            "result_type": "GetAllNodeInfoResult_Success",
+        }

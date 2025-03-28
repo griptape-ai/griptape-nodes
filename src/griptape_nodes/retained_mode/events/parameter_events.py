@@ -107,8 +107,8 @@ class GetParameterDetailsRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetParameterDetailsResult_Success(ResultPayload_Success):
-    input_types: list[str]
-    output_type: str | None
+    element_id: str
+    allowed_types: list[str]
     default_value: Any | None
     tooltip: str
     tooltip_as_input: str | None
