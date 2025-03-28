@@ -10,8 +10,6 @@ from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeVar
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from griptape_nodes.exe_types.type_validator import TypeValidator
-
 T = TypeVar("T", bound="Parameter")
 
 
@@ -293,7 +291,6 @@ class ParameterGroup(BaseNodeElement):
         }
 
 
-@dataclass
 class Parameter(BaseNodeElement):
     name: str  # must be unique from other parameters in Node
 
@@ -316,8 +313,6 @@ class Parameter(BaseNodeElement):
     )
     options: list[Any] | None = None
     ui_options: ParameterUIOptions | None = None
-    next: Parameter | None = None
-    prev: Parameter | None = None
     converters: list[Callable[[Any], Any]] = field(default_factory=list)
     validators: list[Callable[[Parameter, Any], None]] = field(default_factory=list)
 
@@ -327,6 +322,28 @@ class Parameter(BaseNodeElement):
     _type: str | None = field(init=False, repr=False, default=None)
     _types: list[str] | None = None
     _output_type: str | None = None
+
+    # These two are used during node resolution; don't require customers to play with them.
+    next: Parameter | None = None
+    prev: Parameter | None = None
+
+    def __init__(
+        self,
+        name: str,
+        tooltip: str,
+        default_value: Any = None,
+        tooltip_as_input: str | None = None,
+        tooltip_as_property: str | None = None,
+        tooltip_as_output: str | None = None,
+        settable: bool = True,
+        user_defined: bool = False,
+        allowed_modes: set[ParameterMode] | None = None,
+        options: list[Any] | None = None,
+        ui_options: ParameterUIOptions | None = None,
+        converters: list[Callable[[Any], Any]] | None = None,
+        validators: list[Callable[[Parameter, Any], None]] | None = None,
+    ):
+        pass
 
     @property
     def type(self) -> str | None:
