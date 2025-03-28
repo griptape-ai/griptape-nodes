@@ -112,7 +112,7 @@ def process_app_event(event: AppEvent) -> None:
     # Let Griptape Nodes broadcast it.
     GriptapeNodes().broadcast_app_event(payload)
 
-    # TODO(griptape): send to GUI?
+    socket.emit("app_event", event.json())
 
 
 def check_event_queue() -> None:
