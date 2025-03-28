@@ -61,8 +61,3 @@ class CoherePromptDriverNode(BasePromptDriverNode):
         except cohere.errors.UnauthorizedError as e:
             exceptions.append(e)
         return exceptions if exceptions else None
-
-
-if __name__ == "__main__":
-    drv = CoherePromptDriverNode(name="simpleClear")
-    drv.process()

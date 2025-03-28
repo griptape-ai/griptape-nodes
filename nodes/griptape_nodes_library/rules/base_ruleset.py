@@ -50,7 +50,3 @@ class RulesetNode(DataNode):
         ruleset = Ruleset(name=name, rules=sep_rules)  # was in [], but made type validation bad for austin
 
         self.parameter_output_values["ruleset"] = ruleset
-
-
-if __name__ == "__main__":
-    RulesetNode(name="RulesetNode_1").process()

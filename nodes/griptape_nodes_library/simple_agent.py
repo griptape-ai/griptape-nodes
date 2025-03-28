@@ -85,8 +85,3 @@ class SimpleAgentNode(ControlNode):
 
         self.parameter_output_values["agent"] = agent
         try_throw_error(agent.output)
-
-
-if __name__ == "__main__":
-    agt = SimpleAgentNode(name="finky")
-    agt.process()
