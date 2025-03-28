@@ -4,14 +4,14 @@ from griptape.engines import CsvExtractionEngine, JsonExtractionEngine
 from griptape.rules import Rule
 from griptape.tools import ExtractionTool
 
-from griptape_nodes_library.tools.base_tool import gnBaseTool
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 from griptape_nodes_library.utils.env_utils import getenv
 
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
 SERVICE = "OpenAI"
 
 
-class gnExtractionTool(gnBaseTool):
+class ExtractionToolNode(BaseToolNode):
     def process(self) -> None:
         prompt_driver = self.parameter_values.get("prompt_driver", None)
         extraction_type = self.parameter_values.get("extraction_type", "json")

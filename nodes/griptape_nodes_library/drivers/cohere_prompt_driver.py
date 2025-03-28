@@ -1,7 +1,7 @@
 import cohere
 from griptape.drivers.prompt.cohere import CoherePromptDriver
 
-from griptape_nodes_library.drivers.base_prompt_driver import gnBasePromptDriver
+from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
 from griptape_nodes_library.utils.env_utils import getenv
 
 DEFAULT_MODEL = "command-r-plus"
@@ -9,7 +9,7 @@ API_KEY_ENV_VAR = "COHERE_API_KEY"
 SERVICE = "Cohere"
 
 
-class gnCoherePromptDriver(gnBasePromptDriver):
+class CoherePromptDriverNode(BasePromptDriverNode):
     """Node for Cohere Prompt Driver.
 
     This node creates a Cohere prompt driver and outputs its configuration.
@@ -64,5 +64,5 @@ class gnCoherePromptDriver(gnBasePromptDriver):
 
 
 if __name__ == "__main__":
-    drv = gnCoherePromptDriver(name="simpleClear")
+    drv = CoherePromptDriverNode(name="simpleClear")
     drv.process()

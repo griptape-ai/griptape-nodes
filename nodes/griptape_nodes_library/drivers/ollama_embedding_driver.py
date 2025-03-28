@@ -1,7 +1,7 @@
 from griptape.drivers.embedding.ollama import OllamaEmbeddingDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes_library.drivers.base_embedding_driver import gnBaseEmbeddingDriver
+from griptape_nodes_library.drivers.base_embedding_driver import BaseEmbeddingDriverNode
 
 OLLAMA_BASE_URL_ENV_VAR = "ollama_base_url"
 DEFAULT_BASE_URL = "http://127.0.0.1"
@@ -10,7 +10,7 @@ DEFAULT_PORT = "11434"
 SERVICE = "Ollama"
 
 
-class gnOllamaEmbeddingDriver(gnBaseEmbeddingDriver):
+class OllamaEmbeddingDriverNode(BaseEmbeddingDriverNode):
     """Node for Ollama Embedding Driver.
 
     This node creates an Ollama embedding driver and outputs its configuration.
@@ -66,5 +66,5 @@ class gnOllamaEmbeddingDriver(gnBaseEmbeddingDriver):
 
 
 if __name__ == "__main__":
-    drv = gnOllamaEmbeddingDriver(name="ollama_embedding_driver")
+    drv = OllamaEmbeddingDriverNode(name="ollama_embedding_driver")
     drv.process()

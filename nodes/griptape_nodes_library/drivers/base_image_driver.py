@@ -1,7 +1,7 @@
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes_library.drivers.base_driver import gnBaseDriver
+from griptape_nodes_library.drivers.base_driver import BaseDriverNode
 from griptape_nodes_library.utils.env_utils import getenv
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -11,7 +11,7 @@ DEFAULT_QUALITY = "hd"
 DEFAULT_STYLE = "natural"
 
 
-class gnBaseImageDriver(gnBaseDriver):
+class BaseImageDriverNode(BaseDriverNode):
     """Node for OpenAi Image Generation Driver.
 
     This node creates an OpenAi image generation driver and outputs its configuration.
@@ -71,5 +71,5 @@ class gnBaseImageDriver(gnBaseDriver):
 
 
 if __name__ == "__main__":
-    drv = gnBaseImageDriver(name="tito")
+    drv = BaseImageDriverNode(name="tito")
     drv.process()

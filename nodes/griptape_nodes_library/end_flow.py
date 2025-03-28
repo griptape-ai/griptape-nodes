@@ -4,7 +4,7 @@ from griptape_nodes.exe_types.core_types import ControlParameter_Input
 from griptape_nodes.exe_types.node_types import NodeBase
 
 
-class gnEndFlow(NodeBase):
+class EndFlowNode(NodeBase):
     def __init__(
         self,
         name: str,

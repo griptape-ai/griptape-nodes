@@ -1,7 +1,7 @@
 from griptape.drivers.image_generation.azure_openai_image_generation_driver import AzureOpenAiImageGenerationDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes_library.drivers.base_image_driver import gnBaseImageDriver
+from griptape_nodes_library.drivers.base_image_driver import BaseImageDriverNode
 
 AZURE_ENDPOINT_ENV_VAR = "AZURE_OPENAI_DALL_E_3_ENDPOINT"
 API_KEY_ENV_VAR = "AZURE_OPENAI_DALL_E_3_API_KEY"
@@ -12,7 +12,7 @@ AVAILABLE_MODELS = ["dall-e-3", "dall-e-2"]
 AVAILABLE_SIZES = ["256x256", "512x512", "1024x1024", "1024x1792", "1792x1024"]
 
 
-class gnAzureOpenAiImageDriver(gnBaseImageDriver):
+class AzureOpenAiChatPromptDriverNode(BaseImageDriverNode):
     """Node for Azure OpenAI Image Generation Driver.
 
     This node creates an Azure OpenAI image generation driver and outputs its configuration.
