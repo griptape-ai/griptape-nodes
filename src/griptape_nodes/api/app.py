@@ -200,8 +200,7 @@ def sse_listener() -> None:
                                 process_event(json.loads(data))
                             except Exception:
                                 logger.exception("Error processing event, skipping.")
-                    else:
-                        logger.warning("Unexpected line received: %s, skipping.", line)
+
         except Exception:
             logger.warning("Error while listening for events. Retrying in 2 seconds.")
             sleep(2)
