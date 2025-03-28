@@ -17,11 +17,6 @@ class ParameterMode(Enum):
     PROPERTY = auto()
 
 
-# I'm a special way to say my Type is for Control flow.
-class ParameterControlType:
-    pass
-
-
 class ParameterTypeBuiltin(Enum):
     STR = "str"
     BOOL = "bool"
@@ -200,7 +195,7 @@ class Parameter:
     # The types this Parameter accepts for inputs and for output.
     # The rules for this are a rather arcane combination; see the functions below for how these are interpreted.
     # We use @property getters/setters to access these with some arcanum.
-    _type: str | None = None
+    _type: str | None = field(init=False, repr=False, default=None)
     _types: list[str] | None = None
     _output_type: str | None = None
 
@@ -209,26 +204,26 @@ class Parameter:
         return self._type
 
     @type.setter
-    def type(self, new_type) -> None:
-        if new_type is not None:
+    def type(self, value: str | None) -> None:
+        if value is not None:
             # See if it's an alias to a builtin first.
-            builtin = ParameterType.attempt_get_builtin(new_type)
+            builtin = ParameterType.attempt_get_builtin(value)
             if builtin is not None:
                 self._type = builtin.value
                 return
-        self._type = new_type
+        self._type = value
 
     @property
     def types(self) -> list[str] | None:
         return self._types
 
     @types.setter
-    def types(self, new_types) -> None:
-        if new_types is None:
+    def types(self, value: list[str] | None) -> None:
+        if value is None:
             self._types = None
         else:
             self._types = []
-            for new_type in new_types:
+            for new_type in value:
                 # See if it's an alias to a builtin first.
                 builtin = ParameterType.attempt_get_builtin(new_type)
                 if builtin is not None:
@@ -236,19 +231,39 @@ class Parameter:
                 else:
                     self._types.append(new_type)
 
+    def get_all_input_types(self) -> list[str] | None:
+        if self._type is None and self._types is None:
+            return None
+        ret_val = []
+        if self._type is not None:
+            ret_val.append(self._type)
+        if self._types is not None:
+            ret_val.extend(self._types)
+        return ret_val
+
     @property
-    def output_type(self) -> str | None:
-        return self._output_type
+    def output_type(self) -> str:
+        if self._output_type:
+            # If an output type was specified, use that.
+            return self._output_type
+        if self.type:
+            # If a type was specified, try that.
+            return self.type
+        if self.types:
+            # Otherwise, see if we have a list of types. If so, use the first one.
+            return self.types[0]
+        # Otherwise, return a string.
+        return ParameterTypeBuiltin.STR.value
 
     @output_type.setter
-    def output_type(self, new_type) -> None:
-        if new_type is not None:
+    def output_type(self, value: str | None) -> None:
+        if value is not None:
             # See if it's an alias to a builtin first.
-            builtin = ParameterType.attempt_get_builtin(new_type)
+            builtin = ParameterType.attempt_get_builtin(value)
             if builtin is not None:
                 self._output_type = builtin.value
                 return
-        self._output_type = new_type
+        self._output_type = value
 
     # Will this type be allowed as an input?
     def is_incoming_type_allowed(self, incoming_type: str | None) -> bool:
@@ -284,19 +299,9 @@ class Parameter:
 
         return ret_val
 
-    # What's the output type?
-    def get_allowed_output_type(self) -> str | None:
-        if ParameterMode.OUTPUT not in self.allowed_modes:
-            return None
-
-        if self.output_type:
-            return self.output_type
-        if self.types:
-            return self.types[0]
-        if self.type:
-            return self.type
-        # Otherwise, return a string.
-        return ParameterTypeBuiltin.STR.value
+    def is_outgoing_type_allowed(self, target_type: str | None) -> bool:
+        output_type = self.output_type
+        return ParameterType.are_types_compatible(source_type=output_type, target_type=target_type)
 
     def set_default_value(self, value: Any) -> None:
         self.default_value = value
@@ -343,8 +348,7 @@ class Parameter:
 # Convenience classes to reduce boilerplate in node definitions
 @dataclass(kw_only=True)
 class ControlParameter(Parameter, ABC):
-    input_types: list[str] = field(default_factory=lambda: [ParameterControlType.__name__])
-    _output_type: str | None = ParameterControlType.__name__
+    _type: str | None = ParameterTypeBuiltin.CONTROL_TYPE.value
     default_value: Any = None
     settable: bool = False
 

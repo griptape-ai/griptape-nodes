@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from griptape.events import EventBus
 
-from griptape_nodes.exe_types.core_types import ParameterControlType, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeBase, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
@@ -142,7 +142,7 @@ class ExecuteNodeState(State):
             # This creates a new reference specifically for current_node
             current_node.parameter_output_values.pop(parameter_name)
         for parameter in current_node.parameters:
-            if ParameterControlType.__name__ == parameter.output_type:
+            if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
                 continue
             use_set_value = False
             if ParameterMode.INPUT in parameter.allowed_modes:

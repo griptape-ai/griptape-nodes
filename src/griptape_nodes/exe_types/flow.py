@@ -4,7 +4,7 @@ from queue import Queue
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.connections import Connections
-from griptape_nodes.exe_types.core_types import ParameterControlType
+from griptape_nodes.exe_types.core_types import ControlParameter, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState, StartNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 
@@ -266,7 +266,7 @@ class ControlFlow:
             # if it's a control node, there could be a flow.
             control_param = False
             for parameter in node.parameters:
-                if ParameterControlType.__name__ == parameter.output_type:
+                if parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
                     control_param = True
                     break
             if not control_param:
@@ -280,7 +280,7 @@ class ControlFlow:
                 has_control_connection = False
                 for param_name in cn_mgr.incoming_index[node.name]:
                     param = node.get_parameter_by_name(param_name)
-                    if param and ParameterControlType.__name__ == param.output_type:
+                    if param and param.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
                         # there is a control connection coming in
                         has_control_connection = True
                         break
@@ -325,7 +325,7 @@ class ControlFlow:
             parameters = self.connections.incoming_index[node.name]
             for parameter_name in parameters:
                 parameter = node.get_parameter_by_name(parameter_name)
-                if parameter and ParameterControlType.__name__ == parameter.output_type:
+                if parameter and parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
                     # this is a control connection
                     connection_ids = self.connections.incoming_index[node.name][parameter_name]
                     for connection_id in connection_ids:
@@ -400,7 +400,7 @@ class ControlFlow:
             input_connections = self.get_connected_input_from_node(curr_node)
             if input_connections:
                 for input_node, input_parameter in input_connections:
-                    if not isinstance(input_parameter, ParameterControlType) and input_node not in node_list:
+                    if not isinstance(input_parameter, ControlParameter) and input_node not in node_list:
                         node_list.append(input_node)
                         node_queue.put(input_node)
         return node_list

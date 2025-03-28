@@ -13,7 +13,7 @@ from typing import Any, TextIO, TypeVar, cast
 from dotenv import load_dotenv
 from xdg_base_dirs import xdg_data_home
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterControlType, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import NodeBase, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -852,7 +852,7 @@ class FlowManager:
 
         # Validate that the data type from the source is allowed by the target.
         if not target_param.is_incoming_type_allowed(source_param.output_type):
-            details = f'Connection failed on type mismatch "{request.source_node_name}.{request.source_parameter_name}" type({source_param.output_type}) to "{request.target_node_name}.{request.target_parameter_name}" types({target_param.input_types}) '
+            details = f'Connection failed on type mismatch "{request.source_node_name}.{request.source_parameter_name}" type({source_param.output_type}) to "{request.target_node_name}.{request.target_parameter_name}" types({target_param.get_all_input_types()}) '
             GriptapeNodes.get_logger().error(details)
 
             result = CreateConnectionResult_Failure()
@@ -1665,7 +1665,7 @@ class NodeManager:
         )
         return result
 
-    def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:
+    def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -1687,8 +1687,28 @@ class NodeManager:
 
         # Let's see if the Parameter is properly formed.
         # If a Parameter is intended for Control, it needs to have that be the exclusive type.
-        if ParameterControlType.__name__ in request.input_types and len(request.input_types) != 1:
-            details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{request.node_name}'. Failed because it had 'ParameterControlType' with other types allowed. If a Parameter is intended for control, it must only accept that type."
+        # The 'type', 'types', and 'output_type' are a little weird to handle (see Parameter definition for details)
+        has_control_type = False
+        has_non_control_types = False
+        if request.type is not None:
+            if request.type.lower() == ParameterTypeBuiltin.CONTROL_TYPE.value:
+                has_control_type = True
+            else:
+                has_non_control_types = True
+        if request.types is not None:
+            for test_type in request.types:
+                if test_type.lower == ParameterTypeBuiltin.CONTROL_TYPE.value:
+                    has_control_type = True
+                else:
+                    has_non_control_types = True
+        if request.output_type is not None:
+            if request.output_type.lower() == ParameterTypeBuiltin.CONTROL_TYPE.value:
+                has_control_type = True
+            else:
+                has_non_control_types = True
+
+        if has_control_type and has_non_control_types:
+            details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{request.node_name}'. Failed because it had 'ParameterControlType' AND at least one other non-control type. If a Parameter is intended for control, it must only accept that type."
             GriptapeNodes.get_logger().error(details)
 
             result = AddParameterToNodeResult_Failure()
@@ -1705,7 +1725,8 @@ class NodeManager:
         # Let's roll, I guess.
         new_param = Parameter(
             name=request.parameter_name,
-            input_types=request.input_types,
+            type=request.type,
+            types=request.types,
             output_type=request.output_type,
             default_value=request.default_value,
             user_defined=True,
@@ -1857,7 +1878,7 @@ class NodeManager:
         )
         return result
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0912
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -1889,8 +1910,10 @@ class NodeManager:
 
         # TODO(griptape): Verify that we can get through all the OTHER tricky stuff before we proceed to actually making changes.
         # Now change all the values on the Parameter.
-        if request.input_types is not None:
-            parameter.input_types = request.input_types
+        if request.type is not None:
+            parameter.type = request.type
+        if request.types is not None:
+            parameter.types = request.types
         if request.output_type is not None:
             parameter.output_type = request.output_type
         if request.default_value is not None:
