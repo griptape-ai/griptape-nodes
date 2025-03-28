@@ -18,7 +18,8 @@ class ComfyUIImageGenerationNode(ControlNode):
 
         prompt_parameter = Parameter(
             name="prompt",
-            allowed_types=["str"],
+            input_types=["str"],
+            output_type="str",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value="Capybara on the beach",
             ui_options=ParameterUIOptions(
@@ -30,7 +31,8 @@ class ComfyUIImageGenerationNode(ControlNode):
         )
         output_parameter = Parameter(
             name="output",
-            allowed_types=["dict"],
+            input_types=["dict"],
+            output_type="dict",
             allowed_modes={ParameterMode.OUTPUT},
             ui_options=ParameterUIOptions(
                 string_type_options=ParameterUIOptions.StringType(
