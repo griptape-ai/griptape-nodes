@@ -25,7 +25,7 @@ class AzureOpenAiChatPromptDriverNode(BaseImageDriverNode):
         self.add_parameter(
             Parameter(
                 name="image_generation_model",
-                allowed_types=["str"],
+                input_types=["str"],
                 default_value=DEFAULT_MODEL,
                 tooltip="Select the model for image generation.",
             )
@@ -33,7 +33,7 @@ class AzureOpenAiChatPromptDriverNode(BaseImageDriverNode):
         self.add_parameter(
             Parameter(
                 name="image_deployment_name",
-                allowed_types=["str"],
+                input_types=["str"],
                 default_value=DEFAULT_MODEL,
                 tooltip="Enter the deployment name for the image generation model.",
             )
@@ -41,7 +41,7 @@ class AzureOpenAiChatPromptDriverNode(BaseImageDriverNode):
         self.add_parameter(
             Parameter(
                 name="size",
-                allowed_types=["str"],
+                input_types=["str"],
                 default_value=DEFAULT_SIZE,
                 tooltip="Select the size of the generated image.",
             )
@@ -49,7 +49,7 @@ class AzureOpenAiChatPromptDriverNode(BaseImageDriverNode):
         self.add_parameter(
             Parameter(
                 name="image_endpoint_env_var",
-                allowed_types=["str"],
+                input_types=["str"],
                 default_value=AZURE_ENDPOINT_ENV_VAR,
                 tooltip="Enter the name of the environment variable for AZURE_OPENAI_DALL_E_3_ENDPOINT, not the actual endpoint.",
             )
@@ -57,9 +57,49 @@ class AzureOpenAiChatPromptDriverNode(BaseImageDriverNode):
         self.add_parameter(
             Parameter(
                 name="image_api_key_env_var",
-                allowed_types=["str"],
+                input_types=["str"],
                 default_value=API_KEY_ENV_VAR,
                 tooltip="Enter the name of the environment variable for AZURE_OPENAI_DALL_E_3_API_KEY, not the actual API key.",
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="api_key",
+                input_types=["str"],
+                default_value="",
+                tooltip="The Azure OpenAI API key",
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="api_base",
+                input_types=["str"],
+                default_value="",
+                tooltip="The Azure OpenAI API base URL",
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="api_version",
+                input_types=["str"],
+                default_value="",
+                tooltip="The Azure OpenAI API version",
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="deployment_name",
+                input_types=["str"],
+                default_value="",
+                tooltip="The Azure OpenAI deployment name",
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="model",
+                input_types=["str"],
+                default_value="",
+                tooltip="The model to use for image generation",
             )
         )
 

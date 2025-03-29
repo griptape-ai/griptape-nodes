@@ -23,26 +23,28 @@ class GriptapeCloudImageDriverNode(BaseImageDriverNode):
         # Add additional parameters specific to Azure OpenAI
         self.add_parameter(
             Parameter(
-                name="image_generation_model",
-                allowed_types=["str"],
-                default_value=DEFAULT_MODEL,
-                tooltip="Select the model for image generation.",
+                name="model",
+                input_types=["str"],
+                default_value="",
+                tooltip="The model to use for image generation",
             )
         )
+
         self.add_parameter(
             Parameter(
-                name="image_deployment_name",
-                allowed_types=["str"],
-                default_value=DEFAULT_MODEL,
-                tooltip="Enter the deployment name for the image generation model.",
+                name="quality",
+                input_types=["str"],
+                default_value="",
+                tooltip="The quality of the generated image",
             )
         )
+
         self.add_parameter(
             Parameter(
-                name="size",
-                allowed_types=["str"],
-                default_value=DEFAULT_SIZE,
-                tooltip="Select the size of the generated image.",
+                name="style",
+                input_types=["str"],
+                default_value="",
+                tooltip="The style of the generated image",
             )
         )
 
@@ -68,7 +70,7 @@ class GriptapeCloudImageDriverNode(BaseImageDriverNode):
         params = self.parameter_values
 
         # Get model and deployment information
-        model = params.get("image_generation_model", DEFAULT_MODEL)
+        model = params.get("model", DEFAULT_MODEL)
 
         # Get and adjust size
         size = params.get("size", DEFAULT_SIZE)

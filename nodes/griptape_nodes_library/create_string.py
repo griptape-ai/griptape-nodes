@@ -20,10 +20,11 @@ class CreateStringNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="text",
-                default_value=value,
-                allowed_types=["str"],
-                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
-                tooltip="The text content to save to file",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+                input_types=["str"],
+                output_type="str",
+                default_value="",
+                tooltip="The text string",
             )
         )
 

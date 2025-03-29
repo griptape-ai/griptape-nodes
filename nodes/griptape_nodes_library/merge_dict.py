@@ -18,7 +18,7 @@ class MergeDictNode(DataNode):
             Parameter(
                 name="inputs",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                allowed_types=["list[dict]", "list"],  # A list of dictionaries
+                input_types=["list[dict]", "list"],  # A list of dictionaries
                 default_value=[],
                 tooltip="List of dictionaries to merge",
             )
@@ -29,7 +29,7 @@ class MergeDictNode(DataNode):
             Parameter(
                 name="merged_dict",
                 allowed_modes={ParameterMode.OUTPUT},
-                allowed_types=["dict"],
+                output_type="dict",
                 default_value={},
                 tooltip="The merged dictionary",
             )

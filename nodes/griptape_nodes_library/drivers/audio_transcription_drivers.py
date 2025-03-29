@@ -17,9 +17,23 @@ class BaseAudioTranscriptionDriverNode(BaseDriverNode):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.add_parameter(Parameter(name="model", allowed_types=["str"], default_value=None, tooltip=""))
+        self.add_parameter(
+            Parameter(
+                name="model",
+                input_types=["str"],
+                default_value=None,
+                tooltip="The model to use for audio transcription",
+            )
+        )
 
-        self.add_parameter(Parameter(name="driver", allowed_types=["dict"], default_value=None, tooltip=""))
+        self.add_parameter(
+            Parameter(
+                name="driver",
+                output_type="dict",
+                default_value=None,
+                tooltip="The audio transcription driver",
+            )
+        )
 
 
 class OpenAiAudioTranscriptionDriverNode(BaseAudioTranscriptionDriverNode):

@@ -14,12 +14,12 @@ class BasePromptDriverNode(BaseDriverNode):
         super().__init__(**kwargs)
         driver_parameter = self.get_parameter_by_name("driver")
         if driver_parameter is not None:
-            driver_parameter.allowed_types = ["BasePromptDriver"]
+            driver_parameter.output_type = "BasePromptDriver"
 
         self.add_parameter(
             Parameter(
                 name="model",
-                allowed_types=["str"],
+                input_types=["str"],
                 default_value="",
                 tooltip="Select the model you want to use from the available options.",
             )
@@ -27,7 +27,7 @@ class BasePromptDriverNode(BaseDriverNode):
         self.add_parameter(
             Parameter(
                 name="max_attempts_on_fail",
-                allowed_types=["int"],
+                input_types=["int"],
                 default_value=2,
                 tooltip="Maximum attempts on failure",
                 ui_options=ParameterUIOptions(

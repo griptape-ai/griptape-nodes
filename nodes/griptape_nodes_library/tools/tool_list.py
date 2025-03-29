@@ -17,7 +17,7 @@ class ToolListNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="tools",
-                allowed_types=["list[object]"],  # List of tool objects
+                input_types=["list[object]"],  # List of tool objects
                 default_value=[],
                 tooltip="List of tools to combine",
                 allowed_modes={ParameterMode.INPUT},
@@ -28,7 +28,7 @@ class ToolListNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="tool_list",
-                allowed_types=["list[object]"],  # List of tool objects
+                output_type="list[object]",  # List of tool objects
                 default_value=[],
                 tooltip="Combined list of tools",
                 allowed_modes={ParameterMode.OUTPUT},

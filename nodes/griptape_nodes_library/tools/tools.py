@@ -21,12 +21,19 @@ class BaseToolNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="off_prompt",
-                allowed_types=["bool"],
+                input_types=["bool"],
                 default_value=False,
-                tooltip="",
+                tooltip="Whether to use off-prompt mode",
             )
         )
-        self.add_parameter(Parameter(name="tool", allowed_types=["BaseTool"], default_value=None, tooltip=""))
+        self.add_parameter(
+            Parameter(
+                name="tool",
+                output_type="BaseTool",
+                default_value=None,
+                tooltip="The created tool",
+            )
+        )
 
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", False)
@@ -66,9 +73,9 @@ class WebSearchToolNode(BaseToolNode):
         self.add_parameter(
             Parameter(
                 name="driver",
-                allowed_types=["WebSearchDriver"],
-                default_value={},
-                tooltip="",
+                output_type="WebSearchDriver",
+                default_value=None,
+                tooltip="The web search driver",
             )
         )
 

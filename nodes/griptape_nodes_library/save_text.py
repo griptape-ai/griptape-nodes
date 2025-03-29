@@ -18,27 +18,28 @@ class SaveTextNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="text",
-                allowed_types=["str"],
-                allowed_modes={ParameterMode.INPUT},
-                tooltip="The text content to save to file",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                input_types=["str"],
+                default_value="",
+                tooltip="The text to save",
             )
         )
 
         # Add filename prefix parameter
         self.add_parameter(
             Parameter(
-                name="output_path",
-                allowed_types=["str"],
+                name="path",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                default_value="griptape_output.txt",
-                tooltip="The output filename",
+                input_types=["str"],
+                default_value="",
+                tooltip="The path to save the text to",
             )
         )
 
     def process(self) -> None:
         """Process the node by saving text to a file."""
         text = self.parameter_values.get("text", "")
-        full_output_file = self.parameter_values.get("output_path", "griptape_output.txt")
+        full_output_file = self.parameter_values.get("path", "griptape_output.txt")
 
         try:
             with Path(full_output_file).open("w") as f:
@@ -46,7 +47,7 @@ class SaveTextNode(ControlNode):
             print(f"Saved file: {full_output_file}")
 
             # Set output values
-            self.parameter_output_values["output_path"] = full_output_file
+            self.parameter_output_values["path"] = full_output_file
 
         except Exception as e:
             error_message = str(e)

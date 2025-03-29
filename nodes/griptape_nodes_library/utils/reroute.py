@@ -18,7 +18,8 @@ class RerouteNode(DataNode):
 
         passthru = Parameter(
             name="passThru",
-            allowed_types=["Any"],
+            input_types=["Any"],
+            output_type="Any",
             default_value=None,
             tooltip="",
             allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},

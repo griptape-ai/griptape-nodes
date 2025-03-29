@@ -11,7 +11,7 @@ class RulesetNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="name",
-                allowed_types=["str"],
+                input_types=["str"],
                 default_value="Behavior",
                 tooltip="Add the name for your ruleset here",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
@@ -20,7 +20,7 @@ class RulesetNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="rules",
-                allowed_types=["str"],
+                input_types=["str"],
                 default_value="",
                 tooltip="",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
@@ -35,7 +35,7 @@ class RulesetNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="ruleset",
-                allowed_types=["Ruleset"],
+                output_type="Ruleset",
                 default_value=None,
                 tooltip="",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},

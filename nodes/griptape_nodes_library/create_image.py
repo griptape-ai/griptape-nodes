@@ -27,57 +27,74 @@ class CreateImageNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="agent",
-                allowed_types=["Agent"],
-                tooltip="None",
+                input_types=["Agent"],
                 default_value=None,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
+                tooltip="The agent to use for image generation",
             )
         )
 
         self.add_parameter(
             Parameter(
                 name="prompt",
-                allowed_types=["str"],
-                tooltip="None",
+                input_types=["str"],
                 default_value="",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                tooltip="The prompt to generate the image from",
             )
         )
 
         self.add_parameter(
             Parameter(
                 name="driver",
-                allowed_types=["BaseImageGenerationDriver"],
-                tooltip="None",
-                default_value="",
+                output_type="BaseImageGenerationDriver",
+                default_value=None,
+                tooltip="The image generation driver",
             )
         )
 
         self.add_parameter(
             Parameter(
-                name="output",
-                allowed_types=["ImageArtifact"],
-                tooltip="None",
+                name="image",
+                output_type="ImageArtifact",
                 default_value=None,
-                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="The generated image",
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="model",
+                input_types=["str"],
+                default_value="",
+                tooltip="The model to use for image generation",
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="size",
+                input_types=["str"],
+                default_value="",
+                tooltip="The size of the image to generate",
             )
         )
 
         self.add_parameter(
             Parameter(
                 name="output_file",
-                allowed_types=["str"],
+                input_types=["str"],
                 tooltip="None",
                 default_value=None,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
 
         self.add_parameter(
             Parameter(
                 name="output_dir",
-                allowed_types=["str"],
+                input_types=["str"],
                 tooltip="None",
                 default_value=None,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
 

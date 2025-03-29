@@ -18,11 +18,10 @@ class KeyValuePairNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="key",
-                allowed_types=["str"],
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                input_types=["str"],
                 default_value="",
-                tooltip="Key for the key-value pair",
-                ui_options=ParameterUIOptions(string_type_options=ParameterUIOptions.StringType(multiline=True)),
+                tooltip="The key for the key-value pair",
             )
         )
 
@@ -30,21 +29,21 @@ class KeyValuePairNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="value",
-                allowed_types=["str"],
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                input_types=["str"],
                 default_value="",
-                tooltip="Value for the key-value pair",
-                ui_options=ParameterUIOptions(string_type_options=ParameterUIOptions.StringType(multiline=True)),
+                tooltip="The value for the key-value pair",
             )
         )
 
         # Add dictionary output parameter
         self.add_parameter(
             Parameter(
-                name="dictionary",
-                allowed_types=["dict"],
+                name="pair",
                 allowed_modes={ParameterMode.OUTPUT},
-                tooltip="Dictionary containing the key-value pair",
+                output_type="dict",
+                default_value={},
+                tooltip="The key-value pair as a dictionary",
             )
         )
 
@@ -57,4 +56,4 @@ class KeyValuePairNode(DataNode):
         result_dict = {key: value}
 
         # Set output value
-        self.parameter_output_values["dictionary"] = result_dict
+        self.parameter_output_values["pair"] = result_dict

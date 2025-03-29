@@ -22,11 +22,12 @@ class StringListNode(DataNode):
                     ParameterMode.OUTPUT,
                     ParameterMode.PROPERTY,
                 },
-                allowed_types=[
+                input_types=[
                     "str",
                     "list[str]",
                     "list",
                 ],  # Accept strings or lists of strings
+                output_type="list[str]",
                 default_value=[],
                 tooltip="The list of strings",
             )

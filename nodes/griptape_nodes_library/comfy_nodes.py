@@ -31,7 +31,6 @@ class ComfyUIImageGenerationNode(ControlNode):
         )
         output_parameter = Parameter(
             name="output",
-            input_types=["dict"],
             output_type="dict",
             allowed_modes={ParameterMode.OUTPUT},
             ui_options=ParameterUIOptions(
@@ -63,7 +62,7 @@ class ComfyUIFluxWorkflowNode(ControlNode):
 
         prompt_parameter = Parameter(
             name="prompt",
-            allowed_types=["str"],
+            input_types=["str"],
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value="Capybara on the beach",
             ui_options=ParameterUIOptions(
@@ -75,7 +74,7 @@ class ComfyUIFluxWorkflowNode(ControlNode):
         )
         output_parameter = Parameter(
             name="output",
-            allowed_types=["dict"],
+            output_type="dict",
             allowed_modes={ParameterMode.OUTPUT},
             ui_options=ParameterUIOptions(
                 string_type_options=ParameterUIOptions.StringType(
@@ -155,7 +154,7 @@ class ComfyUIPhotographerComparison(ControlNode):
 
         prompt_parameter = Parameter(
             name="prompt",
-            allowed_types=["str"],
+            input_types=["str"],
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value="Dinosaur in the Jungle",
             ui_options=ParameterUIOptions(
@@ -167,7 +166,7 @@ class ComfyUIPhotographerComparison(ControlNode):
         )
         output_parameter = Parameter(
             name="output",
-            allowed_types=["dict"],
+            output_type="dict",
             allowed_modes={ParameterMode.OUTPUT},
             ui_options=ParameterUIOptions(
                 string_type_options=ParameterUIOptions.StringType(
@@ -246,7 +245,7 @@ class LoadFileFromDataLakeNode(ControlNode):
         self.description = "Load an asset from a data lake"
         asset_paths = Parameter(
             name="asset_path",
-            allowed_types=["str", "dict"],
+            input_types=["str", "dict"],
             ui_options=ParameterUIOptions(
                 string_type_options=ParameterUIOptions.StringType(
                     multiline=True, placeholder_text="Enter your prompt here"
@@ -257,7 +256,7 @@ class LoadFileFromDataLakeNode(ControlNode):
         )
         file_parameter = Parameter(
             name="output",
-            allowed_types=["ImageArtifact", "BlobArtifact"],
+            output_type="ImageArtifact",
             allowed_modes={ParameterMode.OUTPUT},
             ui_options=ParameterUIOptions(
                 string_type_options=ParameterUIOptions.StringType(multiline=True, placeholder_text="Image created")

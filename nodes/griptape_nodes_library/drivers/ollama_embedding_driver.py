@@ -22,26 +22,28 @@ class OllamaEmbeddingDriverNode(BaseEmbeddingDriverNode):
         # Add parameters specific to Ollama embedding driver
         self.add_parameter(
             Parameter(
-                name="base_url",
-                allowed_types=["str"],
-                default_value=DEFAULT_BASE_URL,
-                tooltip="The base URL of the Ollama server",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="port",
-                allowed_types=["str"],
-                default_value=DEFAULT_PORT,
-                tooltip="The port of the Ollama server",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="embedding_model",
-                allowed_types=["str"],
+                name="model",
+                input_types=["str"],
                 default_value="",
-                tooltip="The embedding model to use",
+                tooltip="The model to use for embeddings",
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="base_url",
+                input_types=["str"],
+                default_value="",
+                tooltip="The base URL for the Ollama API",
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="timeout",
+                input_types=["str"],
+                default_value="",
+                tooltip="The timeout for API requests",
             )
         )
 
