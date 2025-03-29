@@ -228,7 +228,7 @@ class RetainedMode:
         default_value: Any | None,
         tooltip: str,
         type: str | None = None,  # noqa: A002
-        types: list[str] | None = None,
+        input_types: list[str] | None = None,
         output_type: str | None = None,
         edit: bool = False,  # noqa: FBT001, FBT002
         tooltip_as_input: str | None = None,
@@ -245,7 +245,7 @@ class RetainedMode:
                 parameter_name=parameter_name,
                 node_name=node_name,
                 type=type,
-                types=types,
+                input_types=input_types,
                 output_type=output_type,
                 default_value=default_value,
                 tooltip=tooltip,
@@ -262,7 +262,7 @@ class RetainedMode:
                 parameter_name=parameter_name,
                 node_name=node_name,
                 type=type,
-                types=types,
+                input_types=input_types,
                 output_type=output_type,
                 default_value=default_value,
                 tooltip=tooltip,

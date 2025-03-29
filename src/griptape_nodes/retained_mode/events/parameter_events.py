@@ -20,7 +20,7 @@ class AddParameterToNodeRequest(RequestPayload):
     default_value: Any | None
     tooltip: str
     type: str | None = None
-    types: list[str] | None = None
+    input_types: list[str] | None = None
     output_type: str | None = None
     tooltip_as_input: str | None = None
     tooltip_as_property: str | None = None
@@ -134,7 +134,7 @@ class AlterParameterDetailsRequest(RequestPayload):
     parameter_name: str
     node_name: str
     type: str | None = None
-    types: list[str] | None = None
+    input_types: list[str] | None = None
     output_type: str | None = None
     default_value: Any | None = None
     tooltip: str | None = None

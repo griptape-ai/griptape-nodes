@@ -311,7 +311,6 @@ class Parameter(BaseNodeElement):
             ParameterMode.PROPERTY,
         }
     )
-    options: list[Any] | None = None
     ui_options: ParameterUIOptions | None = None
 
     # Lists of callbacks of converters and validators.
@@ -321,10 +320,13 @@ class Parameter(BaseNodeElement):
 
     # The types this Parameter accepts for inputs and for output.
     # The rules for this are a rather arcane combination; see the functions below for how these are interpreted.
-    # We use @property getters/setters to access these with some arcanum.
-    _type: str | None
-    _types: list[str] | None
+    # We use @property getters/setters to access these through the arcanum.
+    _input_types: list[str] | None
     _output_type: str | None
+
+    # This is the current type of the value on the Parameter.
+    # TODO(griptape): should this live on the node adjacent to the value?
+    # _type: str | None
 
     # These two are used during node resolution; don't require customers to play with them.
     next: Parameter | None = None
@@ -334,15 +336,14 @@ class Parameter(BaseNodeElement):
         self,
         name: str,
         tooltip: str,
-        type: str | None = None,  # noqa: A002
-        types: list[str] | None = None,
+        # type: str | None = None,  # noqa: A002
+        input_types: list[str] | None = None,
         output_type: str | None = None,
         default_value: Any = None,
         tooltip_as_input: str | None = None,
         tooltip_as_property: str | None = None,
         tooltip_as_output: str | None = None,
         allowed_modes: set[ParameterMode] | None = None,
-        options: list[Any] | None = None,
         ui_options: ParameterUIOptions | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
@@ -358,7 +359,6 @@ class Parameter(BaseNodeElement):
         self.tooltip_as_output = tooltip_as_output
         self.settable = settable
         self.user_defined = user_defined
-        self.options = options
         self.ui_options = ui_options
 
         # Special handling for the modes and callbacks.
@@ -378,63 +378,50 @@ class Parameter(BaseNodeElement):
             self.validators = validators
 
         # Use the property setters for special logic
-        self.type = type
-        self.types = types
+        # self.type = type
+        self.input_types = input_types
         self.output_type = output_type
 
+    # @property
+    # def type(self) -> str | None:
+    #     return self._type
+
+    # @type.setter
+    # def type(self, value: str | None) -> None:
+    #     if value is not None:
+    #         # See if it's an alias to a builtin first.
+    #         builtin = ParameterType.attempt_get_builtin(value)
+    #         if builtin is not None:
+    #             self._type = builtin.value
+    #             return
+    #     self._type = value
+
     @property
-    def type(self) -> str | None:
-        return self._type
+    def input_types(self) -> list[str] | None:
+        return self._input_types
 
-    @type.setter
-    def type(self, value: str | None) -> None:
-        if value is not None:
-            # See if it's an alias to a builtin first.
-            builtin = ParameterType.attempt_get_builtin(value)
-            if builtin is not None:
-                self._type = builtin.value
-                return
-        self._type = value
-
-    @property
-    def types(self) -> list[str] | None:
-        return self._types
-
-    @types.setter
-    def types(self, value: list[str] | None) -> None:
+    @input_types.setter
+    def input_types(self, value: list[str] | None) -> None:
         if value is None:
-            self._types = None
+            self._input_types = None
         else:
-            self._types = []
+            self._input_types = []
             for new_type in value:
                 # See if it's an alias to a builtin first.
                 builtin = ParameterType.attempt_get_builtin(new_type)
                 if builtin is not None:
-                    self._types.append(builtin.value)
+                    self._input_types.append(builtin.value)
                 else:
-                    self._types.append(new_type)
-
-    def get_all_input_types(self) -> list[str] | None:
-        if self._type is None and self._types is None:
-            return None
-        ret_val = []
-        if self._type is not None:
-            ret_val.append(self._type)
-        if self._types is not None:
-            ret_val.extend(self._types)
-        return ret_val
+                    self._input_types.append(new_type)
 
     @property
     def output_type(self) -> str:
         if self._output_type:
             # If an output type was specified, use that.
             return self._output_type
-        if self.type:
-            # If a type was specified, try that.
-            return self.type
-        if self.types:
-            # Otherwise, see if we have a list of types. If so, use the first one.
-            return self.types[0]
+        if self.input_types:
+            # Otherwise, see if we have a list of input_types. If so, use the first one.
+            return self.input_types[0]
         # Otherwise, return a string.
         return ParameterTypeBuiltin.STR.value
 
@@ -455,27 +442,13 @@ class Parameter(BaseNodeElement):
 
         ret_val = False
 
-        if self._type is not None:
-            if self._types:
-                # Case 1: Both type and types are specified. Check type first, then types.
-                if ParameterType.are_types_compatible(source_type=incoming_type, target_type=self._type):
-                    ret_val = True
-                else:
-                    for test_type in self._types:
-                        if ParameterType.are_types_compatible(source_type=incoming_type, target_type=test_type):
-                            ret_val = True
-                            break
-            else:
-                # Case 2: type is set, but not types. Just check type.
-                ret_val = ParameterType.are_types_compatible(source_type=incoming_type, target_type=self.type)
-        elif self.types:
-            # Case 3: types is specified, but not type. Just check types.
-            for test_type in self.types:
+        if self._input_types:
+            for test_type in self._input_types:
                 if ParameterType.are_types_compatible(source_type=incoming_type, target_type=test_type):
                     ret_val = True
                     break
         else:
-            # Case 4: neither is set. Treat as a string.
+            # Customer feedback was to treat as a string by default.
             ret_val = ParameterType.are_types_compatible(
                 source_type=incoming_type, target_type=ParameterTypeBuiltin.STR.value
             )
@@ -483,8 +456,7 @@ class Parameter(BaseNodeElement):
         return ret_val
 
     def is_outgoing_type_allowed(self, target_type: str | None) -> bool:
-        output_type = self.output_type
-        return ParameterType.are_types_compatible(source_type=output_type, target_type=target_type)
+        return ParameterType.are_types_compatible(source_type=self.output_type, target_type=target_type)
 
     def set_default_value(self, value: Any) -> None:
         self.default_value = value

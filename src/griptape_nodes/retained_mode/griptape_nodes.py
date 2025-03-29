@@ -852,7 +852,7 @@ class FlowManager:
 
         # Validate that the data type from the source is allowed by the target.
         if not target_param.is_incoming_type_allowed(source_param.output_type):
-            details = f'Connection failed on type mismatch "{request.source_node_name}.{request.source_parameter_name}" type({source_param.output_type}) to "{request.target_node_name}.{request.target_parameter_name}" types({target_param.get_all_input_types()}) '
+            details = f'Connection failed on type mismatch "{request.source_node_name}.{request.source_parameter_name}" type({source_param.output_type}) to "{request.target_node_name}.{request.target_parameter_name}" types({target_param.input_types}) '
             GriptapeNodes.get_logger().error(details)
 
             result = CreateConnectionResultFailure()
@@ -1698,8 +1698,8 @@ class NodeManager:
                 has_control_type = True
             else:
                 has_non_control_types = True
-        if request.types is not None:
-            for test_type in request.types:
+        if request.input_types is not None:
+            for test_type in request.input_types:
                 if test_type.lower == ParameterTypeBuiltin.CONTROL_TYPE.value.lower():
                     has_control_type = True
                 else:
@@ -1729,7 +1729,7 @@ class NodeManager:
         new_param = Parameter(
             name=request.parameter_name,
             type=request.type,
-            types=request.types,
+            input_types=request.input_types,
             output_type=request.output_type,
             default_value=request.default_value,
             user_defined=True,
@@ -1916,8 +1916,8 @@ class NodeManager:
         # Now change all the values on the Parameter.
         if request.type is not None:
             parameter.type = request.type
-        if request.types is not None:
-            parameter.types = request.types
+        if request.input_types is not None:
+            parameter.input_types = request.input_types
         if request.output_type is not None:
             parameter.output_type = request.output_type
         if request.default_value is not None:
