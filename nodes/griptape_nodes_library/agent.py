@@ -65,22 +65,21 @@ class RunAgentNode(ControlNode):
         self.add_node_element(config_group)
 
         with ParameterGroup(group_name="Agent Tools") as tools_group:
-            Parameter(name="tool", allowed_types=["BaseTool"], default_value=None, tooltip="")
+            Parameter(name="tool", input_types=["BaseTool"], default_value=None, tooltip="")
             Parameter(
                 name="tool_list",
-                allowed_types=["list[BaseTool]"],
+                input_types=["list[BaseTool]"],
                 default_value=None,
                 tooltip="",
             )
             Parameter(
                 name="ruleset",
-                allowed_types=["Ruleset"],
+                input_types=["Ruleset"],
                 tooltip="",
             )
             Parameter(
                 name="output",
                 input_types=["str"],
-                output_type="str",
                 default_value="",
                 tooltip="What the agent said.",
                 allowed_modes={ParameterMode.OUTPUT},

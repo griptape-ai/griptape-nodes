@@ -108,6 +108,7 @@ class GetParameterDetailsRequest(RequestPayload):
 @PayloadRegistry.register
 class GetParameterDetailsResultSuccess(ResultPayloadSuccess):
     element_id: str
+    type: str | None
     input_types: list[str]
     output_type: str
     default_value: Any | None

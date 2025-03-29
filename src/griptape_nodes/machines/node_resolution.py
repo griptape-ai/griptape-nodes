@@ -122,23 +122,25 @@ class EvaluateParameterState(State):
 class ExecuteNodeState(State):
     # TODO(kate): Can we refactor this method to make it a lot cleaner? might involve changing how parameter values are retrieved/stored.
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901, PLR0912
+    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901, PLR0912, PLR0915
         current_node = context.focus_stack[-1]
         connections = context.flow.connections
         # Get the parameters that have input values
         for parameter_name in current_node.parameter_output_values.copy():
-            EventBus.publish_event(
-                ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(
-                        payload=ParameterValueUpdateEvent(
-                            node_name=current_node.name,
-                            parameter_name=parameter_name,
-                            data_type="",
-                            value=None,
-                        )
-                    )
-                )
+            parameter = current_node.get_parameter_by_name(parameter_name)
+            if parameter is None:
+                err = f"Attempted to execute node '{current_node.name}' but could not find parameter '{parameter_name}' that was indicated as having a value."
+                raise ValueError(err)
+            parameter_type = parameter.type
+            if parameter_type is None:
+                parameter_type = ParameterTypeBuiltin.NONE.value
+            payload = ParameterValueUpdateEvent(
+                node_name=current_node.name,
+                parameter_name=parameter_name,
+                data_type=parameter_type,
+                value=None,
             )
+            EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
             # This creates a new reference specifically for current_node
             current_node.parameter_output_values.pop(parameter_name)
         for parameter in current_node.parameters:
@@ -189,7 +191,9 @@ class ExecuteNodeState(State):
                 if isinstance(parameter_value, dict) and "type" in parameter_value:
                     data_type = parameter_value["type"]
                 else:
-                    data_type = type(parameter_value).__name__
+                    data_type = parameter.type
+                    if data_type is None:
+                        data_type = ParameterTypeBuiltin.NONE.value
                 EventBus.publish_event(
                     ExecutionGriptapeNodeEvent(
                         wrapped_event=ExecutionEvent(
@@ -244,38 +248,37 @@ class ExecuteNodeState(State):
                 )
             )
         )
-        for parameter, value in current_node.parameter_output_values.items():
+        for parameter_name, value in current_node.parameter_output_values.items():
+            data_type = None
             if hasattr(value, "type"):
-                type_of = value.type
-                EventBus.publish_event(
-                    ExecutionGriptapeNodeEvent(
-                        wrapped_event=ExecutionEvent(
-                            payload=ParameterValueUpdateEvent(
-                                node_name=current_node.name,
-                                parameter_name=parameter,
-                                data_type=str(type_of),
-                                value=TypeValidator.safe_serialize(value),
-                            )
-                        ),
-                    )
+                # They specified a type on the value.
+                data_type = str(value.type)
+            elif isinstance(value, dict) and "type" in value:
+                # They embedded a value in the dict.
+                data_type = value["type"]
+
+            if data_type is None:
+                # Get the value off the Parameter.
+                parameter = current_node.get_parameter_by_name(parameter_name)
+                if parameter is None:
+                    err = f"Canceling flow run. Node '{current_node.name}' specified a Parameter '{parameter_name}', but no such Parameter could be found on that Node."
+                    raise KeyError(err)
+                data_type = parameter.type
+                if data_type is None:
+                    data_type = ParameterTypeBuiltin.NONE.value
+
+            EventBus.publish_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(
+                        payload=ParameterValueUpdateEvent(
+                            node_name=current_node.name,
+                            parameter_name=parameter_name,
+                            data_type=data_type,
+                            value=TypeValidator.safe_serialize(value),
+                        )
+                    ),
                 )
-            else:
-                if isinstance(value, dict) and "type" in value:
-                    data_type = value["type"]
-                else:
-                    data_type = type(value).__name__
-                EventBus.publish_event(
-                    ExecutionGriptapeNodeEvent(
-                        wrapped_event=ExecutionEvent(
-                            payload=ParameterValueUpdateEvent(
-                                node_name=current_node.name,
-                                parameter_name=parameter,
-                                data_type=data_type,
-                                value=TypeValidator.safe_serialize(value),
-                            )
-                        ),
-                    )
-                )
+            )
 
         context.focus_stack.pop()
         if len(context.focus_stack):

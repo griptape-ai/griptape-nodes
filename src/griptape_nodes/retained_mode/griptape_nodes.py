@@ -1867,6 +1867,7 @@ class NodeManager:
 
         result = GetParameterDetailsResultSuccess(
             element_id=parameter.element_id,
+            type=parameter.type,
             input_types=parameter.get_all_input_types(),
             output_type=parameter.output_type,
             default_value=parameter.default_value,

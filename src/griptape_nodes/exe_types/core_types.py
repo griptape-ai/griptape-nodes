@@ -326,7 +326,7 @@ class Parameter(BaseNodeElement):
 
     # This is the current type of the value on the Parameter.
     # TODO(griptape): should this live on the node adjacent to the value?
-    # _type: str | None
+    _type: str | None
 
     # These two are used during node resolution; don't require customers to play with them.
     next: Parameter | None = None
@@ -336,7 +336,7 @@ class Parameter(BaseNodeElement):
         self,
         name: str,
         tooltip: str,
-        # type: str | None = None,  # noqa: A002
+        type: str | None = None,  # noqa: A002
         input_types: list[str] | None = None,
         output_type: str | None = None,
         default_value: Any = None,
@@ -378,23 +378,23 @@ class Parameter(BaseNodeElement):
             self.validators = validators
 
         # Use the property setters for special logic
-        # self.type = type
+        self.type = type
         self.input_types = input_types
         self.output_type = output_type
 
-    # @property
-    # def type(self) -> str | None:
-    #     return self._type
+    @property
+    def type(self) -> str | None:
+        return self._type
 
-    # @type.setter
-    # def type(self, value: str | None) -> None:
-    #     if value is not None:
-    #         # See if it's an alias to a builtin first.
-    #         builtin = ParameterType.attempt_get_builtin(value)
-    #         if builtin is not None:
-    #             self._type = builtin.value
-    #             return
-    #     self._type = value
+    @type.setter
+    def type(self, value: str | None) -> None:
+        if value is not None:
+            # See if it's an alias to a builtin first.
+            builtin = ParameterType.attempt_get_builtin(value)
+            if builtin is not None:
+                self._type = builtin.value
+                return
+        self._type = value
 
     @property
     def input_types(self) -> list[str] | None:
