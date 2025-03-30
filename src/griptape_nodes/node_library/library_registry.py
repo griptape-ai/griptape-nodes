@@ -4,6 +4,7 @@ from typing import Any, NamedTuple, Self, cast
 
 from griptape.mixins.singleton_mixin import SingletonMixin
 
+
 from griptape_nodes.exe_types.node_types import NodeBase
 from griptape_nodes.exe_types.type_validator import TypeValidationError, TypeValidator
 
@@ -244,3 +245,37 @@ class Library:
         if self._metadata is None:
             return {}
         return self._metadata
+
+
+from pydantic import BaseModel
+# TODO: Move each schema into a directory named by its version
+class LibrarySchema(BaseModel):
+    class LibraryMetadata(BaseModel):
+        author: str
+        description: str
+        library_version: str
+        engine_version: str
+        tags: list[str]
+
+    class Category(BaseModel):
+        id: str
+        color: str
+        title: str
+        description: str
+        icon: str
+
+    class Node(BaseModel):
+        class_name: str
+        file_path: str
+        metadata: LibrarySchema.NodeMetadata
+
+    class NodeMetadata(BaseModel):
+        category: str
+        description: str
+        display_name: str
+
+    name: str
+    library_schema_version: str
+    metadata: LibrarySchema.LibraryMetadata
+    categories: list[LibrarySchema.Category]
+    nodes: list[LibrarySchema.Node]
