@@ -7,8 +7,8 @@ from griptape.events import EventBus
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
-    EventResult_Failure,
-    EventResult_Success,
+    EventResultFailure,
+    EventResultSuccess,
     GriptapeNodeEvent,
     RequestPayload,
     ResultPayload,
@@ -74,13 +74,13 @@ class EventManager:
                 if depth_manager.is_top_level():
                     retained_mode_str = depth_manager.request_retained_mode_translation(request)
                 if result_payload.succeeded():
-                    result_event = EventResult_Success(
+                    result_event = EventResultSuccess(
                         request=request,
                         result=result_payload,
                         retained_mode=retained_mode_str,
                     )
                 else:
-                    result_event = EventResult_Failure(
+                    result_event = EventResultFailure(
                         request=request,
                         result=result_payload,
                         retained_mode=retained_mode_str,

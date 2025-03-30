@@ -1,9 +1,9 @@
 from griptape.tools import FileManagerTool
 
-from griptape_nodes_library.tools.tools import gnBaseTool
+from griptape_nodes_library.tools.tools import BaseToolNode
 
 
-class gnFileManagerTool(gnBaseTool):
+class FileManagerToolNode(BaseToolNode):
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", True)
 

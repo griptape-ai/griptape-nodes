@@ -5,8 +5,9 @@ from typing import Any, Self
 from griptape.events import BaseEvent
 
 from griptape_nodes.exe_types.core_types import (
-    ControlParameter_Input,
-    ControlParameter_Output,
+    BaseNodeElement,
+    ControlParameterInput,
+    ControlParameterOutput,
     Parameter,
     ParameterControlType,
     ParameterMode,
@@ -21,11 +22,10 @@ class NodeResolutionState(Enum):
     RESOLVED = auto()
 
 
-class NodeBase(ABC):
+class BaseNode(ABC):
     # Owned by a flow
     name: str
     metadata: dict[Any, Any]
-    parameters: list[Parameter]
 
     # Node Context Fields
     state: NodeResolutionState
@@ -33,6 +33,11 @@ class NodeBase(ABC):
     parameter_values: dict[str, Any]
     parameter_output_values: dict[str, Any]
     stop_flow: bool = False
+    root_ui_element: BaseNodeElement
+
+    @property
+    def parameters(self) -> list[Parameter]:
+        return self.root_ui_element.find_elements_by_type(Parameter)
 
     def __hash__(self) -> int:
         return hash(self.name)
@@ -45,13 +50,13 @@ class NodeBase(ABC):
     ) -> None:
         self.name = name
         self.state = state
-        self.parameters = []
         if metadata is None:
             self.metadata = {}
         else:
             self.metadata = metadata
         self.parameter_values = {}
         self.parameter_output_values = {}
+        self.root_ui_element = BaseNodeElement()
 
     def make_node_unresolved(self) -> None:
         self.state = NodeResolutionState.UNRESOLVED
@@ -166,15 +171,21 @@ class NodeBase(ABC):
                 return True
         return False
 
-    # TODO(griptape): Do i need to flag control/ not control parameters?
+    # TODO(james): Do i need to flag control/ not control parameters?
     def add_parameter(self, param: Parameter) -> None:
         if self.does_name_exist(param.name):
             msg = "Cannot have duplicate names on parameters."
             raise ValueError(msg)
-        self.parameters.append(param)
+        self.add_node_element(param)
 
     def remove_parameter(self, param: Parameter) -> None:
-        self.parameters.remove(param)
+        self.remove_node_element(param)
+
+    def add_node_element(self, ui_element: BaseNodeElement) -> None:
+        self.root_ui_element.add_child(ui_element)
+
+    def remove_node_element(self, ui_element: BaseNodeElement) -> None:
+        self.root_ui_element.remove_child(ui_element)
 
     def get_current_parameter(self) -> Parameter | None:
         return self.current_spotlight_parameter
@@ -340,12 +351,12 @@ class NodeBase(ABC):
         return None
 
 
-class ControlNode(NodeBase):
+class ControlNode(BaseNode):
     # Control Nodes may have one Control Input Port and at least one Control Output Port
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata=metadata)
-        control_parameter_in = ControlParameter_Input()
-        control_parameter_out = ControlParameter_Output()
+        control_parameter_in = ControlParameterInput()
+        control_parameter_out = ControlParameterOutput()
 
         self.parameters.append(control_parameter_in)
         self.parameters.append(control_parameter_out)
@@ -357,12 +368,12 @@ class ControlNode(NodeBase):
         return None
 
 
-class DataNode(NodeBase):
+class DataNode(BaseNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata=metadata)
 
 
-class StartNode(NodeBase):
+class StartNode(BaseNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
 
@@ -374,16 +385,16 @@ class EndNode(ControlNode):
 
 
 class Connection:
-    source_node: NodeBase
-    target_node: NodeBase
+    source_node: BaseNode
+    target_node: BaseNode
     source_parameter: Parameter
     target_parameter: Parameter
 
     def __init__(
         self,
-        source_node: NodeBase,
+        source_node: BaseNode,
         source_parameter: Parameter,
-        target_node: NodeBase,
+        target_node: BaseNode,
         target_parameter: Parameter,
     ) -> None:
         self.source_node = source_node
@@ -391,8 +402,8 @@ class Connection:
         self.source_parameter = source_parameter
         self.target_parameter = target_parameter
 
-    def get_target_node(self) -> NodeBase:
+    def get_target_node(self) -> BaseNode:
         return self.target_node
 
-    def get_source_node(self) -> NodeBase:
+    def get_source_node(self) -> BaseNode:
         return self.source_node

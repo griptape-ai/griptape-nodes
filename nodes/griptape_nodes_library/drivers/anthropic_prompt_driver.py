@@ -2,7 +2,7 @@ import anthropic
 from griptape.drivers.prompt.anthropic import AnthropicPromptDriver
 from rich import print
 
-from griptape_nodes_library.drivers.base_prompt_driver import gnBasePromptDriver
+from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
 from griptape_nodes_library.utils.env_utils import getenv
 
 DEFAULT_MODEL = "claude-3-5-sonnet-latest"
@@ -10,7 +10,7 @@ API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 SERVICE = "Anthropic"
 
 
-class gnAnthropicPromptDriver(gnBasePromptDriver):
+class AnthropicPromptDriverNode(BasePromptDriverNode):
     """Node for Anthropic Prompt Driver.
 
     This node creates an Anthropic prompt driver and outputs its configuration.

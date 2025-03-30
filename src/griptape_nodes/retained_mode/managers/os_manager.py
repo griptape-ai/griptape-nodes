@@ -6,8 +6,8 @@ from pathlib import Path
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
     OpenAssociatedFileRequest,
-    OpenAssociatedFileResult_Failure,
-    OpenAssociatedFileResult_Success,
+    OpenAssociatedFileResultFailure,
+    OpenAssociatedFileResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -31,12 +31,12 @@ class OSManager:
         except (ValueError, RuntimeError):
             details = f"Invalid file path: '{request.path_to_file}'"
             print(details)  # TODO(griptape): Move to Log
-            return OpenAssociatedFileResult_Failure()
+            return OpenAssociatedFileResultFailure()
 
         if not path.exists() or not path.is_file():
             details = f"File does not exist: '{path}'"
             print(details)  # TODO(griptape): Move to Log
-            return OpenAssociatedFileResult_Failure()
+            return OpenAssociatedFileResultFailure()
 
         print(f"Attempting to open: {path} on platform: {sys.platform}")
 
@@ -64,7 +64,7 @@ class OSManager:
                 xdg_path = next((p for p in xdg_paths if Path(p).exists()), None)
                 if not xdg_path:
                     print("xdg-open not found in standard locations")
-                    return OpenAssociatedFileResult_Failure()
+                    return OpenAssociatedFileResultFailure()
 
                 subprocess.run(  # noqa: S603
                     [xdg_path, str(path)],
@@ -76,12 +76,12 @@ class OSManager:
             else:
                 details = f"Unsupported platform: '{platform_name}'"
                 print(details)  # TODO(griptape): Move to Log
-                return OpenAssociatedFileResult_Failure()
+                return OpenAssociatedFileResultFailure()
 
-            return OpenAssociatedFileResult_Success()
+            return OpenAssociatedFileResultSuccess()
         except subprocess.CalledProcessError as e:
             print(f"Process error when opening file: {e.stderr}")
-            return OpenAssociatedFileResult_Failure()
+            return OpenAssociatedFileResultFailure()
         except Exception as e:
             print(f"Exception occurred when trying to open file: {type(e).__name__}: {e}")
-            return OpenAssociatedFileResult_Failure()
+            return OpenAssociatedFileResultFailure()

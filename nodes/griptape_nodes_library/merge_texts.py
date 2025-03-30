@@ -8,7 +8,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import ControlNode
 
 
-class gnMergeTextsNode(ControlNode):
+class MergeTextsNode(ControlNode):
     def __init__(
         self,
         name: str,

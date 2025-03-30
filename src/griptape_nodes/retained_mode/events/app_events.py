@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     RequestPayload,
-    ResultPayload_Failure,
-    ResultPayload_Success,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -17,13 +17,13 @@ class AppStartSessionRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AppStartSessionResult_Success(ResultPayload_Success):
+class AppStartSessionResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class AppStartSessionResult_Failure(ResultPayload_Failure):
+class AppStartSessionResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -41,13 +41,13 @@ class AppExecutionEvent(AppPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetEngineVersion_Request(RequestPayload):
+class GetEngineVersionRequest(RequestPayload):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class GetEngineVersionResult_Success(ResultPayload_Success):
+class GetEngineVersionResultSuccess(ResultPayloadSuccess):
     major: int
     minor: int
     patch: int
@@ -55,5 +55,5 @@ class GetEngineVersionResult_Success(ResultPayload_Success):
 
 @dataclass
 @PayloadRegistry.register
-class GetEngineVersionResult_Failure(ResultPayload_Failure):
+class GetEngineVersionResultFailure(ResultPayloadFailure):
     pass

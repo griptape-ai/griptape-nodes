@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultPayload_Failure,
-    ResultPayload_Success,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -20,11 +20,11 @@ class RunArbitraryPythonStringRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RunArbitraryPythonStringResult_Success(ResultPayload_Success):
+class RunArbitraryPythonStringResultSuccess(ResultPayloadSuccess):
     python_output: str
 
 
 @dataclass
 @PayloadRegistry.register
-class RunArbitraryPythonStringResult_Failure(ResultPayload_Failure):
+class RunArbitraryPythonStringResultFailure(ResultPayloadFailure):
     python_output: str

@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import ControlNode
 
 
-class gnToolListNode(ControlNode):
+class ToolListNode(ControlNode):
     """Combine tools to give an agent a more complex set of tools."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:

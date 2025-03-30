@@ -16,6 +16,9 @@ from griptape.events import (
     FinishStructureRunEvent,
     TextChunkEvent,
 )
+from rich.align import Align
+from rich.console import Console
+from rich.panel import Panel
 
 from griptape_nodes.api.queue_manager import event_queue
 from griptape_nodes.api.routes.api import process_event
@@ -29,8 +32,8 @@ from griptape_nodes.retained_mode.events import (
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
     EventRequest,
-    EventResult_Failure,
-    EventResult_Success,
+    EventResultFailure,
+    EventResultSuccess,
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     GriptapeNodeEvent,
@@ -41,7 +44,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-logger = GriptapeNodes.get_instance().LogManager().get_logger()
+console = Console()
+logger = GriptapeNodes.get_instance().LogManager().get_logger(event_handler=False)
 
 
 def run_with_context(func: Callable) -> Callable:
@@ -65,9 +69,9 @@ def process_request(event: EventRequest) -> None:
 def send_event(event: GriptapeNodeEvent) -> None:
     # Emit the result back to the GUI
     result_event = event.wrapped_event
-    if isinstance(result_event, EventResult_Success):
+    if isinstance(result_event, EventResultSuccess):
         dest_socket = "success_result"
-    elif isinstance(result_event, EventResult_Failure):
+    elif isinstance(result_event, EventResultFailure):
         dest_socket = "failure_result"
     else:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."
@@ -112,21 +116,24 @@ def process_app_event(event: AppEvent) -> None:
     # Let Griptape Nodes broadcast it.
     GriptapeNodes().broadcast_app_event(payload)
 
-    # TODO(griptape): send to GUI?
+    socket.emit("app_event", event.json())
 
 
 def check_event_queue() -> None:
     while True:
-        if not event_queue.empty():
-            event = event_queue.get()
-            if isinstance(event, EventRequest):
-                process_request(event)
-            elif isinstance(event, AppEvent):
-                process_app_event(event)
-            else:
-                logger.warning("Unknown event type encountered: '%s'.", type(event))
+        try:
+            if not event_queue.empty():
+                event = event_queue.get()
+                if isinstance(event, EventRequest):
+                    process_request(event)
+                elif isinstance(event, AppEvent):
+                    process_app_event(event)
+                else:
+                    logger.warning("Unknown event type encountered: '%s'.", type(event))
 
-            event_queue.task_done()
+                event_queue.task_done()
+        except KeyboardInterrupt:
+            break
 
 
 def setup_event_listeners() -> None:
@@ -172,12 +179,6 @@ def sse_listener() -> None:
 
             with httpx.stream("get", endpoint, auth=auth, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout
                 response.raise_for_status()
-                if not init:
-                    # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
-                    payload = app_events.AppInitializationComplete()
-                    app_event = AppEvent(payload=payload)
-                    event_queue.put(app_event)
-                    init = True
 
                 for line in response.iter_lines():
                     if not line.strip():
@@ -185,18 +186,34 @@ def sse_listener() -> None:
                     if line.startswith("data:"):
                         data = line.removeprefix("data:").strip()
                         if data == "START":
-                            logger.info("Engine is ready to receive events")
-                            logger.info(
-                                "[bold green]Please visit [link=%s]%s[/link] in your browser.[/bold green]",
-                                nodes_app_url,
-                                nodes_app_url,
+                            message = Panel(
+                                Align.center(
+                                    f"[bold green]Engine is ready to receive events[/bold green]\n"
+                                    f"[bold blue]Visit: [link={nodes_app_url}]{nodes_app_url}[/link][/bold blue]",
+                                    vertical="middle",
+                                ),
+                                title="🚀 Engine Started",
+                                border_style="green",
+                                padding=(1, 4),
                             )
+                            console.print(message)
+                            if not init:
+                                # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
+                                payload = app_events.AppInitializationComplete()
+                                app_event = AppEvent(payload=payload)
+                                event_queue.put(app_event)
+                                init = True
 
                         else:
-                            process_event(json.loads(data))
+                            try:
+                                process_event(json.loads(data))
+                            except Exception:
+                                logger.exception("Error processing event, skipping.")
+
         except Exception:
-            logger.exception("Error while listening to SSE")
-            sleep(5)
+            logger.warning("Error while listening for events. Retrying in 2 seconds.")
+            sleep(2)
+            init = False
 
 
 def run_sse_mode() -> None:

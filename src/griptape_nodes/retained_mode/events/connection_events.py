@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultPayload_Failure,
-    ResultPayload_Success,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -19,13 +19,13 @@ class CreateConnectionRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CreateConnectionResult_Success(ResultPayload_Success):
+class CreateConnectionResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class CreateConnectionResult_Failure(ResultPayload_Failure):
+class CreateConnectionResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -40,13 +40,13 @@ class DeleteConnectionRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteConnectionResult_Success(ResultPayload_Success):
+class DeleteConnectionResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class DeleteConnectionResult_Failure(ResultPayload_Failure):
+class DeleteConnectionResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -72,12 +72,12 @@ class OutgoingConnection:
 
 @dataclass
 @PayloadRegistry.register
-class ListConnectionsForNodeResult_Success(ResultPayload_Success):
+class ListConnectionsForNodeResultSuccess(ResultPayloadSuccess):
     incoming_connections: list[IncomingConnection]
     outgoing_connections: list[OutgoingConnection]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListConnectionsForNodeResult_Failure(ResultPayload_Failure):
+class ListConnectionsForNodeResultFailure(ResultPayloadFailure):
     pass

@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 from griptape.artifacts import BaseArtifact
-from griptape.events import BaseEvent
+from griptape.events import BaseEvent as GtBaseEvent
 from griptape.structures import Structure
 from griptape.tools import BaseTool
 from pydantic import BaseModel, Field
@@ -40,7 +40,7 @@ class ResultPayload(Payload, ABC):
 
 
 # Success result payload abstract base class
-class ResultPayload_Success(ResultPayload, ABC):
+class ResultPayloadSuccess(ResultPayload, ABC):
     """Abstract base class for success result payloads."""
 
     def succeeded(self) -> bool:
@@ -53,7 +53,7 @@ class ResultPayload_Success(ResultPayload, ABC):
 
 
 # Failure result payload abstract base class
-class ResultPayload_Failure(ResultPayload, ABC):
+class ResultPayloadFailure(ResultPayload, ABC):
     """Abstract base class for failure result payloads."""
 
     def succeeded(self) -> bool:
@@ -80,7 +80,7 @@ E = TypeVar("E", bound=ExecutionPayload)
 A = TypeVar("A", bound=AppPayload)
 
 
-class EventBase(BaseModel, ABC):
+class BaseEvent(BaseModel, ABC):
     """Abstract base class for all events."""
 
     # Keeping here instead of in GriptapeNodes to avoid circular import hell.
@@ -88,7 +88,7 @@ class EventBase(BaseModel, ABC):
     _session_id: ClassVar[str | None] = None
 
     # Instance variable with a default_factory that references the class variable
-    session_id: str | None = Field(default_factory=lambda: EventBase._session_id)
+    session_id: str | None = Field(default_factory=lambda: BaseEvent._session_id)
 
     # Custom JSON encoder for the payload
     class Config:
@@ -127,7 +127,7 @@ class EventBase(BaseModel, ABC):
         """
 
 
-class EventRequest(EventBase, Generic[P]):
+class EventRequest(BaseEvent, Generic[P]):
     """Request event."""
 
     request: P
@@ -189,7 +189,7 @@ class EventRequest(EventBase, Generic[P]):
         return cls(request=request_payload)
 
 
-class EventResult(EventBase, Generic[P, R], ABC):
+class EventResult(BaseEvent, Generic[P, R], ABC):
     """Abstract base class for result events."""
 
     request: P
@@ -295,7 +295,7 @@ class EventResult(EventBase, Generic[P, R], ABC):
         return cls(request=request_payload, result=result_payload)
 
 
-class EventResult_Success(EventResult[P, R]):
+class EventResultSuccess(EventResult[P, R]):
     """Success result event."""
 
     def succeeded(self) -> bool:
@@ -307,7 +307,7 @@ class EventResult_Success(EventResult[P, R]):
         return True
 
 
-class EventResult_Failure(EventResult[P, R]):
+class EventResultFailure(EventResult[P, R]):
     """Failure result event."""
 
     def succeeded(self) -> bool:
@@ -320,7 +320,7 @@ class EventResult_Failure(EventResult[P, R]):
 
 
 # Helper function to deserialize event from JSON
-def deserialize_event(json_data) -> EventBase:
+def deserialize_event(json_data) -> BaseEvent:
     """Deserialize an event from JSON or dict, using the payload type information embedded in the data.
 
     Args:
@@ -356,22 +356,22 @@ def deserialize_event(json_data) -> EventBase:
             return EventRequest.from_dict(data, request_type)
         msg = f"Cannot deserialize EventRequest: unknown payload type {request_type_name}"
         raise ValueError(msg)
-    if event_type == "EventResult_Success":
+    if event_type == "EventResultSuccess":
         if request_type and result_type:
-            return EventResult_Success.from_dict(data, request_type, result_type)
-        msg = f"Cannot deserialize EventResult_Success: unknown payload types request={request_type_name}, result={result_type_name}"
+            return EventResultSuccess.from_dict(data, request_type, result_type)
+        msg = f"Cannot deserialize EventResultSuccess: unknown payload types request={request_type_name}, result={result_type_name}"
         raise ValueError(msg)
-    if event_type == "EventResult_Failure":
+    if event_type == "EventResultFailure":
         if request_type and result_type:
-            return EventResult_Failure.from_dict(data, request_type, result_type)
-        msg = f"Cannot deserialize EventResult_Failure: unknown payload types request={request_type_name}, result={result_type_name}"
+            return EventResultFailure.from_dict(data, request_type, result_type)
+        msg = f"Cannot deserialize EventResultFailure: unknown payload types request={request_type_name}, result={result_type_name}"
         raise ValueError(msg)
     msg = f"Unknown/unsupported event type '{event_type}' encountered."
     raise TypeError(msg)
 
 
 # EXECUTION EVENT BASE (this event type is used for the execution of a Griptape Nodes flow)
-class ExecutionEvent(EventBase, Generic[E]):
+class ExecutionEvent(BaseEvent, Generic[E]):
     payload: E
 
     def __init__(self, **data) -> None:
@@ -432,7 +432,7 @@ class ExecutionEvent(EventBase, Generic[E]):
 
 
 # Events sent as part of the lifecycle of the Griptape Nodes application.
-class AppEvent(EventBase, Generic[A]):
+class AppEvent(BaseEvent, Generic[A]):
     payload: A
 
     def __init__(self, **data) -> None:
@@ -494,10 +494,10 @@ class AppEvent(EventBase, Generic[A]):
 
 
 @dataclass
-class GriptapeNodeEvent(BaseEvent):
+class GriptapeNodeEvent(GtBaseEvent):
     wrapped_event: EventResult
 
 
 @dataclass
-class ExecutionGriptapeNodeEvent(BaseEvent):
+class ExecutionGriptapeNodeEvent(GtBaseEvent):
     wrapped_event: ExecutionEvent = field()

@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultPayload_Failure,
-    ResultPayload_Success,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -16,13 +16,13 @@ class ListRegisteredLibrariesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListRegisteredLibrariesResult_Success(ResultPayload_Success):
+class ListRegisteredLibrariesResultSuccess(ResultPayloadSuccess):
     libraries: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListRegisteredLibrariesResult_Failure(ResultPayload_Failure):
+class ListRegisteredLibrariesResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -34,13 +34,13 @@ class ListNodeTypesInLibraryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListNodeTypesInLibraryResult_Success(ResultPayload_Success):
+class ListNodeTypesInLibraryResultSuccess(ResultPayloadSuccess):
     node_types: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListNodeTypesInLibraryResult_Failure(ResultPayload_Failure):
+class ListNodeTypesInLibraryResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -53,13 +53,13 @@ class GetNodeMetadataFromLibraryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeMetadataFromLibraryResult_Success(ResultPayload_Success):
+class GetNodeMetadataFromLibraryResultSuccess(ResultPayloadSuccess):
     metadata: dict
 
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeMetadataFromLibraryResult_Failure(ResultPayload_Failure):
+class GetNodeMetadataFromLibraryResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -72,13 +72,13 @@ class RegisterLibraryFromFileRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RegisterLibraryFromFileResult_Success(ResultPayload_Success):
+class RegisterLibraryFromFileResultSuccess(ResultPayloadSuccess):
     library_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class RegisterLibraryFromFileResult_Failure(ResultPayload_Failure):
+class RegisterLibraryFromFileResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -90,13 +90,13 @@ class ListCategoriesInLibraryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListCategoriesInLibraryResult_Success(ResultPayload_Success):
+class ListCategoriesInLibraryResultSuccess(ResultPayloadSuccess):
     categories: list[dict]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListCategoriesInLibraryResult_Failure(ResultPayload_Failure):
+class ListCategoriesInLibraryResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -108,13 +108,13 @@ class GetLibraryMetadataRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetLibraryMetadataResult_Success(ResultPayload_Success):
+class GetLibraryMetadataResultSuccess(ResultPayloadSuccess):
     metadata: dict
 
 
 @dataclass
 @PayloadRegistry.register
-class GetLibraryMetadataResult_Failure(ResultPayload_Failure):
+class GetLibraryMetadataResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -127,15 +127,15 @@ class GetAllInfoForLibraryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetAllInfoForLibraryResult_Success(ResultPayload_Success):
-    library_metadata_details: GetLibraryMetadataResult_Success
-    category_details: ListCategoriesInLibraryResult_Success
-    node_type_name_to_node_metadata_details: dict[str, GetNodeMetadataFromLibraryResult_Success]
+class GetAllInfoForLibraryResultSuccess(ResultPayloadSuccess):
+    library_metadata_details: GetLibraryMetadataResultSuccess
+    category_details: ListCategoriesInLibraryResultSuccess
+    node_type_name_to_node_metadata_details: dict[str, GetNodeMetadataFromLibraryResultSuccess]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetAllInfoForLibraryResult_Failure(ResultPayload_Failure):
+class GetAllInfoForLibraryResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -148,11 +148,11 @@ class GetAllInfoForAllLibrariesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetAllInfoForAllLibrariesResult_Success(ResultPayload_Success):
-    library_name_to_library_info: dict[str, GetAllInfoForLibraryResult_Success]
+class GetAllInfoForAllLibrariesResultSuccess(ResultPayloadSuccess):
+    library_name_to_library_info: dict[str, GetAllInfoForLibraryResultSuccess]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetAllInfoForAllLibrariesResult_Failure(ResultPayload_Failure):
+class GetAllInfoForAllLibrariesResultFailure(ResultPayloadFailure):
     pass

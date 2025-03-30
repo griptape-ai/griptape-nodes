@@ -4,8 +4,8 @@ from typing import Any
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     RequestPayload,
-    ResultPayload_Failure,
-    ResultPayload_Success,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -21,13 +21,13 @@ class ResolveNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ResolveNodeResult_Success(ResultPayload_Success):
+class ResolveNodeResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class ResolveNodeResult_Failure(ResultPayload_Failure):
+class ResolveNodeResultFailure(ResultPayloadFailure):
     validation_exceptions: list[Exception]
 
 
@@ -41,13 +41,13 @@ class StartFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class StartFlowResult_Success(ResultPayload_Success):
+class StartFlowResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class StartFlowResult_Failure(ResultPayload_Failure):
+class StartFlowResultFailure(ResultPayloadFailure):
     validation_exceptions: list[Exception]
 
 
@@ -59,13 +59,13 @@ class CancelFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CancelFlowResult_Success(ResultPayload_Success):
+class CancelFlowResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class CancelFlowResult_Failure(ResultPayload_Failure):
+class CancelFlowResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -77,13 +77,13 @@ class UnresolveFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class UnresolveFlowResult_Failure(ResultPayload_Failure):
+class UnresolveFlowResultFailure(ResultPayloadFailure):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class UnresolveFlowResult_Success(ResultPayload_Success):
+class UnresolveFlowResultSuccess(ResultPayloadSuccess):
     pass
 
 
@@ -99,12 +99,12 @@ class SingleExecutionStepRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SingleExecutionStepResult_Success(ResultPayload_Success):
+class SingleExecutionStepResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @PayloadRegistry.register
-class SingleExecutionStepResult_Failure(ResultPayload_Failure):
+class SingleExecutionStepResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -117,13 +117,13 @@ class SingleNodeStepRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SingleNodeStepResult_Success(ResolveNodeResult_Success):
+class SingleNodeStepResultSuccess(ResolveNodeResultSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class SingleNodeStepResult_Failure(ResolveNodeResult_Failure):
+class SingleNodeStepResultFailure(ResolveNodeResultFailure):
     pass
 
 
@@ -136,13 +136,13 @@ class ContinueExecutionStepRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ContinueExecutionStepResult_Success(ResultPayload_Success):
+class ContinueExecutionStepResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class ContinueExecutionStepResult_Failure(ResultPayload_Failure):
+class ContinueExecutionStepResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -154,14 +154,14 @@ class GetFlowStateRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetFlowStateResult_Success(ResultPayload_Success):
+class GetFlowStateResultSuccess(ResultPayloadSuccess):
     control_node: str
     resolving_node: str | None
 
 
 @dataclass
 @PayloadRegistry.register
-class GetFlowStateResult_Failure(ResultPayload_Failure):
+class GetFlowStateResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -173,13 +173,13 @@ class GetIsFlowRunningRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetIsFlowRunningResult_Success(ResultPayload_Success):
+class GetIsFlowRunningResultSuccess(ResultPayloadSuccess):
     is_running: bool
 
 
 @dataclass
 @PayloadRegistry.register
-class GetIsFlowRunningResult_Failure(ResultPayload_Failure):
+class GetIsFlowRunningResultFailure(ResultPayloadFailure):
     pass
 
 

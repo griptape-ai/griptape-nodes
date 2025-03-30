@@ -1,20 +1,24 @@
-import openai
-from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
+from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.utils import Stream
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterUIOptions
+from griptape_nodes.exe_types.core_types import (
+    Parameter,
+    ParameterGroup,
+    ParameterMode,
+    ParameterUIOptions,
+)
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.utils.env_utils import getenv
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 DEFAULT_MODEL = "gpt-4o"
-API_KEY_ENV_VAR = "OPENAI_API_KEY"
-SERVICE = "OpenAI"
+API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
+SERVICE = "Griptape"
 
 
-class gnRunAgent(ControlNode):
+class RunAgentNode(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -22,6 +26,7 @@ class gnRunAgent(ControlNode):
 
         self.category = "Agent"
         self.description = "Create an agent and run it."
+
         self.add_parameter(
             Parameter(
                 name="agent",
@@ -29,41 +34,19 @@ class gnRunAgent(ControlNode):
                 tooltip="",
             )
         )
-        self.add_parameter(
+        with ParameterGroup(group_name="Agent Config") as config_group:
             Parameter(
                 name="prompt_driver",
                 allowed_types=["BasePromptDriver"],
                 default_value=None,
                 tooltip="",
             )
-        )
-        self.add_parameter(
             Parameter(
                 name="prompt_model",
                 allowed_types=["str"],
                 default_value=DEFAULT_MODEL,
                 tooltip="",
             )
-        )
-
-        self.add_parameter(Parameter(name="tool", allowed_types=["BaseTool"], default_value=None, tooltip=""))
-        self.add_parameter(
-            Parameter(
-                name="tool_list",
-                allowed_types=["list[BaseTool]"],
-                default_value=None,
-                tooltip="",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="ruleset",
-                allowed_types=["Ruleset"],
-                tooltip="",
-            )
-        )
-
-        self.add_parameter(
             Parameter(
                 name="prompt",
                 allowed_types=["str"],
@@ -75,9 +58,21 @@ class gnRunAgent(ControlNode):
                     )
                 ),
             )
-        )
+        self.add_node_element(config_group)
 
-        self.add_parameter(
+        with ParameterGroup(group_name="Agent Tools") as tools_group:
+            Parameter(name="tool", allowed_types=["BaseTool"], default_value=None, tooltip="")
+            Parameter(
+                name="tool_list",
+                allowed_types=["list[BaseTool]"],
+                default_value=None,
+                tooltip="",
+            )
+            Parameter(
+                name="ruleset",
+                allowed_types=["Ruleset"],
+                tooltip="",
+            )
             Parameter(
                 name="output",
                 allowed_types=["str"],
@@ -91,9 +86,9 @@ class gnRunAgent(ControlNode):
                     )
                 ),
             )
-        )
+        self.add_node_element(tools_group)
 
-    # Only requires a valid OPENAI_API_KEY
+    # Only requires a valid GT_CLOUD_API_KEY
     def validate_node(self) -> list[Exception] | None:
         # Items here are openai api key
         exceptions = []
@@ -102,11 +97,6 @@ class gnRunAgent(ControlNode):
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
-        try:
-            client = openai.OpenAI(api_key=api_key)
-            client.models.list()
-        except openai.AuthenticationError as e:
-            exceptions.append(e)
         return exceptions if exceptions else None
 
     def process(self) -> None:
@@ -122,7 +112,7 @@ class gnRunAgent(ControlNode):
         model = self.valid_or_fallback("prompt_model", DEFAULT_MODEL)
 
         kwargs["prompt_driver"] = self.valid_or_fallback(
-            "prompt_driver", OpenAiChatPromptDriver(model=model, stream=True, api_key=api_key)
+            "prompt_driver", GriptapeCloudPromptDriver(model=model, stream=True, api_key=api_key)
         )
         agent = params.get("agent", None)
         if not agent:
@@ -153,14 +143,3 @@ class gnRunAgent(ControlNode):
             self.parameter_output_values["output"] = "Agent Created"
         self.parameter_output_values["agent"] = agent
         try_throw_error(agent.output)
-
-
-if __name__ == "__main__":
-    agt = gnRunAgent(name="gnRunAgent_1")
-    agt.parameter_values["prompt"] = "Hey there"
-    try:
-        agt.process()
-    except Exception as e:
-        print(f"FAILURE! {e}")
-    print("SUCCESS")
-    print(agt.parameter_output_values["output"])

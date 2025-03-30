@@ -1,11 +1,11 @@
 from griptape.drivers.structure_run.local import LocalStructureRunDriver
 from griptape.tools import StructureRunTool
 
-from griptape_nodes_library.tools.tools import gnBaseTool
+from griptape_nodes_library.tools.tools import BaseToolNode
 from griptape_nodes_library.utilities import to_pascal_case
 
 
-class gnConvertAgentToTool(gnBaseTool):
+class ConvertAgentToToolNode(BaseToolNode):
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", False)
         agent = self.parameter_values.get("agent", None)

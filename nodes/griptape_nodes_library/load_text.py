@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 
 
-class gnLoadTextNode(ControlNode):
+class LoadTextNode(ControlNode):
     def __init__(
         self,
         name: str,

@@ -10,16 +10,16 @@ from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachi
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
-    from griptape_nodes.exe_types.node_types import NodeBase
+    from griptape_nodes.exe_types.node_types import BaseNode
 
 
 # The flow will own all of the nodes and the connections
 class ControlFlow:
     connections: Connections
-    nodes: dict[str, NodeBase]
+    nodes: dict[str, BaseNode]
     control_flow_machine: ControlFlowMachine
     single_node_resolution: bool
-    flow_queue: Queue[NodeBase]
+    flow_queue: Queue[BaseNode]
 
     def __init__(self) -> None:
         self.connections = Connections()
@@ -28,7 +28,7 @@ class ControlFlow:
         self.single_node_resolution = False
         self.flow_queue = Queue()
 
-    def add_node(self, node: NodeBase) -> None:
+    def add_node(self, node: BaseNode) -> None:
         self.nodes[node.name] = node
 
     def remove_node(self, node_name: str) -> None:
@@ -36,9 +36,9 @@ class ControlFlow:
 
     def add_connection(
         self,
-        source_node: NodeBase,
+        source_node: BaseNode,
         source_parameter: Parameter,
-        target_node: NodeBase,
+        target_node: BaseNode,
         target_parameter: Parameter,
     ) -> bool:
         if source_node.name in self.nodes and target_node.name in self.nodes:
@@ -46,7 +46,7 @@ class ControlFlow:
         return False
 
     def remove_connection(
-        self, source_node: NodeBase, source_parameter: Parameter, target_node: NodeBase, target_parameter: Parameter
+        self, source_node: BaseNode, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter
     ) -> bool:
         if source_node.name in self.nodes and target_node.name in self.nodes:
             return self.connections.remove_connection(
@@ -56,9 +56,9 @@ class ControlFlow:
 
     def has_connection(
         self,
-        source_node: NodeBase,
+        source_node: BaseNode,
         source_parameter: Parameter,
-        target_node: NodeBase,
+        target_node: BaseNode,
         target_parameter: Parameter,
     ) -> bool:
         if source_node.name in self.nodes and target_node.name in self.nodes:
@@ -70,7 +70,7 @@ class ControlFlow:
                         return True
         return False
 
-    def start_flow(self, start_node: NodeBase | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+    def start_flow(self, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
             errormsg = "Flow already has been started. Cannot start flow when it has already been started."
@@ -101,7 +101,7 @@ class ControlFlow:
             and self.control_flow_machine._context.resolution_machine.is_started()
         )
 
-    def resolve_singular_node(self, node: NodeBase, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+    def resolve_singular_node(self, node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         # Set that we are only working on one node right now! no other stepping allowed
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
@@ -204,7 +204,7 @@ class ControlFlow:
             current_resolving_node = None
         return current_control_node, current_resolving_node
 
-    def get_connected_output_parameters(self, node: NodeBase, param: Parameter) -> list[tuple[NodeBase, Parameter]]:
+    def get_connected_output_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
         connections = []
         if node.name in self.connections.outgoing_index:
             outgoing_params = self.connections.outgoing_index[node.name]
@@ -214,7 +214,7 @@ class ControlFlow:
                     connections.append((connection.target_node, connection.target_parameter))
         return connections
 
-    def get_connected_input_parameters(self, node: NodeBase, param: Parameter) -> list[tuple[NodeBase, Parameter]]:
+    def get_connected_input_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
         connections = []
         if node.name in self.connections.incoming_index:
             incoming_params = self.connections.incoming_index[node.name]
@@ -224,7 +224,7 @@ class ControlFlow:
                     connections.append((connection.source_node, connection.source_parameter))
         return connections
 
-    def get_connected_output_from_node(self, node: NodeBase) -> list[tuple[NodeBase, Parameter]]:
+    def get_connected_output_from_node(self, node: BaseNode) -> list[tuple[BaseNode, Parameter]]:
         connections = []
         if node.name in self.connections.outgoing_index:
             connection_ids = [
@@ -235,7 +235,7 @@ class ControlFlow:
                 connections.append((connection.target_node, connection.target_parameter))
         return connections
 
-    def get_connected_input_from_node(self, node: NodeBase) -> list[tuple[NodeBase, Parameter]]:
+    def get_connected_input_from_node(self, node: BaseNode) -> list[tuple[BaseNode, Parameter]]:
         connections = []
         if node.name in self.connections.incoming_index:
             connection_ids = [
@@ -307,7 +307,7 @@ class ControlFlow:
 
         return self.flow_queue
 
-    def get_start_node_from_node(self, node: NodeBase) -> NodeBase | None:
+    def get_start_node_from_node(self, node: BaseNode) -> BaseNode | None:
         # backwards chain in control outputs.
         if node not in self.nodes.values():
             return None
@@ -320,7 +320,7 @@ class ControlFlow:
             prev_node = self.get_prev_node(prev_node)
         return curr_node
 
-    def get_prev_node(self, node: NodeBase) -> NodeBase | None:
+    def get_prev_node(self, node: BaseNode) -> BaseNode | None:
         if node.name in self.connections.incoming_index:
             parameters = self.connections.incoming_index[node.name]
             for parameter_name in parameters:
@@ -333,11 +333,11 @@ class ControlFlow:
                         return connection.get_source_node()
         return None
 
-    def stop_flow_breakpoint(self, node: NodeBase) -> None:
+    def stop_flow_breakpoint(self, node: BaseNode) -> None:
         # This will prevent the flow from continuing on.
         node.stop_flow = True
 
-    def get_connections_on_node(self, node: NodeBase) -> list[NodeBase] | None:
+    def get_connections_on_node(self, node: BaseNode) -> list[BaseNode] | None:
         # get all of the connection ids
         connected_nodes = []
         # Handle outgoing connections
@@ -363,7 +363,7 @@ class ControlFlow:
         # Return all connected nodes. No duplicates
         return connected_nodes
 
-    def get_all_connected_nodes(self, node: NodeBase) -> list[NodeBase]:
+    def get_all_connected_nodes(self, node: BaseNode) -> list[BaseNode]:
         discovered = {}
         processed = {}
         queue = Queue()
@@ -380,17 +380,17 @@ class ControlFlow:
                         queue.put(next_node)
         return list(processed.keys())
 
-    def get_node_dependencies(self, node: NodeBase) -> list[NodeBase]:
+    def get_node_dependencies(self, node: BaseNode) -> list[BaseNode]:
         """Get all upstream nodes that the given node depends on.
 
         This method performs a breadth-first search starting from the given node and working backwards through its non-control input connections to identify all nodes that must run before this node can be resolved.
         It ignores control connections, since we're only focusing on node dependencies.
 
         Args:
-            node (NodeBase): The node to find dependencies for
+            node (BaseNode): The node to find dependencies for
 
         Returns:
-            list[NodeBase]: A list of all nodes that the given node depends on, including the node itself (as the first element)
+            list[BaseNode]: A list of all nodes that the given node depends on, including the node itself (as the first element)
         """
         node_list = [node]
         node_queue = Queue()

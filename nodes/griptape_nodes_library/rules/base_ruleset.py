@@ -4,7 +4,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Parame
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class gnRuleSet(DataNode):
+class RulesetNode(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -50,7 +50,3 @@ class gnRuleSet(DataNode):
         ruleset = Ruleset(name=name, rules=sep_rules)  # was in [], but made type validation bad for austin
 
         self.parameter_output_values["ruleset"] = ruleset
-
-
-if __name__ == "__main__":
-    gnRuleSet(name="gnRuleSet_1").process()

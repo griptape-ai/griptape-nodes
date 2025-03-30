@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultPayload_Failure,
-    ResultPayload_Success,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -17,13 +17,13 @@ class CreateFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CreateFlowResult_Success(ResultPayload_Success):
+class CreateFlowResultSuccess(ResultPayloadSuccess):
     flow_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class CreateFlowResult_Failure(ResultPayload_Failure):
+class CreateFlowResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -35,13 +35,13 @@ class DeleteFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteFlowResult_Success(ResultPayload_Success):
+class DeleteFlowResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class DeleteFlowResult_Failure(ResultPayload_Failure):
+class DeleteFlowResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -53,13 +53,13 @@ class ListNodesInFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListNodesInFlowResult_Success(ResultPayload_Success):
+class ListNodesInFlowResultSuccess(ResultPayloadSuccess):
     node_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListNodesInFlowResult_Failure(ResultPayload_Failure):
+class ListNodesInFlowResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -73,11 +73,11 @@ class ListFlowsInFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInFlowResult_Success(ResultPayload_Success):
+class ListFlowsInFlowResultSuccess(ResultPayloadSuccess):
     flow_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInFlowResult_Failure(ResultPayload_Failure):
+class ListFlowsInFlowResultFailure(ResultPayloadFailure):
     pass

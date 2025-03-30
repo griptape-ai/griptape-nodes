@@ -3,8 +3,8 @@ from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultPayload_Failure,
-    ResultPayload_Success,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -17,13 +17,13 @@ class GetConfigValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigValueResult_Success(ResultPayload_Success):
+class GetConfigValueResultSuccess(ResultPayloadSuccess):
     value: Any
 
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigValueResult_Failure(ResultPayload_Failure):
+class GetConfigValueResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -36,13 +36,13 @@ class SetConfigValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SetConfigValueResult_Success(ResultPayload_Success):
+class SetConfigValueResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class SetConfigValueResult_Failure(ResultPayload_Failure):
+class SetConfigValueResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -54,13 +54,13 @@ class GetConfigCategoryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigCategoryResult_Success(ResultPayload_Success):
+class GetConfigCategoryResultSuccess(ResultPayloadSuccess):
     contents: dict[str, Any]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigCategoryResult_Failure(ResultPayload_Failure):
+class GetConfigCategoryResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -73,11 +73,11 @@ class SetConfigCategoryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SetConfigCategoryResult_Success(ResultPayload_Success):
+class SetConfigCategoryResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class SetConfigCategoryResult_Failure(ResultPayload_Failure):
+class SetConfigCategoryResultFailure(ResultPayloadFailure):
     pass

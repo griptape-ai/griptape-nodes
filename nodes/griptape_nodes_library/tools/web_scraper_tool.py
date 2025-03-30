@@ -2,10 +2,10 @@ from typing import Any
 
 from griptape.tools import WebScraperTool
 
-from griptape_nodes_library.tools.base_tool import gnBaseTool
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 
 
-class gnWebScraperTool(gnBaseTool):
+class WebScraperToolNode(BaseToolNode):
     def __init__(
         self,
         name: str,

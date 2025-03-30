@@ -48,7 +48,7 @@
           "on_app_initialization_complete": {
             "libraries_to_register": [
               "nodes/griptape_nodes_library.json"
-            ],
+            ]
           }
         }
       }
@@ -91,6 +91,18 @@ Serve the documentation:
 
 ```shell
 make docs/serve
+```
+
+Run unit tests:
+
+```shell
+make test/unit
+```
+
+Run integration tests:
+
+```shell
+make test/integration
 ```
 
 # Engine Commands

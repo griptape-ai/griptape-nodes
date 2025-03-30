@@ -6,17 +6,17 @@ from typing import Any
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
-    GetConfigCategoryResult_Failure,
-    GetConfigCategoryResult_Success,
+    GetConfigCategoryResultFailure,
+    GetConfigCategoryResultSuccess,
     GetConfigValueRequest,
-    GetConfigValueResult_Failure,
-    GetConfigValueResult_Success,
+    GetConfigValueResultFailure,
+    GetConfigValueResultSuccess,
     SetConfigCategoryRequest,
-    SetConfigCategoryResult_Failure,
-    SetConfigCategoryResult_Success,
+    SetConfigCategoryResultFailure,
+    SetConfigCategoryResultSuccess,
     SetConfigValueRequest,
-    SetConfigValueResult_Failure,
-    SetConfigValueResult_Success,
+    SetConfigValueResultFailure,
+    SetConfigValueResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
@@ -146,67 +146,67 @@ class ConfigManager:
             contents = self.user_config
             details = "Successfully returned the entire config dictionary."
             print(details)  # TODO(griptape): Move to Log
-            return GetConfigCategoryResult_Success(contents=contents)
+            return GetConfigCategoryResultSuccess(contents=contents)
 
         # See if we got something valid.
         find_results = self.get_config_value(request.category)
         if find_results is None:
             details = f"Attempted to get config details for category '{request.category}'. Failed because no such category could be found."
             print(details)  # TODO(griptape): Move to Log
-            return GetConfigCategoryResult_Failure()
+            return GetConfigCategoryResultFailure()
 
         if not isinstance(find_results, dict):
             details = f"Attempted to get config details for category '{request.category}'. Failed because this was was not a dictionary."
             print(details)  # TODO(griptape): Move to Log
-            return GetConfigCategoryResult_Failure()
+            return GetConfigCategoryResultFailure()
 
         details = f"Successfully returned the config dictionary for section '{request.category}'."
         print(details)  # TODO(griptape): Move to Log
-        return GetConfigCategoryResult_Success(contents=find_results)
+        return GetConfigCategoryResultSuccess(contents=find_results)
 
     def on_handle_set_config_category_request(self, request: SetConfigCategoryRequest) -> ResultPayload:
         # Validate the value is a dict
         if not isinstance(request.contents, dict):
             details = f"Attempted to set config details for category '{request.category}'. Failed because the contents provided were not a dictionary."
             print(details)  # TODO(griptape): Move to Log
-            return SetConfigCategoryResult_Failure()
+            return SetConfigCategoryResultFailure()
 
         if request.category is None or request.category == "":
             # Assign the whole shebang.
             self.user_config = request.contents
             details = "Successfully assigned the entire config dictionary."
             print(details)  # TODO(griptape): Move to Log
-            return SetConfigCategoryResult_Success()
+            return SetConfigCategoryResultSuccess()
 
         self.set_config_value(key=request.category, value=request.contents)
         details = f"Successfully assigned the config dictionary for section '{request.category}'."
         print(details)  # TODO(griptape): Move to Log
-        return SetConfigCategoryResult_Success()
+        return SetConfigCategoryResultSuccess()
 
     def on_handle_get_config_value_request(self, request: GetConfigValueRequest) -> ResultPayload:
         if request.category_and_key == "":
             details = "Attempted to get config value but no category or key was specified."
             print(details)  # TODO(griptape): Move to Log
-            return GetConfigValueResult_Failure()
+            return GetConfigValueResultFailure()
 
         # See if we got something valid.
         find_results = self.get_config_value(request.category_and_key)
         if find_results is None:
             details = f"Attempted to get config value for category.key '{request.category_and_key}'. Failed because no such category.key could be found."
             print(details)  # TODO(griptape): Move to Log
-            return GetConfigValueResult_Failure()
+            return GetConfigValueResultFailure()
 
         details = f"Successfully returned the config value for section '{request.category_and_key}'."
         print(details)  # TODO(griptape): Move to Log
-        return GetConfigValueResult_Success(value=find_results)
+        return GetConfigValueResultSuccess(value=find_results)
 
     def on_handle_set_config_value_request(self, request: SetConfigValueRequest) -> ResultPayload:
         if request.category_and_key == "":
             details = "Attempted to set config value but no category or key was specified."
             print(details)  # TODO(griptape): Move to Log
-            return SetConfigValueResult_Failure()
+            return SetConfigValueResultFailure()
 
         self.set_config_value(key=request.category_and_key, value=request.value)
         details = f"Successfully assigned the config value for category.key '{request.category_and_key}'."
         print(details)  # TODO(griptape): Move to Log
-        return SetConfigValueResult_Success()
+        return SetConfigValueResultSuccess()

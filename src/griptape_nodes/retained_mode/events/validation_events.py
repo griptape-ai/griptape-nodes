@@ -1,7 +1,7 @@
 # Validates that the flow they are trying to run has all it's dependencies
 from dataclasses import dataclass
 
-from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload_Failure, ResultPayload_Success
+from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayloadFailure, ResultPayloadSuccess
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
@@ -15,7 +15,7 @@ class ValidateFlowDependenciesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ValidateFlowDependenciesResult_Success(ResultPayload_Success):
+class ValidateFlowDependenciesResultSuccess(ResultPayloadSuccess):
     validation_succeeded: bool
     exceptions: list[Exception]
 
@@ -23,7 +23,7 @@ class ValidateFlowDependenciesResult_Success(ResultPayload_Success):
 # if it doesn't have a dependency we want
 @dataclass
 @PayloadRegistry.register
-class ValidateFlowDependenciesResult_Failure(ResultPayload_Failure):
+class ValidateFlowDependenciesResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -36,7 +36,7 @@ class ValidateNodeDependenciesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ValidateNodeDependenciesResult_Success(ResultPayload_Success):
+class ValidateNodeDependenciesResultSuccess(ResultPayloadSuccess):
     validation_succeeded: bool
     exceptions: list[Exception]
 
@@ -44,5 +44,5 @@ class ValidateNodeDependenciesResult_Success(ResultPayload_Success):
 # if it doesn't have a dependency we want
 @dataclass
 @PayloadRegistry.register
-class ValidateNodeDependenciesResult_Failure(ResultPayload_Failure):
+class ValidateNodeDependenciesResultFailure(ResultPayloadFailure):
     pass
