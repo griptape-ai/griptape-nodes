@@ -43,7 +43,7 @@ class BasePromptDriverNode(BaseDriverNode):
         self.add_parameter(
             Parameter(
                 name="min_p",
-                allowed_types=["float"],
+                input_types=["float"],
                 default_value=0.1,
                 tooltip="Minimum probability for sampling. Lower values will be more random.",
                 ui_options=ParameterUIOptions(
@@ -60,7 +60,7 @@ class BasePromptDriverNode(BaseDriverNode):
         self.add_parameter(
             Parameter(
                 name="top_k",
-                allowed_types=["int"],
+                input_types=["int"],
                 default_value=50,
                 tooltip="Limits the number of tokens considered for each step of the generation. Prevents the model from focusing too narrowly on the top choices.",
             )
@@ -68,7 +68,7 @@ class BasePromptDriverNode(BaseDriverNode):
         self.add_parameter(
             Parameter(
                 name="temperature",
-                allowed_types=["float"],
+                input_types=["float"],
                 default_value=0.1,
                 tooltip="Temperature for sampling",
                 ui_options=ParameterUIOptions(
@@ -85,7 +85,7 @@ class BasePromptDriverNode(BaseDriverNode):
         self.add_parameter(
             Parameter(
                 name="seed",
-                allowed_types=["int"],
+                input_types=["int"],
                 default_value=10342349342,
                 tooltip="Seed for random number generation",
             )
@@ -93,7 +93,7 @@ class BasePromptDriverNode(BaseDriverNode):
         self.add_parameter(
             Parameter(
                 name="use_native_tools",
-                allowed_types=["bool"],
+                input_types=["bool"],
                 default_value=True,
                 tooltip="Use native tools for the LLM.",
             )
@@ -101,7 +101,7 @@ class BasePromptDriverNode(BaseDriverNode):
         self.add_parameter(
             Parameter(
                 name="max_tokens",
-                allowed_types=["int"],
+                input_types=["int"],
                 default_value=-1,
                 tooltip="Maximum tokens to generate. If <=0, it will use the default based on the tokenizer.",
             )
@@ -109,7 +109,7 @@ class BasePromptDriverNode(BaseDriverNode):
         self.add_parameter(
             Parameter(
                 name="stream",
-                allowed_types=["bool"],
+                input_types=["bool"],
                 default_value=True,
                 tooltip="",
             )
