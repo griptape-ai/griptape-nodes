@@ -358,8 +358,8 @@ class ControlNode(BaseNode):
         control_parameter_in = ControlParameterInput()
         control_parameter_out = ControlParameterOutput()
 
-        self.parameters.append(control_parameter_in)
-        self.parameters.append(control_parameter_out)
+        self.add_parameter(control_parameter_in)
+        self.add_parameter(control_parameter_out)
 
     def get_next_control_output(self) -> Parameter | None:
         for param in self.parameters:
