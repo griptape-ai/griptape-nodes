@@ -501,30 +501,105 @@ class Parameter(BaseNodeElement):
 
 
 # Convenience classes to reduce boilerplate in node definitions
-@dataclass(kw_only=True)
 class ControlParameter(Parameter, ABC):
-    _type: str | None = ParameterTypeBuiltin.CONTROL_TYPE.value
-    default_value: Any = None
-    settable: bool = False
+    def __init__(  # noqa: PLR0913
+        self,
+        name: str,
+        tooltip: str,
+        input_types: list[str] | None = None,
+        output_type: str | None = None,
+        tooltip_as_input: str | None = None,
+        tooltip_as_property: str | None = None,
+        tooltip_as_output: str | None = None,
+        allowed_modes: set[ParameterMode] | None = None,
+        ui_options: ParameterUIOptions | None = None,
+        converters: list[Callable[[Any], Any]] | None = None,
+        validators: list[Callable[[Parameter, Any], None]] | None = None,
+        *,
+        user_defined: bool = False,
+    ):
+        # Call parent with a few explicit tweaks.
+        super().__init__(
+            type=ParameterTypeBuiltin.CONTROL_TYPE.value,
+            default_value=None,
+            settable=False,
+            name=name,
+            tooltip=tooltip,
+            input_types=input_types,
+            output_type=output_type,
+            tooltip_as_input=tooltip_as_input,
+            tooltip_as_property=tooltip_as_property,
+            tooltip_as_output=tooltip_as_output,
+            allowed_modes=allowed_modes,
+            ui_options=ui_options,
+            converters=converters,
+            validators=validators,
+            user_defined=user_defined,
+        )
 
 
-@dataclass(kw_only=True)
 class ControlParameterInput(ControlParameter):
-    name: str = "exec_in"
-    tooltip: str = "Connection from previous node in the execution chain"
-    allowed_modes: set = field(
-        default_factory=lambda: {
-            ParameterMode.INPUT,
-        }
-    )
+    def __init__(  # noqa: PLR0913
+        self,
+        tooltip: str = "Connection from previous node in the execution chain",
+        name: str = "exec_in",
+        tooltip_as_input: str | None = None,
+        tooltip_as_property: str | None = None,
+        tooltip_as_output: str | None = None,
+        ui_options: ParameterUIOptions | None = None,
+        converters: list[Callable[[Any], Any]] | None = None,
+        validators: list[Callable[[Parameter, Any], None]] | None = None,
+        *,
+        user_defined: bool = False,
+    ):
+        allowed_modes = {ParameterMode.INPUT}
+        input_types = [ParameterTypeBuiltin.CONTROL_TYPE.value]
+
+        # Call parent with a few explicit tweaks.
+        super().__init__(
+            name=name,
+            tooltip=tooltip,
+            input_types=input_types,
+            output_type=None,
+            tooltip_as_input=tooltip_as_input,
+            tooltip_as_property=tooltip_as_property,
+            tooltip_as_output=tooltip_as_output,
+            allowed_modes=allowed_modes,
+            ui_options=ui_options,
+            converters=converters,
+            validators=validators,
+            user_defined=user_defined,
+        )
 
 
-@dataclass
 class ControlParameterOutput(ControlParameter):
-    name: str = "exec_out"
-    tooltip: str = "Connection to the next node in the execution chain"
-    allowed_modes: set = field(
-        default_factory=lambda: {
-            ParameterMode.OUTPUT,
-        }
-    )
+    def __init__(  # noqa: PLR0913
+        self,
+        tooltip: str = "Connection to the next node in the execution chain",
+        name: str = "exec_out",
+        tooltip_as_input: str | None = None,
+        tooltip_as_property: str | None = None,
+        tooltip_as_output: str | None = None,
+        ui_options: ParameterUIOptions | None = None,
+        converters: list[Callable[[Any], Any]] | None = None,
+        validators: list[Callable[[Parameter, Any], None]] | None = None,
+        *,
+        user_defined: bool = False,
+    ):
+        allowed_modes = {ParameterMode.OUTPUT}
+
+        # Call parent with a few explicit tweaks.
+        super().__init__(
+            name=name,
+            tooltip=tooltip,
+            input_types=None,
+            output_type=ParameterTypeBuiltin.CONTROL_TYPE.value,
+            tooltip_as_input=tooltip_as_input,
+            tooltip_as_property=tooltip_as_property,
+            tooltip_as_output=tooltip_as_output,
+            allowed_modes=allowed_modes,
+            ui_options=ui_options,
+            converters=converters,
+            validators=validators,
+            user_defined=user_defined,
+        )

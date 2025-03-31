@@ -71,7 +71,7 @@ class Connections:
             connections_from_node = connections.get(node.name, {})
             connection_id = connections_from_node.get(parameter.name, [])
             return len(connection_id) <= 0
-        if not source and parameter.is_incoming_type_allowed(incoming_type=ParameterTypeBuiltin.CONTROL_TYPE.value):
+        if not source and not parameter.is_incoming_type_allowed(incoming_type=ParameterTypeBuiltin.CONTROL_TYPE.value):
             connections = self.incoming_index
             connections_from_node = connections.get(node.name, {})
             connection_id = connections_from_node.get(parameter.name, [])
@@ -156,7 +156,7 @@ class Connections:
             # There are no outgoing connections from this node.
             return
         for parameter in node.parameters:
-            # If it is a data connection and has an OUTPUT type
+            # If it is a data connection and has an OUTPUT mode
             if (
                 ParameterMode.OUTPUT in parameter.allowed_modes
                 and not parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value)
