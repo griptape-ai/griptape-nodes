@@ -1,5 +1,6 @@
 from griptape_nodes.exe_types.core_types import Parameter, ParameterUIOptions, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.retained_mode.griptape_nodes import logger
 
 
 class LoadImageNode(DataNode):
@@ -21,5 +22,7 @@ class LoadImageNode(DataNode):
         # Add input parameter for model selection
 
     def process(self) -> None:
-        print("We need to do something with this image node..")
+        # TODO(griptape): Implement image loading logic
+        debug_msg = "We need to do something with this image node.."
+        logger.debug(debug_msg)
         self.parameter_output_values["image"] = self.parameter_values["image"]
