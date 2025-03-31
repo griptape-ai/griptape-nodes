@@ -59,14 +59,6 @@
         "description": "Utility nodes like save, etc., etc.",
         "icon": "Cog"
       }
-    },
-    {
-      "Comfy": {
-        "color": "border-gray-500",
-        "title": "ComfyNodes",
-        "description": "Run Comfy Workflwos",
-        "icon": "Cog"
-      }
     }
   ],
   "nodes": [
@@ -260,7 +252,7 @@
       }
     },
     {
-      "class_name": "FileManagerToolNode",
+      "class_name": "PromptSummaryToolNode",
       "file_path": "griptape_nodes_library/tools/prompt_summary_tool.py",
       "metadata": {
         "category": "Tools",
@@ -377,7 +369,7 @@
       }
     },
     {
-      "class_name": "LoadImageNode",
+      "class_name": "LoadTextNode",
       "file_path": "griptape_nodes_library/load_text.py",
       "metadata": {
         "category": "Utility",
@@ -422,7 +414,7 @@
       }
     },
     {
-      "class_name": "SimpleAgentNode",
+      "class_name": "StartFlowNode",
       "file_path": "griptape_nodes_library/start_flow.py",
       "metadata": {
         "category": "Utility",
@@ -437,42 +429,6 @@
         "category": "Utility",
         "description": "Creates and manages lists of string values",
         "display_name": "String List"
-      }
-    },
-    {
-      "class_name": "ComfyUIImageGenerationNode",
-      "file_path": "griptape_nodes_library/comfy_nodes.py",
-      "metadata": {
-        "category": "Comfy",
-        "description": "Runs ComfyUI workflow to generate images from prompts",
-        "display_name": "ComfyUI Image Generation"
-      }
-    },
-    {
-      "class_name": "ComfyUIFluxWorkflowNode",
-      "file_path": "griptape_nodes_library/comfy_nodes.py",
-      "metadata": {
-        "category": "Comfy",
-        "description": "Executes ComfyUI Flux workflow for image generation",
-        "display_name": "ComfyUI Flux Workflow"
-      }
-    },
-    {
-      "class_name": "ComfyUIPhotographerComparison",
-      "file_path": "griptape_nodes_library/comfy_nodes.py",
-      "metadata": {
-        "category": "Comfy",
-        "description": "Compares different photographer styles using ComfyUI",
-        "display_name": "ComfyUI Photographer Comparison"
-      }
-    },
-    {
-      "class_name": "LoadFileFromDataLakeNode",
-      "file_path": "griptape_nodes_library/comfy_nodes.py",
-      "metadata": {
-        "category": "Comfy",
-        "description": "Loads assets from cloud storage buckets",
-        "display_name": "Load From Data Lake"
       }
     }
   ]

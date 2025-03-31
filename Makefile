@@ -5,8 +5,8 @@ version/get: ## Set version.
 .PHONY: version/set
 version/set: ## Set version.
 	@uvx --from=toml-cli toml set --toml-path=pyproject.toml project.version ${v}
-	@git add pyproject.toml
 	@uv lock
+	@git add pyproject.toml uv.lock
 	@git commit -m "chore: bump v$$(make version/get)"
 
 .PHONY: publish

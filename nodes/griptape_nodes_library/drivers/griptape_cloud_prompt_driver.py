@@ -73,8 +73,3 @@ class GriptapeCloudPromptDriverNode(BasePromptDriverNode):
             return exceptions
 
         return exceptions if exceptions else None
-
-
-if __name__ == "__main__":
-    drv = GriptapeCloudPromptDriverNode(name="simpleClear")
-    drv.process()

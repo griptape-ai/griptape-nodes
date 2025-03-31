@@ -68,8 +68,3 @@ class BaseImageDriverNode(BaseDriverNode):
             exceptions.append(KeyError(msg))
             return exceptions
         return exceptions if exceptions else None
-
-
-if __name__ == "__main__":
-    drv = BaseImageDriverNode(name="tito")
-    drv.process()

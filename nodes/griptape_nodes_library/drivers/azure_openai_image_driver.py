@@ -142,30 +142,3 @@ class AzureOpenAiChatPromptDriverNode(BaseImageDriverNode):
         }
 
         self.parameter_output_values["driver"] = AzureOpenAiImageGenerationDriver(**kwargs)
-
-
-if __name__ == "__main__":
-    from griptape.structures.agent import Agent
-    from griptape.tasks import PromptImageGenerationTask
-
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-    def getenv(service: str, value: str) -> str:
-        config = GriptapeNodes.ConfigManager()
-        api_key = config.get_config_value(f"env.{service}.{value}")
-        return api_key
-
-    kwargs: dict = {
-        "model": DEFAULT_MODEL,
-        "api_key": getenv(service=SERVICE, value=API_KEY_ENV_VAR),
-        "azure_endpoint": getenv(service=SERVICE, value=AZURE_ENDPOINT_ENV_VAR),
-        "azure_deployment": DEFAULT_MODEL,
-        "image_size": DEFAULT_SIZE,
-    }
-
-    driver = AzureOpenAiImageGenerationDriver(**kwargs)
-    agent = Agent(stream=True)
-    agent.add_task(PromptImageGenerationTask(image_generation_driver=driver))
-
-    # Run the agent
-    result = agent.run("soup")

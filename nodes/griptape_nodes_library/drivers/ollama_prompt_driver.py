@@ -37,8 +37,3 @@ class OllamaPromptDriverNode(BasePromptDriverNode):
 
         # Set the output
         self.parameter_output_values["driver"] = driver
-
-
-if __name__ == "__main__":
-    drv = OllamaPromptDriverNode(name="simpleClear")
-    drv.process()

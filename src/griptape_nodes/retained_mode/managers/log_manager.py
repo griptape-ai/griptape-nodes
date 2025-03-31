@@ -25,6 +25,12 @@ class LogManager:
             root_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True))
             root_logger.addHandler(EventLogHandler())
 
-    def get_logger(self) -> logging.Logger:
-        logger = logging.getLogger()
+        local_logger = logging.getLogger("griptape_nodes_engine")
+        local_logger.setLevel(logging.INFO)
+
+        if not local_logger.hasHandlers():
+            local_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True))
+
+    def get_logger(self, *, event_handler: bool = True) -> logging.Logger:
+        logger = logging.getLogger() if event_handler else logging.getLogger("griptape_nodes_engine")
         return logger
