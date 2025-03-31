@@ -200,6 +200,7 @@ class ExecuteNodeState(State):
                             payload=ParameterValueUpdateEvent(
                                 node_name=current_node.name,
                                 parameter_name=parameter.name,
+                                # This is because type is the type currently IN the parameter.
                                 data_type=data_type,
                                 value=TypeValidator.safe_serialize(parameter_value),
                             )
