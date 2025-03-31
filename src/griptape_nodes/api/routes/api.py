@@ -6,12 +6,8 @@ from griptape_nodes.retained_mode.events.base_events import (
     deserialize_event,
 )
 
-request_counter = 0
-
 
 def process_event(data: Any) -> int:
-    global request_counter  # noqa: PLW0603
-
     try:
         data["request"]
     except KeyError:
@@ -35,11 +31,10 @@ def process_event(data: Any) -> int:
         raise Exception(msg) from None
 
     # Add a request_id to the payload
-    request_id = request_counter
+    request_id = request_event.request.request_id
     request_event.request.request_id = request_id
 
     # increment the request counter
-    request_counter += 1
     # Add the event to the queue
     event_queue.put(request_event)
 
