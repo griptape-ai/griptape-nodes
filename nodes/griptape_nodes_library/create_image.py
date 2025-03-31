@@ -4,7 +4,7 @@ from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes_library.utils.env_utils import getenv
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
@@ -122,16 +122,18 @@ class CreateImageNode(ControlNode):
         out_file = params.get("output_file", None)
         if out_file:
             kwargs["output_file"] = out_file
-            details = rf"\Generating '{out_file}'"
-            print(details)
+            details = f"Image saved to {out_file}"
+            logger().info(details)
         else:
             out_dir = params.get("output_dir", None)
             if out_dir:
                 kwargs["output_dir"] = out_dir
-                print(f'\nLook for image in "{out_dir}"')
+                out_dir_msg = f'\nLook for image in "{out_dir}"'
+                logger().info(out_dir_msg)
             else:
                 kwargs["output_dir"] = images_dir
-                print(f'\nLook for image in "{images_dir}"')
+                images_dir_msg = f'\nLook for image in "{images_dir}"'
+                logger().info(images_dir_msg)
 
         # Add the actual image gen *task
         agent.add_task(PromptImageGenerationTask(**kwargs))

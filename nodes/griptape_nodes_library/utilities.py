@@ -14,6 +14,8 @@ import torch
 from jinja2 import Template
 from PIL import Image, ImageOps, ImageSequence
 
+from griptape_nodes.retained_mode.griptape_nodes import logger
+
 
 def to_pascal_case(string) -> str:
     # First, replace any non-word character with a space
@@ -64,7 +66,8 @@ def get_models(engine, base_url, port) -> list[str]:
         else:  # lmstudio
             models = [model["id"] for model in response.json().get("data", [])]
     except Exception as e:
-        print(f"Failed to fetch models from {engine.capitalize()}: {e}")
+        error_msg = f"Failed to fetch models from {engine.capitalize()}: {e}"
+        logger().error(error_msg)
         return []
     else:
         return models
@@ -137,7 +140,8 @@ def convert_tensor_batch_to_base_64(image_batch) -> list[str] | None:
             base64_image = base64.b64encode(buffer.getvalue()).decode("utf-8")
             base64_images.append(base64_image)
 
-        print(f"Converted {len(base64_images)} images to base64")
+        success_msg = f"Converted {len(base64_images)} images to base64"
+        logger().info(success_msg)
         return base64_images
     return None
 

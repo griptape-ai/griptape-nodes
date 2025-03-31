@@ -1,7 +1,7 @@
 import anthropic
 from griptape.drivers.prompt.anthropic import AnthropicPromptDriver
-from rich import print
 
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
 from griptape_nodes_library.utils.env_utils import getenv
 
@@ -56,9 +56,9 @@ class AnthropicPromptDriverNode(BasePromptDriverNode):
         if max_tokens is not None and max_tokens > 0:
             kwargs["max_tokens"] = max_tokens
 
-        print("\n\nANTHROPIC PROMPT DRIVER:")
-        print(kwargs)
-        print("\n\n")
+        # Debug output
+        debug_msg = "\n\nANTHROPIC PROMPT DRIVER:\n" + str(kwargs) + "\n\n"
+        logger().debug(debug_msg)
 
         self.parameter_output_values["driver"] = AnthropicPromptDriver(**kwargs)
 
