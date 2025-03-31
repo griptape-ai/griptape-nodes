@@ -122,7 +122,8 @@ class CreateImageNode(ControlNode):
         out_file = params.get("output_file", None)
         if out_file:
             kwargs["output_file"] = out_file
-            print(rf'\Generating "{out_file}"')
+            details = rf"\Generating '{out_file}'"
+            print(details)
         else:
             out_dir = params.get("output_dir", None)
             if out_dir:

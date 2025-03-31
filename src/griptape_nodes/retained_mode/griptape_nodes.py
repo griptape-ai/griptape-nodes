@@ -226,6 +226,16 @@ class SingletonMeta(type):
         return cls._instances[cls]
 
 
+# This is a convenience function for node authors to just write "logger().info()" instead of having to write GriptapeNodes.get_logger().
+def logger() -> logging.Logger:
+    """Get the GriptapeNodes logger instance.
+
+    Returns:
+        logging.Logger: The configured logger instance
+    """
+    return GriptapeNodes.get_logger()
+
+
 class GriptapeNodes(metaclass=SingletonMeta):
     def __init__(self) -> None:
         # Initialize only if our managers haven't been created yet
