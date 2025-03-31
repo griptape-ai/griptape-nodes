@@ -6,6 +6,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.retained_mode.griptape_nodes import logger
 
 
 class SaveTextNode(ControlNode):
@@ -43,7 +44,8 @@ class SaveTextNode(ControlNode):
         try:
             with Path(full_output_file).open("w") as f:
                 f.write(text)
-            print(f"Saved file: {full_output_file}")
+            success_msg = f"Saved file: {full_output_file}"
+            logger.info(success_msg)
 
             # Set output values
             self.parameter_output_values["output_path"] = full_output_file

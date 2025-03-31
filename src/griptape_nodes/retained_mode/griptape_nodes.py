@@ -3288,3 +3288,11 @@ class LibraryManager:
                         node_libraries_referenced=script["node_libraries_referenced"],
                     )
                     GriptapeNodes().handle_request(script_register_request)
+
+
+def __getattr__(name) -> logging.Logger:
+    """Convenience function so that node authors only need to write 'logger.info()'."""
+    if name == "logger":
+        return GriptapeNodes.get_logger()
+    msg = f"module '{__name__}' has no attribute '{name}'"
+    raise AttributeError(msg)
