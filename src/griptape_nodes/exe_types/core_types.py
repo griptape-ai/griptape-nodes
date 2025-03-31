@@ -378,6 +378,19 @@ class Parameter(BaseNodeElement):
             self.validators = validators
 
         # Use the property setters for special logic
+        # We are allowing users to define, but they do have to define.
+        if type not in globals():
+            msg = f"Provided type of {type} has not been defined."
+            raise TypeError(msg)
+        if output_type not in globals():
+            msg = f"Provided type of {output_type} has not been defined."
+            raise TypeError(msg)
+        if input_types:
+            for input_type in input_types:
+                if input_type not in globals():
+                    msg = f"Provided type of {input_type} has not been defined."
+                    raise TypeError(msg)
+
         self.type = type
         self.input_types = input_types
         self.output_type = output_type

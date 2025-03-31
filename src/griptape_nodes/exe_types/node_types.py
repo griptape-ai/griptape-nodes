@@ -277,8 +277,15 @@ class BaseNode(ABC):
             parameter=parameter, value=candidate_value, modified_parameters_set=modified_parameters
         )
 
+        type_of = type(final_value).__name__
+        if not parameter.is_incoming_type_allowed(type_of):
+            msg = f"Type of {type_of} cannot be assigned to a parameter."
+            raise TypeError(msg)
+
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
+        # SET THE NEW TYPE TO THE PARAMETER
+        parameter.type = type_of
 
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=modified_parameters)

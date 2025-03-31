@@ -188,12 +188,9 @@ class ExecuteNodeState(State):
                         EventBus.publish_event(app_event)  # pyright: ignore[reportArgumentType]
             if parameter.name in current_node.parameter_values:
                 parameter_value = current_node.get_parameter_value(parameter.name)
-                if isinstance(parameter_value, dict) and "type" in parameter_value:
-                    data_type = parameter_value["type"]
-                else:
-                    data_type = parameter.type
-                    if data_type is None:
-                        data_type = ParameterTypeBuiltin.NONE.value
+                data_type = parameter.type
+                if data_type is None:
+                    data_type = ParameterTypeBuiltin.NONE.value
                 EventBus.publish_event(
                     ExecutionGriptapeNodeEvent(
                         wrapped_event=ExecutionEvent(

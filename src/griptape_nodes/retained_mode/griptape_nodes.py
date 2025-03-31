@@ -1872,7 +1872,7 @@ class NodeManager:
         result = GetParameterDetailsResultSuccess(
             element_id=parameter.element_id,
             type=parameter.type,
-            input_types=parameter.get_all_input_types(),
+            input_types=parameter.input_types,
             output_type=parameter.output_type,
             default_value=parameter.default_value,
             tooltip=parameter.tooltip,
@@ -2043,7 +2043,7 @@ class NodeManager:
         object_created = request.value
         # here we need to see if type_of matches the actual value.
         # Is this value kosher for the types allowed?
-        if not parameter.is_value_allowed(object_created) and not (
+        if not parameter.is_incoming_type_allowed(object_created) and not (
             isinstance(object_created, dict) and "type" in object_created
         ):
             details = f'set_value for "{request.node_name}.{request.parameter_name}" failed.  type "{object_created.__class__.__name__}" not in allowed types:{parameter.input_types}'
