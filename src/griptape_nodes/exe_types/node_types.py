@@ -171,8 +171,8 @@ class BaseNode(ABC):
                 return True
         return False
 
-    # TODO(james): Do i need to flag control/ not control parameters?
     def add_parameter(self, param: Parameter) -> None:
+        """Adds a Parameter to the Node. Control and Data Parameters are all treated equally."""
         if self.does_name_exist(param.name):
             msg = "Cannot have duplicate names on parameters."
             raise ValueError(msg)
