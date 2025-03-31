@@ -45,7 +45,7 @@ cd "$TMP_DIR"
 echo ""
 echo "Installing Griptape Nodes Library..."
 echo ""
-git clone --depth 1 https://github.com/griptape-ai/griptape-nodes.git
+git clone --depth 1 --branch latest https://github.com/griptape-ai/griptape-nodes.git
 
 mkdir -p "$XDG_DATA_HOME/griptape_nodes"
 

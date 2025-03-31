@@ -53,7 +53,7 @@ New-Item -ItemType Directory -Path $TmpDir | Out-Null
 
 Push-Location $TmpDir
 
-git clone --depth 1 https://github.com/griptape-ai/griptape-nodes.git $RepoName
+git clone --depth 1 --branch latest https://github.com/griptape-ai/griptape-nodes.git $RepoName
 
 $DestDir = Join-Path $Env:XDG_DATA_HOME "griptape_nodes"
 if (!(Test-Path $DestDir)) {
