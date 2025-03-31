@@ -537,7 +537,7 @@ class ObjectManager:
         return has_it
 
     def attempt_get_object_by_name(self, name: str) -> Any | None:
-        return self._name_to_objects.get(name)
+        return self._name_to_objects.get(name, None)
 
     def attempt_get_object_by_name_as_type(self, name: str, cast_type: type[T]) -> T | None:
         obj = self.attempt_get_object_by_name(name)
@@ -772,7 +772,7 @@ class FlowManager:
         source_node = None
         try:
             source_node = GriptapeNodes.NodeManager().get_node_by_name(request.source_node_name)
-        except KeyError as err:
+        except ValueError as err:
             details = f'Connection failed: "{request.source_node_name}" does not exist. Error: {err}.'
             GriptapeNodes.get_logger().error(details)
 
@@ -782,7 +782,7 @@ class FlowManager:
         target_node = None
         try:
             target_node = GriptapeNodes.NodeManager().get_node_by_name(request.target_node_name)
-        except KeyError as err:
+        except ValueError as err:
             details = f'Connection failed: "{request.target_node_name}" does not exist. Error: {err}.'
             GriptapeNodes.get_logger().error(details)
             result = CreateConnectionResultFailure()
@@ -952,7 +952,7 @@ class FlowManager:
         source_node = None
         try:
             source_node = GriptapeNodes.NodeManager().get_node_by_name(request.source_node_name)
-        except KeyError as err:
+        except ValueError as err:
             details = f'Connection not deleted "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}". Error: {err}'
             GriptapeNodes.get_logger().error(details)
 
@@ -962,7 +962,7 @@ class FlowManager:
         target_node = None
         try:
             target_node = GriptapeNodes.NodeManager().get_node_by_name(request.target_node_name)
-        except KeyError as err:
+        except ValueError as err:
             details = f'Connection not deleted "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}". Error: {err}'
             GriptapeNodes.get_logger().error(details)
 
@@ -2268,7 +2268,7 @@ class NodeManager:
         # Vet the node
         try:
             node = GriptapeNodes.NodeManager().get_node_by_name(request.node_name)
-        except KeyError as err:
+        except ValueError as err:
             details = f"Attempted to get compatible parameters for node '{request.node_name}', but that node does not exist. Error: {err}."
             GriptapeNodes.get_logger().error(details)
             return GetCompatibleParametersResultFailure()
@@ -2320,7 +2320,7 @@ class NodeManager:
                 # Get node by name
                 try:
                     test_node = GriptapeNodes.NodeManager().get_node_by_name(test_node_name)
-                except KeyError as err:
+                except ValueError as err:
                     details = f"Attempted to get compatible parameters for node '{request.node_name}', and sought to test against {test_node_name}, but that node does not exist. Error: {err}."
                     GriptapeNodes.get_logger().error(details)
                     return GetCompatibleParametersResultFailure()
@@ -2388,7 +2388,7 @@ class NodeManager:
             return ResolveNodeResultFailure(validation_exceptions=[])
         try:
             node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
-        except KeyError:
+        except ValueError:
             details = f'Resolve failure. "{node_name}" does not exist.'
             GriptapeNodes.get_logger().error(details)
 
