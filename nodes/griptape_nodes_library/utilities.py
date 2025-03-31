@@ -67,7 +67,7 @@ def get_models(engine, base_url, port) -> list[str]:
             models = [model["id"] for model in response.json().get("data", [])]
     except Exception as e:
         error_msg = f"Failed to fetch models from {engine.capitalize()}: {e}"
-        logger().error(error_msg)
+        logger.error(error_msg)
         return []
     else:
         return models
@@ -141,7 +141,7 @@ def convert_tensor_batch_to_base_64(image_batch) -> list[str] | None:
             base64_images.append(base64_image)
 
         success_msg = f"Converted {len(base64_images)} images to base64"
-        logger().info(success_msg)
+        logger.info(success_msg)
         return base64_images
     return None
 

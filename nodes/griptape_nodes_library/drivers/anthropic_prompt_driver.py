@@ -58,7 +58,7 @@ class AnthropicPromptDriverNode(BasePromptDriverNode):
 
         # Debug output
         debug_msg = "\n\nANTHROPIC PROMPT DRIVER:\n" + str(kwargs) + "\n\n"
-        logger().debug(debug_msg)
+        logger.debug(debug_msg)
 
         self.parameter_output_values["driver"] = AnthropicPromptDriver(**kwargs)
 

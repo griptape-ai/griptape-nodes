@@ -226,16 +226,6 @@ class SingletonMeta(type):
         return cls._instances[cls]
 
 
-# This is a convenience function for node authors to just write "logger().info()" instead of having to write GriptapeNodes.get_logger().
-def logger() -> logging.Logger:
-    """Get the GriptapeNodes logger instance.
-
-    Returns:
-        logging.Logger: The configured logger instance
-    """
-    return GriptapeNodes.get_logger()
-
-
 class GriptapeNodes(metaclass=SingletonMeta):
     def __init__(self) -> None:
         # Initialize only if our managers haven't been created yet
@@ -3298,3 +3288,11 @@ class LibraryManager:
                         node_libraries_referenced=script["node_libraries_referenced"],
                     )
                     GriptapeNodes().handle_request(script_register_request)
+
+
+def __getattr__(name) -> logging.Logger:
+    """Convenience function so that node authors only need to write 'logger.info()'."""
+    if name == "logger":
+        return GriptapeNodes.get_logger()
+    msg = f"module '{__name__}' has no attribute '{name}'"
+    raise AttributeError(msg)

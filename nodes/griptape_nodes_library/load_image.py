@@ -24,5 +24,5 @@ class LoadImageNode(DataNode):
     def process(self) -> None:
         # TODO(griptape): Implement image loading logic
         debug_msg = "We need to do something with this image node.."
-        logger().debug(debug_msg)
+        logger.debug(debug_msg)
         self.parameter_output_values["image"] = self.parameter_values["image"]

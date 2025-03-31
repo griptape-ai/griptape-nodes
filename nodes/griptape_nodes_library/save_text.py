@@ -45,7 +45,7 @@ class SaveTextNode(ControlNode):
             with Path(full_output_file).open("w") as f:
                 f.write(text)
             success_msg = f"Saved file: {full_output_file}"
-            logger().info(success_msg)
+            logger.info(success_msg)
 
             # Set output values
             self.parameter_output_values["output_path"] = full_output_file

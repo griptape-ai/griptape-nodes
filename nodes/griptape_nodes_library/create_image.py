@@ -123,17 +123,17 @@ class CreateImageNode(ControlNode):
         if out_file:
             kwargs["output_file"] = out_file
             details = f"Image saved to {out_file}"
-            logger().info(details)
+            logger.info(details)
         else:
             out_dir = params.get("output_dir", None)
             if out_dir:
                 kwargs["output_dir"] = out_dir
                 out_dir_msg = f'\nLook for image in "{out_dir}"'
-                logger().info(out_dir_msg)
+                logger.info(out_dir_msg)
             else:
                 kwargs["output_dir"] = images_dir
                 images_dir_msg = f'\nLook for image in "{images_dir}"'
-                logger().info(images_dir_msg)
+                logger.info(images_dir_msg)
 
         # Add the actual image gen *task
         agent.add_task(PromptImageGenerationTask(**kwargs))
