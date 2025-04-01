@@ -1,4 +1,8 @@
-# /// griptape-nodes-scene-metadata
+# /// script
+# dependencies = [
+#    "griptape",
+#    "langchain",
+# ]
 # {
 #   "name": "coloring book",
 #   "schema_version": "0.1.0",

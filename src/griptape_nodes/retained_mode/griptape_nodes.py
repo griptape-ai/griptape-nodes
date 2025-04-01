@@ -10,6 +10,7 @@ from pathlib import Path
 from re import Pattern
 from typing import Any, ClassVar, TextIO, TypeVar, cast
 
+import tomlkit
 from dotenv import load_dotenv
 from xdg_base_dirs import xdg_data_home
 
@@ -2488,7 +2489,7 @@ class NodeManager:
 
 
 class ScriptManager:
-    SCRIPT_METADATA_HEADER: ClassVar[str] = "griptape-nodes-scene-metadata"
+    SCRIPT_METADATA_HEADER: ClassVar[str] = "tool.griptape-nodes"
 
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(
@@ -2654,7 +2655,7 @@ class ScriptManager:
 
         # Find the metadata block.
         regex = r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
-        block_name = ScriptManager.SCRIPT_METADATA_HEADER
+        block_name = "script"
         matches = list(filter(lambda m: m.group("type") == block_name, re.finditer(regex, script_content)))
         if len(matches) != 1:
             details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed as it had {len(matches)} sections titled '{block_name}', and we expect exactly 1 such section."
@@ -2662,19 +2663,36 @@ class ScriptManager:
             return LoadScriptMetadataResultFailure()
 
         # Now attempt to parse out the metadata section, stripped of comment prefixes.
-        metadata_content = "".join(
+        metadata_content_toml = "".join(
             line[2:] if line.startswith("# ") else line[1:]
             for line in matches[0].group("content").splitlines(keepends=True)
         )
 
         try:
+            toml_doc = tomlkit.parse(metadata_content_toml)
+        except Exception as err:
+            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed because the metadata was not valid TOML: {err}"
+            GriptapeNodes.get_logger().error(details)
+            return LoadScriptMetadataResultFailure()
+
+        try:
+            griptape_nodes_tool_section = toml_doc["tool"]["griptape-nodes"]
+        except Exception as err:
+            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed because the '[tools.griptape-nodes]' section could not be found: {err}"
+            GriptapeNodes.get_logger().error(details)
+            return LoadScriptMetadataResultFailure()
+
+        try:
             # Is it kosher?
-            script_metadata = ScriptMetadata.model_validate_json(metadata_content)
+            script_metadata = ScriptMetadata.model_validate(griptape_nodes_tool_section)
         except Exception as err:
             # No, it is haram.
             details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed because the metadata did not match the requisite schema with error: {err}"
             GriptapeNodes.get_logger().error(details)
             return LoadScriptMetadataResultFailure()
+
+        # DO NOT CHECKIN
+        self.on_save_scene_request(request=SaveSceneRequest(file_name="arglebargle.py"))
 
         return LoadScriptMetadataResultSuccess(metadata=script_metadata)
 
@@ -2768,6 +2786,22 @@ class ScriptManager:
                     engine_version_created_with=engine_version,
                     node_libraries_referenced=list(node_libraries_used),
                 )
+
+                try:
+                    toml_doc = tomlkit.document()
+                    toml_doc.add("dependencies", tomlkit.item([]))
+                    griptape_tool_table = tomlkit.table()
+                    metadata_dict = script_metadata.model_dump()
+                    item = tomlkit.item(metadata_dict)
+                    griptape_tool_table.add()
+                    for key, value in metadata_dict.items():
+                        griptape_tool_table.add(key=key, value=value)
+                    toml_doc.add(griptape_tool_table)
+                except Exception as err:
+                    print("BLAH!")
+
+                toml_lines = toml_doc.as_string()
+
                 metadata_json = script_metadata.model_dump_json(indent=2)
                 # Format the metadata block with comment markers for each line
                 json_lines = metadata_json.split("\n")
