@@ -203,7 +203,7 @@ def sse_listener() -> None:
 
                         else:
                             try:
-                                process_sse(socket, json.loads(data))
+                                process_sse(json.loads(data))
                             except Exception:
                                 logger.exception("Error processing event, skipping.")
 
@@ -212,7 +212,7 @@ def sse_listener() -> None:
             sleep(2)
             init = False
 
-def process_sse(socket: NodesApiSocketManager, event: dict) -> None:
+def process_sse(event: dict) -> None:
     try:
         if event.get("request_type") == "Heartbeat":
             session_id = GriptapeNodes.get_session_id()
