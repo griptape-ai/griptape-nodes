@@ -4,7 +4,6 @@ print("prompt an image!")
 # {
 #   "name": "prompt an image!",
 #   "schema_version": "0.1.0",
-#   "file_path": "prompt_an_image.py",
 #   "engine_version_created_with": "0.3.2",
 #   "node_libraries_referenced": [
 #     [

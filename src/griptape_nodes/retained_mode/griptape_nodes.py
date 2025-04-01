@@ -2587,7 +2587,7 @@ class ScriptManager:
             GriptapeNodes.get_logger().error(e)
             return RunScriptFromRegistryResultFailure()
         # get file_path from script
-        relative_file_path = script.metadata.file_path
+        relative_file_path = script.file_path
         # run file
         success, details = self.run_script(relative_file_path=relative_file_path)
 
@@ -2600,7 +2600,7 @@ class ScriptManager:
 
     def on_register_script_request(self, request: RegisterScriptRequest) -> ResultPayload:
         try:
-            script = ScriptRegistry.generate_new_script(request.metadata)
+            script = ScriptRegistry.generate_new_script(metadata=request.metadata, file_path=request.file_name)
         except Exception as e:
             details = f"Failed to register script with name '{request.metadata.name}'. Error: {e}"
             GriptapeNodes.get_logger().error(details)
@@ -2631,11 +2631,11 @@ class ScriptManager:
             GriptapeNodes.get_logger().error(details)
             return DeleteScriptResultFailure()
         # delete the actual file
-        full_path = config_manager.workspace_path.joinpath(script.metadata.file_path)
+        full_path = config_manager.workspace_path.joinpath(script.file_path)
         try:
             full_path.unlink()
         except Exception as e:
-            details = f"Failed to delete script file with path '{script.metadata.file_path}'. Exception: {e}"
+            details = f"Failed to delete script file with path '{script.file_path}'. Exception: {e}"
             GriptapeNodes.get_logger().error(details)
             return DeleteScriptResultFailure()
         return DeleteScriptResultSuccess()
@@ -2765,7 +2765,6 @@ class ScriptManager:
                 script_metadata = ScriptMetadata(
                     name=str(file_name),
                     schema_version=ScriptMetadata.LATEST_SCHEMA_VERSION,
-                    file_path=relative_file_path,
                     engine_version_created_with=engine_version,
                     node_libraries_referenced=list(node_libraries_used),
                 )
@@ -2792,7 +2791,7 @@ class ScriptManager:
         registered_scripts = ScriptRegistry.list_scripts()
         if file_name not in registered_scripts:
             config_manager.save_user_script_json(relative_file_path)
-            ScriptRegistry.generate_new_script(script_metadata)
+            ScriptRegistry.generate_new_script(metadata=script_metadata, file_path=relative_file_path)
         return SaveSceneResultSuccess(file_path=str(file_path))
 
 
@@ -3361,10 +3360,11 @@ class LibraryManager:
 
                 # Adjust the file path depending on if we're internal or not.
                 script_metadata = successful_metadata_result.metadata
-                script_metadata.file_path = str(final_file_path)
 
                 # Register it as a success.
-                script_register_request = RegisterScriptRequest(metadata=script_metadata)
+                script_register_request = RegisterScriptRequest(
+                    metadata=script_metadata, file_name=str(final_file_path)
+                )
                 register_result = GriptapeNodes().handle_request(script_register_request)
 
                 details = f"'{script_metadata.name}' ({final_file_path!s})"

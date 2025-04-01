@@ -67,6 +67,7 @@ class RunScriptFromRegistryResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class RegisterScriptRequest(RequestPayload):
     metadata: ScriptMetadata
+    file_name: str
 
 
 @dataclass

@@ -17,7 +17,6 @@ class ScriptMetadata(BaseModel):
 
     name: str
     schema_version: str
-    file_path: str
     engine_version_created_with: str
     node_libraries_referenced: list[LibraryNameAndVersion]
     description: str | None = None
@@ -33,12 +32,12 @@ class ScriptRegistry(SingletonMixin):
 
     # Create a new script with everything we'd need
     @classmethod
-    def generate_new_script(cls, metadata: ScriptMetadata) -> Script:
+    def generate_new_script(cls, file_path: str, metadata: ScriptMetadata) -> Script:
         instance = cls()
         if metadata.name in instance._scripts:
             msg = f"Script with name {metadata.name} already registered."
             raise KeyError(msg)
-        script = Script(registry_key=instance._registry_key, metadata=metadata)
+        script = Script(registry_key=instance._registry_key, file_path=file_path, metadata=metadata)
         instance._scripts[metadata.name] = script
         return script
 
@@ -77,16 +76,18 @@ class Script:
     """A script card to be ran."""
 
     metadata: ScriptMetadata
+    file_path: str
 
-    def __init__(self, registry_key: ScriptRegistry._RegistryKey, metadata: ScriptMetadata) -> None:
+    def __init__(self, registry_key: ScriptRegistry._RegistryKey, metadata: ScriptMetadata, file_path: str) -> None:
         if not isinstance(registry_key, ScriptRegistry._RegistryKey):
             msg = "Scripts can only be created through ScriptRegistry"
             raise TypeError(msg)
 
         self.metadata = metadata
+        self.file_path = file_path
 
         # Get the absolute file path.
-        complete_path = ScriptRegistry.get_complete_file_path(relative_file_path=metadata.file_path)
+        complete_path = ScriptRegistry.get_complete_file_path(relative_file_path=file_path)
         if not Path(complete_path).is_file():
             msg = f"File path '{complete_path}' does not exist."
             raise ValueError(msg)
@@ -95,7 +96,7 @@ class Script:
         # TODO(griptape): either convert the Pydantic schema to a dict or use it directly.
         return {
             "name": self.metadata.name,
-            "file_path": self.metadata.file_path,
+            "file_path": self.file_path,
             "description": self.metadata.description,
             "image": self.metadata.image,
             "engine_version_created_with": self.metadata.engine_version_created_with,

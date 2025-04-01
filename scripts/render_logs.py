@@ -4,7 +4,6 @@ print("render logs!")
 # {
 #   "name": "render logs!",
 #   "schema_version": "0.1.0",
-#   "file_path": "render_logs.py",
 #   "engine_version_created_with": "0.3.2",
 #   "node_libraries_referenced": [
 #     [
