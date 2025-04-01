@@ -28,7 +28,7 @@ class CreateImageNode(ControlNode):
             Parameter(
                 name="agent",
                 type="Agent",
-                input_types=["Agent, dict"],
+                input_types=["Agent", "dict"],
                 output_type="Agent",
                 tooltip="None",
                 default_value=None,
