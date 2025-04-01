@@ -225,9 +225,11 @@ class RetainedMode:
         cls,
         node_name: str,
         parameter_name: str,
-        allowed_types: list[str],
         default_value: Any | None,
         tooltip: str,
+        type: str | None = None,  # noqa: A002
+        input_types: list[str] | None = None,
+        output_type: str | None = None,
         edit: bool = False,  # noqa: FBT001, FBT002
         tooltip_as_input: str | None = None,
         tooltip_as_property: str | None = None,
@@ -242,9 +244,11 @@ class RetainedMode:
             request = AlterParameterDetailsRequest(
                 parameter_name=parameter_name,
                 node_name=node_name,
-                allowed_types=allowed_types,
                 default_value=default_value,
                 tooltip=tooltip,
+                type=type,
+                input_types=input_types,
+                output_type=output_type,
                 tooltip_as_input=tooltip_as_input,
                 tooltip_as_property=tooltip_as_property,
                 tooltip_as_output=tooltip_as_output,
@@ -257,9 +261,11 @@ class RetainedMode:
             request = AddParameterToNodeRequest(
                 parameter_name=parameter_name,
                 node_name=node_name,
-                allowed_types=allowed_types,
                 default_value=default_value,
                 tooltip=tooltip,
+                type=type,
+                input_types=input_types,
+                output_type=output_type,
                 tooltip_as_input=tooltip_as_input,
                 tooltip_as_property=tooltip_as_property,
                 tooltip_as_output=tooltip_as_output,
