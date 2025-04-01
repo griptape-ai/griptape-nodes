@@ -2676,7 +2676,7 @@ class ScriptManager:
             return LoadScriptMetadataResultFailure()
 
         try:
-            griptape_nodes_tool_section = toml_doc["tool"]["griptape-nodes"]
+            griptape_nodes_tool_section = toml_doc["tool"]["griptape-nodes"]  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
         except Exception as err:
             details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed because the '[tools.griptape-nodes]' section could not be found: {err}"
             GriptapeNodes.get_logger().error(details)
@@ -2691,12 +2691,9 @@ class ScriptManager:
             GriptapeNodes.get_logger().error(details)
             return LoadScriptMetadataResultFailure()
 
-        # DO NOT CHECKIN
-        self.on_save_scene_request(request=SaveSceneRequest(file_name="arglebargle.py"))
-
         return LoadScriptMetadataResultSuccess(metadata=script_metadata)
 
-    def on_save_scene_request(self, request: SaveSceneRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915
+    def on_save_scene_request(self, request: SaveSceneRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (need lots of branches to cover negative cases)
         obj_manager = GriptapeNodes.get_instance()._object_manager
         node_manager = GriptapeNodes.get_instance()._node_manager
         config_manager = GriptapeNodes.get_instance()._config_manager
@@ -2796,7 +2793,8 @@ class ScriptManager:
                         # Strip out the Nones since TOML doesn't like those.
                         if value is not None:
                             griptape_tool_table.add(key=key, value=value)
-                    toml_doc["tool"] = griptape_tool_table
+                    toml_doc["tool"] = tomlkit.table()
+                    toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
                 except Exception as err:
                     details = f"Attempted to save scene '{relative_file_path}', but failed to get metadata into TOML format: {err}."
                     GriptapeNodes.get_logger().error(details)
@@ -3391,7 +3389,6 @@ class LibraryManager:
                     GriptapeNodes.get_logger().error(err_str)
                     continue
 
-                # Adjust the file path depending on if we're internal or not.
                 script_metadata = successful_metadata_result.metadata
 
                 # Register it as a success.
