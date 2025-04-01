@@ -30,6 +30,12 @@ echo "Installing uv..."
 echo ""
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
+# Verify uv is on the user's PATH
+if ! command -v uv >/dev/null 2>&1; then
+  echo "Error: 'uv' command not found. Please close and reopen your terminal, and then run the installer again."
+  exit 1
+fi
+
 echo ""
 echo "Installing Griptape Nodes Engine..."
 echo ""
