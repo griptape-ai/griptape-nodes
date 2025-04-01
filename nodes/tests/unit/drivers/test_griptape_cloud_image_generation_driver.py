@@ -10,7 +10,9 @@ class TestGriptapeCloudImageGenerationNode:
         parameters = [
             {
                 "name": parameter.name,
-                "allowed_types": parameter.allowed_types,
+                "input_types": parameter.input_types,
+                "output_type": parameter.output_type,
+                "type": parameter.type,
                 "default_value": parameter.default_value,
                 "tooltip": parameter.tooltip,
             }
@@ -19,44 +21,52 @@ class TestGriptapeCloudImageGenerationNode:
 
         assert parameters == [
             {
-                "allowed_types": [
+                "input_types": [
                     "BaseImageGenerationDriver",
                 ],
+                "output_type": "BaseImageGenerationDriver",
+                "type": "BaseImageGenerationDriver",
                 "default_value": None,
                 "name": "driver",
                 "tooltip": "",
             },
             {
-                "allowed_types": [
-                    "str",
-                ],
+                "input_types": ["str"],
+                "output_type":  "str",
+                "type":  "str",
                 "default_value": "",
                 "name": "quality",
                 "tooltip": "",
             },
             {
-                "allowed_types": [
-                    "str",
-                ],
+                "input_types": ["str"],
+                "output_type":  "str",
+                "type":  "str",
                 "default_value": "",
                 "name": "style",
                 "tooltip": "",
             },
             {
                 "name": "image_generation_model",
-                "allowed_types": ["str"],
+                "input_types": ["str"],
+                "output_type":  "str",
+                "type":  "str",
                 "default_value": "dall-e-3",
                 "tooltip": "Select the model for image generation.",
             },
             {
                 "name": "image_deployment_name",
-                "allowed_types": ["str"],
+                "input_types": ["str"],
+                "output_type":  "str",
+                "type":  "str",
                 "default_value": "dall-e-3",
                 "tooltip": "Enter the deployment name for the image generation model.",
             },
             {
                 "name": "size",
-                "allowed_types": ["str"],
+                "input_types": ["str"],
+                "output_type":  "str",
+                "type":  "str",
                 "default_value": "1024x1024",
                 "tooltip": "Select the size of the generated image.",
             },
