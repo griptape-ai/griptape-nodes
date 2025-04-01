@@ -26,7 +26,7 @@ class NodesApiSocketManager:
     lock: Lock = field(factory=Lock)
 
     def emit(self, *args, **kwargs) -> None:  # noqa: ARG002 # drop-in replacement workaround
-        body = {"type": args[0], "payload": json.loads(args[1])}
+        body = {"type": args[0], "payload": json.loads(args[1]) if len(args) > 1 else {}}
         sent = False
         while not sent:
             try:
@@ -35,6 +35,21 @@ class NodesApiSocketManager:
             except WebSocketException:
                 logger.warning("Error sending event to Nodes API, attempting to reconnect.")
                 self.socket = self._connect()
+
+    def heartbeat(self, *, session_id: str | None, request: dict) -> None:
+        self.emit(
+            "success_result",
+            json.dumps(
+                {
+                    "request": request,
+                    "result": {},
+                    "request_type": "Heartbeat",
+                    "event_type": "EventResultSuccess",
+                    "result_type": "HeartbeatSuccess",
+                    **({"session_id": session_id} if session_id is not None else {}),
+                }
+            ),
+        )
 
     def run(self, *args, **kwargs) -> None:
         pass

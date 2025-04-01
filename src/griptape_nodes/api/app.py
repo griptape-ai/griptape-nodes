@@ -203,14 +203,25 @@ def sse_listener() -> None:
 
                         else:
                             try:
-                                process_event(json.loads(data))
+                                process_sse(json.loads(data))
                             except Exception:
                                 logger.exception("Error processing event, skipping.")
 
         except Exception:
-            logger.warning("Error while listening for events. Retrying in 2 seconds.")
+            logger.exception("Error while listening for events. Retrying in 2 seconds.")
             sleep(2)
             init = False
+
+
+def process_sse(event: dict) -> None:
+    try:
+        if event.get("request_type") == "Heartbeat":
+            session_id = GriptapeNodes.get_session_id()
+            socket.heartbeat(session_id=session_id, request=event)
+        else:
+            process_event(event)
+    except Exception:
+        logger.warning("Error processing event, skipping.")
 
 
 def run_sse_mode() -> None:
