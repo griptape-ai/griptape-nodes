@@ -22,7 +22,7 @@ class Payload(ABC):  # noqa: B024
 
 # Request payload base class with optional request ID
 @dataclass(kw_only=True)
-class RequestPayload(Payload, BaseModel, ABC):
+class RequestPayload(Payload, ABC):
     request_id: int | None = None
 
 
