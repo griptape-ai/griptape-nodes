@@ -34,10 +34,12 @@ class SecretsManager:
         )
 
     def on_handle_get_secret_request(self, request: GetSecretValueRequest) -> ResultPayload:
-        secret_name = request.key
-        secret_value = self.get_secret(secret_name)
+        secret_key = request.key
+        secret_value = self.get_secret(secret_key)
 
         if secret_value is None:
+            details = f"Secret {secret_key} not found: '{secret_key}'"
+            print(details)  # TODO(griptape): Move to Log
             return GetSecretValueResultFailure()
 
         return GetSecretValueResultSuccess(value=secret_value)
@@ -59,9 +61,13 @@ class SecretsManager:
         secret_name = request.key
 
         if not self.env_var_path.exists():
+            details = f"Secret file does not exist: '{self.env_var_path}'"
+            print(details)  # TODO(griptape): Move to Log
             return DeleteSecretValueResultFailure()
 
         if not get_key(self.env_var_path, secret_name):
+            details = f"Secret {secret_name} not found: '{secret_name}'"
+            print(details)  # TODO(griptape): Move to Log
             return DeleteSecretValueResultFailure()
 
         unset_key(self.env_var_path, secret_name)
