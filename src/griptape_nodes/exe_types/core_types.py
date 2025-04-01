@@ -30,10 +30,6 @@ class ParameterTypeBuiltin(Enum):
     CONTROL_TYPE = "parametercontroltype"
 
 
-class ParameterControlType:
-    pass
-
-
 class ParameterType:
     _builtin_aliases = {
         "str": ParameterTypeBuiltin.STR,
