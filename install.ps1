@@ -37,6 +37,13 @@ try {
     Write-Host "Failed to install uv with the default method. You may need to install it manually."
 }
 
+# Verify uv is on the user's PATH
+if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+    Write-Host "Error: Griptape Nodes dependency 'uv' was installed, but requires the terminal to be restarted to be run."
+    Write-Host "Please close this terminal and open a new one, then run the install command you performed earlier."
+    return
+}
+
 Write-Host "`nInstalling Griptape Nodes Engine...`n"
 uv tool install --force --python python3.13 --from "git+https://github.com/griptape-ai/griptape-nodes.git@latest" griptape_nodes
 
