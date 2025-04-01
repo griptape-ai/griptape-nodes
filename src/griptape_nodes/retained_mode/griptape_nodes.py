@@ -217,8 +217,8 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.log_manager import LogManager
 from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
-from griptape_nodes.retained_mode.managers.settings import ScriptSettingsDetail
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+from griptape_nodes.retained_mode.managers.settings import ScriptSettingsDetail
 
 load_dotenv()
 
