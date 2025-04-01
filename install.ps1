@@ -3,34 +3,50 @@ Param(
 )
 
 # --- Set up paths and variables ---
-$ConfigDir = Join-Path $Env:APPDATA "griptape_nodes"
+$ConfigDir  = Join-Path $Env:USERPROFILE ".config\griptape_nodes"
 $ConfigFile = Join-Path $ConfigDir "griptape_nodes_config.json"
-$EnvFile = Join-Path $ConfigDir ".env"
+$EnvFile    = Join-Path $ConfigDir ".env"
 
-# --- Write/update the config file if API key is provided ---
 if ($API_KEY) {
     # Ensure the config directory exists
     if (!(Test-Path $ConfigDir)) {
         New-Item -ItemType Directory -Path $ConfigDir | Out-Null
     }
 
-    # Check if the file already exists
-    if (Test-Path $ConfigFile) {
-        Write-Host "A config file already exists at '$ConfigFile', overwriting..."
-    } 
-        # Write the API key to the config file
-'{
-  "nodes": {
-      "Griptape": {
-        "GT_CLOUD_API_KEY": "$GT_CLOUD_API_KEY"
-      }
-  }
-}' | Out-File $ConfigFile
+    # Generate JSON in memory (multi-line output).
+    $jsonData = @{
+        "nodes" = @{
+            "Griptape" = @{
+                "GT_CLOUD_API_KEY" = $API_KEY
+            }
+        }
+    } | ConvertTo-Json -Depth 4
 
-'GT_CLOUD_API_KEY="' + $API_KEY + '"' | Out-File $EnvFile
+    # Convert any CRLF -> LF within the JSON string
+    $jsonData = $jsonData -replace "`r`n", "`n"
 
-    Write-Host "API key saved to $ConfigFile"
-} else {
+    # Write JSON file with only LF line endings
+    [System.IO.File]::WriteAllText(
+        $ConfigFile, 
+        $jsonData, 
+        [System.Text.Encoding]::UTF8
+    )
+
+    # Prepare the .env file with quotes
+    # e.g.  GT_CLOUD_API_KEY="the-key"
+    # Add a trailing LF to ensure a proper ending
+    $envContents = 'GT_CLOUD_API_KEY="' + $API_KEY + '"' + "`n"
+
+    # Write .env file with only LF line endings
+    [System.IO.File]::WriteAllText(
+        $EnvFile, 
+        $envContents, 
+        [System.Text.Encoding]::UTF8
+    )
+
+    Write-Host "API key saved to $ConfigFile and $EnvFile"
+}
+else {
     Write-Host "No API key provided. Skipping config file creation."
 }
 
