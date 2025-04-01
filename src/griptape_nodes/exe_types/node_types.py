@@ -1,4 +1,3 @@
-import logging
 from abc import ABC, abstractmethod
 from enum import Enum, auto
 from typing import Any, Self
@@ -14,8 +13,6 @@ from griptape_nodes.exe_types.core_types import (
     ParameterType,
     ParameterTypeBuiltin,
 )
-
-logger = logging.getLogger(__name__)
 
 
 class NodeResolutionState(Enum):
@@ -286,7 +283,9 @@ class BaseNode(ABC):
         else:
             type_of = type(final_value).__name__
         if not parameter.is_incoming_type_allowed(type_of):
-            msg = f"Type of {type_of} doesn't match parameter type."
+            msg = f"Type of {type_of} doesn't match parameter '{param_name}' input types of {parameter.input_types}."
+            from griptape_nodes.retained_mode.griptape_nodes import logger
+
             logger.warning(msg)
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
