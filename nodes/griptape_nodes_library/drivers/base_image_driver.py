@@ -40,6 +40,7 @@ class BaseImageDriverNode(BaseDriverNode):
         driver_parameter = self.get_parameter_by_name("driver")
         if driver_parameter is not None:
             driver_parameter.type = "BaseImageGenerationDriver"
+            driver_parameter.output_type = "BaseImageGenerationDriver"
 
     def process(self) -> None:
         # Get the parameters from the node
