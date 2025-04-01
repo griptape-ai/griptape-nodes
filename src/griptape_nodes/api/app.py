@@ -212,6 +212,7 @@ def sse_listener() -> None:
             sleep(2)
             init = False
 
+
 def process_sse(event: dict) -> None:
     try:
         if event.get("request_type") == "Heartbeat":
