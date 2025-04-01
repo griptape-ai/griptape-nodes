@@ -153,7 +153,7 @@ def setup_event_listeners() -> None:
     EventBus.add_event_listener(event_listener=EventListener(on_event=process_app_event, event_types=[AppEvent]))  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
 
 
-def sse_listener() -> None:
+def sse_listener() -> None:  # noqa: C901
     init = False
     while True:
         try:
