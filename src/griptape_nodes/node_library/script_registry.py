@@ -22,7 +22,6 @@ class ScriptMetadata(BaseModel):
     node_libraries_referenced: list[LibraryNameAndVersion]
     description: str | None = None
     image: str | None = None
-    internal: bool = False
 
 
 class ScriptRegistry(SingletonMixin):

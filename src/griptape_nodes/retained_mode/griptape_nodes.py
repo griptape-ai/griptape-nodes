@@ -214,6 +214,7 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.log_manager import LogManager
 from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.retained_mode.managers.settings import ScriptSettingsDetail
 
 load_dotenv()
 
@@ -2487,7 +2488,7 @@ class NodeManager:
 
 
 class ScriptManager:
-    SCRIPT_METADATA_HEADER: ClassVar[str] = "griptape-nodes scene metadata"
+    SCRIPT_METADATA_HEADER: ClassVar[str] = "griptape-nodes-scene-metadata"
 
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(
@@ -2767,7 +2768,6 @@ class ScriptManager:
                     file_path=relative_file_path,
                     engine_version_created_with=engine_version,
                     node_libraries_referenced=list(node_libraries_used),
-                    internal=False,
                 )
                 metadata_json = script_metadata.model_dump_json(indent=2)
                 # Format the metadata block with comment markers for each line
@@ -2789,17 +2789,10 @@ class ScriptManager:
             return SaveSceneResultFailure()
 
         # save the created scene to a personal json file
-        if file_name not in ScriptRegistry.list_scripts():
-            script = {
-                "name": f"{file_name}",
-                "relative_file_path": relative_file_path,
-                "image": None,
-                "description": None,
-                "engine_version_created_with": engine_version,
-                "node_libraries_referenced": list(node_libraries_used),
-            }
-            config_manager.save_user_script_json(script)
-            ScriptRegistry.generate_new_script(**script)
+        registered_scripts = ScriptRegistry.list_scripts()
+        if file_name not in registered_scripts:
+            config_manager.save_user_script_json(relative_file_path)
+            ScriptRegistry.generate_new_script(script_metadata)
         return SaveSceneResultSuccess(file_path=str(file_path))
 
 
@@ -3323,50 +3316,77 @@ class LibraryManager:
                 )
                 GriptapeNodes().handle_request(library_load_request)
 
-    def _register_scripts_from_config(self, config_section: str) -> None:  # noqa: C901 (error checking adds branches)
+    # TODO(griptape): Move to ScriptManager
+    def _register_scripts_from_config(self, config_section: str) -> None:  # noqa: C901, PLR0912 (need lots of branches for error checking)
         config_mgr = GriptapeNodes().ConfigManager()
         scripts_to_register = config_mgr.get_config_value(config_section)
         successful_registrations = []
         failed_registrations = []
         if scripts_to_register is not None:
-            for script in scripts_to_register:
-                # Attempt to map the script definition to the schema.
+            for script_to_register in scripts_to_register:
                 try:
-                    script_metadata = ScriptMetadata.model_validate(script)
+                    script_detail = ScriptSettingsDetail(
+                        file_name=script_to_register["file_name"],
+                        is_griptape_provided=script_to_register["is_griptape_provided"],
+                    )
                 except Exception as err:
-                    script_name = script.get("name", "<name not found>")
-                    script_path = script.get("file_path", "<path not found>")
-                    failed_registrations.append((script_name, script_path))
-                    err_str = f"Error attempting to load script '{script_name}': {err}. SKIPPING IT."
+                    err_str = f"Error attempting to get info about script to register '{script_to_register}': {err}. SKIPPING IT."
+                    failed_registrations.append(script_to_register)
+                    GriptapeNodes.get_logger().error(err_str)
+                    continue
+
+                # Adjust path depending on if it's a Griptape-provided script or a user one.
+                if script_detail.is_griptape_provided:
+                    final_file_path = xdg_data_home().joinpath(script_detail.file_name)
+                else:
+                    final_file_path = config_mgr.workspace_path.joinpath(script_detail.file_name)
+
+                # Attempt to extract the metadata out of the script.
+                load_metadata_request = LoadScriptMetadata(file_name=str(final_file_path))
+                load_metadata_result = GriptapeNodes.ScriptManager().on_load_script_metadata_request(
+                    load_metadata_request
+                )
+                if not load_metadata_result.succeeded():
+                    failed_registrations.append(final_file_path)
+                    # SKIP IT
+                    continue
+
+                try:
+                    successful_metadata_result = cast("LoadScriptMetadataResultSuccess", load_metadata_result)
+                except Exception as err:
+                    err_str = f"Error attempting to get info about script to register '{final_file_path}': {err}. SKIPPING IT."
+                    failed_registrations.append(final_file_path)
                     GriptapeNodes.get_logger().error(err_str)
                     continue
 
                 # Adjust the file path depending on if we're internal or not.
-                if script["internal"]:
-                    final_file_path = xdg_data_home().joinpath(script_metadata.file_path)
-                else:
-                    final_file_path = config_mgr.workspace_path.joinpath(script_metadata.file_path)
+                script_metadata = successful_metadata_result.metadata
                 script_metadata.file_path = str(final_file_path)
 
+                # Register it as a success.
                 script_register_request = RegisterScriptRequest(metadata=script_metadata)
-                result = GriptapeNodes().handle_request(script_register_request)
-                if result.succeeded():
+                register_result = GriptapeNodes().handle_request(script_register_request)
+
+                details = f"'{script_metadata.name}' ({final_file_path!s})"
+
+                if register_result.succeeded():
                     # put this in the good pile
-                    successful_registrations.append((script_metadata.name, final_file_path))
+                    successful_registrations.append(details)
                 else:
-                    failed_registrations.append((script_metadata.name, final_file_path))
+                    # not-so-good pile
+                    failed_registrations.append(details)
 
         if len(successful_registrations) == 0 and len(failed_registrations) == 0:
-            GriptapeNodes.get_logger().info("No scripts were loaded.")
+            GriptapeNodes.get_logger().info("No scripts were registered.")
         if len(successful_registrations) > 0:
-            details = "Scripts successfully loaded:"
-            for successful_registration_tuple in successful_registrations:
-                details = f"{details}\n\t{successful_registration_tuple[0]} ({successful_registration_tuple[1]})"
+            details = "Scripts successfully registered:"
+            for successful_registration in successful_registrations:
+                details = f"{details}\n\t{successful_registration}"
             GriptapeNodes.get_logger().info(details)
         if len(failed_registrations) > 0:
-            details = "Scripts that FAILED to load:"
-            for failed_registration_tuple in failed_registrations:
-                details = f"{details}\n\t{failed_registration_tuple[0]} ({failed_registration_tuple[1]})"
+            details = "Scripts that FAILED to register:"
+            for failed_registration in failed_registrations:
+                details = f"{details}\n\t{failed_registration}"
             GriptapeNodes.get_logger().error(details)
 
 
