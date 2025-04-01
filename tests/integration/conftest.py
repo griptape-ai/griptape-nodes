@@ -7,7 +7,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 @pytest.fixture
 def flow() -> CreateFlowResultSuccess:
-    request = RegisterLibraryFromFileRequest("../griptape-nodes/nodes/griptape_nodes_library.json")
+    request = RegisterLibraryFromFileRequest(file_path="../griptape-nodes/nodes/griptape_nodes_library.json")
     result = GriptapeNodes.handle_request(request)
 
     # Create a canvas (flow with no parents)
