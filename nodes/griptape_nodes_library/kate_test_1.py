@@ -14,6 +14,9 @@ class AwesomeClass:
     def process(self):
         self.name = f"How Awesome Is {self.name}"
 
+class AwesomenessClass:
+    pass
+
 
 class TestNode1(ControlNode):
     """Save text to a file."""
@@ -38,4 +41,4 @@ class TestNode1(ControlNode):
        val =self.parameter_values["text"]
        val.process()
        print(val.name)
-       self.parameter_output_values["text"] = val
+       self.parameter_output_values["text"] = AwesomenessClass()

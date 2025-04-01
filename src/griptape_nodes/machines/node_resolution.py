@@ -255,12 +255,11 @@ class ExecuteNodeState(State):
                     err = f"Canceling flow run. Node '{current_node.name}' specified a Parameter '{parameter_name}', but no such Parameter could be found on that Node."
                     raise KeyError(err)
             if not parameter.is_outgoing_type_allowed(data_type):
-                msg = f"Type of {data_type} is not allowed for this parameter."
+                msg = f"Type of {data_type} is not allowed as an output type for this parameter."
                 raise TypeError(msg)
             data_type = parameter.type
             if data_type is None:
                 data_type = ParameterTypeBuiltin.NONE.value
-
             EventBus.publish_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
