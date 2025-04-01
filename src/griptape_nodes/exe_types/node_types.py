@@ -196,11 +196,8 @@ class BaseNode(ABC):
         curr_param = None
         prev_param = None
         for parameter in self.parameters:
-            if (
-                ParameterMode.INPUT in parameter.get_mode()
-                and not parameter.is_incoming_type_allowed(
+            if ParameterMode.INPUT in parameter.get_mode() and not parameter.is_incoming_type_allowed(
                 incoming_type=ParameterTypeBuiltin.CONTROL_TYPE.value
-            )
             ):
                 if not self.current_spotlight_parameter or prev_param is None:
                     # make a copy of the parameter and assign it to current spotlight
@@ -314,7 +311,7 @@ class BaseNode(ABC):
                 return param
         return None
 
-    #TODO(kate): can we remove this or change to default value?
+    # TODO(kate): can we remove this or change to default value?
     def valid_or_fallback(self, param_name: str, fallback: Any = None) -> Any:
         """Get a parameter value if valid, otherwise use fallback.
 

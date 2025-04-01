@@ -291,7 +291,6 @@ class ParameterGroup(BaseNodeElement):
         }
 
 
-
 class Parameter(BaseNodeElement):
     # This is the list of types that the Parameter can accept, either externally or when internally treated as a property.
     # Today, we can accept multiple types for input, but only a single output type.
@@ -320,7 +319,7 @@ class Parameter(BaseNodeElement):
     prev: Parameter | None = None
 
     def __init__(
-            self,
+        self,
         name: str,
         tooltip: str,
         type: str | None = None,  # noqa: A002
@@ -372,7 +371,7 @@ class Parameter(BaseNodeElement):
 
     @property
     def type(self) -> str | None:
-        #TODO: Always return something
+        # TODO: Always return something
         return self._type
 
     @type.setter
@@ -566,7 +565,6 @@ class ControlParameterInput(ControlParameter):
         )
 
 
-
 class ControlParameterOutput(ControlParameter):
     def __init__(  # noqa: PLR0913
         self,
@@ -589,7 +587,7 @@ class ControlParameterOutput(ControlParameter):
             name=name,
             tooltip=tooltip,
             input_types=None,
-            output_type= output_type,
+            output_type=output_type,
             tooltip_as_input=tooltip_as_input,
             tooltip_as_property=tooltip_as_property,
             tooltip_as_output=tooltip_as_output,

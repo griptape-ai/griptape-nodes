@@ -4,7 +4,7 @@ from queue import Queue
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.connections import Connections
-from griptape_nodes.exe_types.core_types import ControlParameter, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState, StartNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 
@@ -400,7 +400,10 @@ class ControlFlow:
             input_connections = self.get_connected_input_from_node(curr_node)
             if input_connections:
                 for input_node, input_parameter in input_connections:
-                    if not input_parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value) and input_node not in node_list:
+                    if (
+                        not input_parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value)
+                        and input_node not in node_list
+                    ):
                         node_list.append(input_node)
                         node_queue.put(input_node)
         return node_list

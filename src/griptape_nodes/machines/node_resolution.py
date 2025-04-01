@@ -242,7 +242,7 @@ class ExecuteNodeState(State):
             data_type = None
             if hasattr(value, "type"):
                 data_type = str(value.type)
-            elif isinstance(value,dict) and "type" in value:
+            elif isinstance(value, dict) and "type" in value:
                 data_type = value["type"]
             else:
                 data_type = type(value).__name__

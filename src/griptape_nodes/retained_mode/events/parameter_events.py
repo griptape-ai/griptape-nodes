@@ -19,7 +19,7 @@ class AddParameterToNodeRequest(RequestPayload):
     node_name: str
     default_value: Any | None
     tooltip: str
-    type: str| None
+    type: str | None
     input_types: list[str]
     output_type: str
     tooltip_as_input: str | None = None
@@ -108,7 +108,7 @@ class GetParameterDetailsRequest(RequestPayload):
 @PayloadRegistry.register
 class GetParameterDetailsResultSuccess(ResultPayloadSuccess):
     element_id: str
-    type: str| None
+    type: str | None
     input_types: list[str]
     output_type: str
     default_value: Any | None
@@ -134,7 +134,7 @@ class GetParameterDetailsResultFailure(ResultPayloadFailure):
 class AlterParameterDetailsRequest(RequestPayload):
     parameter_name: str
     node_name: str
-    type: str| None
+    type: str | None
     input_types: list[str]
     output_type: str
     default_value: Any | None = None
