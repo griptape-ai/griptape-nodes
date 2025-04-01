@@ -110,7 +110,7 @@ class AppEvents(BaseModel):
 
 
 class Settings(BaseSettings):
-    workspace_directory: str = Field(default=str(Path().cwd()))
+    workspace_directory: str = Field(default=str(Path().home() / "GriptapeNodes"))
     app_events: AppEvents = Field(default_factory=AppEvents)
     env: dict[str, Any] = Field(
         default_factory=lambda: {
