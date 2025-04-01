@@ -1,13 +1,16 @@
 """Griptape Nodes package."""
 
 import argparse
+import importlib.metadata
 import json
 import subprocess
 import sys
 from pathlib import Path
 
+import httpx
 from dotenv import get_key, load_dotenv, set_key
-from rich.prompt import Prompt
+from rich.console import Console
+from rich.prompt import Confirm, Prompt
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.api.app import main as api_main
@@ -17,6 +20,9 @@ INSTALL_SCRIPT = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/r
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 ENV_FILE = CONFIG_DIR / ".env"
 CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
+REPO_NAME = "griptape-ai/griptape-nodes"
+
+console = Console()
 
 
 def main() -> None:
@@ -28,6 +34,7 @@ def main() -> None:
     # Without this, packages like `nodes` don't properly import.
     # Long term solution could be to make `nodes` a proper src-layout package
     # but current engine relies on importing files rather than packages.
+
     sys.path.append(str(Path.cwd()))
 
     args = _get_args()
@@ -37,7 +44,7 @@ def main() -> None:
 def _get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="griptape-nodes", description="Griptape Nodes Engine.")
     parser.add_argument(
-        "command", help="Command to run", nargs="?", choices=["engine", "config", "update"], default="engine"
+        "command", help="Command to run", nargs="?", choices=["engine", "config", "update", "version"], default="engine"
     )
     return parser.parse_args()
 
@@ -73,13 +80,74 @@ def _init_api_key() -> None:
         set_key(ENV_FILE, "GT_CLOUD_API_KEY", api_key)
 
 
+def _get_latest_version(repo: str) -> str:
+    """Fetches the latest release tag from a GitHub repository using httpx.
+
+    Args:
+        repo (str): Repository name in the format "owner/repo"
+
+    Returns:
+        str: Latest release tag (e.g., "v0.31.4")
+    """
+    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    with httpx.Client() as client:
+        response = client.get(url)
+        response.raise_for_status()
+        return response.json()["tag_name"]
+
+
+def _auto_update() -> None:
+    """Automatically updates the script to the latest version using a shell command."""
+    current_version = _get_current_version()
+    latest_version = _get_latest_version(REPO_NAME)
+
+    if current_version < latest_version:
+        update = Confirm.ask(
+            f"Your current engine version, {current_version}, is behind the latest release, {latest_version}. Update now?",
+        )
+
+        if update:
+            _install_latest_release()
+
+
+def _install_latest_release() -> None:
+    """Installs the latest release of the script using a shell command."""
+    with console.status("[bold green]Updating...", spinner="dots"):
+        curl_process = subprocess.run(["curl", "-LsSf", INSTALL_SCRIPT], capture_output=True, check=False, text=True)  # noqa: S603, S607
+        subprocess.run(  # noqa: S603
+            ["bash"],  # noqa: S607
+            input=curl_process.stdout,
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+    console.print(
+        "[bold green]Update complete! Restart the engine by running 'griptape-nodes' (or just 'gtn').[/bold green]"
+    )
+    sys.exit(0)
+
+
+def _get_current_version() -> str:
+    """Fetches the current version of the script.
+
+    Returns:
+        str: Current version (e.g., "v0.31.4")
+    """
+    return f"v{importlib.metadata.version('griptape_nodes')}"
+
+
 def _process_args(args: argparse.Namespace) -> None:
     if args.command == "engine":
+        _auto_update()
         api_main()
     elif args.command == "config":
         sys.stdout.write(json.dumps(ConfigManager().user_config, indent=2))
     elif args.command == "update":
-        subprocess.run(f"curl -LsSf {INSTALL_SCRIPT} | bash", shell=True, check=True)  # noqa: S602
+        _install_latest_release()
+    elif args.command == "version":
+        version = _get_current_version()
+
+        console.print(f"[bold green]{version}[/bold green]")
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)
