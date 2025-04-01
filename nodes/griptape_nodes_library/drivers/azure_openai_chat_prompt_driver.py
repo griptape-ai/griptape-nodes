@@ -11,7 +11,7 @@ API_KEY_ENV_VAR = "AZURE_OPENAI_API_KEY"
 SERVICE = "Microsoft Azure"
 
 
-class BaseAudioTranscriptionDriverNode(BasePromptDriverNode):
+class AzureOpenAiChatPromptDriverNode(BasePromptDriverNode):
     """Node for Azure OpenAI Chat Prompt Driver.
 
     This node creates an Azure OpenAI chat prompt driver and outputs its configuration.

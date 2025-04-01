@@ -28,17 +28,6 @@ class BaseAudioTranscriptionDriverNode(BaseDriverNode):
             )
         )
 
-        self.add_parameter(
-            Parameter(
-                name="driver",
-                input_types=["dict"],
-                type="dict",
-                output_type="dict",
-                default_value=None,
-                tooltip="",
-            )
-        )
-
 
 class OpenAiAudioTranscriptionDriverNode(BaseAudioTranscriptionDriverNode):
     def process(self) -> None:

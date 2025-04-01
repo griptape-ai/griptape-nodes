@@ -43,7 +43,7 @@ class ConfigManager:
             config_dir: Optional path to the config dir. If not provided,
                          it will use the current working directory.
         """
-        self.config_dir = Path(config_dir) if config_dir else Path.cwd()
+        self.config_dir = Path(config_dir) if config_dir else Path.home() / "GriptapeNodes/"
         self.user_config_path: Path = self.config_dir / "griptape_nodes_config.json"
         self.user_config: dict[str, Any] = {}
 
