@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import importlib.util
 import io
 import json
@@ -215,6 +217,7 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.log_manager import LogManager
 from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.retained_mode.managers.settings import ScriptSettingsDetail
 
 load_dotenv()
@@ -239,6 +242,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._event_manager = EventManager()
             self._os_manager = OSManager(self._event_manager)
             self._config_manager = ConfigManager(self._event_manager)
+            self._secrets_manager = SecretsManager(self._event_manager, self._config_manager)
             self._object_manager = ObjectManager(self._event_manager)
             self._node_manager = NodeManager(self._event_manager)
             self._flow_manager = FlowManager(self._event_manager)
@@ -256,7 +260,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             )
 
     @classmethod
-    def get_instance(cls) -> "GriptapeNodes":
+    def get_instance(cls) -> GriptapeNodes:
         """Helper method to get the singleton instance."""
         return cls()
 
@@ -289,35 +293,39 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._event_manager
 
     @classmethod
-    def LibraryManager(cls) -> "LibraryManager":
+    def LibraryManager(cls) -> LibraryManager:
         return GriptapeNodes.get_instance()._library_manager
 
     @classmethod
-    def ObjectManager(cls) -> "ObjectManager":
+    def ObjectManager(cls) -> ObjectManager:
         return GriptapeNodes.get_instance()._object_manager
 
     @classmethod
-    def FlowManager(cls) -> "FlowManager":
+    def FlowManager(cls) -> FlowManager:
         return GriptapeNodes.get_instance()._flow_manager
 
     @classmethod
-    def NodeManager(cls) -> "NodeManager":
+    def NodeManager(cls) -> NodeManager:
         return GriptapeNodes.get_instance()._node_manager
 
     @classmethod
-    def ScriptManager(cls) -> "ScriptManager":
+    def ScriptManager(cls) -> ScriptManager:
         return GriptapeNodes.get_instance()._script_manager
 
     @classmethod
-    def ArbitraryCodeExecManager(cls) -> "ArbitraryCodeExecManager":
+    def ArbitraryCodeExecManager(cls) -> ArbitraryCodeExecManager:
         return GriptapeNodes.get_instance()._arbitrary_code_exec_manager
 
     @classmethod
-    def ConfigManager(cls) -> "ConfigManager":
+    def ConfigManager(cls) -> ConfigManager:
         return GriptapeNodes.get_instance()._config_manager
 
     @classmethod
-    def OperationDepthManager(cls) -> "OperationDepthManager":
+    def SecretsManager(cls) -> SecretsManager:
+        return GriptapeNodes.get_instance()._secrets_manager
+
+    @classmethod
+    def OperationDepthManager(cls) -> OperationDepthManager:
         return GriptapeNodes.get_instance()._operation_depth_manager
 
     @classmethod

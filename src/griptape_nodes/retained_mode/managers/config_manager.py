@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -118,8 +117,15 @@ class ConfigManager:
         """
         value = get_dot_value(self.user_config, key)
 
+        if value is None:
+            msg = f"Config key '{key}' not found in config file."
+            raise ValueError(msg)
+
         if isinstance(value, str) and value.startswith("$"):
-            value = os.getenv(value[1:], value)
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            value = GriptapeNodes.SecretsManager().get_secret(value[1:], value)
+
         return value
 
     def set_config_value(self, key: str, value: Any) -> None:

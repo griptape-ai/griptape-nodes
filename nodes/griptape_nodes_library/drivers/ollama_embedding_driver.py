@@ -56,7 +56,7 @@ class OllamaEmbeddingDriverNode(BaseEmbeddingDriverNode):
         # Set up the host URL by combining base_url and port
         base_url = params.get("base_url", DEFAULT_BASE_URL)
         if not base_url or base_url == "":
-            base_url = self.getenv(service=SERVICE, value=OLLAMA_BASE_URL_ENV_VAR)
+            base_url = self.get_config_value(service=SERVICE, value=OLLAMA_BASE_URL_ENV_VAR)
 
         port = params.get("port", DEFAULT_PORT)
         if base_url and port:

@@ -5,6 +5,7 @@ Param(
 # --- Set up paths and variables ---
 $ConfigDir = Join-Path $Env:APPDATA "griptape_nodes"
 $ConfigFile = Join-Path $ConfigDir "griptape_nodes_config.json"
+$EnvFile = Join-Path $ConfigDir ".env"
 
 # --- Write/update the config file if API key is provided ---
 if ($API_KEY) {
@@ -21,10 +22,13 @@ if ($API_KEY) {
 '{
   "env": {
       "Griptape": {
-        "GT_CLOUD_API_KEY": "' + $API_KEY + '"
+        "GT_CLOUD_API_KEY": "$GT_CLOUD_API_KEY"
       }
   }
 }' | Out-File $ConfigFile
+
+'GT_CLOUD_API_KEY="' + $API_KEY + '"' | Out-File $EnvFile
+
     Write-Host "API key saved to $ConfigFile"
 } else {
     Write-Host "No API key provided. Skipping config file creation."

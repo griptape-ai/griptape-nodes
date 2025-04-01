@@ -5,8 +5,10 @@ from time import sleep
 from urllib.parse import urljoin
 
 from attrs import Factory, define, field
+from dotenv import get_key
 from websockets.exceptions import WebSocketException
 from websockets.sync.client import ClientConnection, connect
+from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -60,9 +62,9 @@ class NodesApiSocketManager:
     def _connect(self) -> ClientConnection:
         while True:
             try:
-                api_key = GriptapeNodes.get_instance().ConfigManager().get_config_value("env.Griptape.GT_CLOUD_API_KEY")
+                api_key = get_key(xdg_config_home() / "griptape_nodes" / ".env", "GT_CLOUD_API_KEY")
                 if api_key is None:
-                    msg = "env.Griptape.GT_CLOUD_API_KEY is not set, please add this value to your griptape_nodes_config.json file."
+                    msg = "GT_CLOUD_API_KEY is not set, please re-run the install script."
                     raise ValueError(msg) from None
 
                 return connect(

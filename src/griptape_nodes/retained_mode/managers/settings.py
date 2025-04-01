@@ -90,7 +90,7 @@ class AppEvents(BaseModel):
 class Settings(BaseSettings):
     workspace_directory: str = Field(default=str(Path().home() / "GriptapeNodes"))
     app_events: AppEvents = Field(default_factory=AppEvents)
-    env: dict[str, Any] = Field(
+    nodes: dict[str, Any] = Field(
         default_factory=lambda: {
             "Griptape": {"GT_CLOUD_API_KEY": "$GT_CLOUD_API_KEY"},
             "OpenAI": {"OPENAI_API_KEY": "$OPENAI_API_KEY"},
