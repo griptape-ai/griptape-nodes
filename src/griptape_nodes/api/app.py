@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextvars
 import json
 import os
+import sys
 import threading
 from time import sleep
 from typing import TYPE_CHECKING, Any
@@ -121,19 +122,16 @@ def process_app_event(event: AppEvent) -> None:
 
 def check_event_queue() -> None:
     while True:
-        try:
-            if not event_queue.empty():
-                event = event_queue.get()
-                if isinstance(event, EventRequest):
-                    process_request(event)
-                elif isinstance(event, AppEvent):
-                    process_app_event(event)
-                else:
-                    logger.warning("Unknown event type encountered: '%s'.", type(event))
+        if not event_queue.empty():
+            event = event_queue.get()
+            if isinstance(event, EventRequest):
+                process_request(event)
+            elif isinstance(event, AppEvent):
+                process_app_event(event)
+            else:
+                logger.warning("Unknown event type encountered: '%s'.", type(event))
 
-                event_queue.task_done()
-        except KeyboardInterrupt:
-            break
+            event_queue.task_done()
 
 
 def setup_event_listeners() -> None:
@@ -220,12 +218,15 @@ def run_sse_mode() -> None:
     global socket  # noqa: PLW0603 # Need to initialize the socket lazily here to avoid auth-ing too early
 
     socket = NodesApiSocketManager()
-    sse_thread = threading.Thread(target=sse_listener)
+    sse_thread = threading.Thread(target=sse_listener, daemon=True)
     sse_thread.start()
 
     setup_event_listeners()
 
-    check_event_queue()
+    try:
+        check_event_queue()
+    except KeyboardInterrupt:
+        sys.exit(0)
 
 
 def main() -> None:
