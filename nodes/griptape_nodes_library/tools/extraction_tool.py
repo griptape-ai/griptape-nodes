@@ -4,7 +4,6 @@ from griptape.rules import Rule
 from griptape.tools import ExtractionTool
 
 from griptape_nodes_library.tools.base_tool import BaseToolNode
-from griptape_nodes_library.utils.env_utils import getenv
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
@@ -42,7 +41,7 @@ class ExtractionToolNode(BaseToolNode):
         exceptions = []
         if self.parameter_values.get("prompt_driver", None):
             return exceptions
-        api_key = getenv(SERVICE, API_KEY_ENV_VAR)
+        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))

@@ -46,7 +46,7 @@ class GriptapeCloudImageDriverNode(BaseImageDriverNode):
             )
         )
 
-        kwargs["api_key"] = self.getenv(service=SERVICE, value=API_KEY_ENV_VAR)
+        kwargs["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
 
     def adjust_size_based_on_model(self, model, size) -> str:
         """Adjust the image size based on the selected model's capabilities.
@@ -77,7 +77,7 @@ class GriptapeCloudImageDriverNode(BaseImageDriverNode):
         # Initialize kwargs with required parameters
         kwargs = {
             "model": model,
-            "api_key": self.getenv(service=SERVICE, value=API_KEY_ENV_VAR),
+            "api_key": self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
             "image_size": size,
         }
 
@@ -85,7 +85,7 @@ class GriptapeCloudImageDriverNode(BaseImageDriverNode):
 
     def validate_node(self) -> list[Exception] | None:
         exceptions = []
-        api_key = self.getenv(SERVICE, API_KEY_ENV_VAR)
+        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
