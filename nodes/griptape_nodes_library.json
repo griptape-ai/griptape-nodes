@@ -72,12 +72,39 @@
       }
     },
     {
+      "class_name": "SimpleAgentNode",
+      "file_path": "griptape_nodes_library/simple_agent.py",
+      "metadata": {
+        "category": "Agent",
+        "description": "Runs a previously created Griptape Agent with new prompts",
+        "display_name": "Simple Agent"
+      }
+    },
+    {
       "class_name": "AnthropicPromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/anthropic_prompt_driver.py",
       "metadata": {
         "category": "Drivers",
         "description": "Anthropic Claude prompt driver for Griptape Agents",
         "display_name": "Anthropic Prompt Driver"
+      }
+    },
+    {
+      "class_name": "TestNode1",
+      "file_path": "griptape_nodes_library/kate_test_1.py",
+      "metadata": {
+        "category": "Agent",
+        "description": "",
+        "display_name": "katetest1"
+      }
+    },
+    {
+      "class_name": "TestNode2",
+      "file_path": "griptape_nodes_library/kate_test_2.py",
+      "metadata": {
+        "category": "Agent",
+        "description": "",
+        "display_name": "katetest2"
       }
     },
     {
