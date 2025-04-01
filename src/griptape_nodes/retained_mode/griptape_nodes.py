@@ -2004,6 +2004,7 @@ class NodeManager:
 
         result = GetParameterValueResultSuccess(
             input_types=parameter.input_types,
+            type=parameter.type,
             output_type=parameter.output_type,
             value=TypeValidator.safe_serialize(data_value),
         )
