@@ -21,14 +21,18 @@ class SimpleAgentNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="agent",
-                allowed_types=["Agent"],
+                type="Agent",
+                input_types=["Agent, dict"],
+                output_type="Agent",
                 tooltip="",
             )
         )
         self.add_parameter(
             Parameter(
                 name="prompt",
-                allowed_types=["str"],
+                input_types=["str"],
+                output_type="str",
+                type="str",
                 default_value="",
                 tooltip="",
                 ui_options=ParameterUIOptions(
@@ -42,7 +46,9 @@ class SimpleAgentNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output",
-                allowed_types=["str"],
+                input_types=["str"],
+                output_type="str",
+                type="str",
                 default_value="",
                 tooltip="What the agent said.",
                 allowed_modes={ParameterMode.OUTPUT},
