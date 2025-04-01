@@ -1,4 +1,4 @@
-import importlib.metadata
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -11,8 +11,6 @@ from pydantic_settings import (
     YamlConfigSettingsSource,
 )
 from xdg_base_dirs import xdg_config_dirs, xdg_config_home, xdg_data_home
-
-from griptape_nodes.node_library.script_registry import LibraryNameAndVersion
 
 
 def _find_config_files(filename: str, extension: str) -> list[Path]:
@@ -40,43 +38,23 @@ def _find_config_files(filename: str, extension: str) -> list[Path]:
     return config_files
 
 
-class Script(BaseModel):
-    name: str
-    relative_file_path: str
-    engine_version_created_with: str
-    node_libraries_referenced: list[LibraryNameAndVersion]
-    description: str | None = None
-    image: str | None = None
-    internal: bool = False
+@dataclass
+class ScriptSettingsDetail:
+    """Griptape-provided scripts are pathed differently and display in the GUI in a different section."""
+
+    file_name: str
+    is_griptape_provided: bool
 
 
 class AppInitializationComplete(BaseModel):
     libraries_to_register: list[str] = Field(
         default_factory=lambda: [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")]
     )
-    scripts_to_register: list[Script] = Field(
+    scripts_to_register: list[ScriptSettingsDetail] = Field(
         default_factory=lambda: [
-            Script(
-                name="Prompt an image",
-                relative_file_path="griptape_nodes/scripts/prompt_an_image.py",
-                internal=True,
-                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
-                node_libraries_referenced=[LibraryNameAndVersion("Griptape Nodes Library", "0.1.0")],
-            ),
-            Script(
-                name="Coloring Book",
-                relative_file_path="griptape_nodes/scripts/coloring_book.py",
-                internal=True,
-                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
-                node_libraries_referenced=[LibraryNameAndVersion("Griptape Nodes Library", "0.1.0")],
-            ),
-            Script(
-                name="Render logs",
-                relative_file_path="griptape_nodes/scripts/render_logs.py",
-                internal=True,
-                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
-                node_libraries_referenced=[LibraryNameAndVersion("Griptape Nodes Library", "0.1.0")],
-            ),
+            ScriptSettingsDetail(file_name="griptape_nodes/scripts/prompt_an_image.py", is_griptape_provided=True),
+            ScriptSettingsDetail(file_name="griptape_nodes/scripts/coloring_book.py", is_griptape_provided=True),
+            ScriptSettingsDetail(file_name="griptape_nodes/scripts/render_logs.py", is_griptape_provided=True),
         ]
     )
 

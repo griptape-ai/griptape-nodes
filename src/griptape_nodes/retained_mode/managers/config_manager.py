@@ -21,7 +21,7 @@ from griptape_nodes.retained_mode.events.config_events import (
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
 
-from .settings import Settings
+from .settings import ScriptSettingsDetail, Settings
 
 
 class ConfigManager:
@@ -78,13 +78,14 @@ class ConfigManager:
         """
         self.set_config_value("workspace_directory", str(Path(path).resolve()))
 
-    def save_user_script_json(self, script: dict) -> None:
-        # find the filepath for our default json file
-        existing_scripts = self.get_config_value("app_events.on_app_initialization_complete.scripts_to_register")
+    def save_user_script_json(self, script_file_name: str) -> None:
+        script_details = ScriptSettingsDetail(file_name=script_file_name, is_griptape_provided=False)
+        config_loc = "app_events.on_app_initialization_complete.scripts_to_register"
+        existing_scripts = self.get_config_value(config_loc)
         if not existing_scripts:
             existing_scripts = []
-        existing_scripts.append(script)
-        self.set_config_value("app_events.on_app_initialization_complete.scripts_to_register", existing_scripts)
+        existing_scripts.append(script_details.__dict__)
+        self.set_config_value(config_loc, existing_scripts)
 
     def delete_user_script(self, script: dict) -> None:
         default_scripts = self.get_config_value("app_events.on_app_initialization_complete.scripts_to_register")

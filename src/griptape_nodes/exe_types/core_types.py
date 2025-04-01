@@ -252,11 +252,11 @@ class ParameterGroup(BaseNodeElement):
 class Parameter(BaseNodeElement):
     name: str  # must be unique from other parameters in Node
     allowed_types: list[str]
-    tooltip: str  # Default tooltip
+    tooltip: str | list[dict]  # Default tooltip, can be string or list of dicts
     default_value: Any = None
-    tooltip_as_input: str | None = None
-    tooltip_as_property: str | None = None
-    tooltip_as_output: str | None = None
+    tooltip_as_input: str | list[dict] | None = None
+    tooltip_as_property: str | list[dict] | None = None
+    tooltip_as_output: str | list[dict] | None = None
     settable: bool = True
     user_defined: bool = False
     allowed_modes: set = field(
@@ -354,7 +354,7 @@ class ControlParameter(Parameter, ABC):
 @dataclass(kw_only=True)
 class ControlParameterInput(ControlParameter):
     name: str = "exec_in"
-    tooltip: str = "Connection from previous node in the execution chain"
+    tooltip: str | list[dict] = "Connection from previous node in the execution chain"
     allowed_modes: set = field(
         default_factory=lambda: {
             ParameterMode.INPUT,
@@ -365,7 +365,7 @@ class ControlParameterInput(ControlParameter):
 @dataclass
 class ControlParameterOutput(ControlParameter):
     name: str = "exec_out"
-    tooltip: str = "Connection to the next node in the execution chain"
+    tooltip: str | list[dict] = "Connection to the next node in the execution chain"
     allowed_modes: set = field(
         default_factory=lambda: {
             ParameterMode.OUTPUT,

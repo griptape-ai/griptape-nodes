@@ -8,8 +8,9 @@ from contextlib import redirect_stdout
 from datetime import UTC, datetime
 from pathlib import Path
 from re import Pattern
-from typing import Any, TextIO, TypeVar, cast
+from typing import Any, ClassVar, TextIO, TypeVar, cast
 
+import tomlkit
 from dotenv import load_dotenv
 from xdg_base_dirs import xdg_data_home
 
@@ -18,7 +19,7 @@ from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidationError, TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry
-from griptape_nodes.node_library.script_registry import LibraryNameAndVersion, ScriptRegistry
+from griptape_nodes.node_library.script_registry import LibraryNameAndVersion, ScriptMetadata, ScriptRegistry
 from griptape_nodes.retained_mode.events.app_events import (
     AppExecutionEvent,
     AppInitializationComplete,
@@ -182,6 +183,9 @@ from griptape_nodes.retained_mode.events.script_events import (
     ListAllScriptsRequest,
     ListAllScriptsResultFailure,
     ListAllScriptsResultSuccess,
+    LoadScriptMetadata,
+    LoadScriptMetadataResultFailure,
+    LoadScriptMetadataResultSuccess,
     RegisterScriptRequest,
     RegisterScriptResultFailure,
     RegisterScriptResultSuccess,
@@ -211,6 +215,7 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.log_manager import LogManager
 from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.retained_mode.managers.settings import ScriptSettingsDetail
 
 load_dotenv()
 
@@ -2486,6 +2491,8 @@ class NodeManager:
 
 
 class ScriptManager:
+    SCRIPT_METADATA_HEADER: ClassVar[str] = "script"
+
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(
             RunScriptFromScratchRequest, self.on_run_script_from_scratch_request
@@ -2514,6 +2521,7 @@ class ScriptManager:
             SaveSceneRequest,
             self.on_save_scene_request,
         )
+        event_manager.assign_manager_to_request_type(LoadScriptMetadata, self.on_load_script_metadata_request)
 
     def run_script(self, relative_file_path: str) -> tuple[bool, str]:
         relative_file_path_obj = Path(relative_file_path)
@@ -2582,7 +2590,7 @@ class ScriptManager:
             GriptapeNodes.get_logger().error(e)
             return RunScriptFromRegistryResultFailure()
         # get file_path from script
-        relative_file_path = script.relative_file_path
+        relative_file_path = script.file_path
         # run file
         success, details = self.run_script(relative_file_path=relative_file_path)
 
@@ -2595,19 +2603,12 @@ class ScriptManager:
 
     def on_register_script_request(self, request: RegisterScriptRequest) -> ResultPayload:
         try:
-            script = ScriptRegistry.generate_new_script(
-                name=request.script_name,
-                relative_file_path=request.file_path,
-                engine_version_created_with=request.engine_version_created_with,
-                node_libraries_referenced=request.node_libraries_referenced,
-                description=request.description,
-                image=request.image,
-            )
+            script = ScriptRegistry.generate_new_script(metadata=request.metadata, file_path=request.file_name)
         except Exception as e:
-            details = f"Failed to register script with name {request.script_name}. Error: {e}"
+            details = f"Failed to register script with name '{request.metadata.name}'. Error: {e}"
             GriptapeNodes.get_logger().error(details)
             return RegisterScriptResultFailure()
-        return RegisterScriptResultSuccess(script_name=script.name)
+        return RegisterScriptResultSuccess(script_name=script.metadata.name)
 
     def on_list_all_scripts_request(self, _request: ListAllScriptsRequest) -> ResultPayload:
         try:
@@ -2622,30 +2623,83 @@ class ScriptManager:
         try:
             script = ScriptRegistry.delete_script_by_name(request.name)
         except Exception as e:
-            details = f"Failed to remove script from registry with name {request.name}. Exception: {e}"
+            details = f"Failed to remove script from registry with name '{request.name}'. Exception: {e}"
             GriptapeNodes.get_logger().error(details)
             return DeleteScriptResultFailure()
         config_manager = GriptapeNodes.get_instance()._config_manager
         try:
             config_manager.delete_user_script(script.__dict__)
         except Exception as e:
-            details = f"Failed to remove script from user config with name {request.name}. Exception: {e}"
+            details = f"Failed to remove script from user config with name '{request.name}'. Exception: {e}"
             GriptapeNodes.get_logger().error(details)
             return DeleteScriptResultFailure()
         # delete the actual file
-        full_path = config_manager.workspace_path.joinpath(script.relative_file_path)
+        full_path = config_manager.workspace_path.joinpath(script.file_path)
         try:
             full_path.unlink()
         except Exception as e:
-            details = f"Failed to delete script file with path {script.relative_file_path}. Exception: {e}"
+            details = f"Failed to delete script file with path '{script.file_path}'. Exception: {e}"
             GriptapeNodes.get_logger().error(details)
             return DeleteScriptResultFailure()
         return DeleteScriptResultSuccess()
 
-    def on_save_scene_request(self, request: SaveSceneRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915
+    def on_load_script_metadata_request(self, request: LoadScriptMetadata) -> ResultPayload:
+        # Let us go into the darkness.
+        complete_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(request.file_name)
+        if not Path(complete_file_path).is_file():
+            details = f"Attempted to load script metadata for a file at '{complete_file_path}. Failed because no file could be found at that path."
+            GriptapeNodes.get_logger().error(details)
+            return LoadScriptMetadataResultFailure()
+
+        # Open 'er up.
+        with complete_file_path.open("r") as file:
+            script_content = file.read()
+
+        # Find the metadata block.
+        regex = r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
+        block_name = "script"
+        matches = list(filter(lambda m: m.group("type") == block_name, re.finditer(regex, script_content)))
+        if len(matches) != 1:
+            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed as it had {len(matches)} sections titled '{block_name}', and we expect exactly 1 such section."
+            GriptapeNodes.get_logger().error(details)
+            return LoadScriptMetadataResultFailure()
+
+        # Now attempt to parse out the metadata section, stripped of comment prefixes.
+        metadata_content_toml = "".join(
+            line[2:] if line.startswith("# ") else line[1:]
+            for line in matches[0].group("content").splitlines(keepends=True)
+        )
+
+        try:
+            toml_doc = tomlkit.parse(metadata_content_toml)
+        except Exception as err:
+            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed because the metadata was not valid TOML: {err}"
+            GriptapeNodes.get_logger().error(details)
+            return LoadScriptMetadataResultFailure()
+
+        try:
+            griptape_nodes_tool_section = toml_doc["tool"]["griptape-nodes"]  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
+        except Exception as err:
+            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed because the '[tools.griptape-nodes]' section could not be found: {err}"
+            GriptapeNodes.get_logger().error(details)
+            return LoadScriptMetadataResultFailure()
+
+        try:
+            # Is it kosher?
+            script_metadata = ScriptMetadata.model_validate(griptape_nodes_tool_section)
+        except Exception as err:
+            # No, it is haram.
+            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed because the metadata did not match the requisite schema with error: {err}"
+            GriptapeNodes.get_logger().error(details)
+            return LoadScriptMetadataResultFailure()
+
+        return LoadScriptMetadataResultSuccess(metadata=script_metadata)
+
+    def on_save_scene_request(self, request: SaveSceneRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (need lots of branches to cover negative cases)
         obj_manager = GriptapeNodes.get_instance()._object_manager
         node_manager = GriptapeNodes.get_instance()._node_manager
         config_manager = GriptapeNodes.get_instance()._config_manager
+
         # open my file
         if request.file_name:
             file_name = request.file_name
@@ -2659,8 +2713,26 @@ class ScriptManager:
 
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Get the engine version.
+        engine_version_request = GetEngineVersionRequest()
+        engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
+        if not engine_version_result.succeeded():
+            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version."
+            GriptapeNodes.get_logger().error(details)
+            return SaveSceneResultFailure()
+        try:
+            engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
+            engine_version = (
+                f"{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
+            )
+        except Exception as err:
+            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version: {err}"
+            GriptapeNodes.get_logger().error(details)
+            return SaveSceneResultFailure()
+
         try:
             with file_path.open("w") as file:
+                # Now the critical import.
                 file.write("from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes\n")
                 # Write all flows to a file, get back the strings for connections
                 connection_request_scripts = handle_flow_saving(file, obj_manager, created_flows)
@@ -2707,40 +2779,54 @@ class ScriptManager:
                     node_libraries_used.add(library_and_version)
                 # Now all nodes AND parameters have been created
                 file.write(connection_request_scripts)
+
+                # Now that we have the info about what's actually being used, save out the script metadata.
+                script_metadata = ScriptMetadata(
+                    name=str(file_name),
+                    schema_version=ScriptMetadata.LATEST_SCHEMA_VERSION,
+                    engine_version_created_with=engine_version,
+                    node_libraries_referenced=list(node_libraries_used),
+                )
+
+                try:
+                    toml_doc = tomlkit.document()
+                    toml_doc.add("dependencies", tomlkit.item([]))
+                    griptape_tool_table = tomlkit.table()
+                    metadata_dict = script_metadata.model_dump()
+                    for key, value in metadata_dict.items():
+                        # Strip out the Nones since TOML doesn't like those.
+                        if value is not None:
+                            griptape_tool_table.add(key=key, value=value)
+                    toml_doc["tool"] = tomlkit.table()
+                    toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
+                except Exception as err:
+                    details = f"Attempted to save scene '{relative_file_path}', but failed to get metadata into TOML format: {err}."
+                    GriptapeNodes.get_logger().error(details)
+                    return SaveSceneResultFailure()
+
+                # Format the metadata block with comment markers for each line
+                toml_lines = tomlkit.dumps(toml_doc).split("\n")
+                commented_toml_lines = ["# " + line for line in toml_lines]
+
+                # Create the complete metadata block
+                header = f"# /// {ScriptManager.SCRIPT_METADATA_HEADER}"
+                metadata_lines = [header]
+                metadata_lines.extend(commented_toml_lines)
+                metadata_lines.append("# ///")
+                metadata_lines.append("\n\n")
+                metadata_block = "\n".join(metadata_lines)
+
+                file.write(metadata_block)
         except Exception as e:
             details = f"Failed to save scene, exception: {e}"
             GriptapeNodes.get_logger().error(details)
             return SaveSceneResultFailure()
 
-        # Get the engine version.
-        engine_version_request = GetEngineVersionRequest()
-        engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
-        if not engine_version_result.succeeded():
-            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version."
-            GriptapeNodes.get_logger().error(details)
-            return SaveSceneResultFailure()
-        try:
-            engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
-            engine_version = (
-                f"{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
-            )
-        except Exception as err:
-            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version: {err}"
-            GriptapeNodes.get_logger().error(details)
-            return SaveSceneResultFailure()
-
         # save the created scene to a personal json file
-        if file_name not in ScriptRegistry.list_scripts():
-            script = {
-                "name": f"{file_name}",
-                "relative_file_path": relative_file_path,
-                "image": None,
-                "description": None,
-                "engine_version_created_with": engine_version,
-                "node_libraries_referenced": list(node_libraries_used),
-            }
-            config_manager.save_user_script_json(script)
-            ScriptRegistry.generate_new_script(**script)
+        registered_scripts = ScriptRegistry.list_scripts()
+        if file_name not in registered_scripts:
+            config_manager.save_user_script_json(relative_file_path)
+            ScriptRegistry.generate_new_script(metadata=script_metadata, file_path=relative_file_path)
         return SaveSceneResultSuccess(file_path=str(file_path))
 
 
@@ -3264,34 +3350,78 @@ class LibraryManager:
                 )
                 GriptapeNodes().handle_request(library_load_request)
 
-    def _register_scripts_from_config(self, config_section: str) -> None:
+    # TODO(griptape): Move to ScriptManager
+    def _register_scripts_from_config(self, config_section: str) -> None:  # noqa: C901, PLR0912 (need lots of branches for error checking)
         config_mgr = GriptapeNodes().ConfigManager()
         scripts_to_register = config_mgr.get_config_value(config_section)
+        successful_registrations = []
+        failed_registrations = []
         if scripts_to_register is not None:
-            for script in scripts_to_register:
-                if script["internal"]:
-                    file_path = xdg_data_home().joinpath(script["relative_file_path"])
-                    script_register_request = RegisterScriptRequest(
-                        script_name=script["name"],
-                        file_path=str(file_path),
-                        description=script["description"],
-                        image=script["image"],
-                        engine_version_created_with=script["engine_version_created_with"],
-                        node_libraries_referenced=script["node_libraries_referenced"],
+            for script_to_register in scripts_to_register:
+                try:
+                    script_detail = ScriptSettingsDetail(
+                        file_name=script_to_register["file_name"],
+                        is_griptape_provided=script_to_register["is_griptape_provided"],
                     )
-                    GriptapeNodes().handle_request(script_register_request)
+                except Exception as err:
+                    err_str = f"Error attempting to get info about script to register '{script_to_register}': {err}. SKIPPING IT."
+                    failed_registrations.append(script_to_register)
+                    GriptapeNodes.get_logger().error(err_str)
+                    continue
+
+                # Adjust path depending on if it's a Griptape-provided script or a user one.
+                if script_detail.is_griptape_provided:
+                    final_file_path = xdg_data_home().joinpath(script_detail.file_name)
                 else:
-                    config_manager = GriptapeNodes.get_instance()._config_manager
-                    full_path = config_manager.workspace_path.joinpath(script["relative_file_path"])
-                    script_register_request = RegisterScriptRequest(
-                        script_name=script["name"],
-                        file_path=str(full_path),
-                        description=script["description"],
-                        image=script["image"],
-                        engine_version_created_with=script["engine_version_created_with"],
-                        node_libraries_referenced=script["node_libraries_referenced"],
-                    )
-                    GriptapeNodes().handle_request(script_register_request)
+                    final_file_path = config_mgr.workspace_path.joinpath(script_detail.file_name)
+
+                # Attempt to extract the metadata out of the script.
+                load_metadata_request = LoadScriptMetadata(file_name=str(final_file_path))
+                load_metadata_result = GriptapeNodes.ScriptManager().on_load_script_metadata_request(
+                    load_metadata_request
+                )
+                if not load_metadata_result.succeeded():
+                    failed_registrations.append(final_file_path)
+                    # SKIP IT
+                    continue
+
+                try:
+                    successful_metadata_result = cast("LoadScriptMetadataResultSuccess", load_metadata_result)
+                except Exception as err:
+                    err_str = f"Error attempting to get info about script to register '{final_file_path}': {err}. SKIPPING IT."
+                    failed_registrations.append(final_file_path)
+                    GriptapeNodes.get_logger().error(err_str)
+                    continue
+
+                script_metadata = successful_metadata_result.metadata
+
+                # Register it as a success.
+                script_register_request = RegisterScriptRequest(
+                    metadata=script_metadata, file_name=str(final_file_path)
+                )
+                register_result = GriptapeNodes().handle_request(script_register_request)
+
+                details = f"'{script_metadata.name}' ({final_file_path!s})"
+
+                if register_result.succeeded():
+                    # put this in the good pile
+                    successful_registrations.append(details)
+                else:
+                    # not-so-good pile
+                    failed_registrations.append(details)
+
+        if len(successful_registrations) == 0 and len(failed_registrations) == 0:
+            GriptapeNodes.get_logger().info("No scripts were registered.")
+        if len(successful_registrations) > 0:
+            details = "Scripts successfully registered:"
+            for successful_registration in successful_registrations:
+                details = f"{details}\n\t{successful_registration}"
+            GriptapeNodes.get_logger().info(details)
+        if len(failed_registrations) > 0:
+            details = "Scripts that FAILED to register:"
+            for failed_registration in failed_registrations:
+                details = f"{details}\n\t{failed_registration}"
+            GriptapeNodes.get_logger().error(details)
 
 
 def __getattr__(name) -> logging.Logger:

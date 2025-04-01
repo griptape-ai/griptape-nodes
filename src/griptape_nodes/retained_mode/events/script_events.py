@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from griptape_nodes.node_library.script_registry import LibraryNameAndVersion
+from griptape_nodes.node_library.script_registry import ScriptMetadata
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -66,12 +66,8 @@ class RunScriptFromRegistryResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class RegisterScriptRequest(RequestPayload):
-    script_name: str
-    file_path: str
-    engine_version_created_with: str
-    node_libraries_referenced: list[LibraryNameAndVersion]
-    description: str | None = None
-    image: str | None = None
+    metadata: ScriptMetadata
+    file_name: str
 
 
 @dataclass
@@ -137,4 +133,22 @@ class SaveSceneResultSuccess(ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class SaveSceneResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadScriptMetadata(RequestPayload):
+    file_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadScriptMetadataResultSuccess(ResultPayloadSuccess):
+    metadata: ScriptMetadata
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadScriptMetadataResultFailure(ResultPayloadFailure):
     pass
