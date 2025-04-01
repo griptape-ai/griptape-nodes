@@ -280,8 +280,11 @@ class BaseNode(ABC):
         final_value = self.before_value_set(
             parameter=parameter, value=candidate_value, modified_parameters_set=modified_parameters
         )
-
-        type_of = type(final_value).__name__
+        # Should this be removed? accounting for ImageArtifacts represented as dicts, etc
+        if isinstance(value, dict) and "type" in value:
+            type_of = value["type"]
+        else:
+            type_of = type(final_value).__name__
         if not parameter.is_incoming_type_allowed(type_of):
             msg = f"Type of {type_of} cannot be assigned to a parameter."
             raise TypeError(msg)
