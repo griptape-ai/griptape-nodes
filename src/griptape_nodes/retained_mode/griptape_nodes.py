@@ -2108,7 +2108,9 @@ class NodeManager:
 
         if modified_parameters:
             for modified_parameter_name in modified_parameters:
-                modified_request = GetParameterDetailsRequest(modified_parameter_name, node.name)
+                modified_request = GetParameterDetailsRequest(
+                    parameter_name=modified_parameter_name, node_name=node.name
+                )
                 GriptapeNodes.handle_request(modified_request)
         # Mark node as unresolved
         node.state = NodeResolutionState.UNRESOLVED

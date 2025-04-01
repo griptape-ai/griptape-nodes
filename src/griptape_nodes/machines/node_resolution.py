@@ -164,7 +164,7 @@ class ExecuteNodeState(State):
                             if modified_parameters:
                                 for modified_parameter_name in modified_parameters:
                                     modified_request = GetParameterDetailsRequest(
-                                        modified_parameter_name, current_node.name
+                                        parameter_name=modified_parameter_name, node_name=current_node.name
                                     )
                                     app_event = AppEvent(payload=AppExecutionEvent(modified_request))
                                     EventBus.publish_event(app_event)  # pyright: ignore[reportArgumentType]
@@ -181,7 +181,9 @@ class ExecuteNodeState(State):
                 if modified_parameters:
                     for modified_parameter_name in modified_parameters:
                         # TODO(kate): Move to a different type of event
-                        modified_request = GetParameterDetailsRequest(modified_parameter_name, current_node.name)
+                        modified_request = GetParameterDetailsRequest(
+                            parameter_name=modified_parameter_name, node_name=current_node.name
+                        )
                         app_event = AppEvent(payload=AppExecutionEvent(modified_request))
                         EventBus.publish_event(app_event)  # pyright: ignore[reportArgumentType]
             if parameter.name in current_node.parameter_values:
