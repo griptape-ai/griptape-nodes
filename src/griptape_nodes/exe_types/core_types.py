@@ -299,7 +299,8 @@ class Parameter(BaseNodeElement):
     default_value: Any = None
     _input_types: list[str] | None
     _output_type: str | None
-    _type: str | None
+    _type: str
+    user_set_type: bool
     tooltip_as_input: str | None = None
     tooltip_as_property: str | None = None
     tooltip_as_output: str | None = None
@@ -361,17 +362,16 @@ class Parameter(BaseNodeElement):
             self.validators = []
         else:
             self.validators = validators
+        if type:
+            self.user_set_type = True
+        else:
+            self.user_set_type = False
         self.type = type
         self.input_types = input_types
         self.output_type = output_type
-        if not self.input_types:
-            self.input_types = None
-        # Set so we can take care of input types if necessary
-        self._output_type = output_type
 
     @property
-    def type(self) -> str | None:
-        # TODO: Always return something
+    def type(self) -> str:
         return self._type
 
     @type.setter
@@ -382,10 +382,10 @@ class Parameter(BaseNodeElement):
             if builtin is not None:
                 self._type = builtin.value
                 return
-        self._type = value
+        self._type = ParameterTypeBuiltin.STR.value
 
     @property
-    def input_types(self) -> list[str] | None:
+    def input_types(self) -> list[str]:
         if self._input_types:
             return self._input_types
         if self._type:
@@ -413,9 +413,11 @@ class Parameter(BaseNodeElement):
         if self._output_type:
             # If an output type was specified, use that.
             return self._output_type
-        if self.input_types:
+        if self._type and self.user_set_type:
             # Otherwise, see if we have a list of input_types. If so, use the first one.
-            return self.input_types[0]
+            return self._type
+        if self._input_types:
+            return self._input_types[0]
         # Otherwise, return a string.
         return ParameterTypeBuiltin.STR.value
 

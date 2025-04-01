@@ -288,11 +288,13 @@ class BaseNode(ABC):
 
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
-        ret_val = ParameterType.attempt_get_builtin(type_of)
-        if ret_val:
-            parameter.type = ret_val.value
-        else:
-            parameter.type = type_of
+        # The type is dynamically updating
+        if not parameter.user_set_type:
+            ret_val = ParameterType.attempt_get_builtin(type_of)
+            if ret_val:
+                parameter.type = ret_val.value
+            else:
+                parameter.type = type_of
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=modified_parameters)
 
