@@ -299,7 +299,7 @@ class Parameter(BaseNodeElement):
     default_value: Any = None
     _input_types: list[str] | None
     _output_type: str | None
-    _type: str
+    _type: str | None
     user_set_type: bool
     tooltip_as_input: str | None = None
     tooltip_as_property: str | None = None
@@ -372,7 +372,13 @@ class Parameter(BaseNodeElement):
 
     @property
     def type(self) -> str:
-        return self._type
+        if self._type:
+            return self._type
+        if self._input_types:
+            return self._input_types[0]
+        if self._output_type:
+            return self._output_type
+        return ParameterTypeBuiltin.STR.value
 
     @type.setter
     def type(self, value: str | None) -> None:
@@ -382,7 +388,7 @@ class Parameter(BaseNodeElement):
             if builtin is not None:
                 self._type = builtin.value
                 return
-        self._type = ParameterTypeBuiltin.STR.value
+        self._type = None
 
     @property
     def input_types(self) -> list[str]:

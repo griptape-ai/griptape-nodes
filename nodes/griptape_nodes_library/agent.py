@@ -30,7 +30,6 @@ class RunAgentNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="agent",
-                type="Agent",
                 input_types=["Agent", "dict"],
                 output_type="Agent",
                 tooltip="",
