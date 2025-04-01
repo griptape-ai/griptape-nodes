@@ -153,7 +153,7 @@ def setup_event_listeners() -> None:
     EventBus.add_event_listener(event_listener=EventListener(on_event=process_app_event, event_types=[AppEvent]))  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
 
 
-def sse_listener() -> None:  # noqa: C901
+def sse_listener() -> None:
     init = False
     while True:
         try:
@@ -203,12 +203,7 @@ def sse_listener() -> None:  # noqa: C901
 
                         else:
                             try:
-                                json_data = json.loads(data)
-                                if json_data.get("request_type") == "Heartbeat":
-                                    session_id = GriptapeNodes.get_session_id()
-                                    socket.heartbeat(session_id=session_id, request=json_data)
-                                else:
-                                    process_event(json_data)
+                                process_sse(socket, json.loads(data))
                             except Exception:
                                 logger.exception("Error processing event, skipping.")
 
@@ -216,6 +211,16 @@ def sse_listener() -> None:  # noqa: C901
             logger.exception("Error while listening for events. Retrying in 2 seconds.")
             sleep(2)
             init = False
+
+def process_sse(socket: NodesApiSocketManager, event: dict) -> None:
+    try:
+        if event.get("request_type") == "Heartbeat":
+            session_id = GriptapeNodes.get_session_id()
+            socket.heartbeat(session_id=session_id, request=event)
+        else:
+            process_event(event)
+    except Exception:
+        logger.exception("Error processing event, skipping.")
 
 
 def run_sse_mode() -> None:
