@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from datetime import UTC, datetime
 from pathlib import Path
 from re import Pattern
-from typing import Any, TextIO, TypeVar, cast
+from typing import Any, ClassVar, TextIO, TypeVar, cast
 
 from dotenv import load_dotenv
 from xdg_base_dirs import xdg_data_home
@@ -182,6 +182,9 @@ from griptape_nodes.retained_mode.events.script_events import (
     ListAllScriptsRequest,
     ListAllScriptsResultFailure,
     ListAllScriptsResultSuccess,
+    LoadScriptMetadata,
+    LoadScriptMetadataResultFailure,
+    LoadScriptMetadataResultSuccess,
     RegisterScriptRequest,
     RegisterScriptResultFailure,
     RegisterScriptResultSuccess,
@@ -2484,6 +2487,8 @@ class NodeManager:
 
 
 class ScriptManager:
+    SCRIPT_METADATA_HEADER: ClassVar[str] = "griptape-nodes scene metadata"
+
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(
             RunScriptFromScratchRequest, self.on_run_script_from_scratch_request
@@ -2512,6 +2517,7 @@ class ScriptManager:
             SaveSceneRequest,
             self.on_save_scene_request,
         )
+        event_manager.assign_manager_to_request_type(LoadScriptMetadata, self.on_load_script_metadata_request)
 
     def run_script(self, relative_file_path: str) -> tuple[bool, str]:
         relative_file_path_obj = Path(relative_file_path)
@@ -2633,10 +2639,49 @@ class ScriptManager:
             return DeleteScriptResultFailure()
         return DeleteScriptResultSuccess()
 
+    def on_load_script_metadata_request(self, request: LoadScriptMetadata) -> ResultPayload:
+        # Let us go into the darkness.
+        complete_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(request.file_name)
+        if not Path(complete_file_path).is_file():
+            details = f"Attempted to load script metadata for a file at '{complete_file_path}. Failed because no file could be found at that path."
+            GriptapeNodes.get_logger().error(details)
+            return LoadScriptMetadataResultFailure()
+
+        # Open 'er up.
+        with complete_file_path.open("r") as file:
+            script_content = file.read()
+
+        # Find the metadata block.
+        regex = r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
+        block_name = ScriptManager.SCRIPT_METADATA_HEADER
+        matches = list(filter(lambda m: m.group("type") == block_name, re.finditer(regex, script_content)))
+        if len(matches) != 1:
+            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed as it had {len(matches)} sections titled '{block_name}', and we expect exactly 1 such section."
+            GriptapeNodes.get_logger().error(details)
+            return LoadScriptMetadataResultFailure()
+
+        # Now attempt to parse out the metadata section, stripped of comment prefixes.
+        metadata_content = "".join(
+            line[2:] if line.startswith("# ") else line[1:]
+            for line in matches[0].group("content").splitlines(keepends=True)
+        )
+
+        try:
+            # Is it kosher?
+            script_metadata = ScriptMetadata.model_validate_json(metadata_content)
+        except Exception as err:
+            # No, it is haram.
+            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed because the metadata did not match the requisite schema with error: {err}"
+            GriptapeNodes.get_logger().error(details)
+            return LoadScriptMetadataResultFailure()
+
+        return LoadScriptMetadataResultSuccess(metadata=script_metadata)
+
     def on_save_scene_request(self, request: SaveSceneRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915
         obj_manager = GriptapeNodes.get_instance()._object_manager
         node_manager = GriptapeNodes.get_instance()._node_manager
         config_manager = GriptapeNodes.get_instance()._config_manager
+
         # open my file
         if request.file_name:
             file_name = request.file_name
@@ -2648,8 +2693,26 @@ class ScriptManager:
         created_flows = []
         node_libraries_used = set()
 
+        # Get the engine version.
+        engine_version_request = GetEngineVersionRequest()
+        engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
+        if not engine_version_result.succeeded():
+            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version."
+            GriptapeNodes.get_logger().error(details)
+            return SaveSceneResultFailure()
+        try:
+            engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
+            engine_version = (
+                f"{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
+            )
+        except Exception as err:
+            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version: {err}"
+            GriptapeNodes.get_logger().error(details)
+            return SaveSceneResultFailure()
+
         try:
             with file_path.open("w") as file:
+                # Now the critical import.
                 file.write("from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes\n")
                 # Write all flows to a file, get back the strings for connections
                 connection_request_scripts = handle_flow_saving(file, obj_manager, created_flows)
@@ -2696,25 +2759,32 @@ class ScriptManager:
                     node_libraries_used.add(library_and_version)
                 # Now all nodes AND parameters have been created
                 file.write(connection_request_scripts)
+
+                # Now that we have the info about what's actually being used, save out the script metadata.
+                script_metadata = ScriptMetadata(
+                    name=str(file_name),
+                    schema_version=ScriptMetadata.LATEST_SCHEMA_VERSION,
+                    file_path=relative_file_path,
+                    engine_version_created_with=engine_version,
+                    node_libraries_referenced=list(node_libraries_used),
+                    internal=False,
+                )
+                metadata_json = script_metadata.model_dump_json(indent=2)
+                # Format the metadata block with comment markers for each line
+                json_lines = metadata_json.split("\n")
+                commented_json_lines = ["# " + line for line in json_lines]
+
+                # Create the complete metadata block
+                header = f"# /// {ScriptManager.SCRIPT_METADATA_HEADER}"
+                metadata_lines = [header]
+                metadata_lines.extend(commented_json_lines)
+                metadata_lines.append("# ///")
+                metadata_lines.append("\n\n")
+                metadata_block = "\n".join(metadata_lines)
+
+                file.write(metadata_block)
         except Exception as e:
             details = f"Failed to save scene, exception: {e}"
-            GriptapeNodes.get_logger().error(details)
-            return SaveSceneResultFailure()
-
-        # Get the engine version.
-        engine_version_request = GetEngineVersionRequest()
-        engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
-        if not engine_version_result.succeeded():
-            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version."
-            GriptapeNodes.get_logger().error(details)
-            return SaveSceneResultFailure()
-        try:
-            engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
-            engine_version = (
-                f"{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
-            )
-        except Exception as err:
-            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version: {err}"
             GriptapeNodes.get_logger().error(details)
             return SaveSceneResultFailure()
 

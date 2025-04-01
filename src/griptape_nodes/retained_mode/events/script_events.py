@@ -133,3 +133,21 @@ class SaveSceneResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class SaveSceneResultFailure(ResultPayloadFailure):
     pass
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadScriptMetadata(RequestPayload):
+    file_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadScriptMetadataResultSuccess(ResultPayloadSuccess):
+    metadata: ScriptMetadata
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadScriptMetadataResultFailure(ResultPayloadFailure):
+    pass
