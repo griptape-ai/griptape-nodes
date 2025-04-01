@@ -221,7 +221,7 @@ def process_sse(event: dict) -> None:
         else:
             process_event(event)
     except Exception:
-        logger.exception("Error processing event, skipping.")
+        logger.warning("Error processing event, skipping.")
 
 
 def run_sse_mode() -> None:
