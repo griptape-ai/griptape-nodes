@@ -55,8 +55,16 @@ cp -R $REPO_NAME/scripts/ "$XDG_DATA_HOME/griptape_nodes/scripts"
 cd - >/dev/null
 rm -rf "$TMP_DIR"
 
+# ANSI color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
 echo ""
-echo "Installation complete!"
+echo "${GREEN}${BOLD}==========================================${NC}"
+echo "${GREEN}${BOLD}✅ Installation complete!${NC}"
 echo ""
-echo "Run 'griptape-nodes' (or just 'gtn') to start the engine."
+echo "${BOLD}👉 Run '${RED}griptape-nodes${NC}${BOLD}' (or just '${RED}gtn${NC}${BOLD}') to start the engine.${NC}"
+echo "${GREEN}${BOLD}==========================================${NC}"
 echo ""
