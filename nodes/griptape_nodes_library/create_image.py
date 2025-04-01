@@ -27,7 +27,9 @@ class CreateImageNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="agent",
-                allowed_types=["Agent"],
+                type="Agent",
+                input_types=["Agent, dict"],
+                output_type="Agent",
                 tooltip="None",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
@@ -37,7 +39,9 @@ class CreateImageNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="prompt",
-                allowed_types=["str"],
+                input_types=["str"],
+                output_type="str",
+                type="str",
                 tooltip="None",
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -47,7 +51,9 @@ class CreateImageNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="driver",
-                allowed_types=["BaseImageGenerationDriver"],
+                input_types=["BaseImageGenerationDriver"],
+                output_type="BaseImageGenerationDriver",
+                type="BaseImageGenerationDriver",
                 tooltip="None",
                 default_value="",
             )
@@ -56,7 +62,9 @@ class CreateImageNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output",
-                allowed_types=["ImageArtifact"],
+                input_types=["ImageArtifact"],
+                output_type="ImageArtifact",
+                type="ImageArtifact",
                 tooltip="None",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
@@ -66,7 +74,9 @@ class CreateImageNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output_file",
-                allowed_types=["str"],
+                input_types=["str"],
+                output_type="str",
+                type="str",
                 tooltip="None",
                 default_value=None,
             )
@@ -75,7 +85,9 @@ class CreateImageNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output_dir",
-                allowed_types=["str"],
+                input_types=["str"],
+                output_type="str",
+                type="str",
                 tooltip="None",
                 default_value=None,
             )
