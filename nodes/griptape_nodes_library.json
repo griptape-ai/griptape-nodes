@@ -72,24 +72,6 @@
       }
     },
     {
-      "class_name": "TestNode1",
-      "file_path": "griptape_nodes_library/kate_test_1.py",
-      "metadata": {
-        "category": "Agent",
-        "description": "",
-        "display_name": "katetest1"
-      }
-    },
-    {
-      "class_name": "TestNode2",
-      "file_path": "griptape_nodes_library/kate_test_2.py",
-      "metadata": {
-        "category": "Agent",
-        "description": "",
-        "display_name": "katetest2"
-      }
-    },
-    {
       "class_name": "AnthropicPromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/anthropic_prompt_driver.py",
       "metadata": {
