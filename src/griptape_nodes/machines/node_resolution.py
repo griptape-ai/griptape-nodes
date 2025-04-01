@@ -122,7 +122,7 @@ class EvaluateParameterState(State):
 class ExecuteNodeState(State):
     # TODO(kate): Can we refactor this method to make it a lot cleaner? might involve changing how parameter values are retrieved/stored.
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901, PLR0912, PLR0915
+    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901, PLR0912
         current_node = context.focus_stack[-1]
         connections = context.flow.connections
         # Get the parameters that have input values
@@ -252,8 +252,8 @@ class ExecuteNodeState(State):
                 data_type = type(value).__name__
             parameter = current_node.get_parameter_by_name(parameter_name)
             if parameter is None:
-                    err = f"Canceling flow run. Node '{current_node.name}' specified a Parameter '{parameter_name}', but no such Parameter could be found on that Node."
-                    raise KeyError(err)
+                err = f"Canceling flow run. Node '{current_node.name}' specified a Parameter '{parameter_name}', but no such Parameter could be found on that Node."
+                raise KeyError(err)
             if not parameter.is_outgoing_type_allowed(data_type):
                 msg = f"Type of {data_type} is not allowed as an output type for this parameter."
                 raise TypeError(msg)

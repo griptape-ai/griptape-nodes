@@ -29,8 +29,10 @@ class ParameterTypeBuiltin(Enum):
     NONE = "none"
     CONTROL_TYPE = "parametercontroltype"
 
+
 class ParameterControlType:
     pass
+
 
 class ParameterType:
     _builtin_aliases = {

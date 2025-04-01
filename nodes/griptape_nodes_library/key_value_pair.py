@@ -3,7 +3,6 @@ from typing import Any
 from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
-    ParameterUIOptions,
 )
 from griptape_nodes.exe_types.node_types import DataNode
 

@@ -9,8 +9,8 @@ from griptape_nodes.exe_types.core_types import (
     ControlParameterInput,
     ControlParameterOutput,
     Parameter,
-    ParameterTypeBuiltin,
     ParameterMode,
+    ParameterTypeBuiltin,
 )
 
 
@@ -305,7 +305,7 @@ class BaseNode(ABC):
                 return param
         return None
 
-    #TODO(kate): Can we remove this and change to default value? 
+    # TODO(kate): Can we remove this and change to default value?
     def valid_or_fallback(self, param_name: str, fallback: Any = None) -> Any:
         """Get a parameter value if valid, otherwise use fallback.
 

@@ -1,4 +1,4 @@
-from griptape_nodes.exe_types.core_types import Parameter, ParameterUIOptions, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 
