@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from griptape.events import EventBus
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterControlType, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,

@@ -372,6 +372,7 @@ class Parameter(BaseNodeElement):
 
     @property
     def type(self) -> str | None:
+        #TODO: Always return something
         return self._type
 
     @type.setter
