@@ -204,7 +204,6 @@ def sse_listener() -> None:  # noqa: C901
                         else:
                             try:
                                 json_data = json.loads(data)
-                                print(data)
                                 if json_data.get("request_type") == "Heartbeat":
                                     session_id = GriptapeNodes.get_session_id()
                                     socket.heartbeat(session_id=session_id, request=json_data)
