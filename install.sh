@@ -32,7 +32,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Verify uv is on the user's PATH
 if ! command -v uv >/dev/null 2>&1; then
-  echo "Error: 'uv' command not found. Please close and reopen your terminal, and then run the installer again."
+  echo "Error: Griptape Nodes dependency 'uv' was installed, but requires the terminal to be restarted to be run."
+  echo "Please close this terminal and open a new one, then run the install command you performed earlier."
+
   exit 1
 fi
 
