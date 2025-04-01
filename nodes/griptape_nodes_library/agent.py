@@ -30,26 +30,34 @@ class RunAgentNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="agent",
-                allowed_types=["Agent"],
+                type="Agent",
+                input_types=["Agent, dict"],
+                output_type="Agent",
                 tooltip="",
             )
         )
         with ParameterGroup(group_name="Agent Config") as config_group:
             Parameter(
                 name="prompt_driver",
-                allowed_types=["BasePromptDriver"],
+                input_types=["BasePromptDriver"],
+                output_type="BasePromptDriver",
+                type="BasePromptDriver",
                 default_value=None,
                 tooltip="",
             )
             Parameter(
                 name="prompt_model",
-                allowed_types=["str"],
+                input_types=["str"],
+                output_type="str",
+                type="str",
                 default_value=DEFAULT_MODEL,
                 tooltip="",
             )
             Parameter(
                 name="prompt",
-                allowed_types=["str"],
+                input_types=["str"],
+                output_type="str",
+                type="str",
                 default_value="",
                 tooltip="",
                 ui_options=ParameterUIOptions(
@@ -61,21 +69,29 @@ class RunAgentNode(ControlNode):
         self.add_node_element(config_group)
 
         with ParameterGroup(group_name="Agent Tools") as tools_group:
-            Parameter(name="tool", allowed_types=["BaseTool"], default_value=None, tooltip="")
+            Parameter(name="tool", input_types=["BaseTool"],
+                output_type="BaseTool",
+                type="BaseTool", default_value=None, tooltip="")
             Parameter(
                 name="tool_list",
-                allowed_types=["list[BaseTool]"],
+                input_types=["list[BaseTool]"],
+                output_type="list[BaseTool]",
+                type="list[BaseTool]",
                 default_value=None,
                 tooltip="",
             )
             Parameter(
                 name="ruleset",
-                allowed_types=["Ruleset"],
+                input_types=["Ruleset"],
+                output_type="Ruleset",
+                type="Ruleset",
                 tooltip="",
             )
             Parameter(
                 name="output",
-                allowed_types=["str"],
+                input_types=["str"],
+                output_type="str",
+                type="str",
                 default_value="",
                 tooltip="What the agent said.",
                 allowed_modes={ParameterMode.OUTPUT},
