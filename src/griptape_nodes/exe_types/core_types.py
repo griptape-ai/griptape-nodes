@@ -319,7 +319,7 @@ class Parameter(BaseNodeElement):
     next: Parameter | None = None
     prev: Parameter | None = None
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         tooltip: str,
@@ -337,8 +337,14 @@ class Parameter(BaseNodeElement):
         *,
         settable: bool = True,
         user_defined: bool = False,
+        element_id: str | None = None,
+        element_type: str | None = None,
     ):
-        super().__init__()
+        if not element_id:
+            element_id = str(uuid.uuid4().hex)
+        if not element_type:
+            element_type = BaseNodeElement.__name__
+        super().__init__(element_id=element_id, element_type=element_type)
         self.name = name
         self.tooltip = tooltip
         self.default_value = default_value

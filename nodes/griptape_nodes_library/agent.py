@@ -68,9 +68,14 @@ class RunAgentNode(ControlNode):
         self.add_node_element(config_group)
 
         with ParameterGroup(group_name="Agent Tools") as tools_group:
-            Parameter(name="tool", input_types=["BaseTool"],
+            Parameter(
+                name="tool",
+                input_types=["BaseTool"],
                 output_type="BaseTool",
-                type="BaseTool", default_value=None, tooltip="")
+                type="BaseTool",
+                default_value=None,
+                tooltip="",
+            )
             Parameter(
                 name="tool_list",
                 input_types=["list[BaseTool]"],

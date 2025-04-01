@@ -45,8 +45,8 @@ class TestNodeEvents:
                         "details": {
                             "element_id": ANY,
                             "input_types": ["Agent"],
-                            "output_type":  "Agent",
-                            "type":  "Agent",
+                            "output_type": "Agent",
+                            "type": "Agent",
                             "default_value": None,
                             "tooltip": "",
                             "tooltip_as_input": None,
@@ -63,8 +63,8 @@ class TestNodeEvents:
                     "prompt_driver": {
                         "details": {
                             "element_id": ANY,
-                            "input_types":  ["BasePromptDriver"],
-                            "output_type":  "BasePromptDriver",
+                            "input_types": ["BasePromptDriver"],
+                            "output_type": "BasePromptDriver",
                             "type": "BasePromptDriver",
                             "default_value": None,
                             "tooltip": "",
@@ -83,8 +83,8 @@ class TestNodeEvents:
                         "details": {
                             "element_id": ANY,
                             "input_types": ["str"],
-                            "output_type":  "str",
-                            "type":  "str",
+                            "output_type": "str",
+                            "type": "str",
                             "default_value": "gpt-4o",
                             "tooltip": "",
                             "tooltip_as_input": None,
@@ -102,8 +102,8 @@ class TestNodeEvents:
                         "details": {
                             "element_id": ANY,
                             "input_types": ["str"],
-                            "output_type":  "str",
-                            "type":  "str",
+                            "output_type": "str",
+                            "type": "str",
                             "default_value": "",
                             "tooltip": "",
                             "tooltip_as_input": None,
@@ -133,8 +133,8 @@ class TestNodeEvents:
                         "details": {
                             "element_id": ANY,
                             "input_types": ["BaseTool"],
-                            "output_type":  "BaseTool",
-                            "type":  "BaseTool",
+                            "output_type": "BaseTool",
+                            "type": "BaseTool",
                             "default_value": None,
                             "tooltip": "",
                             "tooltip_as_input": None,
@@ -152,8 +152,8 @@ class TestNodeEvents:
                         "details": {
                             "element_id": ANY,
                             "input_types": ["list[BaseTool]"],
-                            "output_type":  "list[BaseTool]",
-                            "type":  "list[BaseTool]",
+                            "output_type": "list[BaseTool]",
+                            "type": "list[BaseTool]",
                             "default_value": None,
                             "tooltip": "",
                             "tooltip_as_input": None,
@@ -171,8 +171,8 @@ class TestNodeEvents:
                         "details": {
                             "element_id": ANY,
                             "input_types": ["Ruleset"],
-                            "output_type":  "Ruleset",
-                            "type":  "Ruleset",
+                            "output_type": "Ruleset",
+                            "type": "Ruleset",
                             "default_value": None,
                             "tooltip": "",
                             "tooltip_as_input": None,
@@ -189,8 +189,8 @@ class TestNodeEvents:
                     "output": {
                         "details": {
                             "element_id": ANY,
-                            "output_type":"str",
-                            "type":  "str",
+                            "output_type": "str",
+                            "type": "str",
                             "default_value": "",
                             "tooltip": "What the agent said.",
                             "tooltip_as_input": None,
