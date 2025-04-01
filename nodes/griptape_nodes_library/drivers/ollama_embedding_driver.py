@@ -23,7 +23,9 @@ class OllamaEmbeddingDriverNode(BaseEmbeddingDriverNode):
         self.add_parameter(
             Parameter(
                 name="base_url",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                output_type="str",
                 default_value=DEFAULT_BASE_URL,
                 tooltip="The base URL of the Ollama server",
             )
@@ -31,7 +33,9 @@ class OllamaEmbeddingDriverNode(BaseEmbeddingDriverNode):
         self.add_parameter(
             Parameter(
                 name="port",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                output_type="str",
                 default_value=DEFAULT_PORT,
                 tooltip="The port of the Ollama server",
             )
@@ -39,7 +43,9 @@ class OllamaEmbeddingDriverNode(BaseEmbeddingDriverNode):
         self.add_parameter(
             Parameter(
                 name="embedding_model",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                output_type="str",
                 default_value="",
                 tooltip="The embedding model to use",
             )

@@ -8,7 +8,16 @@ from griptape_nodes_library.tools.tools import BaseToolNode
 class WebSearchToolNode(BaseToolNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.add_parameter(Parameter(name="driver", allowed_types=["dict"], default_value={}, tooltip=""))
+        self.add_parameter(
+            Parameter(
+                name="driver",
+                input_types=["dict"],
+                type="dict",
+                output_type="dict",
+                default_value={},
+                tooltip="",
+            )
+        )
 
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", False)

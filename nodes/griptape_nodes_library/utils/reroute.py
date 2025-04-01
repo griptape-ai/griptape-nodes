@@ -18,7 +18,8 @@ class RerouteNode(DataNode):
 
         passthru = Parameter(
             name="passThru",
-            allowed_types=["Any"],
+            input_types=["Any"],
+            output_type="Any",
             default_value=None,
             tooltip="",
             allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
@@ -89,14 +90,15 @@ class RerouteNode(DataNode):
         # Our allowed types is the intersection of all of our current connections.
         all_allowed_types = []
         for incoming_connection_param in self.incoming_connection_params:
-            allowed_types = incoming_connection_param.allowed_types
-            all_allowed_types.append(allowed_types)
+            allowed_type = incoming_connection_param.output_type
+            all_allowed_types.append(allowed_type)
         for outgoing_connection_param in self.outgoing_connection_params:
-            allowed_types = outgoing_connection_param.allowed_types
+            allowed_types = outgoing_connection_param.input_types
             all_allowed_types.append(allowed_types)
 
         intersection = RerouteNode.intersection_of_allowed_types(*all_allowed_types)
-        parameter.allowed_types = intersection
+        parameter.input_types = intersection
+        parameter.output_type = intersection[0]
 
     def after_incoming_connection(
         self,

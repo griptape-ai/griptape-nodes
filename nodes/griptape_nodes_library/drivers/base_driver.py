@@ -13,7 +13,7 @@ class BaseDriverNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="driver",
-                allowed_types=["Any"],
+                output_type="Any",
                 default_value=None,
                 tooltip="",
                 allowed_modes={ParameterMode.OUTPUT},

@@ -15,7 +15,14 @@ class TestBaseNodeElement:
                     BaseNodeElement(element_id="leaf1")
             with BaseNodeElement():
                 BaseNodeElement(element_id="leaf2")
-                Parameter(element_id="parameter", name="test", allowed_types=["str"], tooltip="test")
+                Parameter(
+                    element_id="parameter",
+                    name="test",
+                    input_types=["str"],
+                    type="str",
+                    output_type="str",
+                    tooltip="test",
+                )
 
         return root
 
@@ -170,4 +177,4 @@ class TestParameterGroup:
 
 class TestParameter:
     def test_init(self) -> None:
-        assert Parameter(name="test", allowed_types=["str"], tooltip="test")
+        assert Parameter(name="test", input_types=["str"], type="str", output_type="str", tooltip="test")

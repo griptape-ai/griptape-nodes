@@ -12,7 +12,9 @@ class LoadImageNode(DataNode):
         self.description = "Load an image"
         image_parameter = Parameter(
             name="image",
-            allowed_types=["ImageArtifact", "BlobArtifact"],
+            input_types=["ImageArtifact", "BlobArtifact"],
+            type="ImageArtifact",
+            output_type="ImageArtifact",
             ui_options=ParameterUIOptions(
                 image_type_options=ParameterUIOptions.ImageType(clickable_file_browser=True, expander=True)
             ),

@@ -25,7 +25,9 @@ class AzureOpenAiChatPromptDriverNode(BaseImageDriverNode):
         self.add_parameter(
             Parameter(
                 name="image_generation_model",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                output_type="str",
                 default_value=DEFAULT_MODEL,
                 tooltip="Select the model for image generation.",
             )
@@ -33,7 +35,9 @@ class AzureOpenAiChatPromptDriverNode(BaseImageDriverNode):
         self.add_parameter(
             Parameter(
                 name="image_deployment_name",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                output_type="str",
                 default_value=DEFAULT_MODEL,
                 tooltip="Enter the deployment name for the image generation model.",
             )
@@ -41,7 +45,9 @@ class AzureOpenAiChatPromptDriverNode(BaseImageDriverNode):
         self.add_parameter(
             Parameter(
                 name="size",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                output_type="str",
                 default_value=DEFAULT_SIZE,
                 tooltip="Select the size of the generated image.",
             )
@@ -49,7 +55,9 @@ class AzureOpenAiChatPromptDriverNode(BaseImageDriverNode):
         self.add_parameter(
             Parameter(
                 name="image_endpoint_env_var",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                output_type="str",
                 default_value=AZURE_ENDPOINT_ENV_VAR,
                 tooltip="Enter the name of the environment variable for AZURE_OPENAI_DALL_E_3_ENDPOINT, not the actual endpoint.",
             )
@@ -57,7 +65,9 @@ class AzureOpenAiChatPromptDriverNode(BaseImageDriverNode):
         self.add_parameter(
             Parameter(
                 name="image_api_key_env_var",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                output_type="str",
                 default_value=API_KEY_ENV_VAR,
                 tooltip="Enter the name of the environment variable for AZURE_OPENAI_DALL_E_3_API_KEY, not the actual API key.",
             )

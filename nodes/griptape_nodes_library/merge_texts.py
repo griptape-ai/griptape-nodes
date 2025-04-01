@@ -21,7 +21,7 @@ class MergeTextsNode(ControlNode):
             Parameter(
                 name="inputs",
                 allowed_modes={ParameterMode.INPUT},
-                allowed_types=["list"],  # This parameter accepts lists
+                input_types=["list"],
                 default_value=[],
                 tooltip="Text inputs to merge together.",
                 ui_options=ParameterUIOptions(
@@ -35,7 +35,8 @@ class MergeTextsNode(ControlNode):
             Parameter(
                 name="merge_string",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
                 default_value="\\n\\n",
                 tooltip="The string to use as separator between inputs.",
             )
@@ -46,7 +47,7 @@ class MergeTextsNode(ControlNode):
             Parameter(
                 name="output",
                 allowed_modes={ParameterMode.OUTPUT},
-                allowed_types=["str"],
+                output_type="str",
                 default_value="",
                 tooltip="The merged text result.",
             )

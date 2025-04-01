@@ -18,7 +18,8 @@ class DictNode(DataNode):
             Parameter(
                 name="keys",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                allowed_types=["list[str]"],  # A list of strings
+                input_types=["list[str]"],
+                type="list[str]",
                 default_value=[],
                 tooltip="List of dictionary keys",
             )
@@ -29,13 +30,14 @@ class DictNode(DataNode):
             Parameter(
                 name="values",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                allowed_types=[
+                input_types=[
                     "list[str]",
                     "list[int]",
                     "list[float]",
                     "list[bool]",
                     "list",
-                ],  # List with various possible types
+                ],
+                type="list",
                 default_value=[],
                 tooltip="List of dictionary values",
             )
@@ -46,7 +48,7 @@ class DictNode(DataNode):
             Parameter(
                 name="dict",
                 allowed_modes={ParameterMode.OUTPUT},
-                allowed_types=["dict"],
+                output_type="dict",
                 default_value={},
                 tooltip="The constructed dictionary",
             )
