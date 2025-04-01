@@ -146,7 +146,6 @@ class ExecuteNodeState(State):
         for parameter in current_node.parameters:
             if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
                 continue
-            use_set_value = False
             if ParameterMode.INPUT in parameter.allowed_modes:
                 # If the parameter has an INPUT - This will be the value!
                 source_values = connections.get_connected_node(current_node, parameter)
@@ -170,13 +169,8 @@ class ExecuteNodeState(State):
                                     )
                                     app_event = AppEvent(payload=AppExecutionEvent(modified_request))
                                     EventBus.publish_event(app_event)  # pyright: ignore[reportArgumentType]
-                else:
-                    use_set_value = ParameterMode.PROPERTY in parameter.allowed_modes
             # If the parameter DOES NOT have an input and has a property value- use the default value!
-            elif ParameterMode.PROPERTY in parameter.allowed_modes:
-                use_set_value = True
-
-            if use_set_value and parameter.name not in current_node.parameter_values:
+            if parameter.name not in current_node.parameter_values and parameter.default_value:
                 # If a parameter value is not already set
                 value = parameter.default_value
                 modified_parameters = current_node.set_parameter_value(parameter.name, value)
@@ -254,16 +248,18 @@ class ExecuteNodeState(State):
             elif isinstance(value, dict) and "type" in value:
                 # They embedded a value in the dict.
                 data_type = value["type"]
-
-            if data_type is None:
-                # Get the value off the Parameter.
-                parameter = current_node.get_parameter_by_name(parameter_name)
-                if parameter is None:
+            else:
+                data_type = type(value).__name__
+            parameter = current_node.get_parameter_by_name(parameter_name)
+            if parameter is None:
                     err = f"Canceling flow run. Node '{current_node.name}' specified a Parameter '{parameter_name}', but no such Parameter could be found on that Node."
                     raise KeyError(err)
-                data_type = parameter.type
-                if data_type is None:
-                    data_type = ParameterTypeBuiltin.NONE.value
+            if not parameter.is_outgoing_type_allowed(data_type):
+                msg = f"Type of {data_type} is not allowed for this parameter."
+                raise TypeError(msg)
+            data_type = parameter.type
+            if data_type is None:
+                data_type = ParameterTypeBuiltin.NONE.value
 
             EventBus.publish_event(
                 ExecutionGriptapeNodeEvent(

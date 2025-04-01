@@ -28,17 +28,9 @@ class TypeValidator(SingletonMixin):
             return obj
         try:
             obj_dict = obj.to_dict()
-        except Exception:
-            logger.exception("Error serializing object: %s", obj)
-        else:
             return obj_dict
-        try:
-            import pickle
-
-            pickle.dumps(obj)
         except Exception:
-            if hasattr(obj, "id"):
-                return {f"{type(obj).__name__} Object: {obj.id}"}
-        else:
-            return obj
+            pass
+        if hasattr(obj, "id"):
+            return {f"{type(obj).__name__} Object: {obj.id}"}
         return f"{type(obj).__name__} Object"

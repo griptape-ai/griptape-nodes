@@ -29,6 +29,8 @@ class ParameterTypeBuiltin(Enum):
     NONE = "none"
     CONTROL_TYPE = "parametercontroltype"
 
+class ParameterControlType:
+    pass
 
 class ParameterType:
     _builtin_aliases = {
@@ -379,21 +381,21 @@ class Parameter(BaseNodeElement):
 
         # Use the property setters for special logic
         # We are allowing users to define, but they do have to define.
-        if type not in globals():
-            msg = f"Provided type of {type} has not been defined."
-            raise TypeError(msg)
-        if output_type not in globals():
-            msg = f"Provided type of {output_type} has not been defined."
-            raise TypeError(msg)
-        if input_types:
-            for input_type in input_types:
-                if input_type not in globals():
-                    msg = f"Provided type of {input_type} has not been defined."
-                    raise TypeError(msg)
-
         self.type = type
         self.input_types = input_types
         self.output_type = output_type
+        # if self.type and self.type not in globals():
+        #     msg = f"Provided type of {type} has not been defined."
+        #     raise TypeError(msg)
+        # if self.output_type and self.output_type not in globals():
+        #     msg = f"Provided type of {output_type} has not been defined."
+        #     raise TypeError(msg)
+        # if self.input_types:
+        #     for input_type in self.input_types:
+        #         if input_type not in globals():
+        #             msg = f"Provided type of {input_type} has not been defined."
+        #             raise TypeError(msg)
+        super().__init__()
 
     @property
     def type(self) -> str | None:

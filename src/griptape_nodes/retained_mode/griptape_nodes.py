@@ -2041,9 +2041,10 @@ class NodeManager:
             return result
 
         object_created = request.value
+        object_type = type(object_created).__name__
         # here we need to see if type_of matches the actual value.
         # Is this value kosher for the types allowed?
-        if not parameter.is_incoming_type_allowed(object_created) and not (
+        if not parameter.is_incoming_type_allowed(object_type) and not (
             isinstance(object_created, dict) and "type" in object_created
         ):
             details = f'set_value for "{request.node_name}.{request.parameter_name}" failed.  type "{object_created.__class__.__name__}" not in allowed types:{parameter.input_types}'
