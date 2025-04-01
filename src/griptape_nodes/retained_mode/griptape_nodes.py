@@ -2489,7 +2489,7 @@ class NodeManager:
 
 
 class ScriptManager:
-    SCRIPT_METADATA_HEADER: ClassVar[str] = "tool.griptape-nodes"
+    SCRIPT_METADATA_HEADER: ClassVar[str] = "script"
 
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(
@@ -2792,25 +2792,24 @@ class ScriptManager:
                     toml_doc.add("dependencies", tomlkit.item([]))
                     griptape_tool_table = tomlkit.table()
                     metadata_dict = script_metadata.model_dump()
-                    item = tomlkit.item(metadata_dict)
-                    griptape_tool_table.add()
                     for key, value in metadata_dict.items():
-                        griptape_tool_table.add(key=key, value=value)
-                    toml_doc.add(griptape_tool_table)
+                        # Strip out the Nones since TOML doesn't like those.
+                        if value is not None:
+                            griptape_tool_table.add(key=key, value=value)
+                    toml_doc["tool"] = griptape_tool_table
                 except Exception as err:
-                    print("BLAH!")
+                    details = f"Attempted to save scene '{relative_file_path}', but failed to get metadata into TOML format: {err}."
+                    GriptapeNodes.get_logger().error(details)
+                    return SaveSceneResultFailure()
 
-                toml_lines = toml_doc.as_string()
-
-                metadata_json = script_metadata.model_dump_json(indent=2)
                 # Format the metadata block with comment markers for each line
-                json_lines = metadata_json.split("\n")
-                commented_json_lines = ["# " + line for line in json_lines]
+                toml_lines = tomlkit.dumps(toml_doc).split("\n")
+                commented_toml_lines = ["# " + line for line in toml_lines]
 
                 # Create the complete metadata block
                 header = f"# /// {ScriptManager.SCRIPT_METADATA_HEADER}"
                 metadata_lines = [header]
-                metadata_lines.extend(commented_json_lines)
+                metadata_lines.extend(commented_toml_lines)
                 metadata_lines.append("# ///")
                 metadata_lines.append("\n\n")
                 metadata_block = "\n".join(metadata_lines)
