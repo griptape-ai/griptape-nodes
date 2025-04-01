@@ -2655,6 +2655,8 @@ class ScriptManager:
         created_flows = []
         node_libraries_used = set()
 
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
         try:
             with file_path.open("w") as file:
                 file.write("from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes\n")
