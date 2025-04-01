@@ -12,7 +12,7 @@ AVAILABLE_MODELS = ["dall-e-3", "dall-e-2"]
 AVAILABLE_SIZES = ["256x256", "512x512", "1024x1024", "1024x1792", "1792x1024"]
 
 
-class AzureOpenAiChatPromptDriverNode(BaseImageDriverNode):
+class AzureOpenAiImageDriverNode(BaseImageDriverNode):
     """Node for Azure OpenAI Image Generation Driver.
 
     This node creates an Azure OpenAI image generation driver and outputs its configuration.

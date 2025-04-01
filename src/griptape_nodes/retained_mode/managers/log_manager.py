@@ -1,15 +1,15 @@
 import logging
 
-from griptape.events import EventBus
 from rich.logging import RichHandler
 
+from griptape_nodes.api.queue_manager import event_queue
 from griptape_nodes.retained_mode.events.base_events import AppEvent
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 
 
 class EventLogHandler(logging.Handler):
     def emit(self, record) -> None:
-        EventBus.publish_event(
+        event_queue.put(
             AppEvent(  # pyright: ignore[reportArgumentType]
                 payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)
             )

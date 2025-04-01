@@ -2709,6 +2709,8 @@ class ScriptManager:
         created_flows = []
         node_libraries_used = set()
 
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
         # Get the engine version.
         engine_version_request = GetEngineVersionRequest()
         engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)

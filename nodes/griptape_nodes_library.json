@@ -99,7 +99,7 @@
       }
     },
     {
-      "class_name": "BaseAudioTranscriptionDriverNode",
+      "class_name": "AzureOpenAiChatPromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/azure_openai_chat_prompt_driver.py",
       "metadata": {
         "category": "Drivers",
@@ -108,7 +108,7 @@
       }
     },
     {
-      "class_name": "AzureOpenAiChatPromptDriverNode",
+      "class_name": "AzureOpenAiImageDriverNode",
       "file_path": "griptape_nodes_library/drivers/azure_openai_image_driver.py",
       "metadata": {
         "category": "Drivers",
@@ -177,15 +177,6 @@
         "category": "Drivers",
         "description": "OpenAI image generation driver (dall-e-3)",
         "display_name": "OpenAI Image Driver"
-      }
-    },
-    {
-      "class_name": "BaseWebSearchDriverNode",
-      "file_path": "griptape_nodes_library/drivers/web_search_drivers.py",
-      "metadata": {
-        "category": "Drivers",
-        "description": "Web search driver (Duck Duck Go)",
-        "display_name": "Base Web Search Driver"
       }
     },
     {
