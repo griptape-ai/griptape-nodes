@@ -20,7 +20,7 @@ if ($API_KEY) {
     } 
         # Write the API key to the config file
 '{
-  "env": {
+  "nodes": {
       "Griptape": {
         "GT_CLOUD_API_KEY": "$GT_CLOUD_API_KEY"
       }
