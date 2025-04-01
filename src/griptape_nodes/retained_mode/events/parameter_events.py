@@ -187,6 +187,7 @@ class GetParameterValueRequest(RequestPayload):
 @PayloadRegistry.register
 class GetParameterValueResultSuccess(ResultPayloadSuccess):
     input_types: list[str]
+    type: str
     output_type: str
     value: Any
 
