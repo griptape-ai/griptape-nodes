@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from griptape.events import EventBus
@@ -22,6 +23,8 @@ from griptape_nodes.retained_mode.events.parameter_events import GetParameterDet
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.flow import ControlFlow
+
+logger = logging.getLogger(__name__)
 
 
 # This is on a per-node basis
@@ -226,7 +229,7 @@ class ExecuteNodeState(State):
         )
         current_node.state = NodeResolutionState.RESOLVED
         details = f"{current_node.name} resolved. \n Inputs: {TypeValidator.safe_serialize(current_node.parameter_values)} \n Outputs: {TypeValidator.safe_serialize(current_node.parameter_output_values)}"
-        print(details)
+        logger.info(details)
         # Output values should already be saved!
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
@@ -251,8 +254,8 @@ class ExecuteNodeState(State):
                 err = f"Canceling flow run. Node '{current_node.name}' specified a Parameter '{parameter_name}', but no such Parameter could be found on that Node."
                 raise KeyError(err)
             if not parameter.is_outgoing_type_allowed(data_type):
-                msg = f"Type of {data_type} is not allowed as an output type for this parameter."
-                raise TypeError(msg)
+                msg = f"Type of {data_type} does not match the output type for this parameter."
+                logger.warning(msg)
             data_type = parameter.type
             if data_type is None:
                 data_type = ParameterTypeBuiltin.NONE.value
