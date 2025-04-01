@@ -26,7 +26,7 @@ class TestNode1(ControlNode):
             Parameter(
                 name="text",
                 allowed_modes={ParameterMode.OUTPUT},
-                input_types=["AwesomeClass"],
+                input_types=None,
                 output_type="AwesomeClass",
                 default_value=AwesomeClass(),
                 tooltip="",

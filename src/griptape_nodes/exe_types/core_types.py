@@ -382,8 +382,12 @@ class Parameter(BaseNodeElement):
         # Use the property setters for special logic
         # We are allowing users to define, but they do have to define.
         self.type = type
+        # Set so we can take care of input types if necessary
+        self._output_type = output_type
         self.input_types = input_types
         self.output_type = output_type
+        if not self.input_types:
+            self.input_types = None
         # if self.type and self.type not in globals():
         #     msg = f"Provided type of {type} has not been defined."
         #     raise TypeError(msg)
@@ -418,7 +422,12 @@ class Parameter(BaseNodeElement):
     @input_types.setter
     def input_types(self, value: list[str] | None) -> None:
         if value is None:
-            self._input_types = None
+            if self._output_type:
+                self._input_types = [self._output_type]
+            elif self._type:
+                self._input_types = [self._type]
+            else:
+                self._input_types = None
         else:
             self._input_types = []
             for new_type in value:

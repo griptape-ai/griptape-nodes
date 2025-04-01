@@ -28,9 +28,10 @@ class TypeValidator(SingletonMixin):
             return obj
         try:
             obj_dict = obj.to_dict()
-            return obj_dict
         except Exception:
-            pass
+            logger.warning("Error serializing object: Going to use type name.")
+        else:
+            return obj_dict
         if hasattr(obj, "id"):
             return {f"{type(obj).__name__} Object: {obj.id}"}
         return f"{type(obj).__name__} Object"
