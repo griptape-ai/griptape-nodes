@@ -393,7 +393,9 @@ class Parameter(BaseNodeElement):
             builtin = ParameterType.attempt_get_builtin(value)
             if builtin is not None:
                 self._type = builtin.value
-                return
+            else:
+                self._type = value
+            return
         self._type = None
 
     @property
