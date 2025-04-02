@@ -132,7 +132,7 @@ def _prompt_for_workspace() -> None:
     while not valid_workspace:
         try:
             workspace_directory = Prompt.ask(
-                "Please enter your workspace directory",
+                "Please enter your Griptape Nodes Engine workspace directory",
                 default=default_workspace_directory,
                 show_default=True,
             )
