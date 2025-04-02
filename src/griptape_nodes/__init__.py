@@ -106,16 +106,16 @@ def _init_system_config() -> bool:
 
 def _prompt_for_api_key(api_key: str | None = None) -> None:
     """Prompts the user for their GT_CLOUD_API_KEY unless it's provided."""
+    if api_key is None:
+        explainer = f"""[bold cyan]Griptape API Key[/bold cyan]
+        A Griptape API Key is needed to proceed.
+        This key allows the Griptape Nodes engine to communicate with the Griptape Nodes Editor.
+        In order to get a key, visit [link={NODES_APP_URL}]{NODES_APP_URL}[/link] in your browser and click the button "Generate API Key".
+        Once the key is created, copy and paste its value here to proceed."""
+        console.print(Panel(explainer, expand=False))
+
+    current_key = api_key
     default_key = api_key or DotEnv(ENV_FILE, verbose=False).get("GT_CLOUD_API_KEY")
-
-    explainer = f"""[bold cyan]Griptape API Key[/bold cyan]
-    A Griptape API Key is needed to proceed.
-    This key allows the Griptape Nodes engine to communicate with the Griptape Nodes Editor.
-    In order to get a key, visit [link={NODES_APP_URL}]{NODES_APP_URL}[/link] in your browser and click the button "Generate API Key".
-    Once the key is created, copy and paste its value here to proceed."""
-    console.print(Panel(explainer, expand=False))
-
-    current_key = None
     while current_key is None:
         current_key = Prompt.ask(
             "Griptape API Key",
@@ -130,8 +130,6 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
 
 def _prompt_for_workspace() -> None:
     """Prompts the user for their workspace directory and stores it in config directory."""
-    default_workspace_directory = config_manager.get_config_value("workspace_directory")
-
     explainer = """[bold cyan]Workspace Directory[/bold cyan]
     Select the workspace directory. This is the location where Griptape Nodes will store flows, config, and secrets.
     You may enter a custom directory or press Return to accept the default workspace directory
@@ -139,6 +137,7 @@ def _prompt_for_workspace() -> None:
     console.print(Panel(explainer, expand=False))
 
     valid_workspace = False
+    default_workspace_directory = config_manager.get_config_value("workspace_directory")
     while not valid_workspace:
         try:
             workspace_directory = Prompt.ask(

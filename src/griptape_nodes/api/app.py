@@ -23,6 +23,7 @@ from rich.console import Console
 from rich.panel import Panel
 from xdg_base_dirs import xdg_config_home
 
+from griptape_nodes import NODES_APP_URL
 from griptape_nodes.api.queue_manager import event_queue
 from griptape_nodes.api.routes.api import process_event
 from griptape_nodes.api.routes.nodes_api_socket_manager import NodesApiSocketManager
@@ -162,7 +163,7 @@ def sse_listener() -> None:
             endpoint = urljoin(
                 os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/engines/stream"
             )
-            nodes_app_url = os.getenv("GRIPTAPE_NODES_APP_URL", "https://nodes.griptape.ai")
+            nodes_app_url = os.getenv("GRIPTAPE_NODES_APP_URL", NODES_APP_URL)
 
             def auth(request: httpx.Request) -> httpx.Request:
                 api_key = get_key(xdg_config_home() / "griptape_nodes" / ".env", "GT_CLOUD_API_KEY")
