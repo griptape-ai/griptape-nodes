@@ -11,19 +11,21 @@ class RulesetNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="name",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 default_value="Behavior",
                 tooltip="Add the name for your ruleset here",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
             )
         )
         self.add_parameter(
             Parameter(
                 name="rules",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 default_value="",
                 tooltip="",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 ui_options=ParameterUIOptions(
                     string_type_options=ParameterUIOptions.StringType(
                         multiline=True,
@@ -35,10 +37,11 @@ class RulesetNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="ruleset",
-                allowed_types=["Ruleset"],
+                type="Ruleset",
+                output_type="Ruleset",
+                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 default_value=None,
                 tooltip="",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             )
         )
 

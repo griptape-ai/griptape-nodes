@@ -19,7 +19,7 @@ class SaveTextNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="text",
-                allowed_types=["str"],
+                input_types=["str"],
                 allowed_modes={ParameterMode.INPUT},
                 tooltip="The text content to save to file",
             )
@@ -29,7 +29,8 @@ class SaveTextNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output_path",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="griptape_output.txt",
                 tooltip="The output filename",

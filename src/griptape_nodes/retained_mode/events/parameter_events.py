@@ -17,12 +17,14 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 class AddParameterToNodeRequest(RequestPayload):
     parameter_name: str
     node_name: str
-    allowed_types: list[str]
     default_value: Any | None
     tooltip: str | list[dict]
     tooltip_as_input: str | list[dict] | None = None
     tooltip_as_property: str | list[dict] | None = None
     tooltip_as_output: str | list[dict] | None = None
+    type: str | None = None
+    input_types: list[str] | None = None
+    output_type: str | None = None
     ui_options: ParameterUIOptions | None = None
     mode_allowed_input: bool = Field(default=True)
     mode_allowed_property: bool = Field(default=True)
@@ -106,7 +108,9 @@ class GetParameterDetailsRequest(RequestPayload):
 @PayloadRegistry.register
 class GetParameterDetailsResultSuccess(ResultPayloadSuccess):
     element_id: str
-    allowed_types: list[str]
+    type: str
+    input_types: list[str]
+    output_type: str
     default_value: Any | None
     tooltip: str | list[dict]
     tooltip_as_input: str | list[dict] | None
@@ -130,7 +134,9 @@ class GetParameterDetailsResultFailure(ResultPayloadFailure):
 class AlterParameterDetailsRequest(RequestPayload):
     parameter_name: str
     node_name: str
-    allowed_types: list[str] | None = None
+    type: str | None = None
+    input_types: list[str] | None = None
+    output_type: str | None = None
     default_value: Any | None = None
     tooltip: str | list[dict] | None = None
     tooltip_as_input: str | list[dict] | None = None
@@ -180,7 +186,9 @@ class GetParameterValueRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetParameterValueResultSuccess(ResultPayloadSuccess):
-    data_type: str
+    input_types: list[str]
+    type: str
+    output_type: str
     value: Any
 
 

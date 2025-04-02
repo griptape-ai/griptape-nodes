@@ -24,7 +24,7 @@ class GriptapeCloudImageDriverNode(BaseImageDriverNode):
         self.add_parameter(
             Parameter(
                 name="image_generation_model",
-                allowed_types=["str"],
+                type="str",
                 default_value=DEFAULT_MODEL,
                 tooltip="Select the model for image generation.",
             )
@@ -32,7 +32,7 @@ class GriptapeCloudImageDriverNode(BaseImageDriverNode):
         self.add_parameter(
             Parameter(
                 name="image_deployment_name",
-                allowed_types=["str"],
+                type="str",
                 default_value=DEFAULT_MODEL,
                 tooltip="Enter the deployment name for the image generation model.",
             )
@@ -40,7 +40,7 @@ class GriptapeCloudImageDriverNode(BaseImageDriverNode):
         self.add_parameter(
             Parameter(
                 name="size",
-                allowed_types=["str"],
+                type="str",
                 default_value=DEFAULT_SIZE,
                 tooltip="Select the size of the generated image.",
             )

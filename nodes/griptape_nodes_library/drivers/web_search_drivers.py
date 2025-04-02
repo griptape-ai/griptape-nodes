@@ -16,7 +16,16 @@ class BaseWebSearchDriverNode(DataNode):
     def __init__(self, name: str, metadata: dict | None = None) -> None:
         super().__init__(name, metadata)
 
-        self.add_parameter(Parameter(name="driver", allowed_types=["dict"], default_value=None, tooltip=""))
+        self.add_parameter(
+            Parameter(
+                name="driver",
+                input_types=["dict"],
+                type="dict",
+                output_type="dict",
+                default_value=None,
+                tooltip="",
+            )
+        )
 
 
 class DuckDuckGoWebSearchDriverNode(BaseWebSearchDriverNode):

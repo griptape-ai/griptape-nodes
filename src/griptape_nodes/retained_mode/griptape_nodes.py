@@ -16,10 +16,10 @@ import tomlkit
 from dotenv import load_dotenv
 from xdg_base_dirs import xdg_data_home
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterControlType, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
-from griptape_nodes.exe_types.type_validator import TypeValidationError, TypeValidator
+from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.node_library.script_registry import LibraryNameAndVersion, ScriptMetadata, ScriptRegistry
 from griptape_nodes.retained_mode.events.app_events import (
@@ -867,16 +867,9 @@ class FlowManager:
             result = CreateConnectionResultFailure()
             return result
 
-        # Validate that at least ONE data type from the source is allowed by the target.
-        any_types_matched = False
-        source_types_allowed = source_param.allowed_types
-        for source_type_allowed in source_types_allowed:
-            if target_param.is_type_allowed(source_type_allowed):
-                any_types_matched = True
-                break
-
-        if not any_types_matched:
-            details = f'Connection failed on type mismatch "{request.source_node_name}.{request.source_parameter_name}" types({source_param.allowed_types}) to "{request.target_node_name}.{request.target_parameter_name}" types({target_param.allowed_types}) '
+        # Validate that the data type from the source is allowed by the target.
+        if not target_param.is_incoming_type_allowed(source_param.output_type):
+            details = f'Connection failed on type mismatch "{request.source_node_name}.{request.source_parameter_name}" type({source_param.output_type}) to "{request.target_node_name}.{request.target_parameter_name}" types({target_param.input_types}) '
             GriptapeNodes.get_logger().error(details)
 
             result = CreateConnectionResultFailure()
@@ -1692,7 +1685,7 @@ class NodeManager:
         )
         return result
 
-    def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:
+    def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -1714,19 +1707,28 @@ class NodeManager:
 
         # Let's see if the Parameter is properly formed.
         # If a Parameter is intended for Control, it needs to have that be the exclusive type.
-        if ParameterControlType.__name__ in request.allowed_types and len(request.allowed_types) != 1:
-            details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{request.node_name}'. Failed because it had 'ParameterControlType' with other types allowed. If a Parameter is intended for control, it must only accept that type."
-            GriptapeNodes.get_logger().error(details)
+        # The 'type', 'types', and 'output_type' are a little weird to handle (see Parameter definition for details)
+        has_control_type = False
+        has_non_control_types = False
+        if request.type is not None:
+            if request.type.lower() == ParameterTypeBuiltin.CONTROL_TYPE.value.lower():
+                has_control_type = True
+            else:
+                has_non_control_types = True
+        if request.input_types is not None:
+            for test_type in request.input_types:
+                if test_type.lower == ParameterTypeBuiltin.CONTROL_TYPE.value.lower():
+                    has_control_type = True
+                else:
+                    has_non_control_types = True
+        if request.output_type is not None:
+            if request.output_type.lower() == ParameterTypeBuiltin.CONTROL_TYPE.value.lower():
+                has_control_type = True
+            else:
+                has_non_control_types = True
 
-            result = AddParameterToNodeResultFailure()
-            return result
-        # Make sure list of types are correct.
-        invalid_type_list = [
-            allowed_type for allowed_type in request.allowed_types if not TypeValidator.validate_type_spec(allowed_type)
-        ]
-
-        if len(invalid_type_list) > 0:
-            details = f"Attempted to add Parameter '{request.parameter_name}' but the following allowed types were not valid: {invalid_type_list!s}."
+        if has_control_type and has_non_control_types:
+            details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{request.node_name}'. Failed because it had 'ParameterControlType' AND at least one other non-control type. If a Parameter is intended for control, it must only accept that type."
             GriptapeNodes.get_logger().error(details)
 
             result = AddParameterToNodeResultFailure()
@@ -1743,7 +1745,9 @@ class NodeManager:
         # Let's roll, I guess.
         new_param = Parameter(
             name=request.parameter_name,
-            allowed_types=request.allowed_types,
+            type=request.type,
+            input_types=request.input_types,
+            output_type=request.output_type,
             default_value=request.default_value,
             user_defined=True,
             tooltip=request.tooltip,
@@ -1880,7 +1884,9 @@ class NodeManager:
 
         result = GetParameterDetailsResultSuccess(
             element_id=parameter.element_id,
-            allowed_types=parameter.allowed_types,
+            type=parameter.type,
+            input_types=parameter.input_types,
+            output_type=parameter.output_type,
             default_value=parameter.default_value,
             tooltip=parameter.tooltip,
             tooltip_as_input=parameter.tooltip_as_input,
@@ -1926,22 +1932,12 @@ class NodeManager:
 
         # TODO(griptape): Verify that we can get through all the OTHER tricky stuff before we proceed to actually making changes.
         # Now change all the values on the Parameter.
-        if request.allowed_types is not None:
-            # Convert from string to list of types.
-            invalid_type_list = [
-                allowed_type
-                for allowed_type in request.allowed_types
-                if not TypeValidator.validate_type_spec(allowed_type)
-            ]
-
-            if len(invalid_type_list) > 0:
-                details = f"Attempted to alter Parameter '{request.parameter_name}' but the following allowed types were not valid: {invalid_type_list!s}."
-                GriptapeNodes.get_logger().error(details)
-
-                result = AddParameterToNodeResultFailure()
-                return result
-            # TODO(griptape): reconcile current value with types allowed
-            parameter.allowed_types = request.allowed_types
+        if request.type is not None:
+            parameter.type = request.type
+        if request.input_types is not None:
+            parameter.input_types = request.input_types
+        if request.output_type is not None:
+            parameter.output_type = request.output_type
         if request.default_value is not None:
             # TODO(griptape): vet that default value matches types allowed
             node.parameter_values[request.parameter_name] = request.default_value
@@ -1983,7 +1979,7 @@ class NodeManager:
         return result
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
-    def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:  # noqa: C901
+    def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -2015,37 +2011,14 @@ class NodeManager:
         else:
             data_value = node.parameter_values[param_name]
 
-        # Definitely a better way to do this.
-        data_value_type = type(data_value)
-        data_value_type_str = None
-        for allowed_type_str in parameter.allowed_types:
-            try:
-                allowed_type = TypeValidator.convert_to_type(allowed_type_str)
-                if allowed_type == data_value_type:
-                    data_value_type_str = allowed_type_str
-                    break
-            except TypeValidationError as e:
-                details = f"Failed to Get Parameter Value. {e}"
-                GriptapeNodes.get_logger().error(details)
-                return GetParameterValueResultFailure()
-
-        # TODO(griptape): Handle for dict type
-
-        if not data_value_type_str and isinstance(data_value, dict) and "type" in data_value:
-            data_value_type_str = data_value["type"]
-            if "image" in data_value_type_str:
-                data_value_type_str = "ImageArtifact"
-
-        if data_value_type_str is None:
-            data_value_type_str = str(data_value_type)
-            details = f"WARNING: Could not find data value type '{data_value_type_str}' in the list of data types allowed by Parameter '{param_name}'; letting Python do the conversion."
-            GriptapeNodes.get_logger().warning(details)
         # Cool.
         details = f"{request.node_name}.{request.parameter_name} = {data_value}"
         GriptapeNodes.get_logger().info(details)
 
         result = GetParameterValueResultSuccess(
-            data_type=data_value_type_str,
+            input_types=parameter.input_types,
+            type=parameter.type,
+            output_type=parameter.output_type,
             value=TypeValidator.safe_serialize(data_value),
         )
         return result
@@ -2082,12 +2055,13 @@ class NodeManager:
             return result
 
         object_created = request.value
+        object_type = type(object_created).__name__
         # here we need to see if type_of matches the actual value.
         # Is this value kosher for the types allowed?
-        if not parameter.is_value_allowed(object_created) and not (
+        if not parameter.is_incoming_type_allowed(object_type) and not (
             isinstance(object_created, dict) and "type" in object_created
         ):
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed.  type "{object_created.__class__.__name__}" not in allowed types:{parameter.allowed_types}'
+            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed.  type "{object_created.__class__.__name__}" not in allowed types:{parameter.input_types}'
             GriptapeNodes.get_logger().error(details)
 
             result = SetParameterValueResultFailure()
@@ -2351,14 +2325,15 @@ class NodeManager:
 
                     if fits_mode:
                         # Compare types for compatibility
-                        any_types_matched = False
-                        request_types_allowed = request_param.allowed_types
-                        for request_type_allowed in request_types_allowed:
-                            if test_param.is_type_allowed(request_type_allowed):
-                                any_types_matched = True
-                                break
+                        types_compatible = False
+                        if request_mode == ParameterMode.INPUT:
+                            # See if THEIR inputs would accept MY output
+                            types_compatible = test_param.is_incoming_type_allowed(request_param.output_type)
+                        else:
+                            # See if MY inputs would accept THEIR output
+                            types_compatible = request_param.is_incoming_type_allowed(test_param.output_type)
 
-                        if any_types_matched:
+                        if types_compatible:
                             param_and_mode = ParameterAndMode(
                                 parameter_name=test_param.name, is_output=not request.is_output
                             )

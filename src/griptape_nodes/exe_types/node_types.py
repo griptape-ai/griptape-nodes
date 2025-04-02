@@ -9,8 +9,9 @@ from griptape_nodes.exe_types.core_types import (
     ControlParameterInput,
     ControlParameterOutput,
     Parameter,
-    ParameterControlType,
     ParameterMode,
+    ParameterType,
+    ParameterTypeBuiltin,
 )
 
 
@@ -198,9 +199,8 @@ class BaseNode(ABC):
         curr_param = None
         prev_param = None
         for parameter in self.parameters:
-            if (
-                ParameterMode.INPUT in parameter.get_mode()
-                and ParameterControlType.__name__ not in parameter.allowed_types
+            if ParameterMode.INPUT in parameter.get_mode() and not parameter.is_incoming_type_allowed(
+                incoming_type=ParameterTypeBuiltin.CONTROL_TYPE.value
             ):
                 if not self.current_spotlight_parameter or prev_param is None:
                     # make a copy of the parameter and assign it to current spotlight
@@ -280,10 +280,25 @@ class BaseNode(ABC):
         final_value = self.before_value_set(
             parameter=parameter, value=candidate_value, modified_parameters_set=modified_parameters
         )
+        # Should this be removed? accounting for ImageArtifacts represented as dicts, etc
+        if isinstance(value, dict) and "type" in value:
+            type_of = value["type"]
+        else:
+            type_of = type(final_value).__name__
+        if not parameter.is_incoming_type_allowed(type_of):
+            msg = f"Type of {type_of} doesn't match parameter '{param_name}' input types of {parameter.input_types}."
+            from griptape_nodes.retained_mode.griptape_nodes import logger
 
+            logger.warning(msg)
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
-
+        # The type is dynamically updating
+        if not parameter.user_set_type:
+            ret_val = ParameterType.attempt_get_builtin(type_of)
+            if ret_val:
+                parameter.type = ret_val.value
+            else:
+                parameter.type = type_of
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=modified_parameters)
 
@@ -295,10 +310,14 @@ class BaseNode(ABC):
 
     def get_next_control_output(self) -> Parameter | None:
         for param in self.parameters:
-            if ParameterControlType.__name__ in param.allowed_types and ParameterMode.OUTPUT in param.allowed_modes:
+            if (
+                param.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value)
+                and ParameterMode.OUTPUT in param.allowed_modes
+            ):
                 return param
         return None
 
+    # TODO(kate): can we remove this or change to default value?
     def valid_or_fallback(self, param_name: str, fallback: Any = None) -> Any:
         """Get a parameter value if valid, otherwise use fallback.
 
@@ -319,29 +338,15 @@ class BaseNode(ABC):
             raise ValueError(msg)
 
         value = self.parameter_values.get(param_name, None)
-
-        # Check if value is empty or not allowed
-        if value is None:
-            is_empty = True
-            is_valid = False
-        else:
-            is_empty = value is None or (isinstance(value, str) and not value.strip())
-            is_valid = param.is_value_allowed(value)
-
-        # Return value if it's valid and not empty
-        if is_valid and not is_empty:
+        if value is not None:
             return value
 
         # Try fallback if value is invalid or empty
         if fallback is None:
             return None
-        if param.is_value_allowed(fallback):
-            # Store the fallback value in parameter_values for future use
-            self.parameter_values[param_name] = fallback
-            return fallback
-
+        self.set_parameter_value(param_name, fallback)
         # No valid options available
-        return None
+        return fallback
 
     # Abstract method to process the node. Must be defined by the type
     # Must save the values of the output parameters in NodeContext.
@@ -372,7 +377,10 @@ class ControlNode(BaseNode):
 
     def get_next_control_output(self) -> Parameter | None:
         for param in self.parameters:
-            if ParameterControlType.__name__ in param.allowed_types and ParameterMode.OUTPUT in param.allowed_modes:
+            if (
+                param.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value)
+                and ParameterMode.OUTPUT in param.allowed_modes
+            ):
                 return param
         return None
 

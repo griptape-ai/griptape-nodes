@@ -37,7 +37,8 @@ class LoadTextNode(ControlNode):
             Parameter(
                 name="path",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
                 default_value="",
                 tooltip="The full path to the loaded file.",
             )
@@ -47,7 +48,7 @@ class LoadTextNode(ControlNode):
             Parameter(
                 name="output",
                 allowed_modes={ParameterMode.OUTPUT},
-                allowed_types=["str"],
+                output_type="str",
                 default_value="",
                 tooltip="The text content of the loaded file.",
             )
