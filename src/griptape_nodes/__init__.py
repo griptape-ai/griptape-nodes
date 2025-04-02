@@ -133,7 +133,7 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
 def _prompt_for_workspace() -> None:
     """Prompts the user for their workspace directory and stores it in config directory."""
     explainer = """[bold cyan]Workspace Directory[/bold cyan]
-    Select the workspace directory. This is the location where Griptape Nodes will store flows, config, and secrets.
+    Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows, configuration data, and secrets.
     You may enter a custom directory or press Return to accept the default workspace directory"""
     console.print(Panel(explainer, expand=False))
 
