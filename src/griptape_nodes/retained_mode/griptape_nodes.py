@@ -1934,6 +1934,7 @@ class NodeManager:
         # Now change all the values on the Parameter.
         if request.type is not None:
             parameter.type = request.type
+            parameter.user_set_type = True
         if request.input_types is not None:
             parameter.input_types = request.input_types
         if request.output_type is not None:
