@@ -34,19 +34,15 @@ class ConfigManager:
     to organize related configuration items.
     """
 
-    def __init__(self, event_manager: EventManager | None = None, config_dir: str | None = None) -> None:
+    def __init__(self, event_manager: EventManager | None = None) -> None:
         """Initialize the ConfigManager.
 
         Args:
             event_manager: The EventManager instance to use for event handling.
-            config_dir: Optional path to the config dir. If not provided,
-                         it will use the current working directory.
         """
-        self.config_dir = Path(config_dir) if config_dir else Path.home() / "GriptapeNodes/"
-        self.user_config_path: Path = self.config_dir / "griptape_nodes_config.json"
-        self.user_config: dict[str, Any] = {}
-
-        self.user_config = Settings().model_dump()
+        settings = Settings()
+        self.user_config = settings.model_dump()
+        self._workspace_path = settings.workspace_directory
 
         if event_manager is not None:
             # Register all our listeners.
@@ -66,7 +62,7 @@ class ConfigManager:
         Returns:
             Path object representing the base file path.
         """
-        return Path(self.user_config.get("workspace_directory", str(Path.home())))
+        return Path(self._workspace_path).resolve()
 
     @workspace_path.setter
     def workspace_path(self, path: str) -> None:
@@ -75,7 +71,17 @@ class ConfigManager:
         Args:
             path: The path to set as the base file path.
         """
-        self.set_config_value("workspace_directory", str(Path(path).resolve()))
+        self._workspace_path = str(Path(path).resolve())
+        self.set_config_value("workspace_directory", self._workspace_path)
+
+    @property
+    def user_config_path(self) -> Path:
+        """Get the path to the user config file.
+
+        Returns:
+            Path object representing the user config file.
+        """
+        return self.workspace_path / "griptape_nodes_config.json"
 
     @property
     def config_files(self) -> list[Path]:

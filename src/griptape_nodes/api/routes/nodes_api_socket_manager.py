@@ -64,7 +64,7 @@ class NodesApiSocketManager:
             try:
                 api_key = get_key(xdg_config_home() / "griptape_nodes" / ".env", "GT_CLOUD_API_KEY")
                 if api_key is None:
-                    msg = "GT_CLOUD_API_KEY is not set, please re-run the install script."
+                    msg = "GT_CLOUD_API_KEY is not set, please visit https://nodes.griptape.ai to get a key, and then run `griptape-nodes init` to set it up."
                     raise ValueError(msg) from None
 
                 return connect(
