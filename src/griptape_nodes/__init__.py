@@ -43,8 +43,23 @@ def main() -> None:
 
 def _get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="griptape-nodes", description="Griptape Nodes Engine.")
+
+    # The main command (engine|config|update|version)
     parser.add_argument(
-        "command", help="Command to run", nargs="?", choices=["engine", "config", "update", "version"], default="engine"
+        "command",
+        help="Command to run",
+        nargs="?",
+        choices=["engine", "config", "update", "version"],
+        default="engine",
+    )
+
+    # Optional second argument for config subcommand (e.g., config list)
+    parser.add_argument(
+        "config_subcommand",
+        help="Subcommand for 'config'",
+        nargs="?",
+        choices=["list"],
+        default=None,
     )
     return parser.parse_args()
 
@@ -113,7 +128,12 @@ def _auto_update() -> None:
 def _install_latest_release() -> None:
     """Installs the latest release of the script using a shell command."""
     with console.status("[bold green]Updating...", spinner="dots"):
-        curl_process = subprocess.run(["curl", "-LsSf", INSTALL_SCRIPT], capture_output=True, check=False, text=True)  # noqa: S603, S607
+        curl_process = subprocess.run(  # noqa: S603
+            ["curl", "-LsSf", INSTALL_SCRIPT],  # noqa: S607
+            capture_output=True,
+            check=False,
+            text=True,
+        )
         subprocess.run(  # noqa: S603
             ["bash"],  # noqa: S607
             input=curl_process.stdout,
@@ -136,18 +156,43 @@ def _get_current_version() -> str:
     return f"v{importlib.metadata.version('griptape_nodes')}"
 
 
+def _get_user_config() -> dict:
+    """Fetches the user configuration from the config file.
+
+    Returns:
+        dict: User configuration.
+    """
+    return ConfigManager().user_config
+
+
+def _list_user_configs() -> list[Path]:
+    """Lists the user configuration files.
+
+    Returns:
+        list[Path]: All config files.
+    """
+    return ConfigManager().config_files
+
+
 def _process_args(args: argparse.Namespace) -> None:
     if args.command == "engine":
         _auto_update()
         api_main()
+
     elif args.command == "config":
-        sys.stdout.write(json.dumps(ConfigManager().user_config, indent=2))
+        if args.config_subcommand == "list":
+            for config in _list_user_configs():
+                console.print(f"[bold green]{config}[/bold green]")
+        else:
+            sys.stdout.write(json.dumps(_get_user_config(), indent=2))
+
     elif args.command == "update":
         _install_latest_release()
+
     elif args.command == "version":
         version = _get_current_version()
-
         console.print(f"[bold green]{version}[/bold green]")
+
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)
