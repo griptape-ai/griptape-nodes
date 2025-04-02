@@ -15,6 +15,7 @@ from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.api.app import main as api_main
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 INSTALL_SCRIPT = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.sh"
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
@@ -23,6 +24,8 @@ CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
 REPO_NAME = "griptape-ai/griptape-nodes"
 
 console = Console()
+config_manager = ConfigManager()
+secrets_manager = SecretsManager(config_manager)
 
 
 def main() -> None:
@@ -94,6 +97,8 @@ def _init_api_key() -> None:
                 show_default=False,
             )
         set_key(ENV_FILE, "GT_CLOUD_API_KEY", api_key)
+        config_manager.set_config_value("nodes.Griptape.GT_CLOUD_API_KEY", "$GT_CLOUD_API_KEY")
+        secrets_manager.set_secret("GT_CLOUD_API_KEY", api_key)
 
 
 def _get_latest_version(repo: str) -> str:
@@ -163,7 +168,7 @@ def _get_user_config() -> dict:
     Returns:
         dict: User configuration.
     """
-    return ConfigManager().user_config
+    return config_manager.user_config
 
 
 def _list_user_configs() -> list[Path]:
@@ -172,7 +177,7 @@ def _list_user_configs() -> list[Path]:
     Returns:
         list[Path]: All config files.
     """
-    return ConfigManager().config_files
+    return config_manager.config_files
 
 
 def _process_args(args: argparse.Namespace) -> None:
