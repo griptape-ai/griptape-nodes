@@ -155,6 +155,7 @@ class ConfigManager:
         self.user_config = merge_dicts(self.user_config, delta)
 
         if not self.user_config_path.exists():
+            self.user_config_path.parent.mkdir(parents=True, exist_ok=True)
             self.user_config_path.touch()
             self.user_config_path.write_text(json.dumps({}, indent=2))
 
