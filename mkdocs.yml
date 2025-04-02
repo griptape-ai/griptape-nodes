@@ -47,6 +47,3 @@ nav:
       - Overview: index.md
       - Retained Mode: retained_mode.md
       - Glossary: glossary.md
-
-  - Framework:
-      - Overview: "framework/index.md"

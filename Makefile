@@ -89,7 +89,7 @@ test/integration: ## Run integration tests.
 
 .PHONY: docs
 docs: ## Build documentation.
-	@uv run python -m mkdocs build --clean
+	@uv run python -m mkdocs build --clean --strict 
 
 .PHONY: docs/serve
 docs/serve: ## Serve documentation.
