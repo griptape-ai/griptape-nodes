@@ -397,6 +397,7 @@ class Parameter(BaseNodeElement):
                 self._type = value
             return
         self._type = None
+        self.user_set_type = False
 
     @property
     def input_types(self) -> list[str]:
