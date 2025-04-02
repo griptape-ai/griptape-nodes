@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from abc import ABC
+from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -291,10 +291,53 @@ class ParameterGroup(BaseNodeElement):
         }
 
 
+class ParameterBase(BaseNodeElement, ABC):
+    name: str  # must be unique from other parameters in Node
+
+    @abstractmethod
+    def get_tooltip(self) -> str | list[dict]:
+        """Get the default tooltip for this Parameter-like object.
+
+        Returns:
+            str | list[dict]: Either the explicit tooltip string or a list of dicts for special UI handling.
+        """
+
+    @abstractmethod
+    def get_default_value(self) -> Any:
+        """Get the default value that should be assigned to this Parameter-like object.
+
+        Returns:
+            Any: The default value to assign when initialized or reset.
+        """
+
+    @abstractmethod
+    def get_input_types(self) -> list[str] | None:
+        """Get the list of input types this Parameter-like object accepts, or None if it doesn't accept any.
+
+        Returns:
+            list[str] | None: List of user-defined types supported.
+        """
+
+    @abstractmethod
+    def get_output_type(self) -> str | None:
+        """Get the output type this Parameter-like object emits, or None if it doesn't output.
+
+        Returns:
+            str | None: User-defined type output.
+        """
+
+    @abstractmethod
+    def get_type(self) -> str | None:
+        pass  # TODO(griptape): add docstrings everywhere after this works
+
+    @abstractmethod
+    def get_tooltip_as_input(self) -> str | list[dict] | None:
+        pass
+
+
 class Parameter(BaseNodeElement):
     # This is the list of types that the Parameter can accept, either externally or when internally treated as a property.
     # Today, we can accept multiple types for input, but only a single output type.
-    name: str  # must be unique from other parameters in Node
     tooltip: str | list[dict]  # Default tooltip, can be string or list of dicts
     default_value: Any = None
     _input_types: list[str] | None
@@ -426,8 +469,9 @@ class Parameter(BaseNodeElement):
             # If an output type was specified, use that.
             return self._output_type
         if self._type and self.user_set_type:
-            # Otherwise, see if we have a list of input_types. If so, use the first one.
             return self._type
+
+        # Otherwise, see if we have a list of input_types. If so, use the first one.
         if self._input_types:
             return self._input_types[0]
         # Otherwise, return a string.
@@ -611,3 +655,18 @@ class ControlParameterOutput(ControlParameter):
             validators=validators,
             user_defined=user_defined,
         )
+
+
+@dataclass(kw_only=True)
+class ParameterContainer(BaseNodeElement, ABC):
+    """Class managing a container (list/dict/tuple/etc.) of Parameters."""
+
+    container_name: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "element_id": self.element_id,
+            "element_type": self.__class__.__name__,
+            "group_name": self.container_name,
+            "children": [child.to_dict() for child in self._children],
+        }
