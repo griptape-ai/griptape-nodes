@@ -283,24 +283,29 @@ class ParameterGroup(BaseNodeElement):
               ]
             }
         """
-        return {
-            "element_id": self.element_id,
-            "element_type": self.__class__.__name__,
-            "group_name": self.group_name,
-            "children": [child.to_dict() for child in self._children],
-        }
+        # Get the parent's version first.
+        our_dict = super().to_dict()
+        # Add in our deltas.
+        our_dict["group_name"] = self.group_name
+        return our_dict
 
 
 class ParameterBase(BaseNodeElement, ABC):
     name: str  # must be unique from other parameters in Node
 
+    @property
     @abstractmethod
-    def get_tooltip(self) -> str | list[dict]:
+    def tooltip(self) -> str | list[dict]:
         """Get the default tooltip for this Parameter-like object.
 
         Returns:
             str | list[dict]: Either the explicit tooltip string or a list of dicts for special UI handling.
         """
+
+    @tooltip.setter
+    @abstractmethod
+    def tooltip(self, value: str | list[dict]) -> None:
+        pass
 
     @abstractmethod
     def get_default_value(self) -> Any:
@@ -657,16 +662,101 @@ class ControlParameterOutput(ControlParameter):
         )
 
 
-@dataclass(kw_only=True)
-class ParameterContainer(BaseNodeElement, ABC):
-    """Class managing a container (list/dict/tuple/etc.) of Parameters."""
+class ParameterContainer(Parameter, ABC):
+    """Class managing a container (list/dict/tuple/etc.) of Parameters.
 
-    container_name: str
+    It is, itself, a Parameter (so it can be the target of compatible Container connections, etc.)
+    But it also has the ability to own and manage children and make them accessible by keys, etc.
+    """
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "element_id": self.element_id,
-            "element_type": self.__class__.__name__,
-            "group_name": self.container_name,
-            "children": [child.to_dict() for child in self._children],
-        }
+    def __init__(  # noqa: PLR0913
+        self,
+        name: str,
+        tooltip: str | list[dict],
+        type: str | None = None,  # noqa: A002
+        input_types: list[str] | None = None,
+        output_type: str | None = None,
+        default_value: Any = None,
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
+        allowed_modes: set[ParameterMode] | None = None,
+        ui_options: ParameterUIOptions | None = None,
+        converters: list[Callable[[Any], Any]] | None = None,
+        validators: list[Callable[[Parameter, Any], None]] | None = None,
+        *,
+        settable: bool = True,
+        user_defined: bool = False,
+        element_id: str | None = None,
+        element_type: str | None = None,
+    ):
+        super().__init__(
+            name=name,
+            tooltip=tooltip,
+            type=type,
+            input_types=input_types,
+            output_type=output_type,
+            default_value=default_value,
+            tooltip_as_input=tooltip_as_input,
+            tooltip_as_property=tooltip_as_property,
+            tooltip_as_output=tooltip_as_output,
+            allowed_modes=allowed_modes,
+            ui_options=ui_options,
+            converters=converters,
+            validators=validators,
+            settable=settable,
+            user_defined=user_defined,
+            element_id=element_id,
+            element_type=element_type,
+        )
+
+
+class ParameterList(ParameterContainer):
+    def __init__(  # noqa: PLR0913
+        self,
+        name: str,
+        tooltip: str | list[dict],
+        type: str | None = None,  # noqa: A002
+        input_types: list[str] | None = None,
+        output_type: str | None = None,
+        default_value: Any = None,
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
+        allowed_modes: set[ParameterMode] | None = None,
+        ui_options: ParameterUIOptions | None = None,
+        converters: list[Callable[[Any], Any]] | None = None,
+        validators: list[Callable[[Parameter, Any], None]] | None = None,
+        *,
+        settable: bool = True,
+        user_defined: bool = False,
+        element_id: str | None = None,
+        element_type: str | None = None,
+    ):
+        # Remember: we're a Parameter, too, just like everybody else.
+        super().__init__(
+            name=name,
+            tooltip=tooltip,
+            type=type,
+            input_types=input_types,
+            output_type=output_type,
+            default_value=default_value,
+            tooltip_as_input=tooltip_as_input,
+            tooltip_as_property=tooltip_as_property,
+            tooltip_as_output=tooltip_as_output,
+            allowed_modes=allowed_modes,
+            ui_options=ui_options,
+            converters=converters,
+            validators=validators,
+            settable=settable,
+            user_defined=user_defined,
+            element_id=element_id,
+            element_type=element_type,
+        )
+
+    def create_child_parameter(self):
+        # Create a new child Parameter.
+        child_params = self.find_elements_by_type(Parameter)
+
+        # Next index is ours.
+        new_param_name = f"{self.name}[{len(child_params)}]"

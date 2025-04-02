@@ -223,6 +223,12 @@ class BaseNode(ABC):
         self.current_spotlight_parameter = None
         return False
 
+    def get_parameter_by_element_id(self, param_element_id: str) -> Parameter | None:
+        candidate = self.root_ui_element.find_element_by_id(element_id=param_element_id)
+        if (candidate is not None) and (isinstance(candidate, Parameter)):
+            return candidate
+        return None
+
     def get_parameter_by_name(self, param_name: str) -> Parameter | None:
         for parameter in self.parameters:
             if param_name == parameter.name:
