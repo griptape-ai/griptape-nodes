@@ -1,4 +1,5 @@
 from os import getenv
+from pathlib import Path
 
 from dotenv import dotenv_values, get_key, set_key, unset_key
 
@@ -21,7 +22,7 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 class SecretsManager:
     def __init__(self, config_manager: ConfigManager, event_manager: EventManager | None = None) -> None:
-        self.env_var_path = config_manager.workspace_path / ".env"
+        self.config_manager = config_manager
 
         # Register all our listeners.
         if event_manager is not None:
@@ -33,6 +34,10 @@ class SecretsManager:
             event_manager.assign_manager_to_request_type(
                 DeleteSecretValueRequest, self.on_handle_delete_secret_value_request
             )
+
+    @property
+    def env_var_path(self) -> Path:
+        return self.config_manager.workspace_path / ".env"
 
     def on_handle_get_secret_request(self, request: GetSecretValueRequest) -> ResultPayload:
         secret_key = request.key
