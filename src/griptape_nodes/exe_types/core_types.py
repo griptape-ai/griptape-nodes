@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeVar
 
+#from griptape_nodes.exe_types.trait_types import Trait
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -316,6 +318,9 @@ class Parameter(BaseNodeElement):
     ui_options: ParameterUIOptions | None = None
     converters: list[Callable[[Any], Any]]
     validators: list[Callable[[Parameter, Any], None]]
+    # Traits should be set? As values here, correct?
+    # Traits will define UI options and convertors
+    traits: list[Trait] | None = None
     next: Parameter | None = None
     prev: Parameter | None = None
 
