@@ -175,11 +175,23 @@ def sse_listener() -> None:
                 return request
 
             with httpx.stream("get", endpoint, auth=auth, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout
+                if response.status_code in {401, 403}:
+                    message = Panel(
+                        Align.center(
+                            "[bold red]Nodes API key is invalid, please run [code]gtn init[/code] with a valid key: [/bold red]"
+                            "[code]gtn init --api-key <your key>[/code]\n"
+                            "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
+                        ),
+                        title="🔑 ❌ Invalid Nodes API Key",
+                        border_style="red",
+                        padding=(1, 4),
+                    )
+                    console.print(message)
+                    sys.exit(1)
+
                 response.raise_for_status()
 
                 for line in response.iter_lines():
-                    if not line.strip():
-                        continue
                     if line.startswith("data:"):
                         data = line.removeprefix("data:").strip()
                         if data == "START":

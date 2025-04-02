@@ -1,17 +1,22 @@
 import json
 import os
+import sys
 from threading import Lock
 from time import sleep
 from urllib.parse import urljoin
 
 from attrs import Factory, define, field
 from dotenv import get_key
-from websockets.exceptions import WebSocketException
+from rich.align import Align
+from rich.console import Console
+from rich.panel import Panel
+from websockets.exceptions import InvalidStatus, WebSocketException
 from websockets.sync.client import ClientConnection, connect
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
+console = Console()
 logger = GriptapeNodes.get_instance().LogManager().get_logger(event_handler=False)
 
 
@@ -64,8 +69,18 @@ class NodesApiSocketManager:
             try:
                 api_key = get_key(xdg_config_home() / "griptape_nodes" / ".env", "GT_CLOUD_API_KEY")
                 if api_key is None:
-                    msg = "GT_CLOUD_API_KEY is not set, please visit https://nodes.griptape.ai to get a key, and then run `griptape-nodes init` to set it up."
-                    raise ValueError(msg) from None
+                    message = Panel(
+                        Align.center(
+                            "[bold red]Nodes API key is not set, please run [code]gtn init[/code] with a valid key: [/bold red]"
+                            "[code]gtn init --api-key <your key>[/code]\n"
+                            "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
+                        ),
+                        title="🔑 ❌ Missing Nodes API Key",
+                        border_style="red",
+                        padding=(1, 4),
+                    )
+                    console.print(message)
+                    sys.exit(1)
 
                 return connect(
                     urljoin(
@@ -79,4 +94,19 @@ class NodesApiSocketManager:
                 )
             except ConnectionError:
                 logger.warning("Nodes API is not available, waiting 5 seconds before retrying")
+                logger.debug("Error: ", exc_info=True)
                 sleep(5)
+            except InvalidStatus as e:
+                if e.response.status_code in {401, 403}:
+                    message = Panel(
+                        Align.center(
+                            "[bold red]Nodes API key is invalid, please re-run [code]gtn init[/code] with a valid key: [/bold red]"
+                            "[code]gtn init --api-key <your key>[/code]\n"
+                            "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
+                        ),
+                        title="🔑 ❌ Invalid Nodes API Key",
+                        border_style="red",
+                        padding=(1, 4),
+                    )
+                    console.print(message)
+                    sys.exit(1)

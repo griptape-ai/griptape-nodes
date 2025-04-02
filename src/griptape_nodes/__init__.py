@@ -177,6 +177,7 @@ def _auto_update() -> None:
     if current_version < latest_version:
         update = Confirm.ask(
             f"Your current engine version, {current_version}, is behind the latest release, {latest_version}. Update now?",
+            default=True,
         )
 
         if update:
