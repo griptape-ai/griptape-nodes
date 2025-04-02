@@ -1,4 +1,52 @@
 site_name: Griptape Nodes 
 site_url: https://docs.griptapenodes.com/
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_if_no_docstring: true
+            heading_level: 3
+
+copyright: "&copy; Griptape, Inc."
+
 theme:
   name: material
+  palette:
+    # Dark mode
+    - scheme: slate
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/lightbulb-outline
+        name: Switch to light mode
+    # Light mode
+    - scheme: default
+      primary: deep indigo
+      accent: deep orange
+      toggle:
+        icon: material/lightbulb
+        name: Switch to dark mode
+  features:
+    - content.code.copy
+    - navigation.tabs
+    - navigation.expand
+    - navigation.top
+
+markdown_extensions:
+  - pymdownx.highlight
+  - admonition
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - tables
+
+nav:
+  - Home:
+      - Overview: index.md
+      - Retained Mode: retained_mode.md
+      - Glossary: glossary.md
+
+  - Framework:
+      - Overview: "framework/index.md"
