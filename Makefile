@@ -14,6 +14,7 @@ publish: ## Push git tag and publish version to PyPI.
 	@git tag v$$(make version/get)
 	@git tag latest -f
 	@git push -f --tags
+	@git push
 	
 .PHONY: run
 run: ## Run the project.
