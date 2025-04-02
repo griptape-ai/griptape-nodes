@@ -25,11 +25,13 @@ if ($API_KEY) {
     # Convert any CRLF -> LF within the JSON string
     $jsonData = $jsonData -replace "`r`n", "`n"
 
+    $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $False
+
     # Write JSON file with only LF line endings
     [System.IO.File]::WriteAllText(
         $ConfigFile, 
         $jsonData, 
-        [System.Text.Encoding]::UTF8
+        $Utf8NoBomEncoding
     )
 
     # Prepare the .env file with quotes
@@ -41,7 +43,7 @@ if ($API_KEY) {
     [System.IO.File]::WriteAllText(
         $EnvFile, 
         $envContents, 
-        [System.Text.Encoding]::UTF8
+        $Utf8NoBomEncoding
     )
 
     Write-Host "API key saved to $ConfigFile and $EnvFile"
