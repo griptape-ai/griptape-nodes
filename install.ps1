@@ -17,7 +17,7 @@ uv tool install --force --python python3.13 --from "git+https://github.com/gript
 
 # --- Install Griptape Nodes Library and Scripts ---
 if (-not $Env:XDG_DATA_HOME) {
-    $Env:XDG_DATA_HOME = Join-Path $Env:LOCALAPPDATA ".local\share"
+    $Env:XDG_DATA_HOME = Join-Path $HOME ".local\share"
 }
 
 Write-Host "`nInstalling Griptape Nodes Library...`n"
