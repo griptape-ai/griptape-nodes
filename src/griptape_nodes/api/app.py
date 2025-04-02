@@ -183,24 +183,25 @@ def sse_listener() -> None:
                     if line.startswith("data:"):
                         data = line.removeprefix("data:").strip()
                         if data == "START":
-                            message = Panel(
-                                Align.center(
-                                    f"[bold green]Engine is ready to receive events[/bold green]\n"
-                                    f"[bold blue]Visit: [link={nodes_app_url}]{nodes_app_url}[/link][/bold blue]",
-                                    vertical="middle",
-                                ),
-                                title="🚀 Engine Started",
-                                border_style="green",
-                                padding=(1, 4),
-                            )
-                            console.print(message)
                             if not init:
                                 # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
                                 payload = app_events.AppInitializationComplete()
                                 app_event = AppEvent(payload=payload)
-                                event_queue.put(app_event)
-                                init = True
+                                process_app_event(app_event)
 
+                                message = Panel(
+                                    Align.center(
+                                        f"[bold green]Engine is ready to receive events[/bold green]\n"
+                                        f"[bold blue]Visit: [link={nodes_app_url}]{nodes_app_url}[/link][/bold blue]",
+                                        vertical="middle",
+                                    ),
+                                    title="🚀 Engine Started",
+                                    border_style="green",
+                                    padding=(1, 4),
+                                )
+                                console.print(message)
+
+                                init = True
                         else:
                             try:
                                 process_sse(json.loads(data))
