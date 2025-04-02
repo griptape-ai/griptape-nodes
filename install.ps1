@@ -3,34 +3,52 @@ Param(
 )
 
 # --- Set up paths and variables ---
-$ConfigDir = Join-Path $Env:APPDATA "griptape_nodes"
+$ConfigDir  = Join-Path $Env:USERPROFILE ".config\griptape_nodes"
 $ConfigFile = Join-Path $ConfigDir "griptape_nodes_config.json"
-$EnvFile = Join-Path $ConfigDir ".env"
+$EnvFile    = Join-Path $ConfigDir ".env"
 
-# --- Write/update the config file if API key is provided ---
 if ($API_KEY) {
     # Ensure the config directory exists
     if (!(Test-Path $ConfigDir)) {
         New-Item -ItemType Directory -Path $ConfigDir | Out-Null
     }
 
-    # Check if the file already exists
-    if (Test-Path $ConfigFile) {
-        Write-Host "A config file already exists at '$ConfigFile', overwriting..."
-    } 
-        # Write the API key to the config file
-'{
-  "nodes": {
-      "Griptape": {
-        "GT_CLOUD_API_KEY": "$GT_CLOUD_API_KEY"
-      }
-  }
-}' | Out-File $ConfigFile
+    # Generate JSON in memory (multi-line output).
+    $jsonData = @{
+        "nodes" = @{
+            "Griptape" = @{
+                "GT_CLOUD_API_KEY" = $API_KEY
+            }
+        }
+    } | ConvertTo-Json -Depth 4
 
-'GT_CLOUD_API_KEY="' + $API_KEY + '"' | Out-File $EnvFile
+    # Convert any CRLF -> LF within the JSON string
+    $jsonData = $jsonData -replace "`r`n", "`n"
 
-    Write-Host "API key saved to $ConfigFile"
-} else {
+    $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $False
+
+    # Write JSON file with only LF line endings
+    [System.IO.File]::WriteAllText(
+        $ConfigFile, 
+        $jsonData, 
+        $Utf8NoBomEncoding
+    )
+
+    # Prepare the .env file with quotes
+    # e.g.  GT_CLOUD_API_KEY="the-key"
+    # Add a trailing LF to ensure a proper ending
+    $envContents = 'GT_CLOUD_API_KEY="' + $API_KEY + '"' + "`n"
+
+    # Write .env file with only LF line endings
+    [System.IO.File]::WriteAllText(
+        $EnvFile, 
+        $envContents, 
+        $Utf8NoBomEncoding
+    )
+
+    Write-Host "API key saved to $ConfigFile and $EnvFile"
+}
+else {
     Write-Host "No API key provided. Skipping config file creation."
 }
 
@@ -72,10 +90,10 @@ if (!(Test-Path $DestDir)) {
 }
 
 # Copy the nodes/ directory
-Copy-Item -Path (Join-Path $RepoName "nodes") -Destination (Join-Path $DestDir "nodes") -Recurse -Force
+Copy-Item -Path (Join-Path $RepoName "nodes") -Destination $DestDir -Recurse -Force
 
 # Copy the scripts/ directory
-Copy-Item -Path (Join-Path $RepoName "scripts") -Destination (Join-Path $DestDir "scripts") -Recurse -Force
+Copy-Item -Path (Join-Path $RepoName "scripts") -Destination $DestDir -Recurse -Force
 
 Pop-Location
 Remove-Item -Recurse -Force $TmpDir
