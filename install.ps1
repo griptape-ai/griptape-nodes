@@ -44,6 +44,8 @@ Copy-Item -Path (Join-Path $RepoName "scripts") -Destination $DestDir -Recurse -
 Pop-Location
 Remove-Item -Recurse -Force $TmpDir
 
-Write-Host "`nInstallation complete!`n"
-Write-Host "Run 'griptape-nodes' (or just 'gtn') to start the engine."
-Write-Host ""
+Write-Host "**************************************"
+Write-Host "*      Installation complete!        *"
+Write-Host "*  Run 'griptape-nodes' (or 'gtn')   *"
+Write-Host "*      to start the engine.          *"
+Write-Host "**************************************"
