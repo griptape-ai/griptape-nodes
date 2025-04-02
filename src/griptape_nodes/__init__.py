@@ -48,10 +48,6 @@ def _run_init(api_key: str | None = None) -> None:
     _prompt_for_workspace()
     _prompt_for_api_key(api_key)
 
-    console.print(
-        "[bold green]Initialization complete! You can now run the engine with 'griptape-nodes' (or just 'gtn').[/bold green]"
-    )
-
 
 def _get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="griptape-nodes", description="Griptape Nodes Engine.")
