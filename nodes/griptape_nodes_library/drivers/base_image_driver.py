@@ -2,7 +2,6 @@ from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageG
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes_library.drivers.base_driver import BaseDriverNode
-from griptape_nodes_library.utils.env_utils import getenv
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
@@ -48,7 +47,7 @@ class BaseImageDriverNode(BaseDriverNode):
 
         # Initialize kwargs with required parameters
         kwargs = {}
-        kwargs["api_key"] = self.getenv(service=SERVICE, value=API_KEY_ENV_VAR)
+        kwargs["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
 
         kwargs["model"] = params.get("model", DEFAULT_MODEL)
         kwargs["quality"] = params.get("quality", DEFAULT_QUALITY)
@@ -63,7 +62,7 @@ class BaseImageDriverNode(BaseDriverNode):
     def validate_node(self) -> list[Exception] | None:
         # Items here are openai api key
         exceptions = []
-        api_key = getenv(SERVICE, API_KEY_ENV_VAR)
+        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))

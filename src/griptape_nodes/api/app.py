@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urljoin
 
 import httpx
+from dotenv import get_key
 from griptape.events import (
     BaseEvent,
     EventBus,
@@ -20,6 +21,7 @@ from griptape.events import (
 from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
+from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.api.queue_manager import event_queue
 from griptape_nodes.api.routes.api import process_event
@@ -163,13 +165,11 @@ def sse_listener() -> None:
             nodes_app_url = os.getenv("GRIPTAPE_NODES_APP_URL", "https://nodes.griptape.ai")
 
             def auth(request: httpx.Request) -> httpx.Request:
-                service = "Griptape"
-                value = "GT_CLOUD_API_KEY"
-                api_token = GriptapeNodes.get_instance().ConfigManager().get_config_value(f"env.{service}.{value}")
+                api_key = get_key(xdg_config_home() / "griptape_nodes" / ".env", "GT_CLOUD_API_KEY")
                 request.headers.update(
                     {
                         "Accept": "text/event-stream",
-                        "Authorization": f"Bearer {api_token}",
+                        "Authorization": f"Bearer {api_key}",
                     }
                 )
                 return request
@@ -203,14 +203,25 @@ def sse_listener() -> None:
 
                         else:
                             try:
-                                process_event(json.loads(data))
+                                process_sse(json.loads(data))
                             except Exception:
                                 logger.exception("Error processing event, skipping.")
 
         except Exception:
-            logger.warning("Error while listening for events. Retrying in 2 seconds.")
+            logger.exception("Error while listening for events. Retrying in 2 seconds.")
             sleep(2)
             init = False
+
+
+def process_sse(event: dict) -> None:
+    try:
+        if event.get("request_type") == "Heartbeat":
+            session_id = GriptapeNodes.get_session_id()
+            socket.heartbeat(session_id=session_id, request=event)
+        else:
+            process_event(event)
+    except Exception:
+        logger.warning("Error processing event, skipping.")
 
 
 def run_sse_mode() -> None:

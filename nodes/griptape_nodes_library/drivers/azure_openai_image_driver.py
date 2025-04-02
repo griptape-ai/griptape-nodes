@@ -105,8 +105,8 @@ class AzureOpenAiImageDriverNode(BaseImageDriverNode):
         # Initialize kwargs with required parameters
         kwargs = {
             "model": model,
-            "api_key": self.getenv(service=SERVICE, value=API_KEY_ENV_VAR),
-            "azure_endpoint": self.getenv(service=SERVICE, value=AZURE_ENDPOINT_ENV_VAR),
+            "api_key": self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
+            "azure_endpoint": self.get_config_value(service=SERVICE, value=AZURE_ENDPOINT_ENV_VAR),
             "azure_deployment": deployment_name,
             "image_size": size,
         }

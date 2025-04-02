@@ -3,7 +3,6 @@ from griptape.drivers.audio_transcription.openai import OpenAiAudioTranscription
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes_library.drivers.base_driver import BaseDriverNode
-from griptape_nodes_library.utils.env_utils import getenv
 
 
 class BaseAudioTranscriptionDriverNode(BaseDriverNode):
@@ -44,7 +43,7 @@ class OpenAiAudioTranscriptionDriverNode(BaseAudioTranscriptionDriverNode):
         # Items here are openai api key
         exceptions = []
         key = "OPENAI_API_KEY"
-        api_key = getenv("OpenAI", key)
+        api_key = self.get_config_value("OpenAI", key)
         if not api_key:
             msg = f"{key} is not defined"
             exceptions.append(KeyError(msg))

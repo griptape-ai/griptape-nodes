@@ -34,8 +34,8 @@ class AzureOpenAiChatPromptDriverNode(BasePromptDriverNode):
     def process(self) -> None:
         # Initialize kwargs with required parameters
         kwargs = {}
-        kwargs["api_key"] = self.getenv(service=SERVICE, value=API_KEY_ENV_VAR)
-        kwargs["azure_endpoint"] = self.getenv(service=SERVICE, value=DEFAULT_AZURE_ENDPOINT_ENV_VAR)
+        kwargs["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
+        kwargs["azure_endpoint"] = self.get_config_value(service=SERVICE, value=DEFAULT_AZURE_ENDPOINT_ENV_VAR)
 
         kwargs["model"] = self.valid_or_fallback("model", DEFAULT_MODEL)
         # HACKATTACK:

@@ -5,8 +5,10 @@ from time import sleep
 from urllib.parse import urljoin
 
 from attrs import Factory, define, field
+from dotenv import get_key
 from websockets.exceptions import WebSocketException
 from websockets.sync.client import ClientConnection, connect
+from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -26,7 +28,7 @@ class NodesApiSocketManager:
     lock: Lock = field(factory=Lock)
 
     def emit(self, *args, **kwargs) -> None:  # noqa: ARG002 # drop-in replacement workaround
-        body = {"type": args[0], "payload": json.loads(args[1])}
+        body = {"type": args[0], "payload": json.loads(args[1]) if len(args) > 1 else {}}
         sent = False
         while not sent:
             try:
@@ -35,6 +37,21 @@ class NodesApiSocketManager:
             except WebSocketException:
                 logger.warning("Error sending event to Nodes API, attempting to reconnect.")
                 self.socket = self._connect()
+
+    def heartbeat(self, *, session_id: str | None, request: dict) -> None:
+        self.emit(
+            "success_result",
+            json.dumps(
+                {
+                    "request": request,
+                    "result": {},
+                    "request_type": "Heartbeat",
+                    "event_type": "EventResultSuccess",
+                    "result_type": "HeartbeatSuccess",
+                    **({"session_id": session_id} if session_id is not None else {}),
+                }
+            ),
+        )
 
     def run(self, *args, **kwargs) -> None:
         pass
@@ -45,9 +62,9 @@ class NodesApiSocketManager:
     def _connect(self) -> ClientConnection:
         while True:
             try:
-                api_key = GriptapeNodes.get_instance().ConfigManager().get_config_value("env.Griptape.GT_CLOUD_API_KEY")
+                api_key = get_key(xdg_config_home() / "griptape_nodes" / ".env", "GT_CLOUD_API_KEY")
                 if api_key is None:
-                    msg = "env.Griptape.GT_CLOUD_API_KEY is not set, please add this value to your griptape_nodes_config.json file."
+                    msg = "GT_CLOUD_API_KEY is not set, please re-run the install script."
                     raise ValueError(msg) from None
 
                 return connect(

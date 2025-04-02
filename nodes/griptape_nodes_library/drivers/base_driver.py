@@ -2,13 +2,11 @@ from griptape.drivers.prompt.dummy import DummyPromptDriver
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 class BaseDriverNode(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.config = GriptapeNodes.ConfigManager()
 
         self.add_parameter(
             Parameter(
@@ -19,10 +17,6 @@ class BaseDriverNode(DataNode):
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
-
-    def getenv(self, service: str, value: str) -> str:
-        api_key = self.config.get_config_value(f"env.{service}.{value}")
-        return api_key
 
     def params_to_sparse_dict(self, params, kwargs, param_name, target_name=None, transform=None) -> dict:
         """Add a parameter to kwargs if it exists in params, with optional transformation.

@@ -49,6 +49,8 @@ class BaseNode(ABC):
         metadata: dict[Any, Any] | None = None,
         state: NodeResolutionState = NodeResolutionState.UNRESOLVED,
     ) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         self.name = name
         self.state = state
         if metadata is None:
@@ -58,6 +60,7 @@ class BaseNode(ABC):
         self.parameter_values = {}
         self.parameter_output_values = {}
         self.root_ui_element = BaseNodeElement()
+        self.config_manager = GriptapeNodes.ConfigManager()
 
     def make_node_unresolved(self) -> None:
         self.state = NodeResolutionState.UNRESOLVED
@@ -354,6 +357,12 @@ class BaseNode(ABC):
     # if not implemented, it will return no issues.
     def validate_node(self) -> list[Exception] | None:
         return None
+
+    def get_config_value(self, service: str, value: str) -> str:
+        return self.config_manager.get_config_value(f"nodes.{service}.{value}")
+
+    def set_config_value(self, service: str, value: str, new_value: str) -> None:
+        self.config_manager.set_config_value(f"nodes.{service}.{value}", new_value)
 
 
 class ControlNode(BaseNode):

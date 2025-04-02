@@ -9,8 +9,6 @@ from griptape_nodes.exe_types.core_types import (
     ParameterUIOptions,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes_library.utils.env_utils import getenv
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 DEFAULT_MODEL = "gpt-4o"
@@ -21,8 +19,6 @@ SERVICE = "Griptape"
 class RunAgentNode(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-
-        self.config = GriptapeNodes.ConfigManager()
 
         self.category = "Agent"
         self.description = "Create an agent and run it."
@@ -112,7 +108,7 @@ class RunAgentNode(ControlNode):
     def validate_node(self) -> list[Exception] | None:
         # Items here are openai api key
         exceptions = []
-        api_key = getenv(SERVICE, API_KEY_ENV_VAR)
+        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
@@ -121,7 +117,7 @@ class RunAgentNode(ControlNode):
 
     def process(self) -> None:
         # Get api key
-        api_key = self.config.get_config_value(f"env.{SERVICE}.{API_KEY_ENV_VAR}")
+        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
 
         # Get input values
         params = self.parameter_values

@@ -1,6 +1,7 @@
 #!/bin/sh
 
 CONFIG_FILE="$HOME/.config/griptape_nodes/griptape_nodes_config.json"
+ENV_FILE="$HOME/.config/griptape_nodes/.env"
 API_KEY="$1"
 
 # If an API key was passed, attempt to write it to the config file
@@ -14,12 +15,14 @@ if [ -n "$API_KEY" ]; then
   fi
   # Write the API key to the config file
   echo '{
-  "env": {
+  "nodes": {
     "Griptape": {
-        "GT_CLOUD_API_KEY": "'"$API_KEY"'"
+        "GT_CLOUD_API_KEY": "$GT_CLOUD_API_KEY"
     }
   }
 }' >"$CONFIG_FILE"
+
+  echo 'GT_CLOUD_API_KEY="'"$API_KEY"'"' >"$ENV_FILE"
   echo "API key saved to $CONFIG_FILE"
 else
   echo "No API key provided. Skipping config file creation."

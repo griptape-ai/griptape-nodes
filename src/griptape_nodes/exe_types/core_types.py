@@ -295,15 +295,15 @@ class Parameter(BaseNodeElement):
     # This is the list of types that the Parameter can accept, either externally or when internally treated as a property.
     # Today, we can accept multiple types for input, but only a single output type.
     name: str  # must be unique from other parameters in Node
-    tooltip: str  # Default tooltip
+    tooltip: str | list[dict]  # Default tooltip, can be string or list of dicts
     default_value: Any = None
     _input_types: list[str] | None
     _output_type: str | None
     _type: str | None
     user_set_type: bool
-    tooltip_as_input: str | None = None
-    tooltip_as_property: str | None = None
-    tooltip_as_output: str | None = None
+    tooltip_as_input: str | list[dict] | None = None
+    tooltip_as_property: str | list[dict] | None = None
+    tooltip_as_output: str | list[dict] | None = None
     settable: bool = True
     user_defined: bool = False
     allowed_modes: set = field(
@@ -322,14 +322,14 @@ class Parameter(BaseNodeElement):
     def __init__(  # noqa: PLR0913
         self,
         name: str,
-        tooltip: str,
+        tooltip: str | list[dict],
         type: str | None = None,  # noqa: A002
         input_types: list[str] | None = None,
         output_type: str | None = None,
         default_value: Any = None,
-        tooltip_as_input: str | None = None,
-        tooltip_as_property: str | None = None,
-        tooltip_as_output: str | None = None,
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
         allowed_modes: set[ParameterMode] | None = None,
         ui_options: ParameterUIOptions | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
@@ -512,12 +512,12 @@ class ControlParameter(Parameter, ABC):
     def __init__(  # noqa: PLR0913
         self,
         name: str,
-        tooltip: str,
+        tooltip: str | list[dict],
         input_types: list[str] | None = None,
         output_type: str | None = None,
-        tooltip_as_input: str | None = None,
-        tooltip_as_property: str | None = None,
-        tooltip_as_output: str | None = None,
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
         allowed_modes: set[ParameterMode] | None = None,
         ui_options: ParameterUIOptions | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
@@ -548,11 +548,11 @@ class ControlParameter(Parameter, ABC):
 class ControlParameterInput(ControlParameter):
     def __init__(  # noqa: PLR0913
         self,
-        tooltip: str = "Connection from previous node in the execution chain",
+        tooltip: str | list[dict] = "Connection from previous node in the execution chain",
         name: str = "exec_in",
-        tooltip_as_input: str | None = None,
-        tooltip_as_property: str | None = None,
-        tooltip_as_output: str | None = None,
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
         ui_options: ParameterUIOptions | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
@@ -582,11 +582,11 @@ class ControlParameterInput(ControlParameter):
 class ControlParameterOutput(ControlParameter):
     def __init__(  # noqa: PLR0913
         self,
-        tooltip: str = "Connection to the next node in the execution chain",
+        tooltip: str | list[dict] = "Connection to the next node in the execution chain",
         name: str = "exec_out",
-        tooltip_as_input: str | None = None,
-        tooltip_as_property: str | None = None,
-        tooltip_as_output: str | None = None,
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
         ui_options: ParameterUIOptions | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,

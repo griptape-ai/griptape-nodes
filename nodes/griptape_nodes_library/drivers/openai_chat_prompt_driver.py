@@ -30,7 +30,7 @@ class OpenAiChatPromptDriverNode(BasePromptDriverNode):
         # Get the parameters from the node
         params = self.parameter_values
         kwargs = {}
-        kwargs["api_key"] = self.getenv(service=SERVICE, value=API_KEY_ENV_VAR)
+        kwargs["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
         kwargs["model"] = params.get("model", DEFAULT_MODEL)
         response_format = params.get("response_format", None)
         seed = params.get("seed", None)

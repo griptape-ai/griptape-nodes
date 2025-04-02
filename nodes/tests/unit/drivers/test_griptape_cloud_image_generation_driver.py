@@ -95,7 +95,7 @@ class TestGriptapeCloudImageGenerationNode:
 
         assert isinstance(driver, GriptapeCloudImageGenerationDriver)
         assert driver.model == "dall-e-3"
-        assert driver.api_key == griptape_cloud_image_generation_node.getenv(
+        assert driver.api_key == griptape_cloud_image_generation_node.get_config_value(
             service="Griptape", value="GT_CLOUD_API_KEY"
         )
         assert driver.image_size == "1024x1024"

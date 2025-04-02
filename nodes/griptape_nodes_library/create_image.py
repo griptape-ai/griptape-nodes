@@ -4,8 +4,7 @@ from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
-from griptape_nodes_library.utils.env_utils import getenv
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -18,8 +17,6 @@ DEFAULT_STYLE = "natural"
 class CreateImageNode(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-
-        self.config = GriptapeNodes.ConfigManager()
 
         self.category = "Agent"
         self.description = "Generate an image"
@@ -96,7 +93,7 @@ class CreateImageNode(ControlNode):
     def validate_node(self) -> list[Exception] | None:
         # TODO(kate): Figure out how to wrap this so it's easily repeatable
         exceptions = []
-        api_key = getenv(SERVICE, API_KEY_ENV_VAR)
+        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         # No need for the api key. These exceptions caught on other nodes.
         if self.parameter_values.get("agent", None) and self.parameter_values.get("driver", None):
             return None
@@ -110,7 +107,7 @@ class CreateImageNode(ControlNode):
         # Get the parameters from the node
         params = self.parameter_values
 
-        workspace_path = self.config.workspace_path
+        workspace_path = self.config_manager.workspace_path
         images_dir = workspace_path / "Images/"
 
         agent = params.get("agent", Agent(tasks=[]))
@@ -126,7 +123,7 @@ class CreateImageNode(ControlNode):
         else:
             driver = GriptapeCloudImageGenerationDriver(
                 model=params.get("model", DEFAULT_MODEL),
-                api_key=getenv(service=SERVICE, value=API_KEY_ENV_VAR),
+                api_key=self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
             )
         kwargs["image_generation_driver"] = driver
 

@@ -18,13 +18,13 @@ class AddParameterToNodeRequest(RequestPayload):
     parameter_name: str
     node_name: str
     default_value: Any | None
-    tooltip: str
+    tooltip: str | list[dict]
+    tooltip_as_input: str | list[dict] | None = None
+    tooltip_as_property: str | list[dict] | None = None
+    tooltip_as_output: str | list[dict] | None = None
     type: str | None = None
     input_types: list[str] | None = None
     output_type: str | None = None
-    tooltip_as_input: str | None = None
-    tooltip_as_property: str | None = None
-    tooltip_as_output: str | None = None
     ui_options: ParameterUIOptions | None = None
     mode_allowed_input: bool = Field(default=True)
     mode_allowed_property: bool = Field(default=True)
@@ -112,10 +112,10 @@ class GetParameterDetailsResultSuccess(ResultPayloadSuccess):
     input_types: list[str]
     output_type: str
     default_value: Any | None
-    tooltip: str
-    tooltip_as_input: str | None
-    tooltip_as_property: str | None
-    tooltip_as_output: str | None
+    tooltip: str | list[dict]
+    tooltip_as_input: str | list[dict] | None
+    tooltip_as_property: str | list[dict] | None
+    tooltip_as_output: str | list[dict] | None
     mode_allowed_input: bool
     mode_allowed_property: bool
     mode_allowed_output: bool
@@ -138,10 +138,10 @@ class AlterParameterDetailsRequest(RequestPayload):
     input_types: list[str] | None = None
     output_type: str | None = None
     default_value: Any | None = None
-    tooltip: str | None = None
-    tooltip_as_input: str | None = None
-    tooltip_as_property: str | None = None
-    tooltip_as_output: str | None = None
+    tooltip: str | list[dict] | None = None
+    tooltip_as_input: str | list[dict] | None = None
+    tooltip_as_property: str | list[dict] | None = None
+    tooltip_as_output: str | list[dict] | None = None
     mode_allowed_input: bool | None = None
     mode_allowed_property: bool | None = None
     mode_allowed_output: bool | None = None

@@ -226,14 +226,14 @@ class RetainedMode:
         node_name: str,
         parameter_name: str,
         default_value: Any | None,
-        tooltip: str,
+        tooltip: str | list[dict],
         type: str | None = None,  # noqa: A002
         input_types: list[str] | None = None,
         output_type: str | None = None,
         edit: bool = False,  # noqa: FBT001, FBT002
-        tooltip_as_input: str | None = None,
-        tooltip_as_property: str | None = None,
-        tooltip_as_output: str | None = None,
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
         ui_options: ParameterUIOptions | None = None,
         mode_allowed_input: bool = True,  # noqa: FBT001, FBT002
         mode_allowed_property: bool = True,  # noqa: FBT001, FBT002
