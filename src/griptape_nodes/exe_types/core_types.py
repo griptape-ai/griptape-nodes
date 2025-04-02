@@ -754,9 +754,12 @@ class ParameterList(ParameterContainer):
             element_type=element_type,
         )
 
-    def create_child_parameter(self):
-        # Create a new child Parameter.
+    def create_child_parameter(self) -> Parameter:
         child_params = self.find_elements_by_type(Parameter)
 
-        # Next index is ours.
-        new_param_name = f"{self.name}[{len(child_params)}]"
+        # Generate a name. This needs to be UNIQUE because children need
+        # to be tracked as individuals and not as indices in the list.
+        # Ex: a Connection is made to Parameter List[1]. List[0] gets deleted.
+        # The OLD List[1] is now List[0], but we need to maintain the Connection
+        # to the original entry.
+        name = f"{self.name}_ParameterList_Unique_Param_ID_{uuid.uuid4().hex!s}"
