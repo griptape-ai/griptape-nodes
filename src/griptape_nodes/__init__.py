@@ -8,7 +8,8 @@ import sys
 from pathlib import Path
 
 import httpx
-from dotenv import get_key, load_dotenv, set_key
+from dotenv import load_dotenv, set_key
+from dotenv.main import DotEnv
 from rich.console import Console
 from rich.prompt import Confirm, Prompt
 from xdg_base_dirs import xdg_config_home
@@ -30,18 +31,25 @@ secrets_manager = SecretsManager(config_manager)
 
 def main() -> None:
     load_dotenv(ENV_FILE)
-    _init_config()
-    _init_api_key()
+
+    is_first_init = _init_config()
+    if is_first_init:
+        _run_init()
 
     # Hack to make paths "just work". # noqa: FIX004
     # Without this, packages like `nodes` don't properly import.
     # Long term solution could be to make `nodes` a proper src-layout package
     # but current engine relies on importing files rather than packages.
-
     sys.path.append(str(Path.cwd()))
 
     args = _get_args()
     _process_args(args)
+
+
+def _run_init() -> None:
+    """Runs through the engine init steps with the user."""
+    _prompt_for_workspace()
+    _prompt_for_api_key()
 
 
 def _get_args() -> argparse.Namespace:
@@ -52,7 +60,7 @@ def _get_args() -> argparse.Namespace:
         "command",
         help="Command to run",
         nargs="?",
-        choices=["engine", "config", "update", "version"],
+        choices=["init", "engine", "config", "update", "version"],
         default="engine",
     )
 
@@ -67,11 +75,18 @@ def _get_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _init_config() -> None:
-    """Initializes the config directory if it doesn't exist."""
+def _init_config() -> bool:
+    """Initializes the config directory if it doesn't exist.
+
+    Returns:
+        bool: True if the config directory was created, False otherwise.
+
+    """
     config_dir = xdg_config_home() / "griptape_nodes"
+    is_first_init = False
     if not config_dir.exists():
         config_dir.mkdir(parents=True, exist_ok=True)
+        is_first_init = True
 
     files_to_create = [
         (ENV_FILE, ""),
@@ -84,21 +99,36 @@ def _init_config() -> None:
             with Path.open(file_path, "w") as file:
                 file.write(file_name[1])
 
+    return is_first_init
 
-def _init_api_key() -> None:
+
+def _prompt_for_api_key() -> None:
     """Prompts the user for their GT_CLOUD_API_KEY and stores it in config directory."""
-    api_key = get_key(ENV_FILE, "GT_CLOUD_API_KEY")
+    api_key = None
+    while not api_key:
+        api_key = Prompt.ask(
+            "Please enter your Griptape Nodes API key",
+            # dotenv.get_key doesn't support disabling verbose mode
+            default=DotEnv(ENV_FILE, verbose=False).get("GT_CLOUD_API_KEY"),
+            show_default=True,
+        )
+    set_key(ENV_FILE, "GT_CLOUD_API_KEY", api_key)
+    config_manager.set_config_value("nodes.Griptape.GT_CLOUD_API_KEY", "$GT_CLOUD_API_KEY")
+    secrets_manager.set_secret("GT_CLOUD_API_KEY", api_key)
 
-    if not api_key:
-        while not api_key:
-            api_key = Prompt.ask(
-                "Please enter your API key to continue",
-                default=None,
-                show_default=False,
-            )
-        set_key(ENV_FILE, "GT_CLOUD_API_KEY", api_key)
-        config_manager.set_config_value("nodes.Griptape.GT_CLOUD_API_KEY", "$GT_CLOUD_API_KEY")
-        secrets_manager.set_secret("GT_CLOUD_API_KEY", api_key)
+
+def _prompt_for_workspace() -> None:
+    """Prompts the user for their workspace directory and stores it in config directory."""
+    workspace_directory = config_manager.get_config_value("workspace_directory")
+
+    workspace_directory = Prompt.ask(
+        "Please enter your workspace directory",
+        default=workspace_directory,
+        show_default=True,
+    )
+    config_manager.workspace_path = str(Path(workspace_directory).resolve())
+
+    console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
 
 
 def _get_latest_version(repo: str) -> str:
@@ -181,24 +211,22 @@ def _list_user_configs() -> list[Path]:
 
 
 def _process_args(args: argparse.Namespace) -> None:
-    if args.command == "engine":
+    if args.command == "init":
+        _run_init()
+    elif args.command == "engine":
         _auto_update()
         api_main()
-
     elif args.command == "config":
         if args.config_subcommand == "list":
             for config in _list_user_configs():
                 console.print(f"[bold green]{config}[/bold green]")
         else:
             sys.stdout.write(json.dumps(_get_user_config(), indent=2))
-
     elif args.command == "update":
         _install_latest_release()
-
     elif args.command == "version":
         version = _get_current_version()
         console.print(f"[bold green]{version}[/bold green]")
-
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)
