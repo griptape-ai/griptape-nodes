@@ -114,8 +114,8 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
         Once the key is created, copy and paste its value here to proceed."""
         console.print(Panel(explainer, expand=False))
 
-    current_key = api_key
     default_key = api_key or DotEnv(ENV_FILE, verbose=False).get("GT_CLOUD_API_KEY")
+    current_key = api_key
     while current_key is None:
         current_key = Prompt.ask(
             "Griptape API Key",
@@ -126,6 +126,7 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
     set_key(ENV_FILE, "GT_CLOUD_API_KEY", current_key)
     config_manager.set_config_value("nodes.Griptape.GT_CLOUD_API_KEY", "$GT_CLOUD_API_KEY")
     secrets_manager.set_secret("GT_CLOUD_API_KEY", current_key)
+    console.print(f"[bold green]API Key set to: {current_key}[/bold green]")
 
 
 def _prompt_for_workspace() -> None:
@@ -235,6 +236,7 @@ def _process_args(args: argparse.Namespace) -> None:
 
     if args.command == "init":
         _run_init(api_key=args.api_key)
+        console.print("Initialization complete! You can now run the engine with 'griptape-nodes' (or just 'gtn').")
     elif args.command == "engine":
         if is_first_init:
             # Default init flow if it's truly the first time
