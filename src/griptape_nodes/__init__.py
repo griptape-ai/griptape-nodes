@@ -88,7 +88,7 @@ def _init_api_key(api_key_arg: str | None) -> None:
     api_key = get_key(ENV_FILE, "GT_CLOUD_API_KEY")
 
     if not api_key:
-        api_key = api_key_arg if api_key_arg is not None else ""
+        api_key = api_key_arg if api_key_arg is not None and api_key else ""
         while not api_key:
             api_key = Prompt.ask(
                 "Please enter your API key to continue",

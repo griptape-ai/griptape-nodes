@@ -82,6 +82,8 @@ class NodesApiSocketManager:
                 sleep(5)
             except InvalidStatus as e:
                 if e.response.status_code in {401, 403}:
-                    logger.exception("Nodes API key is invalid, please re-run `gtn` with a valid key: `gtn --api-key <your key>`.")
+                    logger.exception(
+                        "Nodes API key is invalid, please re-run `gtn` with a valid key: `gtn --api-key <your key>`."
+                    )
                     msg = "Nodes API key is invalid"
                     raise RuntimeError(msg) from None
