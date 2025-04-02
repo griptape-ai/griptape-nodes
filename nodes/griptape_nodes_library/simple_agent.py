@@ -78,7 +78,9 @@ class SimpleAgentNode(ControlNode):
         agent = params.get("agent", None)
         if not agent:
             agent = Agent(
-                prompt_driver=GriptapeCloudPromptDriver(api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR))
+                prompt_driver=GriptapeCloudPromptDriver(
+                    api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
+                )
             )
 
         prompt = params.get("prompt", None)
