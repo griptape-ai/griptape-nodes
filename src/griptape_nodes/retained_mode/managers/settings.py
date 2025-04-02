@@ -51,11 +51,7 @@ class AppInitializationComplete(BaseModel):
         default_factory=lambda: [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")]
     )
     scripts_to_register: list[ScriptSettingsDetail] = Field(
-        default_factory=lambda: [
-            ScriptSettingsDetail(file_name="griptape_nodes/scripts/prompt_an_image.py", is_griptape_provided=True),
-            ScriptSettingsDetail(file_name="griptape_nodes/scripts/coloring_book.py", is_griptape_provided=True),
-            ScriptSettingsDetail(file_name="griptape_nodes/scripts/render_logs.py", is_griptape_provided=True),
-        ]
+        default_factory=lambda: []  # noqa: PIE807 (leaving as a lambda for list for when we are ready to re-populate)
     )
 
 
