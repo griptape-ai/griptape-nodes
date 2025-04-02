@@ -28,7 +28,6 @@ console = Console()
 def main() -> None:
     load_dotenv(ENV_FILE)
     _init_config()
-    _init_api_key()
 
     # Hack to make paths "just work". # noqa: FIX004
     # Without this, packages like `nodes` don't properly import.
@@ -38,6 +37,7 @@ def main() -> None:
     sys.path.append(str(Path.cwd()))
 
     args = _get_args()
+    _init_api_key(args.api_key)
     _process_args(args)
 
 
@@ -61,6 +61,7 @@ def _get_args() -> argparse.Namespace:
         choices=["list"],
         default=None,
     )
+    parser.add_argument("--api-key", required=False, default=None, help="API key to use for the engine")
     return parser.parse_args()
 
 
@@ -82,11 +83,12 @@ def _init_config() -> None:
                 file.write(file_name[1])
 
 
-def _init_api_key() -> None:
+def _init_api_key(api_key_arg: str | None) -> None:
     """Prompts the user for their GT_CLOUD_API_KEY and stores it in config directory."""
     api_key = get_key(ENV_FILE, "GT_CLOUD_API_KEY")
 
     if not api_key:
+        api_key = api_key_arg if api_key_arg is not None else ""
         while not api_key:
             api_key = Prompt.ask(
                 "Please enter your API key to continue",
@@ -94,6 +96,13 @@ def _init_api_key() -> None:
                 show_default=False,
             )
         set_key(ENV_FILE, "GT_CLOUD_API_KEY", api_key)
+
+    elif api_key_arg is not None:
+        if Confirm.ask(
+            "An API key is already set. Do you want to overwrite it?",
+            default=False,
+        ):
+            set_key(ENV_FILE, "GT_CLOUD_API_KEY", api_key_arg)
 
 
 def _get_latest_version(repo: str) -> str:

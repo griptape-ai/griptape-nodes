@@ -6,7 +6,7 @@ from urllib.parse import urljoin
 
 from attrs import Factory, define, field
 from dotenv import get_key
-from websockets.exceptions import WebSocketException
+from websockets.exceptions import InvalidStatus, WebSocketException
 from websockets.sync.client import ClientConnection, connect
 from xdg_base_dirs import xdg_config_home
 
@@ -80,3 +80,8 @@ class NodesApiSocketManager:
             except ConnectionError:
                 logger.warning("Nodes API is not available, waiting 5 seconds before retrying")
                 sleep(5)
+            except InvalidStatus as e:
+                if e.response.status_code in {401, 403}:
+                    logger.exception("Nodes API key is invalid, please re-run `gtn` with a valid key: `gtn --api-key <your key>`.")
+                    msg = "Nodes API key is invalid"
+                    raise RuntimeError(msg) from None
