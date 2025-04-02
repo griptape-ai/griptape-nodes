@@ -6,7 +6,6 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 import httpx
 from dotenv import load_dotenv, set_key
@@ -24,6 +23,7 @@ CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 ENV_FILE = CONFIG_DIR / ".env"
 CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
 REPO_NAME = "griptape-ai/griptape-nodes"
+NODES_APP_URL = "https://nodes.griptape.ai"
 
 console = Console()
 config_manager = ConfigManager()
@@ -126,14 +126,20 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
 
 def _prompt_for_workspace() -> None:
     """Prompts the user for their workspace directory and stores it in config directory."""
-    workspace_directory = config_manager.get_config_value("workspace_directory")
+    default_workspace_directory = config_manager.get_config_value("workspace_directory")
 
-    workspace_directory = Prompt.ask(
-        "Please enter your workspace directory",
-        default=workspace_directory,
-        show_default=True,
-    )
-    config_manager.workspace_path = str(Path(workspace_directory).expanduser().resolve())
+    valid_workspace = False
+    while not valid_workspace:
+        try:
+            workspace_directory = Prompt.ask(
+                "Please enter your workspace directory",
+                default=default_workspace_directory,
+                show_default=True,
+            )
+            config_manager.workspace_path = str(Path(workspace_directory).expanduser().resolve())
+            valid_workspace = True
+        except OSError as e:
+            console.print(f"[bold red]Invalid workspace directory: {e}[/bold red]")
     console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
 
 
