@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 import httpx
 from dotenv import load_dotenv, set_key
@@ -32,10 +33,6 @@ secrets_manager = SecretsManager(config_manager)
 def main() -> None:
     load_dotenv(ENV_FILE)
 
-    is_first_init = _init_config()
-    if is_first_init:
-        _run_init()
-
     # Hack to make paths "just work". # noqa: FIX004
     # Without this, packages like `nodes` don't properly import.
     # Long term solution could be to make `nodes` a proper src-layout package
@@ -46,16 +43,20 @@ def main() -> None:
     _process_args(args)
 
 
-def _run_init() -> None:
-    """Runs through the engine init steps with the user."""
+def _run_init(api_key: str | None = None) -> None:
+    """Runs through the engine init steps, optionally skipping prompts if the user provided `--api-key`."""
     _prompt_for_workspace()
-    _prompt_for_api_key()
+    _prompt_for_api_key(api_key)
+
+    console.print(
+        "[bold green]Initialization complete! You can now run the engine with 'griptape-nodes' (or just 'gtn').[/bold green]"
+    )
 
 
 def _get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="griptape-nodes", description="Griptape Nodes Engine.")
 
-    # The main command (engine|config|update|version)
+    # The main command (engine|config|update|version|init)
     parser.add_argument(
         "command",
         help="Command to run",
@@ -64,7 +65,7 @@ def _get_args() -> argparse.Namespace:
         default="engine",
     )
 
-    # Optional second argument for config subcommand (e.g., config list)
+    # Optional subcommand for 'config' (e.g., config list)
     parser.add_argument(
         "config_subcommand",
         help="Subcommand for 'config'",
@@ -72,14 +73,18 @@ def _get_args() -> argparse.Namespace:
         choices=["list"],
         default=None,
     )
+
+    # Optionally allow setting the API key directly for the init command
+    parser.add_argument("--api-key", help="Override the Griptape Nodes API key when running 'init'.", required=False)
+
     return parser.parse_args()
 
 
-def _init_config() -> bool:
-    """Initializes the config directory if it doesn't exist.
+def _init_system_config() -> bool:
+    """Initializes the system config directory if it doesn't exist.
 
     Returns:
-        bool: True if the config directory was created, False otherwise.
+        bool: True if the system config directory was created, False otherwise.
 
     """
     config_dir = xdg_config_home() / "griptape_nodes"
@@ -102,19 +107,21 @@ def _init_config() -> bool:
     return is_first_init
 
 
-def _prompt_for_api_key() -> None:
-    """Prompts the user for their GT_CLOUD_API_KEY and stores it in config directory."""
-    api_key = None
-    while not api_key:
-        api_key = Prompt.ask(
-            "Please enter your Griptape Nodes API key",
-            # dotenv.get_key doesn't support disabling verbose mode
-            default=DotEnv(ENV_FILE, verbose=False).get("GT_CLOUD_API_KEY"),
-            show_default=True,
-        )
-    set_key(ENV_FILE, "GT_CLOUD_API_KEY", api_key)
+def _prompt_for_api_key(api_key: str | None = None) -> None:
+    """Prompts the user for their GT_CLOUD_API_KEY unless it's provided."""
+    default_key = api_key or DotEnv(ENV_FILE, verbose=False).get("GT_CLOUD_API_KEY")
+    current_key = Prompt.ask(
+        "Please enter your Griptape Nodes API key",
+        default=default_key,
+        show_default=True,
+    )
+    if current_key is None:
+        console.print("[bold red]API key cannot be empty![/bold red]")
+        sys.exit(1)
+
+    set_key(ENV_FILE, "GT_CLOUD_API_KEY", current_key)
     config_manager.set_config_value("nodes.Griptape.GT_CLOUD_API_KEY", "$GT_CLOUD_API_KEY")
-    secrets_manager.set_secret("GT_CLOUD_API_KEY", api_key)
+    secrets_manager.set_secret("GT_CLOUD_API_KEY", current_key)
 
 
 def _prompt_for_workspace() -> None:
@@ -127,7 +134,6 @@ def _prompt_for_workspace() -> None:
         show_default=True,
     )
     config_manager.workspace_path = str(Path(workspace_directory).resolve())
-
     console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
 
 
@@ -148,7 +154,7 @@ def _get_latest_version(repo: str) -> str:
 
 
 def _auto_update() -> None:
-    """Automatically updates the script to the latest version using a shell command."""
+    """Automatically updates the script to the latest version if the user confirms."""
     current_version = _get_current_version()
     latest_version = _get_latest_version(REPO_NAME)
 
@@ -211,9 +217,15 @@ def _list_user_configs() -> list[Path]:
 
 
 def _process_args(args: argparse.Namespace) -> None:
+    is_first_init = _init_system_config()
+
     if args.command == "init":
-        _run_init()
+        _run_init(api_key=args.api_key)
     elif args.command == "engine":
+        if is_first_init:
+            # Default init flow if it's truly the first time
+            _run_init()
+
         _auto_update()
         api_main()
     elif args.command == "config":
