@@ -115,6 +115,7 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
         console.print(Panel(explainer, expand=False))
 
     default_key = api_key or DotEnv(ENV_FILE, verbose=False).get("GT_CLOUD_API_KEY")
+    # If api_key is provided via --api-key, we don't want to prompt for it
     current_key = api_key
     while current_key is None:
         current_key = Prompt.ask(
