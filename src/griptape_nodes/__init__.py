@@ -133,7 +133,7 @@ def _prompt_for_workspace() -> None:
         default=workspace_directory,
         show_default=True,
     )
-    config_manager.workspace_path = str(Path(workspace_directory).resolve())
+    config_manager.workspace_path = str(Path(workspace_directory).expanduser().resolve())
     console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
 
 
