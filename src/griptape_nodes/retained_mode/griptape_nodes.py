@@ -2089,6 +2089,7 @@ class NodeManager:
         # Values are actually stored on the NODE.
         try:
             modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
+            object_created = node.get_parameter_value(request.parameter_name)
         except Exception as err:
             details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Exception: {err}'
             GriptapeNodes.get_logger().error(details)
@@ -2118,7 +2119,7 @@ class NodeManager:
         details = f'"{request.node_name}.{request.parameter_name}" = {object_created}'
         GriptapeNodes.get_logger().info(details)
 
-        result = SetParameterValueResultSuccess()
+        result = SetParameterValueResultSuccess(value=object_created, data_type=parameter.type)
         return result
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
