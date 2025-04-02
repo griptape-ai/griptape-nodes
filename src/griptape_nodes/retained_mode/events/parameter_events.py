@@ -88,7 +88,8 @@ class SetParameterValueRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class SetParameterValueResultSuccess(ResultPayloadSuccess):
-    pass
+    finalized_value: Any
+    data_type: str
 
 
 @dataclass
