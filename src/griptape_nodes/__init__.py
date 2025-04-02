@@ -56,14 +56,15 @@ def _init_config() -> None:
         config_dir.mkdir(parents=True, exist_ok=True)
 
     files_to_create = [
-        ENV_FILE,
-        CONFIG_FILE,
+        (ENV_FILE, ""),
+        (CONFIG_FILE, "{}"),
     ]
 
     for file_name in files_to_create:
-        file_path = config_dir / file_name
+        file_path = config_dir / file_name[0]
         if not file_path.exists():
-            file_path.touch()
+            with Path.open(file_path, "w") as file:
+                file.write(file_name[1])
 
 
 def _init_api_key() -> None:
