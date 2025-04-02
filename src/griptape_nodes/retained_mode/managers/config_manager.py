@@ -20,7 +20,7 @@ from griptape_nodes.retained_mode.events.config_events import (
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
 
-from .settings import ScriptSettingsDetail, Settings
+from .settings import ScriptSettingsDetail, Settings, _find_config_files
 
 
 class ConfigManager:
@@ -76,6 +76,21 @@ class ConfigManager:
             path: The path to set as the base file path.
         """
         self.set_config_value("workspace_directory", str(Path(path).resolve()))
+
+    @property
+    def config_files(self) -> list[Path]:
+        """Get a list of config files to check for.
+
+        Returns:
+            List of Path objects representing the config files.
+        """
+        possible_config_files = [
+            *_find_config_files("griptape_nodes_config", "json"),
+            *_find_config_files("griptape_nodes_config", "toml"),
+            *_find_config_files("griptape_nodes_config", "yaml"),
+        ]
+
+        return [config_file for config_file in possible_config_files if config_file.exists()]
 
     def save_user_script_json(self, script_file_name: str) -> None:
         script_details = ScriptSettingsDetail(file_name=script_file_name, is_griptape_provided=False)
