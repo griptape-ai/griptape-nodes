@@ -110,14 +110,14 @@ def _init_system_config() -> bool:
 def _prompt_for_api_key(api_key: str | None = None) -> None:
     """Prompts the user for their GT_CLOUD_API_KEY unless it's provided."""
     default_key = api_key or DotEnv(ENV_FILE, verbose=False).get("GT_CLOUD_API_KEY")
-    current_key = Prompt.ask(
-        "Please enter your Griptape Nodes API key",
-        default=default_key,
-        show_default=True,
-    )
-    if current_key is None:
-        console.print("[bold red]API key cannot be empty![/bold red]")
-        sys.exit(1)
+
+    current_key = None
+    while current_key is None:
+        current_key = Prompt.ask(
+            "Please enter your Griptape Nodes API key",
+            default=default_key,
+            show_default=True,
+        )
 
     set_key(ENV_FILE, "GT_CLOUD_API_KEY", current_key)
     config_manager.set_config_value("nodes.Griptape.GT_CLOUD_API_KEY", "$GT_CLOUD_API_KEY")
