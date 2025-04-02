@@ -11,6 +11,7 @@ import httpx
 from dotenv import load_dotenv, set_key
 from dotenv.main import DotEnv
 from rich.console import Console
+from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from xdg_base_dirs import xdg_config_home
 
@@ -107,10 +108,17 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
     """Prompts the user for their GT_CLOUD_API_KEY unless it's provided."""
     default_key = api_key or DotEnv(ENV_FILE, verbose=False).get("GT_CLOUD_API_KEY")
 
+    explainer = f"""[bold cyan]Griptape API Key[/bold cyan]
+    A Griptape API Key is needed to proceed.
+    This key allows the Griptape Nodes engine to communicate with the Griptape Nodes Editor.
+    In order to get a key, visit [link={NODES_APP_URL}]{NODES_APP_URL}[/link] in your browser and click the button "Generate API Key".
+    Once the key is created, copy and paste its value here to proceed."""
+    console.print(Panel(explainer, expand=False))
+
     current_key = None
     while current_key is None:
         current_key = Prompt.ask(
-            "Please enter your Griptape Nodes API key",
+            "Griptape API Key",
             default=default_key,
             show_default=True,
         )
@@ -124,11 +132,17 @@ def _prompt_for_workspace() -> None:
     """Prompts the user for their workspace directory and stores it in config directory."""
     default_workspace_directory = config_manager.get_config_value("workspace_directory")
 
+    explainer = """[bold cyan]Workspace Directory[/bold cyan]
+    Select the workspace directory. This is the location where Griptape Nodes will store flows, config, and secrets.
+    You may enter a custom directory or press Return to accept the default workspace directory
+    """
+    console.print(Panel(explainer, expand=False))
+
     valid_workspace = False
     while not valid_workspace:
         try:
             workspace_directory = Prompt.ask(
-                "Please enter your Griptape Nodes Engine workspace directory",
+                "Workspace Directory",
                 default=default_workspace_directory,
                 show_default=True,
             )
