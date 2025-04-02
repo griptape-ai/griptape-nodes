@@ -90,10 +90,10 @@ if (!(Test-Path $DestDir)) {
 }
 
 # Copy the nodes/ directory
-Copy-Item -Path (Join-Path $RepoName "nodes") -Destination (Join-Path $DestDir "nodes") -Recurse -Force
+Copy-Item -Path (Join-Path $RepoName "nodes") -Destination $DestDir -Recurse -Force
 
 # Copy the scripts/ directory
-Copy-Item -Path (Join-Path $RepoName "scripts") -Destination (Join-Path $DestDir "scripts") -Recurse -Force
+Copy-Item -Path (Join-Path $RepoName "scripts") -Destination $DestDir -Recurse -Force
 
 Pop-Location
 Remove-Item -Recurse -Force $TmpDir
