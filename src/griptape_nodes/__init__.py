@@ -87,8 +87,10 @@ def _init_api_key(api_key_arg: str | None) -> None:
     """Prompts the user for their GT_CLOUD_API_KEY and stores it in config directory."""
     api_key = get_key(ENV_FILE, "GT_CLOUD_API_KEY")
 
+    # If no API key is set, and one is not provided as an argument, prompt the user.
     if not api_key:
-        api_key = api_key_arg if api_key_arg is not None and api_key else ""
+        api_key = api_key_arg
+
         while not api_key:
             api_key = Prompt.ask(
                 "Please enter your API key to continue",
@@ -97,6 +99,7 @@ def _init_api_key(api_key_arg: str | None) -> None:
             )
         set_key(ENV_FILE, "GT_CLOUD_API_KEY", api_key)
 
+    # If an API key is set and one is provided as an argument, prompt the user to overwrite it.
     elif api_key_arg is not None:
         if Confirm.ask(
             "An API key is already set. Do you want to overwrite it?",
