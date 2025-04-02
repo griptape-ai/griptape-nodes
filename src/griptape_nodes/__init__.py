@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from dotenv import get_key, set_key
+from dotenv import get_key, load_dotenv, set_key
 from rich.prompt import Prompt
 from xdg_base_dirs import xdg_config_home
 
@@ -20,12 +20,14 @@ CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
 
 
 def main() -> None:
+    load_dotenv(ENV_FILE)
+    _init_config()
+    _init_api_key()
+
     # Hack to make paths "just work". # noqa: FIX004
     # Without this, packages like `nodes` don't properly import.
     # Long term solution could be to make `nodes` a proper src-layout package
     # but current engine relies on importing files rather than packages.
-    _init_config()
-    _init_api_key()
     sys.path.append(str(Path.cwd()))
 
     args = _get_args()
