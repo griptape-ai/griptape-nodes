@@ -3,6 +3,7 @@
 import argparse
 import importlib.metadata
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -285,7 +286,8 @@ def _process_args(args: argparse.Namespace) -> None:
             # Default init flow if it's truly the first time
             _run_init()
 
-        _auto_update()
+        if os.environ.get("DEBUG", "false") == "false":
+            _auto_update()
         api_main()
     elif args.command == "config":
         if args.config_subcommand == "list":
