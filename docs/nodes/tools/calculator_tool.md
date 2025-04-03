@@ -7,10 +7,13 @@ The `CalculatorToolNode` is a custom node in Griptape that provides a generic im
 ## Subclassing BaseToolNode
 
 #### What does it mean?
+
 The `CalculatorToolNode` class is a subclass of `BaseToolNode`, inheriting its properties and behavior. This allows us to build upon the existing functionality of `BaseToolNode` while adding our own specific implementation for calculator tools.
 
 #### Why would I use it?
+
 Use this node when you want to:
+
 - Create a new calculator tool with customizable parameters
 - Initialize a calculator tool with specific settings (e.g., off-prompt mode)
 - Integrate calculator tools from various sources in your Griptape workflow
@@ -27,9 +30,11 @@ class CalculatorToolNode(BaseToolNode):
 ## Process Method
 
 #### What does it do?
+
 The `process` method is responsible for creating and setting the output of the calculator tool.
 
 #### Example Usage
+
 ```python
 calculator_tool_node = CalculatorToolNode("Calculator Tool")
 calculator_tool_node.add_parameter(
@@ -63,11 +68,11 @@ def process(self) -> None:
 #### Fields
 
 - **off_prompt**: A boolean indicating whether the calculator tool should operate in off-prompt mode.
-    - Input type: Boolean
-    - Type: Boolean
-    - Output type: Boolean
-    - Default value: True
-    - Tooltip:
+  - Input type: Boolean
+  - Type: Boolean
+  - Output type: Boolean
+  - Default value: True
+  - Tooltip:
 
 ## Advantages
 
