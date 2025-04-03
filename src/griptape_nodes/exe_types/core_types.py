@@ -320,7 +320,7 @@ class Parameter(BaseNodeElement):
     validators: list[Callable[[Parameter, Any], None]]
     # Traits should be set? As values here, correct?
     # Traits will define UI options and convertors
-    traits: list[Trait] | None = None
+    traits: list[Trait] | None = None # we need to store the trait objects as lists
     next: Parameter | None = None
     prev: Parameter | None = None
 

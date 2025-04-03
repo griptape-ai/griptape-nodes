@@ -28,12 +28,21 @@ class MinMax(Trait):
     min: Any = 0
     max: Any = 0
 
-    # Define what is up here
-    def set_min_max(self,value:Any) -> Any:
-            pass
+    # Helper method for the function
+    def set_min_max(self, new_min:Any = None, new_max: Any = None) -> None:
+        if new_min:
+                self.min = new_min
+        if new_max:
+                self.max = new_max
 
-    def check_min_max(self,value:Any) -> bool:
-            pass
+    def check_min_max(self,parameter:Parameter, value:Any) -> None:
+            # i wish i knew what a validator was LOL
+            if value > self.max:
+                 msg = "Above max lol"
+                 raise ValueError(msg)
+            if value < self.min:
+                 msg = "Below min lol"
+
     # If we get this anywhere on a parameter, it is going to grab this guy
     @classmethod
     def get_trait_keys(cls) -> list[str]:
@@ -41,19 +50,19 @@ class MinMax(Trait):
 
     def apply_trait_to_parameter(self, parameter: Parameter) -> Parameter:
         # Are there any converters that need to be added?
-        def set_min_max(value:Any) -> Any:
-            pass
         parameter.converters.append(self.set_min_max)
 
         # Are there any validators that need to be added?
-        def check_min_max(value:Any) -> Any:
-            pass
         parameter.validators.append(self.check_min_max)
 
         return parameter
+    
+    def remove_trait_from_parameter(self, parameter:Parameter) -> Parameter:
+         parameter.converters.remove(self.set_min_max)
+         parameter.validators.remove(self.check_min_max)
 
     def apply_ui_to_parameter(self, parameter: Parameter) -> Parameter:
-        # This UI will be silly?? 
+        # What is a good UI thing
         return super().apply_ui_to_parameter(parameter)
 
 # These Traits get added to a list on the parameter. When they are added they apply their functions to the parameter.
