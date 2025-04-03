@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from abc import ABC
+from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeVar
-
-#from griptape_nodes.exe_types.trait_types import Trait
+from griptape.mixins.singleton_mixin import SingletonMixin
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -319,7 +318,7 @@ class Parameter(BaseNodeElement):
     validators: list[Callable[[Parameter, Any], None]]
     # Traits should be set? As values here, correct?
     # Traits will define UI options and convertors
-    traits: list[Trait] | None = None # we need to store the trait objects as lists
+    traits: list[Trait] # we need to store the trait objects as lists
     next: Parameter | None = None
     prev: Parameter | None = None
 
@@ -338,6 +337,7 @@ class Parameter(BaseNodeElement):
         ui_options: ParameterUIOptions | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
+        traits: list[Trait.__class__] | None = None,
         *,
         settable: bool = True,
         user_defined: bool = False,
@@ -372,6 +372,12 @@ class Parameter(BaseNodeElement):
             self.validators = []
         else:
             self.validators = validators
+        self.traits = []
+        if traits:
+            for trait in traits:
+                created = trait()
+                created.apply_trait_to_parameter(self)
+                self.traits.append(created)
         self.type = type
         self.input_types = input_types
         self.output_type = output_type
@@ -446,6 +452,17 @@ class Parameter(BaseNodeElement):
                 self._output_type = value
             return
         self._output_type = None
+
+    def add_trait(self, trait:type[Trait]) -> None:
+        created = trait()
+        created.apply_trait_to_parameter(self)
+        self.traits.append(created)
+
+    def remove_trait(self, trait_type:type[Trait]) -> None:
+        for trait in self.traits:
+            if isinstance(trait,trait_type):
+                trait.remove_trait_from_parameter(self)
+                self.traits.remove(trait)
 
     def is_incoming_type_allowed(self, incoming_type: str | None) -> bool:
         if incoming_type is None:
@@ -615,3 +632,104 @@ class ControlParameterOutput(ControlParameter):
             validators=validators,
             user_defined=user_defined,
         )
+
+
+# Making a new file for parameter traits.
+
+class Trait(ABC):
+
+    @classmethod
+    @abstractmethod
+    def get_trait_keys(cls) -> list[str]:
+        """This will return keys that trigger this trait."""
+
+    @abstractmethod
+    def apply_trait_to_parameter(self, parameter:Parameter) -> Parameter:
+        # Let's use what we already have. 'Applying a trait' applies converters and validators to a parameter that match the trait that we want.
+        self.apply_ui_to_parameter(parameter)
+
+    @abstractmethod
+    def remove_trait_from_parameter(self, parameter:Parameter) -> Parameter:
+         pass
+
+    @abstractmethod
+    def apply_ui_to_parameter(self, parameter:Parameter) -> Parameter:
+        pass
+
+
+class MinMax(Trait):
+    min: Any = 10
+    max: Any = 30
+
+    # Helper method for the function
+    def set_min_max(self, new_min:Any = None, new_max: Any = None) -> None:
+        if new_min:
+                self.min = new_min
+        if new_max:
+                self.max = new_max
+
+    def set_parameter_value(self,value:Any) -> Any:
+         if value > self.max:
+              return self.max
+         if value < self.min:
+              return self.min
+         return value
+
+    def check_min_max(self,parameter:Parameter, value:Any) -> None:
+            # i wish i knew what a validator was LOL
+            if value > self.max:
+                 msg = "Above max lol"
+                 raise ValueError(msg)
+            if value < self.min:
+                 msg = "Below min lol"
+
+    # If we get this anywhere on a parameter, it is going to grab this guy
+    @classmethod
+    def get_trait_keys(cls) -> list[str]:
+        return ["min","max","minmax", "min_max"]
+
+    def apply_trait_to_parameter(self, parameter: Parameter) -> Parameter:
+        super().apply_trait_to_parameter(parameter)
+        # Are there any converters that need to be added?
+        parameter.converters.append(self.set_parameter_value)
+
+        # Are there any validators that need to be added?
+        parameter.validators.append(self.check_min_max)
+
+        return parameter
+
+    def remove_trait_from_parameter(self, parameter:Parameter) -> Parameter:
+         parameter.converters.remove(self.set_parameter_value)
+         parameter.validators.remove(self.check_min_max)
+         return parameter
+
+    def apply_ui_to_parameter(self, parameter: Parameter) -> Parameter:
+        # What is a good UI thing
+        ui_options=ParameterUIOptions(number_type_options=ParameterUIOptions.NumberType(slider=ParameterUIOptions.SliderWidget(min_val=self.min,max_val=self.max)))
+        parameter.ui_options = ui_options
+        return parameter
+
+# These Traits get added to a list on the parameter. When they are added they apply their functions to the parameter.
+
+
+class TraitRegistry(SingletonMixin):
+    # I'm going to create a dictionary that stores all of the created traits we have so far?
+    # Traits will be associated with certain key words
+    key_to_trait:dict[str, list[Trait.__class__]] = {}
+
+    @classmethod
+    def create_traits(cls, key_word:str) -> list[Trait]|None:
+        if key_word not in cls().key_to_trait:
+             return None
+        values = cls().key_to_trait[key_word]
+        return [trait() for trait in values]
+
+
+    @classmethod
+    def register_trait(cls, trait:Trait) -> None:
+        key_words = trait.get_trait_keys()
+        for key in key_words:
+            if key in cls.key_to_trait:
+                cls().key_to_trait[key].append(trait.__class__)
+            else:
+             cls().key_to_trait[key] = [trait.__class__]
