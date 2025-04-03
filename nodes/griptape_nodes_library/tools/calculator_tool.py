@@ -1,6 +1,6 @@
 from griptape.tools import CalculatorTool
 
-from griptape_nodes_library.tools.tools import BaseToolNode
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 
 
 class CalculatorToolNode(BaseToolNode):

@@ -1,6 +1,6 @@
 from griptape.tools import DateTimeTool
 
-from griptape_nodes_library.tools.tools import BaseToolNode
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 
 
 class DateTimeToolNode(BaseToolNode):

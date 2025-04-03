@@ -1,7 +1,7 @@
 from griptape.drivers.structure_run.local import LocalStructureRunDriver
 from griptape.tools import StructureRunTool
 
-from griptape_nodes_library.tools.tools import BaseToolNode
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 from griptape_nodes_library.utilities import to_pascal_case
 
 
