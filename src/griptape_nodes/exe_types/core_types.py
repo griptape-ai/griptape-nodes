@@ -755,11 +755,29 @@ class ParameterList(ParameterContainer):
         )
 
     def create_child_parameter(self) -> Parameter:
-        child_params = self.find_elements_by_type(Parameter)
-
         # Generate a name. This needs to be UNIQUE because children need
         # to be tracked as individuals and not as indices in the list.
         # Ex: a Connection is made to Parameter List[1]. List[0] gets deleted.
         # The OLD List[1] is now List[0], but we need to maintain the Connection
         # to the original entry.
-        name = f"{self.name}_ParameterList_Unique_Param_ID_{uuid.uuid4().hex!s}"
+        name = f"{self.name}_ParameterListUniqueParamID_{uuid.uuid4().hex!s}"
+
+        param = Parameter(
+            name=name,
+            tooltip=self.tooltip,
+            type=self.type,
+            input_types=self.input_types,
+            output_type=self.output_type,
+            default_value=self.default_value,
+            tooltip_as_input=self.tooltip_as_input,
+            tooltip_as_output=self.tooltip_as_output,
+            tooltip_as_property=self.tooltip_as_property,
+            allowed_modes=self.allowed_modes,
+            ui_options=self.ui_options,
+            converters=self.converters,
+            validators=self.validators,
+            settable=self.settable,
+            user_defined=self.user_defined,
+        )
+
+        self.add_child(param)
