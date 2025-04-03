@@ -1,10 +1,13 @@
 # Base Tool Node
 
 ## What is it?
+
 The `BaseToolNode` is a custom node in Griptape that provides a generic implementation for initializing Griptape tools with configurable parameters.
 
 ## When would I use it?
+
 Use this node when you want to:
+
 - Create a new tool with customizable parameters
 - Initialize a tool with specific settings (e.g., off-prompt mode)
 - Integrate tools from various sources in your Griptape workflow
@@ -12,24 +15,28 @@ Use this node when you want to:
 ## How to use it
 
 ### Basic Setup
+
 1. Add the `BaseToolNode` to your workspace
-2. Connect it to other nodes that provide necessary input parameters (e.g., tool configuration)
-3. Run the flow to see the created tool
+1. Connect it to other nodes that provide necessary input parameters (e.g., tool configuration)
+1. Run the flow to see the created tool
 
 ### Fields
+
 - **off_prompt**: A boolean indicating whether the tool should operate in off-prompt mode.
-    - Input type: Boolean
-    - Type: Boolean
-    - Output type: Boolean
-    - Default value: False
-    - Tooltip:
+
+  - Input type: Boolean
+  - Type: Boolean
+  - Output type: Boolean
+  - Default value: False
+  - Tooltip:
 
 - **tool**: The created tool, represented as a dictionary.
-    - Input type: BaseTool
-    - Type: BaseTool
-    - Output type: BaseTool
-    - Default value: None
-    - Tooltip:
+
+  - Input type: BaseTool
+  - Type: BaseTool
+  - Output type: BaseTool
+  - Default value: None
+  - Tooltip:
 
 ## Subclasses
 
@@ -38,6 +45,7 @@ Use this node when you want to:
 The `CalculatorToolNode` is a subclass of `BaseToolNode` that creates a calculator tool with customizable parameters.
 
 #### Example Usage
+
 ```python
 calculator_tool_node = CalculatorToolNode("Calculator Tool")
 calculator_tool_node.add_parameter(
@@ -53,6 +61,7 @@ calculator_tool_node.add_parameter(
 ```
 
 #### Process Method
+
 ```python
 def process(self) -> None:
     off_prompt = self.parameter_values.get("off_prompt", False)
@@ -69,6 +78,7 @@ def process(self) -> None:
 The `DateTimeToolNode` is a subclass of `BaseToolNode` that creates a datetime tool with customizable parameters.
 
 #### Example Usage
+
 ```python
 datetime_tool_node = DateTimeToolNode("Date and Time Tool")
 datetime_tool_node.add_parameter(
@@ -84,6 +94,7 @@ datetime_tool_node.add_parameter(
 ```
 
 #### Process Method
+
 ```python
 def process(self) -> None:
     off_prompt = self.parameter_values.get("off_prompt", False)
@@ -100,6 +111,7 @@ def process(self) -> None:
 The `WebSearchToolNode` is a subclass of `BaseToolNode` that creates a web search tool with customizable parameters.
 
 #### Example Usage
+
 ```python
 web_search_tool_node = WebSearchToolNode("Web Search Tool")
 web_search_tool_node.add_parameter(
@@ -115,6 +127,7 @@ web_search_tool_node.add_parameter(
 ```
 
 #### Process Method
+
 ```python
 def process(self) -> None:
     off_prompt = self.parameter_values.get("off_prompt", False)

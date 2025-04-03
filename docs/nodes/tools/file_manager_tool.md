@@ -7,10 +7,13 @@ The `FileManagerToolNode` is a custom node in Griptape that provides a generic i
 ## Subclassing BaseToolNode
 
 #### What does it mean?
+
 The `FileManagerToolNode` class is a subclass of `BaseToolNode`, inheriting its properties and behavior. This allows us to build upon the existing functionality of `BaseToolNode` while adding our own specific implementation for file manager tools.
 
 #### Why would I use it?
+
 Use this node when you want to:
+
 - Create a new file manager tool with customizable parameters
 - Initialize a file manager tool with specific settings (e.g., off-prompt mode)
 - Integrate file manager tools from various sources in your Griptape workflow
@@ -27,9 +30,11 @@ class FileManagerToolNode(BaseToolNode):
 ## Process Method
 
 #### What does it do?
+
 The `process` method is responsible for creating and setting the output of the file manager tool.
 
 #### Example Usage
+
 ```python
 file_manager_tool_node = FileManagerToolNode("File Manager Tool")
 file_manager_tool_node.add_parameter(
@@ -63,11 +68,11 @@ def process(self) -> None:
 #### Fields
 
 - **off_prompt**: A boolean indicating whether the file manager tool should operate in off-prompt mode.
-    - Input type: Boolean
-    - Type: Boolean
-    - Output type: Boolean
-    - Default value: True
-    - Tooltip:
+  - Input type: Boolean
+  - Type: Boolean
+  - Output type: Boolean
+  - Default value: True
+  - Tooltip:
 
 ## Advantages
 

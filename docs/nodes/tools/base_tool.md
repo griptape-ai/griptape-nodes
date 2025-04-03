@@ -1,5 +1,4 @@
-**Base Tool Node Documentation**
-=====================================
+# **Base Tool Node Documentation**
 
 ### Overview
 
@@ -7,8 +6,8 @@ The `BaseToolNode` class is a generic implementation for creating Griptape tools
 
 ### Attributes
 
-*   **off_prompt (bool)**: Indicates whether the tool should operate in off-prompt mode.
-*   **tool (BaseTool)**: A dictionary representation of the created tool.
+- **off_prompt (bool)**: Indicates whether the tool should operate in off-prompt mode.
+- **tool (BaseTool)**: A dictionary representation of the created tool.
 
 ### Class Definition
 
@@ -21,8 +20,8 @@ class BaseToolNode(DataNode):
 
 The `__init__` method initializes a new instance of the `BaseToolNode` class. It takes two parameters:
 
-*   **name (str)**: The name of the node.
-*   **metadata (dict | None)**: Optional metadata for the node.
+- **name (str)**: The name of the node.
+- **metadata (dict | None)**: Optional metadata for the node.
 
 ```python
 def __init__(self, name: str, metadata: dict | None = None) -> None:
@@ -33,8 +32,8 @@ def __init__(self, name: str, metadata: dict | None = None) -> None:
 
 The `BaseToolNode` class defines two parameters:
 
-*   **off_prompt (bool)**: A boolean parameter that determines whether the tool operates in off-prompt mode.
-*   **tool (BaseTool)**: A dictionary representation of the created tool.
+- **off_prompt (bool)**: A boolean parameter that determines whether the tool operates in off-prompt mode.
+- **tool (BaseTool)**: A dictionary representation of the created tool.
 
 ```python
 def add_parameter(self, parameter: Parameter) -> None:
