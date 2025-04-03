@@ -167,18 +167,9 @@ class ConfigManager:
             key: The configuration key to set. Can use dot notation for nested keys (e.g., 'category.subcategory.key').
             value: The value to associate with the key.
         """
-        # Environment variables we handle separately.
         delta = set_dot_value({}, key, value)
         self.user_config = merge_dicts(self.user_config, delta)
-
-        if not self.user_config_path.exists():
-            self.user_config_path.parent.mkdir(parents=True, exist_ok=True)
-            self.user_config_path.touch()
-            self.user_config_path.write_text(json.dumps({}, indent=2))
-
-        # Merge in the delta with the current config.
-        current_config = json.loads(self.user_config_path.read_text())
-        self.user_config_path.write_text(json.dumps(merge_dicts(current_config, delta), indent=2))
+        self._write_user_config()
 
     def on_handle_get_config_category_request(self, request: GetConfigCategoryRequest) -> ResultPayload:
         if request.category is None or request.category == "":
@@ -214,6 +205,7 @@ class ConfigManager:
         if request.category is None or request.category == "":
             # Assign the whole shebang.
             self.user_config = request.contents
+            self._write_user_config()
             details = "Successfully assigned the entire config dictionary."
             print(details)  # TODO(griptape): Move to Log
             return SetConfigCategoryResultSuccess()
@@ -250,3 +242,15 @@ class ConfigManager:
         details = f"Successfully assigned the config value for category.key '{request.category_and_key}'."
         print(details)  # TODO(griptape): Move to Log
         return SetConfigValueResultSuccess()
+
+    def _write_user_config(self) -> None:
+        """Write the user configuration to the config file.
+
+        This method creates the config file if it doesn't exist and writes the
+        current configuration to it.
+        """
+        if not self.user_config_path.exists():
+            self.user_config_path.parent.mkdir(parents=True, exist_ok=True)
+            self.user_config_path.touch()
+            self.user_config_path.write_text(json.dumps({}, indent=2))
+        self.user_config_path.write_text(json.dumps(self.user_config, indent=2))
