@@ -9,8 +9,8 @@ version/set: ## Set version.
 	@git add pyproject.toml uv.lock
 	@git commit -m "chore: bump v$$(make version/get)"
 
-.PHONY: publish
-publish: ## Push git tag and publish version to PyPI.
+.PHONY: version/publish
+version/publish: ## Push git tag and publish version to PyPI.
 	@git tag v$$(make version/get)
 	@git tag latest -f
 	@git push -f --tags
