@@ -9,12 +9,14 @@
 ### The Basics
 
 - **Node**: A single piece of the puzzle in your creative project. Nodes are like LEGO blocks that you can connect to create something bigger. Each node does one specific thing (like generating an image or processing text).
+
   - **DataNode**: A node that handles information — it can transform data from one form to another.
   - **ControlNode**: A node that makes decisions in your project, like "if this happens, do that."
   - **DriverNode**: A node that connects your project to outside services (like image generators or search engines).
   - **ParameterNode**: A simple node that just holds a specific setting or value.
 
 - **Tool**: A ready-to-use component that performs a specific function. Tools are like brushes in your digital toolkit — each designed for a specific purpose.
+
   - **CalculatorTool**: Does math calculations for you.
   - **DateTimeTool**: Works with dates and times.
   - **FileManagerTool**: Helps manage files (saving, loading, etc.).
@@ -22,6 +24,7 @@
   - **PromptSummaryTool**: Creates summaries of longer text.
 
 - **Driver**: The connector between your project and external AI services or databases. Drivers are like adapters that let your project talk to specialized services.
+
   - **PromptDriver**: Communicates with AI text generators (like GPT models).
   - **WebSearchDriver**: Connects to search engines to find information.
   - **EmbeddingDriver**: Transforms words and concepts into numerical form that AI can understand.
@@ -29,22 +32,26 @@
   - **AudioTranscriptionDriver**: Converts spoken audio to written text.
 
 - **Engine**: The powerhouse that processes your creative requests. Engines are specialized components that transform inputs into creative outputs.
+
   - **RagEngine**: Processes questions and generates answers based on provided information.
   - **PromptSummaryEngine**: Creates concise summaries of longer text.
   - **CsvExtractionEngine**: Pulls information from spreadsheet-like files.
   - **JsonExtractionEngine**: Pulls information from structured data files.
 
 - **Artifact**: A piece of content created during your project, like a generated image or text. Artifacts are the outputs of your creative process.
+
   - **ErrorArtifact**: A notification when something goes wrong.
 
 - **Agent**: A helper that can perform tasks on your behalf, often using a combination of tools. Agents are like assistants that can navigate a sequence of operations for you.
 
 - **Ruleset**: A set of guidelines that control how your project behaves. Rulesets are like recipes that tell your project how to respond in different situations.
+
   - **Rule**: A single instruction within a ruleset, like "if the user asks for an image, generate one."
 
 ### Settings and Configuration
 
 - **Parameter**: A setting or value you can adjust in your project. Parameters are like the knobs and sliders in a music synthesizer — they let you fine-tune how things work.
+
   - **ParameterMode**: Determines if a parameter is for input, output, or both.
   - **ParameterValues**: A collection of all current settings.
   - **ParameterOutputValues**: The results produced by your parameters.
@@ -53,6 +60,7 @@
   - **StringTypeOptions**: Options for text parameters (like allowing multiple lines).
 
 - **Dictionary**: A way to store information as pairs of labels and values. Dictionaries are like organized containers where each item has a unique label.
+
   - **Key-value pair**: A label (key) paired with its corresponding information (value).
   - **SparseDictionary**: A more efficient dictionary that only stores necessary information.
 
@@ -61,9 +69,11 @@
 ## Technical Terms Made Simple
 
 - **API Key**: A special password that grants your project access to external services like AI image generators. Think of it like a membership card that lets you use specific online services.
+
   - **API Key Environment Variable**: A secure place to store your API key.
 
 - **AST (Abstract Syntax Tree)**: A way computers understand the structure of code. This is like the grammar rules of programming languages.
+
   - **ast.literal_eval**: A function that safely interprets simple written expressions.
 
 - **Connection**: The link that allows nodes to communicate with each other. Connections are like the cables connecting different pieces of equipment.
@@ -83,6 +93,7 @@
 - **Embedding Model**: An AI tool that converts words, images, or other content into numbers that capture their meaning. This helps AI understand relationships between different concepts.
 
 - **GPT Models**: AI systems that can generate human-like text based on the input they receive.
+
   - **GPT-4o**: A specific version of GPT with enhanced capabilities.
 
 - **NLP (Natural Language Processing)**: The field of AI focused on helping computers understand and generate human language.
@@ -132,6 +143,7 @@
 - **Custom Parameter Types**: Specialized settings you can define for your specific project needs.
 
 - **Exception Handling**: The way your project deals with errors. This is like having backup plans for when things go wrong.
+
   - **Authentication Error**: An error that occurs when your project can't prove it has permission to use a service.
   - **KeyError**: An error when your project tries to access information using an incorrect label.
   - **SyntaxError**: An error caused by incorrect formatting in code.
@@ -164,6 +176,7 @@
 - **Framework**: A pre-built set of code that provides structure and functionality to build applications more easily. Frameworks are like art supply kits that come with the basic materials and tools you need.
 
 - **Type Hints**: Labels that suggest what kind of information a parameter expects. These are like labels on art supply containers telling you what's inside.
+
   - **Any**: A type hint meaning a parameter can accept any kind of information.
   - **List**: A type hint for a collection of items (like an array of colors or shapes).
   - **Literal**: A type hint indicating a parameter only accepts specific preset values.

@@ -1,5 +1,4 @@
-**Web Scraper Tool Node Documentation**
-=====================================
+# **Web Scraper Tool Node Documentation**
 
 ### Overview
 
@@ -16,8 +15,8 @@ class WebScraperToolNode(BaseToolNode):
 
 The `__init__` method initializes a new instance of the `WebScraperToolNode` class. It takes two parameters:
 
-*   **name (str)**: The name of the node.
-*   **metadata (dict[Any, Any] | None)**: Optional metadata for the node.
+- **name (str)**: The name of the node.
+- **metadata (dict[Any, Any] | None)**: Optional metadata for the node.
 
 ```python
 def __init__(
@@ -55,11 +54,11 @@ This will create a new node with the name "My Web Scraper" and process it to set
 
 ### Notes
 
-*   The `WebScraperTool` class is not defined in this code snippet. It is assumed to be a separate class that provides the actual web scraping functionality.
-*   The `parameter_values` and `parameter_output_values` attributes are not defined in this code snippet. They are assumed to be dictionaries that store the input and output parameters of the node, respectively.
+- The `WebScraperTool` class is not defined in this code snippet. It is assumed to be a separate class that provides the actual web scraping functionality.
+- The `parameter_values` and `parameter_output_values` attributes are not defined in this code snippet. They are assumed to be dictionaries that store the input and output parameters of the node, respectively.
 
 ### Best Practices
 
-*   When creating new nodes, ensure that you follow the same naming conventions and structure as existing nodes.
-*   Use meaningful parameter names and descriptions to make your nodes more user-friendly.
-*   Consider adding additional functionality or features to your nodes as needed.
+- When creating new nodes, ensure that you follow the same naming conventions and structure as existing nodes.
+- Use meaningful parameter names and descriptions to make your nodes more user-friendly.
+- Consider adding additional functionality or features to your nodes as needed.

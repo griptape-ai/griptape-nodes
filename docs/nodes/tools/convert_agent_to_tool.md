@@ -1,5 +1,4 @@
-**Convert Agent to Tool Node Documentation**
-=============================================
+# **Convert Agent to Tool Node Documentation**
 
 ### Overview
 
@@ -47,9 +46,9 @@ def process(self) -> None:
 
 The `ConvertAgentToToolNode` class accepts the following parameters:
 
-*   **agent (Any)**: The agent to be converted into a tool. If not provided, the node will return `None`.
-*   **name (str)**: The name of the tool to be created. Defaults to "Give the agent a name" if not provided.
-*   **description (str)**: A description of the tool to be created. Defaults to "Describe what the agent should be used for" if not provided.
+- **agent (Any)**: The agent to be converted into a tool. If not provided, the node will return `None`.
+- **name (str)**: The name of the tool to be created. Defaults to "Give the agent a name" if not provided.
+- **description (str)**: A description of the tool to be created. Defaults to "Describe what the agent should be used for" if not provided.
 
 ### Example Usage
 
@@ -66,12 +65,12 @@ This will create a new node with the name "My Tool" and process it to set the ou
 
 ### Notes
 
-*   The `LocalStructureRunDriver` class is not defined in this code snippet. It is assumed to be a separate class that provides the actual local structure function.
-*   The `to_pascal_case` function is used to convert the provided name into PascalCase format for the tool's name.
-*   The `parameter_values` and `parameter_output_values` attributes are not defined in this code snippet. They are assumed to be dictionaries that store the input and output parameters of the node, respectively.
+- The `LocalStructureRunDriver` class is not defined in this code snippet. It is assumed to be a separate class that provides the actual local structure function.
+- The `to_pascal_case` function is used to convert the provided name into PascalCase format for the tool's name.
+- The `parameter_values` and `parameter_output_values` attributes are not defined in this code snippet. They are assumed to be dictionaries that store the input and output parameters of the node, respectively.
 
 ### Best Practices
 
-*   When creating new nodes, ensure that you follow the same naming conventions and structure as existing nodes.
-*   Use meaningful parameter names and descriptions to make your nodes more user-friendly.
-*   Consider adding additional functionality or features to your nodes as needed.
+- When creating new nodes, ensure that you follow the same naming conventions and structure as existing nodes.
+- Use meaningful parameter names and descriptions to make your nodes more user-friendly.
+- Consider adding additional functionality or features to your nodes as needed.

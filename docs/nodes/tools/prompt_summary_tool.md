@@ -7,10 +7,13 @@ The `PromptSummaryToolNode` is a custom node in Griptape that provides a generic
 ## Subclassing BaseToolNode
 
 #### What does it mean?
+
 The `PromptSummaryToolNode` class is a subclass of `BaseToolNode`, inheriting its properties and behavior. This allows us to build upon the existing functionality of `BaseToolNode` while adding our own specific implementation for summarizing text.
 
 #### Why would I use it?
+
 Use this node when you want to:
+
 - Summarize text using a prompt driver
 - Create a configured PromptSummaryTool with an optional prompt driver
 - Integrate the summary tool into your Griptape workflow
@@ -42,9 +45,11 @@ class PromptSummaryToolNode(BaseToolNode):
 ## Process Method
 
 #### What does it do?
+
 The `process` method is responsible for creating and configuring the `PromptSummaryTool`.
 
 #### Example Usage
+
 ```python
 prompt_summary_tool_node = PromptSummaryToolNode("Text Summarizer")
 
@@ -97,21 +102,23 @@ def process(self) -> None:
 ## Fields
 
 - **prompt_driver**: A string representing the prompt driver for summarization.
-    - Input type: String
-    - Type: String
-    - Output type: String
-    - Default value: `default_prompt_driver` (use a default prompt driver if none provided)
-    - Tooltip: Prompt driver for summarization (e.g., `'default_prompt_driver'`, `'custom_prompt_driver'`)
+  - Input type: String
+  - Type: String
+  - Output type: String
+  - Default value: `default_prompt_driver` (use a default prompt driver if none provided)
+  - Tooltip: Prompt driver for summarization (e.g., `'default_prompt_driver'`, `'custom_prompt_driver'`)
 
 ## Example Use Cases
 
 - Summarize text using the default prompt driver.
+
 ```python
 prompt_summary_tool_node = PromptSummaryToolNode("Text Summarizer")
 prompt_summary_tool_node.process()
 ```
 
 - Summarize text using a custom prompt driver.
+
 ```python
 prompt_summary_tool_node = PromptSummaryToolNode("Custom Text Summarizer")
 prompt_summary_tool_node.add_parameter(
@@ -130,6 +137,7 @@ prompt_summary_tool_node.process()
 ## Troubleshooting
 
 - If the `prompt_driver` parameter is not provided, an error message will be raised.
+
 ```python
 try:
     prompt_summary_tool_node = PromptSummaryToolNode("Text Summarizer")
@@ -138,6 +146,7 @@ except ValueError as e:
 ```
 
 - If the `prompt_driver` parameter is invalid, an error message will be raised.
+
 ```python
 try:
     prompt_summary_tool_node = PromptSummaryToolNode("Invalid Text Summarizer")

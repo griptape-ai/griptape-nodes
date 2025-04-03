@@ -44,9 +44,9 @@ def main() -> None:
     _process_args(args)
 
 
-def _run_init(api_key: str | None = None) -> None:
+def _run_init(api_key: str | None = None, workspace_directory: str | None = None) -> None:
     """Runs through the engine init steps, optionally skipping prompts if the user provided `--api-key`."""
-    _prompt_for_workspace()
+    _prompt_for_workspace(workspace_directory)
     _prompt_for_api_key(api_key)
 
 
@@ -71,8 +71,17 @@ def _get_args() -> argparse.Namespace:
         default=None,
     )
 
-    # Optionally allow setting the API key directly for the init command
-    parser.add_argument("--api-key", help="Override the Griptape Nodes API key when running 'init'.", required=False)
+    # Optionally allow setting the API key or workspace directory directly for the init command
+    parser.add_argument(
+        "--api-key",
+        help="Override the Griptape Nodes API key when running 'init'.",
+        required=False,
+    )
+    parser.add_argument(
+        "--workspace-directory",
+        help="Override the Griptape Nodes workspace directory when running 'init'.",
+        required=False,
+    )
 
     return parser.parse_args()
 
@@ -130,8 +139,18 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
     console.print(f"[bold green]API Key set to: {current_key}[/bold green]")
 
 
-def _prompt_for_workspace() -> None:
+def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
     """Prompts the user for their workspace directory and stores it in config directory."""
+    if workspace_directory_arg is not None:
+        try:
+            workspace_path = Path(workspace_directory_arg).expanduser().resolve()
+        except OSError as e:
+            console.print(f"[bold red]Invalid workspace directory argument: {e}[/bold red]")
+        else:
+            config_manager.workspace_path = str(workspace_path)
+            console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
+            return
+
     explainer = """[bold cyan]Workspace Directory[/bold cyan]
     Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows, configuration data, and secrets.
     You may enter a custom directory or press Return to accept the default workspace directory"""
@@ -237,7 +256,7 @@ def _process_args(args: argparse.Namespace) -> None:
     is_first_init = _init_system_config()
 
     if args.command == "init":
-        _run_init(api_key=args.api_key)
+        _run_init(api_key=args.api_key, workspace_directory=args.workspace_directory)
         console.print("Initialization complete! You can now run the engine with 'griptape-nodes' (or just 'gtn').")
     elif args.command == "engine":
         if is_first_init:

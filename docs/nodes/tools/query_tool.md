@@ -1,5 +1,4 @@
-**GeminiQueryTool Class Documentation**
-=====================================
+# **GeminiQueryTool Class Documentation**
 
 ### Overview
 
@@ -7,22 +6,21 @@ The `GeminiQueryTool` class is a specialized query tool designed to work with Ge
 
 ### Attributes
 
-*   **`query` method**: This method takes in a dictionary of parameters, including a query string and content information. It processes the query using the Rag engine and returns a list of artifacts or an error artifact if no results are found.
-*   **`params` attribute**: A dictionary containing the input parameters for the `query` method.
+- **`query` method**: This method takes in a dictionary of parameters, including a query string and content information. It processes the query using the Rag engine and returns a list of artifacts or an error artifact if no results are found.
+- **`params` attribute**: A dictionary containing the input parameters for the `query` method.
 
 ### Configuration
 
 The `GeminiQueryTool` class has the following configuration options:
 
-*   **`description`**: A brief description of the tool's purpose.
-*   **`schema`**: A schema defining the expected structure of the input parameters. The schema includes two fields: `query` (a string) and `content` (an object with `memory_name` and `artifact_namespace` properties).
+- **`description`**: A brief description of the tool's purpose.
+- **`schema`**: A schema defining the expected structure of the input parameters. The schema includes two fields: `query` (a string) and `content` (an object with `memory_name` and `artifact_namespace` properties).
 
 ### Usage
 
 To use the `GeminiQueryTool`, create an instance of the class and call the `query` method, passing in a dictionary of parameters. The tool will process the query using the Rag engine and return a list of artifacts or an error artifact.
 
-**QueryToolNode Class Documentation**
-=====================================
+# **QueryToolNode Class Documentation**
 
 ### Overview
 
@@ -30,22 +28,21 @@ The `QueryToolNode` class is a base class for generating query tools based on th
 
 ### Attributes
 
-*   **`process` method**: This method creates an instance of either the `GeminiQueryTool` or `QueryTool` class, depending on the type of prompt driver used.
-*   **`prompt_driver` attribute**: The prompt driver object used to create the query tool.
+- **`process` method**: This method creates an instance of either the `GeminiQueryTool` or `QueryTool` class, depending on the type of prompt driver used.
+- **`prompt_driver` attribute**: The prompt driver object used to create the query tool.
 
 ### Configuration
 
 The `QueryToolNode` class has the following configuration options:
 
-*   **`description`**: A brief description of the tool's purpose.
-*   **`schema`**: A schema defining the expected structure of the input parameters. The schema includes a field for the prompt driver object.
+- **`description`**: A brief description of the tool's purpose.
+- **`schema`**: A schema defining the expected structure of the input parameters. The schema includes a field for the prompt driver object.
 
 ### Usage
 
 To use the `QueryToolNode`, create an instance of the class and call the `process` method, passing in any required parameters. The tool will create an instance of either the `GeminiQueryTool` or `QueryTool` class, depending on the type of prompt driver used.
 
-**Example Usage**
------------------
+## **Example Usage**
 
 ```python
 # Create a GeminiQueryTool instance
@@ -61,25 +58,24 @@ node = QueryToolNode(prompt_driver=GooglePromptDriver())
 tool = node.process()
 ```
 
-**API Documentation**
---------------------
+## **API Documentation**
 
 ### `GeminiQueryTool` Class
 
 #### `query` method
 
-*   **Parameters**: `params` (dict) - A dictionary of input parameters.
-*   **Returns**: `ListArtifact | ErrorArtifact` - A list of artifacts or an error artifact if no results are found.
+- **Parameters**: `params` (dict) - A dictionary of input parameters.
+- **Returns**: `ListArtifact | ErrorArtifact` - A list of artifacts or an error artifact if no results are found.
 
 #### `params` attribute
 
-*   **Type**: `dict`
-*   **Description**: A dictionary containing the input parameters for the `query` method.
+- **Type**: `dict`
+- **Description**: A dictionary containing the input parameters for the `query` method.
 
 ### `QueryToolNode` Class
 
 #### `process` method
 
-*   **Parameters**: None
-*   **Returns**: `GeminiQueryTool | QueryTool` - An instance of either the `GeminiQueryTool` or `QueryTool` class.
-*   **Description**: Creates an instance of either the `GeminiQueryTool` or `QueryTool` class, depending on the type of prompt driver used.
+- **Parameters**: None
+- **Returns**: `GeminiQueryTool | QueryTool` - An instance of either the `GeminiQueryTool` or `QueryTool` class.
+- **Description**: Creates an instance of either the `GeminiQueryTool` or `QueryTool` class, depending on the type of prompt driver used.

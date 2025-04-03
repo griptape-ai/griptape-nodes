@@ -1,5 +1,4 @@
-**DateTimeToolNode Class Documentation**
-=====================================
+# **DateTimeToolNode Class Documentation**
 
 ### Overview
 
@@ -7,7 +6,7 @@ The `DateTimeToolNode` class is a custom node in the Griptape framework that uti
 
 ### Attributes
 
-*   **`off_prompt`**: An optional boolean parameter indicating whether to prompt for input or not (default: True).
+- **`off_prompt`**: An optional boolean parameter indicating whether to prompt for input or not (default: True).
 
 ### Methods
 
@@ -15,9 +14,9 @@ The `DateTimeToolNode` class is a custom node in the Griptape framework that uti
 
 This method is responsible for processing the node's inputs and producing outputs. It:
 
-1.  Retrieves the value of the `off_prompt` parameter from the `parameter_values` dictionary.
-2.  Creates an instance of the `DateTimeTool` using the extracted `off_prompt` value.
-3.  Sets the output as the created tool.
+1. Retrieves the value of the `off_prompt` parameter from the `parameter_values` dictionary.
+1. Creates an instance of the `DateTimeTool` using the extracted `off_prompt` value.
+1. Sets the output as the created tool.
 
 ### Example Usage
 
@@ -38,7 +37,7 @@ The `tool` attribute of the `parameter_output_values` dictionary will contain an
 
 ### Supported Tools
 
-*   **DateTimeTool**: Formats and manipulates dates and times, optionally prompting for input.
+- **DateTimeTool**: Formats and manipulates dates and times, optionally prompting for input.
 
 ### Rules
 
@@ -52,5 +51,5 @@ The node supports adding rules to customize its behavior. In this example, no ad
 
 ### Notes
 
-*   The `DateTimeTool` is a built-in tool in the Griptape framework that provides functionality for formatting and manipulating dates and times.
-*   By default, the `DateTimeTool` will prompt for input if `off_prompt` is set to False.
+- The `DateTimeTool` is a built-in tool in the Griptape framework that provides functionality for formatting and manipulating dates and times.
+- By default, the `DateTimeTool` will prompt for input if `off_prompt` is set to False.

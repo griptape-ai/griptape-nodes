@@ -1,9 +1,11 @@
 # Griptape RetainedMode Command Reference
 
 > **Note:** The actual import command for RetainedMode is:
+>
 > ```python
 > from griptape_nodes.retained_mode import RetainedMode as cmd
 > ```
+>
 > However, for convenience, in the script editor of the GUI, this import is already done for you automatically, so you can freely use `cmd.` directly.
 
 ## Go to: [Flow Operations](#flow-operations) · [Node Operations](#node-operations) · [Parameter Operations](#parameter-operations) · [Connection Operations](#connection-operations) · [Library Operations](#library-operations) · [Config Operations](#config-operations) · [Utility Operations](#utility-operations)
@@ -30,12 +32,14 @@ Creates a new flow within the Griptape system.
 | parent_flow_name | string | ⚪ |
 
 #### Return Value
+
 ResultPayload object with flow creation status
 
 #### Description
+
 Creates a new flow with the specified name. If parent_flow_name is provided, the new flow will be created as a child of the specified parent flow.
 
----
+______________________________________________________________________
 
 ### delete_flow
 
@@ -52,12 +56,14 @@ Deletes an existing flow.
 | flow_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object with flow deletion status
 
 #### Description
+
 Removes the specified flow from the system.
 
----
+______________________________________________________________________
 
 ### get_flows
 
@@ -74,12 +80,14 @@ Lists all flows within a parent flow.
 | parent_flow_name | string | ⚪ |
 
 #### Return Value
+
 ResultPayload object containing a list of flows
 
 #### Description
+
 Returns all flows within the specified parent flow. If no parent_flow_name is provided, returns all top-level flows.
 
----
+______________________________________________________________________
 
 ### get_nodes_in_flow
 
@@ -96,12 +104,14 @@ Lists all nodes within a flow.
 | flow_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object containing a list of node names
 
 #### Description
+
 Returns all nodes within the specified flow.
 
----
+______________________________________________________________________
 
 ### run_flow
 
@@ -118,12 +128,14 @@ Executes a flow.
 | flow_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object with flow execution status
 
 #### Description
+
 Starts the execution of the specified flow.
 
----
+______________________________________________________________________
 
 ### reset_flow
 
@@ -140,12 +152,14 @@ Resets a flow to its initial state.
 | flow_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object with flow reset status
 
 #### Description
+
 Unresolves all nodes in the flow, returning it to its initial state.
 
----
+______________________________________________________________________
 
 ### get_flow_state
 
@@ -162,12 +176,14 @@ Returns the current state of a flow.
 | flow_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object containing flow state information
 
 #### Description
+
 Gets the current execution state of the specified flow.
 
----
+______________________________________________________________________
 
 ### cancel_flow
 
@@ -184,12 +200,14 @@ Cancels the execution of a flow.
 | flow_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object with flow cancellation status
 
 #### Description
+
 Stops the execution of the specified flow.
 
----
+______________________________________________________________________
 
 ### single_step
 
@@ -206,12 +224,14 @@ Executes a single node step in a flow.
 | flow_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object with step execution status
 
 #### Description
+
 Executes a single node in the specified flow.
 
----
+______________________________________________________________________
 
 ### single_execution_step
 
@@ -228,12 +248,14 @@ Executes a single execution step in a flow.
 | flow_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object with execution step status
 
 #### Description
+
 Executes a single execution step in the specified flow.
 
----
+______________________________________________________________________
 
 ### continue_flow
 
@@ -250,9 +272,11 @@ Continues the execution of a paused flow.
 | flow_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object with flow continuation status
 
 #### Description
+
 Continues the execution of a flow that was previously paused.
 
 ## Node Operations
@@ -276,12 +300,14 @@ Creates a new node.
 | metadata | dict | ⚪ |
 
 #### Return Value
+
 Node name or ResultPayload object with node creation status
 
 #### Description
+
 Creates a new node of the specified type. Optional parameters allow specifying the library, node name, parent flow, and metadata.
 
----
+______________________________________________________________________
 
 ### delete_node
 
@@ -298,12 +324,14 @@ Deletes an existing node.
 | node_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object with node deletion status
 
 #### Description
+
 Removes the specified node from the system.
 
----
+______________________________________________________________________
 
 ### run_node
 
@@ -320,12 +348,14 @@ Executes a single node.
 | node_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object with node execution status
 
 #### Description
+
 Resolves and executes the specified node.
 
----
+______________________________________________________________________
 
 ### get_resolution_state_for_node
 
@@ -342,12 +372,14 @@ Returns the resolution state of a node.
 | node_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object containing node resolution state
 
 #### Description
+
 Gets the current resolution state of the specified node.
 
----
+______________________________________________________________________
 
 ### get_metadata_for_node
 
@@ -364,12 +396,14 @@ Returns the metadata for a node.
 | node_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object containing node metadata
 
 #### Description
+
 Gets the metadata associated with the specified node.
 
----
+______________________________________________________________________
 
 ### set_metadata_for_node
 
@@ -387,12 +421,14 @@ Sets the metadata for a node.
 | metadata | dict | 🟢 |
 
 #### Return Value
+
 ResultPayload object with metadata update status
 
 #### Description
+
 Sets the metadata for the specified node.
 
----
+______________________________________________________________________
 
 ### exists
 
@@ -409,12 +445,14 @@ Checks if a node exists.
 | node | string | 🟢 |
 
 #### Return Value
+
 Boolean indicating whether the node exists
 
 #### Description
+
 Returns True if the specified node exists, False otherwise.
 
----
+______________________________________________________________________
 
 ### ls
 
@@ -428,12 +466,14 @@ Lists objects in the system.
 
 | Name | Argument Type | Required |
 |------|:---------------:|:-------:|
-| **kwargs | dict | ⚪ |
+| \*\*kwargs | dict | ⚪ |
 
 #### Return Value
+
 List of object names matching the filter criteria
 
 #### Description
+
 Lists objects in the system, optionally filtered by the provided criteria.
 
 ## Parameter Operations
@@ -453,12 +493,14 @@ Lists all parameters on a node.
 | node | string | 🟢 |
 
 #### Return Value
+
 List of parameter names
 
 #### Description
+
 Returns a list of all parameters on the specified node.
 
----
+______________________________________________________________________
 
 ### add_param
 
@@ -489,12 +531,14 @@ Adds a parameter to a node.
 | mode_allowed_output | boolean | ⚪ |
 
 #### Return Value
+
 ResultPayload object with parameter addition status
 
 #### Description
+
 Adds a parameter to the specified node with the given configuration. If edit=True, modifies an existing parameter instead.
 
----
+______________________________________________________________________
 
 ### del_param
 
@@ -512,12 +556,14 @@ Removes a parameter from a node.
 | parameter_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object with parameter removal status
 
 #### Description
+
 Removes the specified parameter from the node.
 
----
+______________________________________________________________________
 
 ### param_info
 
@@ -535,12 +581,14 @@ Gets information about a parameter.
 | param | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object containing parameter details
 
 #### Description
+
 Returns detailed information about the specified parameter. Accepts either separate node and param arguments or a single "node.param" string.
 
----
+______________________________________________________________________
 
 ### get_value
 
@@ -558,12 +606,14 @@ Gets the value of a parameter.
 | param | string | 🟢 |
 
 #### Return Value
+
 The value of the parameter or a failure result
 
 #### Description
+
 Returns the current value of the specified parameter. Supports indexed access for container types (e.g., "node.param[0]").
 
----
+______________________________________________________________________
 
 ### set_value
 
@@ -582,9 +632,11 @@ Sets the value of a parameter.
 | value | any | 🟢 |
 
 #### Return Value
+
 ResultPayload object with value update status
 
 #### Description
+
 Sets the value of the specified parameter. Supports indexed access for container types (e.g., "node.param[0]").
 
 ## Connection Operations
@@ -605,12 +657,14 @@ Creates a connection between two parameters.
 | destination | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object with connection creation status
 
 #### Description
+
 Creates a connection from the source parameter to the destination parameter. Both arguments should be in the format "node.param".
 
----
+______________________________________________________________________
 
 ### exec_chain
 
@@ -624,15 +678,17 @@ Creates execution connections between a sequence of nodes.
 
 | Name | Argument Type | Required |
 |------|:---------------:|:-------:|
-| *node_names | string(s) | 🟢 |
+| \*node_names | string(s) | 🟢 |
 
 #### Return Value
+
 Dictionary with results of each connection attempt
 
 #### Description
+
 Creates exec_out -> exec_in connections between a sequence of nodes, effectively chaining them for execution in sequence.
 
----
+______________________________________________________________________
 
 ### delete_connection
 
@@ -652,12 +708,14 @@ Deletes a connection between parameters.
 | target_param_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object with connection deletion status
 
 #### Description
+
 Removes the connection between the specified source and target parameters.
 
----
+______________________________________________________________________
 
 ### get_connections_for_node
 
@@ -674,9 +732,11 @@ Lists all connections for a node.
 | node_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object containing connection information
 
 #### Description
+
 Returns all connections involving the specified node, both incoming and outgoing.
 
 ## Library Operations
@@ -690,15 +750,18 @@ cmd.get_available_libraries()
 Lists all available node libraries.
 
 #### Arguments
+
 None
 
 #### Return Value
+
 ResultPayload object containing a list of library names
 
 #### Description
+
 Returns all registered node libraries in the system.
 
----
+______________________________________________________________________
 
 ### get_node_types_in_library
 
@@ -715,12 +778,14 @@ Lists all node types in a library.
 | library_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object containing a list of node type names
 
 #### Description
+
 Returns all node types available in the specified library.
 
----
+______________________________________________________________________
 
 ### get_node_metadata_from_library
 
@@ -738,9 +803,11 @@ Gets metadata for a node type.
 | node_type_name | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object containing node type metadata
 
 #### Description
+
 Returns the metadata for the specified node type in the given library.
 
 ## Config Operations
@@ -760,12 +827,14 @@ Gets a configuration value.
 | category_and_key | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object containing the configuration value
 
 #### Description
+
 Returns the value for the specified configuration key.
 
----
+______________________________________________________________________
 
 ### set_config_value
 
@@ -783,12 +852,14 @@ Sets a configuration value.
 | value | any | 🟢 |
 
 #### Return Value
+
 ResultPayload object with configuration update status
 
 #### Description
+
 Sets the value for the specified configuration key.
 
----
+______________________________________________________________________
 
 ### get_config_category
 
@@ -805,12 +876,14 @@ Gets all configuration values in a category.
 | category | string | ⚪ |
 
 #### Return Value
+
 ResultPayload object containing category configuration values
 
 #### Description
+
 Returns all configuration values in the specified category. If no category is provided, returns all configuration values.
 
----
+______________________________________________________________________
 
 ### set_config_category
 
@@ -828,9 +901,11 @@ Sets configuration values for a category.
 | contents | dict | ⚪ |
 
 #### Return Value
+
 ResultPayload object with category configuration update status
 
 #### Description
+
 Sets all configuration values for the specified category with the provided contents.
 
 ## Utility Operations
@@ -850,9 +925,11 @@ Executes arbitrary Python code.
 | python_str | string | 🟢 |
 
 #### Return Value
+
 ResultPayload object with execution status and results
 
 #### Description
+
 Executes the provided Python code string in the Griptape environment.
 
 ## Examples
