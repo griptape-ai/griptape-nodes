@@ -31,9 +31,9 @@ class BaseToolNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="tool",
-                input_types=["BaseTool"],
-                type="BaseTool",
-                output_type="BaseTool",
+                input_types=["Tool"],
+                type="Tool",
+                output_type="Tool",
                 default_value=None,
                 tooltip="",
             )
@@ -77,9 +77,9 @@ class WebSearchToolNode(BaseToolNode):
         self.add_parameter(
             Parameter(
                 name="driver",
-                input_types=["WebSearchDriver"],
-                type="WebSearchDriver",
-                output_type="WebSearchDriver",
+                input_types=["Web Search Driver"],
+                type="Web Search Driver",
+                output_type="Web Search Driver",
                 default_value={},
                 tooltip="",
             )
