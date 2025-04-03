@@ -39,6 +39,10 @@ version/publish: ## Create and push git tags.
 run: ## Run the project.
 	uv run griptape-nodes --no-update
 	
+.PHONY: run/watch
+run/watch: ## Run the project in watch mode.
+	uv run src/griptape_nodes/app/watch.py
+	
 .PHONY: install
 install: ## Install all dependencies.
 	@make install/all
