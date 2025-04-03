@@ -421,6 +421,18 @@
         "description": "Creates and manages lists of string values",
         "display_name": "String List"
       }
+    },
+    {
+      "class_name": "DynaNode",
+      "file_path": "griptape_nodes_library/dyna_node.py",
+      "metadata": {
+        "category": "Utility",
+        "description": "Creates node from anything",
+        "display_name": "Dyna Node",
+        "module": "griptape.tasks.prompt_task",
+        "class": "PromptTask",
+        "method": "run"
+      }
     }
   ]
 }

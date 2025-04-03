@@ -442,6 +442,9 @@ class Parameter(BaseNodeElement):
             return
         self._output_type = None
 
+    def __str__(self) -> str:
+        return f"Parameter(name={self.name}, type={self.type}, input_types={self.input_types}, output_type={self.output_type})"
+
     def is_incoming_type_allowed(self, incoming_type: str | None) -> bool:
         if incoming_type is None:
             return False
