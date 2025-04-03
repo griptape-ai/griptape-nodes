@@ -14,17 +14,16 @@ from xdg_base_dirs import xdg_config_dirs, xdg_config_home, xdg_data_home
 
 
 def _find_config_files(filename: str, extension: str) -> list[Path]:
-    home = Path.home()
     config_files = []
 
     # Recursively search parent directories up to HOME
     current_path = Path.cwd()
-    while current_path not in (home, current_path.parent) and current_path != current_path.parent:
+    while current_path not in (Path.home(), current_path.parent) and current_path != current_path.parent:
         config_files.append(current_path / f"{filename}.{extension}")
         current_path = current_path.parent
 
-    # Search `GriptapeNodes/` inside home directory
-    config_files.append(home / "GriptapeNodes" / f"{filename}.{extension}")
+    # Search `GriptapeNodes/` inside current working directory (this is the implicit default)
+    config_files.append(Path.cwd() / "GriptapeNodes" / f"{filename}.{extension}")
 
     # Search XDG_CONFIG_HOME (e.g., `~/.config/griptape_nodes/griptape_nodes_config.yaml`)
     config_files.append(xdg_config_home() / "griptape_nodes" / f"{filename}.{extension}")
