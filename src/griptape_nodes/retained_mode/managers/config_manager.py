@@ -57,7 +57,7 @@ class ConfigManager:
 
             if len(self.config_files) == 0:
                 print(
-                    "***NO CONFIGURATION FILES WERE FOUND AT INITIALIZATION; USING DEFAULTS***"
+                    "No configuration files were found. Will run using default values."
                 )  # TODO(griptape): Move to Log
             else:
                 print(
