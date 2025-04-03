@@ -1,7 +1,7 @@
 from griptape.engines import PromptSummaryEngine
 from griptape.tools import PromptSummaryTool
 
-from griptape_nodes_library.tools.tools import BaseToolNode
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 
 
 class PromptSummaryToolNode(BaseToolNode):
