@@ -9,7 +9,6 @@ from griptape_nodes.exe_types.core_types import (
     ParameterUIOptions,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
-from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 DEFAULT_MODEL = "gpt-4o"
