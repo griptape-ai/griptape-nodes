@@ -30,9 +30,9 @@ class BaseToolNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="tool",
-                input_types=["BaseTool"],
-                type="BaseTool",
-                output_type="BaseTool",
+                input_types=["Tool"],
+                type="Tool",
+                output_type="Tool",
                 default_value=None,
                 tooltip="",
             )

@@ -63,9 +63,9 @@ class TestNodeEvents:
                     "prompt_driver": {
                         "details": {
                             "element_id": ANY,
-                            "input_types": ["BasePromptDriver"],
-                            "output_type": "BasePromptDriver",
-                            "type": "BasePromptDriver",
+                            "input_types": ["Prompt Driver"],
+                            "output_type": "Prompt Driver",
+                            "type": "Prompt Driver",
                             "default_value": None,
                             "tooltip": "",
                             "tooltip_as_input": None,
