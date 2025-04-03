@@ -12,7 +12,7 @@ class LoadImageNode(DataNode):
         self.description = "Load an image"
         image_parameter = Parameter(
             name="image",
-            input_types=["ImageArtifact", "Blob Artifact"],
+            input_types=["ImageArtifact", "BlobArtifact"],
             type="ImageArtifact",
             output_type="ImageArtifact",
             ui_options=ParameterUIOptions(
