@@ -59,9 +59,9 @@ class CreateImageNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output",
-                input_types=["Image Artifact"],
-                output_type="Image Artifact",
-                type="Image Artifact",
+                input_types=["ImageArtifact"],
+                output_type="ImageArtifact",
+                type="ImageArtifact",
                 tooltip="None",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
