@@ -55,6 +55,17 @@ class ConfigManager:
             event_manager.assign_manager_to_request_type(GetConfigValueRequest, self.on_handle_get_config_value_request)
             event_manager.assign_manager_to_request_type(SetConfigValueRequest, self.on_handle_set_config_value_request)
 
+            if len(self.config_files) == 0:
+                print(
+                    "***NO CONFIGURATION FILES WERE FOUND AT INITIALIZATION; USING DEFAULTS***"
+                )  # TODO(griptape): Move to Log
+            else:
+                print(
+                    "Configuration files were found at the following locations and merged in this order:"
+                )  # TODO(griptape): Move to Log
+                for config_file in self.config_files:
+                    print(f"\t{config_file}")
+
     @property
     def workspace_path(self) -> Path:
         """Get the base file path from the configuration.
