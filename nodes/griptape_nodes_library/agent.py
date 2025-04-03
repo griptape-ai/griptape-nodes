@@ -34,9 +34,9 @@ class RunAgentNode(ControlNode):
         with ParameterGroup(group_name="Agent Config") as config_group:
             Parameter(
                 name="prompt_driver",
-                input_types=["BasePromptDriver"],
-                output_type="BasePromptDriver",
-                type="BasePromptDriver",
+                input_types=["Prompt Driver"],
+                output_type="Prompt Driver",
+                type="Prompt Driver",
                 default_value=None,
                 tooltip="",
             )
@@ -66,17 +66,17 @@ class RunAgentNode(ControlNode):
         with ParameterGroup(group_name="Agent Tools") as tools_group:
             Parameter(
                 name="tool",
-                input_types=["BaseTool"],
-                output_type="BaseTool",
-                type="BaseTool",
+                input_types=["Tool"],
+                output_type="Tool",
+                type="Tool",
                 default_value=None,
                 tooltip="",
             )
             Parameter(
                 name="tool_list",
-                input_types=["list[BaseTool]"],
-                output_type="list[BaseTool]",
-                type="list[BaseTool]",
+                input_types=["list[Tool]"],
+                output_type="list[Tool]",
+                type="list[Tool]",
                 default_value=None,
                 tooltip="",
             )

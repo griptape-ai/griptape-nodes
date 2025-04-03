@@ -218,20 +218,10 @@ class ExecuteNodeState(State):
             )
         )
         for parameter_name, value in current_node.parameter_output_values.items():
-            data_type = None
-            if hasattr(value, "type"):
-                data_type = str(value.type)
-            elif isinstance(value, dict) and "type" in value:
-                data_type = value["type"]
-            else:
-                data_type = type(value).__name__
             parameter = current_node.get_parameter_by_name(parameter_name)
             if parameter is None:
                 err = f"Canceling flow run. Node '{current_node.name}' specified a Parameter '{parameter_name}', but no such Parameter could be found on that Node."
                 raise KeyError(err)
-            if not parameter.is_outgoing_type_allowed(data_type):
-                msg = f"Type of {data_type} does not match the output type of {parameter.output_type} for parameter '{parameter_name}'."
-                logger.warning(msg)
             data_type = parameter.type
             if data_type is None:
                 data_type = ParameterTypeBuiltin.NONE.value

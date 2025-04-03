@@ -48,9 +48,9 @@ class CreateImageNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="driver",
-                input_types=["BaseImageGenerationDriver"],
-                output_type="BaseImageGenerationDriver",
-                type="BaseImageGenerationDriver",
+                input_types=["Image Generation Driver"],
+                output_type="Image Generation Driver",
+                type="Image Generation Driver",
                 tooltip="None",
                 default_value="",
             )

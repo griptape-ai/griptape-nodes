@@ -22,10 +22,10 @@ class TestGriptapeCloudImageGenerationNode:
         assert parameters == [
             {
                 "input_types": [
-                    "BaseImageGenerationDriver",
+                    "Image Generation Driver",
                 ],
-                "output_type": "BaseImageGenerationDriver",
-                "type": "BaseImageGenerationDriver",
+                "output_type": "Image Generation Driver",
+                "type": "Image Generation Driver",
                 "default_value": None,
                 "name": "driver",
                 "tooltip": "",

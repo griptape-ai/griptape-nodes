@@ -302,7 +302,6 @@ class Parameter(BaseNodeElement):
     _input_types: list[str] | None
     _output_type: str | None
     _type: str | None
-    user_set_type: bool
     tooltip_as_input: str | list[dict] | None = None
     tooltip_as_property: str | list[dict] | None = None
     tooltip_as_output: str | list[dict] | None = None
@@ -373,10 +372,6 @@ class Parameter(BaseNodeElement):
             self.validators = []
         else:
             self.validators = validators
-        if type:
-            self.user_set_type = True
-        else:
-            self.user_set_type = False
         self.type = type
         self.input_types = input_types
         self.output_type = output_type
@@ -402,7 +397,6 @@ class Parameter(BaseNodeElement):
                 self._type = value
             return
         self._type = None
-        self.user_set_type = False
 
     @property
     def input_types(self) -> list[str]:
@@ -433,7 +427,7 @@ class Parameter(BaseNodeElement):
         if self._output_type:
             # If an output type was specified, use that.
             return self._output_type
-        if self._type and self.user_set_type:
+        if self._type:
             # Otherwise, see if we have a list of input_types. If so, use the first one.
             return self._type
         if self._input_types:
@@ -448,8 +442,10 @@ class Parameter(BaseNodeElement):
             builtin = ParameterType.attempt_get_builtin(value)
             if builtin is not None:
                 self._output_type = builtin.value
-                return
-        self._output_type = value
+            else:
+                self._output_type = value
+            return
+        self._output_type = None
 
     def is_incoming_type_allowed(self, incoming_type: str | None) -> bool:
         if incoming_type is None:

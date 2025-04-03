@@ -262,7 +262,7 @@ loaders-image = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.6.7"
+version = "0.7.1"
 source = { editable = "." }
 dependencies = [
     { name = "cohere" },
