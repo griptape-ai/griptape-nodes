@@ -10,7 +10,6 @@ from griptape_nodes.exe_types.core_types import (
     ControlParameterOutput,
     Parameter,
     ParameterMode,
-    ParameterType,
     ParameterTypeBuiltin,
 )
 

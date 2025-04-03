@@ -437,8 +437,10 @@ class Parameter(BaseNodeElement):
             builtin = ParameterType.attempt_get_builtin(value)
             if builtin is not None:
                 self._output_type = builtin.value
-                return
-        self._output_type = value
+            else:
+                self._output_type = value
+            return
+        self._output_type = None
 
     def is_incoming_type_allowed(self, incoming_type: str | None) -> bool:
         if incoming_type is None:
