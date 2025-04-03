@@ -35,6 +35,13 @@ class MinMax(Trait):
         if new_max:
                 self.max = new_max
 
+    def set_parameter_value(self,value:Any) -> Any:
+         if value > self.max:
+              return self.max
+         if value < self.min:
+              return self.min
+         return value
+
     def check_min_max(self,parameter:Parameter, value:Any) -> None:
             # i wish i knew what a validator was LOL
             if value > self.max:
@@ -50,16 +57,17 @@ class MinMax(Trait):
 
     def apply_trait_to_parameter(self, parameter: Parameter) -> Parameter:
         # Are there any converters that need to be added?
-        parameter.converters.append(self.set_min_max)
+        parameter.converters.append(self.set_parameter_value)
 
         # Are there any validators that need to be added?
         parameter.validators.append(self.check_min_max)
 
         return parameter
-    
+
     def remove_trait_from_parameter(self, parameter:Parameter) -> Parameter:
-         parameter.converters.remove(self.set_min_max)
+         parameter.converters.remove(self.set_parameter_value)
          parameter.validators.remove(self.check_min_max)
+         return parameter
 
     def apply_ui_to_parameter(self, parameter: Parameter) -> Parameter:
         # What is a good UI thing
