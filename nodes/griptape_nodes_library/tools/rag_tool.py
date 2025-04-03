@@ -1,7 +1,7 @@
 from griptape.rules import Rule, Ruleset
 from griptape.tools import RagTool
 
-from griptape_nodes_library.tools.tools import BaseToolNode
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 
 
 class RagToolNode(BaseToolNode):

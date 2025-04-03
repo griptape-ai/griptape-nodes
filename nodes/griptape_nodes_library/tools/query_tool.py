@@ -8,7 +8,7 @@ from griptape.tools import QueryTool
 from griptape.utils.decorators import activity
 from schema import Literal, Schema
 
-from griptape_nodes_library.tools.tools import BaseToolNode
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 
 
 @define(kw_only=True)

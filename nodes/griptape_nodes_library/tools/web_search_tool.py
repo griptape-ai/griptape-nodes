@@ -2,7 +2,7 @@ from griptape.drivers import BaseWebSearchDriver, DuckDuckGoWebSearchDriver
 from griptape.tools import WebSearchTool
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes_library.tools.tools import BaseToolNode
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 
 
 class WebSearchToolNode(BaseToolNode):
