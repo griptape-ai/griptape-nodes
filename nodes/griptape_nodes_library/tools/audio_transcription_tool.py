@@ -2,15 +2,14 @@ import openai
 from griptape.drivers.audio_transcription.openai import OpenAiAudioTranscriptionDriver
 from griptape.tools.audio_transcription.tool import AudioTranscriptionTool
 
-from griptape_nodes_library.tools.tools import gnBaseTool
-from griptape_nodes_library.utils.env_utils import getenv
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
 SERVICE = "OpenAI"
 DEFAULT_MODEL = "whisper-1"
 
 
-class gnAudioTranscriptionTool(gnBaseTool):
+class AudioTranscriptionToolNode(BaseToolNode):
     def process(self) -> None:
         self.parameter_values.get("off_prompt", True)
         driver = self.parameter_values.get("driver", None)
@@ -29,7 +28,7 @@ class gnAudioTranscriptionTool(gnBaseTool):
         exceptions = []
         if self.parameter_values.get("driver", None):
             return exceptions
-        api_key = getenv(SERVICE, API_KEY_ENV_VAR)
+        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))

@@ -1,34 +1,17 @@
 #!/bin/sh
 
-CONFIG_FILE="$HOME/.config/griptape_nodes/griptape_nodes_config.json"
-API_KEY="$1"
-
-# If an API key was passed, attempt to write it to the config file
-if [ -n "$API_KEY" ]; then
-  # Ensure the config directory exists
-  mkdir -p "$(dirname "$CONFIG_FILE")"
-
-  # Check if the file already exists
-  if [ -e "$CONFIG_FILE" ]; then
-    echo "A config file already exists at '$CONFIG_FILE', overwriting..."
-  fi
-  # Write the API key to the config file
-  echo '{
-  "env": {
-    "Griptape": {
-        "GT_CLOUD_API_KEY": "'"$API_KEY"'"
-    }
-  }
-}' >"$CONFIG_FILE"
-  echo "API key saved to $CONFIG_FILE"
-else
-  echo "No API key provided. Skipping config file creation."
-fi
-
 echo ""
 echo "Installing uv..."
 echo ""
 curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Verify uv is on the user's PATH
+if ! command -v uv >/dev/null 2>&1; then
+  echo "Error: Griptape Nodes dependency 'uv' was installed, but requires the terminal to be restarted to be run."
+  echo "Please close this terminal and open a new one, then run the install command you performed earlier."
+
+  exit 1
+fi
 
 echo ""
 echo "Installing Griptape Nodes Engine..."
@@ -45,7 +28,7 @@ cd "$TMP_DIR"
 echo ""
 echo "Installing Griptape Nodes Library..."
 echo ""
-git clone --depth 1 https://github.com/griptape-ai/griptape-nodes.git
+git clone --depth 1 --branch latest https://github.com/griptape-ai/griptape-nodes.git
 
 mkdir -p "$XDG_DATA_HOME/griptape_nodes"
 
@@ -55,8 +38,8 @@ cp -R $REPO_NAME/scripts/ "$XDG_DATA_HOME/griptape_nodes/scripts"
 cd - >/dev/null
 rm -rf "$TMP_DIR"
 
-echo ""
-echo "Installation complete!"
-echo ""
-echo "Run 'griptape-nodes' (or just 'gtn') to start the engine."
-echo ""
+echo "**************************************"
+echo "*      Installation complete!        *"
+echo "*  Run 'griptape-nodes' (or 'gtn')   *"
+echo "*      to start the engine.          *"
+echo "**************************************"

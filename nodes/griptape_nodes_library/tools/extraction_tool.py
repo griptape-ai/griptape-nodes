@@ -1,17 +1,15 @@
-import openai
-from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
+from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.engines import CsvExtractionEngine, JsonExtractionEngine
 from griptape.rules import Rule
 from griptape.tools import ExtractionTool
 
-from griptape_nodes_library.tools.base_tool import gnBaseTool
-from griptape_nodes_library.utils.env_utils import getenv
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 
-API_KEY_ENV_VAR = "OPENAI_API_KEY"
-SERVICE = "OpenAI"
+API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
+SERVICE = "Griptape"
 
 
-class gnExtractionTool(gnBaseTool):
+class ExtractionToolNode(BaseToolNode):
     def process(self) -> None:
         prompt_driver = self.parameter_values.get("prompt_driver", None)
         extraction_type = self.parameter_values.get("extraction_type", "json")
@@ -23,7 +21,7 @@ class gnExtractionTool(gnBaseTool):
 
         # Set default prompt driver if none provided
         if not prompt_driver:
-            prompt_driver = OpenAiChatPromptDriver(model="gpt-4o-mini")
+            prompt_driver = GriptapeCloudPromptDriver(model="gpt-4o")
 
         # Create the appropriate extraction engine based on type
         engine = None
@@ -43,14 +41,9 @@ class gnExtractionTool(gnBaseTool):
         exceptions = []
         if self.parameter_values.get("prompt_driver", None):
             return exceptions
-        api_key = getenv(SERVICE, API_KEY_ENV_VAR)
+        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
-        try:
-            client = openai.OpenAI(api_key=api_key)
-            client.models.list()
-        except openai.AuthenticationError as e:
-            exceptions.append(e)
         return exceptions if exceptions else None

@@ -8,7 +8,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import ControlNode
 
 
-class gnMergeTextsNode(ControlNode):
+class MergeTextsNode(ControlNode):
     def __init__(
         self,
         name: str,
@@ -21,7 +21,7 @@ class gnMergeTextsNode(ControlNode):
             Parameter(
                 name="inputs",
                 allowed_modes={ParameterMode.INPUT},
-                allowed_types=["list"],  # This parameter accepts lists
+                input_types=["list"],
                 default_value=[],
                 tooltip="Text inputs to merge together.",
                 ui_options=ParameterUIOptions(
@@ -35,7 +35,8 @@ class gnMergeTextsNode(ControlNode):
             Parameter(
                 name="merge_string",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
                 default_value="\\n\\n",
                 tooltip="The string to use as separator between inputs.",
             )
@@ -46,7 +47,7 @@ class gnMergeTextsNode(ControlNode):
             Parameter(
                 name="output",
                 allowed_modes={ParameterMode.OUTPUT},
-                allowed_types=["str"],
+                output_type="str",
                 default_value="",
                 tooltip="The merged text result.",
             )

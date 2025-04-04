@@ -8,7 +8,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class gnKeyValuePairNode(DataNode):
+class KeyValuePairNode(DataNode):
     """Create a Key Value Pair."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
@@ -18,7 +18,8 @@ class gnKeyValuePairNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="key",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="",
                 tooltip="Key for the key-value pair",
@@ -30,7 +31,8 @@ class gnKeyValuePairNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="value",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="",
                 tooltip="Value for the key-value pair",
@@ -42,7 +44,7 @@ class gnKeyValuePairNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="dictionary",
-                allowed_types=["dict"],
+                output_type="dict",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Dictionary containing the key-value pair",
             )

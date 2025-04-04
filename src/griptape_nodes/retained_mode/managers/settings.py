@@ -1,4 +1,4 @@
-import importlib.metadata
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -12,21 +12,18 @@ from pydantic_settings import (
 )
 from xdg_base_dirs import xdg_config_dirs, xdg_config_home, xdg_data_home
 
-from griptape_nodes.node_library.script_registry import LibraryNameAndVersion
-
 
 def _find_config_files(filename: str, extension: str) -> list[Path]:
-    home = Path.home()
     config_files = []
 
     # Recursively search parent directories up to HOME
     current_path = Path.cwd()
-    while current_path not in (home, current_path.parent) and current_path != current_path.parent:
+    while current_path not in (Path.home(), current_path.parent) and current_path != current_path.parent:
         config_files.append(current_path / f"{filename}.{extension}")
         current_path = current_path.parent
 
-    # Search `GriptapeNodes/` inside home directory
-    config_files.append(home / "GriptapeNodes" / f"{filename}.{extension}")
+    # Search `GriptapeNodes/` inside current working directory (this is the implicit default)
+    config_files.append(Path.cwd() / "GriptapeNodes" / f"{filename}.{extension}")
 
     # Search XDG_CONFIG_HOME (e.g., `~/.config/griptape_nodes/griptape_nodes_config.yaml`)
     config_files.append(xdg_config_home() / "griptape_nodes" / f"{filename}.{extension}")
@@ -40,51 +37,20 @@ def _find_config_files(filename: str, extension: str) -> list[Path]:
     return config_files
 
 
-class Script(BaseModel):
-    name: str
-    relative_file_path: str
-    engine_version_created_with: str
-    node_libraries_referenced: list[LibraryNameAndVersion]
-    description: str | None = None
-    image: str | None = None
-    internal: bool = False
+@dataclass
+class ScriptSettingsDetail:
+    """Griptape-provided scripts are pathed differently and display in the GUI in a different section."""
+
+    file_name: str
+    is_griptape_provided: bool
 
 
 class AppInitializationComplete(BaseModel):
     libraries_to_register: list[str] = Field(
         default_factory=lambda: [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")]
     )
-    scripts_to_register: list[Script] = Field(
-        default_factory=lambda: [
-            Script(
-                name="Prompt an image",
-                relative_file_path="griptape_nodes/scripts/prompt_an_image.py",
-                internal=True,
-                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
-                node_libraries_referenced=[LibraryNameAndVersion("Griptape Nodes Library", "0.1.0")],
-            ),
-            Script(
-                name="Coloring Book",
-                relative_file_path="griptape_nodes/scripts/coloring_book.py",
-                internal=True,
-                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
-                node_libraries_referenced=[LibraryNameAndVersion("Griptape Nodes Library", "0.1.0")],
-            ),
-            Script(
-                name="Render logs",
-                relative_file_path="griptape_nodes/scripts/render_logs.py",
-                internal=True,
-                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
-                node_libraries_referenced=[LibraryNameAndVersion("Griptape Nodes Library", "0.1.0")],
-            ),
-            Script(
-                name="Comfyui flow branch",
-                relative_file_path="griptape_nodes/scripts/comfyui_flow_branch.py",
-                internal=True,
-                engine_version_created_with=importlib.metadata.version("griptape_nodes"),
-                node_libraries_referenced=[LibraryNameAndVersion("Griptape Nodes Library", "0.1.0")],
-            ),
-        ]
+    scripts_to_register: list[ScriptSettingsDetail] = Field(
+        default_factory=lambda: []  # noqa: PIE807 (leaving as a lambda for list for when we are ready to re-populate)
     )
 
 
@@ -117,9 +83,9 @@ class AppEvents(BaseModel):
 
 
 class Settings(BaseSettings):
-    workspace_directory: str = Field(default=str(Path().cwd()))
+    workspace_directory: str = Field(default=str(Path().cwd() / "GriptapeNodes"))
     app_events: AppEvents = Field(default_factory=AppEvents)
-    env: dict[str, Any] = Field(
+    nodes: dict[str, Any] = Field(
         default_factory=lambda: {
             "Griptape": {"GT_CLOUD_API_KEY": "$GT_CLOUD_API_KEY"},
             "OpenAI": {"OPENAI_API_KEY": "$OPENAI_API_KEY"},

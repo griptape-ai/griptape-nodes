@@ -1,7 +1,7 @@
 from griptape.drivers.image_generation.azure_openai_image_generation_driver import AzureOpenAiImageGenerationDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes_library.drivers.base_image_driver import gnBaseImageDriver
+from griptape_nodes_library.drivers.base_image_driver import BaseImageDriverNode
 
 AZURE_ENDPOINT_ENV_VAR = "AZURE_OPENAI_DALL_E_3_ENDPOINT"
 API_KEY_ENV_VAR = "AZURE_OPENAI_DALL_E_3_API_KEY"
@@ -12,7 +12,7 @@ AVAILABLE_MODELS = ["dall-e-3", "dall-e-2"]
 AVAILABLE_SIZES = ["256x256", "512x512", "1024x1024", "1024x1792", "1792x1024"]
 
 
-class gnAzureOpenAiImageDriver(gnBaseImageDriver):
+class AzureOpenAiImageDriverNode(BaseImageDriverNode):
     """Node for Azure OpenAI Image Generation Driver.
 
     This node creates an Azure OpenAI image generation driver and outputs its configuration.
@@ -25,7 +25,9 @@ class gnAzureOpenAiImageDriver(gnBaseImageDriver):
         self.add_parameter(
             Parameter(
                 name="image_generation_model",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                output_type="str",
                 default_value=DEFAULT_MODEL,
                 tooltip="Select the model for image generation.",
             )
@@ -33,7 +35,9 @@ class gnAzureOpenAiImageDriver(gnBaseImageDriver):
         self.add_parameter(
             Parameter(
                 name="image_deployment_name",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                output_type="str",
                 default_value=DEFAULT_MODEL,
                 tooltip="Enter the deployment name for the image generation model.",
             )
@@ -41,7 +45,9 @@ class gnAzureOpenAiImageDriver(gnBaseImageDriver):
         self.add_parameter(
             Parameter(
                 name="size",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                output_type="str",
                 default_value=DEFAULT_SIZE,
                 tooltip="Select the size of the generated image.",
             )
@@ -49,7 +55,9 @@ class gnAzureOpenAiImageDriver(gnBaseImageDriver):
         self.add_parameter(
             Parameter(
                 name="image_endpoint_env_var",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                output_type="str",
                 default_value=AZURE_ENDPOINT_ENV_VAR,
                 tooltip="Enter the name of the environment variable for AZURE_OPENAI_DALL_E_3_ENDPOINT, not the actual endpoint.",
             )
@@ -57,7 +65,9 @@ class gnAzureOpenAiImageDriver(gnBaseImageDriver):
         self.add_parameter(
             Parameter(
                 name="image_api_key_env_var",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
+                output_type="str",
                 default_value=API_KEY_ENV_VAR,
                 tooltip="Enter the name of the environment variable for AZURE_OPENAI_DALL_E_3_API_KEY, not the actual API key.",
             )
@@ -95,37 +105,10 @@ class gnAzureOpenAiImageDriver(gnBaseImageDriver):
         # Initialize kwargs with required parameters
         kwargs = {
             "model": model,
-            "api_key": self.getenv(service=SERVICE, value=API_KEY_ENV_VAR),
-            "azure_endpoint": self.getenv(service=SERVICE, value=AZURE_ENDPOINT_ENV_VAR),
+            "api_key": self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
+            "azure_endpoint": self.get_config_value(service=SERVICE, value=AZURE_ENDPOINT_ENV_VAR),
             "azure_deployment": deployment_name,
             "image_size": size,
         }
 
         self.parameter_output_values["driver"] = AzureOpenAiImageGenerationDriver(**kwargs)
-
-
-if __name__ == "__main__":
-    from griptape.structures.agent import Agent
-    from griptape.tasks import PromptImageGenerationTask
-
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-    def getenv(service: str, value: str) -> str:
-        config = GriptapeNodes.ConfigManager()
-        api_key = config.get_config_value(f"env.{service}.{value}")
-        return api_key
-
-    kwargs: dict = {
-        "model": DEFAULT_MODEL,
-        "api_key": getenv(service=SERVICE, value=API_KEY_ENV_VAR),
-        "azure_endpoint": getenv(service=SERVICE, value=AZURE_ENDPOINT_ENV_VAR),
-        "azure_deployment": DEFAULT_MODEL,
-        "image_size": DEFAULT_SIZE,
-    }
-
-    driver = AzureOpenAiImageGenerationDriver(**kwargs)
-    agent = Agent(stream=True)
-    agent.add_task(PromptImageGenerationTask(image_generation_driver=driver))
-
-    # Run the agent
-    result = agent.run("soup")

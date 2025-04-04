@@ -4,7 +4,7 @@ from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class gnBaseTool(DataNode):
+class BaseToolNode(DataNode):
     """Base tool node for creating Griptape tools.
 
     This node provides a generic implementation for initializing Griptape tools with configurable parameters.
@@ -20,12 +20,23 @@ class gnBaseTool(DataNode):
         self.add_parameter(
             Parameter(
                 name="off_prompt",
-                allowed_types=["bool"],
+                input_types=["bool"],
+                type="bool",
+                output_type="bool",
                 default_value=False,
                 tooltip="",
             )
         )
-        self.add_parameter(Parameter(name="tool", allowed_types=["BaseTool"], default_value=None, tooltip=""))
+        self.add_parameter(
+            Parameter(
+                name="tool",
+                input_types=["Tool"],
+                type="Tool",
+                output_type="Tool",
+                default_value=None,
+                tooltip="",
+            )
+        )
 
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", False)

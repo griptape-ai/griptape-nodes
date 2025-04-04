@@ -1,13 +1,13 @@
 from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
 
-from griptape_nodes_library.drivers.base_prompt_driver import gnBasePromptDriver
+from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
 SERVICE = "OpenAI"
 
 
-class gnOpenAiChatPromptDriver(gnBasePromptDriver):
+class OpenAiChatPromptDriverNode(BasePromptDriverNode):
     """Node for OpenAi Prompt Driver.
 
     This node creates an OpenAi prompt driver and outputs its configuration.
@@ -30,14 +30,14 @@ class gnOpenAiChatPromptDriver(gnBasePromptDriver):
         # Get the parameters from the node
         params = self.parameter_values
         kwargs = {}
-        kwargs["api_key"] = self.getenv(service=SERVICE, value=API_KEY_ENV_VAR)
+        kwargs["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
         kwargs["model"] = params.get("model", DEFAULT_MODEL)
         response_format = params.get("response_format", None)
         seed = params.get("seed", None)
         stream = params.get("stream", False)
         temperature = params.get("temperature", None)
         use_native_tools = params.get("use_native_tools", False)
-        max_tokens = params.get("max_tokens", None)
+        max_tokens = params.get("max_tokens", -1)
         max_attempts = params.get("max_attempts_on_fail", None)
         top_p = None if params.get("min_p", None) is None else 1 - float(params["min_p"])
 

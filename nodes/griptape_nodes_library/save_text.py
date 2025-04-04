@@ -6,9 +6,10 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.retained_mode.griptape_nodes import logger
 
 
-class gnSaveTextNode(ControlNode):
+class SaveTextNode(ControlNode):
     """Save text to a file."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
@@ -18,7 +19,7 @@ class gnSaveTextNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="text",
-                allowed_types=["str"],
+                input_types=["str"],
                 allowed_modes={ParameterMode.INPUT},
                 tooltip="The text content to save to file",
             )
@@ -28,7 +29,8 @@ class gnSaveTextNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output_path",
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="griptape_output.txt",
                 tooltip="The output filename",
@@ -43,7 +45,8 @@ class gnSaveTextNode(ControlNode):
         try:
             with Path(full_output_file).open("w") as f:
                 f.write(text)
-            print(f"Saved file: {full_output_file}")
+            success_msg = f"Saved file: {full_output_file}"
+            logger.info(success_msg)
 
             # Set output values
             self.parameter_output_values["output_path"] = full_output_file

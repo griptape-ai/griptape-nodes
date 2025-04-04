@@ -52,7 +52,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     AlterParameterDetailsRequest,
     GetParameterDetailsRequest,
     GetParameterValueRequest,
-    GetParameterValueResult_Failure,
+    GetParameterValueResultFailure,
     RemoveParameterFromNodeRequest,
     SetParameterValueRequest,
 )
@@ -225,13 +225,15 @@ class RetainedMode:
         cls,
         node_name: str,
         parameter_name: str,
-        allowed_types: list[str],
         default_value: Any | None,
-        tooltip: str,
+        tooltip: str | list[dict],
+        type: str | None = None,  # noqa: A002
+        input_types: list[str] | None = None,
+        output_type: str | None = None,
         edit: bool = False,  # noqa: FBT001, FBT002
-        tooltip_as_input: str | None = None,
-        tooltip_as_property: str | None = None,
-        tooltip_as_output: str | None = None,
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
         ui_options: ParameterUIOptions | None = None,
         mode_allowed_input: bool = True,  # noqa: FBT001, FBT002
         mode_allowed_property: bool = True,  # noqa: FBT001, FBT002
@@ -242,9 +244,11 @@ class RetainedMode:
             request = AlterParameterDetailsRequest(
                 parameter_name=parameter_name,
                 node_name=node_name,
-                allowed_types=allowed_types,
                 default_value=default_value,
                 tooltip=tooltip,
+                type=type,
+                input_types=input_types,
+                output_type=output_type,
                 tooltip_as_input=tooltip_as_input,
                 tooltip_as_property=tooltip_as_property,
                 tooltip_as_output=tooltip_as_output,
@@ -257,9 +261,11 @@ class RetainedMode:
             request = AddParameterToNodeRequest(
                 parameter_name=parameter_name,
                 node_name=node_name,
-                allowed_types=allowed_types,
                 default_value=default_value,
                 tooltip=tooltip,
+                type=type,
+                input_types=input_types,
+                output_type=output_type,
                 tooltip_as_input=tooltip_as_input,
                 tooltip_as_property=tooltip_as_property,
                 tooltip_as_output=tooltip_as_output,
@@ -452,13 +458,13 @@ class RetainedMode:
                 except ValueError:
                     error_msg = f"Failed on key/index '{idx_or_key}' because it wasn't an int as expected."
                     print(error_msg)
-                    return GetParameterValueResult_Failure()
+                    return GetParameterValueResultFailure()
 
                 # Handle negative indices
                 if idx < 0:
                     error_msg = f"Failed on key/index '{idx_or_key}' because it was less than zero."
                     print(error_msg)
-                    return GetParameterValueResult_Failure()
+                    return GetParameterValueResultFailure()
 
                 # Extend the list if needed
                 while len(curr) <= idx:
@@ -473,7 +479,7 @@ class RetainedMode:
             else:
                 error_msg = f"Failed on key/index '{idx_or_key}' because it was a type that was not expected."
                 print(error_msg)
-                return GetParameterValueResult_Failure()
+                return GetParameterValueResultFailure()
 
         # Update the container
         set_request = SetParameterValueRequest(
@@ -509,17 +515,17 @@ class RetainedMode:
                     # Index better be an int.
                     if not isinstance(idx_or_key, int):
                         print(f'get_value failed for "{node}.{param}" on key/index "{idx_or_key}" only ints allowed.')
-                        return GetParameterValueResult_Failure()
+                        return GetParameterValueResultFailure()
                     # Is the index in range?
                     if (idx_or_key < 0) or (idx_or_key >= len(curr_pos_value)):
                         print(
                             f'get_value failed for "{node}.{param}" for key/index "{idx_or_key}" being out of range. Object had {len(curr_pos_value)} elements.'
                         )
-                        return GetParameterValueResult_Failure()
+                        return GetParameterValueResultFailure()
                     curr_pos_value = curr_pos_value[idx_or_key]
                 else:
                     print(f'get_value failed for "{node}.{param}" on key/index "{idx_or_key}". Type Error.')
-                    return GetParameterValueResult_Failure()
+                    return GetParameterValueResultFailure()
             # All done
             return curr_pos_value
         return result
@@ -581,13 +587,13 @@ class RetainedMode:
                         idx_or_key_as_int = int(idx_or_key)
                     except ValueError:
                         print(f'set_value for "{node}.{param}", failed on key/index "{idx_or_key}". Requires an int.')
-                        return GetParameterValueResult_Failure()
+                        return GetParameterValueResultFailure()
                     # Is the index in range?
                     if idx_or_key_as_int < 0:
                         print(
                             f'set_value for "{node}.{param}", failed on key/index "{idx_or_key}" because it was less than zero.'
                         )
-                        return GetParameterValueResult_Failure()
+                        return GetParameterValueResultFailure()
                     # Extend the list if needed to accommodate the index.
                     while len(curr_pos_value) <= idx_or_key_as_int:
                         curr_pos_value.append(None)
@@ -608,7 +614,7 @@ class RetainedMode:
                     curr_pos_value = curr_pos_value[idx_or_key_as_int]
                 else:
                     print(f'set_value on "{node}.{param}" failed on key/index "{idx_or_key}": bad type')
-                    return GetParameterValueResult_Failure()
+                    return GetParameterValueResultFailure()
             # All done
         return result
 

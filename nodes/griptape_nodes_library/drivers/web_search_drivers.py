@@ -4,7 +4,7 @@ from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class gnBaseWebSearchDriver(DataNode):
+class BaseWebSearchDriverNode(DataNode):
     """Base driver node for creating Griptape Drivers.
 
     This node provides a generic implementation for initializing Griptape tools with configurable parameters.
@@ -16,10 +16,19 @@ class gnBaseWebSearchDriver(DataNode):
     def __init__(self, name: str, metadata: dict | None = None) -> None:
         super().__init__(name, metadata)
 
-        self.add_parameter(Parameter(name="driver", allowed_types=["dict"], default_value=None, tooltip=""))
+        self.add_parameter(
+            Parameter(
+                name="driver",
+                input_types=["Web Search Driver"],
+                type="Web Search Driver",
+                output_type="Web Search Driver",
+                default_value=None,
+                tooltip="",
+            )
+        )
 
 
-class gnDuckDuckGoWebSearchDriver(gnBaseWebSearchDriver):
+class DuckDuckGoWebSearchDriverNode(BaseWebSearchDriverNode):
     def process(self) -> None:
         # Create the tool
         driver = DuckDuckGoWebSearchDriver()

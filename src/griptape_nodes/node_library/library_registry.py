@@ -4,8 +4,7 @@ from typing import Any, NamedTuple, Self, cast
 
 from griptape.mixins.singleton_mixin import SingletonMixin
 
-from griptape_nodes.exe_types.node_types import NodeBase
-from griptape_nodes.exe_types.type_validator import TypeValidationError, TypeValidator
+from griptape_nodes.exe_types.node_types import BaseNode
 
 
 class LibraryNodeIdentifier(NamedTuple):
@@ -121,7 +120,7 @@ class LibraryRegistry(SingletonMixin):
         name: str,
         metadata: dict[Any, Any] | None = None,
         specific_library_name: str | None = None,
-    ) -> NodeBase:
+    ) -> BaseNode:
         instance = cls()
         if specific_library_name is None:
             # Does this node class exist in our aliases table?
@@ -152,7 +151,7 @@ class Library:
 
     name: str
     _metadata: dict | None
-    _node_types: dict[str, type[NodeBase]]
+    _node_types: dict[str, type[BaseNode]]
     _node_metadata: dict[str, dict]
     _categories: list[dict] | None
     _is_default_library: bool
@@ -178,10 +177,10 @@ class Library:
         self._is_default_library = is_default_library
         self._metadata["is_default_library"] = self._is_default_library
 
-    def register_new_node_type(self, node_class: type[NodeBase], metadata: dict | None = None) -> None:
+    def register_new_node_type(self, node_class: type[BaseNode], metadata: dict | None = None) -> None:
         """Register a new node type in this library."""
-        if not issubclass(node_class, NodeBase):
-            msg = f"{node_class.__name__} must inherit from NodeBase"
+        if not issubclass(node_class, BaseNode):
+            msg = f"{node_class.__name__} must inherit from BaseNode"
             raise TypeError(msg)
         # We only need to register the name of the node within the library.
         node_class_as_str = node_class.__name__
@@ -199,7 +198,7 @@ class Library:
         node_type: str,
         name: str,
         metadata: dict[Any, Any] | None = None,
-    ) -> NodeBase:
+    ) -> BaseNode:
         """Create a new node instance of the specified type."""
         node_class = self._node_types.get(node_type)
         if not node_class:
@@ -213,14 +212,6 @@ class Library:
         metadata["library"] = self.name
         metadata["node_type"] = node_type
         node = node_class(name=name, metadata=metadata)
-        for parameter in node.parameters:
-            for type_str in parameter.allowed_types:
-                # This will throw an error if there is an unallowed type
-                try:
-                    TypeValidator.convert_to_type(type_str)
-                except TypeValidationError as e:
-                    msg = f"Failed to create node of type {node_type}: {e}"
-                    raise TypeValidationError(msg) from e
         return node
 
     def get_registered_nodes(self) -> list[str]:

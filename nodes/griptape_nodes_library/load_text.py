@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 
 
-class gnLoadTextNode(ControlNode):
+class LoadTextNode(ControlNode):
     def __init__(
         self,
         name: str,
@@ -37,7 +37,8 @@ class gnLoadTextNode(ControlNode):
             Parameter(
                 name="path",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                allowed_types=["str"],
+                input_types=["str"],
+                type="str",
                 default_value="",
                 tooltip="The full path to the loaded file.",
             )
@@ -47,7 +48,7 @@ class gnLoadTextNode(ControlNode):
             Parameter(
                 name="output",
                 allowed_modes={ParameterMode.OUTPUT},
-                allowed_types=["str"],
+                output_type="str",
                 default_value="",
                 tooltip="The text content of the loaded file.",
             )

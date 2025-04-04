@@ -5,12 +5,12 @@ import logging
 from griptape.drivers.vector.dummy import DummyVectorStoreDriver
 from griptape.tools import VectorStoreTool
 
-from griptape_nodes_library.tools.tools import gnBaseTool
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 
 logger = logging.getLogger(__name__)
 
 
-class gnVectorStoreTool(gnBaseTool):
+class VectorStoreToolNode(BaseToolNode):
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", False)
         query_params = self.parameter_values.get("optional_query_params", "{}")

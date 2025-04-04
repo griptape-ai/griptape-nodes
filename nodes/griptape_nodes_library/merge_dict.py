@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class gnMergeDictionaryNode(DataNode):
+class MergeDictNode(DataNode):
     """Merge multiple dictionaries, with later dictionaries overwriting values from earlier ones."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
@@ -17,8 +17,9 @@ class gnMergeDictionaryNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="inputs",
+                input_types=["list[dict]", "list"],
+                type="list[dict]",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                allowed_types=["list[dict]", "list"],  # A list of dictionaries
                 default_value=[],
                 tooltip="List of dictionaries to merge",
             )
@@ -28,8 +29,8 @@ class gnMergeDictionaryNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="merged_dict",
+                output_type="dict",
                 allowed_modes={ParameterMode.OUTPUT},
-                allowed_types=["dict"],
                 default_value={},
                 tooltip="The merged dictionary",
             )

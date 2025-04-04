@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import uuid
 from abc import ABC
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from griptape_nodes.exe_types.type_validator import TypeValidator
+T = TypeVar("T", bound="Parameter")
 
 
 # Types of Modes provided for Parameters
@@ -19,9 +20,54 @@ class ParameterMode(Enum):
     PROPERTY = auto()
 
 
-# I'm a special way to say my Type is for Control flow.
-class ParameterControlType:
-    pass
+class ParameterTypeBuiltin(Enum):
+    STR = "str"
+    BOOL = "bool"
+    INT = "int"
+    FLOAT = "float"
+    ANY = "any"
+    NONE = "none"
+    CONTROL_TYPE = "parametercontroltype"
+
+
+class ParameterType:
+    _builtin_aliases = {
+        "str": ParameterTypeBuiltin.STR,
+        "string": ParameterTypeBuiltin.STR,
+        "bool": ParameterTypeBuiltin.BOOL,
+        "boolean": ParameterTypeBuiltin.BOOL,
+        "int": ParameterTypeBuiltin.INT,
+        "float": ParameterTypeBuiltin.FLOAT,
+        "any": ParameterTypeBuiltin.ANY,
+        "none": ParameterTypeBuiltin.NONE,
+        "parametercontroltype": ParameterTypeBuiltin.CONTROL_TYPE,
+    }
+
+    @staticmethod
+    def attempt_get_builtin(type_name: str) -> ParameterTypeBuiltin | None:
+        ret_val = ParameterType._builtin_aliases.get(type_name.lower())
+        return ret_val
+
+    @staticmethod
+    def are_types_compatible(source_type: str | None, target_type: str | None) -> bool:
+        if source_type is None or target_type is None:
+            return False
+
+        ret_val = False
+        source_type_lower = source_type.lower()
+        target_type_lower = target_type.lower()
+
+        # If either are None, bail.
+        if ParameterTypeBuiltin.NONE.value in (source_type_lower, target_type_lower):
+            ret_val = False
+        elif target_type_lower == ParameterTypeBuiltin.ANY.value:
+            # If the TARGET accepts Any, we're good. Not always true the other way 'round.
+            ret_val = True
+        else:
+            # Do a compare.
+            ret_val = source_type_lower == target_type_lower
+
+        return ret_val
 
 
 # Keys and values for the UI_Options schema.
@@ -121,15 +167,142 @@ class ParameterUIOptions:
         return self_dict == other_dict
 
 
-@dataclass
-class Parameter:
+@dataclass(kw_only=True)
+class BaseNodeElement:
+    element_id: str = field(default_factory=lambda: str(uuid.uuid4().hex))
+    element_type: str = field(default_factory=lambda: BaseNodeElement.__name__)
+
+    _children: list[BaseNodeElement] = field(default_factory=list)
+    _stack: ClassVar[list[BaseNodeElement]] = []
+
+    @property
+    def children(self) -> list[BaseNodeElement]:
+        return self._children
+
+    def __post_init__(self) -> None:
+        # If there's currently an active element, add this new element as a child
+        current = BaseNodeElement.get_current()
+        if current is not None:
+            current.add_child(self)
+
+    def __enter__(self) -> Self:
+        # Push this element onto the global stack
+        BaseNodeElement._stack.append(self)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        # Pop this element off the global stack
+        popped = BaseNodeElement._stack.pop()
+        if popped is not self:
+            msg = f"Expected to pop {self}, but got {popped}"
+            raise RuntimeError(msg)
+
+    def __repr__(self) -> str:
+        return f"BaseNodeElement({self.children=})"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Returns a nested dictionary representation of this node and its children.
+
+        Example:
+            {
+              "element_id": "container-1",
+              "element_type": "ParameterGroup",
+              "group_name": "Group 1",
+              "children": [
+                {
+                    "element_id": "A",
+                    "element_type": "Parameter",
+                    "children": []
+                },
+                ...
+              ]
+            }
+        """
+        return {
+            "element_id": self.element_id,
+            "element_type": self.__class__.__name__,
+            "children": [child.to_dict() for child in self._children],
+        }
+
+    def add_child(self, child: BaseNodeElement) -> None:
+        self._children.append(child)
+
+    def remove_child(self, child: BaseNodeElement | str) -> None:
+        ui_elements: list[BaseNodeElement] = [self]
+        for ui_element in ui_elements:
+            if child in ui_element._children:
+                ui_element._children.remove(child)
+                break
+            ui_elements.extend(ui_element._children)
+
+    def find_element_by_id(self, element_id: str) -> BaseNodeElement | None:
+        if self.element_id == element_id:
+            return self
+
+        for child in self._children:
+            found = child.find_element_by_id(element_id)
+            if found is not None:
+                return found
+        return None
+
+    def find_elements_by_type(self, element_type: type[T]) -> list[T]:
+        elements: list[T] = []
+        for child in self._children:
+            if isinstance(child, element_type):
+                elements.append(child)
+            elements.extend(child.find_elements_by_type(element_type))
+        return elements
+
+    @classmethod
+    def get_current(cls) -> BaseNodeElement | None:
+        """Return the element on top of the stack, or None if no active element."""
+        return cls._stack[-1] if cls._stack else None
+
+
+@dataclass(kw_only=True)
+class ParameterGroup(BaseNodeElement):
+    """UI element for a group of parameters."""
+
+    group_name: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Returns a nested dictionary representation of this node and its children.
+
+        Example:
+            {
+              "element_id": "container-1",
+              "element_type": "ParameterGroup",
+              "group_name": "Group 1",
+              "children": [
+                {
+                    "element_id": "A",
+                    "element_type": "Parameter",
+                    "children": []
+                },
+                ...
+              ]
+            }
+        """
+        return {
+            "element_id": self.element_id,
+            "element_type": self.__class__.__name__,
+            "group_name": self.group_name,
+            "children": [child.to_dict() for child in self._children],
+        }
+
+
+class Parameter(BaseNodeElement):
+    # This is the list of types that the Parameter can accept, either externally or when internally treated as a property.
+    # Today, we can accept multiple types for input, but only a single output type.
     name: str  # must be unique from other parameters in Node
-    allowed_types: list[str]
-    tooltip: str  # Default tooltip
+    tooltip: str | list[dict]  # Default tooltip, can be string or list of dicts
     default_value: Any = None
-    tooltip_as_input: str | None = None
-    tooltip_as_property: str | None = None
-    tooltip_as_output: str | None = None
+    _input_types: list[str] | None
+    _output_type: str | None
+    _type: str | None
+    tooltip_as_input: str | list[dict] | None = None
+    tooltip_as_property: str | list[dict] | None = None
+    tooltip_as_output: str | list[dict] | None = None
     settable: bool = True
     user_defined: bool = False
     allowed_modes: set = field(
@@ -139,43 +312,160 @@ class Parameter:
             ParameterMode.PROPERTY,
         }
     )
-    options: list[Any] | None = None
     ui_options: ParameterUIOptions | None = None
+    converters: list[Callable[[Any], Any]]
+    validators: list[Callable[[Parameter, Any], None]]
     next: Parameter | None = None
     prev: Parameter | None = None
-    converters: list[Callable[[Any], Any]] = field(default_factory=list)
-    validators: list[Callable[[Parameter, Any], None]] = field(default_factory=list)
 
-    def is_type_allowed(self, type_as_str: str) -> bool:
-        # Original code continues here...
-        # Can't just do a string compare as we'll whiff on things like "list" not matching "List"
-        test_type = TypeValidator.convert_to_type(type_as_str)
-        if test_type is Any:
-            return True
-        for allowed_type_str in self.allowed_types:
-            allowed_type = TypeValidator.convert_to_type(allowed_type_str)
-            if allowed_type is Any:
-                return True
-            if allowed_type == test_type:
-                return True
-        return False
+    def __init__(  # noqa: PLR0913
+        self,
+        name: str,
+        tooltip: str | list[dict],
+        type: str | None = None,  # noqa: A002
+        input_types: list[str] | None = None,
+        output_type: str | None = None,
+        default_value: Any = None,
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
+        allowed_modes: set[ParameterMode] | None = None,
+        ui_options: ParameterUIOptions | None = None,
+        converters: list[Callable[[Any], Any]] | None = None,
+        validators: list[Callable[[Parameter, Any], None]] | None = None,
+        *,
+        settable: bool = True,
+        user_defined: bool = False,
+        element_id: str | None = None,
+        element_type: str | None = None,
+    ):
+        if not element_id:
+            element_id = str(uuid.uuid4().hex)
+        if not element_type:
+            element_type = BaseNodeElement.__name__
+        super().__init__(element_id=element_id, element_type=element_type)
+        self.name = name
+        self.tooltip = tooltip
+        self.default_value = default_value
+        self.tooltip_as_input = tooltip_as_input
+        self.tooltip_as_property = tooltip_as_property
+        self.tooltip_as_output = tooltip_as_output
+        self.settable = settable
+        self.user_defined = user_defined
+        self.ui_options = ui_options
+        if allowed_modes is None:
+            self.allowed_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
+        else:
+            self.allowed_modes = allowed_modes
 
-    def is_value_allowed(self, value: Any) -> bool:
-        for allowed_type_str in self.allowed_types:
-            if TypeValidator.is_instance(value, allowed_type_str):
-                return True
-            try:
-                print(f"Value not allowed {self.name}: {value=}, {allowed_type_str=}")
-            except Exception:
-                print(f"Value not allowed {self.name}: [error], {allowed_type_str=}")
-        return False
+        if converters is None:
+            self.converters = []
+        else:
+            self.converters = converters
+
+        if validators is None:
+            self.validators = []
+        else:
+            self.validators = validators
+        self.type = type
+        self.input_types = input_types
+        self.output_type = output_type
+
+    @property
+    def type(self) -> str:
+        if self._type:
+            return self._type
+        if self._input_types:
+            return self._input_types[0]
+        if self._output_type:
+            return self._output_type
+        return ParameterTypeBuiltin.STR.value
+
+    @type.setter
+    def type(self, value: str | None) -> None:
+        if value is not None:
+            # See if it's an alias to a builtin first.
+            builtin = ParameterType.attempt_get_builtin(value)
+            if builtin is not None:
+                self._type = builtin.value
+            else:
+                self._type = value
+            return
+        self._type = None
+
+    @property
+    def input_types(self) -> list[str]:
+        if self._input_types:
+            return self._input_types
+        if self._type:
+            return [self._type]
+        if self._output_type:
+            return [self._output_type]
+        return [ParameterTypeBuiltin.STR.value]
+
+    @input_types.setter
+    def input_types(self, value: list[str] | None) -> None:
+        if value is None:
+            self._input_types = None
+        else:
+            self._input_types = []
+            for new_type in value:
+                # See if it's an alias to a builtin first.
+                builtin = ParameterType.attempt_get_builtin(new_type)
+                if builtin is not None:
+                    self._input_types.append(builtin.value)
+                else:
+                    self._input_types.append(new_type)
+
+    @property
+    def output_type(self) -> str:
+        if self._output_type:
+            # If an output type was specified, use that.
+            return self._output_type
+        if self._type:
+            # Otherwise, see if we have a list of input_types. If so, use the first one.
+            return self._type
+        if self._input_types:
+            return self._input_types[0]
+        # Otherwise, return a string.
+        return ParameterTypeBuiltin.STR.value
+
+    @output_type.setter
+    def output_type(self, value: str | None) -> None:
+        if value is not None:
+            # See if it's an alias to a builtin first.
+            builtin = ParameterType.attempt_get_builtin(value)
+            if builtin is not None:
+                self._output_type = builtin.value
+            else:
+                self._output_type = value
+            return
+        self._output_type = None
+
+    def is_incoming_type_allowed(self, incoming_type: str | None) -> bool:
+        if incoming_type is None:
+            return False
+
+        ret_val = False
+
+        if self._input_types:
+            for test_type in self._input_types:
+                if ParameterType.are_types_compatible(source_type=incoming_type, target_type=test_type):
+                    ret_val = True
+                    break
+        else:
+            # Customer feedback was to treat as a string by default.
+            ret_val = ParameterType.are_types_compatible(
+                source_type=incoming_type, target_type=ParameterTypeBuiltin.STR.value
+            )
+
+        return ret_val
+
+    def is_outgoing_type_allowed(self, target_type: str | None) -> bool:
+        return ParameterType.are_types_compatible(source_type=self.output_type, target_type=target_type)
 
     def set_default_value(self, value: Any) -> None:
-        if self.is_value_allowed(value):
-            self.default_value = value
-        else:
-            errormsg = "Type does not match allowed value types"
-            raise TypeError(errormsg)
+        self.default_value = value
 
     def get_mode(self) -> set:
         return self.allowed_modes
@@ -217,30 +507,106 @@ class Parameter:
 
 
 # Convenience classes to reduce boilerplate in node definitions
-@dataclass(kw_only=True)
 class ControlParameter(Parameter, ABC):
-    allowed_types: list[str] = field(default_factory=lambda: [ParameterControlType.__name__])
-    default_value: Any = None
-    settable: bool = False
+    def __init__(  # noqa: PLR0913
+        self,
+        name: str,
+        tooltip: str | list[dict],
+        input_types: list[str] | None = None,
+        output_type: str | None = None,
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
+        allowed_modes: set[ParameterMode] | None = None,
+        ui_options: ParameterUIOptions | None = None,
+        converters: list[Callable[[Any], Any]] | None = None,
+        validators: list[Callable[[Parameter, Any], None]] | None = None,
+        *,
+        user_defined: bool = False,
+    ):
+        # Call parent with a few explicit tweaks.
+        super().__init__(
+            type=ParameterTypeBuiltin.CONTROL_TYPE.value,
+            default_value=None,
+            settable=False,
+            name=name,
+            tooltip=tooltip,
+            input_types=input_types,
+            output_type=output_type,
+            tooltip_as_input=tooltip_as_input,
+            tooltip_as_property=tooltip_as_property,
+            tooltip_as_output=tooltip_as_output,
+            allowed_modes=allowed_modes,
+            ui_options=ui_options,
+            converters=converters,
+            validators=validators,
+            user_defined=user_defined,
+        )
 
 
-@dataclass(kw_only=True)
-class ControlParameter_Input(ControlParameter):
-    name: str = "exec_in"
-    tooltip: str = "Connection from previous node in the execution chain"
-    allowed_modes: set = field(
-        default_factory=lambda: {
-            ParameterMode.INPUT,
-        }
-    )
+class ControlParameterInput(ControlParameter):
+    def __init__(  # noqa: PLR0913
+        self,
+        tooltip: str | list[dict] = "Connection from previous node in the execution chain",
+        name: str = "exec_in",
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
+        ui_options: ParameterUIOptions | None = None,
+        converters: list[Callable[[Any], Any]] | None = None,
+        validators: list[Callable[[Parameter, Any], None]] | None = None,
+        *,
+        user_defined: bool = False,
+    ):
+        allowed_modes = {ParameterMode.INPUT}
+        input_types = [ParameterTypeBuiltin.CONTROL_TYPE.value]
+
+        # Call parent with a few explicit tweaks.
+        super().__init__(
+            name=name,
+            tooltip=tooltip,
+            input_types=input_types,
+            output_type=None,
+            tooltip_as_input=tooltip_as_input,
+            tooltip_as_property=tooltip_as_property,
+            tooltip_as_output=tooltip_as_output,
+            allowed_modes=allowed_modes,
+            ui_options=ui_options,
+            converters=converters,
+            validators=validators,
+            user_defined=user_defined,
+        )
 
 
-@dataclass
-class ControlParameter_Output(ControlParameter):
-    name: str = "exec_out"
-    tooltip: str = "Connection to the next node in the execution chain"
-    allowed_modes: set = field(
-        default_factory=lambda: {
-            ParameterMode.OUTPUT,
-        }
-    )
+class ControlParameterOutput(ControlParameter):
+    def __init__(  # noqa: PLR0913
+        self,
+        tooltip: str | list[dict] = "Connection to the next node in the execution chain",
+        name: str = "exec_out",
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
+        ui_options: ParameterUIOptions | None = None,
+        converters: list[Callable[[Any], Any]] | None = None,
+        validators: list[Callable[[Parameter, Any], None]] | None = None,
+        *,
+        user_defined: bool = False,
+    ):
+        allowed_modes = {ParameterMode.OUTPUT}
+        output_type = ParameterTypeBuiltin.CONTROL_TYPE.value
+
+        # Call parent with a few explicit tweaks.
+        super().__init__(
+            name=name,
+            tooltip=tooltip,
+            input_types=None,
+            output_type=output_type,
+            tooltip_as_input=tooltip_as_input,
+            tooltip_as_property=tooltip_as_property,
+            tooltip_as_output=tooltip_as_output,
+            allowed_modes=allowed_modes,
+            ui_options=ui_options,
+            converters=converters,
+            validators=validators,
+            user_defined=user_defined,
+        )

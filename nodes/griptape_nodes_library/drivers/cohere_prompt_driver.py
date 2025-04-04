@@ -1,15 +1,14 @@
 import cohere
 from griptape.drivers.prompt.cohere import CoherePromptDriver
 
-from griptape_nodes_library.drivers.base_prompt_driver import gnBasePromptDriver
-from griptape_nodes_library.utils.env_utils import getenv
+from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
 
 DEFAULT_MODEL = "command-r-plus"
 API_KEY_ENV_VAR = "COHERE_API_KEY"
 SERVICE = "Cohere"
 
 
-class gnCoherePromptDriver(gnBasePromptDriver):
+class CoherePromptDriverNode(BasePromptDriverNode):
     """Node for Cohere Prompt Driver.
 
     This node creates a Cohere prompt driver and outputs its configuration.
@@ -24,7 +23,7 @@ class gnCoherePromptDriver(gnBasePromptDriver):
 
         # Initialize kwargs with required parameters
         kwargs = {}
-        kwargs["api_key"] = self.getenv(service=SERVICE, value=API_KEY_ENV_VAR)
+        kwargs["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
         kwargs["model"] = params.get("model", DEFAULT_MODEL)
 
         # Handle optional parameters
@@ -50,7 +49,7 @@ class gnCoherePromptDriver(gnBasePromptDriver):
     def validate_node(self) -> list[Exception] | None:
         # Items here are openai api key
         exceptions = []
-        api_key = getenv(SERVICE, API_KEY_ENV_VAR)
+        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
@@ -61,8 +60,3 @@ class gnCoherePromptDriver(gnBasePromptDriver):
         except cohere.errors.UnauthorizedError as e:
             exceptions.append(e)
         return exceptions if exceptions else None
-
-
-if __name__ == "__main__":
-    drv = gnCoherePromptDriver(name="simpleClear")
-    drv.process()

@@ -3,12 +3,14 @@ from __future__ import annotations
 import contextvars
 import json
 import os
+import sys
 import threading
 from time import sleep
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urljoin
 
 import httpx
+from dotenv import get_key
 from griptape.events import (
     BaseEvent,
     EventBus,
@@ -16,6 +18,10 @@ from griptape.events import (
     FinishStructureRunEvent,
     TextChunkEvent,
 )
+from rich.align import Align
+from rich.console import Console
+from rich.panel import Panel
+from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.api.queue_manager import event_queue
 from griptape_nodes.api.routes.api import process_event
@@ -29,8 +35,8 @@ from griptape_nodes.retained_mode.events import (
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
     EventRequest,
-    EventResult_Failure,
-    EventResult_Success,
+    EventResultFailure,
+    EventResultSuccess,
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     GriptapeNodeEvent,
@@ -39,9 +45,14 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from logging import Logger
 
 
-logger = GriptapeNodes.get_instance().LogManager().get_logger()
+console = Console()
+
+
+def get_logger() -> Logger:
+    return GriptapeNodes.get_instance().LogManager().get_logger(event_handler=False)
 
 
 def run_with_context(func: Callable) -> Callable:
@@ -65,9 +76,9 @@ def process_request(event: EventRequest) -> None:
 def send_event(event: GriptapeNodeEvent) -> None:
     # Emit the result back to the GUI
     result_event = event.wrapped_event
-    if isinstance(result_event, EventResult_Success):
+    if isinstance(result_event, EventResultSuccess):
         dest_socket = "success_result"
-    elif isinstance(result_event, EventResult_Failure):
+    elif isinstance(result_event, EventResultFailure):
         dest_socket = "failure_result"
     else:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."
@@ -112,21 +123,20 @@ def process_app_event(event: AppEvent) -> None:
     # Let Griptape Nodes broadcast it.
     GriptapeNodes().broadcast_app_event(payload)
 
-    # TODO(griptape): send to GUI?
+    socket.emit("app_event", event.json())
 
 
 def check_event_queue() -> None:
     while True:
-        if not event_queue.empty():
-            event = event_queue.get()
-            if isinstance(event, EventRequest):
-                process_request(event)
-            elif isinstance(event, AppEvent):
-                process_app_event(event)
-            else:
-                logger.warning("Unknown event type encountered: '%s'.", type(event))
+        event = event_queue.get(block=True)
+        if isinstance(event, EventRequest):
+            process_request(event)
+        elif isinstance(event, AppEvent):
+            process_app_event(event)
+        else:
+            get_logger().warning("Unknown event type encountered: '%s'.", type(event))
 
-            event_queue.task_done()
+        event_queue.task_done()
 
 
 def setup_event_listeners() -> None:
@@ -159,56 +169,91 @@ def sse_listener() -> None:
             nodes_app_url = os.getenv("GRIPTAPE_NODES_APP_URL", "https://nodes.griptape.ai")
 
             def auth(request: httpx.Request) -> httpx.Request:
-                service = "Griptape"
-                value = "GT_CLOUD_API_KEY"
-                api_token = GriptapeNodes.get_instance().ConfigManager().get_config_value(f"env.{service}.{value}")
+                api_key = get_key(xdg_config_home() / "griptape_nodes" / ".env", "GT_CLOUD_API_KEY")
                 request.headers.update(
                     {
                         "Accept": "text/event-stream",
-                        "Authorization": f"Bearer {api_token}",
+                        "Authorization": f"Bearer {api_key}",
                     }
                 )
                 return request
 
             with httpx.stream("get", endpoint, auth=auth, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout
+                if response.status_code in {401, 403}:
+                    message = Panel(
+                        Align.center(
+                            "[bold red]Nodes API key is invalid, please run [code]gtn init[/code] with a valid key: [/bold red]"
+                            "[code]gtn init --api-key <your key>[/code]\n"
+                            "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
+                        ),
+                        title="🔑 ❌ Invalid Nodes API Key",
+                        border_style="red",
+                        padding=(1, 4),
+                    )
+                    console.print(message)
+                    sys.exit(1)
+
                 response.raise_for_status()
-                if not init:
-                    # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
-                    payload = app_events.AppInitializationComplete()
-                    app_event = AppEvent(payload=payload)
-                    event_queue.put(app_event)
-                    init = True
 
                 for line in response.iter_lines():
-                    if not line.strip():
-                        continue
                     if line.startswith("data:"):
                         data = line.removeprefix("data:").strip()
                         if data == "START":
-                            logger.info("Engine is ready to receive events")
-                            logger.info(
-                                "[bold green]Please visit [link=%s]%s[/link] in your browser.[/bold green]",
-                                nodes_app_url,
-                                nodes_app_url,
-                            )
+                            if not init:
+                                # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
+                                payload = app_events.AppInitializationComplete()
+                                app_event = AppEvent(payload=payload)
+                                process_app_event(app_event)
 
+                                message = Panel(
+                                    Align.center(
+                                        f"[bold green]Engine is ready to receive events[/bold green]\n"
+                                        f"[bold blue]Visit: [link={nodes_app_url}]{nodes_app_url}[/link][/bold blue]",
+                                        vertical="middle",
+                                    ),
+                                    title="🚀 Engine Started",
+                                    border_style="green",
+                                    padding=(1, 4),
+                                )
+                                console.print(message)
+
+                                init = True
                         else:
-                            process_event(json.loads(data))
+                            try:
+                                process_sse(json.loads(data))
+                            except Exception:
+                                get_logger().exception("Error processing event, skipping.")
+
         except Exception:
-            logger.exception("Error while listening to SSE")
-            sleep(5)
+            get_logger().exception("Error while listening for events. Retrying in 2 seconds.")
+            sleep(2)
+            init = False
+
+
+def process_sse(event: dict) -> None:
+    try:
+        if event.get("request_type") == "Heartbeat":
+            session_id = GriptapeNodes.get_session_id()
+            socket.heartbeat(session_id=session_id, request=event)
+        else:
+            process_event(event)
+    except Exception:
+        get_logger().warning("Error processing event, skipping.")
 
 
 def run_sse_mode() -> None:
     global socket  # noqa: PLW0603 # Need to initialize the socket lazily here to avoid auth-ing too early
 
     socket = NodesApiSocketManager()
-    sse_thread = threading.Thread(target=sse_listener)
+    sse_thread = threading.Thread(target=sse_listener, daemon=True)
     sse_thread.start()
 
     setup_event_listeners()
 
-    check_event_queue()
+    try:
+        check_event_queue()
+    except KeyboardInterrupt:
+        sys.exit(0)
 
 
 def main() -> None:

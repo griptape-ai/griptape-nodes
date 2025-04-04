@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 from griptape.events import EventBus
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterControlType, ParameterMode
-from griptape_nodes.exe_types.node_types import Connection, NodeBase, NodeResolutionState
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
+from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -29,9 +29,9 @@ class Connections:
 
     def add_connection(
         self,
-        source_node: NodeBase,
+        source_node: BaseNode,
         source_parameter: Parameter,
-        target_node: NodeBase,
+        target_node: BaseNode,
         target_parameter: Parameter,
     ) -> bool:
         if ParameterMode.OUTPUT not in source_parameter.get_mode():
@@ -61,26 +61,26 @@ class Connections:
         msg = "Connection not allowed because of multiple connections on the same parameter input or control output parameter"
         raise ValueError(msg)
 
-    def connection_allowed(self, node: NodeBase, parameter: Parameter, *, source: bool) -> bool:
+    def connection_allowed(self, node: BaseNode, parameter: Parameter, *, source: bool) -> bool:
         # True if allowed, false if not
         # Here are the rules:
         # A Control Parameter can have multiple connections as an input, but only one output.
         # A Data Parameter can have one connection as input, but multiple outputs.
-        if source and ParameterControlType.__name__ in parameter.allowed_types:
+        if source and parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
             connections = self.outgoing_index
             connections_from_node = connections.get(node.name, {})
             connection_id = connections_from_node.get(parameter.name, [])
             return len(connection_id) <= 0
-        if not source and ParameterControlType.__name__ not in parameter.allowed_types:
+        if not source and not parameter.is_incoming_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
             connections = self.incoming_index
             connections_from_node = connections.get(node.name, {})
             connection_id = connections_from_node.get(parameter.name, [])
             return len(connection_id) <= 0
         return True
 
-    def get_connected_node(self, node: NodeBase, parameter: Parameter) -> tuple[NodeBase, Parameter] | None:
+    def get_connected_node(self, node: BaseNode, parameter: Parameter) -> tuple[BaseNode, Parameter] | None:
         # Check to see if we should be getting the next connection or the previous connection based on the parameter.
-        if ParameterControlType.__name__ in parameter.allowed_types:
+        if parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
             connections = self.outgoing_index
         else:
             connections = self.incoming_index
@@ -96,7 +96,7 @@ class Connections:
         connection_id = connection_id[0]
         if connection_id in self.connections:
             connection = self.connections[connection_id]
-            if ParameterControlType.__name__ in parameter.allowed_types:
+            if parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
                 # Return the target (next place to go)
                 return connection.target_node, connection.target_parameter
             # Return the source (next place to chain back to)
@@ -149,7 +149,7 @@ class Connections:
         del self.connections[connection_id]
 
     # Used to check data connections for all future nodes to be BAD!
-    def unresolve_future_nodes(self, node: NodeBase) -> None:
+    def unresolve_future_nodes(self, node: BaseNode) -> None:
         # Recursive loop
         # For each parameter
         if node.name not in self.outgoing_index:
@@ -159,7 +159,7 @@ class Connections:
             # If it is a data connection and has an OUTPUT type
             if (
                 ParameterMode.OUTPUT in parameter.allowed_modes
-                and ParameterControlType.__name__ not in parameter.allowed_types
+                and not parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value)
                 # check if a outgoing connection exists from this parameter
                 and parameter.name in self.outgoing_index[node.name]
             ):

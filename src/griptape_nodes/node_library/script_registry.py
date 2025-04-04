@@ -1,14 +1,26 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import NamedTuple
+from typing import ClassVar, NamedTuple
 
 from griptape.mixins.singleton_mixin import SingletonMixin
+from pydantic import BaseModel
 
 
 class LibraryNameAndVersion(NamedTuple):
     library_name: str
     library_version: str
+
+
+class ScriptMetadata(BaseModel):
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.1.0"
+
+    name: str
+    schema_version: str
+    engine_version_created_with: str
+    node_libraries_referenced: list[LibraryNameAndVersion]
+    description: str | None = None
+    image: str | None = None
 
 
 class ScriptRegistry(SingletonMixin):
@@ -20,30 +32,13 @@ class ScriptRegistry(SingletonMixin):
 
     # Create a new script with everything we'd need
     @classmethod
-    def generate_new_script(  # noqa: PLR0913
-        cls,
-        name: str,
-        relative_file_path: str,
-        engine_version_created_with: str,
-        node_libraries_referenced: list[LibraryNameAndVersion],
-        description: str | None = None,
-        image: str | None = None,
-    ) -> Script:
+    def generate_new_script(cls, file_path: str, metadata: ScriptMetadata) -> Script:
         instance = cls()
-        if name in instance._scripts:
-            # TODO(griptape): Should we rename scripts here?
-            msg = f"Script with name {name} already registered."
+        if metadata.name in instance._scripts:
+            msg = f"Script with name {metadata.name} already registered."
             raise KeyError(msg)
-        script = Script(
-            name=name,
-            relative_file_path=relative_file_path,
-            registry_key=instance._registry_key,
-            description=description,
-            image=image,
-            engine_version_created_with=engine_version_created_with,
-            node_libraries_referenced=node_libraries_referenced,
-        )
-        instance._scripts[name] = script
+        script = Script(registry_key=instance._registry_key, file_path=file_path, metadata=metadata)
+        instance._scripts[metadata.name] = script
         return script
 
     @classmethod
@@ -80,45 +75,30 @@ class ScriptRegistry(SingletonMixin):
 class Script:
     """A script card to be ran."""
 
-    name: str
-    relative_file_path: str
-    engine_version_created_with: str
-    node_libraries_referenced: list[LibraryNameAndVersion]
-    description: str | None
-    image: str | None  # TODO(griptape): Make work with real images
+    metadata: ScriptMetadata
+    file_path: str
 
-    def __init__(  # noqa: PLR0913
-        self,
-        name: str,
-        relative_file_path: str,
-        engine_version_created_with: str,
-        node_libraries_referenced: list[LibraryNameAndVersion],
-        registry_key: ScriptRegistry._RegistryKey,
-        description: str | None = None,
-        image: str | None = None,
-    ) -> None:
+    def __init__(self, registry_key: ScriptRegistry._RegistryKey, metadata: ScriptMetadata, file_path: str) -> None:
         if not isinstance(registry_key, ScriptRegistry._RegistryKey):
             msg = "Scripts can only be created through ScriptRegistry"
             raise TypeError(msg)
 
+        self.metadata = metadata
+        self.file_path = file_path
+
         # Get the absolute file path.
-        complete_path = ScriptRegistry.get_complete_file_path(relative_file_path=relative_file_path)
+        complete_path = ScriptRegistry.get_complete_file_path(relative_file_path=file_path)
         if not Path(complete_path).is_file():
             msg = f"File path '{complete_path}' does not exist."
             raise ValueError(msg)
-        self.name = name
-        self.relative_file_path = relative_file_path
-        self.description = description
-        self.image = image
-        self.engine_version_created_with = engine_version_created_with
-        self.node_libraries_referenced = node_libraries_referenced
 
     def get_script_metadata(self) -> dict:
+        # TODO(griptape): either convert the Pydantic schema to a dict or use it directly.
         return {
-            "name": self.name,
-            "file_path": self.relative_file_path,
-            "description": self.description,
-            "image": self.image,
-            "engine_version_created_with": self.engine_version_created_with,
-            "node_libraries_referenced": self.node_libraries_referenced,
+            "name": self.metadata.name,
+            "file_path": self.file_path,
+            "description": self.metadata.description,
+            "image": self.metadata.image,
+            "engine_version_created_with": self.metadata.engine_version_created_with,
+            "node_libraries_referenced": self.metadata.node_libraries_referenced,
         }

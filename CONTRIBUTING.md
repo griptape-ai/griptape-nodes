@@ -20,17 +20,9 @@
    make install
    ```
 
-1. Install the stdlib of scripts/nodes:
+1. Install the Griptape Nodes Engine:
 
-   ```shell
-   ./install.sh
-   ```
-
-   If you have Griptape Nodes API key, pass it as an argument to the install script:
-
-   ```shell
-   ./install.sh <API_KEY>
-   ```
+   Visit [https://nodes.griptape.ai/](https://nodes.griptape.ai/), and follow the instructions to install the Engine locally.
 
 1. Configure the Engine to use the nodes library in this repo.
 
@@ -38,9 +30,9 @@
    https://github.com/griptape-ai/griptape-nodes/blob/24d1fdab898e1617793eeb55b7a5a87c161502ef/install.sh?plain=1#L63-L64
    https://github.com/griptape-ai/griptape-nodes/blob/24d1fdab898e1617793eeb55b7a5a87c161502ef/src/griptape_nodes/retained_mode/managers/settings.py?plain=1#L52-L54
 
-   When developing locally, we want to configure the Engine to use the nodes library in this repo:
+   When developing locally, you must configure the Engine to use the nodes library in this repo:
 
-   1. Create a file `griptape_nodes_config.json` in the root of your project.
+   1. Create a file `griptape_nodes_config.json` in the root of the cloned repo.
    1. Add the following content to the file:
       ```json
       {
@@ -48,7 +40,7 @@
           "on_app_initialization_complete": {
             "libraries_to_register": [
               "nodes/griptape_nodes_library.json"
-            ],
+            ]
           }
         }
       }
@@ -60,8 +52,11 @@
    make run
    ```
 
-   To start the engine using SSE (Server Sent Events) to the remote Griptape Nodes API:
-   `GT_CLOUD_API_KEY=<your_key> make run`
+   To point your engine at a different instance of the API, set the `GRIPTAPE_NODES_API_BASE_URL` environment variable before running:
+
+   ```shell
+   GRIPTAPE_NODES_API_BASE_URL=http://localhost:8001 make run
+   ```
 
 1. Navigate to the URL provided in the terminal.
 
@@ -93,6 +88,18 @@ Serve the documentation:
 make docs/serve
 ```
 
+Run unit tests:
+
+```shell
+make test/unit
+```
+
+Run integration tests:
+
+```shell
+make test/integration
+```
+
 # Engine Commands
 
 Install the engine using the following command:
@@ -120,3 +127,34 @@ Get the current configuration:
 ```
 griptape-nodes config
 ```
+
+# Making a Release
+
+1. Check out the `main` branch locally:
+
+   ```shell
+   git checkout main
+   ```
+
+1. Pull the latest changes from the remote repository:
+
+   ```shell
+   git pull origin main
+   ```
+
+1. Set the new release version:
+
+   ```shell
+   make version/set v=0.1.2
+   ```
+
+   This will create a new tag, `v0.1.2`, and update the `latest` tag to point to the new version.
+
+1. Publish the release:
+
+   ```shell
+   make version/publish
+   ```
+
+   This will push the tags, `v0.1.2` and `latest`, to the remote repository.
+   When new tags are pushed, a Github Workflow will be triggered to create a new release on Github.

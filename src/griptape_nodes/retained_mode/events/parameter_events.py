@@ -6,8 +6,8 @@ from pydantic import Field
 from griptape_nodes.exe_types.core_types import ParameterMode, ParameterUIOptions
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultPayload_Failure,
-    ResultPayload_Success,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -17,12 +17,14 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 class AddParameterToNodeRequest(RequestPayload):
     parameter_name: str
     node_name: str
-    allowed_types: list[str]
     default_value: Any | None
-    tooltip: str
-    tooltip_as_input: str | None = None
-    tooltip_as_property: str | None = None
-    tooltip_as_output: str | None = None
+    tooltip: str | list[dict]
+    tooltip_as_input: str | list[dict] | None = None
+    tooltip_as_property: str | list[dict] | None = None
+    tooltip_as_output: str | list[dict] | None = None
+    type: str | None = None
+    input_types: list[str] | None = None
+    output_type: str | None = None
     ui_options: ParameterUIOptions | None = None
     mode_allowed_input: bool = Field(default=True)
     mode_allowed_property: bool = Field(default=True)
@@ -46,13 +48,13 @@ class AddParameterToNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AddParameterToNodeResult_Success(ResultPayload_Success):
+class AddParameterToNodeResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class AddParameterToNodeResult_Failure(ResultPayload_Failure):
+class AddParameterToNodeResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -65,13 +67,13 @@ class RemoveParameterFromNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RemoveParameterFromNodeResult_Success(ResultPayload_Success):
+class RemoveParameterFromNodeResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class RemoveParameterFromNodeResult_Failure(ResultPayload_Failure):
+class RemoveParameterFromNodeResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -85,13 +87,14 @@ class SetParameterValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SetParameterValueResult_Success(ResultPayload_Success):
-    pass
+class SetParameterValueResultSuccess(ResultPayloadSuccess):
+    finalized_value: Any
+    data_type: str
 
 
 @dataclass
 @PayloadRegistry.register
-class SetParameterValueResult_Failure(ResultPayload_Failure):
+class SetParameterValueResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -104,13 +107,16 @@ class GetParameterDetailsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterDetailsResult_Success(ResultPayload_Success):
-    allowed_types: list[str]
+class GetParameterDetailsResultSuccess(ResultPayloadSuccess):
+    element_id: str
+    type: str
+    input_types: list[str]
+    output_type: str
     default_value: Any | None
-    tooltip: str
-    tooltip_as_input: str | None
-    tooltip_as_property: str | None
-    tooltip_as_output: str | None
+    tooltip: str | list[dict]
+    tooltip_as_input: str | list[dict] | None
+    tooltip_as_property: str | list[dict] | None
+    tooltip_as_output: str | list[dict] | None
     mode_allowed_input: bool
     mode_allowed_property: bool
     mode_allowed_output: bool
@@ -120,7 +126,7 @@ class GetParameterDetailsResult_Success(ResultPayload_Success):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterDetailsResult_Failure(ResultPayload_Failure):
+class GetParameterDetailsResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -129,12 +135,14 @@ class GetParameterDetailsResult_Failure(ResultPayload_Failure):
 class AlterParameterDetailsRequest(RequestPayload):
     parameter_name: str
     node_name: str
-    allowed_types: list[str] | None = None
+    type: str | None = None
+    input_types: list[str] | None = None
+    output_type: str | None = None
     default_value: Any | None = None
-    tooltip: str | None = None
-    tooltip_as_input: str | None = None
-    tooltip_as_property: str | None = None
-    tooltip_as_output: str | None = None
+    tooltip: str | list[dict] | None = None
+    tooltip_as_input: str | list[dict] | None = None
+    tooltip_as_property: str | list[dict] | None = None
+    tooltip_as_output: str | list[dict] | None = None
     mode_allowed_input: bool | None = None
     mode_allowed_property: bool | None = None
     mode_allowed_output: bool | None = None
@@ -159,13 +167,13 @@ class AlterParameterDetailsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AlterParameterDetailsResult_Success(ResultPayload_Success):
+class AlterParameterDetailsResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class AlterParameterDetailsResult_Failure(ResultPayload_Failure):
+class AlterParameterDetailsResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -178,20 +186,22 @@ class GetParameterValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterValueResult_Success(ResultPayload_Success):
-    data_type: str
+class GetParameterValueResultSuccess(ResultPayloadSuccess):
+    input_types: list[str]
+    type: str
+    output_type: str
     value: Any
 
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterValueResult_Failure(ResultPayload_Failure):
+class GetParameterValueResultFailure(ResultPayloadFailure):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class OnParameterValueChanged(ResultPayload_Success):
+class OnParameterValueChanged(ResultPayloadSuccess):
     node_name: str
     parameter_name: str
     data_type: str
@@ -213,11 +223,11 @@ class ParameterAndMode(NamedTuple):
 
 @dataclass
 @PayloadRegistry.register
-class GetCompatibleParametersResult_Success(ResultPayload_Success):
+class GetCompatibleParametersResultSuccess(ResultPayloadSuccess):
     valid_parameters_by_node: dict[str, list[ParameterAndMode]]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetCompatibleParametersResult_Failure(ResultPayload_Failure):
+class GetCompatibleParametersResultFailure(ResultPayloadFailure):
     pass

@@ -2,11 +2,10 @@ import openai
 from griptape.drivers.audio_transcription.openai import OpenAiAudioTranscriptionDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes_library.drivers.base_driver import gnBaseDriver
-from griptape_nodes_library.utils.env_utils import getenv
+from griptape_nodes_library.drivers.base_driver import BaseDriverNode
 
 
-class gnBaseAudioTranscriptionDriver(gnBaseDriver):
+class BaseAudioTranscriptionDriverNode(BaseDriverNode):
     """Base driver node for creating Griptape Drivers.
 
     This node provides a generic implementation for initializing Griptape audio_transcription_drivers with configurable parameters.
@@ -17,12 +16,19 @@ class gnBaseAudioTranscriptionDriver(gnBaseDriver):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.add_parameter(Parameter(name="model", allowed_types=["str"], default_value=None, tooltip=""))
+        self.add_parameter(
+            Parameter(
+                name="model",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value=None,
+                tooltip="",
+            )
+        )
 
-        self.add_parameter(Parameter(name="driver", allowed_types=["dict"], default_value=None, tooltip=""))
 
-
-class gnOpenAiAudioTranscriptionDriver(gnBaseAudioTranscriptionDriver):
+class OpenAiAudioTranscriptionDriverNode(BaseAudioTranscriptionDriverNode):
     def process(self) -> None:
         model = self.parameter_values.get("model", None)
         if model:
@@ -37,7 +43,7 @@ class gnOpenAiAudioTranscriptionDriver(gnBaseAudioTranscriptionDriver):
         # Items here are openai api key
         exceptions = []
         key = "OPENAI_API_KEY"
-        api_key = getenv("OpenAI", key)
+        api_key = self.get_config_value("OpenAI", key)
         if not api_key:
             msg = f"{key} is not defined"
             exceptions.append(KeyError(msg))

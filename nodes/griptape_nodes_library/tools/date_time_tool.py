@@ -1,9 +1,9 @@
 from griptape.tools import DateTimeTool
 
-from griptape_nodes_library.tools.tools import gnBaseTool
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 
 
-class gnDateTimeTool(gnBaseTool):
+class DateTimeToolNode(BaseToolNode):
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", True)
 

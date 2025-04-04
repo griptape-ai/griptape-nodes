@@ -5,14 +5,16 @@ version/get: ## Set version.
 .PHONY: version/set
 version/set: ## Set version.
 	@uvx --from=toml-cli toml set --toml-path=pyproject.toml project.version ${v}
-	@git add pyproject.toml
+	@uv lock
+	@git add pyproject.toml uv.lock
 	@git commit -m "chore: bump v$$(make version/get)"
 
-.PHONY: publish
-publish: ## Push git tag and publish version to PyPI.
+.PHONY: version/publish
+version/publish: ## Push git tag and publish version to PyPI.
 	@git tag v$$(make version/get)
 	@git tag latest -f
 	@git push -f --tags
+	@git push
 	
 .PHONY: run
 run: ## Run the project.
@@ -72,6 +74,18 @@ check/types:
 check/spell:
 	@uv run typos 
 
+.PHONY: test  ## Run all tests.
+test: test/unit test/integration
+
+.PHONY: test/unit
+test/unit: ## Run unit tests.
+	@uv run pytest -n auto tests/unit
+	@uv run pytest -n auto nodes/tests/unit
+
+.PHONY: test/integration
+test/integration: ## Run integration tests.
+	@uv run pytest -n auto tests/integration
+	@uv run pytest -n auto nodes/tests/integration
 
 .PHONY: docs
 docs: ## Build documentation.

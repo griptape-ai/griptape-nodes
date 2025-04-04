@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import ControlNode
 
 
-class gnToolListNode(ControlNode):
+class ToolListNode(ControlNode):
     """Combine tools to give an agent a more complex set of tools."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
@@ -17,10 +17,10 @@ class gnToolListNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="tools",
-                allowed_types=["list[object]"],  # List of tool objects
+                input_types=["list[Tool]"],
+                allowed_modes={ParameterMode.INPUT},
                 default_value=[],
                 tooltip="List of tools to combine",
-                allowed_modes={ParameterMode.INPUT},
             )
         )
 
@@ -28,10 +28,10 @@ class gnToolListNode(ControlNode):
         self.add_parameter(
             Parameter(
                 name="tool_list",
-                allowed_types=["list[object]"],  # List of tool objects
+                output_type="list[Tool]",
+                allowed_modes={ParameterMode.OUTPUT},
                 default_value=[],
                 tooltip="Combined list of tools",
-                allowed_modes={ParameterMode.OUTPUT},
             )
         )
 

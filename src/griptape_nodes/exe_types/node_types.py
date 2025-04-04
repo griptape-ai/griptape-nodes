@@ -5,11 +5,12 @@ from typing import Any, Self
 from griptape.events import BaseEvent
 
 from griptape_nodes.exe_types.core_types import (
-    ControlParameter_Input,
-    ControlParameter_Output,
+    BaseNodeElement,
+    ControlParameterInput,
+    ControlParameterOutput,
     Parameter,
-    ParameterControlType,
     ParameterMode,
+    ParameterTypeBuiltin,
 )
 import logging
 
@@ -22,11 +23,10 @@ class NodeResolutionState(Enum):
     RESOLVED = auto()
 
 
-class NodeBase(ABC):
+class BaseNode(ABC):
     # Owned by a flow
     name: str
     metadata: dict[Any, Any]
-    parameters: list[Parameter]
 
     # Node Context Fields
     state: NodeResolutionState
@@ -34,7 +34,12 @@ class NodeBase(ABC):
     parameter_values: dict[str, Any]
     parameter_output_values: dict[str, Any]
     stop_flow: bool = False
-    logger: logging.Logger
+    root_ui_element: BaseNodeElement
+
+    @property
+    def parameters(self) -> list[Parameter]:
+        return self.root_ui_element.find_elements_by_type(Parameter)
+
     def __hash__(self) -> int:
         return hash(self.name)
 
@@ -44,15 +49,18 @@ class NodeBase(ABC):
         metadata: dict[Any, Any] | None = None,
         state: NodeResolutionState = NodeResolutionState.UNRESOLVED,
     ) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         self.name = name
         self.state = state
-        self.parameters = []
         if metadata is None:
             self.metadata = {}
         else:
             self.metadata = metadata
         self.parameter_values = {}
         self.parameter_output_values = {}
+        self.root_ui_element = BaseNodeElement()
+        self.config_manager = GriptapeNodes.ConfigManager()
 
     def make_node_unresolved(self) -> None:
         self.state = NodeResolutionState.UNRESOLVED
@@ -167,15 +175,21 @@ class NodeBase(ABC):
                 return True
         return False
 
-    # TODO(griptape): Do i need to flag control/ not control parameters?
     def add_parameter(self, param: Parameter) -> None:
+        """Adds a Parameter to the Node. Control and Data Parameters are all treated equally."""
         if self.does_name_exist(param.name):
             msg = "Cannot have duplicate names on parameters."
             raise ValueError(msg)
-        self.parameters.append(param)
+        self.add_node_element(param)
 
     def remove_parameter(self, param: Parameter) -> None:
-        self.parameters.remove(param)
+        self.remove_node_element(param)
+
+    def add_node_element(self, ui_element: BaseNodeElement) -> None:
+        self.root_ui_element.add_child(ui_element)
+
+    def remove_node_element(self, ui_element: BaseNodeElement) -> None:
+        self.root_ui_element.remove_child(ui_element)
 
     def get_current_parameter(self) -> Parameter | None:
         return self.current_spotlight_parameter
@@ -185,9 +199,8 @@ class NodeBase(ABC):
         curr_param = None
         prev_param = None
         for parameter in self.parameters:
-            if (
-                ParameterMode.INPUT in parameter.get_mode()
-                and ParameterControlType.__name__ not in parameter.allowed_types
+            if ParameterMode.INPUT in parameter.get_mode() and not parameter.is_incoming_type_allowed(
+                incoming_type=ParameterTypeBuiltin.CONTROL_TYPE.value
             ):
                 if not self.current_spotlight_parameter or prev_param is None:
                     # make a copy of the parameter and assign it to current spotlight
@@ -267,10 +280,8 @@ class NodeBase(ABC):
         final_value = self.before_value_set(
             parameter=parameter, value=candidate_value, modified_parameters_set=modified_parameters
         )
-
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
-
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=modified_parameters)
 
@@ -282,10 +293,14 @@ class NodeBase(ABC):
 
     def get_next_control_output(self) -> Parameter | None:
         for param in self.parameters:
-            if ParameterControlType.__name__ in param.allowed_types and ParameterMode.OUTPUT in param.allowed_modes:
+            if (
+                param.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value)
+                and ParameterMode.OUTPUT in param.allowed_modes
+            ):
                 return param
         return None
 
+    # TODO(kate): can we remove this or change to default value?
     def valid_or_fallback(self, param_name: str, fallback: Any = None) -> Any:
         """Get a parameter value if valid, otherwise use fallback.
 
@@ -306,29 +321,15 @@ class NodeBase(ABC):
             raise ValueError(msg)
 
         value = self.parameter_values.get(param_name, None)
-
-        # Check if value is empty or not allowed
-        if value is None:
-            is_empty = True
-            is_valid = False
-        else:
-            is_empty = value is None or (isinstance(value, str) and not value.strip())
-            is_valid = param.is_value_allowed(value)
-
-        # Return value if it's valid and not empty
-        if is_valid and not is_empty:
+        if value is not None:
             return value
 
         # Try fallback if value is invalid or empty
         if fallback is None:
             return None
-        if param.is_value_allowed(fallback):
-            # Store the fallback value in parameter_values for future use
-            self.parameter_values[param_name] = fallback
-            return fallback
-
+        self.set_parameter_value(param_name, fallback)
         # No valid options available
-        return None
+        return fallback
 
     # Abstract method to process the node. Must be defined by the type
     # Must save the values of the output parameters in NodeContext.
@@ -340,30 +341,39 @@ class NodeBase(ABC):
     def validate_node(self) -> list[Exception] | None:
         return None
 
+    def get_config_value(self, service: str, value: str) -> str:
+        return self.config_manager.get_config_value(f"nodes.{service}.{value}")
 
-class ControlNode(NodeBase):
+    def set_config_value(self, service: str, value: str, new_value: str) -> None:
+        self.config_manager.set_config_value(f"nodes.{service}.{value}", new_value)
+
+
+class ControlNode(BaseNode):
     # Control Nodes may have one Control Input Port and at least one Control Output Port
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata=metadata)
-        control_parameter_in = ControlParameter_Input()
-        control_parameter_out = ControlParameter_Output()
+        control_parameter_in = ControlParameterInput()
+        control_parameter_out = ControlParameterOutput()
 
-        self.parameters.append(control_parameter_in)
-        self.parameters.append(control_parameter_out)
+        self.add_parameter(control_parameter_in)
+        self.add_parameter(control_parameter_out)
 
     def get_next_control_output(self) -> Parameter | None:
         for param in self.parameters:
-            if ParameterControlType.__name__ in param.allowed_types and ParameterMode.OUTPUT in param.allowed_modes:
+            if (
+                param.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value)
+                and ParameterMode.OUTPUT in param.allowed_modes
+            ):
                 return param
         return None
 
 
-class DataNode(NodeBase):
+class DataNode(BaseNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata=metadata)
 
 
-class StartNode(NodeBase):
+class StartNode(BaseNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
 
@@ -375,16 +385,16 @@ class EndNode(ControlNode):
 
 
 class Connection:
-    source_node: NodeBase
-    target_node: NodeBase
+    source_node: BaseNode
+    target_node: BaseNode
     source_parameter: Parameter
     target_parameter: Parameter
 
     def __init__(
         self,
-        source_node: NodeBase,
+        source_node: BaseNode,
         source_parameter: Parameter,
-        target_node: NodeBase,
+        target_node: BaseNode,
         target_parameter: Parameter,
     ) -> None:
         self.source_node = source_node
@@ -392,8 +402,8 @@ class Connection:
         self.source_parameter = source_parameter
         self.target_parameter = target_parameter
 
-    def get_target_node(self) -> NodeBase:
+    def get_target_node(self) -> BaseNode:
         return self.target_node
 
-    def get_source_node(self) -> NodeBase:
+    def get_source_node(self) -> BaseNode:
         return self.source_node

@@ -1,18 +1,17 @@
-import openai
+from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.utils import Stream
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterUIOptions
 from griptape_nodes.exe_types.node_types import ControlNode
-from griptape_nodes_library.utils.env_utils import getenv
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 DEFAULT_MODEL = "gpt-4o"
-SERVICE = "OpenAI"
-API_KEY_ENV_VAR = "OPENAI_API_KEY"
+SERVICE = "Griptape"
+API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 
 
-class gnSimpleAgent(ControlNode):
+class SimpleAgentNode(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -21,14 +20,18 @@ class gnSimpleAgent(ControlNode):
         self.add_parameter(
             Parameter(
                 name="agent",
-                allowed_types=["Agent"],
+                type="Agent",
+                input_types=["Agent", "dict"],
+                output_type="Agent",
                 tooltip="",
             )
         )
         self.add_parameter(
             Parameter(
                 name="prompt",
-                allowed_types=["str"],
+                input_types=["str"],
+                output_type="str",
+                type="str",
                 default_value="",
                 tooltip="",
                 ui_options=ParameterUIOptions(
@@ -42,7 +45,9 @@ class gnSimpleAgent(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output",
-                allowed_types=["str"],
+                input_types=["str"],
+                output_type="str",
+                type="str",
                 default_value="",
                 tooltip="What the agent said.",
                 allowed_modes={ParameterMode.OUTPUT},
@@ -55,20 +60,15 @@ class gnSimpleAgent(ControlNode):
             )
         )
 
-    # Same here as gnRunAgent. TODO(kate):package into one
+    # Same here as RunAgentNode. TODO(kate):package into one
     def validate_node(self) -> list[Exception] | None:
         # Items here are openai api key
         exceptions = []
-        api_key = getenv(SERVICE, API_KEY_ENV_VAR)
+        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
-        try:
-            client = openai.OpenAI(api_key=api_key)
-            client.models.list()
-        except openai.AuthenticationError as e:
-            exceptions.append(e)
         return exceptions if exceptions else None
 
     def process(self) -> None:
@@ -77,7 +77,11 @@ class gnSimpleAgent(ControlNode):
 
         agent = params.get("agent", None)
         if not agent:
-            agent = Agent(stream=True)
+            agent = Agent(
+                prompt_driver=GriptapeCloudPromptDriver(
+                    api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
+                )
+            )
 
         prompt = params.get("prompt", None)
         if prompt:
@@ -91,8 +95,3 @@ class gnSimpleAgent(ControlNode):
 
         self.parameter_output_values["agent"] = agent
         try_throw_error(agent.output)
-
-
-if __name__ == "__main__":
-    agt = gnSimpleAgent(name="finky")
-    agt.process()

@@ -1,9 +1,9 @@
 from griptape.drivers.embedding.dummy import DummyEmbeddingDriver
 
-from griptape_nodes_library.drivers.base_driver import gnBaseDriver
+from griptape_nodes_library.drivers.base_driver import BaseDriverNode
 
 
-class gnBaseEmbeddingDriver(gnBaseDriver):
+class BaseEmbeddingDriverNode(BaseDriverNode):
     """Node for Base Embedding Driver.
 
     This node creates a basic embedding driver and outputs its configuration.
@@ -15,7 +15,7 @@ class gnBaseEmbeddingDriver(gnBaseDriver):
         # Override the allowed types for the driver parameter
         driver_parameter = self.get_parameter_by_name("driver")
         if driver_parameter is not None:
-            driver_parameter.allowed_types = ["BaseEmbeddingDriver"]
+            driver_parameter.output_type = "BaseEmbeddingDriver"
 
     def process(self) -> None:
         # Get the parameters from the node

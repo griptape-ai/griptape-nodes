@@ -2,13 +2,22 @@ from griptape.drivers import BaseWebSearchDriver, DuckDuckGoWebSearchDriver
 from griptape.tools import WebSearchTool
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes_library.tools.tools import gnBaseTool
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 
 
-class gnWebSearchTool(gnBaseTool):
+class WebSearchToolNode(BaseToolNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.add_parameter(Parameter(name="driver", allowed_types=["dict"], default_value={}, tooltip=""))
+        self.add_parameter(
+            Parameter(
+                name="driver",
+                input_types=["dict"],
+                type="dict",
+                output_type="dict",
+                default_value={},
+                tooltip="",
+            )
+        )
 
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", False)
