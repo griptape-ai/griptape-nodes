@@ -45,6 +45,14 @@
       }
     },
     {
+      "Drivers": {
+        "color": "border-lime-500",
+        "title": "Drivers/Image",
+        "description": "Image Drivers for Griptape Agents.",
+        "icon": "Truck"
+      }
+    },
+    {
       "Tools": {
         "color": "border-cyan-500",
         "title": "Tools",
@@ -135,19 +143,10 @@
       }
     },
     {
-      "class_name": "AzureOpenAiImageDriverNode",
-      "file_path": "griptape_nodes_library/drivers/image/azure_openai_image_driver.py",
-      "metadata": {
-        "category": "Drivers - Image",
-        "description": "Azure OpenAI image generation driver for Griptape agents",
-        "display_name": "Azure OpenAI image generation driver"
-      }
-    },
-    {
       "class_name": "GriptapeCloudImageDriverNode",
       "file_path": "griptape_nodes_library/drivers/image/griptape_cloud_image_driver.py",
       "metadata": {
-        "category": "Drivers - Image",
+        "category": "Drivers",
         "description": "Azure OpenAI image generation driver for Griptape agents",
         "display_name": "Azure OpenAI image generation driver"
       }
@@ -156,7 +155,7 @@
       "class_name": "OllamaEmbeddingDriverNode",
       "file_path": "griptape_nodes_library/drivers/embedding/ollama_embedding_driver.py",
       "metadata": {
-        "category": "Drivers",
+        "category": "Drivers - Embedding",
         "description": "Ollama embedding driver for local embeddings",
         "display_name": "Ollama Embedding Driver"
       }

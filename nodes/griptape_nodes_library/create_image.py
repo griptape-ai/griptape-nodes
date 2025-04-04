@@ -2,9 +2,8 @@ from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageG
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterUIOptions
 from griptape_nodes.exe_types.node_types import ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -32,6 +31,16 @@ class CreateImageNode(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
+        self.add_parameter(
+            Parameter(
+                name="image_generation_driver",
+                input_types=["Image Generation Driver"],
+                output_type="Image Generation Driver",
+                type="Image Generation Driver",
+                tooltip="None",
+                default_value="",
+            )
+        )
 
         self.add_parameter(
             Parameter(
@@ -42,20 +51,16 @@ class CreateImageNode(ControlNode):
                 tooltip="None",
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options=ParameterUIOptions(
+                    string_type_options=ParameterUIOptions.StringType(
+                        placeholder_text="Enter your image generation prompt here.", multiline=True
+                    )
+                ),
             )
         )
-
         self.add_parameter(
-            Parameter(
-                name="driver",
-                input_types=["Image Generation Driver"],
-                output_type="Image Generation Driver",
-                type="Image Generation Driver",
-                tooltip="None",
-                default_value="",
-            )
+            Parameter(name="enhance_prompt", input_types=["bool"], type="bool", tooltip="None", default_value=True)
         )
-
         self.add_parameter(
             Parameter(
                 name="output",
@@ -68,27 +73,27 @@ class CreateImageNode(ControlNode):
             )
         )
 
-        self.add_parameter(
-            Parameter(
-                name="output_file",
-                input_types=["str"],
-                output_type="str",
-                type="str",
-                tooltip="None",
-                default_value=None,
-            )
-        )
+        # self.add_parameter(
+        #     Parameter(
+        #         name="output_file",
+        #         input_types=["str"],
+        #         output_type="str",
+        #         type="str",
+        #         tooltip="None",
+        #         default_value=None,
+        #     )
+        # )
 
-        self.add_parameter(
-            Parameter(
-                name="output_dir",
-                input_types=["str"],
-                output_type="str",
-                type="str",
-                tooltip="None",
-                default_value=None,
-            )
-        )
+        # self.add_parameter(
+        #     Parameter(
+        #         name="output_dir",
+        #         input_types=["str"],
+        #         output_type="str",
+        #         type="str",
+        #         tooltip="None",
+        #         default_value=None,
+        #     )
+        # )
 
     def validate_node(self) -> list[Exception] | None:
         # TODO(kate): Figure out how to wrap this so it's easily repeatable
@@ -112,6 +117,18 @@ class CreateImageNode(ControlNode):
 
         agent = params.get("agent", Agent(tasks=[]))
         prompt = params.get("prompt", "")
+        enhance_prompt = params.get("enhance_prompt", True)
+
+        if enhance_prompt:
+            result = agent.run(
+                [
+                    """
+Enhance the following prompt for an image generation engine. Return only the image generation prompt.
+Include unique details that make the subject stand out. Specify a specific depth of field, and time of day. Focus on qualities that will make this the most professional looking photo in the world.""",
+                    prompt,
+                ]
+            )
+            prompt = result.output
 
         # Initialize driver kwargs with required parameters
         kwargs = {}
@@ -128,21 +145,21 @@ class CreateImageNode(ControlNode):
         kwargs["image_generation_driver"] = driver
 
         # Declaring a prio towards file, not dir for now, at least
-        out_file = params.get("output_file", None)
-        if out_file:
-            kwargs["output_file"] = out_file
-            details = f"Image saved to {out_file}"
-            logger.info(details)
-        else:
-            out_dir = params.get("output_dir", None)
-            if out_dir:
-                kwargs["output_dir"] = out_dir
-                out_dir_msg = f'\nLook for image in "{out_dir}"'
-                logger.info(out_dir_msg)
-            else:
-                kwargs["output_dir"] = images_dir
-                images_dir_msg = f'\nLook for image in "{images_dir}"'
-                logger.info(images_dir_msg)
+        # out_file = params.get("output_file", None)
+        # if out_file:
+        #     kwargs["output_file"] = out_file
+        #     details = f"Image saved to {out_file}"
+        #     logger.info(details)
+        # else:
+        #     out_dir = params.get("output_dir", None)
+        #     if out_dir:
+        #         kwargs["output_dir"] = out_dir
+        #         out_dir_msg = f'\nLook for image in "{out_dir}"'
+        #         logger.info(out_dir_msg)
+        #     else:
+        #         kwargs["output_dir"] = images_dir
+        #         images_dir_msg = f'\nLook for image in "{images_dir}"'
+        #         logger.info(images_dir_msg)
 
         # Add the actual image gen *task
         agent.add_task(PromptImageGenerationTask(**kwargs))
