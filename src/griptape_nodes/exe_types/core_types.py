@@ -423,6 +423,10 @@ class Parameter(BaseNodeElement):
 
     @property
     def type(self) -> str:
+        return self._custom_getter_for_property_type()
+
+    def _custom_getter_for_property_type(self) -> str:
+        """Derived classes may override this. Overriding property getter/setters is fraught with peril."""
         if self._type:
             return self._type
         if self._input_types:
@@ -433,6 +437,10 @@ class Parameter(BaseNodeElement):
 
     @type.setter
     def type(self, value: str | None) -> None:
+        self._custom_setter_for_property_type(value)
+
+    def _custom_setter_for_property_type(self, value: str | None) -> None:
+        """Derived classes may override this. Overriding property getter/setters is fraught with peril."""
         if value is not None:
             # See if it's an alias to a builtin first.
             builtin = ParameterType.attempt_get_builtin(value)
@@ -445,6 +453,10 @@ class Parameter(BaseNodeElement):
 
     @property
     def input_types(self) -> list[str]:
+        return self._custom_getter_for_property_input_types()
+
+    def _custom_getter_for_property_input_types(self) -> list[str]:
+        """Derived classes may override this. Overriding property getter/setters is fraught with peril."""
         if self._input_types:
             return self._input_types
         if self._type:
@@ -455,6 +467,10 @@ class Parameter(BaseNodeElement):
 
     @input_types.setter
     def input_types(self, value: list[str] | None) -> None:
+        self._custom_setter_for_property_input_types(value)
+
+    def _custom_setter_for_property_input_types(self, value: list[str] | None) -> None:
+        """Derived classes may override this. Overriding property getter/setters is fraught with peril."""
         if value is None:
             self._input_types = None
         else:
@@ -469,6 +485,10 @@ class Parameter(BaseNodeElement):
 
     @property
     def output_type(self) -> str:
+        return self._custom_getter_for_property_output_type()
+
+    def _custom_getter_for_property_output_type(self) -> str:
+        """Derived classes may override this. Overriding property getter/setters is fraught with peril."""
         if self._output_type:
             # If an output type was specified, use that.
             return self._output_type
@@ -484,6 +504,10 @@ class Parameter(BaseNodeElement):
 
     @output_type.setter
     def output_type(self, value: str | None) -> None:
+        self._custom_setter_for_property_output_type(value)
+
+    def _custom_setter_for_property_output_type(self, value: str | None) -> None:
+        """Derived classes may override this. Overriding property getter/setters is fraught with peril."""
         if value is not None:
             # See if it's an alias to a builtin first.
             builtin = ParameterType.attempt_get_builtin(value)
@@ -712,33 +736,8 @@ class ParameterContainer(Parameter, ABC):
             element_type=element_type,
         )
 
-    @property
-    def input_types(self) -> list[str]:
-        return super().input_types
 
-    @input_types.setter
-    def input_types(self, value: list[str] | None) -> None:
-        # Have to override both getter and setter to get Pylance offa my back
-        super().input_types = value
-
-    @property
-    def type(self) -> str:
-        return super().type
-
-    @type.setter
-    def type(self, value: str | None) -> None:
-        super().type = value
-
-    @property
-    def output_type(self) -> str:
-        return super().output_type
-
-    @output_type.setter
-    def output_type(self, value: str | None) -> None:
-        super().output_type = value
-
-
-class ParameterList(Parameter):
+class ParameterList(ParameterContainer):
     def __init__(  # noqa: PLR0913
         self,
         name: str,
@@ -760,8 +759,6 @@ class ParameterList(Parameter):
         element_id: str | None = None,
         element_type: str | None = None,
     ):
-        print(ParameterList.__mro__)
-
         # Remember: we're a Parameter, too, just like everybody else.
         super().__init__(
             name=name,
@@ -783,11 +780,15 @@ class ParameterList(Parameter):
             element_type=element_type,
         )
 
-    @property
-    def input_types(self) -> list[str]:
+    def _custom_getter_for_property_type(self) -> str:
+        base_type = super()._custom_getter_for_property_type()
+        result = f"list[{base_type}]"
+        return result
+
+    def _custom_getter_for_property_input_types(self) -> list[str]:
         # For every valid input type, also accept a list variant of that for the CONTAINER Parameter only.
         # Children still use the input types given to them.
-        base_input_types = super().input_types
+        base_input_types = super()._custom_getter_for_property_input_types()
         result = []
         for base_input_type in base_input_types:
             container_variant = f"list[{base_input_type}]"
@@ -796,30 +797,10 @@ class ParameterList(Parameter):
 
         return result
 
-    @input_types.setter
-    def input_types(self, value: list[str] | None) -> None:
-        # Have to override both getter and setter to get Pylance offa my back
-        Parameter.input_types.fset(self, value)
-
-    @property
-    def type(self) -> str:
-        base_type = super().type
+    def _custom_getter_for_property_output_type(self) -> str:
+        base_type = super()._custom_getter_for_property_output_type()
         result = f"list[{base_type}]"
         return result
-
-    @type.setter
-    def type(self, value: str | None) -> None:
-        Parameter.type.fset(self, value)
-
-    @property
-    def output_type(self) -> str:
-        base_type = super().output_type
-        result = f"list[{base_type}]"
-        return result
-
-    @output_type.setter
-    def output_type(self, value: str | None) -> None:
-        Parameter.output_type.fset(self, value)
 
     def __len__(self) -> int:
         # Returns the number of child Parameters. Just do the top level.
