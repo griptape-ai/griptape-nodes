@@ -5,7 +5,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Parame
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class RulesetNode(DataNode):
+class CreateRulesetNode(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 

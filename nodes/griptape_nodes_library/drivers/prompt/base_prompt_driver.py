@@ -14,6 +14,7 @@ class BasePromptDriverNode(BaseDriverNode):
         super().__init__(**kwargs)
         driver_parameter = self.get_parameter_by_name("driver")
         if driver_parameter is not None:
+            driver_parameter.name = "prompt_driver"
             driver_parameter.output_type = "Prompt Driver"
 
         self.add_parameter(
@@ -24,6 +25,8 @@ class BasePromptDriverNode(BaseDriverNode):
                 output_type="str",
                 default_value="",
                 tooltip="Select the model you want to use from the available options.",
+                ui_options = ParameterUIOptions(simple_dropdown_options=(ParameterUIOptions.SimpleDropdown(enum_choices=[])))
+
             )
         )
         self.add_parameter(
@@ -138,4 +141,4 @@ class BasePromptDriverNode(BaseDriverNode):
         driver = DummyPromptDriver()
 
         # Set the output
-        self.parameter_output_values["driver"] = driver
+        self.parameter_output_values["prompt_driver"] = driver

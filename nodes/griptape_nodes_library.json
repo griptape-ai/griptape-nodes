@@ -40,7 +40,7 @@
       "Drivers": {
         "color": "border-lime-500",
         "title": "Drivers",
-        "description": "Utility nodes like save, etc., etc.",
+        "description": "Prompt Drivers for Griptape Agents.",
         "icon": "Truck"
       }
     },
@@ -63,26 +63,26 @@
   ],
   "nodes": [
     {
-      "class_name": "RunAgentNode",
-      "file_path": "griptape_nodes_library/agent.py",
+      "class_name": "CreateAgentNode",
+      "file_path": "griptape_nodes_library/agents/create_agent_node.py",
       "metadata": {
         "category": "Agent",
         "description": "Griptape Agent that can execute prompts and use tools",
+        "display_name": "Create Agent"
+      }
+    },
+    {
+      "class_name": "RunAgentNode",
+      "file_path": "griptape_nodes_library/agents/run_agent_node.py",
+      "metadata": {
+        "category": "Agent",
+        "description": "Runs a previously created Griptape Agent with new prompts",
         "display_name": "Run Agent"
       }
     },
     {
-      "class_name": "SimpleAgentNode",
-      "file_path": "griptape_nodes_library/simple_agent.py",
-      "metadata": {
-        "category": "Agent",
-        "description": "Runs a previously created Griptape Agent with new prompts",
-        "display_name": "Simple Agent"
-      }
-    },
-    {
       "class_name": "AnthropicPromptDriverNode",
-      "file_path": "griptape_nodes_library/drivers/anthropic_prompt_driver.py",
+      "file_path": "griptape_nodes_library/drivers/prompt/anthropic_prompt_driver.py",
       "metadata": {
         "category": "Drivers",
         "description": "Anthropic Claude prompt driver for Griptape Agents",
@@ -90,17 +90,8 @@
       }
     },
     {
-      "class_name": "OpenAiAudioTranscriptionDriverNode",
-      "file_path": "griptape_nodes_library/drivers/audio_transcription_drivers.py",
-      "metadata": {
-        "category": "Drivers",
-        "description": "OpenAI Transcription driver for processing provided audio",
-        "display_name": "OpenAI Audio Transcription Driver"
-      }
-    },
-    {
       "class_name": "AzureOpenAiChatPromptDriverNode",
-      "file_path": "griptape_nodes_library/drivers/azure_openai_chat_prompt_driver.py",
+      "file_path": "griptape_nodes_library/drivers/prompt/azure_openai_chat_prompt_driver.py",
       "metadata": {
         "category": "Drivers",
         "description": "Azure OpenAI prompt driver for Griptape agents",
@@ -108,26 +99,8 @@
       }
     },
     {
-      "class_name": "AzureOpenAiImageDriverNode",
-      "file_path": "griptape_nodes_library/drivers/azure_openai_image_driver.py",
-      "metadata": {
-        "category": "Drivers",
-        "description": "Azure OpenAI image generation driver for Griptape agents",
-        "display_name": "Azure OpenAI image generation driver"
-      }
-    },
-    {
-      "class_name": "GriptapeCloudImageDriverNode",
-      "file_path": "griptape_nodes_library/drivers/griptape_cloud_image_driver.py",
-      "metadata": {
-        "category": "Drivers",
-        "description": "Azure OpenAI image generation driver for Griptape agents",
-        "display_name": "Azure OpenAI image generation driver"
-      }
-    },
-    {
       "class_name": "CoherePromptDriverNode",
-      "file_path": "griptape_nodes_library/drivers/cohere_prompt_driver.py",
+      "file_path": "griptape_nodes_library/drivers/prompt/cohere_prompt_driver.py",
       "metadata": {
         "category": "Drivers",
         "description": "Cohere prompt driver for Griptape agents",
@@ -136,7 +109,7 @@
     },
     {
       "class_name": "GriptapeCloudPromptDriverNode",
-      "file_path": "griptape_nodes_library/drivers/griptape_cloud_prompt_driver.py",
+      "file_path": "griptape_nodes_library/drivers/prompt/griptape_cloud_prompt_driver.py",
       "metadata": {
         "category": "Drivers",
         "description": "Griptape Cloud Prompt Driver",
@@ -144,17 +117,8 @@
       }
     },
     {
-      "class_name": "OllamaEmbeddingDriverNode",
-      "file_path": "griptape_nodes_library/drivers/ollama_embedding_driver.py",
-      "metadata": {
-        "category": "Drivers",
-        "description": "Ollama embedding driver for local embeddings",
-        "display_name": "Ollama Embedding Driver"
-      }
-    },
-    {
       "class_name": "OllamaPromptDriverNode",
-      "file_path": "griptape_nodes_library/drivers/ollama_prompt_driver.py",
+      "file_path": "griptape_nodes_library/drivers/prompt/ollama_prompt_driver.py",
       "metadata": {
         "category": "Drivers",
         "description": "Prompt driver for Ollama (local!)",
@@ -162,57 +126,75 @@
       }
     },
     {
-      "class_name": "OpenAiChatPromptDriverNode",
-      "file_path": "griptape_nodes_library/drivers/openai_chat_prompt_driver.py",
+      "class_name": "OpenAiPromptDriverNode",
+      "file_path": "griptape_nodes_library/drivers/prompt/openai_prompt_driver_node.py",
       "metadata": {
         "category": "Drivers",
-        "description": "OpenAI chat prompt driver (default)",
-        "display_name": "OpenAI Chat Prompt Driver"
+        "description": "OpenAI chat driver (default)",
+        "display_name": "OpenAI Prompt Driver"
+      }
+    },
+    {
+      "class_name": "OpenAiAudioTranscriptionDriverNode",
+      "file_path": "griptape_nodes_library/drivers/audio_transcription/audio_transcription_drivers.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "OpenAI Transcription driver for processing provided audio",
+        "display_name": "OpenAI Audio Transcription Driver"
+      }
+    },
+    {
+      "class_name": "AzureOpenAiImageDriverNode",
+      "file_path": "griptape_nodes_library/drivers/image/azure_openai_image_driver.py",
+      "metadata": {
+        "category": "Drivers - Image",
+        "description": "Azure OpenAI image generation driver for Griptape agents",
+        "display_name": "Azure OpenAI image generation driver"
+      }
+    },
+    {
+      "class_name": "GriptapeCloudImageDriverNode",
+      "file_path": "griptape_nodes_library/drivers/image/griptape_cloud_image_driver.py",
+      "metadata": {
+        "category": "Drivers - Image",
+        "description": "Azure OpenAI image generation driver for Griptape agents",
+        "display_name": "Azure OpenAI image generation driver"
+      }
+    },
+    {
+      "class_name": "OllamaEmbeddingDriverNode",
+      "file_path": "griptape_nodes_library/drivers/embedding/ollama_embedding_driver.py",
+      "metadata": {
+        "category": "Drivers",
+        "description": "Ollama embedding driver for local embeddings",
+        "display_name": "Ollama Embedding Driver"
       }
     },
     {
       "class_name": "OpenAiImageDriverNode",
-      "file_path": "griptape_nodes_library/drivers/openai_image_driver.py",
+      "file_path": "griptape_nodes_library/drivers/image/openai_image_driver.py",
       "metadata": {
-        "category": "Drivers",
+        "category": "Drivers - Image",
         "description": "OpenAI image generation driver (dall-e-3)",
         "display_name": "OpenAI Image Driver"
       }
     },
     {
       "class_name": "DuckDuckGoWebSearchDriverNode",
-      "file_path": "griptape_nodes_library/drivers/web_search_drivers.py",
+      "file_path": "griptape_nodes_library/drivers/web_search/web_search_drivers.py",
       "metadata": {
-        "category": "Drivers",
+        "category": "Drivers - Web Search",
         "description": "Web search driver (Duck Duck Go)",
         "display_name": "Duck Duck Go Web Search Driver"
       }
     },
     {
-      "class_name": "RulesetNode",
-      "file_path": "griptape_nodes_library/rules/base_ruleset.py",
+      "class_name": "CreateRulesetNode",
+      "file_path": "griptape_nodes_library/rules/create_rulesetnode.py",
       "metadata": {
         "category": "Rules",
         "description": "Creates behavioral ruleset for Griptape agents",
-        "display_name": "Ruleset"
-      }
-    },
-    {
-      "class_name": "AddRulesetToAgent",
-      "file_path": "griptape_nodes_library/rules/add_ruleset_to_agent.py",
-      "metadata": {
-        "category": "Rules",
-        "description": "Add ruleset to an agent",
-        "display_name": "Add Ruleset to Agent"
-      }
-    },
-    {
-      "class_name": "AddRulesetToAgent",
-      "file_path": "griptape_nodes_library/rules/add_ruleset_to_agent.py",
-      "metadata": {
-        "category": "Rules",
-        "description": "Add ruleset to an agent",
-        "display_name": "Add Ruleset to Agent"
+        "display_name": "Create Ruleset"
       }
     },
     {

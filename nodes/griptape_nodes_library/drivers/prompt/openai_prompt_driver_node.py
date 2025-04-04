@@ -1,13 +1,14 @@
 from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
-
-from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
+from griptape_nodes.exe_types.core_types import ParameterUIOptions
+from nodes.griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
 
 DEFAULT_MODEL = "gpt-4o"
+MODELS=["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
 SERVICE = "OpenAI"
 
 
-class OpenAiChatPromptDriverNode(BasePromptDriverNode):
+class OpenAiPromptDriverNode(BasePromptDriverNode):
     """Node for OpenAi Prompt Driver.
 
     This node creates an OpenAi prompt driver and outputs its configuration.
@@ -17,7 +18,11 @@ class OpenAiChatPromptDriverNode(BasePromptDriverNode):
         super().__init__(**kwargs)
 
         # Set any defaults
-        self.parameter_values["model"] = DEFAULT_MODEL
+        model_parameter = self.get_parameter_by_name("model")
+        if model_parameter is not None:
+            model_parameter.default_value = DEFAULT_MODEL
+            model_parameter.input_types = ["str", "None"]
+            model_parameter.ui_options = ParameterUIOptions(simple_dropdown_options=(ParameterUIOptions.SimpleDropdown(enum_choices=MODELS)))
 
         # Delete top_k because openai does not use it
         parameter = self.get_parameter_by_name("top_k")

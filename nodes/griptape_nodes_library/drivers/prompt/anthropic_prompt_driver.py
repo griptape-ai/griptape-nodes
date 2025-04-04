@@ -2,7 +2,7 @@ import anthropic
 from griptape.drivers.prompt.anthropic import AnthropicPromptDriver
 
 from griptape_nodes.retained_mode.griptape_nodes import logger
-from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
+from nodes.griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
 
 DEFAULT_MODEL = "claude-3-5-sonnet-latest"
 API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"

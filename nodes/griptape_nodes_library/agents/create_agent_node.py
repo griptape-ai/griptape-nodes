@@ -1,14 +1,15 @@
-from griptape.structures import Agent as gtAgent
+from griptape.structures import Agent 
 from griptape.utils import Stream
+from griptape_nodes.retained_mode.griptape_nodes import logger
 
-from nodes.griptape_nodes_library.agents.base_agent import BaseAgent
+from nodes.griptape_nodes_library.agents.base_agent_node import BaseAgentNode
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 
 
-class Agent(BaseAgent):
+class CreateAgentNode(BaseAgentNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -29,8 +30,14 @@ class Agent(BaseAgent):
         # append any tools to the already existing tools if there are any.
         tools = params.get("tools", None)
         if tools:
+            logger.info("Tools found, adding to agent")
+            if isinstance(tools, list):
+                tools = [tool.to_dict() for tool in tools]
+            else:
+                tools = [tools.to_dict()]
             kwargs["tools"] = tools
-
+        else:
+            logger.info("No tools found")
         # Get any rules
         rulesets = self.valid_or_fallback("rulesets", None)
         if rulesets:
@@ -38,11 +45,11 @@ class Agent(BaseAgent):
 
         agent = None
         if not agent_dict:
-            print("No agent, creating one")
+            logger.info("No agent input, creating one")
             # Create the Agent
-            agent = gtAgent(**kwargs)
+            agent = Agent(**kwargs)
         else:
-            agent = gtAgent().from_dict(agent_dict)
+            agent = Agent().from_dict(agent_dict)
         # Otherwise, append rules and tools to the existing agent
 
         prompt = params.get("prompt", None)

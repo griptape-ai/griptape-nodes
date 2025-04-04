@@ -1,6 +1,6 @@
 from griptape.drivers.prompt.azure_openai_chat_prompt_driver import AzureOpenAiChatPromptDriver
 
-from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
+from nodes.griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
 
 # Available models
 # "gpt-4o", "gpt-4", "gpt-3.5-turbo-16k", "gpt-3.5-turbo"

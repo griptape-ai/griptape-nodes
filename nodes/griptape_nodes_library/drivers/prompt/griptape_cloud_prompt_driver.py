@@ -1,6 +1,6 @@
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 
-from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
+from nodes.griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"

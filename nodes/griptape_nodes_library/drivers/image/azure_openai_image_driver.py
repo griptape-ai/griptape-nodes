@@ -1,7 +1,7 @@
 from griptape.drivers.image_generation.azure_openai_image_generation_driver import AzureOpenAiImageGenerationDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes_library.drivers.base_image_driver import BaseImageDriverNode
+from nodes.griptape_nodes_library.drivers.image.base_image_driver import BaseImageDriverNode
 
 AZURE_ENDPOINT_ENV_VAR = "AZURE_OPENAI_DALL_E_3_ENDPOINT"
 API_KEY_ENV_VAR = "AZURE_OPENAI_DALL_E_3_API_KEY"

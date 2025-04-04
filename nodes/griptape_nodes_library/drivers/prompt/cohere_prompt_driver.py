@@ -1,7 +1,7 @@
 import cohere
 from griptape.drivers.prompt.cohere import CoherePromptDriver
 
-from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
+from nodes.griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
 
 DEFAULT_MODEL = "command-r-plus"
 API_KEY_ENV_VAR = "COHERE_API_KEY"

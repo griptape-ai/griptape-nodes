@@ -4,28 +4,31 @@ from griptape.drivers.prompt.griptape_cloud import (
 from griptape.structures import Agent as gtAgent
 from griptape.utils import Stream
 
-from nodes.griptape_nodes_library.agents.agent import Agent
+from nodes.griptape_nodes_library.agents.create_agent_node import CreateAgentNode
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 
 
-class RunAgent(Agent):
+class RunAgentNode(CreateAgentNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
+        
         # Remove unused inputs
         param = self.get_parameter_by_name("rulesets")
         if param:
             self.remove_parameter(param)
-        param = self.get_parameter_by_name("tool_list")
+        param = self.get_parameter_by_name("tools")
         if param:
             self.remove_parameter(param)
         param = self.get_parameter_by_name("prompt_driver")
         if param:
             self.remove_parameter(param)
-
+        group = self.get_parameter_by_name("Agent Abilities")
+        if group:
+            self.remove_parameter(group)
     def process(self) -> None:
         # Get input values
         params = self.parameter_values
@@ -34,7 +37,7 @@ class RunAgent(Agent):
         if not agent_dict:
             prompt_driver = GtGriptapeCloudPromptDriver(
                 model="gpt-4o",
-                api_key=self.getkey(value=f"env.{SERVICE}.{API_KEY_ENV_VAR}"),
+                api_key=self.getkey(value=f"nodes.{SERVICE}.{API_KEY_ENV_VAR}"),
                 stream=True,
             )
             agent = gtAgent(prompt_driver=prompt_driver)
