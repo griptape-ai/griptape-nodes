@@ -469,8 +469,8 @@ class Parameter(BaseNodeElement):
 
         ret_val = False
 
-        if self._input_types:
-            for test_type in self._input_types:
+        if self.input_types:
+            for test_type in self.input_types:
                 if ParameterType.are_types_compatible(source_type=incoming_type, target_type=test_type):
                     ret_val = True
                     break
