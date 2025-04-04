@@ -59,7 +59,7 @@ class AnthropicPromptDriverNode(BasePromptDriverNode):
         debug_msg = "\n\nANTHROPIC PROMPT DRIVER:\n" + str(kwargs) + "\n\n"
         logger.debug(debug_msg)
 
-        self.parameter_output_values["driver"] = AnthropicPromptDriver(**kwargs)
+        self.parameter_output_values["prompt_driver"] = AnthropicPromptDriver(**kwargs)
 
     def validate_node(self) -> list[Exception] | None:
         exceptions = []
