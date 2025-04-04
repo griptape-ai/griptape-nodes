@@ -20,6 +20,10 @@ version/publish: ## Push git tag and publish version to PyPI.
 run: ## Run the project.
 	uv run griptape-nodes
 	
+.PHONY: run/watch
+run/watch: ## Run the project in watch mode.
+	uv run src/griptape_nodes/api/watch.py
+	
 .PHONY: install
 install: ## Install all dependencies.
 	@make install/all

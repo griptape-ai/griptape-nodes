@@ -52,6 +52,12 @@
    make run
    ```
 
+   Or with live reload:
+
+   ```shell
+   make run/watch
+   ```
+
    To point your engine at a different instance of the API, set the `GRIPTAPE_NODES_API_BASE_URL` environment variable before running:
 
    ```shell
