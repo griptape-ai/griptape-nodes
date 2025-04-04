@@ -17,17 +17,21 @@ from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.api.app import main as api_main
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 INSTALL_SCRIPT = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.sh"
+INSTALL_SCRIPT_PS = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.ps1"
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 ENV_FILE = CONFIG_DIR / ".env"
 CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
 REPO_NAME = "griptape-ai/griptape-nodes"
 NODES_APP_URL = "https://nodes.griptape.ai"
 
+
 console = Console()
 config_manager = ConfigManager()
+os_manager = OSManager()
 secrets_manager = SecretsManager(config_manager)
 
 
@@ -206,19 +210,38 @@ def _auto_update() -> None:
 def _install_latest_release() -> None:
     """Installs the latest release of the script using a shell command."""
     with console.status("[bold green]Updating...", spinner="dots"):
-        curl_process = subprocess.run(  # noqa: S603
-            ["curl", "-LsSf", INSTALL_SCRIPT],  # noqa: S607
-            capture_output=True,
-            check=False,
-            text=True,
-        )
-        subprocess.run(  # noqa: S603
-            ["bash"],  # noqa: S607
-            input=curl_process.stdout,
-            capture_output=True,
-            check=True,
-            text=True,
-        )
+        if os_manager.is_windows:
+            # Run via PowerShell
+            subprocess.run(  # noqa: S603
+                [  # noqa: S607
+                    "powershell",
+                    "-ExecutionPolicy",
+                    "ByPass",
+                    "-c",
+                    f"irm {INSTALL_SCRIPT_PS} | iex",
+                ],
+                check=True,
+                text=True,
+            )
+        elif os_manager.is_mac or os_manager.is_linux:
+            # Run via Bash/cURL
+            curl_process = subprocess.run(  # noqa: S603
+                ["curl", "-LsSf", INSTALL_SCRIPT],  # noqa: S607
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            subprocess.run(  # noqa: S603
+                ["bash"],  # noqa: S607
+                input=curl_process.stdout,
+                capture_output=True,
+                check=True,
+                text=True,
+            )
+        else:
+            console.print(f"[bold red]Unsupported platform: {os_manager.platform}[/bold red]")
+            sys.exit(1)
+
     console.print(
         "[bold green]Update complete! Restart the engine by running 'griptape-nodes' (or just 'gtn').[/bold green]"
     )
