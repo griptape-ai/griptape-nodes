@@ -83,6 +83,7 @@ class SetParameterValueRequest(RequestPayload):
     parameter_name: str
     node_name: str
     value: Any
+    data_type: str | None = None
 
 
 @dataclass
