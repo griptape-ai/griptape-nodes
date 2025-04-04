@@ -96,6 +96,7 @@ class SecretsManager:
             )
             # Check if the secret is set in the config manager
             value = default
+        return value
 
     def set_secret(self, secret_name: str, secret_value: str) -> None:
         if not self.env_var_path.exists():
