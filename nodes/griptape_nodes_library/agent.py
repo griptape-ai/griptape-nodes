@@ -1,3 +1,4 @@
+from typing import Any
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.utils import Stream
@@ -10,6 +11,7 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes_library.utils.error_utils import try_throw_error
+from traits.minmax import ModelTrait
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -22,7 +24,6 @@ class RunAgentNode(ControlNode):
 
         self.category = "Agent"
         self.description = "Create an agent and run it."
-
         self.add_parameter(
             Parameter(
                 name="agent",
@@ -45,6 +46,7 @@ class RunAgentNode(ControlNode):
                 input_types=["str"],
                 output_type="str",
                 type="str",
+                traits={ModelTrait},
                 default_value=DEFAULT_MODEL,
                 tooltip="",
             )
@@ -55,11 +57,7 @@ class RunAgentNode(ControlNode):
                 type="str",
                 default_value="",
                 tooltip="",
-                ui_options=ParameterUIOptions(
-                    string_type_options=ParameterUIOptions.StringType(
-                        multiline=True,
-                    )
-                ),
+                ui_options=["multiline"]
             )
         self.add_node_element(config_group)
 
@@ -95,12 +93,7 @@ class RunAgentNode(ControlNode):
                 default_value="",
                 tooltip="What the agent said.",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options=ParameterUIOptions(
-                    string_type_options=ParameterUIOptions.StringType(
-                        multiline=True,
-                        placeholder_text="The agent response",
-                    )
-                ),
+                ui_options=["multiline",{"placeholder_text":"The Agent Response"}]
             )
         self.add_node_element(tools_group)
 
@@ -114,6 +107,37 @@ class RunAgentNode(ControlNode):
             exceptions.append(KeyError(msg))
             return exceptions
         return exceptions if exceptions else None
+
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        if parameter.name == "prompt_driver":
+            prompt_model = self.get_parameter_by_name("prompt_model")
+            if prompt_model:
+                trait = prompt_model.find_element_by_id("ModelTrait")
+                if trait and isinstance(trait, ModelTrait):
+                    driver_type = str(type(value).__name__).lower()
+                    modified_parameters_set.add("prompt_driver")
+                    match driver_type:
+                        case _ if "anthropic" in driver_type:
+                            trait.choices = [
+                                "claude-3-opus-20240229",
+                                "claude-3-sonnet-20240229",
+                                "claude-3-haiku-20240307",
+                                "claude-3-5-sonnet-20240620"
+                            ]
+                        case _ if "openai" in driver_type:
+                            trait.choices = [
+                                "gpt-4-turbo",
+                                "gpt-4-1106-preview",
+                                "gpt-4",
+                                "gpt-3.5-turbo"
+                            ]
+                        case _ if "ollama" in driver_type:
+                            trait.choices = [
+                                "llama3",
+                                "llama2",
+                                "mistral",
+                                "mpt"
+                            ]
 
     def process(self) -> None:
         # Get api key
