@@ -245,12 +245,14 @@ class BaseNodeElement:
                 return found
         return None
 
-    def find_elements_by_type(self, element_type: type[T]) -> list[T]:
+    def find_elements_by_type(self, element_type: type[T], *, find_recursively: bool = True) -> list[T]:
+        """Returns a list of child elements that are instances of type specified. Optionally do this recursively."""
         elements: list[T] = []
         for child in self._children:
             if isinstance(child, element_type):
                 elements.append(child)
-            elements.extend(child.find_elements_by_type(element_type))
+            if find_recursively:
+                elements.extend(child.find_elements_by_type(element_type))
         return elements
 
     @classmethod
@@ -498,8 +500,8 @@ class Parameter(BaseNodeElement):
 
         ret_val = False
 
-        if self._input_types:
-            for test_type in self._input_types:
+        if self.input_types:
+            for test_type in self.input_types:
                 if ParameterType.are_types_compatible(source_type=incoming_type, target_type=test_type):
                     ret_val = True
                     break
@@ -710,8 +712,33 @@ class ParameterContainer(Parameter, ABC):
             element_type=element_type,
         )
 
+    @property
+    def input_types(self) -> list[str]:
+        return super().input_types
 
-class ParameterList(ParameterContainer):
+    @input_types.setter
+    def input_types(self, value: list[str] | None) -> None:
+        # Have to override both getter and setter to get Pylance offa my back
+        super().input_types = value
+
+    @property
+    def type(self) -> str:
+        return super().type
+
+    @type.setter
+    def type(self, value: str | None) -> None:
+        super().type = value
+
+    @property
+    def output_type(self) -> str:
+        return super().output_type
+
+    @output_type.setter
+    def output_type(self, value: str | None) -> None:
+        super().output_type = value
+
+
+class ParameterList(Parameter):
     def __init__(  # noqa: PLR0913
         self,
         name: str,
@@ -733,6 +760,8 @@ class ParameterList(ParameterContainer):
         element_id: str | None = None,
         element_type: str | None = None,
     ):
+        print(ParameterList.__mro__)
+
         # Remember: we're a Parameter, too, just like everybody else.
         super().__init__(
             name=name,
@@ -754,12 +783,70 @@ class ParameterList(ParameterContainer):
             element_type=element_type,
         )
 
-    def create_child_parameter(self) -> Parameter:
+    @property
+    def input_types(self) -> list[str]:
+        # For every valid input type, also accept a list variant of that for the CONTAINER Parameter only.
+        # Children still use the input types given to them.
+        base_input_types = super().input_types
+        result = []
+        for base_input_type in base_input_types:
+            container_variant = f"list[{base_input_type}]"
+            result.append(container_variant)
+            result.append(base_input_type)
+
+        return result
+
+    @input_types.setter
+    def input_types(self, value: list[str] | None) -> None:
+        # Have to override both getter and setter to get Pylance offa my back
+        Parameter.input_types.fset(self, value)
+
+    @property
+    def type(self) -> str:
+        base_type = super().type
+        result = f"list[{base_type}]"
+        return result
+
+    @type.setter
+    def type(self, value: str | None) -> None:
+        Parameter.type.fset(self, value)
+
+    @property
+    def output_type(self) -> str:
+        base_type = super().output_type
+        result = f"list[{base_type}]"
+        return result
+
+    @output_type.setter
+    def output_type(self, value: str | None) -> None:
+        Parameter.output_type.fset(self, value)
+
+    def __len__(self) -> int:
+        # Returns the number of child Parameters. Just do the top level.
+        param_children = self.find_elements_by_type(element_type=Parameter, find_recursively=False)
+        return len(param_children)
+
+    def __getitem__(self, key: int) -> Parameter:
+        count = 0
+        for child in self._children:
+            if isinstance(child, Parameter):
+                if count == key:
+                    # Found it.
+                    return child
+                count += 1
+
+        # If we fell out of the for loop, we had a bad value.
+        err_str = f"Attempted to get a Parameter List index {key}, which was out of range."
+        raise KeyError(err_str)
+
+    def add_child_parameter(self) -> Parameter:
         # Generate a name. This needs to be UNIQUE because children need
         # to be tracked as individuals and not as indices in the list.
         # Ex: a Connection is made to Parameter List[1]. List[0] gets deleted.
         # The OLD List[1] is now List[0], but we need to maintain the Connection
         # to the original entry.
+        #
+        # (No, we're not renaming it List[0] everywhere for you)
         name = f"{self.name}_ParameterListUniqueParamID_{uuid.uuid4().hex!s}"
 
         param = Parameter(
@@ -780,4 +867,7 @@ class ParameterList(ParameterContainer):
             user_defined=self.user_defined,
         )
 
+        # Add at the end.
         self.add_child(param)
+
+        return param

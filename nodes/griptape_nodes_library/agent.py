@@ -5,6 +5,7 @@ from griptape.utils import Stream
 from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterGroup,
+    ParameterList,
     ParameterMode,
     ParameterUIOptions,
 )
@@ -72,6 +73,16 @@ class RunAgentNode(ControlNode):
                 default_value=None,
                 tooltip="",
             )
+            ParameterList(
+                name="tool_list",
+                input_types=[
+                    "Tool"
+                ],  # We only need to specify the element type; the container will automatically accept list[Tool], too.
+                output_type="Tool",  # Same
+                type="Tool",  # Same
+                default_value=None,
+                tooltip="All of the tools",
+            )
             Parameter(
                 name="tool_list",
                 input_types=["list[Tool]"],
@@ -103,6 +114,14 @@ class RunAgentNode(ControlNode):
                 ),
             )
         self.add_node_element(tools_group)
+
+        # Do some ParameterList magick
+        tool_list = self.get_parameter_by_name("tool_list")
+        if isinstance(tool_list, ParameterList):
+            entry_0 = tool_list.add_child_parameter()
+            entry_1 = tool_list.add_child_parameter()
+            print(entry_0.name)
+            print(tool_list[1].name)
 
     # Only requires a valid GT_CLOUD_API_KEY
     def validate_node(self) -> list[Exception] | None:
