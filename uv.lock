@@ -256,6 +256,9 @@ dependencies = [
 drivers-prompt-anthropic = [
     { name = "anthropic" },
 ]
+drivers-prompt-ollama = [
+    { name = "ollama" },
+]
 loaders-image = [
     { name = "pillow" },
 ]
@@ -266,7 +269,7 @@ version = "0.7.2"
 source = { editable = "." }
 dependencies = [
     { name = "cohere" },
-    { name = "griptape", extra = ["drivers-prompt-anthropic", "loaders-image"] },
+    { name = "griptape", extra = ["drivers-prompt-anthropic", "drivers-prompt-ollama", "loaders-image"] },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -297,7 +300,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "cohere", specifier = ">=5.14.0" },
-    { name = "griptape", extras = ["drivers-prompt-anthropic", "loaders-image"], git = "https://github.com/griptape-ai/griptape.git?branch=main" },
+    { name = "griptape", extras = ["drivers-prompt-anthropic", "drivers-prompt-ollama", "loaders-image"], git = "https://github.com/griptape-ai/griptape.git?branch=main" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pydantic-settings", specifier = ">=2.8.1" },
@@ -699,6 +702,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/dc/4fc7c0283abe0981e3b89f9b332a134e237dd476b0c018e1e21083310c31/numpy-2.2.4-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:ee4d528022f4c5ff67332469e10efe06a267e32f4067dc76bb7e2cddf3cd25ff", size = 17879998 },
     { url = "https://files.pythonhosted.org/packages/e5/2b/878576190c5cfa29ed896b518cc516aecc7c98a919e20706c12480465f43/numpy-2.2.4-cp313-cp313t-win32.whl", hash = "sha256:05c076d531e9998e7e694c36e8b349969c56eadd2cdcd07242958489d79a7286", size = 6366896 },
     { url = "https://files.pythonhosted.org/packages/3e/05/eb7eec66b95cf697f08c754ef26c3549d03ebd682819f794cb039574a0a6/numpy-2.2.4-cp313-cp313t-win_amd64.whl", hash = "sha256:188dcbca89834cc2e14eb2f106c96d6d46f200fe0200310fc29089657379c58d", size = 12739119 },
+]
+
+[[package]]
+name = "ollama"
+version = "0.4.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b0/6d/dc77539c735bbed5d0c873fb029fb86aa9f0163df169b34152914331c369/ollama-0.4.7.tar.gz", hash = "sha256:891dcbe54f55397d82d289c459de0ea897e103b86a3f1fad0fdb1895922a75ff", size = 12843 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/31/83/c3ffac86906c10184c88c2e916460806b072a2cfe34cdcaf3a0c0e836d39/ollama-0.4.7-py3-none-any.whl", hash = "sha256:85505663cca67a83707be5fb3aeff0ea72e67846cea5985529d8eca4366564a1", size = 13210 },
 ]
 
 [[package]]

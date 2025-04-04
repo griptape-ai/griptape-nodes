@@ -1,10 +1,12 @@
 import anthropic
 from griptape.drivers.prompt.anthropic import AnthropicPromptDriver
 
+from griptape_nodes.exe_types.core_types import ParameterUIOptions
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from nodes.griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
 
-DEFAULT_MODEL = "claude-3-5-sonnet-latest"
+DEFAULT_MODEL = "claude-3-7-sonnet-latest"
+MODELS = ["claude-3-7-sonnet-latest", "claude-3-5-sonnet-latest", "claude-3-5-opus-latest", "claude-3-5-haiku-latest"]
 API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 SERVICE = "Anthropic"
 
@@ -18,12 +20,19 @@ class AnthropicPromptDriverNode(BasePromptDriverNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         # Set any defaults
-        self.parameter_values["model"] = DEFAULT_MODEL
+        model_parameter = self.get_parameter_by_name("model")
+        if model_parameter is not None:
+            model_parameter.default_value = DEFAULT_MODEL
+            model_parameter.input_types = ["str"]
+            model_parameter.ui_options = ParameterUIOptions(
+                simple_dropdown_options=(ParameterUIOptions.SimpleDropdown(enum_choices=MODELS))
+            )
 
         # Remove parameters not used by Azure OpenAI
 
     def process(self) -> None:
         # Get the parameters from the node
+        params = self.parameter_values
 
         # Initialize kwargs with required parameters
         kwargs = {}
@@ -31,13 +40,13 @@ class AnthropicPromptDriverNode(BasePromptDriverNode):
         kwargs["model"] = self.valid_or_fallback("model", DEFAULT_MODEL)
 
         # Handle optional parameters
-        stream = self.valid_or_fallback("stream", False)
-        temperature = self.valid_or_fallback("temperature", None)
-        max_attempts = self.valid_or_fallback("max_attempts_on_fail", None)
-        use_native_tools = self.valid_or_fallback("use_native_tools", False)
-        max_tokens = self.valid_or_fallback("max_tokens", None)
-        min_p = self.valid_or_fallback("min_p", None)
-        top_k = self.valid_or_fallback("top_k", None)
+        stream = params.get("stream", False)
+        temperature = params.get("temperature", None)
+        use_native_tools = params.get("use_native_tools", False)
+        max_tokens = params.get("max_tokens", -1)
+        max_attempts = params.get("max_attempts_on_fail", None)
+        min_p = params.get("min_p", None)
+        top_k = params.get("top_k", None)
 
         if stream:
             kwargs["stream"] = stream

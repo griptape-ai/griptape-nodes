@@ -1,5 +1,7 @@
 from griptape.drivers.prompt.ollama import OllamaPromptDriver
 
+from griptape_nodes.exe_types.core_types import ParameterUIOptions
+from griptape_nodes.exe_types.node_types import Parameter
 from nodes.griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
 
 DEFAULT_PORT = "11434"
@@ -16,19 +18,42 @@ class OllamaPromptDriverNode(BasePromptDriverNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
+        # Set any defaults
+        model_parameter = self.get_parameter_by_name("model")
+        self.get_model_list()
+        if model_parameter is not None:
+            model_parameter.default_value = self.models[0]
+            model_parameter.input_types = ["str"]
+            model_parameter.ui_options = ParameterUIOptions(
+                simple_dropdown_options=(ParameterUIOptions.SimpleDropdown(enum_choices=self.models))
+            )
+
+        self.add_parameter(Parameter(name="base_url", default_value=DEFAULT_BASE_URL, type="str", tooltip=""))
+        self.add_parameter(Parameter(name="port", default_value=DEFAULT_PORT, type="str", tooltip=""))
+
+    def get_model_list(self) -> None:
+        import ollama
+
+        self.models = [model["model"] for model in ollama.list()["models"]]
+
     def process(self) -> None:
         # Get the parameters from the node
+        params = self.parameter_values
+
         kwargs = {}
-        kwargs["model"] = self.valid_or_fallback("model", DEFAULT_MODEL)
-        kwargs["temperature"] = self.valid_or_fallback("temperature", None)
-        kwargs["max_attempts"] = self.valid_or_fallback("max_attempts_on_fail", None)
-        kwargs["use_native_tools"] = self.valid_or_fallback("use_native_tools", False)
-        kwargs["max_tokens"] = self.valid_or_fallback("max_tokens", None)
+        kwargs["model"] = params.get("model", self.models[0])
+        base_url = params.get("base_url", DEFAULT_BASE_URL)
+        port = params.get("port", DEFAULT_PORT)
+        kwargs["host"] = f"{base_url}:{port}"
+        kwargs["temperature"] = params.get("temperature", None)
+        kwargs["max_attempts"] = params.get("max_attempts_on_fail", None)
+        kwargs["use_native_tools"] = params.get("use_native_tools", False)
+        kwargs["max_tokens"] = params.get("max_tokens", None)
 
         kwargs["extra_params"] = {
             "options": {
-                "min_p": self.valid_or_fallback("min_p", None),
-                "top_k": self.valid_or_fallback("top_k", None),
+                "min_p": params.get("min_p", None),
+                "top_k": params.get("top_k", None),
             },
         }
 
@@ -36,4 +61,4 @@ class OllamaPromptDriverNode(BasePromptDriverNode):
         driver = OllamaPromptDriver(**kwargs)
 
         # Set the output
-        self.parameter_output_values["driver"] = driver
+        self.parameter_output_values["prompt_driver"] = driver
