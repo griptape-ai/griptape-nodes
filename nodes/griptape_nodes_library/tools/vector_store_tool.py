@@ -5,7 +5,7 @@ import logging
 from griptape.drivers.vector.dummy import DummyVectorStoreDriver
 from griptape.tools import VectorStoreTool
 
-from griptape_nodes_library.tools.tools import BaseToolNode
+from griptape_nodes_library.tools.base_tool import BaseToolNode
 
 logger = logging.getLogger(__name__)
 

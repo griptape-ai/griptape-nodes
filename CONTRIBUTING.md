@@ -127,3 +127,34 @@ Get the current configuration:
 ```
 griptape-nodes config
 ```
+
+# Making a Release
+
+1. Check out the `main` branch locally:
+
+   ```shell
+   git checkout main
+   ```
+
+1. Pull the latest changes from the remote repository:
+
+   ```shell
+   git pull origin main
+   ```
+
+1. Set the new release version:
+
+   ```shell
+   make version/set v=0.1.2
+   ```
+
+   This will create a new tag, `v0.1.2`, and update the `latest` tag to point to the new version.
+
+1. Publish the release:
+
+   ```shell
+   make version/publish
+   ```
+
+   This will push the tags, `v0.1.2` and `latest`, to the remote repository.
+   When new tags are pushed, a Github Workflow will be triggered to create a new release on Github.

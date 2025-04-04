@@ -45,10 +45,14 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from logging import Logger
 
 
 console = Console()
-logger = GriptapeNodes.get_instance().LogManager().get_logger(event_handler=False)
+
+
+def get_logger() -> Logger:
+    return GriptapeNodes.get_instance().LogManager().get_logger(event_handler=False)
 
 
 def run_with_context(func: Callable) -> Callable:
@@ -130,7 +134,7 @@ def check_event_queue() -> None:
         elif isinstance(event, AppEvent):
             process_app_event(event)
         else:
-            logger.warning("Unknown event type encountered: '%s'.", type(event))
+            get_logger().warning("Unknown event type encountered: '%s'.", type(event))
 
         event_queue.task_done()
 
@@ -175,40 +179,53 @@ def sse_listener() -> None:
                 return request
 
             with httpx.stream("get", endpoint, auth=auth, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout
+                if response.status_code in {401, 403}:
+                    message = Panel(
+                        Align.center(
+                            "[bold red]Nodes API key is invalid, please run [code]gtn init[/code] with a valid key: [/bold red]"
+                            "[code]gtn init --api-key <your key>[/code]\n"
+                            "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
+                        ),
+                        title="🔑 ❌ Invalid Nodes API Key",
+                        border_style="red",
+                        padding=(1, 4),
+                    )
+                    console.print(message)
+                    sys.exit(1)
+
                 response.raise_for_status()
 
                 for line in response.iter_lines():
-                    if not line.strip():
-                        continue
                     if line.startswith("data:"):
                         data = line.removeprefix("data:").strip()
                         if data == "START":
-                            message = Panel(
-                                Align.center(
-                                    f"[bold green]Engine is ready to receive events[/bold green]\n"
-                                    f"[bold blue]Visit: [link={nodes_app_url}]{nodes_app_url}[/link][/bold blue]",
-                                    vertical="middle",
-                                ),
-                                title="🚀 Engine Started",
-                                border_style="green",
-                                padding=(1, 4),
-                            )
-                            console.print(message)
                             if not init:
                                 # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
                                 payload = app_events.AppInitializationComplete()
                                 app_event = AppEvent(payload=payload)
-                                event_queue.put(app_event)
-                                init = True
+                                process_app_event(app_event)
 
+                                message = Panel(
+                                    Align.center(
+                                        f"[bold green]Engine is ready to receive events[/bold green]\n"
+                                        f"[bold blue]Visit: [link={nodes_app_url}]{nodes_app_url}[/link][/bold blue]",
+                                        vertical="middle",
+                                    ),
+                                    title="🚀 Engine Started",
+                                    border_style="green",
+                                    padding=(1, 4),
+                                )
+                                console.print(message)
+
+                                init = True
                         else:
                             try:
                                 process_sse(json.loads(data))
                             except Exception:
-                                logger.exception("Error processing event, skipping.")
+                                get_logger().exception("Error processing event, skipping.")
 
         except Exception:
-            logger.exception("Error while listening for events. Retrying in 2 seconds.")
+            get_logger().exception("Error while listening for events. Retrying in 2 seconds.")
             sleep(2)
             init = False
 
@@ -221,7 +238,7 @@ def process_sse(event: dict) -> None:
         else:
             process_event(event)
     except Exception:
-        logger.warning("Error processing event, skipping.")
+        get_logger().warning("Error processing event, skipping.")
 
 
 def run_sse_mode() -> None:

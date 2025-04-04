@@ -19,9 +19,9 @@ class BaseWebSearchDriverNode(DataNode):
         self.add_parameter(
             Parameter(
                 name="driver",
-                input_types=["dict"],
-                type="dict",
-                output_type="dict",
+                input_types=["Web Search Driver"],
+                type="Web Search Driver",
+                output_type="Web Search Driver",
                 default_value=None,
                 tooltip="",
             )

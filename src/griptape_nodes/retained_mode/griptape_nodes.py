@@ -242,7 +242,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._event_manager = EventManager()
             self._os_manager = OSManager(self._event_manager)
             self._config_manager = ConfigManager(self._event_manager)
-            self._secrets_manager = SecretsManager(self._event_manager, self._config_manager)
+            self._secrets_manager = SecretsManager(self._config_manager, self._event_manager)
             self._object_manager = ObjectManager(self._event_manager)
             self._node_manager = NodeManager(self._event_manager)
             self._flow_manager = FlowManager(self._event_manager)
@@ -2088,6 +2088,7 @@ class NodeManager:
         # Values are actually stored on the NODE.
         try:
             modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
+            finalized_value = node.get_parameter_value(request.parameter_name)
         except Exception as err:
             details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Exception: {err}'
             GriptapeNodes.get_logger().error(details)
@@ -2109,7 +2110,7 @@ class NodeManager:
                 SetParameterValueRequest(
                     parameter_name=target_parameter.name,
                     node_name=target_node.name,
-                    value=object_created,
+                    value=finalized_value,
                 )
             )
 
@@ -2117,7 +2118,7 @@ class NodeManager:
         details = f'"{request.node_name}.{request.parameter_name}" = {object_created}'
         GriptapeNodes.get_logger().info(details)
 
-        result = SetParameterValueResultSuccess()
+        result = SetParameterValueResultSuccess(finalized_value=finalized_value, data_type=parameter.type)
         return result
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.

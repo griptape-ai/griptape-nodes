@@ -20,7 +20,7 @@ from griptape_nodes.retained_mode.events.config_events import (
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
 
-from .settings import ScriptSettingsDetail, Settings
+from .settings import ScriptSettingsDetail, Settings, _find_config_files
 
 
 class ConfigManager:
@@ -34,19 +34,15 @@ class ConfigManager:
     to organize related configuration items.
     """
 
-    def __init__(self, event_manager: EventManager | None = None, config_dir: str | None = None) -> None:
+    def __init__(self, event_manager: EventManager | None = None) -> None:
         """Initialize the ConfigManager.
 
         Args:
             event_manager: The EventManager instance to use for event handling.
-            config_dir: Optional path to the config dir. If not provided,
-                         it will use the current working directory.
         """
-        self.config_dir = Path(config_dir) if config_dir else Path.home() / "GriptapeNodes/"
-        self.user_config_path: Path = self.config_dir / "griptape_nodes_config.json"
-        self.user_config: dict[str, Any] = {}
-
-        self.user_config = Settings().model_dump()
+        settings = Settings()
+        self.user_config = settings.model_dump()
+        self._workspace_path = settings.workspace_directory
 
         if event_manager is not None:
             # Register all our listeners.
@@ -59,6 +55,17 @@ class ConfigManager:
             event_manager.assign_manager_to_request_type(GetConfigValueRequest, self.on_handle_get_config_value_request)
             event_manager.assign_manager_to_request_type(SetConfigValueRequest, self.on_handle_set_config_value_request)
 
+            if len(self.config_files) == 0:
+                print(
+                    "No configuration files were found. Will run using default values."
+                )  # TODO(griptape): Move to Log
+            else:
+                print(
+                    "Configuration files were found at the following locations and merged in this order:"
+                )  # TODO(griptape): Move to Log
+                for config_file in self.config_files:
+                    print(f"\t{config_file}")
+
     @property
     def workspace_path(self) -> Path:
         """Get the base file path from the configuration.
@@ -66,7 +73,7 @@ class ConfigManager:
         Returns:
             Path object representing the base file path.
         """
-        return Path(self.user_config.get("workspace_directory", str(Path.home())))
+        return Path(self._workspace_path).resolve()
 
     @workspace_path.setter
     def workspace_path(self, path: str) -> None:
@@ -75,7 +82,32 @@ class ConfigManager:
         Args:
             path: The path to set as the base file path.
         """
-        self.set_config_value("workspace_directory", str(Path(path).resolve()))
+        self._workspace_path = str(Path(path).resolve())
+        self.set_config_value("workspace_directory", self._workspace_path)
+
+    @property
+    def user_config_path(self) -> Path:
+        """Get the path to the user config file.
+
+        Returns:
+            Path object representing the user config file.
+        """
+        return self.workspace_path / "griptape_nodes_config.json"
+
+    @property
+    def config_files(self) -> list[Path]:
+        """Get a list of config files to check for.
+
+        Returns:
+            List of Path objects representing the config files.
+        """
+        possible_config_files = [
+            *_find_config_files("griptape_nodes_config", "json"),
+            *_find_config_files("griptape_nodes_config", "toml"),
+            *_find_config_files("griptape_nodes_config", "yaml"),
+        ]
+
+        return [config_file for config_file in possible_config_files if config_file.exists()]
 
     def save_user_script_json(self, script_file_name: str) -> None:
         script_details = ScriptSettingsDetail(file_name=script_file_name, is_griptape_provided=False)
@@ -135,17 +167,9 @@ class ConfigManager:
             key: The configuration key to set. Can use dot notation for nested keys (e.g., 'category.subcategory.key').
             value: The value to associate with the key.
         """
-        # Environment variables we handle separately.
         delta = set_dot_value({}, key, value)
         self.user_config = merge_dicts(self.user_config, delta)
-
-        if not self.user_config_path.exists():
-            self.user_config_path.touch()
-            self.user_config_path.write_text(json.dumps({}, indent=2))
-
-        # Merge in the delta with the current config.
-        current_config = json.loads(self.user_config_path.read_text())
-        self.user_config_path.write_text(json.dumps(merge_dicts(current_config, delta), indent=2))
+        self._write_user_config()
 
     def on_handle_get_config_category_request(self, request: GetConfigCategoryRequest) -> ResultPayload:
         if request.category is None or request.category == "":
@@ -181,6 +205,7 @@ class ConfigManager:
         if request.category is None or request.category == "":
             # Assign the whole shebang.
             self.user_config = request.contents
+            self._write_user_config()
             details = "Successfully assigned the entire config dictionary."
             print(details)  # TODO(griptape): Move to Log
             return SetConfigCategoryResultSuccess()
@@ -217,3 +242,15 @@ class ConfigManager:
         details = f"Successfully assigned the config value for category.key '{request.category_and_key}'."
         print(details)  # TODO(griptape): Move to Log
         return SetConfigValueResultSuccess()
+
+    def _write_user_config(self) -> None:
+        """Write the user configuration to the config file.
+
+        This method creates the config file if it doesn't exist and writes the
+        current configuration to it.
+        """
+        if not self.user_config_path.exists():
+            self.user_config_path.parent.mkdir(parents=True, exist_ok=True)
+            self.user_config_path.touch()
+            self.user_config_path.write_text(json.dumps({}, indent=2))
+        self.user_config_path.write_text(json.dumps(self.user_config, indent=2))

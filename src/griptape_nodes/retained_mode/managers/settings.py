@@ -14,17 +14,16 @@ from xdg_base_dirs import xdg_config_dirs, xdg_config_home, xdg_data_home
 
 
 def _find_config_files(filename: str, extension: str) -> list[Path]:
-    home = Path.home()
     config_files = []
 
     # Recursively search parent directories up to HOME
     current_path = Path.cwd()
-    while current_path not in (home, current_path.parent) and current_path != current_path.parent:
+    while current_path not in (Path.home(), current_path.parent) and current_path != current_path.parent:
         config_files.append(current_path / f"{filename}.{extension}")
         current_path = current_path.parent
 
-    # Search `GriptapeNodes/` inside home directory
-    config_files.append(home / "GriptapeNodes" / f"{filename}.{extension}")
+    # Search `GriptapeNodes/` inside current working directory (this is the implicit default)
+    config_files.append(Path.cwd() / "GriptapeNodes" / f"{filename}.{extension}")
 
     # Search XDG_CONFIG_HOME (e.g., `~/.config/griptape_nodes/griptape_nodes_config.yaml`)
     config_files.append(xdg_config_home() / "griptape_nodes" / f"{filename}.{extension}")
@@ -51,11 +50,7 @@ class AppInitializationComplete(BaseModel):
         default_factory=lambda: [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")]
     )
     scripts_to_register: list[ScriptSettingsDetail] = Field(
-        default_factory=lambda: [
-            ScriptSettingsDetail(file_name="griptape_nodes/scripts/prompt_an_image.py", is_griptape_provided=True),
-            ScriptSettingsDetail(file_name="griptape_nodes/scripts/coloring_book.py", is_griptape_provided=True),
-            ScriptSettingsDetail(file_name="griptape_nodes/scripts/render_logs.py", is_griptape_provided=True),
-        ]
+        default_factory=lambda: []  # noqa: PIE807 (leaving as a lambda for list for when we are ready to re-populate)
     )
 
 
@@ -88,7 +83,7 @@ class AppEvents(BaseModel):
 
 
 class Settings(BaseSettings):
-    workspace_directory: str = Field(default=str(Path().home() / "GriptapeNodes"))
+    workspace_directory: str = Field(default=str(Path().cwd() / "GriptapeNodes"))
     app_events: AppEvents = Field(default_factory=AppEvents)
     nodes: dict[str, Any] = Field(
         default_factory=lambda: {

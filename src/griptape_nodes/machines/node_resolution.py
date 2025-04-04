@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from griptape.events import EventBus
 
-from griptape_nodes.exe_types.core_types import ParameterMode, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
@@ -18,7 +18,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ParameterSpotlightEvent,
     ParameterValueUpdateEvent,
 )
-from griptape_nodes.retained_mode.events.parameter_events import GetParameterDetailsRequest
+from griptape_nodes.retained_mode.events.parameter_events import GetParameterDetailsRequest, SetParameterValueRequest
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.flow import ControlFlow
@@ -122,9 +122,8 @@ class EvaluateParameterState(State):
 class ExecuteNodeState(State):
     # TODO(kate): Can we refactor this method to make it a lot cleaner? might involve changing how parameter values are retrieved/stored.
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901, PLR0912
+    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901
         current_node = context.focus_stack[-1]
-        connections = context.flow.connections
         # Get the parameters that have input values
         for parameter_name in current_node.parameter_output_values.copy():
             parameter = current_node.get_parameter_by_name(parameter_name)
@@ -144,30 +143,6 @@ class ExecuteNodeState(State):
         for parameter in current_node.parameters:
             if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
                 continue
-            if ParameterMode.INPUT in parameter.allowed_modes:
-                # If the parameter has an INPUT - This will be the value!
-                source_values = connections.get_connected_node(current_node, parameter)
-                if source_values:
-                    source_node, source_port = source_values
-                    # just check for node bc port doesn't matter
-                    if source_node and source_port:
-                        value = None
-                        if source_port.name in source_node.parameter_output_values:
-                            # This parameter output values is a dict for str and then parameters
-                            value = source_node.parameter_output_values[source_port.name]
-                        elif source_port.name in source_node.parameter_values:
-                            value = source_node.parameter_values[source_port.name]
-                        # Sets the value in the context!
-                        if value:
-                            modified_parameters = current_node.set_parameter_value(parameter.name, value)
-                            if modified_parameters:
-                                for modified_parameter_name in modified_parameters:
-                                    modified_request = GetParameterDetailsRequest(
-                                        parameter_name=modified_parameter_name, node_name=current_node.name
-                                    )
-                                    app_event = AppEvent(payload=AppExecutionEvent(modified_request))
-                                    EventBus.publish_event(app_event)  # pyright: ignore[reportArgumentType]
-            # If the parameter DOES NOT have an input and has a property value- use the default value!
             if parameter.name not in current_node.parameter_values and parameter.default_value:
                 # If a parameter value is not already set
                 value = parameter.default_value
@@ -228,7 +203,7 @@ class ExecuteNodeState(State):
         )
         current_node.state = NodeResolutionState.RESOLVED
         details = f"{current_node.name} resolved. \n Inputs: {TypeValidator.safe_serialize(current_node.parameter_values)} \n Outputs: {TypeValidator.safe_serialize(current_node.parameter_output_values)}"
-        from griptape_nodes.retained_mode.griptape_nodes import logger
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 
         logger.info(details)
         # Output values should already be saved!
@@ -243,20 +218,10 @@ class ExecuteNodeState(State):
             )
         )
         for parameter_name, value in current_node.parameter_output_values.items():
-            data_type = None
-            if hasattr(value, "type"):
-                data_type = str(value.type)
-            elif isinstance(value, dict) and "type" in value:
-                data_type = value["type"]
-            else:
-                data_type = type(value).__name__
             parameter = current_node.get_parameter_by_name(parameter_name)
             if parameter is None:
                 err = f"Canceling flow run. Node '{current_node.name}' specified a Parameter '{parameter_name}', but no such Parameter could be found on that Node."
                 raise KeyError(err)
-            if not parameter.is_outgoing_type_allowed(data_type):
-                msg = f"Type of {data_type} does not match the output type of {parameter.output_type} for parameter '{parameter_name}'."
-                logger.warning(msg)
             data_type = parameter.type
             if data_type is None:
                 data_type = ParameterTypeBuiltin.NONE.value
@@ -272,6 +237,16 @@ class ExecuteNodeState(State):
                     ),
                 )
             )
+            # Pass the value through to the new nodes.
+            conn_output_nodes = context.flow.get_connected_output_parameters(current_node, parameter)
+            for target_node, target_parameter in conn_output_nodes:
+                GriptapeNodes.get_instance().handle_request(
+                    SetParameterValueRequest(
+                        parameter_name=target_parameter.name,
+                        node_name=target_node.name,
+                        value=value,
+                    )
+                )
         context.focus_stack.pop()
         if len(context.focus_stack):
             return EvaluateParameterState

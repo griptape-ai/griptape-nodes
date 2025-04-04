@@ -10,7 +10,6 @@ from griptape_nodes.exe_types.core_types import (
     ControlParameterOutput,
     Parameter,
     ParameterMode,
-    ParameterType,
     ParameterTypeBuiltin,
 )
 
@@ -286,25 +285,8 @@ class BaseNode(ABC):
         final_value = self.before_value_set(
             parameter=parameter, value=candidate_value, modified_parameters_set=modified_parameters
         )
-        # Should this be removed? accounting for ImageArtifacts represented as dicts, etc
-        if isinstance(value, dict) and "type" in value:
-            type_of = value["type"]
-        else:
-            type_of = type(final_value).__name__
-        if not parameter.is_incoming_type_allowed(type_of):
-            msg = f"Type of {type_of} doesn't match parameter '{param_name}' input types of {parameter.input_types}."
-            from griptape_nodes.retained_mode.griptape_nodes import logger
-
-            logger.warning(msg)
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
-        # The type is dynamically updating
-        if not parameter.user_set_type:
-            ret_val = ParameterType.attempt_get_builtin(type_of)
-            if ret_val:
-                parameter.type = ret_val.value
-            else:
-                parameter.type = type_of
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=modified_parameters)
 

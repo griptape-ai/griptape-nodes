@@ -1,4 +1,5 @@
 from os import getenv
+from pathlib import Path
 
 from dotenv import dotenv_values, get_key, set_key, unset_key
 
@@ -20,18 +21,23 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 
 class SecretsManager:
-    def __init__(self, event_manager: EventManager, config_manager: ConfigManager) -> None:
-        self.env_var_path = config_manager.workspace_path / ".env"
+    def __init__(self, config_manager: ConfigManager, event_manager: EventManager | None = None) -> None:
+        self.config_manager = config_manager
 
         # Register all our listeners.
-        event_manager.assign_manager_to_request_type(GetSecretValueRequest, self.on_handle_get_secret_request)
-        event_manager.assign_manager_to_request_type(SetSecretValueRequest, self.on_handle_set_secret_request)
-        event_manager.assign_manager_to_request_type(
-            GetAllSecretValuesRequest, self.on_handle_get_all_secret_values_request
-        )
-        event_manager.assign_manager_to_request_type(
-            DeleteSecretValueRequest, self.on_handle_delete_secret_value_request
-        )
+        if event_manager is not None:
+            event_manager.assign_manager_to_request_type(GetSecretValueRequest, self.on_handle_get_secret_request)
+            event_manager.assign_manager_to_request_type(SetSecretValueRequest, self.on_handle_set_secret_request)
+            event_manager.assign_manager_to_request_type(
+                GetAllSecretValuesRequest, self.on_handle_get_all_secret_values_request
+            )
+            event_manager.assign_manager_to_request_type(
+                DeleteSecretValueRequest, self.on_handle_delete_secret_value_request
+            )
+
+    @property
+    def env_var_path(self) -> Path:
+        return self.config_manager.workspace_path / ".env"
 
     def on_handle_get_secret_request(self, request: GetSecretValueRequest) -> ResultPayload:
         secret_key = request.key
