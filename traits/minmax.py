@@ -72,4 +72,20 @@ class CapybaraTrait(Trait):
 
 
 
+@dataclass
+class ModelTrait(Trait):
+
+    @classmethod
+    def get_trait_keys(cls) -> list[str]:
+        return ["model"]
+
+    def converters_for_trait(self) -> list[Callable]:
+        def convert(value:str) -> str:
+            return "Capybara\n"* len(value.split(" "))
+        return [convert]
+
+    def ui_options_for_trait(self) -> list:
+        return ["multiline",{"placeholder_text":"Hi"}, {"simple_dropdown":["Rodent","Fish","magical","cool","fun"]}]
+
+
 # These Traits get added to a list on the parameter. When they are added they apply their functions to the parameter.

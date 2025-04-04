@@ -41,9 +41,18 @@ class TestTraitNode(ControlNode):
         )
         self.add_parameter(
             Parameter(
-                name="string_test",
+                name="list_test",
                 input_types=["str", "list"],
                 type="list",
+                traits={CapybaraTrait},
+                tooltip="",
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="string_test",
+                input_types=["str", "list"],
+                type="str",
                 traits={CapybaraTrait},
                 tooltip="",
             )
