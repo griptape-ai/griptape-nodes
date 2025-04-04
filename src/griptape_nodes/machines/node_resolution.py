@@ -245,6 +245,7 @@ class ExecuteNodeState(State):
                         parameter_name=target_parameter.name,
                         node_name=target_node.name,
                         value=value,
+                        data_type=parameter.output_type,
                     )
                 )
         context.focus_stack.pop()

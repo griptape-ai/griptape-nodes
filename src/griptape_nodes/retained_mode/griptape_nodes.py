@@ -946,6 +946,7 @@ class FlowManager:
                     parameter_name=target_param.name,
                     node_name=target_node.name,
                     value=value,
+                    data_type=source_param.type,
                 )
             )
 
@@ -2055,12 +2056,10 @@ class NodeManager:
             return result
 
         object_created = request.value
-        object_type = type(object_created).__name__
-        # here we need to see if type_of matches the actual value.
+        # Well this seems kind of stupid
+        object_type = request.data_type if request.data_type else parameter.type
         # Is this value kosher for the types allowed?
-        if not parameter.is_incoming_type_allowed(object_type) and not (
-            isinstance(object_created, dict) and "type" in object_created
-        ):
+        if not parameter.is_incoming_type_allowed(object_type):
             details = f'set_value for "{request.node_name}.{request.parameter_name}" failed.  type "{object_created.__class__.__name__}" not in allowed types:{parameter.input_types}'
             GriptapeNodes.get_logger().error(details)
 
@@ -2104,6 +2103,7 @@ class NodeManager:
         node.state = NodeResolutionState.UNRESOLVED
         # Get the flow
         # Pass the value through!
+        # Optional data_type parameter for internal handling!
         conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
         for target_node, target_parameter in conn_output_nodes:
             GriptapeNodes.get_instance().handle_request(
@@ -2111,6 +2111,7 @@ class NodeManager:
                     parameter_name=target_parameter.name,
                     node_name=target_node.name,
                     value=finalized_value,
+                    data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
                 )
             )
 
