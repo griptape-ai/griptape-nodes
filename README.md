@@ -2,7 +2,7 @@
 
 Griptape Nodes provides a powerful, visual, node-based interface for building and executing complex AI workflows. It combines a cloud-based IDE with a locally runnable engine, allowing for easy development, debugging, and execution of Griptape applications.
 
-[![Griptape Nodes Trailer Preview](assets/img/video-thumbnail.jpg)](https://vimeo.com/1064451891)
+[![Griptape Nodes Trailer Preview](docs/assets/img/video-thumbnail.jpg)](https://vimeo.com/1064451891)
 
 **Key Features:**
 
