@@ -83,14 +83,14 @@ class RunAgentNode(ControlNode):
                 default_value=None,
                 tooltip="All of the tools",
             )
-            Parameter(
-                name="tool_list",
-                input_types=["list[Tool]"],
-                output_type="list[Tool]",
-                type="list[Tool]",
-                default_value=None,
-                tooltip="",
-            )
+            # Parameter(
+            #     name="tool_list",
+            #     input_types=["list[Tool]"],
+            #     output_type="list[Tool]",
+            #     type="list[Tool]",
+            #     default_value=None,
+            #     tooltip="",
+            # )
             Parameter(
                 name="ruleset",
                 input_types=["Ruleset"],
