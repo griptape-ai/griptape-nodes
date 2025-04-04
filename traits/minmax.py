@@ -60,21 +60,18 @@ class Clamp(Trait):
 @dataclass
 class CapybaraTrait(Trait):
     element_id: str = field(default_factory=lambda: "CapybaraTrait")
-    choices: list[str] = field(default_factory=lambda: ["1", "2", "3", "4"])
+    choices: list[str] = field(default_factory=lambda: ["Frog", "America", "Rainforest", "River"])
 
     @classmethod
     def get_trait_keys(cls) -> list[str]:
         return ["Capybara","new zealand"]
 
-    def converters_for_trait(self) -> list[Callable]:
-        def convert(value:Any) -> Any:
-            if isinstance(value,str):
-                return "Capybara\n"* len(value.split(" "))
-            if isinstance(value,list):
-                self.choices = value
-                return value
-            return value
-        return [convert]
+    # def converters_for_trait(self) -> list[Callable]:
+    #     def convert(value:Any) -> Any:
+    #         if isinstance(value,str):
+    #             return value + "Capybara"
+    #         return value
+    #     return [convert]
 
 
     def ui_options_for_trait(self) -> list:
