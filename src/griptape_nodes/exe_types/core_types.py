@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -31,6 +31,10 @@ class ParameterTypeBuiltin(Enum):
 
 
 class ParameterType:
+    class KeyValueTypePair(NamedTuple):
+        key_type: str
+        value_type: str
+
     _builtin_aliases = {
         "str": ParameterTypeBuiltin.STR,
         "string": ParameterTypeBuiltin.STR,
@@ -68,6 +72,78 @@ class ParameterType:
             ret_val = source_type_lower == target_type_lower
 
         return ret_val
+
+    @staticmethod
+    def parse_kv_type_pair(type_str: str) -> KeyValueTypePair | None:  # noqa: C901
+        """Parse a string that potentially defines a Key-Value Type Pair.
+
+        Args:
+            type_str: A string like "[str, int]" or "[dict[str, bool], list[float]]"
+
+        Returns:
+            A KeyValueTypePair object if valid KV pair format, or None if not a KV pair
+
+        Raises:
+            ValueError: If the string appears to be a KV pair but is malformed
+        """
+        # Remove any whitespace
+        type_str = type_str.strip()
+
+        # Check if it starts with '[' and ends with ']'
+        if not (type_str.startswith("[") and type_str.endswith("]")):
+            return None  # Not a KV pair, just a regular type
+
+        # Remove the outer brackets
+        inner_content = type_str[1:-1].strip()
+
+        # Now we need to find the comma that separates key type from value type
+        # This is tricky because we might have nested structures with commas
+
+        # Keep track of nesting level with different brackets
+        bracket_stack = []
+        comma_positions = []
+
+        for i, char in enumerate(inner_content):
+            if char in "[{(":
+                bracket_stack.append(char)
+            elif char in "]})":
+                if bracket_stack:  # Ensure stack isn't empty
+                    bracket_stack.pop()
+                else:
+                    # Unmatched closing bracket
+                    err_str = f"Unmatched closing bracket at position {i} in '{type_str}'."
+                    raise ValueError(err_str)
+            elif char == "," and not bracket_stack:
+                # This is a top-level comma
+                comma_positions.append(i)
+
+        # Check for unclosed brackets
+        if bracket_stack:
+            err_str = f"Unclosed brackets in '{type_str}'."
+            raise ValueError(err_str)
+
+        # We should have exactly one top-level comma
+        if len(comma_positions) != 1:
+            err_str = (
+                f"Missing comma separator in '{type_str}'."
+                if len(comma_positions) == 0
+                else f"Too many comma separators in '{type_str}'."
+            )
+            raise ValueError(err_str)
+
+        # Split at the comma
+        key_type = inner_content[: comma_positions[0]].strip()
+        value_type = inner_content[comma_positions[0] + 1 :].strip()
+
+        # Validate that both parts are not empty
+        if not key_type:
+            err_str = f"Empty key type in '{type_str}'."
+            raise ValueError(err_str)
+        if not value_type:
+            err_str = f"Empty value type in '{type_str}'."
+            raise ValueError(err_str)
+
+        return ParameterType.KeyValueTypePair(key_type=key_type, value_type=value_type)
 
 
 # Keys and values for the UI_Options schema.
@@ -833,9 +909,135 @@ class ParameterList(ParameterContainer):
         param = Parameter(
             name=name,
             tooltip=self.tooltip,
-            type=self.type,
-            input_types=self.input_types,
-            output_type=self.output_type,
+            type=self._type,
+            input_types=self._input_types,
+            output_type=self._output_type,
+            default_value=self.default_value,
+            tooltip_as_input=self.tooltip_as_input,
+            tooltip_as_output=self.tooltip_as_output,
+            tooltip_as_property=self.tooltip_as_property,
+            allowed_modes=self.allowed_modes,
+            ui_options=self.ui_options,
+            converters=self.converters,
+            validators=self.validators,
+            settable=self.settable,
+            user_defined=self.user_defined,
+        )
+
+        # Add at the end.
+        self.add_child(param)
+
+        return param
+
+
+class ParameterDict(ParameterContainer):
+    _kvp_type: ParameterType.KeyValueTypePair
+
+    def __init__(  # noqa: PLR0913
+        self,
+        name: str,
+        tooltip: str | list[dict],
+        type: str | None = None,  # noqa: A002
+        default_value: Any = None,
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
+        allowed_modes: set[ParameterMode] | None = None,
+        ui_options: ParameterUIOptions | None = None,
+        converters: list[Callable[[Any], Any]] | None = None,
+        validators: list[Callable[[Parameter, Any], None]] | None = None,
+        *,
+        settable: bool = True,
+        user_defined: bool = False,
+        element_id: str | None = None,
+        element_type: str | None = None,
+    ):
+        # Remember: we're a Parameter, too, just like everybody else.
+        super().__init__(
+            name=name,
+            tooltip=tooltip,
+            type=type,
+            default_value=default_value,
+            tooltip_as_input=tooltip_as_input,
+            tooltip_as_property=tooltip_as_property,
+            tooltip_as_output=tooltip_as_output,
+            allowed_modes=allowed_modes,
+            ui_options=ui_options,
+            converters=converters,
+            validators=validators,
+            settable=settable,
+            user_defined=user_defined,
+            element_id=element_id,
+            element_type=element_type,
+        )
+
+    def _custom_getter_for_property_type(self) -> str:
+        base_type = super()._custom_getter_for_property_type()
+        # NOT A TYPO. Internally, we are representing the Dict as a List to preserve the order.
+        result = f"list[{base_type}]"
+        return result
+
+    def _custom_setter_for_property_type(self, value) -> None:
+        # Set it as normal.
+        super()._custom_setter_for_property_type(value)
+
+        # We set the type value, now get it back.
+        base_type = super()._custom_getter_for_property_type()
+
+        # Ensure this is a valid Key-Value Pair
+        base_type = super()._custom_getter_for_property_type()
+        kvp_type = ParameterType.parse_kv_type_pair(base_type)
+        if kvp_type is None:
+            err_str = f"PropertyDict type '{base_type}' was not a valid Key-Value Type Pair. Format should be: ['<key type>', '<value type>']"
+            raise ValueError(err_str)
+        self._kvp_type = kvp_type
+
+    def _custom_getter_for_property_input_types(self) -> list[str]:
+        # For every valid input type, also accept a list variant of that for the CONTAINER Parameter only.
+        # Children still use the input types given to them.
+        base_input_types = super()._custom_getter_for_property_input_types()
+        result = []
+        for base_input_type in base_input_types:
+            container_variant = f"dict[{base_input_type}]"
+            result.append(container_variant)
+            result.append(base_input_type)
+
+        return result
+
+    def _custom_getter_for_property_output_type(self) -> str:
+        base_type = super()._custom_getter_for_property_output_type()
+        result = f"dict[{base_type}]"
+        return result
+
+    def __len__(self) -> int:
+        # Returns the number of child Parameters. Just do the top level.
+        param_children = self.find_elements_by_type(element_type=Parameter, find_recursively=False)
+        return len(param_children)
+
+    def __getitem__(self, key: int) -> Parameter:
+        count = 0
+        for child in self._children:
+            if isinstance(child, Parameter):
+                if count == key:
+                    # Found it.
+                    return child
+                count += 1
+
+        # If we fell out of the for loop, we had a bad value.
+        err_str = f"Attempted to get a Parameter List index {key}, which was out of range."
+        raise KeyError(err_str)
+
+    def add_child_parameter(self) -> Parameter:
+        # Generate a name. This needs to be UNIQUE because children need
+        # to be tracked as individuals and not as indices/keys in the dict.
+        name = f"{self.name}_ParameterDictUniqueParamID_{uuid.uuid4().hex!s}"
+
+        param = Parameter(
+            name=name,
+            tooltip=self.tooltip,
+            type=self._type,
+            input_types=self._input_types,
+            output_type=self._output_type,
             default_value=self.default_value,
             tooltip_as_input=self.tooltip_as_input,
             tooltip_as_output=self.tooltip_as_output,

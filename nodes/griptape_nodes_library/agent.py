@@ -4,6 +4,7 @@ from griptape.utils import Stream
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
+    ParameterDict,
     ParameterGroup,
     ParameterList,
     ParameterMode,
@@ -29,6 +30,13 @@ class RunAgentNode(ControlNode):
                 name="agent",
                 input_types=["Agent", "dict"],
                 output_type="Agent",
+                tooltip="",
+            )
+        )
+        self.add_parameter(
+            ParameterDict(
+                name="context",
+                type="[str, str]",
                 tooltip="",
             )
         )
@@ -83,14 +91,6 @@ class RunAgentNode(ControlNode):
                 default_value=None,
                 tooltip="All of the tools",
             )
-            # Parameter(
-            #     name="tool_list",
-            #     input_types=["list[Tool]"],
-            #     output_type="list[Tool]",
-            #     type="list[Tool]",
-            #     default_value=None,
-            #     tooltip="",
-            # )
             Parameter(
                 name="ruleset",
                 input_types=["Ruleset"],
@@ -122,6 +122,13 @@ class RunAgentNode(ControlNode):
             entry_1 = tool_list.add_child_parameter()
             print(entry_0.name)
             print(tool_list[1].name)
+
+        # Now with ParameterDict
+        context = self.get_parameter_by_name("context")
+        if isinstance(context, ParameterDict):
+            kvp_0 = context.add_child_parameter()
+            kvp_1 = context.add_child_parameter()
+            kvp_0["first_name"] = "James"
 
     # Only requires a valid GT_CLOUD_API_KEY
     def validate_node(self) -> list[Exception] | None:
