@@ -4,6 +4,7 @@ from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterUIOptions
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -53,7 +54,7 @@ class CreateImageNode(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options=ParameterUIOptions(
                     string_type_options=ParameterUIOptions.StringType(
-                        placeholder_text="Enter your image generation prompt here.", multiline=True
+                        placeholder_text="Enter your image generation prompt here."
                     )
                 ),
             )
@@ -120,16 +121,23 @@ class CreateImageNode(ControlNode):
         enhance_prompt = params.get("enhance_prompt", True)
 
         if enhance_prompt:
+            logger.info("Enhancing prompt...")
             result = agent.run(
                 [
                     """
 Enhance the following prompt for an image generation engine. Return only the image generation prompt.
-Include unique details that make the subject stand out. Specify a specific depth of field, and time of day. Focus on qualities that will make this the most professional looking photo in the world.""",
+Include unique details that make the subject stand out.
+Specify a specific depth of field, and time of day.
+Use dust in the air to create a sense of depth.
+Use a slight vignetting on the edges of the image.
+Use a color palette that is complementary to the subject.
+Focus on qualities that will make this the most professional looking photo in the world.""",
                     prompt,
                 ]
             )
             prompt = result.output
-
+        else:
+            logger.info("Prompt enhancement disabled.")
         # Initialize driver kwargs with required parameters
         kwargs = {}
 
