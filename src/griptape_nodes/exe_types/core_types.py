@@ -416,7 +416,7 @@ class Parameter(BaseNodeElement):
     @property
     def validators(self) -> list[Callable[[Parameter, Any], None]]:
         validators = []
-        traits = self.find_elements_by_type(Trait)
+        traits = self.find_elements_by_type(Trait) #TODO(kate): Should these be ordered? does this return them in order?
         for trait in traits:
             validators += trait.validators_for_trait()
         validators += self._validators
@@ -427,8 +427,12 @@ class Parameter(BaseNodeElement):
         ui_options = []
         traits = self.find_elements_by_type(Trait)
         for trait in traits:
-            ui_options = ui_options + trait.ui_options_for_trait()
-        ui_options += self._ui_options
+            ui_options_combined = ui_options.copy()
+            #TODO(kate): User a better data type here
+            for option in trait.ui_options_for_trait():
+                if option not in ui_options_combined:
+                    ui_options_combined.append(option)
+                    ui_options += self._ui_options
         return ui_options
 
     @property

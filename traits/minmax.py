@@ -3,12 +3,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
-from numpy import isin
 
 @dataclass
 class MinMax(Trait):
     min: Any = 10
     max: Any = 30
+    element_id: str = field(default_factory=lambda: "MinMaxTrait")
 
     _allowed_modes = {ParameterMode.PROPERTY}
 
@@ -37,6 +37,7 @@ class MinMax(Trait):
 class Clamp(Trait):
     min: Any = 10
     max: Any = 30
+    element_id: str = field(default_factory=lambda: "ClampTrait")
 
     def __init__(self) -> None:
         super().__init__()
@@ -58,7 +59,7 @@ class Clamp(Trait):
 
 @dataclass
 class CapybaraTrait(Trait):
-
+    element_id: str = field(default_factory=lambda: "CapybaraTrait")
     choices: list[str] = field(default_factory=lambda: ["1", "2", "3", "4"])
 
     @classmethod

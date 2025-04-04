@@ -171,7 +171,6 @@ class RunAgentNode(ControlNode):
                             ]
                     self.set_parameter_value("prompt_model",self.get_parameter_value("prompt_model"))
 
-
     def process(self) -> None:
         # Get api key
         api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
