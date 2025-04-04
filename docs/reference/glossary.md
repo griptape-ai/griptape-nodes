@@ -8,6 +8,22 @@
 
 ### The Basics
 
+- **Workflow**: A document containing nodes, connections, and values.  While technically a Workflow is also a Script, avoid calling them Scripts, so that the term Script can communicate a clearly different thing than the term Workflow.  This is also what we call the saved file.
+
+- **Workflow Editor**: The workspace where nodes are added, connected, and configured.
+
+- **Flow**: A collection of connected nodes that form a functional unit. A Workflow can contain 0-n Flows.
+
+- **Sub-Flow**: A contained set of nodes that executes within a Loop, Branch, Reference (and sometimes Groups). This refers to any logically distinct, internally-contained portion of a flow that functions as a cohesive unit.
+
+- **Reference**: A link to another Flow, embedding it as a Sub-Flow within the current context.
+
+- **Group**: A visual clustering of nodes. A Group may act as a Sub-Flow if it is executed as a unit, but grouping alone does not imply execution and may simply be a subjectively related set of nodes.
+
+- **Script**: A Python script that runs code. This term should be avoided when describing a Workflow; instead, script refers to tools, macros, or flow-building aids.
+
+- **Libraries**: Collections of node definitions and/or scripts that extend functionality
+
 - **Node**: A single piece of the puzzle in your creative project. Nodes are like LEGO blocks that you can connect to create something bigger. Each node does one specific thing (like generating an image or processing text).
 
   - **DataNode**: A node that handles information — it can transform data from one form to another.
