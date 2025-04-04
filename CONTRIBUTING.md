@@ -1,160 +1,143 @@
-# Getting started
+# Contributing to Griptape Nodes
 
-1. Clone the repository:
+We welcome contributions to the Griptape Nodes project! Whether it's bug fixes, new features, or documentation improvements, your help is appreciated.
 
-   ```shell
-   git clone https://github.com/griptape-ai/griptape-nodes.git
-   ```
+## Development Setup
 
-1. Install `uv`: https://docs.astral.sh/uv/getting-started/installation/.
+1.  **Clone the Repository:**
+    ```shell
+    git clone https://github.com/griptape-ai/griptape-nodes.git
+    cd griptape-nodes
+    ```
 
-1. Navigate to the project directory:
+2.  **Install `uv`:**
+    If you don't have `uv` installed, follow the official instructions: [Astral's uv Installation Guide](https://docs.astral.sh/uv/getting-started/installation/).
 
-   ```shell
-   cd griptape-nodes
-   ```
+3.  **Install Dependencies:**
+    Use `uv` to create a virtual environment and install all required dependencies, including base, development, testing, and documentation tools:
+    ```shell
+    uv sync -p --all-extras
+    ```
+    This command reads the `pyproject.toml` file and installs everything needed for development within a `.venv` directory.
 
-1. Install the project's dependencies:
+## Running the Engine Locally for Development
 
-   ```shell
-   make install
-   ```
+When developing, you typically want to run the engine using your local source code, not a globally installed version.
 
-1. Install the Griptape Nodes Engine:
+**Key Development Commands:**
 
-   Visit [https://nodes.griptape.ai/](https://nodes.griptape.ai/), and follow the instructions to install the Engine locally.
+*   **Run the Engine:** Use `uv run` to execute the engine script (`gtn` or `griptape-nodes`) within the virtual environment managed by `uv`.
+    ```shell
+    uv run gtn
+    # or
+    uv run griptape-nodes engine
+    ```
+*   **Run Initialization:** To trigger the initial setup prompts (API Key, Workspace Directory) using the local code:
+    ```shell
+    uv run gtn init
+    ```
+*   **Run Tests:**
+    ```shell
+    uv run pytest
+    # or use the Makefile shortcut
+    make test/unit
+    ```
+*   **Check Code (Linting & Formatting):**
+    ```shell
+    uv run ruff check . && uv run ruff format . --check && uv run pyright
+    # or use the Makefile shortcut
+    make check
+    ```
+*   **Format Code:**
+    ```shell
+    uv run ruff format .
+    # or use the Makefile shortcut
+    make format
+    ```
+*   **Fix Code Automatically (Format + Lint):**
+    ```shell
+    uv run ruff check . --fix && uv run ruff format .
+    # or use the Makefile shortcut
+    make fix
+    ```
 
-1. Configure the Engine to use the nodes library in this repo.
+**Connecting to a Different API Backend:**
 
-   By default, the Engine looks for the nodes library set up by the `./install.sh` script:
-   https://github.com/griptape-ai/griptape-nodes/blob/24d1fdab898e1617793eeb55b7a5a87c161502ef/install.sh?plain=1#L63-L64
-   https://github.com/griptape-ai/griptape-nodes/blob/24d1fdab898e1617793eeb55b7a5a87c161502ef/src/griptape_nodes/retained_mode/managers/settings.py?plain=1#L52-L54
+To point your local engine at a different API instance (e.g., a local Griptape Nodes IDE server), set the `GRIPTAPE_NODES_API_BASE_URL` environment variable:
 
-   When developing locally, you must configure the Engine to use the nodes library in this repo:
+```shell
+GRIPTAPE_NODES_API_BASE_URL=http://localhost:8001 uv run gtn
+```
 
-   1. Create a file `griptape_nodes_config.json` in the root of the cloned repo.
-   1. Add the following content to the file:
-      ```json
-      {
-        "app_events": {
-          "on_app_initialization_complete": {
-            "libraries_to_register": [
-              "nodes/griptape_nodes_library.json"
-            ]
+## Configuration for Development
+
+Griptape Nodes uses a configuration loading system. For full details, see the [Configuration Documentation](docs/configuration.md). Here's what's crucial for development:
+
+1.  **`.env` File:** The engine still needs your `GT_CLOUD_API_KEY` to communicate with the cloud IDE. Ensure this is set in the system-wide environment file located via `gtn init` (typically `~/.config/griptape_nodes/.env`). Running `uv run gtn init` will guide you through creating this if needed.
+
+2.  **Using the Local Nodes Library:** By default, a regularly installed engine looks for node definitions (the `griptape_nodes_library.json`) in a system data directory. For development, you **must** tell the engine (run via `uv run gtn`) to use the library file directly from your cloned repository (`./nodes/griptape_nodes_library.json`).
+
+    *   **How to Override:** Create a configuration file in a location that has higher priority than the default system paths. The simplest location is the **root of your cloned `griptape-nodes` repository**.
+    *   Create a file named `griptape_nodes_config.json` in the project root.
+    *   Add the following content:
+        ```json
+        {
+          "app_events": {
+            "on_app_initialization_complete": {
+              "libraries_to_register": [
+                "nodes/griptape_nodes_library.json"
+              ]
+            }
           }
         }
-      }
-      ```
+        ```
+    *   **Why this works:** When you run `uv run gtn` from the project root, the engine's configuration loader finds this `griptape_nodes_config.json` first (due to the "Current Directory & Parents" search path) and uses its `libraries_to_register` setting, overriding the default path.
 
-1. Run the engine 🚗:
+## Contributing to Documentation
 
-   ```shell
-   make run
-   ```
+The documentation website ([docs.griptapenodes.com](https://docs.griptapenodes.com)) is built using MkDocs with the Material theme.
 
-   To point your engine at a different instance of the API, set the `GRIPTAPE_NODES_API_BASE_URL` environment variable before running:
+1.  **Setup:** Ensure you've installed dependencies using `uv sync -p --all-extras` (this includes the `docs` group).
 
-   ```shell
-   GRIPTAPE_NODES_API_BASE_URL=http://localhost:8001 make run
-   ```
+2.  **Source Files:** Documentation source files are located in the `/docs` directory in Markdown format. The site structure is defined in `mkdocs.yml` in the project root.
 
-1. Navigate to the URL provided in the terminal.
+3.  **Serving Locally:** To preview your changes live, run the MkDocs development server:
+    ```shell
+    uv run mkdocs serve
+    ```
+    This will start a local webserver (usually at `http://127.0.0.1:8000/`). The site will automatically reload when you save changes to the documentation files or `mkdocs.yml`.
 
-# Make Commands
+4.  **Making Changes:** Edit the Markdown files in the `/docs` directory. Add new pages by creating new `.md` files and updating the `nav` section in `mkdocs.yml`.
 
-Review [Makefile](https://github.com/griptape-ai/griptape-nodes/blob/main/Makefile) for all commands.
+## Code Style and Quality
 
-Check the project (type-check, format, lint):
+*   We use **Ruff** for linting and formatting. Please ensure your code conforms to the style by running `make format` or `make fix`.
+*   We use **Pyright** for static type checking. Run `make check` to ensure there are no type errors.
+*   Run tests using `make test/unit` or `uv run pytest`.
 
-```shell
-make check
-```
+## Submitting Changes
 
-Format the project:
+1.  Create a new branch for your feature or bug fix: `git checkout -b my-feature-branch`.
+2.  Make your changes, commit them with clear messages, and ensure all checks (`make check`) and tests (`make test/unit`) pass.
+3.  Push your branch to your fork: `git push origin my-feature-branch`.
+4.  Open a Pull Request (PR) against the `main` branch of the `griptape-ai/griptape-nodes` repository.
+5.  Clearly describe your changes in the PR description.
 
-```shell
-make format
-```
+## Making a Release (Maintainers)
 
-Automatically fix issues (format, lint):
+1.  Check out the `main` branch locally:
+    ```shell
+    git checkout main
+    git pull origin main
+    ```
+2.  Set the new release version (this creates Git tags):
+    ```shell
+    # Example for version 0.8.0
+    make version/set v=0.8.0
+    ```
+3.  Publish the release (pushes tags to trigger GitHub Actions workflow):
+    ```shell
+    make version/publish
+    ```
 
-```shell
-make fix
-```
-
-Serve the documentation:
-
-```shell
-make docs/serve
-```
-
-Run unit tests:
-
-```shell
-make test/unit
-```
-
-Run integration tests:
-
-```shell
-make test/integration
-```
-
-# Engine Commands
-
-Install the engine using the following command:
-
-```bash
-uv tool install .
-```
-
-You can now run the `griptape-nodes` command (`gtn` shorthand).
-
-Start the engine:
-
-```
-griptape-nodes
-```
-
-or
-
-```
-griptape-nodes engine
-```
-
-Get the current configuration:
-
-```
-griptape-nodes config
-```
-
-# Making a Release
-
-1. Check out the `main` branch locally:
-
-   ```shell
-   git checkout main
-   ```
-
-1. Pull the latest changes from the remote repository:
-
-   ```shell
-   git pull origin main
-   ```
-
-1. Set the new release version:
-
-   ```shell
-   make version/set v=0.1.2
-   ```
-
-   This will create a new tag, `v0.1.2`, and update the `latest` tag to point to the new version.
-
-1. Publish the release:
-
-   ```shell
-   make version/publish
-   ```
-
-   This will push the tags, `v0.1.2` and `latest`, to the remote repository.
-   When new tags are pushed, a Github Workflow will be triggered to create a new release on Github.
+Thank you for contributing!
