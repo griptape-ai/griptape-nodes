@@ -116,7 +116,11 @@ class CreateImageNode(ControlNode):
         workspace_path = self.config_manager.workspace_path
         images_dir = workspace_path / "Images/"
 
-        agent = params.get("agent", Agent(tasks=[]))
+        agent = params.get("agent", None)
+        if not agent:
+            agent = Agent()
+        else:
+            agent = Agent().from_dict(agent)
         prompt = params.get("prompt", "")
         enhance_prompt = params.get("enhance_prompt", True)
 
