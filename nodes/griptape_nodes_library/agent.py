@@ -115,7 +115,7 @@ class RunAgentNode(ControlNode):
                 trait = prompt_model.find_element_by_id("ModelTrait")
                 if trait and isinstance(trait, ModelTrait):
                     driver_type = str(type(value).__name__).lower()
-                    modified_parameters_set.add("prompt_driver")
+                    modified_parameters_set.add("prompt_model")
                     match driver_type:
                         case _ if "anthropic" in driver_type:
                             trait.choices = [

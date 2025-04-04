@@ -70,7 +70,6 @@ class AnthropicPromptDriverNode(BasePromptDriverNode):
             return exceptions
         try:
             client = anthropic.Anthropic(api_key=api_key)
-            logger.error(f"api_key={api_key}")
             client.models.list()
         except anthropic.APIError as e:
             exceptions.append(e)

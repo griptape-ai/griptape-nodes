@@ -84,7 +84,7 @@ class CapybaraTrait(Trait):
 @dataclass
 class ModelTrait(Trait):
     choices: list[str] = field(default_factory=lambda: ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo", "gpt-4"])
-    element_id = "ModelTrait"
+    element_id: str = field(default_factory=lambda: "ModelTrait")
 
     @classmethod
     def get_trait_keys(cls) -> list[str]:
