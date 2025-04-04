@@ -62,6 +62,7 @@ When developing, you typically want to run the engine using your local source co
     ```
 
 **Connecting to a Different API Backend:**
+> Internal Griptape Developers with access to API project
 
 To point your local engine at a different API instance (e.g., a local Griptape Nodes IDE server), set the `GRIPTAPE_NODES_API_BASE_URL` environment variable:
 

@@ -1,11 +1,11 @@
 # Setup Griptape Nodes
 
-Griptape Nodes has a cloud based IDE that works in conjunction with an installable engine. The engine can be installed on your local machine or in a hosted environment. The instructions that follow are the same in either case. 
+Griptape Nodes has a cloud-based IDE that works in conjunction with an installable engine. The engine can be installed on your local machine or in a hosted environment. The instructions that follow are the same in either case. 
 
-The IDE allows you to create workflows using a node based editor. The workflows are executed in the engine allowing for advanced capabilities like debugging a flow, stepping through a flow node by node, iterating over parts of a flow, and a scriptable interface to your flows. 
+The IDE allows you to create workflows using a node based editor. The workflows are executed in the engine allowing for advanced capabilities like debugging a flow, stepping through a flow node by node, and iterating over parts of a flow. The IDE also exposes scriptable interface to your flows. 
 
 ## Login
-To get start, visit https://griptapenodes.com and click the sign-in button. You'll be presented with a Griptape Cloud authorization form. 
+To get started, visit https://griptapenodes.com and click the sign-in button. You'll be presented with a Griptape Cloud authorization form. 
 
 > If you've previously logged into Griptape Cloud, or have an account there, use the same credentials. 
 
@@ -46,7 +46,7 @@ Next, you'll be prompted for your Griptape Cloud API Key. Return to the web brow
 ![Setup Two](assets/img/setup/setup-two.png)
 
 ```
-Workspace directory set to: /Users/kyleroche/Documents/local-dev/nodes-test-eng/GriptapeNodes
+Workspace directory set to: /Users/user/Documents/local-dev/nodes-test-eng/GriptapeNodes
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Griptape API Key                                                                                                        │
 │         A Griptape API Key is needed to proceed.                                                                        │

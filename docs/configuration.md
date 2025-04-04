@@ -1,25 +1,30 @@
 # Engine Configuration
 
-When running Griptape Nodes engine on your own machine, you are provided with a few utilities to manage configuration settings. During installation, `gtn init` was run automatically. Understanding how the configuration settings are loaded is important as you build out and manage more complicated projects or share projects with your team members. 
+When running Griptape Nodes engine on your own machine, you are provided with utilities to manage configuration settings. Understanding how the configuration settings are loaded is important as you build out and manage more complicated projects or share projects with your team members. 
+
+> During installation, `gtn init` was run automatically.  
 
 ## Configuration Loading
 
 Griptape Nodes employs a specific search order to load settings from environment variables and configuration files. Understanding this process is key to managing your setup.
 
 1.  **Environment Variables (`.env`)**
+Configuration files hold information important for Griptape Nodes operation, such as where to locate Node Libraries, as well as user preferences to customize the Griptape Nodes experience.
     *   The primary `.env` file is loaded from the system-wide user configuration directory: `xdg_config_home() / "griptape_nodes" / ".env"` (commonly `~/.config/griptape_nodes/.env`).
-    *   This file is intended for secrets like `GT_CLOUD_API_KEY`.
-    *   **Important:** By default, `.env` files located elsewhere (e.g., your project directory or workspace) are **not** automatically loaded.
+    *   This file is intended for secrets like `GT_CLOUD_API_KEY`, `OPENAI_API_KEY`.
+> You shouldn't interact with these files directly. Griptape Nodes manages your environment variables through its Settings dialog. 
 
 2.  **Configuration Files (`griptape_nodes_config.[json|yaml|toml]`)**
+    *   If no configuration files are found, Griptape Nodes will issue a warning and attempt to run using built-in default values.
     *   The application searches for configuration files named `griptape_nodes_config` with `.json`, `.yaml`, or `.toml` extensions.
-    *   It searches in multiple locations in a specific order. The **first** configuration file found determines the settings. Settings from files in lower priority locations are ignored if a higher priority file exists.
-    *   **Search Order (Highest to Lowest Priority):**
-        1.  **System-wide Shared:** Paths in `XDG_CONFIG_DIRS` (e.g., `/etc/xdg/griptape_nodes/`).
-        2.  **System-wide User:** Path in `XDG_CONFIG_HOME` (e.g., `~/.config/griptape_nodes/`). This is where `gtn init` saves the initial configuration.
-        3.  **Implicit CWD Subdirectory:** `current_working_directory / "GriptapeNodes" /` (relative to where `gtn` is run).
-        4.  **Current Directory & Parents:** The current working directory (`cwd`) and its parent directories up to the user's home directory (`~`).
-    *   **File Type Priority:** If multiple file types exist in the *same* highest-priority directory found (e.g., both `.json` and `.yaml`), the priority is: `.json` > `.yaml` > `.toml`.
+    *   It searches in multiple locations in a specific order. **All** valid configuration files found across these locations are loaded and their settings are **merged**.
+    *   **Search Order (Lower numbers are checked first, but higher numbers override):**
+        1.  **System-wide Shared:** Paths in `XDG_CONFIG_DIRS` (e.g., `/etc/xdg/griptape_nodes/`). Settings here have the *lowest* priority.
+        2.  **System-wide User:** Path in `XDG_CONFIG_HOME` (e.g., `~/.config/griptape_nodes/`). Settings here override System-wide Shared.
+        3.  **Implicit CWD Subdirectory:** `current_working_directory / "GriptapeNodes" /` (relative to where `gtn` is run). Settings here override System User.
+        4.  **Current Directory & Parents:** The current working directory (`cwd`) and its parent directories up to the user's home directory (`~`). Settings found closer to `cwd` have *higher* priority and override settings from parent directories and all locations above.
+    *   **Override Priority:** Because settings are merged, if the same setting exists in multiple files, the value from the file found *later* in the search order (i.e., closer to the current directory) takes precedence. For example, a setting in `./griptape_nodes_config.json` will override the same setting in `~/.config/griptape_nodes/griptape_nodes_config.json`.
+    *   **File Type Priority:** If multiple file types (e.g., `.json` and `.yaml`) exist in the *same directory*, they are all loaded, but the priority for merging within that *single* directory is: `.json` > `.yaml` > `.toml`.
 
 3.  **Defaults and Merging**
     *   Settings loaded from the first found configuration file override the built-in default values.
