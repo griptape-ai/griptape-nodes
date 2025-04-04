@@ -72,6 +72,15 @@
       }
     },
     {
+      "class_name": "TestTraitNode",
+      "file_path": "griptape_nodes_library/test_node.py",
+      "metadata": {
+        "category": "Agent",
+        "description": "Griptape Agent that can execute prompts and use tools",
+        "display_name": "test"
+      }
+    },
+    {
       "class_name": "SimpleAgentNode",
       "file_path": "griptape_nodes_library/simple_agent.py",
       "metadata": {

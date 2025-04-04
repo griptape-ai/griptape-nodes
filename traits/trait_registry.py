@@ -30,3 +30,7 @@ class TraitRegistry(SingletonMixin):
                 cls().key_to_trait[key].append(trait.__class__)
             else:
              cls().key_to_trait[key] = [trait.__class__]
+
+    @classmethod
+    def register_trait_from_json(cls) -> None:
+        path_to_json = "trait_registry.py"
