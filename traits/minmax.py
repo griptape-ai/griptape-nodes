@@ -59,7 +59,7 @@ class Clamp(Trait):
 @dataclass
 class CapybaraTrait(Trait):
 
-    choices: list[str] = field(default=["1","2","3","4"])
+    choices: list[str] = field(default_factory=lambda: ["1", "2", "3", "4"])
 
     @classmethod
     def get_trait_keys(cls) -> list[str]:
