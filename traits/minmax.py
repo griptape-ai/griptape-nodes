@@ -1,9 +1,10 @@
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 
-
+@dataclass
 class MinMax(Trait):
     min: Any = 10
     max: Any = 30
@@ -15,10 +16,34 @@ class MinMax(Trait):
         return ["min", "max", "minmax", "min_max"]
 
     def ui_options_for_trait(self) -> list:
-        return [{"slider": {"min_val": self.min, "max_val": self.max}}, {"step": 2}]
+        return [{"slider": {"min_val": self.min, "max_val": self.max}},{"step": 2}, "multiline" ]
 
     def display_options_for_trait(self) -> dict:
         return {}
+
+    def converters_for_trait(self) -> list[Callable]:
+        return []
+
+    def validators_for_trait(self) -> list[Callable[..., Any]]:
+        def validate(param: Parameter, value:Any) -> None:
+            if value > self.max or value < self.min:
+                msg = "Value out of range"
+                raise ValueError(msg)
+
+        return [validate]
+
+@dataclass
+class Clamp(Trait):
+    min: Any = 10
+    max: Any = 30
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.add_child(MinMax())
+
+    @classmethod
+    def get_trait_keys(cls) -> list[str]:
+        return ["clamp"]
 
     def converters_for_trait(self) -> list[Callable]:
         def clamp(value: Any) -> Any:
@@ -30,13 +55,21 @@ class MinMax(Trait):
 
         return [clamp]
 
-    def validators_for_trait(self) -> list[Callable[..., Any]]:
-        def validate(param: Parameter, value:Any) -> None:
-            if value > self.max or value < self.min:
-                msg = "Value out of range"
-                raise ValueError(msg)
+@dataclass
+class CapybaraTrait(Trait):
 
-        return [validate]
+    @classmethod
+    def get_trait_keys(cls) -> list[str]:
+        return ["Capybara","new zealand"]
+
+    def converters_for_trait(self) -> list[Callable]:
+        def convert(value:str) -> str:
+            return "Capybara\n"* len(value.split(" "))
+        return [convert]
+
+    def ui_options_for_trait(self) -> list:
+        return ["multiline",{"placeholder_text":"Hi"}, {"simple_dropdown":["Rodent","Fish","magical","cool","fun"]}]
+
 
 
 # These Traits get added to a list on the parameter. When they are added they apply their functions to the parameter.

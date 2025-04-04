@@ -427,7 +427,7 @@ class Parameter(BaseNodeElement):
         ui_options = []
         traits = self.find_elements_by_type(Trait)
         for trait in traits:
-            ui_options += trait.ui_options_for_trait()
+            ui_options = ui_options + trait.ui_options_for_trait()
         ui_options += self._ui_options
         return ui_options
 
@@ -658,30 +658,30 @@ class ControlParameterOutput(ControlParameter):
 # Making a new file for parameter traits.
 # TODO(kate): What do we want traits to have? there will probably be more..
 
-
+@dataclass
 class Trait(ABC, BaseNodeElement):
-    _allowed_modes: set[ParameterMode] | None
+    _allowed_modes: set[ParameterMode] | None = field(default=None)
 
     @classmethod
     @abstractmethod
     def get_trait_keys(cls) -> list[str]:
         """This will return keys that trigger this trait."""
 
-    @abstractmethod
     def ui_options_for_trait(self) -> list:
         """Returns a list of UI options for the parameter as a list of strings or dictionaries."""
+        return []
 
-    @abstractmethod
     def display_options_for_trait(self) -> dict:
         """Returns a list of display options for the parameter as a dictionary."""
+        return {}
 
-    @abstractmethod
-    def converters_for_trait(self) -> list[Callable]:
-        """ "Returns a list of methods to be applied as a convertor."""
+    def converters_for_trait(self) -> list[Callable[[Any], Any]]:
+        """Returns a list of methods to be applied as a convertor."""
+        return []
 
-    @abstractmethod
-    def validators_for_trait(self) -> list[Callable]:
+    def validators_for_trait(self) -> list[Callable[[Parameter, Any]]]:
         """Returns a list of methods to be applied as a validator."""
+        return []
 
     @property
     def allowed_modes(self) -> set:

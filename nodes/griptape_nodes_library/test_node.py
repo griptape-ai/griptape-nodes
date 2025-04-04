@@ -4,7 +4,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
-from traits.minmax import MinMax
+from traits.minmax import CapybaraTrait, Clamp, MinMax
 
 
 class TestTraitNode(ControlNode):
@@ -27,7 +27,7 @@ class TestTraitNode(ControlNode):
                 name="number2",
                 input_types=["int"],
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={MinMax},
+                traits={Clamp},
                 tooltip="",
             )
         )
@@ -36,6 +36,15 @@ class TestTraitNode(ControlNode):
                 name="sum",
                 input_types=["int"],
                 allowed_modes={ParameterMode.OUTPUT},
+                tooltip="",
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="string_test",
+                input_types=["str", "list"],
+                type="list",
+                traits={CapybaraTrait},
                 tooltip="",
             )
         )
