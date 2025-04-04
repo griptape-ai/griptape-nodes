@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
+from numpy import isin
 
 @dataclass
 class MinMax(Trait):
@@ -65,12 +66,14 @@ class CapybaraTrait(Trait):
         return ["Capybara","new zealand"]
 
     def converters_for_trait(self) -> list[Callable]:
-        def convert_str(value:str) -> str:
-            return "Capybara\n"* len(value.split(" "))
-        def convert_list(value:list) -> list:
-            self.choices = value
+        def convert(value:Any) -> Any:
+            if isinstance(value,str):
+                return "Capybara\n"* len(value.split(" "))
+            if isinstance(value,list):
+                self.choices = value
+                return value
             return value
-        return [convert_str,convert_list]
+        return [convert]
 
 
     def ui_options_for_trait(self) -> list:
