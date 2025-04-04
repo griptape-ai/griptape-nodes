@@ -90,15 +90,6 @@
       }
     },
     {
-      "class_name": "AzureOpenAiChatPromptDriverNode",
-      "file_path": "griptape_nodes_library/drivers/prompt/azure_openai_chat_prompt_driver.py",
-      "metadata": {
-        "category": "Drivers",
-        "description": "Azure OpenAI prompt driver for Griptape agents",
-        "display_name": "Azure OpenAI Chat Prompt Driver"
-      }
-    },
-    {
       "class_name": "CoherePromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/prompt/cohere_prompt_driver.py",
       "metadata": {
@@ -190,7 +181,7 @@
     },
     {
       "class_name": "CreateRulesetNode",
-      "file_path": "griptape_nodes_library/rules/create_rulesetnode.py",
+      "file_path": "griptape_nodes_library/rules/create_ruleset_node.py",
       "metadata": {
         "category": "Rules",
         "description": "Creates behavioral ruleset for Griptape agents",

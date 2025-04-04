@@ -1,7 +1,7 @@
 from griptape.drivers.embedding.ollama import OllamaEmbeddingDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes_library.drivers.base_embedding_driver import BaseEmbeddingDriverNode
+from griptape_nodes_library.drivers.embedding.base_embedding_driver import BaseEmbeddingDriverNode
 
 OLLAMA_BASE_URL_ENV_VAR = "ollama_base_url"
 DEFAULT_BASE_URL = "http://127.0.0.1"
