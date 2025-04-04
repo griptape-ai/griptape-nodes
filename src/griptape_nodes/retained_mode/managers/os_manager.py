@@ -25,20 +25,20 @@ class OSManager:
                 request_type=OpenAssociatedFileRequest, callback=self.on_open_associated_file_request
             )
 
-    @property
-    def platform(self) -> str:
+    @staticmethod
+    def platform() -> str:
         return sys.platform
 
-    @property
-    def is_windows(self) -> bool:
+    @staticmethod
+    def is_windows() -> bool:
         return sys.platform.startswith("win")
 
-    @property
-    def is_mac(self) -> bool:
+    @staticmethod
+    def is_mac() -> bool:
         return sys.platform.startswith("darwin")
 
-    @property
-    def is_linux(self) -> bool:
+    @staticmethod
+    def is_linux() -> bool:
         return sys.platform.startswith("linux")
 
     def on_open_associated_file_request(self, request: OpenAssociatedFileRequest) -> ResultPayload:  # noqa: PLR0911

@@ -31,7 +31,6 @@ NODES_APP_URL = "https://nodes.griptape.ai"
 
 console = Console()
 config_manager = ConfigManager()
-os_manager = OSManager()
 secrets_manager = SecretsManager(config_manager)
 
 
@@ -210,7 +209,7 @@ def _auto_update() -> None:
 def _install_latest_release() -> None:
     """Installs the latest release of the script using a shell command."""
     with console.status("[bold green]Updating...", spinner="dots"):
-        if os_manager.is_windows:
+        if OSManager.is_windows():
             # Run via PowerShell
             subprocess.run(  # noqa: S603
                 [  # noqa: S607
@@ -223,7 +222,7 @@ def _install_latest_release() -> None:
                 check=True,
                 text=True,
             )
-        elif os_manager.is_mac or os_manager.is_linux:
+        elif OSManager.is_mac() or OSManager.is_linux():
             # Run via Bash/cURL
             curl_process = subprocess.run(  # noqa: S603
                 ["curl", "-LsSf", INSTALL_SCRIPT],  # noqa: S607
@@ -239,7 +238,7 @@ def _install_latest_release() -> None:
                 text=True,
             )
         else:
-            console.print(f"[bold red]Unsupported platform: {os_manager.platform}[/bold red]")
+            console.print(f"[bold red]Unsupported platform: {OSManager.platform()}[/bold red]")
             sys.exit(1)
 
     console.print(
