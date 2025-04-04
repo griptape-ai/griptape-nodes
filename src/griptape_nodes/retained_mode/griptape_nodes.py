@@ -190,6 +190,9 @@ from griptape_nodes.retained_mode.events.script_events import (
     RegisterScriptRequest,
     RegisterScriptResultFailure,
     RegisterScriptResultSuccess,
+    RenameScriptRequest,
+    RenameScriptResultFailure,
+    RenameScriptResultSuccess,
     RunScriptFromRegistryRequest,
     RunScriptFromRegistryResultFailure,
     RunScriptFromRegistryResultSuccess,
@@ -2495,6 +2498,11 @@ class ScriptManager:
             self.on_delete_scripts_request,
         )
         event_manager.assign_manager_to_request_type(
+            RenameScriptRequest,
+            self.on_rename_script_request,
+        )
+
+        event_manager.assign_manager_to_request_type(
             SaveSceneRequest,
             self.on_save_scene_request,
         )
@@ -2619,6 +2627,20 @@ class ScriptManager:
             GriptapeNodes.get_logger().error(details)
             return DeleteScriptResultFailure()
         return DeleteScriptResultSuccess()
+
+    def on_rename_script_request(self, request: RenameScriptRequest) -> ResultPayload:
+        save_scene_request = self.on_save_scene_request(SaveSceneRequest(file_name=request.requested_name))
+
+        if isinstance(save_scene_request, SaveSceneResultFailure):
+            print("Failed to save scene")
+            return RenameScriptResultFailure()
+
+        delete_script_result = self.on_delete_scripts_request(DeleteScriptRequest(name=request.script_name))
+        if isinstance(delete_script_result, DeleteScriptResultFailure):
+            print("Failed to delete script from registry")
+            return RenameScriptResultFailure()
+
+        return RenameScriptResultSuccess()
 
     def on_load_script_metadata_request(self, request: LoadScriptMetadata) -> ResultPayload:
         # Let us go into the darkness.
