@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeVar
 
+from networkx import triad_graph
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -312,12 +314,8 @@ class Parameter(BaseNodeElement):
             ParameterMode.PROPERTY,
         }
     )
-    ui_options: ParameterUIOptions | None = None
     converters: list[Callable[[Any], Any]]
     validators: list[Callable[[Parameter, Any], None]]
-    # Traits should be set? As values here, correct?
-    # Traits will define UI options and convertors
-    traits: list[Trait] # we need to store the trait objects as lists
     next: Parameter | None = None
     prev: Parameter | None = None
 
@@ -333,10 +331,9 @@ class Parameter(BaseNodeElement):
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
         allowed_modes: set[ParameterMode] | None = None,
-        ui_options: ParameterUIOptions | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
-        traits: list[Trait.__class__] | None = None,
+        traits: set[Trait.__class__] | None = None, # We are going to make these children.
         *,
         settable: bool = True,
         user_defined: bool = False,
@@ -356,7 +353,6 @@ class Parameter(BaseNodeElement):
         self.tooltip_as_output = tooltip_as_output
         self.settable = settable
         self.user_defined = user_defined
-        self.ui_options = ui_options
         if allowed_modes is None:
             self.allowed_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
         else:
@@ -371,12 +367,12 @@ class Parameter(BaseNodeElement):
             self.validators = []
         else:
             self.validators = validators
-        self.traits = []
         if traits:
             for trait in traits:
                 created = trait()
-                created.apply_trait_to_parameter(self)
-                self.traits.append(created)
+                # Add a trait as a child
+                # UI options are now traits! sorry!
+                self.add_child(created)
         self.type = type
         self.input_types = input_types
         self.output_type = output_type
@@ -454,14 +450,11 @@ class Parameter(BaseNodeElement):
 
     def add_trait(self, trait:type[Trait]) -> None:
         created = trait()
-        created.apply_trait_to_parameter(self)
-        self.traits.append(created)
+        self.add_child(created)
 
-    def remove_trait(self, trait_type:type[Trait]) -> None:
-        for trait in self.traits:
-            if isinstance(trait,trait_type):
-                trait.remove_trait_from_parameter(self)
-                self.traits.remove(trait)
+    def remove_trait(self, trait_type:str) -> None:
+        # You are NOT ALLOWED TO ADD DUPLICATE TRAITS (kate)
+        self.remove_child(trait_type)
 
     def is_incoming_type_allowed(self, incoming_type: str | None) -> bool:
         if incoming_type is None:
@@ -516,9 +509,6 @@ class Parameter(BaseNodeElement):
         differences = {}
         for key, self_value in self_dict.items():
             other_value = other_dict.get(key)
-            if isinstance(other_value, ParameterUIOptions) and other_value != self_value:
-                # check if these two objects are equal
-                differences["key"] = other_value
             if isinstance(self_value, (list, set)) and isinstance(other_value, (list, set)):
                 if set(self_value) != set(other_value):
                     differences[key] = other_value
@@ -539,7 +529,7 @@ class ControlParameter(Parameter, ABC):
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
         allowed_modes: set[ParameterMode] | None = None,
-        ui_options: ParameterUIOptions | None = None,
+        traits: set[Trait.__class__] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
@@ -558,7 +548,7 @@ class ControlParameter(Parameter, ABC):
             tooltip_as_property=tooltip_as_property,
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
-            ui_options=ui_options,
+            traits=traits,
             converters=converters,
             validators=validators,
             user_defined=user_defined,
@@ -573,7 +563,7 @@ class ControlParameterInput(ControlParameter):
         tooltip_as_input: str | list[dict] | None = None,
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
-        ui_options: ParameterUIOptions | None = None,
+        traits: set[Trait.__class__] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
@@ -592,7 +582,7 @@ class ControlParameterInput(ControlParameter):
             tooltip_as_property=tooltip_as_property,
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
-            ui_options=ui_options,
+            traits=traits,
             converters=converters,
             validators=validators,
             user_defined=user_defined,
@@ -607,7 +597,7 @@ class ControlParameterOutput(ControlParameter):
         tooltip_as_input: str | list[dict] | None = None,
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
-        ui_options: ParameterUIOptions | None = None,
+        traits: set[Trait.__class__] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
@@ -626,7 +616,7 @@ class ControlParameterOutput(ControlParameter):
             tooltip_as_property=tooltip_as_property,
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
-            ui_options=ui_options,
+            traits=traits,
             converters=converters,
             validators=validators,
             user_defined=user_defined,
@@ -635,22 +625,37 @@ class ControlParameterOutput(ControlParameter):
 
 # Making a new file for parameter traits.
 
-class Trait(ABC):
+class Trait(ABC, BaseNodeElement):
+
+    _allowed_modes: set[ParameterMode] | None
 
     @classmethod
     @abstractmethod
     def get_trait_keys(cls) -> list[str]:
         """This will return keys that trigger this trait."""
 
+    @classmethod
     @abstractmethod
-    def apply_trait_to_parameter(self, parameter:Parameter) -> Parameter:
-        # Let's use what we already have. 'Applying a trait' applies converters and validators to a parameter that match the trait that we want.
-        self.apply_ui_to_parameter(parameter)
+    def ui_options_for_trait(cls) -> list:
+        """Returns a list of UI options for the parameter as a list of strings or dictionaries."""
+
+    @classmethod
+    @abstractmethod
+    def display_options_for_trait(cls) -> dict:
+        """Returns a list of display options for the parameter as a dictionary."""
 
     @abstractmethod
-    def remove_trait_from_parameter(self, parameter:Parameter) -> Parameter:
-        """Removes all of the methods associated with the trait from the parameter."""
+    def convertors_for_trait(cls) -> list[Callable]:
+        """"Returns a list of methods to be applied as a convertor."""
 
     @abstractmethod
-    def apply_ui_to_parameter(self, parameter:Parameter) -> Parameter:
-        """Applies UI to the parameter based on the trait."""
+    def validators_for_trait(cls) -> list[Callable]:
+        """Returns a list of methods to be applied as a validator."""
+
+
+    @property
+    @abstractmethod
+    def allowed_modes(self) -> set:
+        if self._allowed_modes:
+            return self._allowed_modes
+        return {ParameterMode.OUTPUT, ParameterMode.INPUT, ParameterMode.PROPERTY}

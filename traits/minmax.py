@@ -1,58 +1,37 @@
-from typing import Any
+from typing import Any, Callable
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterUIOptions, Trait
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 
 
 class MinMax(Trait):
-    min: Any = 10
-    max: Any = 30
+     min: Any = 10
+     max: Any = 30
 
-    # Helper method for the function
-    def set_min_max(self, new_min:Any = None, new_max: Any = None) -> None:
-        if new_min:
-                self.min = new_min
-        if new_max:
-                self.max = new_max
+     _allowed_modes = {ParameterMode.PROPERTY}
 
-    def set_parameter_value(self,value:Any) -> Any:
-         if value > self.max:
-              return self.max
-         if value < self.min:
-              return self.min
-         return value
+     @classmethod
+     def get_trait_keys(cls) -> list[str]:
+          return["min","max","minmax","min_max"]
 
-    def check_min_max(self,parameter:Parameter, value:Any) -> None:
-            # i wish i knew what a validator was LOL
-            if value > self.max:
-                 msg = "Above max lol"
-                 raise ValueError(msg)
-            if value < self.min:
-                 msg = "Below min lol"
+     def ui_options_for_trait(self) -> list:
+          return [{"slider":{"min_val":self.min,"max_val":self.max}}, {"step":2}]
 
-    # If we get this anywhere on a parameter, it is going to grab this guy
-    @classmethod
-    def get_trait_keys(cls) -> list[str]:
-        return ["min","max","minmax", "min_max"]
+     def display_options_for_trait(self) -> dict:
+          return {}
 
-    def apply_trait_to_parameter(self, parameter: Parameter) -> Parameter:
-        super().apply_trait_to_parameter(parameter)
-        # Are there any converters that need to be added?
-        parameter.converters.append(self.set_parameter_value)
+     def convertors_for_trait(self) -> list[Callable]:
+          def clamp(value:Any)->Any:
+               if value> self.max:
+                    return self.max
+               if value < self.min:
+                    return self.min
+               return value
+          return [clamp]
 
-        # Are there any validators that need to be added?
-        parameter.validators.append(self.check_min_max)
-
-        return parameter
-
-    def remove_trait_from_parameter(self, parameter:Parameter) -> Parameter:
-         parameter.converters.remove(self.set_parameter_value)
-         parameter.validators.remove(self.check_min_max)
-         return parameter
-
-    def apply_ui_to_parameter(self, parameter: Parameter) -> Parameter:
-        # What is a good UI thing
-        ui_options=ParameterUIOptions(number_type_options=ParameterUIOptions.NumberType(slider=ParameterUIOptions.SliderWidget(min_val=self.min,max_val=self.max)))
-        parameter.ui_options = ui_options
-        return parameter
+     def validators_for_trait(self) -> list[Callable[..., Any]]:
+          def validate(value:Any, param:Parameter) -> None:
+               if value > self.max or value < self.min:
+                    raise ValueError("Value out of range")
+          return [validate]
 
 # These Traits get added to a list on the parameter. When they are added they apply their functions to the parameter.
