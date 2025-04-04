@@ -1,6 +1,4 @@
-from griptape.drivers.prompt.griptape_cloud import (
-    GriptapeCloudPromptDriver
-)
+from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.tasks import PromptTask
 
@@ -76,7 +74,6 @@ class BaseAgentNode(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
-
 
         with ParameterGroup(group_name="Agent Response") as agent_response_group:
             self.add_parameter(

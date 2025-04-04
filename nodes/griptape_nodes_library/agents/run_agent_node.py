@@ -15,7 +15,6 @@ class RunAgentNode(CreateAgentNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        
         # Remove unused inputs
         param = self.get_parameter_by_name("rulesets")
         if param:
@@ -29,6 +28,7 @@ class RunAgentNode(CreateAgentNode):
         group = self.get_parameter_by_name("Agent Abilities")
         if group:
             self.remove_parameter(group)
+
     def process(self) -> None:
         # Get input values
         params = self.parameter_values
