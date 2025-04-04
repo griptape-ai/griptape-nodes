@@ -12,25 +12,24 @@ if TYPE_CHECKING:
 class TraitRegistry(SingletonMixin):
     # I'm going to create a dictionary that stores all of the created traits we have so far?
     # Traits will be associated with certain key words
-    key_to_trait:dict[str, list[Trait.__class__]] = {}
+    key_to_trait: dict[str, list[Trait.__class__]] = {}
 
     @classmethod
-    def create_traits(cls, key_word:str) -> list[Trait]|None:
+    def create_traits(cls, key_word: str) -> list[Trait] | None:
         if key_word not in cls().key_to_trait:
-             return None
+            return None
         values = cls().key_to_trait[key_word]
         return [trait() for trait in values]
 
-
     @classmethod
-    def register_trait(cls, trait:Trait) -> None:
+    def register_trait(cls, trait: Trait) -> None:
         key_words = trait.get_trait_keys()
         for key in key_words:
             if key in cls.key_to_trait:
                 cls().key_to_trait[key].append(trait.__class__)
             else:
-             cls().key_to_trait[key] = [trait.__class__]
+                cls().key_to_trait[key] = [trait.__class__]
 
     @classmethod
     def register_trait_from_json(cls) -> None:
-        path_to_json = "trait_registry.py"
+        pass

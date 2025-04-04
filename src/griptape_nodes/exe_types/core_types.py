@@ -7,8 +7,6 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeVar
 
-from networkx import triad_graph
-
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -247,8 +245,9 @@ class BaseNodeElement:
                 return found
         return None
 
-    def find_elements_by_type(self, element_type: type[T]) -> list[T]:
-        elements: list[T] = []
+    # TODO(kate): I'd like to be able to do this with traits as well.
+    def find_elements_by_type(self, element_type: type) -> list:
+        elements = []
         for child in self._children:
             if isinstance(child, element_type):
                 elements.append(child)
@@ -314,8 +313,9 @@ class Parameter(BaseNodeElement):
             ParameterMode.PROPERTY,
         }
     )
-    converters: list[Callable[[Any], Any]]
-    validators: list[Callable[[Parameter, Any], None]]
+    _converters: list[Callable[[Any], Any]]
+    _validators: list[Callable[[Parameter, Any], None]]
+    _ui_options: list
     next: Parameter | None = None
     prev: Parameter | None = None
 
@@ -333,7 +333,8 @@ class Parameter(BaseNodeElement):
         allowed_modes: set[ParameterMode] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
-        traits: set[Trait.__class__] | None = None, # We are going to make these children.
+        traits: set[Trait.__class__] | None = None,  # We are going to make these children.
+        ui_options: list | None = None,
         *,
         settable: bool = True,
         user_defined: bool = False,
@@ -359,14 +360,18 @@ class Parameter(BaseNodeElement):
             self.allowed_modes = allowed_modes
 
         if converters is None:
-            self.converters = []
+            self._converters = []
         else:
-            self.converters = converters
+            self._converters = converters
 
         if validators is None:
-            self.validators = []
+            self._validators = []
         else:
-            self.validators = validators
+            self._validators = validators
+        if ui_options is None:
+            self._ui_options = []
+        else:
+            self._ui_options = ui_options
         if traits:
             for trait in traits:
                 created = trait()
@@ -398,6 +403,33 @@ class Parameter(BaseNodeElement):
                 self._type = value
             return
         self._type = None
+
+    @property
+    def converters(self) -> list[Callable[[Any], Any]]:
+        converters = []
+        traits = self.find_elements_by_type(Trait)
+        for trait in traits:
+            converters += trait.converters_for_trait()
+        converters += self._converters
+        return converters
+
+    @property
+    def validators(self) -> list[Callable[[Parameter, Any], None]]:
+        validators = []
+        traits = self.find_elements_by_type(Trait)
+        for trait in traits:
+            validators += trait.validators_for_trait()
+        validators += self._validators
+        return validators
+
+    @property
+    def ui_options(self) -> list:
+        ui_options = []
+        traits = self.find_elements_by_type(Trait)
+        for trait in traits:
+            ui_options += trait.ui_options_for_trait()
+        ui_options += self._ui_options
+        return ui_options
 
     @property
     def input_types(self) -> list[str]:
@@ -448,11 +480,11 @@ class Parameter(BaseNodeElement):
             return
         self._output_type = None
 
-    def add_trait(self, trait:type[Trait]) -> None:
+    def add_trait(self, trait: type[Trait]) -> None:
         created = trait()
         self.add_child(created)
 
-    def remove_trait(self, trait_type:str) -> None:
+    def remove_trait(self, trait_type: str) -> None:
         # You are NOT ALLOWED TO ADD DUPLICATE TRAITS (kate)
         self.remove_child(trait_type)
 
@@ -624,9 +656,10 @@ class ControlParameterOutput(ControlParameter):
 
 
 # Making a new file for parameter traits.
+# TODO(kate): What do we want traits to have? there will probably be more..
+
 
 class Trait(ABC, BaseNodeElement):
-
     _allowed_modes: set[ParameterMode] | None
 
     @classmethod
@@ -634,27 +667,23 @@ class Trait(ABC, BaseNodeElement):
     def get_trait_keys(cls) -> list[str]:
         """This will return keys that trigger this trait."""
 
-    @classmethod
     @abstractmethod
-    def ui_options_for_trait(cls) -> list:
+    def ui_options_for_trait(self) -> list:
         """Returns a list of UI options for the parameter as a list of strings or dictionaries."""
 
-    @classmethod
     @abstractmethod
-    def display_options_for_trait(cls) -> dict:
+    def display_options_for_trait(self) -> dict:
         """Returns a list of display options for the parameter as a dictionary."""
 
     @abstractmethod
-    def convertors_for_trait(cls) -> list[Callable]:
-        """"Returns a list of methods to be applied as a convertor."""
+    def converters_for_trait(self) -> list[Callable]:
+        """ "Returns a list of methods to be applied as a convertor."""
 
     @abstractmethod
-    def validators_for_trait(cls) -> list[Callable]:
+    def validators_for_trait(self) -> list[Callable]:
         """Returns a list of methods to be applied as a validator."""
 
-
     @property
-    @abstractmethod
     def allowed_modes(self) -> set:
         if self._allowed_modes:
             return self._allowed_modes

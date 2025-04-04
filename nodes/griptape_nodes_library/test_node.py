@@ -1,12 +1,10 @@
-from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.structures import Agent
-from griptape.utils import Stream
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
+from traits.minmax import MinMax
 
 
 class TestTraitNode(ControlNode):
@@ -21,7 +19,7 @@ class TestTraitNode(ControlNode):
                 input_types=["int"],
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="",
-                traits=["max"]
+                traits={MinMax},
             )
         )
         self.add_parameter(
@@ -29,8 +27,8 @@ class TestTraitNode(ControlNode):
                 name="number2",
                 input_types=["int"],
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits=["min"],
-                tooltip=""
+                traits={MinMax},
+                tooltip="",
             )
         )
         self.add_parameter(
@@ -41,8 +39,6 @@ class TestTraitNode(ControlNode):
                 tooltip="",
             )
         )
-
-
 
     def process(self) -> None:
         # Get api key
