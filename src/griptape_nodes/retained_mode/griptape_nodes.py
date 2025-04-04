@@ -23,7 +23,6 @@ from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.node_library.script_registry import LibraryNameAndVersion, ScriptMetadata, ScriptRegistry
 from griptape_nodes.retained_mode.events.app_events import (
-    AppExecutionEvent,
     AppInitializationComplete,
     AppStartSessionRequest,
     AppStartSessionResultFailure,
@@ -586,8 +585,6 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(
             ValidateFlowDependenciesRequest, self.on_validate_flow_dependencies_request
         )
-        # events that happen after a flow is ran
-        event_manager.add_listener_to_app_event(AppExecutionEvent, self.on_app_execution_event)
 
         self._name_to_parent_name = {}
 
@@ -1303,11 +1300,6 @@ class FlowManager:
         details = f"Unresolved flow with name {flow_name}"
         GriptapeNodes.get_logger().debug(details)
         return UnresolveFlowResultSuccess()
-
-    def on_app_execution_event(self, event: AppExecutionEvent) -> None:
-        # Handle all events from the execution engine
-        # TODO(kate): Should this somehow be modified to be specific events for the gui?
-        GriptapeNodes.handle_request(event.request)
 
     def on_validate_flow_dependencies_request(self, request: ValidateFlowDependenciesRequest) -> ResultPayload:
         flow_name = request.flow_name

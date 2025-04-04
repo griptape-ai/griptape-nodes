@@ -35,12 +35,6 @@ class AppInitializationComplete(AppPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AppExecutionEvent(AppPayload):
-    request: RequestPayload
-
-
-@dataclass
-@PayloadRegistry.register
 class GetEngineVersionRequest(RequestPayload):
     pass
 
