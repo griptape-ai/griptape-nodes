@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
@@ -58,17 +58,23 @@ class Clamp(Trait):
 @dataclass
 class CapybaraTrait(Trait):
 
+    choices: list[str] = field(default=["1","2","3","4"])
+
     @classmethod
     def get_trait_keys(cls) -> list[str]:
         return ["Capybara","new zealand"]
 
     def converters_for_trait(self) -> list[Callable]:
-        def convert(value:str) -> str:
+        def convert_str(value:str) -> str:
             return "Capybara\n"* len(value.split(" "))
-        return [convert]
+        def convert_list(value:list) -> list:
+            self.choices = value
+            return value
+        return [convert_str,convert_list]
+
 
     def ui_options_for_trait(self) -> list:
-        return ["multiline",{"placeholder_text":"Hi"}, {"simple_dropdown":["Rodent","Fish","magical","cool","fun"]}]
+        return ["multiline",{"placeholder_text":"Hi"}, {"simple_dropdown":self.choices}]
 
 
 
