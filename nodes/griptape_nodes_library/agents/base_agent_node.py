@@ -117,7 +117,7 @@ class BaseAgentNode(ControlNode):
     def get_default_prompt_driver(self) -> GriptapeCloudPromptDriver:
         return GriptapeCloudPromptDriver(
             model="gpt-4o",
-            api_key=self.getkey(value=f"{SERVICE}.{API_KEY_ENV_VAR}"),
+            api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
             stream=True,
         )
 

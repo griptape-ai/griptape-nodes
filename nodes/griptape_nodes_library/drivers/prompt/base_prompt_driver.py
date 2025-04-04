@@ -15,7 +15,7 @@ class BasePromptDriverNode(BaseDriverNode):
         driver_parameter = self.get_parameter_by_name("driver")
         if driver_parameter is not None:
             driver_parameter.name = "prompt_driver"
-            driver_parameter.output_type = "Prompt Driver"
+            driver_parameter.output_type = "PromptDriver"
 
         self.add_parameter(
             Parameter(

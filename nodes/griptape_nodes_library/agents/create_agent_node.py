@@ -1,7 +1,7 @@
-from griptape.structures import Agent 
+from griptape.structures import Agent
 from griptape.utils import Stream
-from griptape_nodes.retained_mode.griptape_nodes import logger
 
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from nodes.griptape_nodes_library.agents.base_agent_node import BaseAgentNode
 
 DEFAULT_MODEL = "gpt-4o"
@@ -16,16 +16,14 @@ class CreateAgentNode(BaseAgentNode):
     def process(self) -> None:
         # Get input values
         params = self.parameter_values
-        prompt_driver = params.get("prompt_driver", None)
-
-        if not prompt_driver:
-            prompt_driver = self.get_default_prompt_driver()
+        prompt_driver = params.get("prompt_driver", self.get_default_prompt_driver())
 
         kwargs = {}
 
         kwargs["prompt_driver"] = prompt_driver
 
         agent_dict = params.get("agent", None)
+
         # Get any tools
         # append any tools to the already existing tools if there are any.
         tools = params.get("tools", None)

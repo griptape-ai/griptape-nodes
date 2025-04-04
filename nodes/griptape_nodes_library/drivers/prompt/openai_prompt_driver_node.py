@@ -70,4 +70,4 @@ class OpenAiPromptDriverNode(BasePromptDriverNode):
         driver = OpenAiChatPromptDriver(**kwargs)
 
         # Set the output
-        self.parameter_output_values["driver"] = driver
+        self.parameter_output_values["prompt_driver"] = driver
