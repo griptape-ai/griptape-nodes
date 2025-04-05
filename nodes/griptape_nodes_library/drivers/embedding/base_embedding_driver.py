@@ -15,7 +15,8 @@ class BaseEmbeddingDriverNode(BaseDriverNode):
         # Override the allowed types for the driver parameter
         driver_parameter = self.get_parameter_by_name("driver")
         if driver_parameter is not None:
-            driver_parameter.output_type = "BaseEmbeddingDriver"
+            driver_parameter.name = "embedding_driver"
+            driver_parameter.output_type = "EmbeddingDriver"
 
     def process(self) -> None:
         # Get the parameters from the node
@@ -25,4 +26,4 @@ class BaseEmbeddingDriverNode(BaseDriverNode):
         driver = DummyEmbeddingDriver()
 
         # Set the output
-        self.parameter_output_values["driver"] = driver
+        self.parameter_output_values["embedding_driver"] = driver

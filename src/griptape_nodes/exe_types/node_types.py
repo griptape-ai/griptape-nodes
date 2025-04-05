@@ -12,6 +12,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
+import logging
 
 
 class NodeResolutionState(Enum):
