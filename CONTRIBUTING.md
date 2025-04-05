@@ -16,7 +16,7 @@ We welcome contributions to the Griptape Nodes project! Whether it's bug fixes, 
 3.  **Install Dependencies:**
     Use `uv` to create a virtual environment and install all required dependencies, including base, development, testing, and documentation tools:
     ```shell
-    uv sync -p --all-extras
+    uv sync --all-extras
     ```
     This command reads the `pyproject.toml` file and installs everything needed for development within a `.venv` directory.
 
