@@ -45,7 +45,7 @@ class ScriptRegistry(SingletonMixin):
     def get_script_by_name(cls, name: str) -> Script:
         instance = cls()
         if name not in instance._scripts:
-            msg = f"Script with name {name} has not been registered."
+            msg = f"Failed to get Script. Script with name {name} has not been registered."
             raise KeyError(msg)
         return instance._scripts[name]
 
@@ -67,7 +67,7 @@ class ScriptRegistry(SingletonMixin):
     def delete_script_by_name(cls, name: str) -> Script:
         instance = cls()
         if name not in instance._scripts:
-            msg = f"Script with name {name} has not been registered."
+            msg = f"Failed to delete Script. Script with name {name} has not been registered."
             raise KeyError(msg)
         return instance._scripts.pop(name)
 
