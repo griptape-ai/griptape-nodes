@@ -25,8 +25,9 @@ class BasePromptDriverNode(BaseDriverNode):
                 output_type="str",
                 default_value="",
                 tooltip="Select the model you want to use from the available options.",
-                ui_options = ParameterUIOptions(simple_dropdown_options=(ParameterUIOptions.SimpleDropdown(enum_choices=[])))
-
+                ui_options=ParameterUIOptions(
+                    simple_dropdown_options=(ParameterUIOptions.SimpleDropdown(enum_choices=[]))
+                ),
             )
         )
         self.add_parameter(
