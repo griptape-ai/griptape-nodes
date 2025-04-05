@@ -16,6 +16,11 @@ class CoherePromptDriverNode(BasePromptDriverNode):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+        # Set any defaults
+        model_parameter = self.get_parameter_by_name("model")
+        if model_parameter is not None:
+            model_parameter.default_value = DEFAULT_MODEL
+            model_parameter.input_types = ["str"]
 
     def process(self) -> None:
         # Get the parameters from the node
@@ -44,7 +49,7 @@ class CoherePromptDriverNode(BasePromptDriverNode):
         if top_k:
             kwargs["extra_params"]["k"] = top_k
 
-        self.parameter_output_values["driver"] = CoherePromptDriver(**kwargs)
+        self.parameter_output_values["prompt_driver"] = CoherePromptDriver(**kwargs)
 
     def validate_node(self) -> list[Exception] | None:
         # Items here are openai api key

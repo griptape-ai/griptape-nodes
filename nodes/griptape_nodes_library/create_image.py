@@ -74,28 +74,6 @@ class CreateImageNode(ControlNode):
             )
         )
 
-        # self.add_parameter(
-        #     Parameter(
-        #         name="output_file",
-        #         input_types=["str"],
-        #         output_type="str",
-        #         type="str",
-        #         tooltip="None",
-        #         default_value=None,
-        #     )
-        # )
-
-        # self.add_parameter(
-        #     Parameter(
-        #         name="output_dir",
-        #         input_types=["str"],
-        #         output_type="str",
-        #         type="str",
-        #         tooltip="None",
-        #         default_value=None,
-        #     )
-        # )
-
     def validate_node(self) -> list[Exception] | None:
         # TODO(kate): Figure out how to wrap this so it's easily repeatable
         exceptions = []
@@ -112,9 +90,6 @@ class CreateImageNode(ControlNode):
     def process(self) -> None:
         # Get the parameters from the node
         params = self.parameter_values
-
-        workspace_path = self.config_manager.workspace_path
-        images_dir = workspace_path / "Images/"
 
         agent = params.get("agent", None)
         if not agent:
@@ -155,23 +130,6 @@ Focus on qualities that will make this the most professional looking photo in th
                 api_key=self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
             )
         kwargs["image_generation_driver"] = driver
-
-        # Declaring a prio towards file, not dir for now, at least
-        # out_file = params.get("output_file", None)
-        # if out_file:
-        #     kwargs["output_file"] = out_file
-        #     details = f"Image saved to {out_file}"
-        #     logger.info(details)
-        # else:
-        #     out_dir = params.get("output_dir", None)
-        #     if out_dir:
-        #         kwargs["output_dir"] = out_dir
-        #         out_dir_msg = f'\nLook for image in "{out_dir}"'
-        #         logger.info(out_dir_msg)
-        #     else:
-        #         kwargs["output_dir"] = images_dir
-        #         images_dir_msg = f'\nLook for image in "{images_dir}"'
-        #         logger.info(images_dir_msg)
 
         # Add the actual image gen *task
         agent.add_task(PromptImageGenerationTask(**kwargs))
