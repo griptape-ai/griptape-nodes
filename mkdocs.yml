@@ -14,7 +14,7 @@ copyright: "&copy; Griptape, Inc."
 extra:
   analytics:
     provider: google
-    property: G-QM8EDPSCB6
+    property: G-25RZCVNV2D
   social:
     - icon: fontawesome/solid/house
       link: https://www.griptape.ai
@@ -56,6 +56,8 @@ markdown_extensions:
 nav:
   - Home:
       - Overview: index.md
+      - Setup: setup.md
+      - Engine Configuration: configuration.md
   - Nodes:
       - Overview: nodes/overview.md
       - Basic:
