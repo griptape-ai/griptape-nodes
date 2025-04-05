@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from abc import ABC
+from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -245,8 +245,9 @@ class BaseNodeElement:
                 return found
         return None
 
-    def find_elements_by_type(self, element_type: type[T]) -> list[T]:
-        elements: list[T] = []
+    # TODO(kate): I'd like to be able to do this with traits as well.
+    def find_elements_by_type(self, element_type: type) -> list:
+        elements = []
         for child in self._children:
             if isinstance(child, element_type):
                 elements.append(child)
@@ -312,9 +313,9 @@ class Parameter(BaseNodeElement):
             ParameterMode.PROPERTY,
         }
     )
-    ui_options: ParameterUIOptions | None = None
-    converters: list[Callable[[Any], Any]]
-    validators: list[Callable[[Parameter, Any], None]]
+    _converters: list[Callable[[Any], Any]]
+    _validators: list[Callable[[Parameter, Any], None]]
+    _ui_options: list
     next: Parameter | None = None
     prev: Parameter | None = None
 
@@ -330,9 +331,10 @@ class Parameter(BaseNodeElement):
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
         allowed_modes: set[ParameterMode] | None = None,
-        ui_options: ParameterUIOptions | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
+        traits: set[Trait.__class__] | None = None,  # We are going to make these children.
+        ui_options: list | None = None,
         *,
         settable: bool = True,
         user_defined: bool = False,
@@ -352,21 +354,30 @@ class Parameter(BaseNodeElement):
         self.tooltip_as_output = tooltip_as_output
         self.settable = settable
         self.user_defined = user_defined
-        self.ui_options = ui_options
         if allowed_modes is None:
             self.allowed_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
         else:
             self.allowed_modes = allowed_modes
 
         if converters is None:
-            self.converters = []
+            self._converters = []
         else:
-            self.converters = converters
+            self._converters = converters
 
         if validators is None:
-            self.validators = []
+            self._validators = []
         else:
-            self.validators = validators
+            self._validators = validators
+        if ui_options is None:
+            self._ui_options = []
+        else:
+            self._ui_options = ui_options
+        if traits:
+            for trait in traits:
+                created = trait()
+                # Add a trait as a child
+                # UI options are now traits! sorry!
+                self.add_child(created)
         self.type = type
         self.input_types = input_types
         self.output_type = output_type
@@ -392,6 +403,33 @@ class Parameter(BaseNodeElement):
                 self._type = value
             return
         self._type = None
+
+    @property
+    def converters(self) -> list[Callable[[Any], Any]]:
+        converters = []
+        traits = self.find_elements_by_type(Trait)
+        for trait in traits:
+            converters += trait.converters_for_trait()
+        converters += self._converters
+        return converters
+
+    @property
+    def validators(self) -> list[Callable[[Parameter, Any], None]]:
+        validators = []
+        traits = self.find_elements_by_type(Trait) #TODO(kate): Should these be ordered? does this return them in order?
+        for trait in traits:
+            validators += trait.validators_for_trait()
+        validators += self._validators
+        return validators
+
+    @property
+    def ui_options(self) -> list:
+        ui_options = []
+        traits = self.find_elements_by_type(Trait)
+        for trait in traits:
+            ui_options += trait.ui_options_for_trait()
+        ui_options += self._ui_options
+        return ui_options
 
     @property
     def input_types(self) -> list[str]:
@@ -441,6 +479,14 @@ class Parameter(BaseNodeElement):
                 self._output_type = value
             return
         self._output_type = None
+
+    def add_trait(self, trait: type[Trait]) -> None:
+        created = trait()
+        self.add_child(created)
+
+    def remove_trait(self, trait_type: str) -> None:
+        # You are NOT ALLOWED TO ADD DUPLICATE TRAITS (kate)
+        self.remove_child(trait_type)
 
     def is_incoming_type_allowed(self, incoming_type: str | None) -> bool:
         if incoming_type is None:
@@ -495,9 +541,6 @@ class Parameter(BaseNodeElement):
         differences = {}
         for key, self_value in self_dict.items():
             other_value = other_dict.get(key)
-            if isinstance(other_value, ParameterUIOptions) and other_value != self_value:
-                # check if these two objects are equal
-                differences["key"] = other_value
             if isinstance(self_value, (list, set)) and isinstance(other_value, (list, set)):
                 if set(self_value) != set(other_value):
                     differences[key] = other_value
@@ -518,7 +561,7 @@ class ControlParameter(Parameter, ABC):
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
         allowed_modes: set[ParameterMode] | None = None,
-        ui_options: ParameterUIOptions | None = None,
+        traits: set[Trait.__class__] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
@@ -537,7 +580,7 @@ class ControlParameter(Parameter, ABC):
             tooltip_as_property=tooltip_as_property,
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
-            ui_options=ui_options,
+            traits=traits,
             converters=converters,
             validators=validators,
             user_defined=user_defined,
@@ -552,7 +595,7 @@ class ControlParameterInput(ControlParameter):
         tooltip_as_input: str | list[dict] | None = None,
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
-        ui_options: ParameterUIOptions | None = None,
+        traits: set[Trait.__class__] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
@@ -571,7 +614,7 @@ class ControlParameterInput(ControlParameter):
             tooltip_as_property=tooltip_as_property,
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
-            ui_options=ui_options,
+            traits=traits,
             converters=converters,
             validators=validators,
             user_defined=user_defined,
@@ -586,7 +629,7 @@ class ControlParameterOutput(ControlParameter):
         tooltip_as_input: str | list[dict] | None = None,
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
-        ui_options: ParameterUIOptions | None = None,
+        traits: set[Trait.__class__] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
@@ -605,8 +648,43 @@ class ControlParameterOutput(ControlParameter):
             tooltip_as_property=tooltip_as_property,
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
-            ui_options=ui_options,
+            traits=traits,
             converters=converters,
             validators=validators,
             user_defined=user_defined,
         )
+
+
+# Making a new file for parameter traits.
+# TODO(kate): What do we want traits to have? there will probably be more..
+
+@dataclass
+class Trait(ABC, BaseNodeElement):
+    _allowed_modes: set[ParameterMode] | None = field(default=None)
+
+    @classmethod
+    @abstractmethod
+    def get_trait_keys(cls) -> list[str]:
+        """This will return keys that trigger this trait."""
+
+    def ui_options_for_trait(self) -> list:
+        """Returns a list of UI options for the parameter as a list of strings or dictionaries."""
+        return []
+
+    def display_options_for_trait(self) -> dict:
+        """Returns a list of display options for the parameter as a dictionary."""
+        return {}
+
+    def converters_for_trait(self) -> list[Callable[[Any], Any]]:
+        """Returns a list of methods to be applied as a convertor."""
+        return []
+
+    def validators_for_trait(self) -> list[Callable[[Parameter, Any]]]:
+        """Returns a list of methods to be applied as a validator."""
+        return []
+
+    @property
+    def allowed_modes(self) -> set:
+        if self._allowed_modes:
+            return self._allowed_modes
+        return {ParameterMode.OUTPUT, ParameterMode.INPUT, ParameterMode.PROPERTY}
