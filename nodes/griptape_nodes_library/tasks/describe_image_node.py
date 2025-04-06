@@ -1,4 +1,3 @@
-from griptape.artifacts import ImageArtifact
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptTask
 
@@ -98,17 +97,14 @@ class DescribeImageNode(ControlNode):
         prompt = params.get("prompt", "")
         if prompt == "":
             prompt = "Describe the image"
-        image = params.get("image", None)
-        if image is None:
+        image_artifact = params.get("image", None)
+        if image_artifact is None:
             self.parameter_output_values["output"] = "No image provided"
             return
-        image_type = image.get("type", "png")
-        image_type = image_type.split("/")[1] if "/" in image_type else image_type
-        image_artifact = ImageArtifact(value=image["value"], width=image["width"], height=image["height"], format="png")
         # Make sure the agent is using a PromptTask
         agent.add_task(PromptTask())
 
         # Run the agent
         result = agent.run([prompt, image_artifact])
-        self.parameter_output_values["output"] = result.output
+        self.parameter_output_values["output"] = result.output.value
         try_throw_error(agent.output)
