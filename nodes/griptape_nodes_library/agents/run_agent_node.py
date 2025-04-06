@@ -1,6 +1,4 @@
-from griptape.drivers.prompt.griptape_cloud import (
-    GriptapeCloudPromptDriver as GtGriptapeCloudPromptDriver,
-)
+from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.utils import Stream
 
@@ -35,7 +33,7 @@ class RunAgentNode(CreateAgentNode):
         agent_dict = params.get("agent", None)
 
         if not agent_dict:
-            prompt_driver = GtGriptapeCloudPromptDriver(
+            prompt_driver = GriptapeCloudPromptDriver(
                 model="gpt-4o",
                 api_key=self.getkey(value=f"{SERVICE}.{API_KEY_ENV_VAR}"),
                 stream=True,
