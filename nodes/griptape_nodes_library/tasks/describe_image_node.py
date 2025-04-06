@@ -105,6 +105,7 @@ class DescribeImageNode(ControlNode):
         agent.add_task(PromptTask())
 
         # Run the agent
+
         result = agent.run([prompt, image_artifact])
         self.parameter_output_values["output"] = result.output.value
         try_throw_error(agent.output)
