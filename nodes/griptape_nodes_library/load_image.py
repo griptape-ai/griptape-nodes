@@ -25,5 +25,5 @@ class LoadImageNode(DataNode):
 
     def process(self) -> None:
         logger.info(type(self.parameter_values["image"]))
+
         self.parameter_output_values["image"] = self.parameter_values["image"]
-        logger.info(self.parameter_values["image"].keys())
