@@ -306,11 +306,20 @@
     },
     {
       "class_name": "CreateImageNode",
-      "file_path": "griptape_nodes_library/create_image.py",
+      "file_path": "griptape_nodes_library/tasks/create_image_node.py",
       "metadata": {
         "category": "Image",
         "description": "Generates images using configurable image drivers",
         "display_name": "Create Image"
+      }
+    },
+    {
+      "class_name": "DescribeImageNode",
+      "file_path": "griptape_nodes_library/tasks/describe_image_node.py",
+      "metadata": {
+        "category": "Image",
+        "description": "Describes an image",
+        "display_name": "Describe Image"
       }
     },
     {

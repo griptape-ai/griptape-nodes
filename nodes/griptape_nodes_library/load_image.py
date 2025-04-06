@@ -24,7 +24,6 @@ class LoadImageNode(DataNode):
         # Add input parameter for model selection
 
     def process(self) -> None:
-        # TODO(griptape): Implement image loading logic
-        debug_msg = "We need to do something with this image node.."
-        logger.debug(debug_msg)
+        logger.info(type(self.parameter_values["image"]))
         self.parameter_output_values["image"] = self.parameter_values["image"]
+        logger.info(self.parameter_values["image"].keys())
