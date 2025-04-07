@@ -1,5 +1,4 @@
-from griptape.rules import Rule as gnRule
-from griptape.rules import Ruleset as gnRuleset
+from griptape.rules import Rule, Ruleset
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
@@ -45,7 +44,7 @@ class CreateRulesetNode(DataNode):
         params = self.parameter_values
         name = params.get("name", "Behavior")
         raw_rules = params.get("rules", "")
-        sep_rules = [gnRule(rule) for rule in raw_rules.split("\n")]
-        ruleset = gnRuleset(name=name, rules=sep_rules)  # was in [], but made type validation bad for austin
+        sep_rules = [Rule(rule) for rule in raw_rules.split("\n")]
+        ruleset = Ruleset(name=name, rules=sep_rules)  # was in [], but made type validation bad for austin
 
         self.parameter_output_values["ruleset"] = ruleset
