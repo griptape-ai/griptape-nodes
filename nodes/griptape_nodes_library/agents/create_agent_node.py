@@ -37,7 +37,10 @@ class CreateAgentNode(BaseAgentNode):
         # Get any rules
         rulesets = self.valid_or_fallback("rulesets", None)
         if rulesets:
-            kwargs["rulesets"] = [rulesets]
+            if not isinstance(rulesets, list):
+                kwargs["rulesets"] = [rulesets]
+            else:
+                kwargs["rulesets"] = rulesets
 
         agent = None
         if not agent_dict:

@@ -188,6 +188,15 @@
       }
     },
     {
+      "class_name": "RulesetListNode",
+      "file_path": "griptape_nodes_library/rules/ruleset_list_node.py",
+      "metadata": {
+        "category": "Rules",
+        "description": "Create a list of rulesets for Griptape agents",
+        "display_name": "Ruleset List"
+      }
+    },
+    {
       "class_name": "AudioTranscriptionToolNode",
       "file_path": "griptape_nodes_library/tools/audio_transcription_tool.py",
       "metadata": {
