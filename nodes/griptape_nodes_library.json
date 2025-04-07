@@ -215,48 +215,12 @@
       }
     },
     {
-      "class_name": "PromptSummaryToolNode",
-      "file_path": "griptape_nodes_library/tools/prompt_summary_tool.py",
-      "metadata": {
-        "category": "Tools",
-        "description": "Summarizes text using prompt-based summarization",
-        "display_name": "Prompt Summary"
-      }
-    },
-    {
-      "class_name": "QueryToolNode",
-      "file_path": "griptape_nodes_library/tools/query_tool.py",
-      "metadata": {
-        "category": "Tools",
-        "description": "Query tool optimized for different LLM providers",
-        "display_name": "Query"
-      }
-    },
-    {
       "class_name": "ToolListNode",
       "file_path": "griptape_nodes_library/tools/tool_list.py",
       "metadata": {
         "category": "Tools",
         "description": "Combines multiple tools into a single list for agents to use",
         "display_name": "Tool List"
-      }
-    },
-    {
-      "class_name": "WebScraperToolNode",
-      "file_path": "griptape_nodes_library/tools/web_scraper_tool.py",
-      "metadata": {
-        "category": "Tools",
-        "description": "Extracts content from websites",
-        "display_name": "Web Scraper"
-      }
-    },
-    {
-      "class_name": "WebSearchToolNode",
-      "file_path": "griptape_nodes_library/tools/web_search_tool.py",
-      "metadata": {
-        "category": "Tools",
-        "description": "Searches the web using configurable search drivers",
-        "display_name": "Web Search"
       }
     },
     {

@@ -300,7 +300,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "cohere", specifier = ">=5.14.0" },
-    { name = "griptape", extras = ["drivers-prompt-anthropic", "drivers-prompt-ollama", "loaders-image"], git = "https://github.com/griptape-ai/griptape.git?branch=main" },
+    { name = "griptape", extras = ["drivers-prompt-anthropic", "drivers-prompt-ollama", "loaders-image", "trafilatura"], git = "https://github.com/griptape-ai/griptape.git?branch=main" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pydantic-settings", specifier = ">=2.8.1" },
