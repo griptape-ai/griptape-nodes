@@ -8,7 +8,7 @@
 
 ### The Basics
 
-- **Workflow**: A document containing nodes, connections, and values.  While technically a Workflow is also a Script, avoid calling them Scripts, so that the term Script can communicate a clearly different thing than the term Workflow.  This is also what we call the saved file.
+- **Workflow**: A document containing nodes, connections, and values. While technically a Workflow is also a Script, avoid calling them Scripts, so that the term Script can communicate a clearly different thing than the term Workflow. This is also what we call the saved file.
 
 - **Workflow Editor**: The workspace where nodes are added, connected, and configured.
 
