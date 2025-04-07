@@ -42,7 +42,7 @@ class CreateAgentNode(BaseAgentNode):
         if not agent_dict:
             logger.debug("No agent input, creating one")
             # Create the Agent
-            agent = Agent(**kwargs)
+            agent = Agent(**kwargs, stream=True)
         else:
             agent = Agent().from_dict(agent_dict)
         # Otherwise, append rules and tools to the existing agent
@@ -55,6 +55,7 @@ class CreateAgentNode(BaseAgentNode):
                 # Run the agent
                 for artifact in Stream(agent).run(prompt):
                     full_output += artifact.value
+                    self.parameter_output_values["agent_response"] = full_output
             else:
                 # Run the agent
                 result = agent.run(prompt)
