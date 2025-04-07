@@ -231,7 +231,7 @@ wheels = [
 [[package]]
 name = "griptape"
 version = "1.5.0"
-source = { git = "https://github.com/griptape-ai/griptape.git?branch=main#050d949ef423287f52c3307b18bc41703a8af953" }
+source = { git = "https://github.com/griptape-ai/griptape.git?branch=main#c43134d6c91f1e7ec10887635f05bcb1753c2b10" }
 dependencies = [
     { name = "attrs" },
     { name = "filetype" },
@@ -703,7 +703,7 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "1.70.0"
+version = "1.71.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -715,9 +715,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/87/f5/ae0f3cd226c2993b4ac1cc4b5f6ca099764689f403c14922c9356accec66/openai-1.70.0.tar.gz", hash = "sha256:e52a8d54c3efeb08cf58539b5b21a5abef25368b5432965e4de88cdf4e091b2b", size = 409640 }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/19/b8f0347090a649dce55a008ec54ac6abb50553a06508cdb5e7abb2813e99/openai-1.71.0.tar.gz", hash = "sha256:52b20bb990a1780f9b0b8ccebac93416343ebd3e4e714e3eff730336833ca207", size = 409926 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e2/39/c4b38317d2c702c4bc763957735aaeaf30dfc43b5b824121c49a4ba7ba0f/openai-1.70.0-py3-none-any.whl", hash = "sha256:f6438d053fd8b2e05fd6bef70871e832d9bbdf55e119d0ac5b92726f1ae6f614", size = 599070 },
+    { url = "https://files.pythonhosted.org/packages/c4/f7/049e85faf6a000890e5ca0edca8e9183f8a43c9e7bba869cad871da0caba/openai-1.71.0-py3-none-any.whl", hash = "sha256:e1c643738f1fff1af52bce6ef06a7716c95d089281e7011777179614f32937aa", size = 598975 },
 ]
 
 [[package]]
