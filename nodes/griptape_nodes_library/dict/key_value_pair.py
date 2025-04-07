@@ -23,7 +23,7 @@ class KeyValuePairNode(DataNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="",
                 tooltip="Key for the key-value pair",
-                ui_options=ParameterUIOptions(string_type_options=ParameterUIOptions.StringType(multiline=True)),
+                ui_options=ParameterUIOptions(string_type_options=ParameterUIOptions.StringType(multiline=False)),
             )
         )
 

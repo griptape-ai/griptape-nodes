@@ -61,6 +61,14 @@
       }
     },
     {
+      "Dict": {
+        "color": "border-green-500",
+        "title": "Dict",
+        "description": "Dictionary Nodes.",
+        "icon": "Braces"
+      }
+    },
+    {
       "Tools": {
         "color": "border-cyan-500",
         "title": "Tools",
@@ -232,15 +240,6 @@
       }
     },
     {
-      "class_name": "DictNode",
-      "file_path": "griptape_nodes_library/create_dict.py",
-      "metadata": {
-        "category": "Utility",
-        "description": "Create a dictionary with key-value pairs",
-        "display_name": "Dict Node"
-      }
-    },
-    {
       "class_name": "CreateImageNode",
       "file_path": "griptape_nodes_library/tasks/create_image_node.py",
       "metadata": {
@@ -313,15 +312,6 @@
       }
     },
     {
-      "class_name": "KeyValuePairNode",
-      "file_path": "griptape_nodes_library/key_value_pair.py",
-      "metadata": {
-        "category": "Utility",
-        "description": "Creates a dictionary from a single key-value input",
-        "display_name": "Key Value Pair"
-      }
-    },
-    {
       "class_name": "LoadImageNode",
       "file_path": "griptape_nodes_library/load_image.py",
       "metadata": {
@@ -331,12 +321,21 @@
       }
     },
     {
-      "class_name": "MergeDictNode",
-      "file_path": "griptape_nodes_library/merge_dict.py",
+      "class_name": "KeyValuePairNode",
+      "file_path": "griptape_nodes_library/dict/key_value_pair.py",
       "metadata": {
-        "category": "Utility",
-        "description": "Combines multiple dictionaries",
-        "display_name": "Merge Dictionary"
+        "category": "Dict",
+        "description": "Creates a dictionary from a single key-value input",
+        "display_name": "Key Value Pair"
+      }
+    },
+    {
+      "class_name": "MergeKeyValuePairNode",
+      "file_path": "griptape_nodes_library/dict/merge_key_value_pair_node.py",
+      "metadata": {
+        "category": "Dict",
+        "description": "Merges Key/Value pairs into a single dictionary",
+        "display_name": "Merge Key Value Pair"
       }
     },
     {
@@ -355,15 +354,6 @@
         "category": "Utility",
         "description": "Entry point for control flow graphs",
         "display_name": "Start Flow"
-      }
-    },
-    {
-      "class_name": "StringListNode",
-      "file_path": "griptape_nodes_library/string_list.py",
-      "metadata": {
-        "category": "Utility",
-        "description": "Creates and manages lists of string values",
-        "display_name": "String List"
       }
     }
   ]
