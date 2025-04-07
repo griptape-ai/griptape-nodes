@@ -172,10 +172,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
     GetParameterValueResultFailure,
     GetParameterValueResultSuccess,
-    NodeElementDetails,
     ParameterAndMode,
-    ParameterDetails,
-    ParameterGroupDetails,
     RemoveParameterFromNodeRequest,
     RemoveParameterFromNodeResultFailure,
     RemoveParameterFromNodeResultSuccess,
@@ -1903,7 +1900,35 @@ class NodeManager:
         return result
 
     def on_get_node_element_details_request(self, request: GetNodeElementDetailsRequest) -> ResultPayload:
-        SMEG
+        # Does this node exist?
+        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to get element details for Node '{request.node_name}', but no such Node was found."
+            GriptapeNodes.get_logger().error(details)
+
+            result = GetNodeElementDetailsResultFailure()
+            return result
+
+        # Did they ask for a specific element ID?
+        if request.specific_element_id is None:
+            # No? Use the node's root element to search from.
+            element = node.root_ui_element
+        else:
+            element = node.findroot_ui_element.find_element_by_id(request.specific_element_id)
+            if element is None:
+                details = f"Attempted to get element details for element '{request.specific_element_id}' from Node '{request.node_name}'. Failed because it didn't have an element with that ID on it."
+                GriptapeNodes.get_logger().error(details)
+
+                result = GetNodeElementDetailsResultFailure()
+                return result
+
+        element_details = element.to_dict()
+        details = f"Successfully got element details for Node '{request.node_name}'."
+        GriptapeNodes.get_logger().debug(details)
+        result = GetNodeElementDetailsResultSuccess(element_details=element_details)
+        return result
 
     def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         # Does this node exist?

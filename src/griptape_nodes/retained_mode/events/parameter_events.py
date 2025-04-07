@@ -237,51 +237,16 @@ class GetCompatibleParametersResultFailure(ResultPayloadFailure):
 
 
 @dataclass
-class NodeElementDetails:
-    element_id: str
-    element_type: str
-    children: list[NodeElementDetails]
-
-
-@dataclass
-class ParameterGroupDetails(NodeElementDetails):
-    group_name: str
-
-
-@dataclass
-class TraitDetails(NodeElementDetails):
-    pass
-
-
-@dataclass
-class ParameterDetails(NodeElementDetails):
-    name: str
-    type: str
-    input_types: list[str]
-    output_type: str
-    default_value: Any | None
-    tooltip: str | list[dict]
-    tooltip_as_input: str | list[dict] | None
-    tooltip_as_property: str | list[dict] | None
-    tooltip_as_output: str | list[dict] | None
-    mode_allowed_input: bool
-    mode_allowed_property: bool
-    mode_allowed_output: bool
-    is_user_defined: bool
-    ui_options: ParameterUIOptions | None
-
-
-@dataclass
 @PayloadRegistry.register
 class GetNodeElementDetailsRequest(RequestPayload):
     node_name: str
-    specific_element: str | None = None  # Pass None to use the root
+    specific_element_id: str | None = None  # Pass None to use the root
 
 
 @dataclass
 @PayloadRegistry.register
 class GetNodeElementDetailsResultSuccess(ResultPayloadSuccess):
-    element_details: NodeElementDetails
+    element_details: dict[str, Any]
 
 
 @dataclass

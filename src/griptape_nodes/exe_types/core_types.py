@@ -266,29 +266,12 @@ class ParameterGroup(BaseNodeElement):
     group_name: str
 
     def to_dict(self) -> dict[str, Any]:
-        """Returns a nested dictionary representation of this node and its children.
-
-        Example:
-            {
-              "element_id": "container-1",
-              "element_type": "ParameterGroup",
-              "group_name": "Group 1",
-              "children": [
-                {
-                    "element_id": "A",
-                    "element_type": "Parameter",
-                    "children": []
-                },
-                ...
-              ]
-            }
-        """
-        return {
-            "element_id": self.element_id,
-            "element_type": self.__class__.__name__,
-            "group_name": self.group_name,
-            "children": [child.to_dict() for child in self._children],
-        }
+        """Returns a nested dictionary representation of this node and its children."""
+        # Get the parent's version first.
+        our_dict = super().to_dict()
+        # Add in our deltas.
+        our_dict["group_name"] = self.group_name
+        return our_dict
 
 
 class Parameter(BaseNodeElement):
@@ -370,6 +353,29 @@ class Parameter(BaseNodeElement):
         self.type = type
         self.input_types = input_types
         self.output_type = output_type
+
+    def to_dict(self) -> dict[str, Any]:
+        """Returns a nested dictionary representation of this node and its children."""
+        # Get the parent's version first.
+        our_dict = super().to_dict()
+        # Add in our deltas.
+        # TODO(griptape): ADD THE FOLLOWING
+        # name: str
+        # type: str
+        # input_types: list[str]
+        # output_type: str
+        # default_value: Any | None
+        # tooltip: str | list[dict]
+        # tooltip_as_input: str | list[dict] | None
+        # tooltip_as_property: str | list[dict] | None
+        # tooltip_as_output: str | list[dict] | None
+        # mode_allowed_input: bool
+        # mode_allowed_property: bool
+        # mode_allowed_output: bool
+        # is_user_defined: bool
+        # ui_options: ParameterUIOptions | None
+
+        return our_dict
 
     @property
     def type(self) -> str:
