@@ -1,10 +1,6 @@
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import (
-    Parameter,
-    ParameterMode,
-    ParameterUIOptions,
-)
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 
 
@@ -23,7 +19,7 @@ class KeyValuePairNode(DataNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="",
                 tooltip="Key for the key-value pair",
-                ui_options=ParameterUIOptions(string_type_options=ParameterUIOptions.StringType(multiline=True)),
+                ui_options={"multiline": True},
             )
         )
 
@@ -36,7 +32,7 @@ class KeyValuePairNode(DataNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="",
                 tooltip="Value for the key-value pair",
-                ui_options=ParameterUIOptions(string_type_options=ParameterUIOptions.StringType(multiline=True)),
+                ui_options={"multiline": True},
             )
         )
 

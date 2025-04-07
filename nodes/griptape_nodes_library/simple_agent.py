@@ -2,7 +2,7 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.utils import Stream
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterUIOptions
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
@@ -34,11 +34,7 @@ class SimpleAgentNode(ControlNode):
                 type="str",
                 default_value="",
                 tooltip="",
-                ui_options=ParameterUIOptions(
-                    string_type_options=ParameterUIOptions.StringType(
-                        multiline=True,
-                    )
-                ),
+                ui_options={"multiline": True},
             )
         )
 
@@ -51,12 +47,7 @@ class SimpleAgentNode(ControlNode):
                 default_value="",
                 tooltip="What the agent said.",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options=ParameterUIOptions(
-                    string_type_options=ParameterUIOptions.StringType(
-                        multiline=True,
-                        placeholder_text="The agent response",
-                    )
-                ),
+                ui_options={"multiline": True, "placeholder_text": "The Agent Response"},
             )
         )
 
