@@ -2,7 +2,6 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import ParameterUIOptions
 from griptape_nodes.retained_mode.events.arbitrary_python_events import RunArbitraryPythonStringRequest
 from griptape_nodes.retained_mode.events.base_events import (
     ResultPayload,
@@ -234,7 +233,7 @@ class RetainedMode:
         tooltip_as_input: str | list[dict] | None = None,
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
-        ui_options: ParameterUIOptions | None = None,
+        ui_options: dict | None = None,
         mode_allowed_input: bool = True,  # noqa: FBT001, FBT002
         mode_allowed_property: bool = True,  # noqa: FBT001, FBT002
         mode_allowed_output: bool = True,  # noqa: FBT001, FBT002

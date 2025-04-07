@@ -19,10 +19,27 @@ class OSManager:
     This lays the groundwork to exclude specific functionality on a configuration basis.
     """
 
-    def __init__(self, event_manager: EventManager):
-        event_manager.assign_manager_to_request_type(
-            request_type=OpenAssociatedFileRequest, callback=self.on_open_associated_file_request
-        )
+    def __init__(self, event_manager: EventManager | None = None):
+        if event_manager is not None:
+            event_manager.assign_manager_to_request_type(
+                request_type=OpenAssociatedFileRequest, callback=self.on_open_associated_file_request
+            )
+
+    @staticmethod
+    def platform() -> str:
+        return sys.platform
+
+    @staticmethod
+    def is_windows() -> bool:
+        return sys.platform.startswith("win")
+
+    @staticmethod
+    def is_mac() -> bool:
+        return sys.platform.startswith("darwin")
+
+    @staticmethod
+    def is_linux() -> bool:
+        return sys.platform.startswith("linux")
 
     def on_open_associated_file_request(self, request: OpenAssociatedFileRequest) -> ResultPayload:  # noqa: PLR0911
         # Sanitize and validate the file path
@@ -42,12 +59,12 @@ class OSManager:
 
         try:
             platform_name = sys.platform
-            if platform_name.startswith("win"):
+            if self.is_windows:
                 # Linter complains but this is the recommended way on Windows
                 # We can ignore this warning as we've validated the path
                 os.startfile(str(path))  # noqa: S606 # pyright: ignore[reportAttributeAccessIssue]
                 print(f"Started file on Windows: {path}")
-            elif platform_name.startswith("darwin"):
+            elif self.is_mac:
                 # On macOS, open should be in a standard location
                 subprocess.run(  # noqa: S603
                     ["/usr/bin/open", str(path)],
@@ -56,7 +73,7 @@ class OSManager:
                     text=True,
                 )
                 print(f"Opened file on macOS: {path}")
-            elif platform_name.startswith("linux"):
+            elif self.is_linux:
                 # Use full path to xdg-open to satisfy linter
                 # Common locations for xdg-open:
                 xdg_paths = ["/usr/bin/xdg-open", "/bin/xdg-open", "/usr/local/bin/xdg-open"]

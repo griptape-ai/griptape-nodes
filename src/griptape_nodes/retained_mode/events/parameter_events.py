@@ -3,7 +3,7 @@ from typing import Any, NamedTuple
 
 from pydantic import Field
 
-from griptape_nodes.exe_types.core_types import ParameterMode, ParameterUIOptions
+from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -25,7 +25,7 @@ class AddParameterToNodeRequest(RequestPayload):
     type: str | None = None
     input_types: list[str] | None = None
     output_type: str | None = None
-    ui_options: ParameterUIOptions | None = None
+    ui_options: dict | None = None
     mode_allowed_input: bool = Field(default=True)
     mode_allowed_property: bool = Field(default=True)
     mode_allowed_output: bool = Field(default=True)
@@ -83,6 +83,7 @@ class SetParameterValueRequest(RequestPayload):
     parameter_name: str
     node_name: str
     value: Any
+    data_type: str | None = None
 
 
 @dataclass
@@ -121,7 +122,7 @@ class GetParameterDetailsResultSuccess(ResultPayloadSuccess):
     mode_allowed_property: bool
     mode_allowed_output: bool
     is_user_defined: bool
-    ui_options: ParameterUIOptions | None
+    ui_options: dict | None
 
 
 @dataclass
@@ -146,7 +147,7 @@ class AlterParameterDetailsRequest(RequestPayload):
     mode_allowed_input: bool | None = None
     mode_allowed_property: bool | None = None
     mode_allowed_output: bool | None = None
-    ui_options: ParameterUIOptions | None = None
+    ui_options: dict | None = None
 
     @classmethod
     def create(cls, **kwargs) -> "AlterParameterDetailsRequest":

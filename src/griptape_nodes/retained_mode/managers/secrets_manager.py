@@ -72,7 +72,7 @@ class SecretsManager:
             return DeleteSecretValueResultFailure()
 
         if not get_key(self.env_var_path, secret_name):
-            details = f"Secret {secret_name} not found: '{secret_name}'"
+            details = f"Secret {secret_name} not found in {self.env_var_path}"
             print(details)  # TODO(griptape): Move to Log
             return DeleteSecretValueResultFailure()
 
@@ -81,7 +81,22 @@ class SecretsManager:
         return DeleteSecretValueResultSuccess()
 
     def get_secret(self, secret_name: str, default: str | None = None) -> str | None:
-        return get_key(self.env_var_path, secret_name) or getenv(secret_name) or default
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        value = get_key(self.env_var_path, secret_name)
+        if value is None:
+            GriptapeNodes.get_logger().warning(
+                "Secret %s not found in %s, looking in environment variables", secret_name, self.env_var_path
+            )
+            # Check if the secret is set in the environment variables
+            value = getenv(secret_name)
+        if value is None:
+            GriptapeNodes.get_logger().warning(
+                "Secret %s not found in environment variables, using default value %s", secret_name, default
+            )
+            # Check if the secret is set in the config manager
+            value = default
+        return value
 
     def set_secret(self, secret_name: str, secret_value: str) -> None:
         if not self.env_var_path.exists():

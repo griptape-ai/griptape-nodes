@@ -1,4 +1,4 @@
-site_name: Griptape Nodes 
+site_name: Documentation
 site_url: https://docs.griptapenodes.com/
 
 plugins:
@@ -11,9 +11,20 @@ plugins:
             heading_level: 3
 
 copyright: "&copy; Griptape, Inc."
-
+extra:
+  analytics:
+    provider: google
+    property: G-25RZCVNV2D
+  social:
+    - icon: fontawesome/solid/house
+      link: https://www.griptape.ai
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/gnWRz88eym
+    - icon: fontawesome/brands/github
+      link: https://github.com/griptape-ai/griptape-nodes
 theme:
   name: material
+  logo: assets/img/griptape_nodes_header_logo.png
   palette:
     # Dark mode
     - scheme: slate
@@ -45,5 +56,56 @@ markdown_extensions:
 nav:
   - Home:
       - Overview: index.md
-      - Retained Mode: retained_mode.md
-      - Glossary: glossary.md
+      - Setup: setup.md
+      - Engine Configuration: configuration.md
+  - Nodes:
+      - Overview: nodes/overview.md
+      - Basic:
+          - Agent: nodes/basic/agent.md
+          - Create Dict: nodes/basic/create_dict.md
+          - Create Image: nodes/basic/create_image.md
+          - Create String: nodes/basic/create_string.md
+          - End Flow: nodes/basic/end_flow.md
+          - Key Value Pair: nodes/basic/key_value_pair.md
+          - Load Image: nodes/basic/load_image.md
+          - Load Text: nodes/basic/load_text.md
+          - Merge Dict: nodes/basic/merge_dict.md
+          - Merge Texts: nodes/basic/merge_texts.md
+          - Save Text: nodes/basic/save_text.md
+          - Simple Agent: nodes/basic/simple_agent.md
+          - Start Flow: nodes/basic/start_flow.md
+          - String List: nodes/basic/string_list.md
+      - Drivers:
+          - Anthropic Prompt Driver: nodes/drivers/anthropic_prompt_driver.md
+          - Audio Transcription Drivers: nodes/drivers/audio_transcription_drivers.md
+          - Azure OpenAI Chat Prompt Driver: nodes/drivers/azure_openai_chat_prompt_driver.md
+          - Azure OpenAI Image Driver: nodes/drivers/azure_openai_image_driver.md
+          - Cohere Prompt Driver: nodes/drivers/cohere_prompt_driver.md
+          - Griptape Cloud Image Driver: nodes/drivers/griptape_cloud_image_driver.md
+          - Griptape Cloud Prompt Driver: nodes/drivers/griptape_cloud_prompt_driver.md
+          - Ollama Embedding Driver: nodes/drivers/ollama_embedding_driver.md
+          - Ollama Prompt Driver: nodes/drivers/ollama_prompt_driver.md
+          - OpenAI Chat Prompt Driver: nodes/drivers/openai_chat_prompt_driver.md
+          - OpenAI Image Driver: nodes/drivers/openai_image_driver.md
+          - Web Search Drivers: nodes/drivers/web_search_drivers.md
+      - Tools:
+          - Audio Transcription Tool: nodes/tools/audio_transcription_tool.md
+          - Base Tool: nodes/tools/base_tool.md
+          - Calculator Tool: nodes/tools/calculator_tool.md
+          - Convert Agent to Tool: nodes/tools/convert_agent_to_tool.md
+          - Date Time Tool: nodes/tools/date_time_tool.md
+          - Extraction Tool: nodes/tools/extraction_tool.md
+          - File Manager Tool: nodes/tools/file_manager_tool.md
+          - Prompt Summary Tool: nodes/tools/prompt_summary_tool.md
+          - Query Tool: nodes/tools/query_tool.md
+          - RAG Tool: nodes/tools/rag_tool.md
+          - Tool List: nodes/tools/tool_list.md
+          - Vector Store Tool: nodes/tools/vector_store_tool.md
+          - Web Scraper Tool: nodes/tools/web_scraper_tool.md
+          - Web Search Tool: nodes/tools/web_search_tool.md
+      - Rules:
+          - Base Ruleset: nodes/rules/base_ruleset.md
+  - Commands: 
+      - Retained Mode: scripting/retained_mode.md
+  - Reference: 
+      - Glossary: reference/glossary.md

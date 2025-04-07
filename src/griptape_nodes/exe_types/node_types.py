@@ -294,7 +294,10 @@ class BaseNode(ABC):
         return modified_parameters
 
     def get_parameter_value(self, param_name: str) -> Any:
-        return self.parameter_values[param_name]
+        if param_name in self.parameter_values:
+            return self.parameter_values[param_name]
+        param = self.get_parameter_by_name(param_name)
+        return param.default_value if param else None
 
     def get_next_control_output(self) -> Parameter | None:
         for param in self.parameters:

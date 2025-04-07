@@ -1,6 +1,6 @@
 from griptape.rules import Rule, Ruleset
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterUIOptions
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 
 
@@ -26,12 +26,7 @@ class RulesetNode(DataNode):
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 default_value="",
                 tooltip="",
-                ui_options=ParameterUIOptions(
-                    string_type_options=ParameterUIOptions.StringType(
-                        multiline=True,
-                        placeholder_text="Add your rules here, one per line",
-                    )
-                ),
+                ui_options={"multiline": True, "placeholder_text": "Add your rules here, one per line"},
             )
         )
         self.add_parameter(
