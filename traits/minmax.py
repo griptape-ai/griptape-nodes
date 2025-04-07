@@ -13,12 +13,18 @@ class MinMax(Trait):
 
     _allowed_modes = {ParameterMode.PROPERTY}
 
+    def __init__(self, min_val:float, max_val:float) -> None:
+        super().__init__()
+        self.min = min_val
+        self.max = max_val
+
+
     @classmethod
     def get_trait_keys(cls) -> list[str]:
         return ["min", "max", "minmax", "min_max"]
 
     def ui_options_for_trait(self) -> dict:
-        return {"slider": {"min_val": self.min, "max_val": self.max}, "step": 2, "multiline": True}
+        return {"multiline": True}
 
     def display_options_for_trait(self) -> dict:
         return {}

@@ -6,6 +6,8 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import DataNode
 
+from traits.clamp import Clamp
+
 
 class CreateStringNode(DataNode):
     def __init__(
@@ -24,6 +26,7 @@ class CreateStringNode(DataNode):
                 input_types=["str"],
                 output_type="str",
                 type="str",
+                traits={Clamp(min_val=0, max_val=100)},
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 tooltip="The text content to save to file",
             )

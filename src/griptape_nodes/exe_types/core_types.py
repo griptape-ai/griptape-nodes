@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 T = TypeVar("T", bound="Parameter")
+N = TypeVar("N", bound="BaseNodeElement")
 
 
 # Types of Modes provided for Parameters
@@ -148,9 +149,8 @@ class BaseNodeElement:
                 return found
         return None
 
-    # TODO(kate): I'd like to be able to do this with traits as well.
-    def find_elements_by_type(self, element_type: type) -> list:
-        elements = []
+    def find_elements_by_type(self, element_type: type[N]) -> list:
+        elements: list[N]= []
         for child in self._children:
             if isinstance(child, element_type):
                 elements.append(child)
@@ -277,7 +277,10 @@ class Parameter(BaseNodeElement):
             self._ui_options = ui_options
         if traits:
             for trait in traits:
-                created = trait()
+                if not isinstance(trait,Trait):
+                    created = trait()
+                else:
+                    created = trait
                 # Add a trait as a child
                 # UI options are now traits! sorry!
                 self.add_child(created)
@@ -385,8 +388,11 @@ class Parameter(BaseNodeElement):
             return
         self._output_type = None
 
-    def add_trait(self, trait: type[Trait]) -> None:
-        created = trait()
+    def add_trait(self, trait: type[Trait]| Trait) -> None:
+        if not isinstance(trait,Trait):
+            created = trait()
+        else:
+            created = trait
         self.add_child(created)
 
     def remove_trait(self, trait_type: str) -> None:
