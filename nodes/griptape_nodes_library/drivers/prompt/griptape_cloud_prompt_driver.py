@@ -1,8 +1,10 @@
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 
 from nodes.griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
+from traits.options import Options
 
 DEFAULT_MODEL = "gpt-4o"
+MODELS = ["gpt-4o"]
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 SUCCESS = 200
@@ -21,6 +23,7 @@ class GriptapeCloudPromptDriverNode(BasePromptDriverNode):
         if model_parameter is not None:
             model_parameter.default_value = DEFAULT_MODEL
             model_parameter.input_types = ["str"]
+            model_parameter.add_trait(Options(choices=MODELS))
 
         seed_parameter = self.get_parameter_by_name("seed")
         if seed_parameter is not None:

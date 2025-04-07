@@ -1,7 +1,7 @@
 from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
 
-from griptape_nodes.exe_types.core_types import ParameterUIOptions
 from nodes.griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
+from traits.options import Options
 
 DEFAULT_MODEL = "gpt-4o"
 MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
@@ -23,9 +23,7 @@ class OpenAiPromptDriverNode(BasePromptDriverNode):
         if model_parameter is not None:
             model_parameter.default_value = DEFAULT_MODEL
             model_parameter.input_types = ["str"]
-            model_parameter.ui_options = ParameterUIOptions(
-                simple_dropdown_options=(ParameterUIOptions.SimpleDropdown(enum_choices=MODELS))
-            )
+            model_parameter.add_trait(Options(choices=MODELS))
 
         # Delete top_k because openai does not use it
         parameter = self.get_parameter_by_name("top_k")

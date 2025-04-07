@@ -1,9 +1,9 @@
 import anthropic
 from griptape.drivers.prompt.anthropic import AnthropicPromptDriver
 
-from griptape_nodes.exe_types.core_types import ParameterUIOptions
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from nodes.griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
+from traits.options import Options
 
 DEFAULT_MODEL = "claude-3-7-sonnet-latest"
 MODELS = ["claude-3-7-sonnet-latest", "claude-3-5-sonnet-latest", "claude-3-5-opus-latest", "claude-3-5-haiku-latest"]
@@ -23,10 +23,7 @@ class AnthropicPromptDriverNode(BasePromptDriverNode):
         model_parameter = self.get_parameter_by_name("model")
         if model_parameter is not None:
             model_parameter.default_value = DEFAULT_MODEL
-            model_parameter.input_types = ["str"]
-            model_parameter.ui_options = ParameterUIOptions(
-                simple_dropdown_options=(ParameterUIOptions.SimpleDropdown(enum_choices=MODELS))
-            )
+            model_parameter.add_trait(Options(choices=MODELS))
 
         # Remove parameters not used by Azure OpenAI
 

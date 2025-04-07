@@ -2,12 +2,7 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.tasks import PromptTask
 
-from griptape_nodes.exe_types.core_types import (
-    Parameter,
-    ParameterGroup,
-    ParameterMode,
-    ParameterUIOptions,
-)
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -65,12 +60,7 @@ class BaseAgentNode(ControlNode):
                 type="str",
                 default_value="",
                 tooltip="The prompt to call an agent",
-                ui_options=ParameterUIOptions(
-                    string_type_options=ParameterUIOptions.StringType(
-                        multiline=True,
-                        placeholder_text="The prompt to call an agent",
-                    )
-                ),
+                ui_options={"multiline": True},
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
@@ -83,12 +73,7 @@ class BaseAgentNode(ControlNode):
                     default_value="",
                     tooltip="What the agent said.",
                     allowed_modes={ParameterMode.OUTPUT},
-                    ui_options=ParameterUIOptions(
-                        string_type_options=ParameterUIOptions.StringType(
-                            multiline=True,
-                            placeholder_text="The agent will respond here. Connect the output to other nodes.",
-                        )
-                    ),
+                    ui_options={"multiline": True, "placeholder_text": "Agent response"},
                 )
             )
 

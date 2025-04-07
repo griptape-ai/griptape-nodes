@@ -1,8 +1,8 @@
 from griptape.drivers.prompt.ollama import OllamaPromptDriver
 
-from griptape_nodes.exe_types.core_types import ParameterUIOptions
 from griptape_nodes.exe_types.node_types import Parameter
 from nodes.griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
+from traits.options import Options
 
 DEFAULT_PORT = "11434"
 DEFAULT_BASE_URL = "http://127.0.0.1"
@@ -24,9 +24,7 @@ class OllamaPromptDriverNode(BasePromptDriverNode):
         if model_parameter is not None:
             model_parameter.default_value = self.models[0]
             model_parameter.input_types = ["str"]
-            model_parameter.ui_options = ParameterUIOptions(
-                simple_dropdown_options=(ParameterUIOptions.SimpleDropdown(enum_choices=self.models))
-            )
+            model_parameter.add_trait(Options(self.models))
 
         self.add_parameter(Parameter(name="base_url", default_value=DEFAULT_BASE_URL, type="str", tooltip=""))
         self.add_parameter(Parameter(name="port", default_value=DEFAULT_PORT, type="str", tooltip=""))
