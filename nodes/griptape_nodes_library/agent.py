@@ -11,6 +11,7 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 from griptape_nodes_library.utils.error_utils import try_throw_error
+from traits.add_button import AddButton
 from traits.options import Options
 
 DEFAULT_MODEL = "gpt-4o"
@@ -93,6 +94,7 @@ class RunAgentNode(ControlNode):
                 default_value="",
                 tooltip="What the agent said.",
                 allowed_modes={ParameterMode.OUTPUT},
+                traits={AddButton(button_type="modal")},
                 ui_options={"multiline": True, "placeholder_text": "The Agent Response"},
             )
         self.add_node_element(tools_group)
