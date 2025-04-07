@@ -111,17 +111,8 @@ class RunAgentNode(ControlNode):
         return exceptions if exceptions else None
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        if parameter.name == "prompt_driver":
-            prompt_model = self.get_parameter_by_name("prompt_model")
-            if prompt_model:
-                trait = prompt_model.find_element_by_id("Options")
-                if trait and isinstance(trait, Options):
-                    driver_type = str(type(value).__name__).lower()
-                    modified_parameters_set.add("prompt_model")
-                    choices = self.select_choices(driver_type)
-                    if choices:
-                        trait.choices = choices
-                    self.set_parameter_value("prompt_model", self.get_parameter_value("prompt_model"))
+        driver_type = str(type(value).__name__).lower()
+        self.handle_prompt_driver(parameter, driver_type, modified_parameters_set)
 
     def after_incoming_connection(
         self,
@@ -129,16 +120,8 @@ class RunAgentNode(ControlNode):
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,
     ) -> None:
-        if target_parameter.name == "prompt_driver":
-            prompt_model = self.get_parameter_by_name("prompt_model")
-            if prompt_model:
-                trait = prompt_model.find_element_by_id("Options")
-                if trait and isinstance(trait, Options):
-                    node_class = source_node.__class__.__name__.lower()
-                    choices = self.select_choices(node_class)
-                    if choices:
-                        trait.choices = choices
-                    self.set_parameter_value("prompt_model", self.get_parameter_value("prompt_model"))
+        node_class = source_node.__class__.__name__.lower()
+        self.handle_prompt_driver(target_parameter, node_class)
 
     def select_choices(self, value: str) -> list[str]:
         match value:
@@ -154,6 +137,21 @@ class RunAgentNode(ControlNode):
             case _ if "ollama" in value:
                 return ["llama3", "llama2", "mistral", "mpt"]
         return []
+
+    def handle_prompt_driver(
+        self, parameter: Parameter, type_string: Any, modified_parameters_set: set[str] | None = None
+    ) -> None:
+        if parameter.name == "prompt_driver":
+            prompt_model = self.get_parameter_by_name("prompt_model")
+            if prompt_model:
+                trait = prompt_model.find_element_by_id("Options")
+                if trait and isinstance(trait, Options):
+                    if modified_parameters_set:
+                        modified_parameters_set.add("prompt_model")
+                    choices = self.select_choices(type_string)
+                    if choices:
+                        trait.choices = choices
+                    self.set_parameter_value("prompt_model", self.get_parameter_value("prompt_model"))
 
     def process(self) -> None:
         # Get api key
