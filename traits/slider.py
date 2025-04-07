@@ -27,7 +27,7 @@ class Slider(Trait):
 
     def validators_for_trait(self) -> list[Callable[..., Any]]:
         def validate(param: Parameter, value: Any) -> None:  # noqa: ARG001
-            if hasattr(value, "<") and hasattr(value, ">") and (value > self.max or value < self.min):
+            if hasattr(value, "__gt__") and hasattr(value, "__lt__") and (value > self.max or value < self.min):
                 msg = "Value out of range"
                 raise ValueError(msg)
 
