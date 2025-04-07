@@ -2632,12 +2632,14 @@ class ScriptManager:
         save_scene_request = self.on_save_scene_request(SaveSceneRequest(file_name=request.requested_name))
 
         if isinstance(save_scene_request, SaveSceneResultFailure):
-            print("Failed to save scene")
+            details = f"Attempted to rename script '{request.script_name}' to '{request.requested_name}'. Failed while attempting to save."
+            GriptapeNodes.get_logger().error(details)
             return RenameScriptResultFailure()
 
         delete_script_result = self.on_delete_scripts_request(DeleteScriptRequest(name=request.script_name))
         if isinstance(delete_script_result, DeleteScriptResultFailure):
-            print("Failed to delete script from registry")
+            details = f"Attempted to rename script '{request.script_name}' to '{request.requested_name}'. Failed while attempting to remove the original file name from the registry."
+            GriptapeNodes.get_logger().error(details)
             return RenameScriptResultFailure()
 
         return RenameScriptResultSuccess()
