@@ -5,7 +5,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import DataNode
-from traits.clamp import Clamp
+from griptape_nodes.traits.clamp import Clamp
 
 
 class CreateStringNode(DataNode):
