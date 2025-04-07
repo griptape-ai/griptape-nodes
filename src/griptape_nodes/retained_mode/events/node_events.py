@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import BaseNodeElement
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -149,7 +148,7 @@ class GetAllNodeInfoResultSuccess(ResultPayloadSuccess):
     node_resolution_state: str
     connections: ListConnectionsForNodeResultSuccess
     element_id_to_value: dict[str, ParameterInfoValue]
-    root_node_element: dict[str,Any]
+    root_node_element: dict[str, Any]
 
 
 @dataclass

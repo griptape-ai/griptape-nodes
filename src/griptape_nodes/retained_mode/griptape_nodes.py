@@ -142,7 +142,6 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
-    ParameterInfoValue,
     SetNodeMetadataRequest,
     SetNodeMetadataResultFailure,
     SetNodeMetadataResultSuccess,
@@ -2167,7 +2166,7 @@ class NodeManager:
     # want to give clear reasoning for each failure.
     # For PLR0915 (too many statements): very little reusable code here, want to be explicit and
     # make debugger use friendly.
-    def on_get_all_node_info_request(self, request: GetAllNodeInfoRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
+    def on_get_all_node_info_request(self, request: GetAllNodeInfoRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -2223,14 +2222,16 @@ class NodeManager:
             result = GetAllNodeInfoResultFailure()
             return result
         get_node_elements_request = GetNodeElementDetailsRequest(node_name=request.node_name)
-        get_node_elements_result = GriptapeNodes.NodeManager().on_get_node_element_details_request(get_node_elements_request)
+        get_node_elements_result = GriptapeNodes.NodeManager().on_get_node_element_details_request(
+            get_node_elements_request
+        )
         if not get_node_elements_result.succeeded():
             details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting details for elements."
             GriptapeNodes.get_logger().error(details)
             result = GetAllNodeInfoResultFailure()
             return result
         try:
-            get_element_details_successs = cast("GetNodeElementDetailsResultSuccess",get_node_elements_result)
+            get_element_details_successs = cast("GetNodeElementDetailsResultSuccess", get_node_elements_result)
         except Exception as err:
             details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
             GriptapeNodes.get_logger().error(details)
@@ -2250,7 +2251,7 @@ class NodeManager:
             metadata=get_metadata_success.metadata,
             node_resolution_state=get_resolution_state_success.state,
             connections=list_connections_success,
-            element_id_to_value =element_id_to_value,
+            element_id_to_value=element_id_to_value,
             root_node_element=element_details,
         )
         return result
