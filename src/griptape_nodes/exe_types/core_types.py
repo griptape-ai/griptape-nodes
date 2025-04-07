@@ -359,21 +359,26 @@ class Parameter(BaseNodeElement):
         # Get the parent's version first.
         our_dict = super().to_dict()
         # Add in our deltas.
-        # TODO(griptape): ADD THE FOLLOWING
-        # name: str
-        # type: str
-        # input_types: list[str]
-        # output_type: str
-        # default_value: Any | None
-        # tooltip: str | list[dict]
-        # tooltip_as_input: str | list[dict] | None
-        # tooltip_as_property: str | list[dict] | None
-        # tooltip_as_output: str | list[dict] | None
-        # mode_allowed_input: bool
-        # mode_allowed_property: bool
-        # mode_allowed_output: bool
-        # is_user_defined: bool
-        # ui_options: ParameterUIOptions | None
+        our_dict["name"] = self.name
+        our_dict["type"] = self.type
+        our_dict["input_types"] = self.input_types
+        our_dict["output_type"] = self.output_type
+        our_dict["default_value"] = self.default_value
+        our_dict["tooltip"] = self.tooltip
+        our_dict["tooltip_as_input"] = self.tooltip_as_input
+        our_dict["tooltip_as_output"] = self.tooltip_as_output
+        our_dict["tooltip_as_property"] = self.tooltip_as_property
+
+        our_dict["is_user_defined"] = self.user_defined
+        our_dict["ui_options"] = self.ui_options
+
+        # Let's bundle up the mode details.
+        allows_input = ParameterMode.INPUT in self.allowed_modes
+        allows_property = ParameterMode.PROPERTY in self.allowed_modes
+        allows_output = ParameterMode.OUTPUT in self.allowed_modes
+        our_dict["mode_allowed_input"] = allows_input
+        our_dict["mode_allowed_property"] = allows_property
+        our_dict["mode_allowed_output"] = allows_output
 
         return our_dict
 
