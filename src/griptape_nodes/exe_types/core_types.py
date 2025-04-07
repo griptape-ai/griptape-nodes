@@ -70,103 +70,6 @@ class ParameterType:
         return ret_val
 
 
-# Keys and values for the UI_Options schema.
-@dataclass
-class ParameterUIOptions:
-    @dataclass
-    class Option(ABC):  # noqa: B024
-        def __eq__(self, other) -> bool:
-            if not isinstance(other, type(self)):
-                return False
-            self_dict = self.__dict__
-            other_dict = self.__dict__
-            return self_dict == other_dict
-
-    @dataclass
-    class TypeOption(Option, ABC):
-        pass
-
-    @dataclass
-    class ContainerOption(Option, ABC):
-        pass
-
-    @dataclass
-    class StringType(TypeOption):
-        multiline: bool | None = None
-        markdown: bool | None = None
-        placeholder_text: str | None = None
-
-    @dataclass
-    class BooleanType(TypeOption):
-        on_label: str | None = None
-        off_label: str | None = None
-
-    @dataclass
-    class SliderWidget:
-        min_val: Any
-        max_val: Any
-
-    @dataclass
-    class NumberType(TypeOption):
-        slider: ParameterUIOptions.SliderWidget | None = None
-        step: Any | None = None
-
-    @dataclass
-    class SimpleDropdown(Option):
-        enum_choices: list[str] | None = None
-        placeholder_text: str | None = None
-
-    @dataclass
-    class FancyDropdown(Option):
-        enum_dict: dict[Any, Any] | None = None
-
-    @dataclass
-    class ImageType(TypeOption):
-        clickable_file_browser: bool | None = None
-        expander: bool | None = None
-
-    @dataclass
-    class VideoType(TypeOption):
-        clickable_file_browser: bool | None = None
-        play_button: bool | None = None
-        playback_range: bool | None = None
-        expander: bool | None = None
-
-    @dataclass
-    class AudioType(TypeOption):
-        clickable_file_browser: bool | None = None
-
-    @dataclass
-    class PropertyArrayType(ContainerOption, TypeOption):
-        property_type_option: ParameterUIOptions.TypeOption | None = None
-        stacked: bool | None = None
-        color: bool | None = None
-
-    @dataclass
-    class ListContainer(ContainerOption):
-        element_type_option: ParameterUIOptions.TypeOption | None = None
-        stacked: bool | None = None
-
-    string_type_options: StringType | None = None
-    boolean_type_options: BooleanType | None = None
-    number_type_options: NumberType | None = None
-    simple_dropdown_options: SimpleDropdown | None = None
-    fancy_dropdown_options: FancyDropdown | None = None
-    image_type_options: ImageType | None = None
-    video_type_options: VideoType | None = None
-    audio_type_options: AudioType | None = None
-    property_array_type_options: PropertyArrayType | None = None
-    list_container_options: ListContainer | None = None
-    display: bool = True
-
-    def __eq__(self, other) -> bool:
-        if not isinstance(other, ParameterUIOptions):
-            return False
-        self_dict = self.__dict__
-        other_dict = other.__dict__
-        return self_dict == other_dict
-
-
 @dataclass(kw_only=True)
 class BaseNodeElement:
     element_id: str = field(default_factory=lambda: str(uuid.uuid4().hex))
@@ -315,7 +218,7 @@ class Parameter(BaseNodeElement):
     )
     _converters: list[Callable[[Any], Any]]
     _validators: list[Callable[[Parameter, Any], None]]
-    _ui_options: list
+    _ui_options: dict
     next: Parameter | None = None
     prev: Parameter | None = None
 
@@ -334,7 +237,7 @@ class Parameter(BaseNodeElement):
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         traits: set[Trait.__class__] | None = None,  # We are going to make these children.
-        ui_options: list | None = None,
+        ui_options: dict | None = None,
         *,
         settable: bool = True,
         user_defined: bool = False,
@@ -369,7 +272,7 @@ class Parameter(BaseNodeElement):
         else:
             self._validators = validators
         if ui_options is None:
-            self._ui_options = []
+            self._ui_options = {}
         else:
             self._ui_options = ui_options
         if traits:
@@ -416,19 +319,21 @@ class Parameter(BaseNodeElement):
     @property
     def validators(self) -> list[Callable[[Parameter, Any], None]]:
         validators = []
-        traits = self.find_elements_by_type(Trait) #TODO(kate): Should these be ordered? does this return them in order?
+        traits = self.find_elements_by_type(
+            Trait
+        )  # TODO(kate): Should these be ordered? does this return them in order?
         for trait in traits:
             validators += trait.validators_for_trait()
         validators += self._validators
         return validators
 
     @property
-    def ui_options(self) -> list:
-        ui_options = []
+    def ui_options(self) -> dict:
+        ui_options = {}
         traits = self.find_elements_by_type(Trait)
         for trait in traits:
-            ui_options += trait.ui_options_for_trait()
-        ui_options += self._ui_options
+            ui_options = ui_options | trait.ui_options_for_trait()
+        ui_options = ui_options | self._ui_options
         return ui_options
 
     @property
@@ -655,8 +560,8 @@ class ControlParameterOutput(ControlParameter):
         )
 
 
-# Making a new file for parameter traits.
 # TODO(kate): What do we want traits to have? there will probably be more..
+
 
 @dataclass
 class Trait(ABC, BaseNodeElement):
@@ -667,9 +572,9 @@ class Trait(ABC, BaseNodeElement):
     def get_trait_keys(cls) -> list[str]:
         """This will return keys that trigger this trait."""
 
-    def ui_options_for_trait(self) -> list:
+    def ui_options_for_trait(self) -> dict:
         """Returns a list of UI options for the parameter as a list of strings or dictionaries."""
-        return []
+        return {}
 
     def display_options_for_trait(self) -> dict:
         """Returns a list of display options for the parameter as a dictionary."""

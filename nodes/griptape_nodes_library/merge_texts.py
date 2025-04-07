@@ -3,7 +3,6 @@ from typing import Any
 from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
-    ParameterUIOptions,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
 
@@ -23,10 +22,9 @@ class MergeTextsNode(ControlNode):
                 allowed_modes={ParameterMode.INPUT},
                 input_types=["list"],
                 default_value=[],
+                type="list",
                 tooltip="Text inputs to merge together.",
-                ui_options=ParameterUIOptions(
-                    list_container_options=ParameterUIOptions.ListContainer()
-                ),  # Hint to UI to display as a list
+                # Hint to UI to display as a list
             )
         )
 

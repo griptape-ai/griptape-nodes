@@ -1,4 +1,5 @@
 from typing import Any
+
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.utils import Stream
@@ -7,11 +8,10 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterGroup,
     ParameterMode,
-    ParameterUIOptions,
 )
-from griptape_nodes.exe_types.node_types import ControlNode, BaseNode
+from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 from griptape_nodes_library.utils.error_utils import try_throw_error
-from traits.minmax import ModelTrait
+from traits.modeltrait import ModelTrait
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -57,7 +57,7 @@ class RunAgentNode(ControlNode):
                 type="str",
                 default_value="",
                 tooltip="",
-                ui_options=["multiline"]
+                ui_options={"multiline": True},
             )
         self.add_node_element(config_group)
 
@@ -93,7 +93,7 @@ class RunAgentNode(ControlNode):
                 default_value="",
                 tooltip="What the agent said.",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options=["multiline",{"placeholder_text":"The Agent Response"}]
+                ui_options={"multiline": True, "placeholder_text": "The Agent Response"},
             )
         self.add_node_element(tools_group)
 
@@ -122,25 +122,20 @@ class RunAgentNode(ControlNode):
                                 "claude-3-opus",
                                 "claude-3-sonnet-latest",
                                 "claude-3-haiku",
-                                "claude-3-5-sonnet"
+                                "claude-3-5-sonnet",
                             ]
                         case _ if "openai" in driver_type:
-                            trait.choices = [
-                                "gpt-4-turbo",
-                                "gpt-4-1106-preview",
-                                "gpt-4",
-                                "gpt-3.5-turbo"
-                            ]
+                            trait.choices = ["gpt-4-turbo", "gpt-4-1106-preview", "gpt-4", "gpt-3.5-turbo"]
                         case _ if "ollama" in driver_type:
-                            trait.choices = [
-                                "llama3",
-                                "llama2",
-                                "mistral",
-                                "mpt"
-                            ]
-                    self.set_parameter_value("prompt_model",self.get_parameter_value("prompt_model"))
+                            trait.choices = ["llama3", "llama2", "mistral", "mpt"]
+                    self.set_parameter_value("prompt_model", self.get_parameter_value("prompt_model"))
 
-    def after_incoming_connection(self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter) -> None:
+    def after_incoming_connection(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,
+    ) -> None:
         if target_parameter.name == "prompt_driver":
             prompt_model = self.get_parameter_by_name("prompt_model")
             if prompt_model:
@@ -153,23 +148,13 @@ class RunAgentNode(ControlNode):
                                 "claude-3-opus",
                                 "claude-3-sonnet-latest",
                                 "claude-3-haiku",
-                                "claude-3-5-sonnet"
+                                "claude-3-5-sonnet",
                             ]
                         case _ if "openai" in node_class:
-                            trait.choices = [
-                                "gpt-4-turbo",
-                                "gpt-4-1106-preview",
-                                "gpt-4",
-                                "gpt-3.5-turbo"
-                            ]
+                            trait.choices = ["gpt-4-turbo", "gpt-4-1106-preview", "gpt-4", "gpt-3.5-turbo"]
                         case _ if "ollama" in node_class:
-                            trait.choices = [
-                                "llama3",
-                                "llama2",
-                                "mistral",
-                                "mpt"
-                            ]
-                    self.set_parameter_value("prompt_model",self.get_parameter_value("prompt_model"))
+                            trait.choices = ["llama3", "llama2", "mistral", "mpt"]
+                    self.set_parameter_value("prompt_model", self.get_parameter_value("prompt_model"))
 
     def process(self) -> None:
         # Get api key
