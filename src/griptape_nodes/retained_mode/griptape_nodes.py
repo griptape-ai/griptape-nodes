@@ -1050,6 +1050,9 @@ class FlowManager:
             result = DeleteConnectionResultFailure()
             return result
 
+        # After the connection has been removed, if it doesn't have PROPERTY as a type, wipe the set parameter value
+        target_node.set_parameter_value
+
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
         source_node.after_outgoing_connection_removed(
             source_parameter=source_param,
