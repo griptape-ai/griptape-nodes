@@ -1,8 +1,10 @@
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 
-from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
+from griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
+from traits.options import Options
 
 DEFAULT_MODEL = "gpt-4o"
+MODELS = ["gpt-4o"]
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 SUCCESS = 200
@@ -16,6 +18,16 @@ class GriptapeCloudPromptDriverNode(BasePromptDriverNode):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+        # Set any defaults
+        model_parameter = self.get_parameter_by_name("model")
+        if model_parameter is not None:
+            model_parameter.default_value = DEFAULT_MODEL
+            model_parameter.input_types = ["str"]
+            model_parameter.add_trait(Options(choices=MODELS))
+
+        seed_parameter = self.get_parameter_by_name("seed")
+        if seed_parameter is not None:
+            self.remove_parameter(seed_parameter)
 
     def process(self) -> None:
         # Get the parameters from the node
@@ -28,7 +40,6 @@ class GriptapeCloudPromptDriverNode(BasePromptDriverNode):
 
         # Handle optional parameters
         response_format = params.get("response_format", None)
-        seed = params.get("seed", None)
         stream = params.get("stream", False)
         temperature = params.get("temperature", None)
         max_attempts = params.get("max_attempts_on_fail", None)
@@ -39,8 +50,6 @@ class GriptapeCloudPromptDriverNode(BasePromptDriverNode):
         if response_format == "json_object":
             response_format = {"type": "json_object"}
             kwargs["response_format"] = response_format
-        if seed:
-            kwargs["seed"] = seed
         if stream:
             kwargs["stream"] = stream
         if temperature:
@@ -60,7 +69,7 @@ class GriptapeCloudPromptDriverNode(BasePromptDriverNode):
         driver = GriptapeCloudPromptDriver(**kwargs)
 
         # Set the output
-        self.parameter_output_values["driver"] = driver
+        self.parameter_output_values["prompt_driver"] = driver
 
     def validate_node(self) -> list[Exception] | None:
         # Items here are openai api key

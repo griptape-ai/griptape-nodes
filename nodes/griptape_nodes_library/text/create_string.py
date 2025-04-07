@@ -13,7 +13,7 @@ class CreateStringNode(DataNode):
         self,
         name: str,
         metadata: dict[Any, Any] | None = None,
-        value: str = "<Empty>",
+        value: str = "",
     ) -> None:
         super().__init__(name, metadata)
 
