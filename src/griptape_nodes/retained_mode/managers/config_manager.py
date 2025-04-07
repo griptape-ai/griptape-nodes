@@ -169,6 +169,12 @@ class ConfigManager:
             value: The value to associate with the key.
         """
         delta = set_dot_value({}, key, value)
+        if key == "log_level":
+            try:
+                logger.setLevel(value.upper())
+            except ValueError:
+                logger.exception("Invalid log level %s. Defaulting to INFO.", value)
+                logger.setLevel(logging.INFO)
         self.user_config = merge_dicts(self.user_config, delta)
         self._write_user_config()
 

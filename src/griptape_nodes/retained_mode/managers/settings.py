@@ -121,6 +121,7 @@ class Settings(BaseSettings):
             "Serper": {"SERPER_API_KEY": "$SERPER_API_KEY"},
         }
     )
+    log_level: str = Field(default="INFO")
 
     class Config:
         json_file = _find_config_files("griptape_nodes_config", "json")

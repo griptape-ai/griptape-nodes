@@ -26,3 +26,5 @@ class LogManager:
         if not logger.hasHandlers():
             logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
             logger.addHandler(EventLogHandler())
+
+        self.logger = logger
