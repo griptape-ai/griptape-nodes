@@ -1,4 +1,4 @@
-from nodes.griptape_nodes_library.drivers.image.base_image_driver import BaseImageDriverNode
+from griptape_nodes_library.drivers.image.base_image_driver import BaseImageDriverNode
 
 
 class OpenAiImageDriverNode(BaseImageDriverNode):

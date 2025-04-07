@@ -1,6 +1,6 @@
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 
-from nodes.griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
+from griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
 from traits.options import Options
 
 DEFAULT_MODEL = "gpt-4o"

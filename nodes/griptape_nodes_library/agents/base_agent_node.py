@@ -36,7 +36,7 @@ class BaseAgentNode(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
-        with ParameterGroup(group_name="Agent Abilities") as agent_abilities_group:
+        with ParameterGroup(group_name="Agent Abilities"):
             self.add_parameter(
                 Parameter(
                     name="tools",
@@ -65,7 +65,7 @@ class BaseAgentNode(ControlNode):
             )
         )
 
-        with ParameterGroup(group_name="Agent Response") as agent_response_group:
+        with ParameterGroup(group_name="Agent Response"):
             self.add_parameter(
                 Parameter(
                     name="output",
@@ -84,7 +84,8 @@ class BaseAgentNode(ControlNode):
             api_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
 
             if not api_key:
-                raise ValueError(f"API key for {SERVICE} is not set.")
+                msg = f"API key for {SERVICE} is not set."
+                raise ValueError(msg)  # noqa: TRY301
         except Exception as e:
             # Add any exceptions to your list to return
             exceptions.append(e)
