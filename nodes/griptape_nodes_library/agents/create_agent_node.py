@@ -28,11 +28,8 @@ class CreateAgentNode(BaseAgentNode):
         # append any tools to the already existing tools if there are any.
         tools = params.get("tools", None)
         if tools:
-            logger.debug("Tools found, adding to agent")
-            if isinstance(tools, list):
-                tools = [tool.to_dict() for tool in tools]
-            else:
-                tools = [tools.to_dict()]
+            if not isinstance(tools, list):
+                tools = [tools]
             kwargs["tools"] = tools
         else:
             logger.debug("No tools found")
