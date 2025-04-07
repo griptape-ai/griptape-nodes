@@ -14,6 +14,22 @@ class CreateAgentNode(BaseAgentNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
+    def get_tools(self) -> list:
+        tools = self.parameter_values.get("tools", None)
+        if tools:
+            if not isinstance(tools, list):
+                tools = [tools]
+            return tools
+        return []
+
+    def get_rulesets(self) -> list:
+        rulesets = self.parameter_values.get("rulesets", None)
+        if rulesets:
+            if not isinstance(rulesets, list):
+                rulesets = [rulesets]
+            return rulesets
+        return []
+
     def process(self) -> None:
         # Get input values
         params = self.parameter_values
@@ -27,20 +43,10 @@ class CreateAgentNode(BaseAgentNode):
 
         # Get any tools
         # append any tools to the already existing tools if there are any.
-        tools = params.get("tools", None)
-        if tools:
-            if not isinstance(tools, list):
-                tools = [tools]
-            kwargs["tools"] = tools
-        else:
-            logger.debug("No tools found")
+        kwargs["tools"] = self.get_tools()
+
         # Get any rules
-        rulesets = self.valid_or_fallback("rulesets", None)
-        if rulesets:
-            if not isinstance(rulesets, list):
-                kwargs["rulesets"] = [rulesets]
-            else:
-                kwargs["rulesets"] = rulesets
+        kwargs["rulesets"] = self.get_rulesets()
 
         agent = None
         if not agent_dict:

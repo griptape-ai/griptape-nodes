@@ -37,15 +37,15 @@
       }
     },
     {
-      "Drivers": {
+      "Drivers/Prompt": {
         "color": "border-lime-500",
-        "title": "Drivers",
+        "title": "Drivers/Prompt",
         "description": "Prompt Drivers for Griptape Agents.",
         "icon": "Truck"
       }
     },
     {
-      "Drivers": {
+      "Drivers/Image": {
         "color": "border-lime-500",
         "title": "Drivers/Image",
         "description": "Image Drivers for Griptape Agents.",
@@ -92,7 +92,7 @@
       "class_name": "AnthropicPromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/prompt/anthropic_prompt_driver.py",
       "metadata": {
-        "category": "Drivers",
+        "category": "Drivers/Prompt",
         "description": "Anthropic Claude prompt driver for Griptape Agents",
         "display_name": "Anthropic Prompt Driver"
       }
@@ -101,7 +101,7 @@
       "class_name": "CoherePromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/prompt/cohere_prompt_driver.py",
       "metadata": {
-        "category": "Drivers",
+        "category": "Drivers/Prompt",
         "description": "Cohere prompt driver for Griptape agents",
         "display_name": "Cohere Prompt Driver"
       }
@@ -110,7 +110,7 @@
       "class_name": "GriptapeCloudPromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/prompt/griptape_cloud_prompt_driver.py",
       "metadata": {
-        "category": "Drivers",
+        "category": "Drivers/Prompt",
         "description": "Griptape Cloud Prompt Driver",
         "display_name": "Griptape Cloud Prompt Driver"
       }
@@ -119,7 +119,7 @@
       "class_name": "OllamaPromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/prompt/ollama_prompt_driver.py",
       "metadata": {
-        "category": "Drivers",
+        "category": "Drivers/Prompt",
         "description": "Prompt driver for Ollama (local!)",
         "display_name": "Ollama Prompt Driver"
       }
@@ -128,7 +128,7 @@
       "class_name": "OpenAiPromptDriverNode",
       "file_path": "griptape_nodes_library/drivers/prompt/openai_prompt_driver_node.py",
       "metadata": {
-        "category": "Drivers",
+        "category": "Drivers/Prompt",
         "description": "OpenAI chat driver (default)",
         "display_name": "OpenAI Prompt Driver"
       }
@@ -137,7 +137,7 @@
       "class_name": "OpenAiAudioTranscriptionDriverNode",
       "file_path": "griptape_nodes_library/drivers/audio_transcription/audio_transcription_drivers.py",
       "metadata": {
-        "category": "Drivers",
+        "category": "Drivers/Audio Transcription",
         "description": "OpenAI Transcription driver for processing provided audio",
         "display_name": "OpenAI Audio Transcription Driver"
       }
@@ -146,27 +146,27 @@
       "class_name": "GriptapeCloudImageDriverNode",
       "file_path": "griptape_nodes_library/drivers/image/griptape_cloud_image_driver.py",
       "metadata": {
-        "category": "Drivers",
+        "category": "Drivers/Image",
         "description": "Azure OpenAI image generation driver for Griptape agents",
         "display_name": "Azure OpenAI image generation driver"
-      }
-    },
-    {
-      "class_name": "OllamaEmbeddingDriverNode",
-      "file_path": "griptape_nodes_library/drivers/embedding/ollama_embedding_driver.py",
-      "metadata": {
-        "category": "Drivers - Embedding",
-        "description": "Ollama embedding driver for local embeddings",
-        "display_name": "Ollama Embedding Driver"
       }
     },
     {
       "class_name": "OpenAiImageDriverNode",
       "file_path": "griptape_nodes_library/drivers/image/openai_image_driver.py",
       "metadata": {
-        "category": "Drivers - Image",
+        "category": "Drivers/Image",
         "description": "OpenAI image generation driver (dall-e-3)",
         "display_name": "OpenAI Image Driver"
+      }
+    },
+    {
+      "class_name": "OllamaEmbeddingDriverNode",
+      "file_path": "griptape_nodes_library/drivers/embedding/ollama_embedding_driver.py",
+      "metadata": {
+        "category": "Drivers/Embedding",
+        "description": "Ollama embedding driver for local embeddings",
+        "display_name": "Ollama Embedding Driver"
       }
     },
     {
@@ -197,15 +197,6 @@
       }
     },
     {
-      "class_name": "AudioTranscriptionToolNode",
-      "file_path": "griptape_nodes_library/tools/audio_transcription_tool.py",
-      "metadata": {
-        "category": "Tools",
-        "description": "Transcribes audio files using configurable drivers",
-        "display_name": "Audio Transcription"
-      }
-    },
-    {
       "class_name": "CalculatorToolNode",
       "file_path": "griptape_nodes_library/tools/calculator_tool.py",
       "metadata": {
@@ -221,24 +212,6 @@
         "category": "Tools",
         "display_name": "DateTime Tool",
         "description": "Gives the agent access to DateTime"
-      }
-    },
-    {
-      "class_name": "ExtractionToolNode",
-      "file_path": "griptape_nodes_library/tools/extraction_tool.py",
-      "metadata": {
-        "category": "Tools",
-        "description": "Extracts structured data from text in CSV or JSON format",
-        "display_name": "Extraction"
-      }
-    },
-    {
-      "class_name": "FileManagerToolNode",
-      "file_path": "griptape_nodes_library/tools/file_manager_tool.py",
-      "metadata": {
-        "category": "Tools",
-        "description": "Provides file system operations for Griptape agents",
-        "display_name": "File Manager"
       }
     },
     {
@@ -260,30 +233,12 @@
       }
     },
     {
-      "class_name": "RagToolNode",
-      "file_path": "griptape_nodes_library/tools/rag_tool.py",
-      "metadata": {
-        "category": "Tools",
-        "description": "Implements retrieval-augmented generation with rules",
-        "display_name": "R.A.G."
-      }
-    },
-    {
       "class_name": "ToolListNode",
       "file_path": "griptape_nodes_library/tools/tool_list.py",
       "metadata": {
         "category": "Tools",
         "description": "Combines multiple tools into a single list for agents to use",
         "display_name": "Tool List"
-      }
-    },
-    {
-      "class_name": "VectorStoreToolNode",
-      "file_path": "griptape_nodes_library/tools/vector_store_tool.py",
-      "metadata": {
-        "category": "Tools",
-        "description": " Provides vector database search capabilities",
-        "display_name": "Vector Store"
       }
     },
     {
