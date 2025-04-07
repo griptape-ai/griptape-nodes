@@ -9,7 +9,7 @@ class Button(Trait):
     element_id: str = field(default_factory=lambda: "Button")
 
     def __init__(self, button_type: str | None = None) -> None:
-        super().__init__(element_id=self.element_id)
+        super().__init__(element_id="Button")
         if button_type:
             self.type = button_type
 

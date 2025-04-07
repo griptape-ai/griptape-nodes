@@ -10,7 +10,7 @@ class AddParameterButton(Trait):
     element_id: str = field(default_factory=lambda: "Button")
 
     def __init__(self) -> None:
-        super().__init__(element_id=self.element_id)
+        super().__init__(element_id="AddParameterButton")
         self.add_child(Button(button_type="AddParameter"))
 
     @classmethod
