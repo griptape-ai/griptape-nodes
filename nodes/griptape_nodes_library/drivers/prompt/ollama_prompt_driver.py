@@ -1,8 +1,8 @@
 from griptape.drivers.prompt.ollama import OllamaPromptDriver
 
 from griptape_nodes.exe_types.node_types import Parameter
+from griptape_nodes.traits.options import Options
 from griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
-from traits.options import Options
 
 DEFAULT_PORT = "11434"
 DEFAULT_BASE_URL = "http://127.0.0.1"

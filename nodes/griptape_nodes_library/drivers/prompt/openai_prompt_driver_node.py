@@ -1,7 +1,7 @@
 from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
 
+from griptape_nodes.traits.options import Options
 from griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
-from traits.options import Options
 
 DEFAULT_MODEL = "gpt-4o"
 MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]

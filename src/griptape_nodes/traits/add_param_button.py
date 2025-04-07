@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 
 from griptape_nodes.exe_types.core_types import Trait
-from traits.button import Button
+from griptape_nodes.traits.button import Button
 
 
 @dataclass(eq=False)
