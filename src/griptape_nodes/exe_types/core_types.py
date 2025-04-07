@@ -149,7 +149,7 @@ class BaseNodeElement:
                 return found
         return None
 
-    def find_elements_by_type(self, element_type: type[N]) -> list:
+    def find_elements_by_type(self, element_type: type[N]) -> list[N]:
         elements: list[N] = []
         for child in self._children:
             if isinstance(child, element_type):
@@ -572,8 +572,6 @@ class ControlParameterOutput(ControlParameter):
 
 @dataclass(eq=False)
 class Trait(ABC, BaseNodeElement):
-    _allowed_modes: set[ParameterMode] | None = field(default=None)
-
     def __hash__(self) -> int:
         # Use a unique, immutable attribute for hashing
         return hash(self.element_id)
@@ -604,9 +602,3 @@ class Trait(ABC, BaseNodeElement):
     def validators_for_trait(self) -> list[Callable[[Parameter, Any]]]:
         """Returns a list of methods to be applied as a validator."""
         return []
-
-    @property
-    def allowed_modes(self) -> set:
-        if self._allowed_modes:
-            return self._allowed_modes
-        return {ParameterMode.OUTPUT, ParameterMode.INPUT, ParameterMode.PROPERTY}
