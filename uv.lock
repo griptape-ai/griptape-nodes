@@ -231,7 +231,7 @@ wheels = [
 [[package]]
 name = "griptape"
 version = "1.5.0"
-source = { git = "https://github.com/griptape-ai/griptape.git?branch=main#260269d340da538372e798c8fa1ae9f79df9b2e4" }
+source = { git = "https://github.com/griptape-ai/griptape.git?branch=main#050d949ef423287f52c3307b18bc41703a8af953" }
 dependencies = [
     { name = "attrs" },
     { name = "filetype" },
