@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from queue import Queue
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,9 @@ from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachi
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.node_types import BaseNode
+
+
+logger = logging.getLogger("griptape_nodes_engine")
 
 
 # The flow will own all of the nodes and the connections
@@ -76,7 +80,7 @@ class ControlFlow:
             errormsg = "Flow already has been started. Cannot start flow when it has already been started."
             raise Exception(errormsg)
         if start_node:
-            print(f"start with {start_node.name}")
+            logger.info("start with %s", start_node.name)
             self.control_flow_machine.start_flow(start_node, debug_mode)
         elif not self.flow_queue.empty():
             start_node = self.flow_queue.get()

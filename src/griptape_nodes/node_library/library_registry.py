@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, NamedTuple, Self, cast
 
 from griptape.mixins.singleton_mixin import SingletonMixin
 
 from griptape_nodes.exe_types.node_types import BaseNode
+
+logger = logging.getLogger("griptape_nodes_engine")
 
 
 class LibraryNodeIdentifier(NamedTuple):
@@ -73,15 +76,19 @@ class LibraryRegistry(SingletonMixin):
             collision_set = instance._collision_node_names_to_library_names[node_class_name]
             # Make sure we're not re-adding the same node/library combo.
             if library.name in collision_set:
-                print(
-                    f"Attempted to register Node class '{node_class_name}' from Library '{library.name}', but a Node with that name from that Library was already registered. Check to ensure you aren't re-adding the same libraries multiple times."
-                )  # TODO(griptape): Move to Log
+                logger.info(
+                    "Attempted to register Node class '%s' from Library '%s', but a Node with that name from that Library was already registered. Check to ensure you aren't re-adding the same libraries multiple times.",
+                    node_class_name,
+                    library.name,
+                )
                 return
 
             # Append it to the set.
-            print(
-                f"When registering Node class '{node_class_name}', Nodes with the same class name were already registered from the following Libraries: {collision_set}. In order to create this type of node, you will need to specify the Library name in addition to the Node class name so that it can be disambiguated."
-            )  # TODO(griptape): Move to Log
+            logger.info(
+                "When registering Node class '%s', Nodes with the same class name were already registered from the following Libraries: %s, you will need to specify the Library name in addition to the Node class name so that it can be disambiguated.",
+                node_class_name,
+                collision_set,
+            )
             collision_set.add(library.name)
             return
 
@@ -90,14 +97,19 @@ class LibraryRegistry(SingletonMixin):
             collision_library_name = instance._node_aliases[node_class_name]
             # Make sure we're not trying to register the same node/library combo.
             if library.name == collision_library_name:
-                print(
-                    f"Attempted to register Node class '{node_class_name}' from Library '{library.name}', but a Node with that name from that Library was already registered. Check to ensure you aren't re-adding the same libraries multiple times."
-                )  # TODO(griptape): Move to Log
+                logger.info(
+                    "Attempted to register Node class '%s' from Library '%s', but a Node with that name from that Library was already registered. Check to ensure you aren't re-adding the same libraries multiple times.",
+                    node_class_name,
+                    library.name,
+                )
                 return
             # OK, legit collision. Move from the aliases table to the collision table.
-            print(
-                f"WARNING: Attempted to register a Node class '{node_class_name}' from Library '{library.name}', but a Node of that class name already existed from Library '{collision_library_name}'. In order to create these types of node, you will need to specify the Library name in addition to the Node class name so that it can be disambiguated."
-            )  # TODO(griptape): Move to Log
+            logger.warning(
+                "Attempted to register a Node class '%s' from Library '%s', but a Node of that class name already existed from Library '%s'. In order to create these types of node, you will need to specify the Library name in addition to the Node class name so that it can be disambiguated.",
+                node_class_name,
+                library.name,
+                collision_library_name,
+            )
 
             collision_set = set()
             collision_set.add(collision_library_name)

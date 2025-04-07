@@ -17,20 +17,12 @@ class EventLogHandler(logging.Handler):
 
 
 class LogManager:
+    LOGGER_NAME = "griptape_nodes_engine"
+
     def __init__(self) -> None:
-        root_logger = logging.getLogger()
-        root_logger.setLevel(logging.INFO)
+        logger = logging.getLogger(LogManager.LOGGER_NAME)
+        logger.setLevel(logging.INFO)
 
-        if not root_logger.hasHandlers():
-            root_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True))
-            root_logger.addHandler(EventLogHandler())
-
-        local_logger = logging.getLogger("griptape_nodes_engine")
-        local_logger.setLevel(logging.INFO)
-
-        if not local_logger.hasHandlers():
-            local_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True))
-
-    def get_logger(self, *, event_handler: bool = True) -> logging.Logger:
-        logger = logging.getLogger() if event_handler else logging.getLogger("griptape_nodes_engine")
-        return logger
+        if not logger.hasHandlers():
+            logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
+            logger.addHandler(EventLogHandler())
