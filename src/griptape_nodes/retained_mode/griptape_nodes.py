@@ -1930,12 +1930,12 @@ class NodeManager:
         param_to_value = {}
         for parameter in element.find_elements_by_type(Parameter):
             # How to do for grouping?
-            if parameter.name in node.parameter_values:
-                value = node.get_parameter_value(parameter.name)
+            value = node.get_parameter_value(parameter.name)
+            if value:
                 element_id = parameter.element_id
                 param_to_value[element_id] = value
         if param_to_value:
-            element_details["element_to_value"] = param_to_value
+            element_details["element_id_to_value"] = param_to_value
         details = f"Successfully got element details for Node '{request.node_name}'."
         GriptapeNodes.get_logger().debug(details)
         result = GetNodeElementDetailsResultSuccess(element_details=element_details)
