@@ -120,7 +120,9 @@ class ConfigManager:
 
     def delete_user_script(self, script: dict) -> None:
         default_scripts = self.get_config_value("app_events.on_app_initialization_complete.scripts_to_register")
-        default_scripts = [saved_script for saved_script in default_scripts if saved_script != script]
+        default_scripts = [
+            saved_script for saved_script in default_scripts if saved_script["file_name"] != script["file_path"]
+        ]
         self.set_config_value("app_events.on_app_initialization_complete.scripts_to_register", default_scripts)
 
     def get_full_path(self, relative_path: str) -> Path:

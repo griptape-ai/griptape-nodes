@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from abc import ABC
+from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 T = TypeVar("T", bound="Parameter")
+N = TypeVar("N", bound="BaseNodeElement")
 
 
 # Types of Modes provided for Parameters
@@ -68,103 +69,6 @@ class ParameterType:
             ret_val = source_type_lower == target_type_lower
 
         return ret_val
-
-
-# Keys and values for the UI_Options schema.
-@dataclass
-class ParameterUIOptions:
-    @dataclass
-    class Option(ABC):  # noqa: B024
-        def __eq__(self, other) -> bool:
-            if not isinstance(other, type(self)):
-                return False
-            self_dict = self.__dict__
-            other_dict = self.__dict__
-            return self_dict == other_dict
-
-    @dataclass
-    class TypeOption(Option, ABC):
-        pass
-
-    @dataclass
-    class ContainerOption(Option, ABC):
-        pass
-
-    @dataclass
-    class StringType(TypeOption):
-        multiline: bool | None = None
-        markdown: bool | None = None
-        placeholder_text: str | None = None
-
-    @dataclass
-    class BooleanType(TypeOption):
-        on_label: str | None = None
-        off_label: str | None = None
-
-    @dataclass
-    class SliderWidget:
-        min_val: Any
-        max_val: Any
-
-    @dataclass
-    class NumberType(TypeOption):
-        slider: ParameterUIOptions.SliderWidget | None = None
-        step: Any | None = None
-
-    @dataclass
-    class SimpleDropdown(Option):
-        enum_choices: list[str] | None = None
-        placeholder_text: str | None = None
-
-    @dataclass
-    class FancyDropdown(Option):
-        enum_dict: dict[Any, Any] | None = None
-
-    @dataclass
-    class ImageType(TypeOption):
-        clickable_file_browser: bool | None = None
-        expander: bool | None = None
-
-    @dataclass
-    class VideoType(TypeOption):
-        clickable_file_browser: bool | None = None
-        play_button: bool | None = None
-        playback_range: bool | None = None
-        expander: bool | None = None
-
-    @dataclass
-    class AudioType(TypeOption):
-        clickable_file_browser: bool | None = None
-
-    @dataclass
-    class PropertyArrayType(ContainerOption, TypeOption):
-        property_type_option: ParameterUIOptions.TypeOption | None = None
-        stacked: bool | None = None
-        color: bool | None = None
-
-    @dataclass
-    class ListContainer(ContainerOption):
-        element_type_option: ParameterUIOptions.TypeOption | None = None
-        stacked: bool | None = None
-
-    string_type_options: StringType | None = None
-    boolean_type_options: BooleanType | None = None
-    number_type_options: NumberType | None = None
-    simple_dropdown_options: SimpleDropdown | None = None
-    fancy_dropdown_options: FancyDropdown | None = None
-    image_type_options: ImageType | None = None
-    video_type_options: VideoType | None = None
-    audio_type_options: AudioType | None = None
-    property_array_type_options: PropertyArrayType | None = None
-    list_container_options: ListContainer | None = None
-    display: bool = True
-
-    def __eq__(self, other) -> bool:
-        if not isinstance(other, ParameterUIOptions):
-            return False
-        self_dict = self.__dict__
-        other_dict = other.__dict__
-        return self_dict == other_dict
 
 
 @dataclass(kw_only=True)
@@ -245,8 +149,8 @@ class BaseNodeElement:
                 return found
         return None
 
-    def find_elements_by_type(self, element_type: type[T]) -> list[T]:
-        elements: list[T] = []
+    def find_elements_by_type(self, element_type: type[N]) -> list[N]:
+        elements: list[N] = []
         for child in self._children:
             if isinstance(child, element_type):
                 elements.append(child)
@@ -295,13 +199,13 @@ class Parameter(BaseNodeElement):
             ParameterMode.PROPERTY,
         }
     )
-    ui_options: ParameterUIOptions | None = None
-    converters: list[Callable[[Any], Any]]
-    validators: list[Callable[[Parameter, Any], None]]
+    _converters: list[Callable[[Any], Any]]
+    _validators: list[Callable[[Parameter, Any], None]]
+    _ui_options: dict
     next: Parameter | None = None
     prev: Parameter | None = None
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: PLR0913,PLR0912
         self,
         name: str,
         tooltip: str | list[dict],
@@ -313,9 +217,10 @@ class Parameter(BaseNodeElement):
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
         allowed_modes: set[ParameterMode] | None = None,
-        ui_options: ParameterUIOptions | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
+        traits: set[Trait.__class__ | Trait] | None = None,  # We are going to make these children.
+        ui_options: dict | None = None,
         *,
         settable: bool = True,
         user_defined: bool = False,
@@ -335,21 +240,33 @@ class Parameter(BaseNodeElement):
         self.tooltip_as_output = tooltip_as_output
         self.settable = settable
         self.user_defined = user_defined
-        self.ui_options = ui_options
         if allowed_modes is None:
             self.allowed_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
         else:
             self.allowed_modes = allowed_modes
 
         if converters is None:
-            self.converters = []
+            self._converters = []
         else:
-            self.converters = converters
+            self._converters = converters
 
         if validators is None:
-            self.validators = []
+            self._validators = []
         else:
-            self.validators = validators
+            self._validators = validators
+        if ui_options is None:
+            self._ui_options = {}
+        else:
+            self._ui_options = ui_options
+        if traits:
+            for trait in traits:
+                if not isinstance(trait, Trait):
+                    created = trait()
+                else:
+                    created = trait
+                # Add a trait as a child
+                # UI options are now traits! sorry!
+                self.add_child(created)
         self.type = type
         self.input_types = input_types
         self.output_type = output_type
@@ -405,6 +322,35 @@ class Parameter(BaseNodeElement):
         self._type = None
 
     @property
+    def converters(self) -> list[Callable[[Any], Any]]:
+        converters = []
+        traits = self.find_elements_by_type(Trait)
+        for trait in traits:
+            converters += trait.converters_for_trait()
+        converters += self._converters
+        return converters
+
+    @property
+    def validators(self) -> list[Callable[[Parameter, Any], None]]:
+        validators = []
+        traits = self.find_elements_by_type(
+            Trait
+        )  # TODO(kate): Should these be ordered? does this return them in order?
+        for trait in traits:
+            validators += trait.validators_for_trait()
+        validators += self._validators
+        return validators
+
+    @property
+    def ui_options(self) -> dict:
+        ui_options = {}
+        traits = self.find_elements_by_type(Trait)
+        for trait in traits:
+            ui_options = ui_options | trait.ui_options_for_trait()
+        ui_options = ui_options | self._ui_options
+        return ui_options
+
+    @property
     def input_types(self) -> list[str]:
         if self._input_types:
             return self._input_types
@@ -452,6 +398,17 @@ class Parameter(BaseNodeElement):
                 self._output_type = value
             return
         self._output_type = None
+
+    def add_trait(self, trait: type[Trait] | Trait) -> None:
+        if not isinstance(trait, Trait):
+            created = trait()
+        else:
+            created = trait
+        self.add_child(created)
+
+    def remove_trait(self, trait_type: str) -> None:
+        # You are NOT ALLOWED TO ADD DUPLICATE TRAITS (kate)
+        self.remove_child(trait_type)
 
     def is_incoming_type_allowed(self, incoming_type: str | None) -> bool:
         if incoming_type is None:
@@ -506,9 +463,6 @@ class Parameter(BaseNodeElement):
         differences = {}
         for key, self_value in self_dict.items():
             other_value = other_dict.get(key)
-            if isinstance(other_value, ParameterUIOptions) and other_value != self_value:
-                # check if these two objects are equal
-                differences["key"] = other_value
             if isinstance(self_value, (list, set)) and isinstance(other_value, (list, set)):
                 if set(self_value) != set(other_value):
                     differences[key] = other_value
@@ -529,7 +483,7 @@ class ControlParameter(Parameter, ABC):
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
         allowed_modes: set[ParameterMode] | None = None,
-        ui_options: ParameterUIOptions | None = None,
+        traits: set[Trait.__class__ | Trait] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
@@ -548,10 +502,11 @@ class ControlParameter(Parameter, ABC):
             tooltip_as_property=tooltip_as_property,
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
-            ui_options=ui_options,
+            traits=traits,
             converters=converters,
             validators=validators,
             user_defined=user_defined,
+            element_type=self.__class__.__name__,
         )
 
 
@@ -563,7 +518,7 @@ class ControlParameterInput(ControlParameter):
         tooltip_as_input: str | list[dict] | None = None,
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
-        ui_options: ParameterUIOptions | None = None,
+        traits: set[Trait.__class__ | Trait] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
@@ -582,7 +537,7 @@ class ControlParameterInput(ControlParameter):
             tooltip_as_property=tooltip_as_property,
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
-            ui_options=ui_options,
+            traits=traits,
             converters=converters,
             validators=validators,
             user_defined=user_defined,
@@ -597,7 +552,7 @@ class ControlParameterOutput(ControlParameter):
         tooltip_as_input: str | list[dict] | None = None,
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
-        ui_options: ParameterUIOptions | None = None,
+        traits: set[Trait.__class__ | Trait] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
@@ -616,8 +571,45 @@ class ControlParameterOutput(ControlParameter):
             tooltip_as_property=tooltip_as_property,
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
-            ui_options=ui_options,
+            traits=traits,
             converters=converters,
             validators=validators,
             user_defined=user_defined,
         )
+
+
+# TODO(kate): What do we want traits to have? there will probably be more..
+
+
+@dataclass(eq=False)
+class Trait(ABC, BaseNodeElement):
+    def __hash__(self) -> int:
+        # Use a unique, immutable attribute for hashing
+        return hash(self.element_id)
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, Trait):
+            return False
+        # Define what makes two traits equal - often based on identity or a key field
+        return self.element_id == other.element_id
+
+    @classmethod
+    @abstractmethod
+    def get_trait_keys(cls) -> list[str]:
+        """This will return keys that trigger this trait."""
+
+    def ui_options_for_trait(self) -> dict:
+        """Returns a list of UI options for the parameter as a list of strings or dictionaries."""
+        return {}
+
+    def display_options_for_trait(self) -> dict:
+        """Returns a list of display options for the parameter as a dictionary."""
+        return {}
+
+    def converters_for_trait(self) -> list[Callable[[Any], Any]]:
+        """Returns a list of methods to be applied as a convertor."""
+        return []
+
+    def validators_for_trait(self) -> list[Callable[[Parameter, Any]]]:
+        """Returns a list of methods to be applied as a validator."""
+        return []

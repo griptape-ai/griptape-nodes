@@ -25,7 +25,6 @@ from griptape_nodes.node_library.script_registry import LibraryNameAndVersion, S
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
     AppStartSessionRequest,
-    AppStartSessionResultFailure,
     AppStartSessionResultSuccess,
     GetEngineVersionRequest,
     GetEngineVersionResultFailure,
@@ -193,6 +192,9 @@ from griptape_nodes.retained_mode.events.script_events import (
     RegisterScriptRequest,
     RegisterScriptResultFailure,
     RegisterScriptResultSuccess,
+    RenameScriptRequest,
+    RenameScriptResultFailure,
+    RenameScriptResultSuccess,
     RunScriptFromRegistryRequest,
     RunScriptFromRegistryResultFailure,
     RunScriptFromRegistryResultSuccess,
@@ -374,9 +376,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
     def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:
         # Do we already have one?
         if BaseEvent._session_id is not None:
-            details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID `{BaseEvent._session_id}' in place."
-            GriptapeNodes.get_logger().error(details)
-            return AppStartSessionResultFailure()
+            details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID `{BaseEvent._session_id}' in place. Replacing it."
+            GriptapeNodes.get_logger().info(details)
 
         BaseEvent._session_id = request.session_id
 
@@ -2532,6 +2533,11 @@ class ScriptManager:
             self.on_delete_scripts_request,
         )
         event_manager.assign_manager_to_request_type(
+            RenameScriptRequest,
+            self.on_rename_script_request,
+        )
+
+        event_manager.assign_manager_to_request_type(
             SaveSceneRequest,
             self.on_save_scene_request,
         )
@@ -2656,6 +2662,22 @@ class ScriptManager:
             GriptapeNodes.get_logger().error(details)
             return DeleteScriptResultFailure()
         return DeleteScriptResultSuccess()
+
+    def on_rename_script_request(self, request: RenameScriptRequest) -> ResultPayload:
+        save_scene_request = GriptapeNodes.handle_request(SaveSceneRequest(file_name=request.requested_name))
+
+        if isinstance(save_scene_request, SaveSceneResultFailure):
+            details = f"Attempted to rename script '{request.script_name}' to '{request.requested_name}'. Failed while attempting to save."
+            GriptapeNodes.get_logger().error(details)
+            return RenameScriptResultFailure()
+
+        delete_script_result = GriptapeNodes.handle_request(DeleteScriptRequest(name=request.script_name))
+        if isinstance(delete_script_result, DeleteScriptResultFailure):
+            details = f"Attempted to rename script '{request.script_name}' to '{request.requested_name}'. Failed while attempting to remove the original file name from the registry."
+            GriptapeNodes.get_logger().error(details)
+            return RenameScriptResultFailure()
+
+        return RenameScriptResultSuccess()
 
     def on_load_script_metadata_request(self, request: LoadScriptMetadata) -> ResultPayload:
         # Let us go into the darkness.
