@@ -5,14 +5,19 @@ from typing import Any
 from griptape_nodes.exe_types.core_types import Parameter, Trait
 
 
-@dataclass
-class ModelTrait(Trait):
-    choices: list[str] = field(default_factory=lambda: ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo", "gpt-4"])
-    element_id: str = field(default_factory=lambda: "ModelTrait")
+@dataclass(eq=False)
+class Options(Trait):
+    choices: list[str] = field(default_factory=lambda: ["choice 1","choice 2","choice 3"])
+    element_id: str = field(default_factory=lambda: "Options")
+
+    def __init__(self, choices:list[str]|None = None) -> None:
+        super().__init__(element_id="Options")
+        if choices:
+            self.choices = choices
 
     @classmethod
     def get_trait_keys(cls) -> list[str]:
-        return ["model"]
+        return ["options","models"]
 
     def converters_for_trait(self) -> list[Callable]:
         def converter(value: Any) -> Any:

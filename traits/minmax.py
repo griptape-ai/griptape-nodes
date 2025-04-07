@@ -5,7 +5,7 @@ from typing import Any
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 
 
-@dataclass
+@dataclass(eq=False)
 class MinMax(Trait):
     min: Any = 10
     max: Any = 30
@@ -13,11 +13,10 @@ class MinMax(Trait):
 
     _allowed_modes = {ParameterMode.PROPERTY}
 
-    def __init__(self, min_val:float, max_val:float) -> None:
+    def __init__(self, min_val: float, max_val: float) -> None:
         super().__init__()
         self.min = min_val
         self.max = max_val
-
 
     @classmethod
     def get_trait_keys(cls) -> list[str]:

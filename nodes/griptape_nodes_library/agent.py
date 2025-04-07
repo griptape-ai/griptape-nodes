@@ -11,7 +11,7 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 from griptape_nodes_library.utils.error_utils import try_throw_error
-from traits.modeltrait import ModelTrait
+from traits.options import Options
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -46,7 +46,7 @@ class RunAgentNode(ControlNode):
                 input_types=["str"],
                 output_type="str",
                 type="str",
-                traits={ModelTrait},
+                traits={Options(["gpt-4o","gpt-3.5","gpt-4"])},
                 default_value=DEFAULT_MODEL,
                 tooltip="",
             )
@@ -112,22 +112,13 @@ class RunAgentNode(ControlNode):
         if parameter.name == "prompt_driver":
             prompt_model = self.get_parameter_by_name("prompt_model")
             if prompt_model:
-                trait = prompt_model.find_element_by_id("ModelTrait")
-                if trait and isinstance(trait, ModelTrait):
+                trait = prompt_model.find_element_by_id("Options")
+                if trait and isinstance(trait, Options):
                     driver_type = str(type(value).__name__).lower()
                     modified_parameters_set.add("prompt_model")
-                    match driver_type:
-                        case _ if "anthropic" in driver_type:
-                            trait.choices = [
-                                "claude-3-opus",
-                                "claude-3-sonnet-latest",
-                                "claude-3-haiku",
-                                "claude-3-5-sonnet",
-                            ]
-                        case _ if "openai" in driver_type:
-                            trait.choices = ["gpt-4-turbo", "gpt-4-1106-preview", "gpt-4", "gpt-3.5-turbo"]
-                        case _ if "ollama" in driver_type:
-                            trait.choices = ["llama3", "llama2", "mistral", "mpt"]
+                    choices = self.select_choices(driver_type)
+                    if choices:
+                        trait.choices = choices
                     self.set_parameter_value("prompt_model", self.get_parameter_value("prompt_model"))
 
     def after_incoming_connection(
@@ -139,22 +130,28 @@ class RunAgentNode(ControlNode):
         if target_parameter.name == "prompt_driver":
             prompt_model = self.get_parameter_by_name("prompt_model")
             if prompt_model:
-                trait = prompt_model.find_element_by_id("ModelTrait")
-                if trait and isinstance(trait, ModelTrait):
+                trait = prompt_model.find_element_by_id("Options")
+                if trait and isinstance(trait, Options):
                     node_class = source_node.__class__.__name__.lower()
-                    match node_class:
-                        case _ if "anthropic" in node_class:
-                            trait.choices = [
-                                "claude-3-opus",
-                                "claude-3-sonnet-latest",
-                                "claude-3-haiku",
-                                "claude-3-5-sonnet",
-                            ]
-                        case _ if "openai" in node_class:
-                            trait.choices = ["gpt-4-turbo", "gpt-4-1106-preview", "gpt-4", "gpt-3.5-turbo"]
-                        case _ if "ollama" in node_class:
-                            trait.choices = ["llama3", "llama2", "mistral", "mpt"]
+                    choices = self.select_choices(node_class)
+                    if choices:
+                        trait.choices = choices
                     self.set_parameter_value("prompt_model", self.get_parameter_value("prompt_model"))
+
+    def select_choices(self, value:str) -> list[str]:
+        match value:
+            case _ if "anthropic" in value:
+                return [
+                    "claude-3-opus",
+                    "claude-3-sonnet-latest",
+                    "claude-3-haiku",
+                    "claude-3-5-sonnet",
+                ]
+            case _ if "openai" in value:
+                return ["gpt-4-turbo", "gpt-4-1106-preview", "gpt-4", "gpt-3.5-turbo"]
+            case _ if "ollama" in value:
+                return ["llama3", "llama2", "mistral", "mpt"]
+        return []
 
     def process(self) -> None:
         # Get api key

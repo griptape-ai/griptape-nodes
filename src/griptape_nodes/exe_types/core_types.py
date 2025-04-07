@@ -150,7 +150,7 @@ class BaseNodeElement:
         return None
 
     def find_elements_by_type(self, element_type: type[N]) -> list:
-        elements: list[N]= []
+        elements: list[N] = []
         for child in self._children:
             if isinstance(child, element_type):
                 elements.append(child)
@@ -236,7 +236,7 @@ class Parameter(BaseNodeElement):
         allowed_modes: set[ParameterMode] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
-        traits: set[Trait.__class__] | None = None,  # We are going to make these children.
+        traits: set[Trait.__class__ | Trait] | None = None,  # We are going to make these children.
         ui_options: dict | None = None,
         *,
         settable: bool = True,
@@ -277,7 +277,7 @@ class Parameter(BaseNodeElement):
             self._ui_options = ui_options
         if traits:
             for trait in traits:
-                if not isinstance(trait,Trait):
+                if not isinstance(trait, Trait):
                     created = trait()
                 else:
                     created = trait
@@ -388,8 +388,8 @@ class Parameter(BaseNodeElement):
             return
         self._output_type = None
 
-    def add_trait(self, trait: type[Trait]| Trait) -> None:
-        if not isinstance(trait,Trait):
+    def add_trait(self, trait: type[Trait] | Trait) -> None:
+        if not isinstance(trait, Trait):
             created = trait()
         else:
             created = trait
@@ -472,7 +472,7 @@ class ControlParameter(Parameter, ABC):
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
         allowed_modes: set[ParameterMode] | None = None,
-        traits: set[Trait.__class__] | None = None,
+        traits: set[Trait.__class__ | Trait] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
@@ -495,6 +495,7 @@ class ControlParameter(Parameter, ABC):
             converters=converters,
             validators=validators,
             user_defined=user_defined,
+            element_type=self.__class__.__name__,
         )
 
 
@@ -506,7 +507,7 @@ class ControlParameterInput(ControlParameter):
         tooltip_as_input: str | list[dict] | None = None,
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
-        traits: set[Trait.__class__] | None = None,
+        traits: set[Trait.__class__ | Trait] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
@@ -540,7 +541,7 @@ class ControlParameterOutput(ControlParameter):
         tooltip_as_input: str | list[dict] | None = None,
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
-        traits: set[Trait.__class__] | None = None,
+        traits: set[Trait.__class__ | Trait] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
@@ -569,9 +570,19 @@ class ControlParameterOutput(ControlParameter):
 # TODO(kate): What do we want traits to have? there will probably be more..
 
 
-@dataclass
+@dataclass(eq=False)
 class Trait(ABC, BaseNodeElement):
     _allowed_modes: set[ParameterMode] | None = field(default=None)
+
+    def __hash__(self) -> int:
+        # Use a unique, immutable attribute for hashing
+        return hash(self.element_id)
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, Trait):
+            return False
+        # Define what makes two traits equal - often based on identity or a key field
+        return self.element_id == other.element_id
 
     @classmethod
     @abstractmethod
