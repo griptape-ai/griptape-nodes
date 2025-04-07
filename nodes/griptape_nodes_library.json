@@ -53,6 +53,14 @@
       }
     },
     {
+      "Text": {
+        "color": "border-blue-500",
+        "title": "Text",
+        "description": "Text Nodes.",
+        "icon": "DocumentText"
+      }
+    },
+    {
       "Tools": {
         "color": "border-cyan-500",
         "title": "Tools",
@@ -252,11 +260,47 @@
     },
     {
       "class_name": "CreateStringNode",
-      "file_path": "griptape_nodes_library/create_string.py",
+      "file_path": "griptape_nodes_library/text/create_string.py",
       "metadata": {
-        "category": "Utility",
+        "category": "Text",
         "description": "Creates and outputs a simple string value",
         "display_name": "Create String"
+      }
+    },
+    {
+      "class_name": "CreateMultilineTextNode",
+      "file_path": "griptape_nodes_library/text/create_multiline_text_node.py",
+      "metadata": {
+        "category": "Text",
+        "description": "Creates and outputs a multiline text string value",
+        "display_name": "Create Multiline Text"
+      }
+    },
+    {
+      "class_name": "MergeTextsNode",
+      "file_path": "griptape_nodes_library/text/merge_texts.py",
+      "metadata": {
+        "category": "Text",
+        "description": "Joins multiple text inputs with a configurable separator",
+        "display_name": "Merge Texts"
+      }
+    },
+    {
+      "class_name": "LoadTextNode",
+      "file_path": "griptape_nodes_library/text/load_text.py",
+      "metadata": {
+        "category": "Text",
+        "description": "Loads text content from files",
+        "display_name": "Load Text"
+      }
+    },
+    {
+      "class_name": "SaveTextNode",
+      "file_path": "griptape_nodes_library/text/save_text.py",
+      "metadata": {
+        "category": "Text",
+        "description": "Saves text content to a file",
+        "display_name": "Save Text"
       }
     },
     {
@@ -287,15 +331,6 @@
       }
     },
     {
-      "class_name": "LoadTextNode",
-      "file_path": "griptape_nodes_library/load_text.py",
-      "metadata": {
-        "category": "Utility",
-        "description": "Loads text content from files",
-        "display_name": "Load Text"
-      }
-    },
-    {
       "class_name": "MergeDictNode",
       "file_path": "griptape_nodes_library/merge_dict.py",
       "metadata": {
@@ -311,24 +346,6 @@
         "category": "Utility",
         "description": "Passes data through, for visual organization",
         "display_name": "Reroute"
-      }
-    },
-    {
-      "class_name": "MergeTextsNode",
-      "file_path": "griptape_nodes_library/merge_texts.py",
-      "metadata": {
-        "category": "Utility",
-        "description": "Joins multiple text inputs with a configurable separator",
-        "display_name": "Merge Texts"
-      }
-    },
-    {
-      "class_name": "SaveTextNode",
-      "file_path": "griptape_nodes_library/save_text.py",
-      "metadata": {
-        "category": "Utility",
-        "description": "Saves text content to a file",
-        "display_name": "Save Text"
       }
     },
     {

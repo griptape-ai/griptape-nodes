@@ -1,18 +1,15 @@
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import (
-    Parameter,
-    ParameterMode,
-)
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterUIOptions
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class CreateStringNode(DataNode):
+class CreateMultilineTextNode(DataNode):
     def __init__(
         self,
         name: str,
         metadata: dict[Any, Any] | None = None,
-        value: str = "<Empty>",
+        value: str = "",
     ) -> None:
         super().__init__(name, metadata)
 
@@ -26,6 +23,11 @@ class CreateStringNode(DataNode):
                 type="str",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 tooltip="The text content to save to file",
+                ui_options=ParameterUIOptions(
+                    string_type_options=ParameterUIOptions.StringType(
+                        multiline=True,
+                    )
+                ),
             )
         )
 
