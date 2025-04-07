@@ -1,24 +1,27 @@
 # Setup Griptape Nodes
 
-Griptape Nodes has a cloud-based IDE that works in conjunction with an installable engine. The engine can be installed on your local machine or in a hosted environment. The instructions that follow are the same in either case. 
+Griptape Nodes has a cloud-based IDE that works in conjunction with an installable engine. The engine can be installed on your local machine or in a hosted environment. The instructions that follow are the same in either case.
 
-The IDE allows you to create workflows using a node based editor. The workflows are executed in the engine allowing for advanced capabilities like debugging a flow, stepping through a flow node by node, and iterating over parts of a flow. The IDE also exposes scriptable interface to your flows. 
+The IDE allows you to create workflows using a node based editor. The workflows are executed in the engine allowing for advanced capabilities like debugging a flow, stepping through a flow node by node, and iterating over parts of a flow. The IDE also exposes scriptable interface to your flows.
 
 ## Login
-To get started, visit https://griptapenodes.com and click the sign-in button. You'll be presented with a Griptape Cloud authorization form. 
 
-> If you've previously logged into Griptape Cloud, or have an account there, use the same credentials. 
+To get started, visit https://griptapenodes.com and click the sign-in button. You'll be presented with a Griptape Cloud authorization form.
+
+> If you've previously logged into Griptape Cloud, or have an account there, use the same credentials.
 
 ![Login](assets/img/setup/setup-login.png)
 
-Once you've logged in, you'll be presented with a setup screen which walks you through the installation process of your engine. Again, you can run this on your local machine or any cloud based workstation. 
+Once you've logged in, you'll be presented with a setup screen which walks you through the installation process of your engine. Again, you can run this on your local machine or any cloud based workstation.
 
 ## Install the Engine
-The first step is to install the engine. Copy the installation command from the New Installation section. Open a terminal on your machine and paste and run the command. If you already have `uv` installed, the installation process should be quick. If you need `uv`, we'll install it for you. 
+
+The first step is to install the engine. Copy the installation command from the New Installation section. Open a terminal on your machine and paste and run the command. If you already have `uv` installed, the installation process should be quick. If you need `uv`, we'll install it for you.
 
 ![Setup Two](assets/img/setup/setup-one.png)
 
-You'll see a message similar to the following when installation has completed. 
+You'll see a message similar to the following when installation has completed.
+
 ```
 **************************************
 *      Installation complete!        *
@@ -28,7 +31,8 @@ You'll see a message similar to the following when installation has completed.
 ```
 
 ## Configuration
-WHen you start Griptape Nodes using `griptape-nodes` or `gtn` for the first time, it will ask you a series of questions. First, you'll be prompted to set your **workspace directory.** Your workspace directory is where the Griptape Nodes engine will save configuration settings, project files, and generated assets. It will also contain a .env for your project secret key values. 
+
+WHen you start Griptape Nodes using `griptape-nodes` or `gtn` for the first time, it will ask you a series of questions. First, you'll be prompted to set your **workspace directory.** Your workspace directory is where the Griptape Nodes engine will save configuration settings, project files, and generated assets. It will also contain a .env for your project secret key values.
 
 ```
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
@@ -39,9 +43,10 @@ WHen you start Griptape Nodes using `griptape-nodes` or `gtn` for the first time
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 Workspace Directory (/Users/user/Documents/local-dev/nodes-test-eng/GriptapeNodes):
 ```
-You can accept the default, which will be your present `working directory/GriptapeNodes` by pressing Enter. Or, you can set another location. You can always return to this dialog using the `gtn init` command if you need to make changes in the future. 
 
-Next, you'll be prompted for your Griptape Cloud API Key. Return to the web browser and click the **Generate API Key** button. Copy that key and enter it in the next step. 
+You can accept the default, which will be your present `working directory/GriptapeNodes` by pressing Enter. Or, you can set another location. You can always return to this dialog using the `gtn init` command if you need to make changes in the future.
+
+Next, you'll be prompted for your Griptape Cloud API Key. Return to the web browser and click the **Generate API Key** button. Copy that key and enter it in the next step.
 
 ![Setup Two](assets/img/setup/setup-two.png)
 
@@ -56,9 +61,11 @@ Workspace directory set to: /Users/user/Documents/local-dev/nodes-test-eng/Gript
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 Griptape API Key (YOUR-KEY-HERE):
 ```
+
 > If you've previously run `gtn init` your key might be presented to you in this dialog. You can accept it by pressing Enter or use a different value as required.
 
 ## Start your Engine
-You're ready to proceed. Run `griptape-nodes` or `gtn` and refresh your browser. You should be taken to an Untitled flow in the IDE. 
+
+You're ready to proceed. Run `griptape-nodes` or `gtn` and refresh your browser. You should be taken to an Untitled flow in the IDE.
 
 ![Setup Three](assets/img/setup/setup-three.png)
