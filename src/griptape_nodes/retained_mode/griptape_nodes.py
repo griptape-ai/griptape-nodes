@@ -1926,6 +1926,16 @@ class NodeManager:
                 return result
 
         element_details = element.to_dict()
+        # We need to get parameter values from here
+        param_to_value = {}
+        for parameter in element.find_elements_by_type(Parameter):
+            # How to do for grouping?
+            if parameter.name in node.parameter_values:
+                value = node.get_parameter_value(parameter.name)
+                element_id = parameter.element_id
+                param_to_value[element_id] = value
+        if param_to_value:
+            element_details["element_to_value"] = param_to_value
         details = f"Successfully got element details for Node '{request.node_name}'."
         GriptapeNodes.get_logger().debug(details)
         result = GetNodeElementDetailsResultSuccess(element_details=element_details)
@@ -2201,87 +2211,47 @@ class NodeManager:
 
             result = GetAllNodeInfoResultFailure()
             return result
-
-        list_parameters_request = ListParametersOnNodeRequest(node_name=request.node_name)
-        list_parameters_result = GriptapeNodes.NodeManager().on_list_parameters_on_node_request(list_parameters_request)
-        if not list_parameters_result.succeeded():
-            details = f"Attempted to get all info for Node named '{request.node_name}', but failed listing all Parameters on it."
-            GriptapeNodes.get_logger().error(details)
-
-            result = GetAllNodeInfoResultFailure()
-            return result
-
         # Cast everything to get the linter off our back.
         try:
             get_metadata_success = cast("GetNodeMetadataResultSuccess", get_metadata_result)
             get_resolution_state_success = cast("GetNodeResolutionStateResultSuccess", get_resolution_state_result)
             list_connections_success = cast("ListConnectionsForNodeResultSuccess", list_connections_result)
-            list_parameters_success = cast("ListParametersOnNodeResultSuccess", list_parameters_result)
         except Exception as err:
             details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
             GriptapeNodes.get_logger().error(details)
 
             result = GetAllNodeInfoResultFailure()
             return result
+        get_node_elements_request = GetNodeElementDetailsRequest(node_name=request.node_name)
+        get_node_elements_result = GriptapeNodes.NodeManager().on_get_node_element_details_request(get_node_elements_request)
+        if not get_node_elements_result.succeeded():
+            details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting details for elements."
+            GriptapeNodes.get_logger().error(details)
+            result = GetAllNodeInfoResultFailure()
+            return result
+        try:
+            get_element_details_successs = cast("GetNodeElementDetailsResultSuccess",get_node_elements_result)
+        except Exception as err:
+            details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
+            GriptapeNodes.get_logger().error(details)
+            result = GetAllNodeInfoResultFailure()
+            return result
 
-        # Now go through all the Parameters.
-        parameter_name_to_info = {}
-
-        for param_name in list_parameters_success.parameter_names:
-            # Parameter details up first.
-            get_parameter_details_request = GetParameterDetailsRequest(
-                parameter_name=param_name, node_name=request.node_name
-            )
-            get_parameter_details_result = GriptapeNodes.NodeManager().on_get_parameter_details_request(
-                get_parameter_details_request
-            )
-
-            if not get_parameter_details_result.succeeded():
-                details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting details for Parameter '{param_name}'."
-                GriptapeNodes.get_logger().error(details)
-
-                result = GetAllNodeInfoResultFailure()
-                return result
-
-            # Now the...gulp...value.
-            get_parameter_value_request = GetParameterValueRequest(
-                parameter_name=param_name, node_name=request.node_name
-            )
-            get_parameter_value_result = GriptapeNodes.NodeManager().on_get_parameter_value_request(
-                get_parameter_value_request
-            )
-
-            if not get_parameter_value_result.succeeded():
-                details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting value for Parameter '{param_name}'."
-                GriptapeNodes.get_logger().error(details)
-
-                result = GetAllNodeInfoResultFailure()
-                return result
-
-            # They may have succeeded, but are they OUR type of succeeded?
-            try:
-                get_parameter_details_success = cast("GetParameterDetailsResultSuccess", get_parameter_details_result)
-                get_parameter_value_success = cast("GetParameterValueResultSuccess", get_parameter_value_result)
-            except Exception as err:
-                details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
-                GriptapeNodes.get_logger().error(details)
-
-                result = GetAllNodeInfoResultFailure()
-                return result
-
-            # OK, add it to the parameter dictionary.
-            parameter_name_to_info[param_name] = ParameterInfoValue(
-                details=get_parameter_details_success, value=get_parameter_value_success
-            )
-
+        # this will return the node element and the value
+        element_details = get_element_details_successs.element_details
+        if "element_id_to_value" in element_details:
+            element_id_to_value = element_details["element_id_to_value"].copy()
+            del element_details["element_id_to_value"]
+        else:
+            element_id_to_value = {}
         details = f"Successfully got all node info for node '{request.node_name}'."
         GriptapeNodes.get_logger().debug(details)
         result = GetAllNodeInfoResultSuccess(
             metadata=get_metadata_success.metadata,
             node_resolution_state=get_resolution_state_success.state,
             connections=list_connections_success,
-            parameter_name_to_info=parameter_name_to_info,
-            root_node_element=node.root_ui_element.to_dict(),
+            element_id_to_value =element_id_to_value,
+            root_node_element=element_details,
         )
         return result
 

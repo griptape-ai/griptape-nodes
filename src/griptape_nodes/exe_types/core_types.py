@@ -593,6 +593,13 @@ class Trait(ABC, BaseNodeElement):
         # Define what makes two traits equal - often based on identity or a key field
         return self.element_id == other.element_id
 
+    def to_dict(self) -> dict[str, Any]:
+        updated = super().to_dict()
+        updated["trait_ui_options"] = self.ui_options_for_trait()
+        updated["trait_name"] = self.__class__.__name__
+        updated["trait_display_options"] = self.display_options_for_trait()
+        return updated
+
     @classmethod
     @abstractmethod
     def get_trait_keys(cls) -> list[str]:
