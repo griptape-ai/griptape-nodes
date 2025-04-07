@@ -163,13 +163,19 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     GetCompatibleParametersRequest,
     GetCompatibleParametersResultFailure,
     GetCompatibleParametersResultSuccess,
+    GetNodeElementDetailsRequest,
+    GetNodeElementDetailsResultFailure,
+    GetNodeElementDetailsResultSuccess,
     GetParameterDetailsRequest,
     GetParameterDetailsResultFailure,
     GetParameterDetailsResultSuccess,
     GetParameterValueRequest,
     GetParameterValueResultFailure,
     GetParameterValueResultSuccess,
+    NodeElementDetails,
     ParameterAndMode,
+    ParameterDetails,
+    ParameterGroupDetails,
     RemoveParameterFromNodeRequest,
     RemoveParameterFromNodeResultFailure,
     RemoveParameterFromNodeResultSuccess,
@@ -1371,6 +1377,9 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(
             ValidateNodeDependenciesRequest, self.on_validate_node_dependencies_request
         )
+        event_manager.assign_manager_to_request_type(
+            GetNodeElementDetailsRequest, self.on_get_node_element_details_request
+        )
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old node name and its parent.
@@ -1892,6 +1901,9 @@ class NodeManager:
             ui_options=parameter.ui_options,
         )
         return result
+
+    def on_get_node_element_details_request(self, request: GetNodeElementDetailsRequest) -> ResultPayload:
+        SMEG
 
     def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         # Does this node exist?

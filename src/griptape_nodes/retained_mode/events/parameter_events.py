@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any, NamedTuple
 
@@ -31,7 +33,7 @@ class AddParameterToNodeRequest(RequestPayload):
     mode_allowed_output: bool = Field(default=True)
 
     @classmethod
-    def create(cls, **kwargs) -> "AddParameterToNodeRequest":
+    def create(cls, **kwargs) -> AddParameterToNodeRequest:
         if "allowed_modes" in kwargs:
             kwargs["mode_allowed_input"] = ParameterMode.INPUT in kwargs["allowed_modes"]
             kwargs["mode_allowed_output"] = ParameterMode.OUTPUT in kwargs["allowed_modes"]
@@ -150,7 +152,7 @@ class AlterParameterDetailsRequest(RequestPayload):
     ui_options: ParameterUIOptions | None = None
 
     @classmethod
-    def create(cls, **kwargs) -> "AlterParameterDetailsRequest":
+    def create(cls, **kwargs) -> AlterParameterDetailsRequest:
         if "allowed_modes" in kwargs:
             kwargs["mode_allowed_input"] = ParameterMode.INPUT in kwargs["allowed_modes"]
             kwargs["mode_allowed_output"] = ParameterMode.OUTPUT in kwargs["allowed_modes"]
@@ -231,4 +233,58 @@ class GetCompatibleParametersResultSuccess(ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class GetCompatibleParametersResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+class NodeElementDetails:
+    element_id: str
+    element_type: str
+    children: list[NodeElementDetails]
+
+
+@dataclass
+class ParameterGroupDetails(NodeElementDetails):
+    group_name: str
+
+
+@dataclass
+class TraitDetails(NodeElementDetails):
+    pass
+
+
+@dataclass
+class ParameterDetails(NodeElementDetails):
+    name: str
+    type: str
+    input_types: list[str]
+    output_type: str
+    default_value: Any | None
+    tooltip: str | list[dict]
+    tooltip_as_input: str | list[dict] | None
+    tooltip_as_property: str | list[dict] | None
+    tooltip_as_output: str | list[dict] | None
+    mode_allowed_input: bool
+    mode_allowed_property: bool
+    mode_allowed_output: bool
+    is_user_defined: bool
+    ui_options: ParameterUIOptions | None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNodeElementDetailsRequest(RequestPayload):
+    node_name: str
+    specific_element: str | None = None  # Pass None to use the root
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNodeElementDetailsResultSuccess(ResultPayloadSuccess):
+    element_details: NodeElementDetails
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNodeElementDetailsResultFailure(ResultPayloadFailure):
     pass
