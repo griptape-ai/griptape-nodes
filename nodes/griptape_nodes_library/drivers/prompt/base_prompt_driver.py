@@ -1,6 +1,6 @@
 from griptape.drivers.prompt.dummy import DummyPromptDriver
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterUIOptions
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes_library.drivers.base_driver import BaseDriverNode
 
 
@@ -38,14 +38,7 @@ class BasePromptDriverNode(BaseDriverNode):
                 output_type="int",
                 default_value=2,
                 tooltip="Maximum attempts on failure",
-                ui_options=ParameterUIOptions(
-                    number_type_options=ParameterUIOptions.NumberType(
-                        slider=ParameterUIOptions.SliderWidget(
-                            min_val=1,
-                            max_val=100,
-                        )
-                    )
-                ),
+                ui_options={"slider": {"min_val": 1, "max_val": 100}},
             )
         )
         self.add_parameter(
@@ -56,15 +49,7 @@ class BasePromptDriverNode(BaseDriverNode):
                 output_type="float",
                 default_value=0.1,
                 tooltip="Minimum probability for sampling. Lower values will be more random.",
-                ui_options=ParameterUIOptions(
-                    number_type_options=ParameterUIOptions.NumberType(
-                        slider=ParameterUIOptions.SliderWidget(
-                            min_val=0.0,
-                            max_val=1.0,
-                        ),
-                        step=0.01,
-                    )
-                ),
+                ui_options={"slider": {"min_val": 0.0, "max_val": 1.0}, "step": 0.01},
             )
         )
         self.add_parameter(
@@ -85,15 +70,7 @@ class BasePromptDriverNode(BaseDriverNode):
                 output_type="float",
                 default_value=0.1,
                 tooltip="Temperature for sampling",
-                ui_options=ParameterUIOptions(
-                    number_type_options=ParameterUIOptions.NumberType(
-                        slider=ParameterUIOptions.SliderWidget(
-                            min_val=0.0,
-                            max_val=1.0,
-                        ),
-                        step=0.01,
-                    )
-                ),
+                ui_options={"slider": {"min_val": 0.0, "max_val": 1.0}, "step": 0.01},
             )
         )
         self.add_parameter(

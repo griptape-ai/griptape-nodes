@@ -85,6 +85,12 @@ def _get_args() -> argparse.Namespace:
         help="Override the Griptape Nodes workspace directory when running 'init'.",
         required=False,
     )
+    parser.add_argument(
+        "--no-update",
+        action="store_true",
+        help="Skip the auto-update check.",
+        required=False,
+    )
 
     return parser.parse_args()
 
@@ -285,7 +291,9 @@ def _process_args(args: argparse.Namespace) -> None:
             # Default init flow if it's truly the first time
             _run_init()
 
-        _auto_update()
+        # Confusing double negation -- If `no_update` is set, we want to skip the update
+        if not args.no_update:
+            _auto_update()
         api_main()
     elif args.command == "config":
         if args.config_subcommand == "list":

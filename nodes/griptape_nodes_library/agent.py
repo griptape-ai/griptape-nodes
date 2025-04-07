@@ -1,3 +1,5 @@
+from typing import Any
+
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.utils import Stream
@@ -6,10 +8,11 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterGroup,
     ParameterMode,
-    ParameterUIOptions,
 )
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 from griptape_nodes_library.utils.error_utils import try_throw_error
+from traits.button import Button
+from traits.options import Options
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -22,7 +25,6 @@ class RunAgentNode(ControlNode):
 
         self.category = "Agent"
         self.description = "Create an agent and run it."
-
         self.add_parameter(
             Parameter(
                 name="agent",
@@ -45,6 +47,7 @@ class RunAgentNode(ControlNode):
                 input_types=["str"],
                 output_type="str",
                 type="str",
+                traits={Options(["gpt-4o", "gpt-3.5", "gpt-4"])},
                 default_value=DEFAULT_MODEL,
                 tooltip="",
             )
@@ -55,11 +58,7 @@ class RunAgentNode(ControlNode):
                 type="str",
                 default_value="",
                 tooltip="",
-                ui_options=ParameterUIOptions(
-                    string_type_options=ParameterUIOptions.StringType(
-                        multiline=True,
-                    )
-                ),
+                ui_options={"multiline": True},
             )
         self.add_node_element(config_group)
 
@@ -95,12 +94,8 @@ class RunAgentNode(ControlNode):
                 default_value="",
                 tooltip="What the agent said.",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options=ParameterUIOptions(
-                    string_type_options=ParameterUIOptions.StringType(
-                        multiline=True,
-                        placeholder_text="The agent response",
-                    )
-                ),
+                traits={Button(button_type="modal")},
+                ui_options={"multiline": True, "placeholder_text": "The Agent Response"},
             )
         self.add_node_element(tools_group)
 
@@ -114,6 +109,49 @@ class RunAgentNode(ControlNode):
             exceptions.append(KeyError(msg))
             return exceptions
         return exceptions if exceptions else None
+
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        driver_type = str(type(value).__name__).lower()
+        self.handle_prompt_driver(parameter, driver_type, modified_parameters_set)
+
+    def after_incoming_connection(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,
+    ) -> None:
+        node_class = source_node.__class__.__name__.lower()
+        self.handle_prompt_driver(target_parameter, node_class)
+
+    def select_choices(self, value: str) -> list[str]:
+        match value:
+            case _ if "anthropic" in value:
+                return [
+                    "claude-3-opus",
+                    "claude-3-sonnet-latest",
+                    "claude-3-haiku",
+                    "claude-3-5-sonnet",
+                ]
+            case _ if "openai" in value:
+                return ["gpt-4-turbo", "gpt-4-1106-preview", "gpt-4", "gpt-3.5-turbo"]
+            case _ if "ollama" in value:
+                return ["llama3", "llama2", "mistral", "mpt"]
+        return []
+
+    def handle_prompt_driver(
+        self, parameter: Parameter, type_string: Any, modified_parameters_set: set[str] | None = None
+    ) -> None:
+        if parameter.name == "prompt_driver":
+            prompt_model = self.get_parameter_by_name("prompt_model")
+            if prompt_model:
+                trait = prompt_model.find_element_by_id("Options")
+                if trait and isinstance(trait, Options):
+                    if modified_parameters_set:
+                        modified_parameters_set.add("prompt_model")
+                    choices = self.select_choices(type_string)
+                    if choices:
+                        trait.choices = choices
+                    self.set_parameter_value("prompt_model", self.get_parameter_value("prompt_model"))
 
     def process(self) -> None:
         # Get api key
