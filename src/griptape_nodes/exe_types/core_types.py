@@ -930,6 +930,60 @@ class ParameterList(ParameterContainer):
         return param
 
 
+class ParameterKeyValulePair(Parameter):
+    _kvp: ParameterType.KeyValueTypePair
+
+    def __init__(  # noqa: PLR0913
+        self,
+        name: str,
+        tooltip: str | list[dict],
+        type: str | None = None,  # noqa: A002
+        default_value: Any = None,
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
+        allowed_modes: set[ParameterMode] | None = None,
+        ui_options: ParameterUIOptions | None = None,
+        converters: list[Callable[[Any], Any]] | None = None,
+        validators: list[Callable[[Parameter, Any], None]] | None = None,
+        *,
+        settable: bool = True,
+        user_defined: bool = False,
+        element_id: str | None = None,
+        element_type: str | None = None,
+    ):
+        # Remember: we're a Parameter, too, just like everybody else.
+        super().__init__(
+            name=name,
+            tooltip=tooltip,
+            type=type,
+            default_value=default_value,
+            tooltip_as_input=tooltip_as_input,
+            tooltip_as_property=tooltip_as_property,
+            tooltip_as_output=tooltip_as_output,
+            allowed_modes=allowed_modes,
+            ui_options=ui_options,
+            converters=converters,
+            validators=validators,
+            settable=settable,
+            user_defined=user_defined,
+            element_id=element_id,
+            element_type=element_type,
+        )
+
+    def _custom_setter_for_property_type(self, value) -> None:
+        # Set it as normal.
+        super()._custom_setter_for_property_type(value)
+
+        # Ensure this is a valid Key-Value Pair
+        base_type = super()._custom_getter_for_property_type()
+        kvp_type = ParameterType.parse_kv_type_pair(base_type)
+        if kvp_type is None:
+            err_str = f"PropertyKeyValuePair type '{base_type}' was not a valid Key-Value Type Pair. Format should be: ['<key type>', '<value type>']"
+            raise ValueError(err_str)
+        self._kvp_type = kvp_type
+
+
 class ParameterDict(ParameterContainer):
     _kvp_type: ParameterType.KeyValueTypePair
 
