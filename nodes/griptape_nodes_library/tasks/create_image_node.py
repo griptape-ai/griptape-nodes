@@ -2,7 +2,7 @@ from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageG
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterUIOptions
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.error_utils import try_throw_error
@@ -52,11 +52,7 @@ class CreateImageNode(ControlNode):
                 tooltip="None",
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options=ParameterUIOptions(
-                    string_type_options=ParameterUIOptions.StringType(
-                        placeholder_text="Enter your image generation prompt here."
-                    )
-                ),
+                ui_options={"placeholder_text": "Enter your image generation prompt here."},
             )
         )
         self.add_parameter(

@@ -1,7 +1,7 @@
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptTask
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterUIOptions
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
@@ -47,14 +47,10 @@ class DescribeImageNode(ControlNode):
                 tooltip="How would you like to describe the image",
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options=ParameterUIOptions(
-                    string_type_options=ParameterUIOptions.StringType(
-                        placeholder_text="How would you like to describe the image",
-                        multiline=True,
-                    )
-                ),
-            )
+                ui_options={"placeholder_text": "How would you like to describe the image", "multiline": True},
+            ),
         )
+
         self.add_parameter(
             Parameter(
                 name="output",
@@ -63,12 +59,7 @@ class DescribeImageNode(ControlNode):
                 tooltip="None",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options=ParameterUIOptions(
-                    string_type_options=ParameterUIOptions.StringType(
-                        placeholder_text="The description of the image",
-                        multiline=True,
-                    )
-                ),
+                ui_options={"placeholder_text": "The description of the image", "multiline": True},
             )
         )
 
