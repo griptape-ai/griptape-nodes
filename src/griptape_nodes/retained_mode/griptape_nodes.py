@@ -25,7 +25,6 @@ from griptape_nodes.node_library.script_registry import LibraryNameAndVersion, S
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
     AppStartSessionRequest,
-    AppStartSessionResultFailure,
     AppStartSessionResultSuccess,
     GetEngineVersionRequest,
     GetEngineVersionResultFailure,
@@ -374,9 +373,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
     def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:
         # Do we already have one?
         if BaseEvent._session_id is not None:
-            details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID `{BaseEvent._session_id}' in place."
-            GriptapeNodes.get_logger().error(details)
-            return AppStartSessionResultFailure()
+            details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID `{BaseEvent._session_id}' in place. Replacing it."
+            GriptapeNodes.get_logger().info(details)
 
         BaseEvent._session_id = request.session_id
 
