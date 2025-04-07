@@ -16,11 +16,11 @@ class ToolListNode(ControlNode):
         # Add a parameter for a list of tools
         self.add_parameter(
             Parameter(
-                name="tools",
-                input_types=["list[Tool]"],
+                name="tool",
+                input_types=["Tool"],
                 allowed_modes={ParameterMode.INPUT},
                 default_value=[],
-                tooltip="List of tools to combine",
+                tooltip="Tool to add to the list",
             )
         )
 

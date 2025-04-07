@@ -1,3 +1,4 @@
+from griptape.events import TextChunkEvent
 from griptape.structures import Agent
 from griptape.utils import Stream
 
@@ -53,15 +54,15 @@ class CreateAgentNode(BaseAgentNode):
             # Check and see if the prompt driver is a stream driver
             if self.is_stream(agent):
                 # Run the agent
-                for artifact in Stream(agent).run(prompt):
+                for artifact in Stream(agent, event_types=[TextChunkEvent]).run(prompt):
                     full_output += artifact.value
-                    self.parameter_output_values["agent_response"] = full_output
+                    self.parameter_output_values["output"] = full_output
             else:
                 # Run the agent
                 result = agent.run(prompt)
                 full_output = result.output.value
-            self.parameter_output_values["agent_response"] = full_output
+            self.parameter_output_values["output"] = full_output
         else:
-            self.parameter_output_values["agent_response"] = "Agent Created"
+            self.parameter_output_values["output"] = "Agent Created"
 
         self.parameter_output_values["agent"] = agent.to_dict()

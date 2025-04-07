@@ -78,7 +78,7 @@ class BaseAgentNode(ControlNode):
         with ParameterGroup(group_name="Agent Response") as agent_response_group:
             self.add_parameter(
                 Parameter(
-                    name="agent_response",
+                    name="output",
                     type="str",
                     default_value="",
                     tooltip="What the agent said.",

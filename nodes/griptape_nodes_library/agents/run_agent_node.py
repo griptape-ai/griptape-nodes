@@ -54,8 +54,8 @@ class RunAgentNode(CreateAgentNode):
                 # Run the agent
                 result = agent.run(prompt)
                 full_output = result.output.value
-            self.parameter_output_values["agent_response"] = full_output
+            self.parameter_output_values["output"] = full_output
         else:
-            self.parameter_output_values["agent_response"] = "Agent Created"
+            self.parameter_output_values["output"] = "Agent Created"
 
         self.parameter_output_values["agent"] = agent.to_dict()
