@@ -1,5 +1,3 @@
-
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -14,8 +12,9 @@ class Compare(Trait):
         return ["compare"]
 
     def converters_for_trait(self) -> list[Callable[[Any], Any]]:
-        def convert(value:Any) -> Any:
-            if isinstance(value,str):
+        def convert(value: Any) -> Any:
+            if isinstance(value, str):
                 # How do i do a text diff here?
                 pass
+
         return [convert]

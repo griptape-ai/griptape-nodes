@@ -1,17 +1,17 @@
 from dataclasses import dataclass, field
 
 from griptape_nodes.exe_types.core_types import Trait
+from traits.button import Button
 
 
 @dataclass(eq=False)
-class Button(Trait):
-    type: str = field(default_factory=lambda: "Generic")
+class AddParameterButton(Trait):
+    type: str = field(default_factory=lambda: "AddParameter")
     element_id: str = field(default_factory=lambda: "Button")
 
-    def __init__(self, button_type: str | None = None) -> None:
+    def __init__(self) -> None:
         super().__init__(element_id=self.element_id)
-        if button_type:
-            self.type = button_type
+        self.add_child(Button(button_type="AddParameter"))
 
     @classmethod
     def get_trait_keys(cls) -> list[str]:

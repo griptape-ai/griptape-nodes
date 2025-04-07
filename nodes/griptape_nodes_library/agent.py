@@ -11,7 +11,7 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 from griptape_nodes_library.utils.error_utils import try_throw_error
-from traits.add_button import AddButton
+from traits.button import Button
 from traits.options import Options
 
 DEFAULT_MODEL = "gpt-4o"
@@ -47,7 +47,7 @@ class RunAgentNode(ControlNode):
                 input_types=["str"],
                 output_type="str",
                 type="str",
-                traits={Options(["gpt-4o","gpt-3.5","gpt-4"])},
+                traits={Options(["gpt-4o", "gpt-3.5", "gpt-4"])},
                 default_value=DEFAULT_MODEL,
                 tooltip="",
             )
@@ -94,7 +94,7 @@ class RunAgentNode(ControlNode):
                 default_value="",
                 tooltip="What the agent said.",
                 allowed_modes={ParameterMode.OUTPUT},
-                traits={AddButton(button_type="modal")},
+                traits={Button(button_type="modal")},
                 ui_options={"multiline": True, "placeholder_text": "The Agent Response"},
             )
         self.add_node_element(tools_group)
@@ -140,7 +140,7 @@ class RunAgentNode(ControlNode):
                         trait.choices = choices
                     self.set_parameter_value("prompt_model", self.get_parameter_value("prompt_model"))
 
-    def select_choices(self, value:str) -> list[str]:
+    def select_choices(self, value: str) -> list[str]:
         match value:
             case _ if "anthropic" in value:
                 return [

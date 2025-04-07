@@ -222,7 +222,7 @@ class Parameter(BaseNodeElement):
     next: Parameter | None = None
     prev: Parameter | None = None
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: PLR0913,PLR0912
         self,
         name: str,
         tooltip: str | list[dict],
