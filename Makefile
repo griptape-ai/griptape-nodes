@@ -18,7 +18,7 @@ version/publish: ## Push git tag and publish version to PyPI.
 	
 .PHONY: run
 run: ## Run the project.
-	DEBUG=true uv run griptape-nodes
+	uv run griptape-nodes --no-update
 	
 .PHONY: install
 install: ## Install all dependencies.

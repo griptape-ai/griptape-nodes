@@ -3,7 +3,6 @@
 import argparse
 import importlib.metadata
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -84,6 +83,12 @@ def _get_args() -> argparse.Namespace:
     parser.add_argument(
         "--workspace-directory",
         help="Override the Griptape Nodes workspace directory when running 'init'.",
+        required=False,
+    )
+    parser.add_argument(
+        "--no-update",
+        action="store_true",
+        help="Skip the auto-update check.",
         required=False,
     )
 
@@ -286,7 +291,8 @@ def _process_args(args: argparse.Namespace) -> None:
             # Default init flow if it's truly the first time
             _run_init()
 
-        if os.environ.get("DEBUG", "false") == "false":
+        # Confusing double negation -- If `no_update` is set, we want to skip the update
+        if not args.no_update:
             _auto_update()
         api_main()
     elif args.command == "config":
