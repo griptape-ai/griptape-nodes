@@ -1,7 +1,7 @@
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes_library.drivers.base_image_driver import BaseImageDriverNode
+from griptape_nodes_library.drivers.image.base_image_driver import BaseImageDriverNode
 
 SERVICE = "Griptape"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"

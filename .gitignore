@@ -179,3 +179,5 @@ GriptapeNodes/
 # MacOS
 .DS_Store
 
+# VSCode Settings
+.vscode/settings.json
