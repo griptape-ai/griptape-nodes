@@ -1,7 +1,8 @@
-# MergeDictNode
+# MergeDict
 
 ## What is it?
-The MergeDictNode is a building block that combines multiple dictionaries (collections of key-value pairs) into a single dictionary. Think of it as taking several labeled containers and pouring their contents into one larger container.
+
+The MergeDict is a building block that combines multiple dictionaries (collections of key-value pairs) into a single dictionary. Think of it as taking several labeled containers and pouring their contents into one larger container.
 
 ## When would I use it?
 Use this node when you want to:
@@ -12,9 +13,10 @@ Use this node when you want to:
 ## How to use it
 
 ### Basic Setup
-1. Add the MergeDictNode to your workspace
-2. Connect it to your flow
-3. Connect a list of dictionaries to the input
+
+1. Add the MergeDict to your workspace
+1. Connect it to your flow
+1. Connect a list of dictionaries to the input
 
 ### Required Fields
 - **inputs**: A list of dictionaries to merge together

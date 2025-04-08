@@ -3,12 +3,12 @@
 
 ### Overview
 
-The `ConvertAgentToToolNode` class is a specialized node for converting an agent into a Griptape tool. This node provides a basic structure for initializing tools based on provided agents and can be extended to support various tool creation scenarios.
+The `ConvertAgentToTool` class is a specialized node for converting an agent into a Griptape tool. This node provides a basic structure for initializing tools based on provided agents and can be extended to support various tool creation scenarios.
 
 ### Class Definition
 
 ```python
-class ConvertAgentToToolNode(BaseToolNode):
+class ConvertAgentToTool(BaseTool):
     """A node for converting an agent into a Griptape tool."""
 ```
 
@@ -45,7 +45,7 @@ def process(self) -> None:
 
 ### Parameters
 
-The `ConvertAgentToToolNode` class accepts the following parameters:
+The `ConvertAgentToTool` class accepts the following parameters:
 
 *   **agent (Any)**: The agent to be converted into a tool. If not provided, the node will return `None`.
 *   **name (str)**: The name of the tool to be created. Defaults to "Give the agent a name" if not provided.
@@ -53,10 +53,10 @@ The `ConvertAgentToToolNode` class accepts the following parameters:
 
 ### Example Usage
 
-To create a new instance of the `ConvertAgentToToolNode` class, you can use the following code:
+To create a new instance of the `ConvertAgentToTool` class, you can use the following code:
 
 ```python
-node = ConvertAgentToToolNode("My Tool")
+node = ConvertAgentToTool("My Tool")
 node.parameter_values["agent"] = {"id": 1, "name": "Example Agent"}
 node.process()
 print(node.parameter_output_values["tool"])

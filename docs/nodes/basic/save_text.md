@@ -1,7 +1,8 @@
-# SaveTextNode
+# SaveText
 
 ## What is it?
-The SaveTextNode is a building block that lets you save text content to a file on your computer. Think of it as a way to keep and store the text your workflow creates.
+
+The SaveText is a building block that lets you save text content to a file on your computer. Think of it as a way to keep and store the text your workflow creates.
 
 ## When would I use it?
 Use this node when you want to:
@@ -12,9 +13,10 @@ Use this node when you want to:
 ## How to use it
 
 ### Basic Setup
-1. Add the SaveTextNode to your workspace
-2. Connect it to your flow
-3. Connect a source of text to its input
+
+1. Add the SaveText to your workspace
+1. Connect it to your flow
+1. Connect a source of text to its input
 
 ### Required Fields
 - **text**: The text content you want to save (usually connected from another node)
@@ -28,10 +30,10 @@ Use this node when you want to:
 ## Example
 Imagine you have text from an agent that you want to save:
 
-1. Connect the "output" from your agent node to the "text" input of the SaveTextNode
-2. Set "output_path" to "my_agent_response.txt"
-3. Run your flow
-4. The text will be saved to a file named "my_agent_response.txt"
+1. Connect the "output" from your agent node to the "text" input of the SaveText
+1. Set "output_path" to "my_agent_response.txt"
+1. Run your flow
+1. The text will be saved to a file named "my_agent_response.txt"
 
 ## Important Notes
 - If you don't specify an output path, the text will be saved to "griptape_output.txt" by default

@@ -1,7 +1,8 @@
-# MergeTextsNode
+# MergeTexts
 
 ## What is it?
-The MergeTextsNode is a building block that combines multiple pieces of text into a single text string. Think of it as taking several separate paragraphs and joining them together into one document.
+
+The MergeTexts is a building block that combines multiple pieces of text into a single text string. Think of it as taking several separate paragraphs and joining them together into one document.
 
 ## When would I use it?
 Use this node when you want to:
@@ -12,9 +13,10 @@ Use this node when you want to:
 ## How to use it
 
 ### Basic Setup
-1. Add the MergeTextsNode to your workspace
-2. Connect it to your flow
-3. Connect multiple text inputs to it
+
+1. Add the MergeTexts to your workspace
+1. Connect it to your flow
+1. Connect multiple text inputs to it
 
 ### Required Fields
 - **inputs**: A list of text strings you want to combine

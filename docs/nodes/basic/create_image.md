@@ -1,7 +1,8 @@
-# CreateImageNode
+# CreateImage
 
 ## What is it?
-The CreateImageNode is a building block that lets you generate images using AI. Think of it as having an artist on call who can create images based on your description.
+
+The CreateImage is a building block that lets you generate images using AI. Think of it as having an artist on call who can create images based on your description.
 
 ## When would I use it?
 Use this node when you want to:
@@ -12,8 +13,9 @@ Use this node when you want to:
 ## How to use it
 
 ### Basic Setup
-1. Add the CreateImageNode to your workspace
-2. Connect it to your flow
+
+1. Add the CreateImage to your workspace
+1. Connect it to your flow
 
 ### Required Fields
 - **prompt**: The description of the image you want to create (e.g., "a sunset over mountains with a lake")
@@ -31,10 +33,10 @@ Use this node when you want to:
 ## Example
 Imagine you want to create an image of a friendly robot:
 
-1. Add a CreateImageNode
-2. In the "prompt" field, type: "A friendly robot helping a child with homework"
-3. Run the node
-4. The image will be generated and saved in the Images folder by default
+1. Add a CreateImage
+1. In the "prompt" field, type: "A friendly robot helping a child with homework"
+1. Run the node
+1. The image will be generated and saved in the Images folder by default
 
 ## Important Notes
 - You need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY`

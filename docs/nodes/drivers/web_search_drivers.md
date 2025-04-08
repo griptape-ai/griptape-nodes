@@ -1,7 +1,8 @@
-# DuckDuckGoWebSearchDriverNode
+# DuckDuckGoWebSearchDriver
 
 ## What is it?
-The DuckDuckGoWebSearchDriverNode is a building block that sets up a connection to the DuckDuckGo search engine. Think of it as giving your workflow the ability to search the internet for information.
+
+The DuckDuckGoWebSearchDriver is a building block that sets up a connection to the DuckDuckGo search engine. Think of it as giving your workflow the ability to search the internet for information.
 
 ## When would I use it?
 Use this node when you want to:
@@ -12,9 +13,10 @@ Use this node when you want to:
 ## How to use it
 
 ### Basic Setup
-1. Add the DuckDuckGoWebSearchDriverNode to your workspace
-2. Connect it to your flow
-3. Connect its output to nodes that need web search capabilities
+
+1. Add the DuckDuckGoWebSearchDriver to your workspace
+1. Connect it to your flow
+1. Connect its output to nodes that need web search capabilities
 
 ### Required Fields
 None - this node works without additional configuration
@@ -25,9 +27,9 @@ None - this node works without additional configuration
 ## Example
 Imagine you want to create an agent that can search the web for current information:
 
-1. Add a DuckDuckGoWebSearchDriverNode to your workflow
-2. Connect the "driver" output to a node that uses web search tools
-3. When you run the flow, your agent will be able to search the internet using DuckDuckGo
+1. Add a DuckDuckGoWebSearchDriver to your workflow
+1. Connect the "driver" output to a node that uses web search tools
+1. When you run the flow, your agent will be able to search the internet using DuckDuckGo
 
 ## Important Notes
 - No API key is required as DuckDuckGo's search is freely available

@@ -1,7 +1,8 @@
-# KeyValuePairNode
+# KeyValuePair
 
 ## What is it?
-The KeyValuePairNode is a simple building block that creates a single key-value pair and stores it in a dictionary. Think of it as creating a label (key) and attaching a piece of information (value) to it.
+
+The KeyValuePair is a simple building block that creates a single key-value pair and stores it in a dictionary. Think of it as creating a label (key) and attaching a piece of information (value) to it.
 
 ## When would I use it?
 Use this node when you want to:
@@ -12,8 +13,9 @@ Use this node when you want to:
 ## How to use it
 
 ### Basic Setup
-1. Add the KeyValuePairNode to your workspace
-2. Connect it to your flow
+
+1. Add the KeyValuePair to your workspace
+1. Connect it to your flow
 
 ### Required Fields
 - **key**: The name or identifier for your value (e.g., "name", "temperature", "option")
@@ -25,10 +27,10 @@ Use this node when you want to:
 ## Example
 Imagine you want to create a setting for an image generation:
 
-1. Add a KeyValuePairNode to your workflow
-2. Set "key" to "image_style"
-3. Set "value" to "watercolor"
-4. The output dictionary will be: {"image_style": "watercolor"}
+1. Add a KeyValuePair to your workflow
+1. Set "key" to "image_style"
+1. Set "value" to "watercolor"
+1. The output dictionary will be: {"image_style": "watercolor"}
 
 ## Important Notes
 - This node creates a dictionary with just one key-value pair

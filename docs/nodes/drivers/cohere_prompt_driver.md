@@ -1,7 +1,8 @@
-# CoherePromptDriverNode
+# CoherePromptDriver
 
 ## What is it?
-The CoherePromptDriverNode is a building block that sets up a connection to Cohere's AI models. Think of it as configuring a special channel that your workflow can use to talk to Cohere's language models.
+
+The CoherePromptDriver is a building block that sets up a connection to Cohere's AI models. Think of it as configuring a special channel that your workflow can use to talk to Cohere's language models.
 
 ## When would I use it?
 Use this node when you want to:
@@ -12,9 +13,10 @@ Use this node when you want to:
 ## How to use it
 
 ### Basic Setup
-1. Add the CoherePromptDriverNode to your workspace
-2. Connect it to your flow
-3. Connect its output to nodes that need to use Cohere (like RunAgentNode)
+
+1. Add the CoherePromptDriver to your workspace
+1. Connect it to your flow
+1. Connect its output to nodes that need to use Cohere (like RunAgent)
 
 ### Required Fields
 None - the node uses default settings if you don't change anything
@@ -33,11 +35,11 @@ None - the node uses default settings if you don't change anything
 ## Example
 Imagine you want to create an agent that uses Cohere with specific settings:
 
-1. Add a CoherePromptDriverNode to your workflow
-2. Set "model" to "command-r-plus"
-3. Set "max_tokens" to 1000 (for moderate length responses)
-4. Connect the "driver" output to a RunAgentNode's "prompt_driver" input
-5. Now that agent will use Cohere with your custom settings
+1. Add a CoherePromptDriver to your workflow
+1. Set "model" to "command-r-plus"
+1. Set "max_tokens" to 1000 (for moderate length responses)
+1. Connect the "driver" output to a RunAgent's "prompt_driver" input
+1. Now that agent will use Cohere with your custom settings
 
 ## Important Notes
 - You need a valid Cohere API key set up in your environment as `COHERE_API_KEY`

@@ -1,7 +1,8 @@
-# AzureOpenAiChatPromptDriverNode
+# AzureOpenAiChatPromptDriver
 
 ## What is it?
-The AzureOpenAiChatPromptDriverNode is a building block that sets up a connection to Microsoft Azure's OpenAI service. Think of it as configuring a special channel to OpenAI models hosted on Azure's cloud.
+
+The AzureOpenAiChatPromptDriver is a building block that sets up a connection to Microsoft Azure's OpenAI service. Think of it as configuring a special channel to OpenAI models hosted on Azure's cloud.
 
 ## When would I use it?
 Use this node when you want to:
@@ -12,9 +13,10 @@ Use this node when you want to:
 ## How to use it
 
 ### Basic Setup
-1. Add the AzureOpenAiChatPromptDriverNode to your workspace
-2. Connect it to your flow
-3. Connect its output to nodes that need to use Azure OpenAI (like RunAgentNode)
+
+1. Add the AzureOpenAiChatPromptDriver to your workspace
+1. Connect it to your flow
+1. Connect its output to nodes that need to use Azure OpenAI (like RunAgent)
 
 ### Required Fields
 None - the node uses default settings if you don't change anything
@@ -34,11 +36,11 @@ None - the node uses default settings if you don't change anything
 ## Example
 Imagine you want to create an agent that uses Azure-hosted GPT-4o:
 
-1. Add an AzureOpenAiChatPromptDriverNode to your workflow
-2. Set "model" to "gpt-4o"
-3. Set "temperature" to 0.3 (for more focused responses)
-4. Connect the "driver" output to a RunAgentNode's "prompt_driver" input
-5. Now that agent will use Azure OpenAI with your custom settings
+1. Add an AzureOpenAiChatPromptDriver to your workflow
+1. Set "model" to "gpt-4o"
+1. Set "temperature" to 0.3 (for more focused responses)
+1. Connect the "driver" output to a RunAgent's "prompt_driver" input
+1. Now that agent will use Azure OpenAI with your custom settings
 
 ## Important Notes
 - You need valid Azure OpenAI credentials set up in your environment:

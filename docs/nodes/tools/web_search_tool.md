@@ -3,18 +3,18 @@
 
 ### Overview
 
-The `WebSearchToolNode` class is a specialized node for creating a Griptape web search tool. This node provides a basic structure for initializing tools based on provided drivers and can be extended to support various driver scenarios.
+The `WebSearchTool` class is a specialized node for creating a Griptape web search tool. This node provides a basic structure for initializing tools based on provided drivers and can be extended to support various driver scenarios.
 
 ### Class Definition
 
 ```python
-class WebSearchToolNode(BaseToolNode):
+class WebSearchTool(BaseTool):
     """A node for creating a Griptape web search tool."""
 ```
 
 ### Initialization
 
-The `WebSearchToolNode` class is initialized with the following parameters:
+The `WebSearchTool` class is initialized with the following parameters:
 
 *   **driver (dict)**: A dictionary containing the driver configuration. If not provided, a default DuckDuckGoWebSearchDriver will be used.
 
@@ -59,16 +59,16 @@ def process(self) -> None:
 
 ### Parameters
 
-The `WebSearchToolNode` class accepts the following parameters:
+The `WebSearchTool` class accepts the following parameters:
 
 *   **driver (dict)**: A dictionary containing the driver configuration. If not provided, a default DuckDuckGoWebSearchDriver will be used.
 
 ### Example Usage
 
-To create a new instance of the `WebSearchToolNode` class, you can use the following code:
+To create a new instance of the `WebSearchTool` class, you can use the following code:
 
 ```python
-node = WebSearchToolNode()
+node = WebSearchTool()
 # node.parameter_values["driver"] = {"api_key": "1234567890", "language": "en"}
 node.process()
 print(node.parameter_output_values["tool"])

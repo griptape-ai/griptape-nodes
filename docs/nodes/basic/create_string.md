@@ -1,7 +1,8 @@
-# CreateStringNode
+# CreateString
 
 ## What is it?
-The CreateStringNode is a simple building block that creates a piece of text (a string) that you can use in your workflow. Think of it as a notepad where you can write text to use elsewhere.
+
+The CreateString is a simple building block that creates a piece of text (a string) that you can use in your workflow. Think of it as a notepad where you can write text to use elsewhere.
 
 ## When would I use it?
 Use this node when you want to:
@@ -12,8 +13,9 @@ Use this node when you want to:
 ## How to use it
 
 ### Basic Setup
-1. Add the CreateStringNode to your workspace
-2. Connect it to your flow
+
+1. Add the CreateString to your workspace
+1. Connect it to your flow
 
 ### Fields
 - **text**: The text content you want to create (defaults to "<Empty>" if not set)
@@ -24,9 +26,9 @@ Use this node when you want to:
 ## Example
 Imagine you want to provide a standard greeting for an agent to use:
 
-1. Add a CreateStringNode to your workflow
-2. Set the "text" value to "Hello! How can I help you today?"
-3. Connect the "text" output to another node that needs this greeting text
+1. Add a CreateString to your workflow
+1. Set the "text" value to "Hello! How can I help you today?"
+1. Connect the "text" output to another node that needs this greeting text
 
 ## Important Notes
 - The default value is "<Empty>" if you don't set anything

@@ -1,7 +1,8 @@
-# RunAgentNode
+# RunAgent
 
 ## What is it?
-The RunAgentNode is a building block in our visual scripting system that lets you create and run an AI agent. Think of it as setting up a smart assistant that can perform tasks for you based on what you tell it to do.
+
+The RunAgent is a building block in our visual scripting system that lets you create and run an AI agent. Think of it as setting up a smart assistant that can perform tasks for you based on what you tell it to do.
 
 ## When would I use it?
 Use this node when you want to:
@@ -12,8 +13,9 @@ Use this node when you want to:
 ## How to use it
 
 ### Basic Setup
-1. Add the RunAgentNode to your workspace
-2. Connect it to your flow
+
+1. Add the RunAgent to your workspace
+1. Connect it to your flow
 
 ### Required Fields
 - **prompt**: The instructions or question you want to ask the agent
@@ -36,10 +38,10 @@ Use this node when you want to:
 ## Example
 Imagine you want to create an agent that can answer questions about the weather:
 
-1. Add a RunAgentNode
-2. In the "prompt" field, type: "What's the weather like in New York today?"
-3. Run the node
-4. The "output" will contain the agent's response about the weather
+1. Add a RunAgent
+1. In the "prompt" field, type: "What's the weather like in New York today?"
+1. Run the node
+1. The "output" will contain the agent's response about the weather
 
 ## Important Notes
 - You need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY`

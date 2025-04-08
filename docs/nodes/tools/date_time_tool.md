@@ -1,9 +1,8 @@
-**DateTimeToolNode Class Documentation**
-=====================================
+# **DateTimeTool Class Documentation**
 
 ### Overview
 
-The `DateTimeToolNode` class is a custom node in the Griptape framework that utilizes the `DateTimeTool` to format and manipulate dates and times. This node provides a flexible way to process and output date and time data.
+The `DateTimeTool` class is a custom node in the Griptape framework that utilizes the `DateTimeTool` to format and manipulate dates and times. This node provides a flexible way to process and output date and time data.
 
 ### Attributes
 
@@ -22,8 +21,8 @@ This method is responsible for processing the node's inputs and producing output
 ### Example Usage
 
 ```python
-# Create a DateTimeToolNode instance
-node = DateTimeToolNode()
+# Create a DateTimeTool instance
+node = DateTimeTool()
 
 # Set input parameters
 node.parameter_values["off_prompt"] = False

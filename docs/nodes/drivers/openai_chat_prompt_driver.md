@@ -1,7 +1,8 @@
-# OpenAiChatPromptDriverNode
+# OpenAiChatPromptDriver
 
 ## What is it?
-The OpenAiChatPromptDriverNode is a building block that sets up a direct connection to OpenAI's models like GPT-4o. Think of it as configuring a special channel that your workflow can use to talk to OpenAI's powerful language models.
+
+The OpenAiChatPromptDriver is a building block that sets up a direct connection to OpenAI's models like GPT-4o. Think of it as configuring a special channel that your workflow can use to talk to OpenAI's powerful language models.
 
 ## When would I use it?
 Use this node when you want to:
@@ -12,9 +13,10 @@ Use this node when you want to:
 ## How to use it
 
 ### Basic Setup
-1. Add the OpenAiChatPromptDriverNode to your workspace
-2. Connect it to your flow
-3. Connect its output to nodes that need to use OpenAI (like RunAgentNode)
+
+1. Add the OpenAiChatPromptDriver to your workspace
+1. Connect it to your flow
+1. Connect its output to nodes that need to use OpenAI (like RunAgent)
 
 ### Required Fields
 None - the node uses default settings if you don't change anything
@@ -36,12 +38,12 @@ None - the node uses default settings if you don't change anything
 ## Example
 Imagine you want to create an agent that uses GPT-4o with specific settings:
 
-1. Add an OpenAiChatPromptDriverNode to your workflow
-2. Set "model" to "gpt-4o"
-3. Set "temperature" to 0.2 (for more focused, deterministic responses)
-4. Set "max_tokens" to 2000 (for longer responses)
-5. Connect the "driver" output to a RunAgentNode's "prompt_driver" input
-6. Now that agent will use OpenAI with your custom settings
+1. Add an OpenAiChatPromptDriver to your workflow
+1. Set "model" to "gpt-4o"
+1. Set "temperature" to 0.2 (for more focused, deterministic responses)
+1. Set "max_tokens" to 2000 (for longer responses)
+1. Connect the "driver" output to a RunAgent's "prompt_driver" input
+1. Now that agent will use OpenAI with your custom settings
 
 ## Important Notes
 - You need a valid OpenAI API key set up in your environment as `OPENAI_API_KEY`

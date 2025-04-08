@@ -1,7 +1,8 @@
-# OpenAiAudioTranscriptionDriverNode
+# OpenAiAudioTranscriptionDriver
 
 ## What is it?
-The OpenAiAudioTranscriptionDriverNode is a building block that lets you set up a connection to OpenAI's audio transcription service (Whisper). Think of it as configuring a special tool that can listen to audio and convert it to text.
+
+The OpenAiAudioTranscriptionDriver is a building block that lets you set up a connection to OpenAI's audio transcription service (Whisper). Think of it as configuring a special tool that can listen to audio and convert it to text.
 
 ## When would I use it?
 Use this node when you want to:
@@ -12,9 +13,10 @@ Use this node when you want to:
 ## How to use it
 
 ### Basic Setup
-1. Add the OpenAiAudioTranscriptionDriverNode to your workspace
-2. Connect it to your flow
-3. Connect its output to nodes that need to transcribe audio
+
+1. Add the OpenAiAudioTranscriptionDriver to your workspace
+1. Connect it to your flow
+1. Connect its output to nodes that need to transcribe audio
 
 ### Optional Configuration
 - **model**: The Whisper model to use (default is "whisper-1")
@@ -25,10 +27,10 @@ Use this node when you want to:
 ## Example
 Imagine you want to transcribe an audio recording and then analyze the text:
 
-1. Add an OpenAiAudioTranscriptionDriverNode to your workflow
-2. Leave the default "whisper-1" model or specify a different one
-3. Connect the "driver" output to a node that processes audio files
-4. When you run the flow, the audio will be converted to text that other nodes can process
+1. Add an OpenAiAudioTranscriptionDriver to your workflow
+1. Leave the default "whisper-1" model or specify a different one
+1. Connect the "driver" output to a node that processes audio files
+1. When you run the flow, the audio will be converted to text that other nodes can process
 
 ## Important Notes
 - You need a valid OpenAI API key set up in your environment as `OPENAI_API_KEY`

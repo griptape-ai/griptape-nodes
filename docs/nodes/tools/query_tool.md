@@ -21,12 +21,11 @@ The `GeminiQueryTool` class has the following configuration options:
 
 To use the `GeminiQueryTool`, create an instance of the class and call the `query` method, passing in a dictionary of parameters. The tool will process the query using the Rag engine and return a list of artifacts or an error artifact.
 
-**QueryToolNode Class Documentation**
-=====================================
+# **QueryTool Class Documentation**
 
 ### Overview
 
-The `QueryToolNode` class is a base class for generating query tools based on the provided prompt driver. It provides a way to create specialized query tools for Gemini models or standard query tools for other driver types.
+The `QueryTool` class is a base class for generating query tools based on the provided prompt driver. It provides a way to create specialized query tools for Gemini models or standard query tools for other driver types.
 
 ### Attributes
 
@@ -35,14 +34,14 @@ The `QueryToolNode` class is a base class for generating query tools based on th
 
 ### Configuration
 
-The `QueryToolNode` class has the following configuration options:
+The `QueryTool` class has the following configuration options:
 
 *   **`description`**: A brief description of the tool's purpose.
 *   **`schema`**: A schema defining the expected structure of the input parameters. The schema includes a field for the prompt driver object.
 
 ### Usage
 
-To use the `QueryToolNode`, create an instance of the class and call the `process` method, passing in any required parameters. The tool will create an instance of either the `GeminiQueryTool` or `QueryTool` class, depending on the type of prompt driver used.
+To use the `QueryTool`, create an instance of the class and call the `process` method, passing in any required parameters. The tool will create an instance of either the `GeminiQueryTool` or `QueryTool` class, depending on the type of prompt driver used.
 
 **Example Usage**
 -----------------
@@ -54,8 +53,8 @@ tool = GeminiQueryTool()
 # Process a query using the Rag engine
 outputs = tool.query({"values": {"query": "example query", "content": {"memory_name": "my_memory", "artifact_namespace": "my_namespace"}}})
 
-# Create a QueryToolNode instance
-node = QueryToolNode(prompt_driver=GooglePromptDriver())
+# Create a QueryTool instance
+node = QueryTool(prompt_driver=GooglePromptDriver())
 
 # Process a query using the Rag engine
 tool = node.process()
@@ -76,7 +75,7 @@ tool = node.process()
 *   **Type**: `dict`
 *   **Description**: A dictionary containing the input parameters for the `query` method.
 
-### `QueryToolNode` Class
+### `QueryTool` Class
 
 #### `process` method
 

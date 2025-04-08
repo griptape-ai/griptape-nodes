@@ -1,7 +1,8 @@
-# ToolListNode
+# ToolList
 
 ## What is it?
-The ToolListNode is a custom node in Griptape that allows you to combine multiple tools into a single list. This enables more complex workflows by providing agents with access to a diverse set of tools.
+
+The ToolList is a custom node in Griptape that allows you to combine multiple tools into a single list. This enables more complex workflows by providing agents with access to a diverse set of tools.
 
 ## When would I use it?
 Use this node when you want to:
@@ -12,9 +13,10 @@ Use this node when you want to:
 ## How to use it
 
 ### Basic Setup
-1. Add the ToolListNode to your workspace
-2. Connect it to other nodes that provide necessary input parameters (e.g., tools)
-3. Run the flow to see the combined list of tools
+
+1. Add the ToolList to your workspace
+1. Connect it to other nodes that provide necessary input parameters (e.g., tools)
+1. Run the flow to see the combined list of tools
 
 ### Fields
 - **tools**: A list of tools to combine into a single list.
@@ -34,11 +36,12 @@ Use this node when you want to:
 Imagine you have a workflow that generates and saves text:
 
 1. Create a flow with several nodes (like an agent that generates text and a node that saves it)
-2. Add the ToolListNode at the end of your sequence, connecting it to nodes that provide tools parameters
-3. Run the flow to see the combined list of tools in action
+1. Add the ToolList at the end of your sequence, connecting it to nodes that provide tools parameters
+1. Run the flow to see the combined list of tools in action
 
 ## Important Notes
-- The ToolListNode requires input tools to be provided when running the flow.
+
+- The ToolList requires input tools to be provided when running the flow.
 - Using nested lists for tool inputs will result in flattened output.
 
 ## Validation
