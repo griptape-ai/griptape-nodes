@@ -72,7 +72,6 @@ ignore = [
   "RUF012", # TODO(griptape): discuss with team
   "FBT003", # Intentional
   "RET504", # Intentional
-  "T201",   # TODO(griptape): replace prints with logs before removing
 ]
 
 [tool.ruff.lint.per-file-ignores]
