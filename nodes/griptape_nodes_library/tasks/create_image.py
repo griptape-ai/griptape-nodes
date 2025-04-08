@@ -1,4 +1,5 @@
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
+from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
 
@@ -89,7 +90,12 @@ class CreateImage(ControlNode):
 
         agent = params.get("agent", None)
         if not agent:
-            agent = Agent()
+            prompt_driver = GriptapeCloudPromptDriver(
+                model="gpt-4o",
+                api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
+                stream=True,
+            )
+            agent = Agent(prompt_driver=prompt_driver)
         else:
             agent = Agent().from_dict(agent)
         prompt = params.get("prompt", "")
