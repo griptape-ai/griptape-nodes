@@ -12,9 +12,9 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
+from griptape_nodes.traits.button import Button
+from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.error_utils import try_throw_error
-from traits.button import Button
-from traits.options import Options
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"

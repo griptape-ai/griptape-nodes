@@ -1,39 +1,50 @@
-from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
+from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
 
-from griptape_nodes_library.drivers.base_prompt_driver import BasePromptDriverNode
+from griptape_nodes.traits.options import Options
+from griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
 
 DEFAULT_MODEL = "gpt-4o"
-API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
-SERVICE = "Griptape"
-SUCCESS = 200
+MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
+API_KEY_ENV_VAR = "OPENAI_API_KEY"
+SERVICE = "OpenAI"
 
 
-class GriptapeCloudPromptDriverNode(BasePromptDriverNode):
-    """Node for Griptape Cloud Prompt Driver.
+class OpenAiPromptDriverNode(BasePromptDriverNode):
+    """Node for OpenAi Prompt Driver.
 
-    This node creates a Griptape Cloud prompt driver and outputs its configuration.
+    This node creates an OpenAi prompt driver and outputs its configuration.
     """
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
+        # Set any defaults
+        model_parameter = self.get_parameter_by_name("model")
+        if model_parameter is not None:
+            model_parameter.default_value = DEFAULT_MODEL
+            model_parameter.input_types = ["str"]
+            model_parameter.add_trait(Options(choices=MODELS))
+
+        # Delete top_k because openai does not use it
+        parameter = self.get_parameter_by_name("top_k")
+        if parameter is not None:
+            self.remove_parameter(parameter)
+
     def process(self) -> None:
+        # Grab the API key
+
         # Get the parameters from the node
         params = self.parameter_values
-
-        # Initialize kwargs with required parameters
         kwargs = {}
         kwargs["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
         kwargs["model"] = params.get("model", DEFAULT_MODEL)
-
-        # Handle optional parameters
         response_format = params.get("response_format", None)
         seed = params.get("seed", None)
         stream = params.get("stream", False)
         temperature = params.get("temperature", None)
-        max_attempts = params.get("max_attempts_on_fail", None)
         use_native_tools = params.get("use_native_tools", False)
-        max_tokens = params.get("max_tokens", None)
+        max_tokens = params.get("max_tokens", -1)
+        max_attempts = params.get("max_attempts_on_fail", None)
         top_p = None if params.get("min_p", None) is None else 1 - float(params["min_p"])
 
         if response_format == "json_object":
@@ -49,7 +60,7 @@ class GriptapeCloudPromptDriverNode(BasePromptDriverNode):
             kwargs["max_attempts"] = max_attempts
         if use_native_tools:
             kwargs["use_native_tools"] = use_native_tools
-        if max_tokens is not None and max_tokens > 0:
+        if max_tokens > 0:
             kwargs["max_tokens"] = max_tokens
 
         kwargs["extra_params"] = {}
@@ -57,18 +68,7 @@ class GriptapeCloudPromptDriverNode(BasePromptDriverNode):
             kwargs["extra_params"]["top_p"] = top_p
 
         # Create the driver
-        driver = GriptapeCloudPromptDriver(**kwargs)
+        driver = OpenAiChatPromptDriver(**kwargs)
 
         # Set the output
-        self.parameter_output_values["driver"] = driver
-
-    def validate_node(self) -> list[Exception] | None:
-        # Items here are openai api key
-        exceptions = []
-        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
-        if not api_key:
-            msg = f"{API_KEY_ENV_VAR} is not defined"
-            exceptions.append(KeyError(msg))
-            return exceptions
-
-        return exceptions if exceptions else None
+        self.parameter_output_values["prompt_driver"] = driver

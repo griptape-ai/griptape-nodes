@@ -5,7 +5,7 @@ from griptape_nodes_library.tools.base_tool import BaseToolNode
 
 class DateTimeToolNode(BaseToolNode):
     def process(self) -> None:
-        off_prompt = self.parameter_values.get("off_prompt", True)
+        off_prompt = self.parameter_values.get("off_prompt", False)
 
         # Create the tool
         tool = DateTimeTool(off_prompt=off_prompt)

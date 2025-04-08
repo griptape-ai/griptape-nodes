@@ -14,7 +14,8 @@ class BasePromptDriverNode(BaseDriverNode):
         super().__init__(**kwargs)
         driver_parameter = self.get_parameter_by_name("driver")
         if driver_parameter is not None:
-            driver_parameter.output_type = "Prompt Driver"
+            driver_parameter.name = "prompt_driver"
+            driver_parameter.output_type = "PromptDriver"
 
         self.add_parameter(
             Parameter(
@@ -115,4 +116,4 @@ class BasePromptDriverNode(BaseDriverNode):
         driver = DummyPromptDriver()
 
         # Set the output
-        self.parameter_output_values["driver"] = driver
+        self.parameter_output_values["prompt_driver"] = driver

@@ -32,22 +32,9 @@ class CreateImageNode(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
-
         self.add_parameter(
             Parameter(
-                name="prompt",
-                input_types=["str"],
-                output_type="str",
-                type="str",
-                tooltip="None",
-                default_value="",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="driver",
+                name="image_generation_driver",
                 input_types=["Image Generation Driver"],
                 output_type="Image Generation Driver",
                 type="Image Generation Driver",
@@ -58,6 +45,21 @@ class CreateImageNode(ControlNode):
 
         self.add_parameter(
             Parameter(
+                name="prompt",
+                input_types=["str"],
+                output_type="str",
+                type="str",
+                tooltip="None",
+                default_value="",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"placeholder_text": "Enter your image generation prompt here."},
+            )
+        )
+        self.add_parameter(
+            Parameter(name="enhance_prompt", input_types=["bool"], type="bool", tooltip="None", default_value=True)
+        )
+        self.add_parameter(
+            Parameter(
                 name="output",
                 input_types=["ImageArtifact"],
                 output_type="ImageArtifact",
@@ -65,28 +67,6 @@ class CreateImageNode(ControlNode):
                 tooltip="None",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="output_file",
-                input_types=["str"],
-                output_type="str",
-                type="str",
-                tooltip="None",
-                default_value=None,
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="output_dir",
-                input_types=["str"],
-                output_type="str",
-                type="str",
-                tooltip="None",
-                default_value=None,
             )
         )
 
@@ -107,12 +87,32 @@ class CreateImageNode(ControlNode):
         # Get the parameters from the node
         params = self.parameter_values
 
-        workspace_path = self.config_manager.workspace_path
-        images_dir = workspace_path / "Images/"
-
-        agent = params.get("agent", Agent(tasks=[]))
+        agent = params.get("agent", None)
+        if not agent:
+            agent = Agent()
+        else:
+            agent = Agent().from_dict(agent)
         prompt = params.get("prompt", "")
+        enhance_prompt = params.get("enhance_prompt", True)
 
+        if enhance_prompt:
+            logger.info("Enhancing prompt...")
+            result = agent.run(
+                [
+                    """
+Enhance the following prompt for an image generation engine. Return only the image generation prompt.
+Include unique details that make the subject stand out.
+Specify a specific depth of field, and time of day.
+Use dust in the air to create a sense of depth.
+Use a slight vignetting on the edges of the image.
+Use a color palette that is complementary to the subject.
+Focus on qualities that will make this the most professional looking photo in the world.""",
+                    prompt,
+                ]
+            )
+            prompt = result.output
+        else:
+            logger.info("Prompt enhancement disabled.")
         # Initialize driver kwargs with required parameters
         kwargs = {}
 
@@ -126,23 +126,6 @@ class CreateImageNode(ControlNode):
                 api_key=self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
             )
         kwargs["image_generation_driver"] = driver
-
-        # Declaring a prio towards file, not dir for now, at least
-        out_file = params.get("output_file", None)
-        if out_file:
-            kwargs["output_file"] = out_file
-            details = f"Image saved to {out_file}"
-            logger.info(details)
-        else:
-            out_dir = params.get("output_dir", None)
-            if out_dir:
-                kwargs["output_dir"] = out_dir
-                out_dir_msg = f'\nLook for image in "{out_dir}"'
-                logger.info(out_dir_msg)
-            else:
-                kwargs["output_dir"] = images_dir
-                images_dir_msg = f'\nLook for image in "{images_dir}"'
-                logger.info(images_dir_msg)
 
         # Add the actual image gen *task
         agent.add_task(PromptImageGenerationTask(**kwargs))
