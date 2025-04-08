@@ -19,9 +19,8 @@ from griptape_nodes.retained_mode.events.config_events import (
     SetConfigValueResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.managers.settings import Settings, WorkflowSettingsDetail, _find_config_files
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
-
-from .settings import Settings, WorkflowSettingsDetail, _find_config_files
 
 logger = logging.getLogger("griptape_nodes")
 

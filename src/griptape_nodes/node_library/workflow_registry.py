@@ -58,7 +58,7 @@ class WorkflowRegistry(SingletonMixin):
     def get_complete_file_path(cls, relative_file_path: str) -> str:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        config_mgr = GriptapeNodes().get_instance().ConfigManager()
+        config_mgr = GriptapeNodes.ConfigManager()
         workspace_path = config_mgr.workspace_path
         complete_file_path = workspace_path / relative_file_path
         return str(complete_file_path)
