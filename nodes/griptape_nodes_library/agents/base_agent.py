@@ -36,24 +36,22 @@ class BaseAgent(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
-        with ParameterGroup(group_name="Agent Abilities"):
-            self.add_parameter(
-                Parameter(
-                    name="tools",
-                    input_types=["list[Tool]", "Tool"],
-                    default_value=None,
-                    tooltip="",
-                    allowed_modes={ParameterMode.INPUT},
-                )
+        with ParameterGroup(group_name="Agent Abilities") as abilities_group:
+            Parameter(
+                name="tools",
+                input_types=["list[Tool]", "Tool"],
+                default_value=None,
+                tooltip="",
+                allowed_modes={ParameterMode.INPUT},
             )
-            self.add_parameter(
-                Parameter(
-                    name="rulesets",
-                    input_types=["list[Ruleset]", "Ruleset"],
-                    tooltip="Rulesets to apply to the agent to control its behavior.",
-                    allowed_modes={ParameterMode.INPUT},
-                )
+            Parameter(
+                name="rulesets",
+                input_types=["list[Ruleset]", "Ruleset"],
+                tooltip="Rulesets to apply to the agent to control its behavior.",
+                allowed_modes={ParameterMode.INPUT},
             )
+        self.add_node_element(abilities_group)
+
         self.add_parameter(
             Parameter(
                 name="prompt",
@@ -65,18 +63,16 @@ class BaseAgent(ControlNode):
             )
         )
 
-        with ParameterGroup(group_name="Agent Response"):
-            self.add_parameter(
-                Parameter(
-                    name="output",
-                    type="str",
-                    default_value="",
-                    tooltip="What the agent said.",
-                    allowed_modes={ParameterMode.OUTPUT},
-                    ui_options={"multiline": True, "placeholder_text": "Agent response"},
-                )
+        with ParameterGroup(group_name="Agent Response") as response_group:
+            Parameter(
+                name="output",
+                type="str",
+                default_value="",
+                tooltip="What the agent said.",
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"multiline": True, "placeholder_text": "Agent response"},
             )
-
+        self.add_node_element(response_group)
     def validate_node(self) -> list[Exception] | None:
         # All env values are stored in the SecretsManager. Check if they exist using this method.
         exceptions = []
