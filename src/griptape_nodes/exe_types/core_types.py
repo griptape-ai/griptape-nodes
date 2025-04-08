@@ -995,12 +995,11 @@ class ParameterList(ParameterContainer):
 
 
 class ParameterKeyValulePair(Parameter):
-    _kvp: ParameterType.KeyValueTypePair
-
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         name: str,
         tooltip: str | list[dict],
+        # Main parameter options
         type: str | None = None,  # noqa: A002
         default_value: Any = None,
         tooltip_as_input: str | list[dict] | None = None,
@@ -1011,6 +1010,19 @@ class ParameterKeyValulePair(Parameter):
         traits: set[Trait.__class__ | Trait] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
+        # Key and Value specific options
+        key_default_value: Any = None,
+        key_tooltip: str | list[dict] | None = None,
+        key_ui_options: dict | None = None,
+        key_traits: set[Trait.__class__ | Trait] | None = None,
+        key_converters: list[Callable[[Any], Any]] | None = None,
+        key_validators: list[Callable[[Parameter, Any], None]] | None = None,
+        value_default_value: Any = None,
+        value_tooltip: str | list[dict] | None = None,
+        value_ui_options: dict | None = None,
+        value_traits: set[Trait.__class__ | Trait] | None = None,
+        value_converters: list[Callable[[Any], Any]] | None = None,
+        value_validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
         settable: bool = True,
         user_defined: bool = False,
@@ -1037,6 +1049,37 @@ class ParameterKeyValulePair(Parameter):
             element_type=element_type,
         )
 
+        kvp_type = ParameterType.parse_kv_type_pair(self.type)
+        if kvp_type is None:
+            err_str = f"PropertyKeyValuePair type '{type}' was not a valid Key-Value Type Pair. Format should be: ['<key type>', '<value type>']"
+            raise ValueError(err_str)
+
+        # Create key parameter as a child
+        key_param = Parameter(
+            name=f"{name}.key",
+            tooltip=key_tooltip or "Key for the key-value pair",
+            type=kvp_type.key_type,
+            default_value=key_default_value,
+            ui_options=key_ui_options,
+            traits=key_traits,
+            converters=key_converters,
+            validators=key_validators,
+        )
+        self.add_child(key_param)
+
+        # Create value parameter as a child
+        value_param = Parameter(
+            name=f"{name}.value",
+            tooltip=value_tooltip or "Value for the key-value pair",
+            type=kvp_type.value_type,
+            default_value=value_default_value,
+            ui_options=value_ui_options,
+            traits=value_traits,
+            converters=value_converters,
+            validators=value_validators,
+        )
+        self.add_child(value_param)
+
     def _custom_setter_for_property_type(self, value) -> None:
         # Set it as normal.
         super()._custom_setter_for_property_type(value)
@@ -1047,14 +1090,46 @@ class ParameterKeyValulePair(Parameter):
         if kvp_type is None:
             err_str = f"PropertyKeyValuePair type '{base_type}' was not a valid Key-Value Type Pair. Format should be: ['<key type>', '<value type>']"
             raise ValueError(err_str)
-        self._kvp_type = kvp_type
+
+        # Update the key and value parameter types
+        key_param = self.find_element_by_id(f"{self.name}.key")
+        value_param = self.find_element_by_id(f"{self.name}.value")
+        if isinstance(key_param, Parameter) and isinstance(value_param, Parameter):
+            key_param.type = kvp_type.key_type
+            value_param.type = kvp_type.value_type
+
+    def get_key(self) -> Any:
+        """Get the current value of the key parameter."""
+        key_param = self.find_element_by_id(f"{self.name}.key")
+        if isinstance(key_param, Parameter):
+            return key_param.default_value
+        return None
+
+    def set_key(self, value: Any) -> None:
+        """Set the value of the key parameter."""
+        key_param = self.find_element_by_id(f"{self.name}.key")
+        if isinstance(key_param, Parameter):
+            key_param.default_value = value
+
+    def get_value(self) -> Any:
+        """Get the current value of the value parameter."""
+        value_param = self.find_element_by_id(f"{self.name}.value")
+        if isinstance(value_param, Parameter):
+            return value_param.default_value
+        return None
+
+    def set_value(self, value: Any) -> None:
+        """Set the value of the value parameter."""
+        value_param = self.find_element_by_id(f"{self.name}.value")
+        if isinstance(value_param, Parameter):
+            value_param.default_value = value
 
 
 class ParameterDictionary(ParameterContainer):
     _kvp_type: ParameterType.KeyValueTypePair
     _original_traits: set[Trait.__class__ | Trait]
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         name: str,
         tooltip: str | list[dict],
@@ -1116,7 +1191,7 @@ class ParameterDictionary(ParameterContainer):
         base_type = super()._custom_getter_for_property_type()
         kvp_type = ParameterType.parse_kv_type_pair(base_type)
         if kvp_type is None:
-            err_str = f"PropertyDict type '{base_type}' was not a valid Key-Value Type Pair. Format should be: ['<key type>', '<value type>']"
+            err_str = f"PropertyDictionary type '{base_type}' was not a valid Key-Value Type Pair. Format should be: ['<key type>', '<value type>']"
             raise ValueError(err_str)
         self._kvp_type = kvp_type
 
@@ -1139,33 +1214,31 @@ class ParameterDictionary(ParameterContainer):
 
     def __len__(self) -> int:
         # Returns the number of child Parameters. Just do the top level.
-        param_children = self.find_elements_by_type(element_type=Parameter, find_recursively=False)
+        param_children = self.find_elements_by_type(element_type=ParameterKeyValulePair, find_recursively=False)
         return len(param_children)
 
-    def __getitem__(self, key: int) -> Parameter:
+    def __getitem__(self, key: int) -> ParameterKeyValulePair:
         count = 0
         for child in self._children:
-            if isinstance(child, Parameter):
+            if isinstance(child, ParameterKeyValulePair):
                 if count == key:
                     # Found it.
                     return child
                 count += 1
 
         # If we fell out of the for loop, we had a bad value.
-        err_str = f"Attempted to get a Parameter List index {key}, which was out of range."
+        err_str = f"Attempted to get a Parameter Dictionary index {key}, which was out of range."
         raise KeyError(err_str)
 
-    def add_child_parameter(self) -> Parameter:
+    def add_key_value_pair(self) -> ParameterKeyValulePair:
         # Generate a name. This needs to be UNIQUE because children need
         # to be tracked as individuals and not as indices/keys in the dict.
         name = f"{self.name}_ParameterDictUniqueParamID_{uuid.uuid4().hex!s}"
 
-        param = Parameter(
+        param = ParameterKeyValulePair(
             name=name,
             tooltip=self.tooltip,
             type=self._type,
-            input_types=self._input_types,
-            output_type=self._output_type,
             default_value=self.default_value,
             tooltip_as_input=self.tooltip_as_input,
             tooltip_as_output=self.tooltip_as_output,
