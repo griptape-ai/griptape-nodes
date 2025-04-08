@@ -68,7 +68,6 @@ ignore = [
   "D105",   # Intentional
   "N802",   # TODO(griptape): discuss with team
   "TRY002", # TODO(griptape): discuss with team
-  "RUF012", # TODO(griptape): discuss with team
   "FBT003", # Intentional
   "RET504", # Intentional
 ]

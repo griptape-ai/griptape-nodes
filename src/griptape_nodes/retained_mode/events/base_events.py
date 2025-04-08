@@ -93,7 +93,7 @@ class BaseEvent(BaseModel, ABC):
     # Custom JSON encoder for the payload
     class Config:
         arbitrary_types_allowed = True
-        json_encoders = {
+        json_encoders: ClassVar[dict] = {
             # Use to_dict() methods for Griptape objects
             BaseArtifact: lambda obj: obj.to_dict(),
             BaseTool: lambda obj: obj.to_dict(),

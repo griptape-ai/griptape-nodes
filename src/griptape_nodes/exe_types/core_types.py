@@ -32,7 +32,7 @@ class ParameterTypeBuiltin(Enum):
 
 
 class ParameterType:
-    _builtin_aliases = {
+    _builtin_aliases: ClassVar[dict] = {
         "str": ParameterTypeBuiltin.STR,
         "string": ParameterTypeBuiltin.STR,
         "bool": ParameterTypeBuiltin.BOOL,

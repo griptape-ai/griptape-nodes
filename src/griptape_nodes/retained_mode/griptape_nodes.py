@@ -230,7 +230,7 @@ logger = logging.getLogger("griptape_nodes")
 
 
 class SingletonMeta(type):
-    _instances = {}
+    _instances: ClassVar[dict] = {}
 
     def __call__(cls, *args, **kwargs) -> Any:
         if cls not in cls._instances:
