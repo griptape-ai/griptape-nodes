@@ -272,6 +272,7 @@ class ParameterGroup(BaseNodeElement):
         return our_dict
 
 
+# TODO(james): revisit this if we want to do flyweight Parameters
 class ParameterBase(BaseNodeElement, ABC):
     name: str  # must be unique from other parameters in Node
 
