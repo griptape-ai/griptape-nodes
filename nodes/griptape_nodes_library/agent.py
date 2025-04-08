@@ -6,9 +6,7 @@ from griptape.utils import Stream
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
-    ParameterDictionary,
     ParameterGroup,
-    ParameterList,
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
@@ -32,13 +30,6 @@ class RunAgentNode(ControlNode):
                 name="agent",
                 input_types=["Agent", "dict"],
                 output_type="Agent",
-                tooltip="",
-            )
-        )
-        self.add_parameter(
-            ParameterDictionary(
-                name="context",
-                type="[str, str]",
                 tooltip="",
             )
         )
@@ -80,15 +71,13 @@ class RunAgentNode(ControlNode):
                 default_value=None,
                 tooltip="",
             )
-            ParameterList(
+            Parameter(
                 name="tool_list",
-                input_types=[
-                    "Tool"
-                ],  # We only need to specify the element type; the container will automatically accept list[Tool], too.
-                output_type="Tool",  # Same
-                type="Tool",  # Same
+                input_types=["list[Tool]"],
+                output_type="list[Tool]",
+                type="list[Tool]",
                 default_value=None,
-                tooltip="All of the tools",
+                tooltip="",
             )
             Parameter(
                 name="ruleset",
@@ -109,22 +98,6 @@ class RunAgentNode(ControlNode):
                 ui_options={"multiline": True, "placeholder_text": "The Agent Response"},
             )
         self.add_node_element(tools_group)
-
-        # Do some ParameterList magick
-        tool_list = self.get_parameter_by_name("tool_list")
-        if isinstance(tool_list, ParameterList):
-            entry_0 = tool_list.add_child_parameter()
-            entry_1 = tool_list.add_child_parameter()
-            print(entry_0.name)
-            print(tool_list[1].name)
-
-        # Now with ParameterDictionary
-        context = self.get_parameter_by_name("context")
-        if isinstance(context, ParameterDictionary):
-            kvp_0 = context.add_key_value_pair()
-            kvp_1 = context.add_key_value_pair()
-            kvp_0.set_key("first_name")
-            kvp_0.set_value("James")
 
     # Only requires a valid GT_CLOUD_API_KEY
     def validate_node(self) -> list[Exception] | None:
