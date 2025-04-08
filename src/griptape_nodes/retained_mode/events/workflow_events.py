@@ -139,19 +139,19 @@ class RenameWorkflowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class SaveSceneRequest(RequestPayload):
+class SaveWorkflowRequest(RequestPayload):
     file_name: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
-class SaveSceneResultSuccess(ResultPayloadSuccess):
+class SaveWorkflowResultSuccess(ResultPayloadSuccess):
     file_path: str
 
 
 @dataclass
 @PayloadRegistry.register
-class SaveSceneResultFailure(ResultPayloadFailure):
+class SaveWorkflowResultFailure(ResultPayloadFailure):
     pass
 
 

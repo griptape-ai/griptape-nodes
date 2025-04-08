@@ -209,9 +209,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RunWorkflowWithCurrentStateRequest,
     RunWorkflowWithCurrentStateResultFailure,
     RunWorkflowWithCurrentStateResultSuccess,
-    SaveSceneRequest,
-    SaveSceneResultFailure,
-    SaveSceneResultSuccess,
+    SaveWorkflowRequest,
+    SaveWorkflowResultFailure,
+    SaveWorkflowResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -2500,8 +2500,8 @@ class WorkflowManager:
         )
 
         event_manager.assign_manager_to_request_type(
-            SaveSceneRequest,
-            self.on_save_scene_request,
+            SaveWorkflowRequest,
+            self.on_save_workflow_request,
         )
         event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
 
@@ -2626,9 +2626,9 @@ class WorkflowManager:
         return DeleteWorkflowResultSuccess()
 
     def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
-        save_scene_request = GriptapeNodes.handle_request(SaveSceneRequest(file_name=request.requested_name))
+        save_workflow_request = GriptapeNodes.handle_request(SaveWorkflowRequest(file_name=request.requested_name))
 
-        if isinstance(save_scene_request, SaveSceneResultFailure):
+        if isinstance(save_workflow_request, SaveWorkflowResultFailure):
             details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to save."
             logger.error(details)
             return RenameWorkflowResultFailure()
@@ -2693,7 +2693,7 @@ class WorkflowManager:
 
         return LoadWorkflowMetadataResultSuccess(metadata=workflow_metadata)
 
-    def on_save_scene_request(self, request: SaveSceneRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (need lots of branches to cover negative cases)
+    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (need lots of branches to cover negative cases)
         obj_manager = GriptapeNodes.get_instance()._object_manager
         node_manager = GriptapeNodes.get_instance()._node_manager
         config_manager = GriptapeNodes.get_instance()._config_manager
@@ -2715,18 +2715,18 @@ class WorkflowManager:
         engine_version_request = GetEngineVersionRequest()
         engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
         if not engine_version_result.succeeded():
-            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version."
+            details = f"Attempted to save workflow '{relative_file_path}', but failed getting the engine version."
             logger.error(details)
-            return SaveSceneResultFailure()
+            return SaveWorkflowResultFailure()
         try:
             engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
             engine_version = (
                 f"{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
             )
         except Exception as err:
-            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version: {err}"
+            details = f"Attempted to save workflow '{relative_file_path}', but failed getting the engine version: {err}"
             logger.exception(details)
-            return SaveSceneResultFailure()
+            return SaveWorkflowResultFailure()
 
         try:
             with file_path.open("w") as file:
@@ -2749,9 +2749,9 @@ class WorkflowManager:
                     try:
                         handle_parameter_creation_saving(file, node, flow_name)
                     except Exception as e:
-                        details = f"Failed to save scene because failed to save parameter creation for node '{node.name}'. Error: {e}"
+                        details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
                         logger.exception(details)
-                        return SaveSceneResultFailure()
+                        return SaveWorkflowResultFailure()
 
                     # See if this node uses a library we need to know about.
                     library_used = node.metadata["library"]
@@ -2761,16 +2761,16 @@ class WorkflowManager:
                         library_metadata_request
                     )
                     if not library_metadata_result.succeeded():
-                        details = f"Attempted to save scene '{relative_file_path}', but failed to get library metadata for library '{library_used}'."
+                        details = f"Attempted to save workflow '{relative_file_path}', but failed to get library metadata for library '{library_used}'."
                         logger.error(details)
-                        return SaveSceneResultFailure()
+                        return SaveWorkflowResultFailure()
                     try:
                         library_metadata_success = cast("GetLibraryMetadataResultSuccess", library_metadata_result)
                         library_version = library_metadata_success.metadata["library_version"]
                     except Exception as err:
-                        details = f"Attempted to save scene '{relative_file_path}', but failed to get library version from metadata for library '{library_used}': {err}."
+                        details = f"Attempted to save workflow '{relative_file_path}', but failed to get library version from metadata for library '{library_used}': {err}."
                         logger.exception(details)
-                        return SaveSceneResultFailure()
+                        return SaveWorkflowResultFailure()
                     library_and_version = LibraryNameAndVersion(
                         library_name=library_used, library_version=library_version
                     )
@@ -2798,9 +2798,9 @@ class WorkflowManager:
                     toml_doc["tool"] = tomlkit.table()
                     toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
                 except Exception as err:
-                    details = f"Attempted to save scene '{relative_file_path}', but failed to get metadata into TOML format: {err}."
+                    details = f"Attempted to save workflow '{relative_file_path}', but failed to get metadata into TOML format: {err}."
                     logger.exception(details)
-                    return SaveSceneResultFailure()
+                    return SaveWorkflowResultFailure()
 
                 # Format the metadata block with comment markers for each line
                 toml_lines = tomlkit.dumps(toml_doc).split("\n")
@@ -2816,16 +2816,16 @@ class WorkflowManager:
 
                 file.write(metadata_block)
         except Exception as e:
-            details = f"Failed to save scene, exception: {e}"
+            details = f"Failed to save workflow, exception: {e}"
             logger.exception(details)
-            return SaveSceneResultFailure()
+            return SaveWorkflowResultFailure()
 
-        # save the created scene to a personal json file
+        # save the created workflow to a personal json file
         registered_workflows = WorkflowRegistry.list_workflows()
         if file_name not in registered_workflows:
             config_manager.save_user_workflow_json(relative_file_path)
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
-        return SaveSceneResultSuccess(file_path=str(file_path))
+        return SaveWorkflowResultSuccess(file_path=str(file_path))
 
 
 def create_flows_in_order(flow_name, flow_manager, created_flows, file) -> list | None:
