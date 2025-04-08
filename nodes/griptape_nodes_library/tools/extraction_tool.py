@@ -1,15 +1,15 @@
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.engines import CsvExtractionEngine, JsonExtractionEngine
 from griptape.rules import Rule
-from griptape.tools import ExtractionTool
+from griptape.tools import ExtractionTool as GtExtractionTool
 
-from griptape_nodes_library.tools.base_tool import BaseToolNode
+from griptape_nodes_library.tools.base_tool import BaseTool
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 
 
-class ExtractionToolNode(BaseToolNode):
+class ExtractionTool(BaseTool):
     def process(self) -> None:
         prompt_driver = self.parameter_values.get("prompt_driver", None)
         extraction_type = self.parameter_values.get("extraction_type", "json")
@@ -32,7 +32,7 @@ class ExtractionToolNode(BaseToolNode):
 
         # Create the tool with parameters
         params: dict = {"extraction_engine": engine}
-        tool = ExtractionTool(**params, rules=[Rule("Raw output please")])
+        tool = GtExtractionTool(**params, rules=[Rule("Raw output please")])
 
         # Set the output
         self.parameter_output_values["tool"] = tool

@@ -175,6 +175,14 @@ cython_debug/
 griptape_nodes_user_config.json
 griptape_nodes_config.json
 
+# Griptape Nodes
+GriptapeNodes/
+
 # MacOS
 .DS_Store
 
+# VSCode Settings
+.vscode/settings.json
+
+# Generated Output
+request_payload_schemas.json

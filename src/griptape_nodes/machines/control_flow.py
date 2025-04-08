@@ -1,6 +1,7 @@
 # Control flow machine
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from griptape.events import EventBus
@@ -19,6 +20,8 @@ from griptape_nodes.retained_mode.events.execution_events import (
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.flow import ControlFlow
+
+logger = logging.getLogger("griptape_nodes")
 
 
 # This is the control flow context. Owns the Resolution Machine
@@ -51,8 +54,7 @@ class ResolveNodeState(State):
                 wrapped_event=ExecutionEvent(payload=CurrentControlNodeEvent(node_name=context.current_node.name))
             )
         )
-        # Print statement for retained mode
-        print(f"Resolving {context.current_node.name}")
+        logger.info("Resolving %s", context.current_node.name)
         if not context.paused:
             # Call the update. Otherwise wait
             return ResolveNodeState
@@ -123,7 +125,7 @@ class CompleteState(State):
                 )
             )
         )
-        print("Flow is complete.")
+        logger.info("Flow is complete.")
         return None
 
     @staticmethod

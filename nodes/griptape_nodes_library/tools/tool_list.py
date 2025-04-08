@@ -4,10 +4,10 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
 )
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import DataNode
 
 
-class ToolListNode(ControlNode):
+class ToolList(DataNode):
     """Combine tools to give an agent a more complex set of tools."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
@@ -16,18 +16,45 @@ class ToolListNode(ControlNode):
         # Add a parameter for a list of tools
         self.add_parameter(
             Parameter(
-                name="tools",
-                input_types=["list[Tool]"],
+                name="tool_1",
+                input_types=["Tool"],
                 allowed_modes={ParameterMode.INPUT},
                 default_value=[],
-                tooltip="List of tools to combine",
+                tooltip="Tool to add to the list",
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="tool_2",
+                input_types=["Tool"],
+                allowed_modes={ParameterMode.INPUT},
+                default_value=[],
+                tooltip="Tool to add to the list",
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="tool_3",
+                input_types=["Tool"],
+                allowed_modes={ParameterMode.INPUT},
+                default_value=[],
+                tooltip="Tool to add to the list",
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="tool_4",
+                input_types=["Tool"],
+                allowed_modes={ParameterMode.INPUT},
+                default_value=[],
+                tooltip="Tool to add to the list",
             )
         )
 
         # Add output parameter for the combined tool list
         self.add_parameter(
             Parameter(
-                name="tool_list",
+                name="tools",
                 output_type="list[Tool]",
                 allowed_modes={ParameterMode.OUTPUT},
                 default_value=[],
@@ -38,22 +65,13 @@ class ToolListNode(ControlNode):
     def process(self) -> None:
         """Process the node by combining tools into a list."""
         # Get the input tools
-        input_tools = self.parameter_values.get("tools", [])
+        tool_1 = self.parameter_values.get("tool_1", None)
+        tool_2 = self.parameter_values.get("tool_2", None)
+        tool_3 = self.parameter_values.get("tool_3", None)
+        tool_4 = self.parameter_values.get("tool_4", None)
 
-        # Ensure it's a list
-        if not isinstance(input_tools, list):
-            input_tools = [input_tools] if input_tools is not None else []
-
-        # Flatten nested lists if needed (in case tools come in as lists)
-        tool_list = []
-        for item in input_tools:
-            if isinstance(item, list):
-                # Add each tool from the list
-                tool_list.extend(item)
-            elif item is not None:
-                # Add single tool
-                tool_list.append(item)
+        # Combine the tools into a list
+        tools = [tool for tool in [tool_1, tool_2, tool_3, tool_4] if tool is not None]
 
         # Set output values
-        self.parameter_output_values["tool_list"] = tool_list
-        self.parameter_values["tool_list"] = tool_list  # For get_value compatibility
+        self.parameter_output_values["tools"] = tools
