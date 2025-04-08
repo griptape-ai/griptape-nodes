@@ -1,6 +1,6 @@
 if (Get-Process griptape-nodes -ErrorAction SilentlyContinue) {
     Write-Host "Error: an instance of 'griptape-nodes' is currently running. Please close it before continuing."
-    return
+    exit
 }
 
 Write-Host "`nInstalling uv...`n"
@@ -8,14 +8,14 @@ try {
     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 } catch {
     Write-Host "Failed to install uv with the default method. You may need to install it manually."
-    return 
+    exit 
 }
 
 # Verify uv is on the user's PATH
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Write-Host "Error: Griptape Nodes dependency 'uv' was installed, but requires the terminal to be restarted to be run."
     Write-Host "Please close this terminal and open a new one, then run the install command you performed earlier."
-    return
+    exit
 }
 
 Write-Host "`nInstalling Griptape Nodes Engine...`n"
