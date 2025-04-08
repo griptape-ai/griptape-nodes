@@ -73,6 +73,7 @@ class BaseAgent(ControlNode):
                 ui_options={"multiline": True, "placeholder_text": "Agent response"},
             )
         self.add_node_element(response_group)
+
     def validate_node(self) -> list[Exception] | None:
         # All env values are stored in the SecretsManager. Check if they exist using this method.
         exceptions = []

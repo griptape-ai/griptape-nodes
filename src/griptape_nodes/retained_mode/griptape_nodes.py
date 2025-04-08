@@ -2230,7 +2230,7 @@ class NodeManager:
             result = GetAllNodeInfoResultFailure()
             return result
         try:
-            get_element_details_successs = cast("GetNodeElementDetailsResultSuccess", get_node_elements_result)
+            get_element_details_success = cast("GetNodeElementDetailsResultSuccess", get_node_elements_result)
         except Exception as err:
             details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
             logger.exception(details)
@@ -2238,7 +2238,7 @@ class NodeManager:
             return result
 
         # this will return the node element and the value
-        element_details = get_element_details_successs.element_details
+        element_details = get_element_details_success.element_details
         if "element_id_to_value" in element_details:
             element_id_to_value = element_details["element_id_to_value"].copy()
             del element_details["element_id_to_value"]
