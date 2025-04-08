@@ -1905,7 +1905,7 @@ class NodeManager:
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
             details = f"Attempted to get element details for Node '{request.node_name}', but no such Node was found."
-            GriptapeNodes.get_logger().error(details)
+            logger.error(details)
 
             result = GetNodeElementDetailsResultFailure()
             return result
@@ -1918,7 +1918,7 @@ class NodeManager:
             element = node.findroot_ui_element.find_element_by_id(request.specific_element_id)
             if element is None:
                 details = f"Attempted to get element details for element '{request.specific_element_id}' from Node '{request.node_name}'. Failed because it didn't have an element with that ID on it."
-                GriptapeNodes.get_logger().error(details)
+                logger.error(details)
 
                 result = GetNodeElementDetailsResultFailure()
                 return result
@@ -1935,7 +1935,7 @@ class NodeManager:
         if param_to_value:
             element_details["element_id_to_value"] = param_to_value
         details = f"Successfully got element details for Node '{request.node_name}'."
-        GriptapeNodes.get_logger().debug(details)
+        logger.debug(details)
         result = GetNodeElementDetailsResultSuccess(element_details=element_details)
         return result
 
