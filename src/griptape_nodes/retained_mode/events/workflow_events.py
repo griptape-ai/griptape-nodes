@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from griptape_nodes.node_library.script_registry import ScriptMetadata
+from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -11,129 +11,129 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptFromScratchRequest(RequestPayload):
+class RunWorkflowFromScratchRequest(RequestPayload):
     file_path: str
 
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptFromScratchResultSuccess(ResultPayloadSuccess):
+class RunWorkflowFromScratchResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptFromScratchResultFailure(ResultPayloadFailure):
+class RunWorkflowFromScratchResultFailure(ResultPayloadFailure):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptWithCurrentStateRequest(RequestPayload):
+class RunWorkflowWithCurrentStateRequest(RequestPayload):
     file_path: str
 
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptWithCurrentStateResultSuccess(ResultPayloadSuccess):
+class RunWorkflowWithCurrentStateResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptWithCurrentStateResultFailure(ResultPayloadFailure):
+class RunWorkflowWithCurrentStateResultFailure(ResultPayloadFailure):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptFromRegistryRequest(RequestPayload):
-    script_name: str
+class RunWorkflowFromRegistryRequest(RequestPayload):
+    workflow_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptFromRegistryResultSuccess(ResultPayloadSuccess):
+class RunWorkflowFromRegistryResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class RunScriptFromRegistryResultFailure(ResultPayloadFailure):
+class RunWorkflowFromRegistryResultFailure(ResultPayloadFailure):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class RegisterScriptRequest(RequestPayload):
-    metadata: ScriptMetadata
+class RegisterWorkflowRequest(RequestPayload):
+    metadata: WorkflowMetadata
     file_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class RegisterScriptResultSuccess(ResultPayloadSuccess):
-    script_name: str
+class RegisterWorkflowResultSuccess(ResultPayloadSuccess):
+    workflow_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class RegisterScriptResultFailure(ResultPayloadFailure):
+class RegisterWorkflowResultFailure(ResultPayloadFailure):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class ListAllScriptsRequest(RequestPayload):
+class ListAllWorkflowsRequest(RequestPayload):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class ListAllScriptsResultSuccess(ResultPayloadSuccess):
-    scripts: dict
+class ListAllWorkflowsResultSuccess(ResultPayloadSuccess):
+    workflows: dict
 
 
 @dataclass
 @PayloadRegistry.register
-class ListAllScriptsResultFailure(ResultPayloadFailure):
+class ListAllWorkflowsResultFailure(ResultPayloadFailure):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class DeleteScriptRequest(RequestPayload):
+class DeleteWorkflowRequest(RequestPayload):
     name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class DeleteScriptResultSuccess(ResultPayloadSuccess):
+class DeleteWorkflowResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class DeleteScriptResultFailure(ResultPayloadFailure):
+class DeleteWorkflowResultFailure(ResultPayloadFailure):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class RenameScriptRequest(RequestPayload):
-    script_name: str
+class RenameWorkflowRequest(RequestPayload):
+    workflow_name: str
     requested_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class RenameScriptResultSuccess(ResultPayloadSuccess):
+class RenameWorkflowResultSuccess(ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class RenameScriptResultFailure(ResultPayloadFailure):
+class RenameWorkflowResultFailure(ResultPayloadFailure):
     pass
 
 
@@ -157,17 +157,17 @@ class SaveSceneResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class LoadScriptMetadata(RequestPayload):
+class LoadWorkflowMetadata(RequestPayload):
     file_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class LoadScriptMetadataResultSuccess(ResultPayloadSuccess):
-    metadata: ScriptMetadata
+class LoadWorkflowMetadataResultSuccess(ResultPayloadSuccess):
+    metadata: WorkflowMetadata
 
 
 @dataclass
 @PayloadRegistry.register
-class LoadScriptMetadataResultFailure(ResultPayloadFailure):
+class LoadWorkflowMetadataResultFailure(ResultPayloadFailure):
     pass

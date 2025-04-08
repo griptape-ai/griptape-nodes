@@ -21,7 +21,7 @@ from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry
-from griptape_nodes.node_library.script_registry import LibraryNameAndVersion, ScriptMetadata, ScriptRegistry
+from griptape_nodes.node_library.workflow_registry import LibraryNameAndVersion, WorkflowMetadata, WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
     AppStartSessionRequest,
@@ -176,35 +176,6 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueResultFailure,
     SetParameterValueResultSuccess,
 )
-from griptape_nodes.retained_mode.events.script_events import (
-    DeleteScriptRequest,
-    DeleteScriptResultFailure,
-    DeleteScriptResultSuccess,
-    ListAllScriptsRequest,
-    ListAllScriptsResultFailure,
-    ListAllScriptsResultSuccess,
-    LoadScriptMetadata,
-    LoadScriptMetadataResultFailure,
-    LoadScriptMetadataResultSuccess,
-    RegisterScriptRequest,
-    RegisterScriptResultFailure,
-    RegisterScriptResultSuccess,
-    RenameScriptRequest,
-    RenameScriptResultFailure,
-    RenameScriptResultSuccess,
-    RunScriptFromRegistryRequest,
-    RunScriptFromRegistryResultFailure,
-    RunScriptFromRegistryResultSuccess,
-    RunScriptFromScratchRequest,
-    RunScriptFromScratchResultFailure,
-    RunScriptFromScratchResultSuccess,
-    RunScriptWithCurrentStateRequest,
-    RunScriptWithCurrentStateResultFailure,
-    RunScriptWithCurrentStateResultSuccess,
-    SaveSceneRequest,
-    SaveSceneResultFailure,
-    SaveSceneResultSuccess,
-)
 from griptape_nodes.retained_mode.events.validation_events import (
     ValidateFlowDependenciesRequest,
     ValidateFlowDependenciesResultFailure,
@@ -213,13 +184,42 @@ from griptape_nodes.retained_mode.events.validation_events import (
     ValidateNodeDependenciesResultFailure,
     ValidateNodeDependenciesResultSuccess,
 )
+from griptape_nodes.retained_mode.events.workflow_events import (
+    DeleteWorkflowRequest,
+    DeleteWorkflowResultFailure,
+    DeleteWorkflowResultSuccess,
+    ListAllWorkflowsRequest,
+    ListAllWorkflowsResultFailure,
+    ListAllWorkflowsResultSuccess,
+    LoadWorkflowMetadata,
+    LoadWorkflowMetadataResultFailure,
+    LoadWorkflowMetadataResultSuccess,
+    RegisterWorkflowRequest,
+    RegisterWorkflowResultFailure,
+    RegisterWorkflowResultSuccess,
+    RenameWorkflowRequest,
+    RenameWorkflowResultFailure,
+    RenameWorkflowResultSuccess,
+    RunWorkflowFromRegistryRequest,
+    RunWorkflowFromRegistryResultFailure,
+    RunWorkflowFromRegistryResultSuccess,
+    RunWorkflowFromScratchRequest,
+    RunWorkflowFromScratchResultFailure,
+    RunWorkflowFromScratchResultSuccess,
+    RunWorkflowWithCurrentStateRequest,
+    RunWorkflowWithCurrentStateResultFailure,
+    RunWorkflowWithCurrentStateResultSuccess,
+    SaveSceneRequest,
+    SaveSceneResultFailure,
+    SaveSceneResultSuccess,
+)
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.log_manager import LogManager
 from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-from griptape_nodes.retained_mode.managers.settings import ScriptSettingsDetail
+from griptape_nodes.retained_mode.managers.settings import WorkflowSettingsDetail
 
 load_dotenv()
 
@@ -251,7 +251,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._node_manager = NodeManager(self._event_manager)
             self._flow_manager = FlowManager(self._event_manager)
             self._library_manager = LibraryManager(self._event_manager)
-            self._script_manager = ScriptManager(self._event_manager)
+            self._workflow_manager = WorkflowManager(self._event_manager)
             self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
             self._operation_depth_manager = OperationDepthManager(self._config_manager)
 
@@ -309,8 +309,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._node_manager
 
     @classmethod
-    def ScriptManager(cls) -> ScriptManager:
-        return GriptapeNodes.get_instance()._script_manager
+    def WorkflowManager(cls) -> WorkflowManager:
+        return GriptapeNodes.get_instance()._workflow_manager
 
     @classmethod
     def ArbitraryCodeExecManager(cls) -> ArbitraryCodeExecManager:
@@ -2467,70 +2467,70 @@ class NodeManager:
         )
 
 
-class ScriptManager:
-    SCRIPT_METADATA_HEADER: ClassVar[str] = "script"
+class WorkflowManager:
+    WORKFLOW_METADATA_HEADER: ClassVar[str] = "script"
 
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(
-            RunScriptFromScratchRequest, self.on_run_script_from_scratch_request
+            RunWorkflowFromScratchRequest, self.on_run_workflow_from_scratch_request
         )
         event_manager.assign_manager_to_request_type(
-            RunScriptWithCurrentStateRequest,
-            self.on_run_script_with_current_state_request,
+            RunWorkflowWithCurrentStateRequest,
+            self.on_run_workflow_with_current_state_request,
         )
         event_manager.assign_manager_to_request_type(
-            RunScriptFromRegistryRequest,
-            self.on_run_script_from_registry_request,
+            RunWorkflowFromRegistryRequest,
+            self.on_run_workflow_from_registry_request,
         )
         event_manager.assign_manager_to_request_type(
-            RegisterScriptRequest,
-            self.on_register_script_request,
+            RegisterWorkflowRequest,
+            self.on_register_workflow_request,
         )
         event_manager.assign_manager_to_request_type(
-            ListAllScriptsRequest,
-            self.on_list_all_scripts_request,
+            ListAllWorkflowsRequest,
+            self.on_list_all_workflows_request,
         )
         event_manager.assign_manager_to_request_type(
-            DeleteScriptRequest,
-            self.on_delete_scripts_request,
+            DeleteWorkflowRequest,
+            self.on_delete_workflows_request,
         )
         event_manager.assign_manager_to_request_type(
-            RenameScriptRequest,
-            self.on_rename_script_request,
+            RenameWorkflowRequest,
+            self.on_rename_workflow_request,
         )
 
         event_manager.assign_manager_to_request_type(
             SaveSceneRequest,
             self.on_save_scene_request,
         )
-        event_manager.assign_manager_to_request_type(LoadScriptMetadata, self.on_load_script_metadata_request)
+        event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
 
-    def run_script(self, relative_file_path: str) -> tuple[bool, str]:
+    def run_workflow(self, relative_file_path: str) -> tuple[bool, str]:
         relative_file_path_obj = Path(relative_file_path)
         if relative_file_path_obj.is_absolute():
             complete_file_path = relative_file_path_obj
         else:
-            complete_file_path = ScriptRegistry.get_complete_file_path(relative_file_path=relative_file_path)
+            complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         try:
             with Path(complete_file_path).open() as file:
-                script_content = file.read()
-            exec(script_content)  # noqa: S102
+                workflow_content = file.read()
+            exec(workflow_content)  # noqa: S102
         except Exception as e:
             return (
                 False,
-                f"Failed to run script on path '{complete_file_path}'. Exception: {e}",
+                f"Failed to run workflow on path '{complete_file_path}'. Exception: {e}",
             )
-        return True, f"Succeeded in running script on path '{complete_file_path}'."
+        return True, f"Succeeded in running workflow on path '{complete_file_path}'."
 
-    def on_run_script_from_scratch_request(self, request: RunScriptFromScratchRequest) -> ResultPayload:
+    def on_run_workflow_from_scratch_request(self, request: RunWorkflowFromScratchRequest) -> ResultPayload:
         # Check if file path exists
 
         relative_file_path = request.file_path
-        complete_file_path = ScriptRegistry.get_complete_file_path(relative_file_path=relative_file_path)
+        complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         if not Path(complete_file_path).is_file():
             details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
             logger.error(details)
-            return RunScriptFromScratchResultFailure()
+            return RunWorkflowFromScratchResultFailure()
 
         try:
             # Clear the existing flows
@@ -2538,129 +2538,129 @@ class ScriptManager:
         except Exception as e:
             details = f"Failed to clear the existing context when trying to run '{complete_file_path}'. Exception: {e}"
             logger.exception(details)
-            return RunScriptFromScratchResultFailure()
+            return RunWorkflowFromScratchResultFailure()
 
         # Run the file, goddamn it
-        success, details = self.run_script(relative_file_path=relative_file_path)
+        success, details = self.run_workflow(relative_file_path=relative_file_path)
         if success:
             logger.debug(details)
-            return RunScriptFromScratchResultSuccess()
+            return RunWorkflowFromScratchResultSuccess()
 
         logger.error(details)
-        return RunScriptFromScratchResultFailure()
+        return RunWorkflowFromScratchResultFailure()
 
-    def on_run_script_with_current_state_request(self, request: RunScriptWithCurrentStateRequest) -> ResultPayload:
+    def on_run_workflow_with_current_state_request(self, request: RunWorkflowWithCurrentStateRequest) -> ResultPayload:
         relative_file_path = request.file_path
-        complete_file_path = ScriptRegistry.get_complete_file_path(relative_file_path=relative_file_path)
+        complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         if not Path(complete_file_path).is_file():
             details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
             logger.error(details)
-            return RunScriptWithCurrentStateResultFailure()
-        success, details = self.run_script(relative_file_path=relative_file_path)
+            return RunWorkflowWithCurrentStateResultFailure()
+        success, details = self.run_workflow(relative_file_path=relative_file_path)
 
         if success:
             logger.debug(details)
-            return RunScriptWithCurrentStateResultSuccess()
+            return RunWorkflowWithCurrentStateResultSuccess()
         logger.error(details)
-        return RunScriptWithCurrentStateResultFailure()
+        return RunWorkflowWithCurrentStateResultFailure()
 
-    def on_run_script_from_registry_request(self, request: RunScriptFromRegistryRequest) -> ResultPayload:
-        # get script from registry
+    def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
+        # get workflow from registry
         try:
-            script = ScriptRegistry.get_script_by_name(request.script_name)
+            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
         except KeyError:
-            logger.exception("Failed to get script from registry.")
-            return RunScriptFromRegistryResultFailure()
-        # get file_path from script
-        relative_file_path = script.file_path
+            logger.exception("Failed to get workflow from registry.")
+            return RunWorkflowFromRegistryResultFailure()
+        # get file_path from workflow
+        relative_file_path = workflow.file_path
         # run file
-        success, details = self.run_script(relative_file_path=relative_file_path)
+        success, details = self.run_workflow(relative_file_path=relative_file_path)
 
         if success:
             logger.debug(details)
-            return RunScriptFromRegistryResultSuccess()
+            return RunWorkflowFromRegistryResultSuccess()
 
         logger.error(details)
-        return RunScriptFromRegistryResultFailure()
+        return RunWorkflowFromRegistryResultFailure()
 
-    def on_register_script_request(self, request: RegisterScriptRequest) -> ResultPayload:
+    def on_register_workflow_request(self, request: RegisterWorkflowRequest) -> ResultPayload:
         try:
-            script = ScriptRegistry.generate_new_script(metadata=request.metadata, file_path=request.file_name)
+            workflow = WorkflowRegistry.generate_new_workflow(metadata=request.metadata, file_path=request.file_name)
         except Exception as e:
-            details = f"Failed to register script with name '{request.metadata.name}'. Error: {e}"
+            details = f"Failed to register workflow with name '{request.metadata.name}'. Error: {e}"
             logger.exception(details)
-            return RegisterScriptResultFailure()
-        return RegisterScriptResultSuccess(script_name=script.metadata.name)
+            return RegisterWorkflowResultFailure()
+        return RegisterWorkflowResultSuccess(workflow_name=workflow.metadata.name)
 
-    def on_list_all_scripts_request(self, _request: ListAllScriptsRequest) -> ResultPayload:
+    def on_list_all_workflows_request(self, _request: ListAllWorkflowsRequest) -> ResultPayload:
         try:
-            scripts = ScriptRegistry.list_scripts()
+            workflows = WorkflowRegistry.list_workflows()
         except Exception:
-            details = "Failed to list all scripts."
+            details = "Failed to list all workflows."
             logger.exception(details)
-            return ListAllScriptsResultFailure()
-        return ListAllScriptsResultSuccess(scripts=scripts)
+            return ListAllWorkflowsResultFailure()
+        return ListAllWorkflowsResultSuccess(workflows=workflows)
 
-    def on_delete_scripts_request(self, request: DeleteScriptRequest) -> ResultPayload:
+    def on_delete_workflows_request(self, request: DeleteWorkflowRequest) -> ResultPayload:
         try:
-            script = ScriptRegistry.delete_script_by_name(request.name)
+            workflow = WorkflowRegistry.delete_workflow_by_name(request.name)
         except Exception as e:
-            details = f"Failed to remove script from registry with name '{request.name}'. Exception: {e}"
+            details = f"Failed to remove workflow from registry with name '{request.name}'. Exception: {e}"
             logger.exception(details)
-            return DeleteScriptResultFailure()
+            return DeleteWorkflowResultFailure()
         config_manager = GriptapeNodes.get_instance()._config_manager
         try:
-            config_manager.delete_user_script(script.__dict__)
+            config_manager.delete_user_workflow(workflow.__dict__)
         except Exception as e:
-            details = f"Failed to remove script from user config with name '{request.name}'. Exception: {e}"
+            details = f"Failed to remove workflow from user config with name '{request.name}'. Exception: {e}"
             logger.exception(details)
-            return DeleteScriptResultFailure()
+            return DeleteWorkflowResultFailure()
         # delete the actual file
-        full_path = config_manager.workspace_path.joinpath(script.file_path)
+        full_path = config_manager.workspace_path.joinpath(workflow.file_path)
         try:
             full_path.unlink()
         except Exception as e:
-            details = f"Failed to delete script file with path '{script.file_path}'. Exception: {e}"
+            details = f"Failed to delete workflow file with path '{workflow.file_path}'. Exception: {e}"
             logger.exception(details)
-            return DeleteScriptResultFailure()
-        return DeleteScriptResultSuccess()
+            return DeleteWorkflowResultFailure()
+        return DeleteWorkflowResultSuccess()
 
-    def on_rename_script_request(self, request: RenameScriptRequest) -> ResultPayload:
+    def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
         save_scene_request = GriptapeNodes.handle_request(SaveSceneRequest(file_name=request.requested_name))
 
         if isinstance(save_scene_request, SaveSceneResultFailure):
-            details = f"Attempted to rename script '{request.script_name}' to '{request.requested_name}'. Failed while attempting to save."
+            details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to save."
             logger.error(details)
-            return RenameScriptResultFailure()
+            return RenameWorkflowResultFailure()
 
-        delete_script_result = GriptapeNodes.handle_request(DeleteScriptRequest(name=request.script_name))
-        if isinstance(delete_script_result, DeleteScriptResultFailure):
-            details = f"Attempted to rename script '{request.script_name}' to '{request.requested_name}'. Failed while attempting to remove the original file name from the registry."
+        delete_workflow_result = GriptapeNodes.handle_request(DeleteWorkflowRequest(name=request.workflow_name))
+        if isinstance(delete_workflow_result, DeleteWorkflowResultFailure):
+            details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to remove the original file name from the registry."
             logger.error(details)
-            return RenameScriptResultFailure()
+            return RenameWorkflowResultFailure()
 
-        return RenameScriptResultSuccess()
+        return RenameWorkflowResultSuccess()
 
-    def on_load_script_metadata_request(self, request: LoadScriptMetadata) -> ResultPayload:
+    def on_load_workflow_metadata_request(self, request: LoadWorkflowMetadata) -> ResultPayload:
         # Let us go into the darkness.
         complete_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(request.file_name)
         if not Path(complete_file_path).is_file():
-            details = f"Attempted to load script metadata for a file at '{complete_file_path}. Failed because no file could be found at that path."
+            details = f"Attempted to load workflow metadata for a file at '{complete_file_path}. Failed because no file could be found at that path."
             logger.error(details)
-            return LoadScriptMetadataResultFailure()
+            return LoadWorkflowMetadataResultFailure()
 
         # Open 'er up.
         with complete_file_path.open("r") as file:
-            script_content = file.read()
+            workflow_content = file.read()
 
         # Find the metadata block.
         regex = r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
-        block_name = "script"
-        matches = list(filter(lambda m: m.group("type") == block_name, re.finditer(regex, script_content)))
+        block_name = "workflow"
+        matches = list(filter(lambda m: m.group("type") == block_name, re.finditer(regex, workflow_content)))
         if len(matches) != 1:
-            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed as it had {len(matches)} sections titled '{block_name}', and we expect exactly 1 such section."
+            details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed as it had {len(matches)} sections titled '{block_name}', and we expect exactly 1 such section."
             logger.error(details)
-            return LoadScriptMetadataResultFailure()
+            return LoadWorkflowMetadataResultFailure()
 
         # Now attempt to parse out the metadata section, stripped of comment prefixes.
         metadata_content_toml = "".join(
@@ -2671,27 +2671,27 @@ class ScriptManager:
         try:
             toml_doc = tomlkit.parse(metadata_content_toml)
         except Exception as err:
-            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed because the metadata was not valid TOML: {err}"
+            details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed because the metadata was not valid TOML: {err}"
             logger.exception(details)
-            return LoadScriptMetadataResultFailure()
+            return LoadWorkflowMetadataResultFailure()
 
         try:
             griptape_nodes_tool_section = toml_doc["tool"]["griptape-nodes"]  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
         except Exception as err:
-            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed because the '[tools.griptape-nodes]' section could not be found: {err}"
+            details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed because the '[tools.griptape-nodes]' section could not be found: {err}"
             logger.exception(details)
-            return LoadScriptMetadataResultFailure()
+            return LoadWorkflowMetadataResultFailure()
 
         try:
             # Is it kosher?
-            script_metadata = ScriptMetadata.model_validate(griptape_nodes_tool_section)
+            workflow_metadata = WorkflowMetadata.model_validate(griptape_nodes_tool_section)
         except Exception as err:
             # No, it is haram.
-            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed because the metadata did not match the requisite schema with error: {err}"
+            details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed because the metadata did not match the requisite schema with error: {err}"
             logger.exception(details)
-            return LoadScriptMetadataResultFailure()
+            return LoadWorkflowMetadataResultFailure()
 
-        return LoadScriptMetadataResultSuccess(metadata=script_metadata)
+        return LoadWorkflowMetadataResultSuccess(metadata=workflow_metadata)
 
     def on_save_scene_request(self, request: SaveSceneRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (need lots of branches to cover negative cases)
         obj_manager = GriptapeNodes.get_instance()._object_manager
@@ -2733,7 +2733,7 @@ class ScriptManager:
                 # Now the critical import.
                 file.write("from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes\n")
                 # Write all flows to a file, get back the strings for connections
-                connection_request_scripts = handle_flow_saving(file, obj_manager, created_flows)
+                connection_request_workflows = handle_flow_saving(file, obj_manager, created_flows)
                 # Now all of the flows have been created.
                 for node in obj_manager.get_filtered_subset(type=BaseNode).values():
                     flow_name = node_manager.get_node_parent_flow_by_name(node.name)
@@ -2776,12 +2776,12 @@ class ScriptManager:
                     )
                     node_libraries_used.add(library_and_version)
                 # Now all nodes AND parameters have been created
-                file.write(connection_request_scripts)
+                file.write(connection_request_workflows)
 
-                # Now that we have the info about what's actually being used, save out the script metadata.
-                script_metadata = ScriptMetadata(
+                # Now that we have the info about what's actually being used, save out the workflow metadata.
+                workflow_metadata = WorkflowMetadata(
                     name=str(file_name),
-                    schema_version=ScriptMetadata.LATEST_SCHEMA_VERSION,
+                    schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
                     engine_version_created_with=engine_version,
                     node_libraries_referenced=list(node_libraries_used),
                 )
@@ -2790,7 +2790,7 @@ class ScriptManager:
                     toml_doc = tomlkit.document()
                     toml_doc.add("dependencies", tomlkit.item([]))
                     griptape_tool_table = tomlkit.table()
-                    metadata_dict = script_metadata.model_dump()
+                    metadata_dict = workflow_metadata.model_dump()
                     for key, value in metadata_dict.items():
                         # Strip out the Nones since TOML doesn't like those.
                         if value is not None:
@@ -2807,7 +2807,7 @@ class ScriptManager:
                 commented_toml_lines = ["# " + line for line in toml_lines]
 
                 # Create the complete metadata block
-                header = f"# /// {ScriptManager.SCRIPT_METADATA_HEADER}"
+                header = f"# /// {WorkflowManager.WORKFLOW_METADATA_HEADER}"
                 metadata_lines = [header]
                 metadata_lines.extend(commented_toml_lines)
                 metadata_lines.append("# ///")
@@ -2821,10 +2821,10 @@ class ScriptManager:
             return SaveSceneResultFailure()
 
         # save the created scene to a personal json file
-        registered_scripts = ScriptRegistry.list_scripts()
-        if file_name not in registered_scripts:
-            config_manager.save_user_script_json(relative_file_path)
-            ScriptRegistry.generate_new_script(metadata=script_metadata, file_path=relative_file_path)
+        registered_workflows = WorkflowRegistry.list_workflows()
+        if file_name not in registered_workflows:
+            config_manager.save_user_workflow_json(relative_file_path)
+            WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
         return SaveSceneResultSuccess(file_path=str(file_path))
 
 
@@ -2853,7 +2853,7 @@ def create_flows_in_order(flow_name, flow_manager, created_flows, file) -> list 
 
 def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: list) -> str:
     flow_manager = GriptapeNodes.get_instance()._flow_manager
-    connection_request_scripts = ""
+    connection_request_workflows = ""
     for flow_name, flow in obj_manager.get_filtered_subset(type=ControlFlow).items():
         create_flows_in_order(flow_name, flow_manager, created_flows, file)
         # While creating flows - let's create all of our connections
@@ -2865,8 +2865,8 @@ def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: 
                 target_parameter_name=connection.target_parameter.name,
             )
             code_string = f"GriptapeNodes().handle_request({creation_request})"
-            connection_request_scripts += code_string + "\n"
-    return connection_request_scripts
+            connection_request_workflows += code_string + "\n"
+    return connection_request_workflows
 
 
 def handle_parameter_creation_saving(file: TextIO, node: BaseNode, flow_name: str) -> None:
@@ -3332,9 +3332,9 @@ class LibraryManager:
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         self._load_libraries_from_config_category(config_category=user_libraries_section, load_as_default_library=False)
 
-        # See if there are script JSONs to load!
-        default_script_section = "app_events.on_app_initialization_complete.scripts_to_register"
-        self._register_scripts_from_config(config_section=default_script_section)
+        # See if there are workflow JSONs to load!
+        default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
+        self._register_workflows_from_config(config_section=default_workflow_section)
 
     def _load_libraries_from_config_category(self, config_category: str, load_as_default_library: bool) -> None:  # noqa: FBT001
         config_mgr = GriptapeNodes().ConfigManager()
@@ -3348,34 +3348,34 @@ class LibraryManager:
                 )
                 GriptapeNodes().handle_request(library_load_request)
 
-    # TODO(griptape): Move to ScriptManager
-    def _register_scripts_from_config(self, config_section: str) -> None:  # noqa: C901, PLR0912 (need lots of branches for error checking)
+    # TODO(griptape): Move to WorkflowManager
+    def _register_workflows_from_config(self, config_section: str) -> None:  # noqa: C901, PLR0912 (need lots of branches for error checking)
         config_mgr = GriptapeNodes().ConfigManager()
-        scripts_to_register = config_mgr.get_config_value(config_section)
+        workflows_to_register = config_mgr.get_config_value(config_section)
         successful_registrations = []
         failed_registrations = []
-        if scripts_to_register is not None:
-            for script_to_register in scripts_to_register:
+        if workflows_to_register is not None:
+            for workflow_to_register in workflows_to_register:
                 try:
-                    script_detail = ScriptSettingsDetail(
-                        file_name=script_to_register["file_name"],
-                        is_griptape_provided=script_to_register["is_griptape_provided"],
+                    workflow_detail = WorkflowSettingsDetail(
+                        file_name=workflow_to_register["file_name"],
+                        is_griptape_provided=workflow_to_register["is_griptape_provided"],
                     )
                 except Exception as err:
-                    err_str = f"Error attempting to get info about script to register '{script_to_register}': {err}. SKIPPING IT."
-                    failed_registrations.append(script_to_register)
+                    err_str = f"Error attempting to get info about workflow to register '{workflow_to_register}': {err}. SKIPPING IT."
+                    failed_registrations.append(workflow_to_register)
                     logger.exception(err_str)
                     continue
 
-                # Adjust path depending on if it's a Griptape-provided script or a user one.
-                if script_detail.is_griptape_provided:
-                    final_file_path = xdg_data_home().joinpath(script_detail.file_name)
+                # Adjust path depending on if it's a Griptape-provided workflow or a user one.
+                if workflow_detail.is_griptape_provided:
+                    final_file_path = xdg_data_home().joinpath(workflow_detail.file_name)
                 else:
-                    final_file_path = config_mgr.workspace_path.joinpath(script_detail.file_name)
+                    final_file_path = config_mgr.workspace_path.joinpath(workflow_detail.file_name)
 
-                # Attempt to extract the metadata out of the script.
-                load_metadata_request = LoadScriptMetadata(file_name=str(final_file_path))
-                load_metadata_result = GriptapeNodes.ScriptManager().on_load_script_metadata_request(
+                # Attempt to extract the metadata out of the workflow.
+                load_metadata_request = LoadWorkflowMetadata(file_name=str(final_file_path))
+                load_metadata_result = GriptapeNodes.WorkflowManager().on_load_workflow_metadata_request(
                     load_metadata_request
                 )
                 if not load_metadata_result.succeeded():
@@ -3384,22 +3384,22 @@ class LibraryManager:
                     continue
 
                 try:
-                    successful_metadata_result = cast("LoadScriptMetadataResultSuccess", load_metadata_result)
+                    successful_metadata_result = cast("LoadWorkflowMetadataResultSuccess", load_metadata_result)
                 except Exception as err:
-                    err_str = f"Error attempting to get info about script to register '{final_file_path}': {err}. SKIPPING IT."
+                    err_str = f"Error attempting to get info about workflow to register '{final_file_path}': {err}. SKIPPING IT."
                     failed_registrations.append(final_file_path)
                     logger.exception(err_str)
                     continue
 
-                script_metadata = successful_metadata_result.metadata
+                workflow_metadata = successful_metadata_result.metadata
 
                 # Register it as a success.
-                script_register_request = RegisterScriptRequest(
-                    metadata=script_metadata, file_name=str(final_file_path)
+                workflow_register_request = RegisterWorkflowRequest(
+                    metadata=workflow_metadata, file_name=str(final_file_path)
                 )
-                register_result = GriptapeNodes().handle_request(script_register_request)
+                register_result = GriptapeNodes().handle_request(workflow_register_request)
 
-                details = f"'{script_metadata.name}' ({final_file_path!s})"
+                details = f"'{workflow_metadata.name}' ({final_file_path!s})"
 
                 if register_result.succeeded():
                     # put this in the good pile
@@ -3409,14 +3409,14 @@ class LibraryManager:
                     failed_registrations.append(details)
 
         if len(successful_registrations) == 0 and len(failed_registrations) == 0:
-            logger.info("No scripts were registered.")
+            logger.info("No workflows were registered.")
         if len(successful_registrations) > 0:
-            details = "Scripts successfully registered:"
+            details = "Workflows successfully registered:"
             for successful_registration in successful_registrations:
                 details = f"{details}\n\t{successful_registration}"
             logger.info(details)
         if len(failed_registrations) > 0:
-            details = "Scripts that FAILED to register:"
+            details = "Workflows that FAILED to register:"
             for failed_registration in failed_registrations:
                 details = f"{details}\n\t{failed_registration}"
             logger.error(details)
