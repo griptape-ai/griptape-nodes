@@ -1,7 +1,7 @@
-from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
+from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver as GtGriptapeCloudPromptDriver
 
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
+from griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriver
 
 DEFAULT_MODEL = "gpt-4o"
 MODELS = ["gpt-4o"]
@@ -10,7 +10,7 @@ SERVICE = "Griptape"
 SUCCESS = 200
 
 
-class GriptapeCloudPromptDriverNode(BasePromptDriverNode):
+class GriptapeCloudPromptDriver(BasePromptDriver):
     """Node for Griptape Cloud Prompt Driver.
 
     This node creates a Griptape Cloud prompt driver and outputs its configuration.
@@ -66,7 +66,7 @@ class GriptapeCloudPromptDriverNode(BasePromptDriverNode):
             kwargs["extra_params"]["top_p"] = top_p
 
         # Create the driver
-        driver = GriptapeCloudPromptDriver(**kwargs)
+        driver = GtGriptapeCloudPromptDriver(**kwargs)
 
         # Set the output
         self.parameter_output_values["prompt_driver"] = driver

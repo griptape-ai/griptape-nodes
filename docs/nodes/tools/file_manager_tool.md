@@ -4,11 +4,11 @@
 
 The `FileManagerToolNode` is a custom node in Griptape that provides a generic implementation for initializing Griptape file manager tools with customizable parameters.
 
-## Subclassing BaseToolNode
+## Subclassing BaseTool
 
 #### What does it mean?
 
-The `FileManagerToolNode` class is a subclass of `BaseToolNode`, inheriting its properties and behavior. This allows us to build upon the existing functionality of `BaseToolNode` while adding our own specific implementation for file manager tools.
+The `FileManagerToolNode` class is a subclass of `BaseTool`, inheriting its properties and behavior. This allows us to build upon the existing functionality of `BaseTool` while adding our own specific implementation for file manager tools.
 
 #### Why would I use it?
 
@@ -21,7 +21,7 @@ Use this node when you want to:
 ## Class Definition
 
 ```python
-class FileManagerToolNode(BaseToolNode):
+class FileManagerToolNode(BaseTool):
     """
     A custom node for initializing Griptape file manager tools with customizable parameters.
     """
@@ -112,7 +112,7 @@ file_manager_tool_node.parameter_output_values["tool"] = file_manager_tool
 
 ## Conclusion
 
-The `FileManagerToolNode` provides a convenient way to initialize Griptape file manager tools with customizable parameters. By subclassing `BaseToolNode` and adding our own implementation for file manager tools, we can create a flexible and reusable node that can be integrated into various Griptape workflows.
+The `FileManagerToolNode` provides a convenient way to initialize Griptape file manager tools with customizable parameters. By subclassing `BaseTool` and adding our own implementation for file manager tools, we can create a flexible and reusable node that can be integrated into various Griptape workflows.
 
 ### Best Practices
 

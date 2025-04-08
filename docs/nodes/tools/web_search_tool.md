@@ -7,7 +7,7 @@ The `WebSearchToolNode` class is a specialized node for creating a Griptape web 
 ### Class Definition
 
 ```python
-class WebSearchToolNode(BaseToolNode):
+class WebSearchToolNode(BaseTool):
     """A node for creating a Griptape web search tool."""
 ```
 

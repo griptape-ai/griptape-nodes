@@ -1,9 +1,9 @@
 from griptape.drivers.embedding.dummy import DummyEmbeddingDriver
 
-from griptape_nodes_library.drivers.base_driver import BaseDriverNode
+from griptape_nodes_library.drivers.base_driver import BaseDriver
 
 
-class BaseEmbeddingDriverNode(BaseDriverNode):
+class BaseEmbeddingDriver(BaseDriver):
     """Node for Base Embedding Driver.
 
     This node creates a basic embedding driver and outputs its configuration.

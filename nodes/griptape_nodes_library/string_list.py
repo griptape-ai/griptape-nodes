@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class StringListNode(DataNode):
+class StringList(DataNode):
     """Create a list of strings from multiple input values, and immediately forwards to output."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:

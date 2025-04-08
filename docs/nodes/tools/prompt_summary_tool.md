@@ -4,11 +4,11 @@
 
 The `PromptSummaryToolNode` is a custom node in Griptape that provides a generic implementation for summarizing text using a prompt driver. This node creates and configures a `PromptSummaryTool` with an optional prompt driver.
 
-## Subclassing BaseToolNode
+## Subclassing BaseTool
 
 #### What does it mean?
 
-The `PromptSummaryToolNode` class is a subclass of `BaseToolNode`, inheriting its properties and behavior. This allows us to build upon the existing functionality of `BaseToolNode` while adding our own specific implementation for summarizing text.
+The `PromptSummaryToolNode` class is a subclass of `BaseTool`, inheriting its properties and behavior. This allows us to build upon the existing functionality of `BaseTool` while adding our own specific implementation for summarizing text.
 
 #### Why would I use it?
 
@@ -21,11 +21,11 @@ Use this node when you want to:
 ## Class Definition
 
 ```python
-class PromptSummaryToolNode(BaseToolNode):
+class PromptSummaryToolNode(BaseTool):
     """
     A custom node for summarizing text using a prompt driver.
 
-    This class extends BaseToolNode to create a tool specifically for summarizing text.
+    This class extends BaseTool to create a tool specifically for summarizing text.
     It configures a PromptSummaryEngine with an optional prompt driver and wraps it
     in a PromptSummaryTool.
     """

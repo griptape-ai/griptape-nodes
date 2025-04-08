@@ -1,9 +1,9 @@
 import anthropic
-from griptape.drivers.prompt.anthropic import AnthropicPromptDriver
+from griptape.drivers.prompt.anthropic import AnthropicPromptDriver as GtAnthropicPromptDriver
 
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
+from griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriver
 
 DEFAULT_MODEL = "claude-3-7-sonnet-latest"
 MODELS = ["claude-3-7-sonnet-latest", "claude-3-5-sonnet-latest", "claude-3-5-opus-latest", "claude-3-5-haiku-latest"]
@@ -11,7 +11,7 @@ API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 SERVICE = "Anthropic"
 
 
-class AnthropicPromptDriverNode(BasePromptDriverNode):
+class AnthropicPromptDriver(BasePromptDriver):
     """Node for Anthropic Prompt Driver.
 
     This node creates an Anthropic prompt driver and outputs its configuration.
@@ -65,7 +65,7 @@ class AnthropicPromptDriverNode(BasePromptDriverNode):
         debug_msg = "\n\nANTHROPIC PROMPT DRIVER:\n" + str(kwargs) + "\n\n"
         logger.debug(debug_msg)
 
-        self.parameter_output_values["prompt_driver"] = AnthropicPromptDriver(**kwargs)
+        self.parameter_output_values["prompt_driver"] = GtAnthropicPromptDriver(**kwargs)
 
     def validate_node(self) -> list[Exception] | None:
         exceptions = []

@@ -2,7 +2,7 @@
 
 ### Overview
 
-The `BaseToolNode` class is a generic implementation for creating Griptape tools with configurable parameters. This node provides a basic structure for initializing tools and can be extended to support various tool types.
+The `BaseTool` class is a generic implementation for creating Griptape tools with configurable parameters. This node provides a basic structure for initializing tools and can be extended to support various tool types.
 
 ### Attributes
 
@@ -12,13 +12,13 @@ The `BaseToolNode` class is a generic implementation for creating Griptape tools
 ### Class Definition
 
 ```python
-class BaseToolNode(DataNode):
+class BaseTool(DataNode):
     """Base tool node for creating Griptape tools."""
 ```
 
 ### Initialization
 
-The `__init__` method initializes a new instance of the `BaseToolNode` class. It takes two parameters:
+The `__init__` method initializes a new instance of the `BaseTool` class. It takes two parameters:
 
 - **name (str)**: The name of the node.
 - **metadata (dict | None)**: Optional metadata for the node.
@@ -30,7 +30,7 @@ def __init__(self, name: str, metadata: dict | None = None) -> None:
 
 ### Parameters
 
-The `BaseToolNode` class defines two parameters:
+The `BaseTool` class defines two parameters:
 
 - **off_prompt (bool)**: A boolean parameter that determines whether the tool operates in off-prompt mode.
 - **tool (BaseTool)**: A dictionary representation of the created tool.
@@ -54,10 +54,10 @@ def process(self) -> None:
 
 ### Example Usage
 
-To create a new instance of the `BaseToolNode` class, you can use the following code:
+To create a new instance of the `BaseTool` class, you can use the following code:
 
 ```python
-node = BaseToolNode("My Tool")
+node = BaseTool("My Tool")
 node.process()
 print(node.parameter_output_values["tool"])
 ```

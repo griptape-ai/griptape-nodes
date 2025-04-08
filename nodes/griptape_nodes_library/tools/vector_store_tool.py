@@ -3,14 +3,14 @@ import json
 import logging
 
 from griptape.drivers.vector.dummy import DummyVectorStoreDriver
-from griptape.tools import VectorStoreTool
+from griptape.tools import VectorStoreTool as GtVectorStoreTool
 
-from griptape_nodes_library.tools.base_tool import BaseToolNode
+from griptape_nodes_library.tools.base_tool import BaseTool
 
 logger = logging.getLogger(__name__)
 
 
-class VectorStoreToolNode(BaseToolNode):
+class VectorStoreTool(BaseTool):
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", False)
         query_params = self.parameter_values.get("optional_query_params", "{}")
@@ -30,7 +30,7 @@ class VectorStoreToolNode(BaseToolNode):
             params["vector_store_driver"] = vector_store_driver
 
         # Create the tool
-        tool = VectorStoreTool(**params)
+        tool = GtVectorStoreTool(**params)
 
         # Set the output
         self.parameter_output_values["tool"] = tool

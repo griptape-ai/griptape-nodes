@@ -1,15 +1,15 @@
 import openai
 from griptape.drivers.audio_transcription.openai import OpenAiAudioTranscriptionDriver
-from griptape.tools.audio_transcription.tool import AudioTranscriptionTool
+from griptape.tools.audio_transcription.tool import AudioTranscriptionTool as GtAudioTranscriptionTool
 
-from griptape_nodes_library.tools.base_tool import BaseToolNode
+from griptape_nodes_library.tools.base_tool import BaseTool
 
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
 SERVICE = "OpenAI"
 DEFAULT_MODEL = "whisper-1"
 
 
-class AudioTranscriptionToolNode(BaseToolNode):
+class AudioTranscriptionTool(BaseTool):
     def process(self) -> None:
         self.parameter_values.get("off_prompt", True)
         driver = self.parameter_values.get("driver", None)
@@ -19,7 +19,7 @@ class AudioTranscriptionToolNode(BaseToolNode):
             driver = OpenAiAudioTranscriptionDriver(model=DEFAULT_MODEL)
 
         # Create the tool with parameters
-        tool = AudioTranscriptionTool(audio_transcription_driver=driver)
+        tool = GtAudioTranscriptionTool(audio_transcription_driver=driver)
 
         # Set the output
         self.parameter_output_values["tool"] = tool

@@ -1,10 +1,14 @@
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import (
+    Parameter,
+    ParameterMode,
+)
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.traits.clamp import Clamp
 
 
-class CreateMultilineTextNode(DataNode):
+class CreateText(DataNode):
     def __init__(
         self,
         name: str,
@@ -21,10 +25,10 @@ class CreateMultilineTextNode(DataNode):
                 input_types=["str"],
                 output_type="str",
                 type="str",
+                traits={Clamp(min_val=0, max_val=100)},
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 tooltip="The text content to save to file",
-                ui_options={"multiline": True},
-            ),
+            )
         )
 
     def process(self) -> None:
