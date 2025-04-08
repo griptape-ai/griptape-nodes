@@ -1049,10 +1049,14 @@ class FlowManager:
             result = DeleteConnectionResultFailure()
             return result
 
-        # After the connection has been removed, if it doesn't have PROPERTY as a type, wipe the set parameter value
+        # After the connection has been removed, if it doesn't have PROPERTY as a type, wipe the set parameter value and unresolve future nodes
         if ParameterMode.PROPERTY not in target_param.allowed_modes:
             try:
                 target_node.remove_parameter_value(target_param.name)
+                # It removed it accurately
+                # Unresolve future nodes that depended on that value
+                source_flow.connections.unresolve_future_nodes(target_node)
+                target_node.make_node_unresolved()
             except KeyError as e:
                 logger.warning(e)
 
