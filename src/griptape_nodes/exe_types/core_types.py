@@ -995,7 +995,7 @@ class ParameterList(ParameterContainer):
 
 
 class ParameterKeyValulePair(Parameter):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         tooltip: str | list[dict],
@@ -1129,7 +1129,7 @@ class ParameterDictionary(ParameterContainer):
     _kvp_type: ParameterType.KeyValueTypePair
     _original_traits: set[Trait.__class__ | Trait]
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         tooltip: str | list[dict],
