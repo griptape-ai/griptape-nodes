@@ -61,9 +61,9 @@
       }
     },
     {
-      "Dict": {
+      "Dictionary": {
         "color": "border-green-500",
-        "title": "Dict",
+        "title": "Dictionary",
         "description": "Dictionary Nodes.",
         "icon": "Braces"
       }
@@ -315,7 +315,7 @@
       "class_name": "KeyValuePair",
       "file_path": "griptape_nodes_library/dict/key_value_pair.py",
       "metadata": {
-        "category": "Dict",
+        "category": "Dictionary",
         "description": "Creates a dictionary from a single key-value input",
         "display_name": "Key Value Pair"
       }
@@ -324,7 +324,7 @@
       "class_name": "MergeKeyValuePair",
       "file_path": "griptape_nodes_library/dict/merge_key_value_pair.py",
       "metadata": {
-        "category": "Dict",
+        "category": "Dictionary",
         "description": "Merges Key/Value pairs into a single dictionary",
         "display_name": "Merge Key Value Pair"
       }

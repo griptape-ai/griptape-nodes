@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class Dict(DataNode):
+class Dictionary(DataNode):
     """Create a dictionary with arbitrary key-value pairs using list parameters."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
