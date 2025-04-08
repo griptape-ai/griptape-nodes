@@ -1,7 +1,7 @@
 import json
+import logging
 import os
 import sys
-from logging import Logger
 from threading import Lock
 from time import sleep
 from urllib.parse import urljoin
@@ -15,9 +15,9 @@ from websockets.exceptions import InvalidStatus, WebSocketException
 from websockets.sync.client import ClientConnection, connect
 from xdg_base_dirs import xdg_config_home
 
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
 console = Console()
+
+logger = logging.getLogger(__name__)
 
 
 @define(kw_only=True)
@@ -32,10 +32,6 @@ class NodesApiSocketManager:
     )
     lock: Lock = field(factory=Lock)
 
-    def get_logger(self) -> Logger:
-        logger = GriptapeNodes.get_instance().LogManager().get_logger(event_handler=False)
-        return logger
-
     def emit(self, *args, **kwargs) -> None:  # noqa: ARG002 # drop-in replacement workaround
         body = {"type": args[0], "payload": json.loads(args[1]) if len(args) > 1 else {}}
         sent = False
@@ -44,7 +40,7 @@ class NodesApiSocketManager:
                 self.socket.send(json.dumps(body))
                 sent = True
             except WebSocketException:
-                self.get_logger().warning("Error sending event to Nodes API, attempting to reconnect.")
+                logger.warning("Error sending event to Nodes API, attempting to reconnect.")
                 self.socket = self._connect()
 
     def heartbeat(self, *, session_id: str | None, request: dict) -> None:
@@ -97,8 +93,8 @@ class NodesApiSocketManager:
                     ping_timeout=None,
                 )
             except ConnectionError:
-                self.get_logger().warning("Nodes API is not available, waiting 5 seconds before retrying")
-                self.get_logger().debug("Error: ", exc_info=True)
+                logger.warning("Nodes API is not available, waiting 5 seconds before retrying")
+                logger.debug("Error: ", exc_info=True)
                 sleep(5)
             except InvalidStatus as e:
                 if e.response.status_code in {401, 403}:

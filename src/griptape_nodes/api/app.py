@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextvars
 import json
+import logging
 import os
 import sys
 import threading
@@ -45,14 +46,10 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from logging import Logger
 
 
 console = Console()
-
-
-def get_logger() -> Logger:
-    return GriptapeNodes.get_instance().LogManager().get_logger(event_handler=False)
+logger = logging.getLogger(__name__)
 
 
 def run_with_context(func: Callable) -> Callable:
@@ -134,7 +131,7 @@ def check_event_queue() -> None:
         elif isinstance(event, AppEvent):
             process_app_event(event)
         else:
-            get_logger().warning("Unknown event type encountered: '%s'.", type(event))
+            logger.warning("Unknown event type encountered: '%s'.", type(event))
 
         event_queue.task_done()
 
@@ -159,6 +156,30 @@ def setup_event_listeners() -> None:
     EventBus.add_event_listener(event_listener=EventListener(on_event=process_app_event, event_types=[AppEvent]))  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
 
 
+def auth(request: httpx.Request) -> httpx.Request:
+    api_key = get_key(xdg_config_home() / "griptape_nodes" / ".env", "GT_CLOUD_API_KEY")
+    if api_key is None:
+        message = Panel(
+            Align.center(
+                "[bold red]Nodes API key is not set, please run [code]gtn init[/code] with a valid key: [/bold red]"
+                "[code]gtn init --api-key <your key>[/code]\n"
+                "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
+            ),
+            title="🔑 ❌ Missing Nodes API Key",
+            border_style="red",
+            padding=(1, 4),
+        )
+        console.print(message)
+        sys.exit(1)
+    request.headers.update(
+        {
+            "Accept": "text/event-stream",
+            "Authorization": f"Bearer {api_key}",
+        }
+    )
+    return request
+
+
 def sse_listener() -> None:
     init = False
     while True:
@@ -167,16 +188,6 @@ def sse_listener() -> None:
                 os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/engines/stream"
             )
             nodes_app_url = os.getenv("GRIPTAPE_NODES_APP_URL", "https://nodes.griptape.ai")
-
-            def auth(request: httpx.Request) -> httpx.Request:
-                api_key = get_key(xdg_config_home() / "griptape_nodes" / ".env", "GT_CLOUD_API_KEY")
-                request.headers.update(
-                    {
-                        "Accept": "text/event-stream",
-                        "Authorization": f"Bearer {api_key}",
-                    }
-                )
-                return request
 
             with httpx.stream("get", endpoint, auth=auth, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout
                 if response.status_code in {401, 403}:
@@ -222,10 +233,10 @@ def sse_listener() -> None:
                             try:
                                 process_sse(json.loads(data))
                             except Exception:
-                                get_logger().exception("Error processing event, skipping.")
+                                logger.exception("Error processing event, skipping.")
 
         except Exception:
-            get_logger().exception("Error while listening for events. Retrying in 2 seconds.")
+            logger.exception("Error while listening for events. Retrying in 2 seconds.")
             sleep(2)
             init = False
 
@@ -238,7 +249,7 @@ def process_sse(event: dict) -> None:
         else:
             process_event(event)
     except Exception:
-        get_logger().warning("Error processing event, skipping.")
+        logger.warning("Error processing event, skipping.")
 
 
 def run_sse_mode() -> None:

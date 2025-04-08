@@ -120,6 +120,25 @@ class DeleteScriptResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class RenameScriptRequest(RequestPayload):
+    script_name: str
+    requested_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class RenameScriptResultSuccess(ResultPayloadSuccess):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class RenameScriptResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
 class SaveSceneRequest(RequestPayload):
     file_name: str | None = None
 

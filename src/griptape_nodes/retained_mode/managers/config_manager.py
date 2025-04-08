@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,8 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
 
 from .settings import ScriptSettingsDetail, Settings, _find_config_files
+
+logger = logging.getLogger("griptape_nodes")
 
 
 class ConfigManager:
@@ -56,15 +59,11 @@ class ConfigManager:
             event_manager.assign_manager_to_request_type(SetConfigValueRequest, self.on_handle_set_config_value_request)
 
             if len(self.config_files) == 0:
-                print(
-                    "No configuration files were found. Will run using default values."
-                )  # TODO(griptape): Move to Log
+                logger.info("No configuration files were found. Will run using default values.")
             else:
-                print(
-                    "Configuration files were found at the following locations and merged in this order:"
-                )  # TODO(griptape): Move to Log
+                logger.info("Configuration files were found at the following locations and merged in this order:")
                 for config_file in self.config_files:
-                    print(f"\t{config_file}")
+                    logger.info("\t%s", config_file)
 
     @property
     def workspace_path(self) -> Path:
@@ -120,7 +119,9 @@ class ConfigManager:
 
     def delete_user_script(self, script: dict) -> None:
         default_scripts = self.get_config_value("app_events.on_app_initialization_complete.scripts_to_register")
-        default_scripts = [saved_script for saved_script in default_scripts if saved_script != script]
+        default_scripts = [
+            saved_script for saved_script in default_scripts if saved_script["file_name"] != script["file_path"]
+        ]
         self.set_config_value("app_events.on_app_initialization_complete.scripts_to_register", default_scripts)
 
     def get_full_path(self, relative_path: str) -> Path:
@@ -168,6 +169,12 @@ class ConfigManager:
             value: The value to associate with the key.
         """
         delta = set_dot_value({}, key, value)
+        if key == "log_level":
+            try:
+                logger.setLevel(value.upper())
+            except ValueError:
+                logger.exception("Invalid log level %s. Defaulting to INFO.", value)
+                logger.setLevel(logging.INFO)
         self.user_config = merge_dicts(self.user_config, delta)
         self._write_user_config()
 
@@ -176,30 +183,30 @@ class ConfigManager:
             # Return the whole shebang. Start with the defaults and then layer on the user config.
             contents = self.user_config
             details = "Successfully returned the entire config dictionary."
-            print(details)  # TODO(griptape): Move to Log
+            logger.info(details)
             return GetConfigCategoryResultSuccess(contents=contents)
 
         # See if we got something valid.
         find_results = self.get_config_value(request.category)
         if find_results is None:
             details = f"Attempted to get config details for category '{request.category}'. Failed because no such category could be found."
-            print(details)  # TODO(griptape): Move to Log
+            logger.error(details)
             return GetConfigCategoryResultFailure()
 
         if not isinstance(find_results, dict):
             details = f"Attempted to get config details for category '{request.category}'. Failed because this was was not a dictionary."
-            print(details)  # TODO(griptape): Move to Log
+            logger.error(details)
             return GetConfigCategoryResultFailure()
 
         details = f"Successfully returned the config dictionary for section '{request.category}'."
-        print(details)  # TODO(griptape): Move to Log
+        logger.info(details)
         return GetConfigCategoryResultSuccess(contents=find_results)
 
     def on_handle_set_config_category_request(self, request: SetConfigCategoryRequest) -> ResultPayload:
         # Validate the value is a dict
         if not isinstance(request.contents, dict):
             details = f"Attempted to set config details for category '{request.category}'. Failed because the contents provided were not a dictionary."
-            print(details)  # TODO(griptape): Move to Log
+            logger.error(details)
             return SetConfigCategoryResultFailure()
 
         if request.category is None or request.category == "":
@@ -207,40 +214,40 @@ class ConfigManager:
             self.user_config = request.contents
             self._write_user_config()
             details = "Successfully assigned the entire config dictionary."
-            print(details)  # TODO(griptape): Move to Log
+            logger.info(details)
             return SetConfigCategoryResultSuccess()
 
         self.set_config_value(key=request.category, value=request.contents)
         details = f"Successfully assigned the config dictionary for section '{request.category}'."
-        print(details)  # TODO(griptape): Move to Log
+        logger.info(details)
         return SetConfigCategoryResultSuccess()
 
     def on_handle_get_config_value_request(self, request: GetConfigValueRequest) -> ResultPayload:
         if request.category_and_key == "":
             details = "Attempted to get config value but no category or key was specified."
-            print(details)  # TODO(griptape): Move to Log
+            logger.error(details)
             return GetConfigValueResultFailure()
 
         # See if we got something valid.
         find_results = self.get_config_value(request.category_and_key)
         if find_results is None:
             details = f"Attempted to get config value for category.key '{request.category_and_key}'. Failed because no such category.key could be found."
-            print(details)  # TODO(griptape): Move to Log
+            logger.error(details)
             return GetConfigValueResultFailure()
 
         details = f"Successfully returned the config value for section '{request.category_and_key}'."
-        print(details)  # TODO(griptape): Move to Log
+        logger.info(details)
         return GetConfigValueResultSuccess(value=find_results)
 
     def on_handle_set_config_value_request(self, request: SetConfigValueRequest) -> ResultPayload:
         if request.category_and_key == "":
             details = "Attempted to set config value but no category or key was specified."
-            print(details)  # TODO(griptape): Move to Log
+            logger.error(details)
             return SetConfigValueResultFailure()
 
         self.set_config_value(key=request.category_and_key, value=request.value)
         details = f"Successfully assigned the config value for category.key '{request.category_and_key}'."
-        print(details)  # TODO(griptape): Move to Log
+        logger.info(details)
         return SetConfigValueResultSuccess()
 
     def _write_user_config(self) -> None:

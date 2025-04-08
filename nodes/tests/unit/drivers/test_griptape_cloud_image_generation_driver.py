@@ -1,6 +1,6 @@
 import pytest
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
-from griptape_nodes_library.drivers.griptape_cloud_image_driver import GriptapeCloudImageDriverNode
+from griptape_nodes_library.drivers.image.griptape_cloud_image_driver import GriptapeCloudImageDriverNode
 
 
 class TestGriptapeCloudImageGenerationNode:

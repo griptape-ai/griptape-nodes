@@ -8,8 +8,7 @@ from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
-from griptape_nodes.retained_mode.events.app_events import AppExecutionEvent
-from griptape_nodes.retained_mode.events.base_events import AppEvent, ExecutionEvent, ExecutionGriptapeNodeEvent
+from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import (
     CurrentDataNodeEvent,
     NodeFinishProcessEvent,
@@ -150,11 +149,12 @@ class ExecuteNodeState(State):
                 if modified_parameters:
                     for modified_parameter_name in modified_parameters:
                         # TODO(kate): Move to a different type of event
+                        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
                         modified_request = GetParameterDetailsRequest(
                             parameter_name=modified_parameter_name, node_name=current_node.name
                         )
-                        app_event = AppEvent(payload=AppExecutionEvent(modified_request))
-                        EventBus.publish_event(app_event)  # pyright: ignore[reportArgumentType]
+                        GriptapeNodes.handle_request(modified_request)
             if parameter.name in current_node.parameter_values:
                 parameter_value = current_node.get_parameter_value(parameter.name)
                 data_type = parameter.type
@@ -245,6 +245,7 @@ class ExecuteNodeState(State):
                         parameter_name=target_parameter.name,
                         node_name=target_node.name,
                         value=value,
+                        data_type=parameter.output_type,
                     )
                 )
         context.focus_stack.pop()

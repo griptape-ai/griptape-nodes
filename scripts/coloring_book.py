@@ -13,6 +13,3 @@
 #   ]
 #
 # ///
-
-
-print("coloring_book!")

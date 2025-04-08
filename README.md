@@ -1,119 +1,55 @@
-# Griptape Nodes Engine
+# Griptape Nodes
 
-## Getting Started
+Griptape Nodes provides a powerful, visual, node-based interface for building and executing complex AI workflows. It combines a cloud-based IDE with a locally runnable engine, allowing for easy development, debugging, and execution of Griptape applications.
 
-For getting started with using Griptape Nodes, please visit [griptapenodes.com](https://www.griptapenodes.com/).
+[![Griptape Nodes Trailer Preview](docs/assets/img/video-thumbnail.jpg)](https://vimeo.com/1064451891)
+*(Clicking the image opens the video on Vimeo)*
 
-## Contributing
+**Key Features:**
 
-If you would like to contribute to the Griptape Nodes Engine, please review the [CONTRIBUTING.md](CONTRIBUTING.md) file.
+- **Visual Workflow Editor:** Design and connect nodes representing different AI tasks, tools, and logic.
+- **Local Engine:** Run workflows securely on your own machine or infrastructure.
+- **Debugging & Stepping:** Analyze flow execution step-by-step.
+- **Scriptable Interface:** Interact with and control flows programmatically.
+- **Extensible:** Build your own custom nodes.
 
-### Request Structure
+**Learn More:**
 
-All requests follow this general structure:
+- **Full Documentation:** [docs.griptapenodes.com](https://docs.griptapenodes.com)
+- **Setup Guide:** [docs.griptapenodes.com/setup/](https://docs.griptapenodes.com/setup/)
+- **Configuration:** [docs.griptapenodes.com/configuration/](https://docs.griptapenodes.com/configuration/)
+- **Tutorials:** [docs.griptapenodes.com/tutorials/](https://docs.griptapenodes.com/tutorials/)
 
-```json
-{
-  "event_type": "EventRequest",
-  "request_type": "", //Name of the request type, for example CreateNodeRequest
-  "request": {
-    // Specific request payload based on the operation
-    // Optional: "request_id" will be automatically added by the server if not provided
-  }
-}
-```
+______________________________________________________________________
 
-### Response Structure
+## Quick Installation
 
-Responses follow this structure:
+Follow these steps to get the Griptape Nodes engine running on your system:
 
-```json
-{
-    "node_type": "string",
-    "override_parent_flow_id": "string"  // optional
-}
-```
+1. **Login:** Visit [Griptape Nodes](https://griptapenodes.com) and log in or sign up using your Griptape Cloud credentials.
 
-### Responses
+1. **Install Command:** Once logged in, you'll find a setup screen. Copy the installation command provided in the "New Installation" section. It will look similar to this (use the **exact** command provided on the website):
 
-#### Success Response
+   ```bash
+   curl -LsSf https://raw.githubusercontent.com/griptape-ai/griptape-nodes/main/install.sh | bash
+   ```
 
-**Code:** `200`
+1. **Run Installer:** Open a terminal on your machine (local or cloud environment) and paste/run the command. The installer uses `uv` for fast installation; if `uv` isn't present, the script will typically handle installing it.
 
-```json
-{
-    "message": "Request to create node received"
-}
-```
+1. **Initial Configuration (Automatic on First Run):**
 
-#### Example Successful Event Response (Start Flow)
+   - The first time you run the engine command (`griptape-nodes` or `gtn`), it will guide you through the initial setup:
+   - **Workspace Directory:** You'll be prompted to choose a directory where Griptape Nodes will store configurations, project files, secrets (`.env`), and generated assets. You can accept the default (`<current_directory>/GriptapeNodes`) or specify a custom path.
+   - **Griptape Cloud API Key:** Return to the [Griptape Nodes setup page](https://griptapenodes.com) in your browser, click "Generate API Key", copy the key, and paste it when prompted in the terminal.
 
-```json
-{
-  "event_type": "EventResultSuccess",
-  "request_type": "StartFlowRequest",
-  "result_type": "StartFlowResultSuccess",
-  "request": {
-    "request_id": 1,
-    "flow_name": "canvas",
-    "debug_mode": false
-  },
-  "result": {
-  }
-}
-```
+1. **Start the Engine:** After configuration, start the engine by running:
 
-#### Example Failure Event Response (Start Flow)
+   ```bash
+   griptape-nodes
+   ```
 
-```json
-{
-  "event_type": "EventResultFailure",
-  "request_type": "StartFlowRequest", 
-  "result_type": "StartFlowResultFailure",
-  "request": {
-    "request_id": 2,
-    "flow_name": "canvas",
-    "debug_mode": false
-  },
-  "result": {}
-}
-```
+   *(or the shorter alias `gtn`)*
 
-### Request Counter
+1. **Connect IDE:** Refresh the Griptape Nodes IDE page in your browser. It should now connect to your running engine.
 
-Each request is assigned a unique `request_id` that increments with each request. This can be used for tracking and reference purposes.
-
-### Request ID Handling
-
-- If no `request_id` is provided in the request, the server will automatically assign one.
-- The `request_id` increments for each request during the session.
-- The `request_id` can be used for tracking and referencing specific requests.
-
-### Error Handling
-
-The program prints out appropriate error messages.
-
-#### Example Error Response
-
-```json
-{
-  "message": "Error: 'request' was expected but not found.",
-  "status": 400
-}
-```
-
-#### Example Successful Request Receipt
-
-```json
-{
-  "message": "Request for event type 'EventRequest' successfully received",
-  "request_id": 3,
-  "status": 200
-}
-```
-
-## Running with the Local API
-
-```env
-GRIPTAPE_NODES_API_BASE_URL=http://localhost:8001
-```
+You're now ready to start building flows! For more detailed setup options and troubleshooting, see the full [Setup Guide](https://docs.griptapenodes.com/setup/).

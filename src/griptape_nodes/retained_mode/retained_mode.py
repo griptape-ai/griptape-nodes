@@ -1,8 +1,8 @@
+import logging
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import ParameterUIOptions
 from griptape_nodes.retained_mode.events.arbitrary_python_events import RunArbitraryPythonStringRequest
 from griptape_nodes.retained_mode.events.base_events import (
     ResultPayload,
@@ -59,6 +59,8 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 MIN_NODES = 2
+
+logger = logging.getLogger("griptpae_nodes_engine")
 
 
 def node_param_split(node_and_param: str) -> tuple[str, str]:
@@ -178,7 +180,7 @@ class RetainedMode:
         if hasattr(result, "node_name"):
             return result.node_name
         # You could return the result object for debugging
-        print(f"Failed to create node: {result}")
+        logger.error("Failed to create node: %s", result)
         return result
 
     @classmethod
@@ -234,7 +236,7 @@ class RetainedMode:
         tooltip_as_input: str | list[dict] | None = None,
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
-        ui_options: ParameterUIOptions | None = None,
+        ui_options: dict | None = None,
         mode_allowed_input: bool = True,  # noqa: FBT001, FBT002
         mode_allowed_property: bool = True,  # noqa: FBT001, FBT002
         mode_allowed_output: bool = True,  # noqa: FBT001, FBT002
@@ -326,7 +328,7 @@ class RetainedMode:
                 final_param_name = base_param_name
             except Exception as e:
                 details = f"Invalid list index format in parameter name: '{param_name}'. Error: {e}."
-                GriptapeNodes.get_logger().error(details)
+                logger.exception(details)
                 # TODO(griptape): what to do here?
         return (final_param_name, index)
 
@@ -457,13 +459,13 @@ class RetainedMode:
                     idx = int(idx_or_key)
                 except ValueError:
                     error_msg = f"Failed on key/index '{idx_or_key}' because it wasn't an int as expected."
-                    print(error_msg)
+                    logger.exception(error_msg)
                     return GetParameterValueResultFailure()
 
                 # Handle negative indices
                 if idx < 0:
                     error_msg = f"Failed on key/index '{idx_or_key}' because it was less than zero."
-                    print(error_msg)
+                    logger.error(error_msg)
                     return GetParameterValueResultFailure()
 
                 # Extend the list if needed
@@ -478,7 +480,7 @@ class RetainedMode:
                     curr = curr[idx]
             else:
                 error_msg = f"Failed on key/index '{idx_or_key}' because it was a type that was not expected."
-                print(error_msg)
+                logger.error(error_msg)
                 return GetParameterValueResultFailure()
 
         # Update the container
@@ -514,17 +516,30 @@ class RetainedMode:
                 if isinstance(curr_pos_value, list):
                     # Index better be an int.
                     if not isinstance(idx_or_key, int):
-                        print(f'get_value failed for "{node}.{param}" on key/index "{idx_or_key}" only ints allowed.')
+                        logger.error(
+                            "get_value failed for %s.%s on key/index %s only ints allowed.",
+                            node,
+                            param,
+                            idx_or_key,
+                        )
                         return GetParameterValueResultFailure()
                     # Is the index in range?
                     if (idx_or_key < 0) or (idx_or_key >= len(curr_pos_value)):
-                        print(
-                            f'get_value failed for "{node}.{param}" for key/index "{idx_or_key}" being out of range. Object had {len(curr_pos_value)} elements.'
+                        logger.error(
+                            "get_value failed for %s.%s on key/index %s out of range.",
+                            node,
+                            param,
+                            idx_or_key,
                         )
                         return GetParameterValueResultFailure()
                     curr_pos_value = curr_pos_value[idx_or_key]
                 else:
-                    print(f'get_value failed for "{node}.{param}" on key/index "{idx_or_key}". Type Error.')
+                    logger.error(
+                        "get_value failed for %s.%s on key/index %s because it was a type that was not expected.",
+                        node,
+                        param,
+                        idx_or_key,
+                    )
                     return GetParameterValueResultFailure()
             # All done
             return curr_pos_value
@@ -562,8 +577,7 @@ class RetainedMode:
                 value=value,
             )
             result = GriptapeNodes().handle_request(request)
-            print("\n")
-            print(f"D:{result=}")
+            logger.info("\nD:%s", f"{result=}")
         else:
             # We have indices. Get the value of the container first, then attempt to move all the way up to the end.
             request = GetParameterValueRequest(
@@ -573,7 +587,12 @@ class RetainedMode:
             result = GriptapeNodes().handle_request(request)
 
             if not result.succeeded():
-                print(f'set_value failed for "{node}.{param}", failed to get value for container "{base_param_name}".')
+                logger.error(
+                    'set_value failed for "%s.%s", failed to get value for container "%s".',
+                    node,
+                    param,
+                    base_param_name,
+                )
                 return result
 
             base_container = result.value
@@ -586,12 +605,20 @@ class RetainedMode:
                     try:
                         idx_or_key_as_int = int(idx_or_key)
                     except ValueError:
-                        print(f'set_value for "{node}.{param}", failed on key/index "{idx_or_key}". Requires an int.')
+                        logger.exception(
+                            'set_value for "%s.%s", failed on key/index "%s". Requires an int.',
+                            node,
+                            param,
+                            idx_or_key,
+                        )
                         return GetParameterValueResultFailure()
                     # Is the index in range?
                     if idx_or_key_as_int < 0:
-                        print(
-                            f'set_value for "{node}.{param}", failed on key/index "{idx_or_key}" because it was less than zero.'
+                        logger.error(
+                            'set_value for "%s.%s", failed on key/index "%s" because it was less than zero.',
+                            node,
+                            param,
+                            idx_or_key,
                         )
                         return GetParameterValueResultFailure()
                     # Extend the list if needed to accommodate the index.
@@ -613,7 +640,12 @@ class RetainedMode:
                     # Advance.
                     curr_pos_value = curr_pos_value[idx_or_key_as_int]
                 else:
-                    print(f'set_value on "{node}.{param}" failed on key/index "{idx_or_key}": bad type')
+                    logger.error(
+                        'set_value on "%s.%s" failed on key/index "%s" because it was a type that was not expected.',
+                        node,
+                        param,
+                        idx_or_key,
+                    )
                     return GetParameterValueResultFailure()
             # All done
         return result
