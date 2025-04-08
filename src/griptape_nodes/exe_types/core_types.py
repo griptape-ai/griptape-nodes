@@ -994,7 +994,7 @@ class ParameterList(ParameterContainer):
         return param
 
 
-class ParameterKeyValulePair(Parameter):
+class ParameterKeyValuePair(Parameter):
     def __init__(  # noqa: PLR0913
         self,
         name: str,
@@ -1214,13 +1214,13 @@ class ParameterDictionary(ParameterContainer):
 
     def __len__(self) -> int:
         # Returns the number of child Parameters. Just do the top level.
-        param_children = self.find_elements_by_type(element_type=ParameterKeyValulePair, find_recursively=False)
+        param_children = self.find_elements_by_type(element_type=ParameterKeyValuePair, find_recursively=False)
         return len(param_children)
 
-    def __getitem__(self, key: int) -> ParameterKeyValulePair:
+    def __getitem__(self, key: int) -> ParameterKeyValuePair:
         count = 0
         for child in self._children:
-            if isinstance(child, ParameterKeyValulePair):
+            if isinstance(child, ParameterKeyValuePair):
                 if count == key:
                     # Found it.
                     return child
@@ -1230,12 +1230,12 @@ class ParameterDictionary(ParameterContainer):
         err_str = f"Attempted to get a Parameter Dictionary index {key}, which was out of range."
         raise KeyError(err_str)
 
-    def add_key_value_pair(self) -> ParameterKeyValulePair:
+    def add_key_value_pair(self) -> ParameterKeyValuePair:
         # Generate a name. This needs to be UNIQUE because children need
         # to be tracked as individuals and not as indices/keys in the dict.
         name = f"{self.name}_ParameterDictUniqueParamID_{uuid.uuid4().hex!s}"
 
-        param = ParameterKeyValulePair(
+        param = ParameterKeyValuePair(
             name=name,
             tooltip=self.tooltip,
             type=self._type,
