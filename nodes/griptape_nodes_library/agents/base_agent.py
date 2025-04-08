@@ -35,9 +35,9 @@ class BaseAgent(ControlNode):
                 tooltip="Connect a prompt driver to use. If not specified, will use the default OpenAI gpt-4o.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
-            Parameter(
+            ParameterList(
                 name="tools",
-                input_types=["list[Tool]"],
+                input_types=["Tool"],
                 default_value=None,
                 tooltip="",
                 allowed_modes={ParameterMode.INPUT},

@@ -79,7 +79,7 @@ class EvaluateParameterState(State):
     def on_enter(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1]
         current_parameter = current_node.get_current_parameter()
-        if not current_parameter:
+        if current_parameter is None:
             return ExecuteNodeState
         # if not in debug mode - keep going!
         EventBus.publish_event(
