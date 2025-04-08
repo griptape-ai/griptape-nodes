@@ -226,7 +226,7 @@ load_dotenv()
 T = TypeVar("T")
 
 
-logger = logging.getLogger("griptape_nodes_engine")
+logger = logging.getLogger("griptape_nodes")
 
 
 class SingletonMeta(type):

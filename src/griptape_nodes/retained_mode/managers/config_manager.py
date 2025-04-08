@@ -23,7 +23,7 @@ from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_
 
 from .settings import ScriptSettingsDetail, Settings, _find_config_files
 
-logger = logging.getLogger("griptape_nodes_engine")
+logger = logging.getLogger("griptape_nodes")
 
 
 class ConfigManager:

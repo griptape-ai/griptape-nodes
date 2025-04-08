@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from griptape_nodes.retained_mode.events.base_events import RequestPayload
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
-logger = logging.getLogger("griptape_nodes_engine")
+logger = logging.getLogger("griptape_nodes")
 
 payload_type_to_schema: dict[str, dict[str, Any]] = {}
 

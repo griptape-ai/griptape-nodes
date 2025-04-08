@@ -17,7 +17,7 @@ class EventLogHandler(logging.Handler):
 
 
 class LogManager:
-    LOGGER_NAME = "griptape_nodes_engine"
+    LOGGER_NAME = "griptape_nodes"
 
     def __init__(self) -> None:
         logger = logging.getLogger(LogManager.LOGGER_NAME)

@@ -7,7 +7,7 @@ from griptape.mixins.singleton_mixin import SingletonMixin
 
 from griptape_nodes.exe_types.node_types import BaseNode
 
-logger = logging.getLogger("griptape_nodes_engine")
+logger = logging.getLogger("griptape_nodes")
 
 
 class LibraryNodeIdentifier(NamedTuple):

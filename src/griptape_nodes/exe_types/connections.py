@@ -13,7 +13,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     NodeUnresolvedEvent,
 )
 
-logger = logging.getLogger("griptape_nodes_engine")
+logger = logging.getLogger("griptape_nodes")
 
 
 @dataclass
