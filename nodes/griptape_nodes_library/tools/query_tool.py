@@ -4,15 +4,15 @@ from attrs import define
 from griptape.artifacts import ErrorArtifact, ListArtifact, TextArtifact
 from griptape.drivers.prompt.google import GooglePromptDriver
 from griptape.engines.rag.rag_context import RagContext
-from griptape.tools import QueryTool
+from griptape.tools import QueryTool as GtQueryTool
 from griptape.utils.decorators import activity
 from schema import Literal, Schema
 
-from griptape_nodes_library.tools.base_tool import BaseToolNode
+from griptape_nodes_library.tools.base_tool import BaseTool
 
 
 @define(kw_only=True)
-class GeminiQueryTool(QueryTool):
+class GeminiQueryTool(GtQueryTool):
     @activity(
         config={
             "description": "Can be used to search through textual content.",
@@ -53,7 +53,7 @@ class GeminiQueryTool(QueryTool):
         return ErrorArtifact("query output is empty")
 
 
-class QueryToolNode(BaseToolNode):
+class QueryToolNode(BaseTool):
     """A tool generator class that creates an query tool based on the provided prompt driver.
 
     Create either a specialized GeminiQueryTool when using a Google prompt driver, or a
@@ -78,7 +78,7 @@ class QueryToolNode(BaseToolNode):
             tool = GeminiQueryTool()
         else:
             # For all other driver types, use the standard QueryTool with the given parameters
-            tool = QueryTool(**params)
+            tool = GtQueryTool(**params)
 
         # Store the tool as a dictionary in the output parameters for later use
         self.parameter_output_values["tool"] = tool

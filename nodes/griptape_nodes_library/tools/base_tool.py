@@ -1,10 +1,10 @@
-from griptape.tools import BaseTool
+from griptape.tools import BaseTool as GtBaseTool
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class BaseToolNode(DataNode):
+class BaseTool(DataNode):
     """Base tool node for creating Griptape tools.
 
     This node provides a generic implementation for initializing Griptape tools with configurable parameters.
@@ -42,7 +42,7 @@ class BaseToolNode(DataNode):
         off_prompt = self.parameter_values.get("off_prompt", False)
 
         # Create the tool
-        tool = BaseTool(off_prompt=off_prompt)
+        tool = GtBaseTool(off_prompt=off_prompt)
 
         # Set the output
         self.parameter_output_values["tool"] = tool

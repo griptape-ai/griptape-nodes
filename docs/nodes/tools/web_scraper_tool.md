@@ -7,7 +7,7 @@ The `WebScraperToolNode` class is a specialized node for creating Griptape tools
 ### Class Definition
 
 ```python
-class WebScraperToolNode(BaseToolNode):
+class WebScraperToolNode(BaseTool):
     """A web scraper tool node for creating Griptape tools."""
 ```
 

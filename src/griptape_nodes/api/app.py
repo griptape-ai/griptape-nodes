@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextvars
 import json
+import logging
 import os
 import sys
 import threading
@@ -45,14 +46,10 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from logging import Logger
 
 
 console = Console()
-
-
-def get_logger() -> Logger:
-    return GriptapeNodes.get_instance().LogManager().get_logger(event_handler=False)
+logger = logging.getLogger(__name__)
 
 
 def run_with_context(func: Callable) -> Callable:
@@ -134,7 +131,7 @@ def check_event_queue() -> None:
         elif isinstance(event, AppEvent):
             process_app_event(event)
         else:
-            get_logger().warning("Unknown event type encountered: '%s'.", type(event))
+            logger.warning("Unknown event type encountered: '%s'.", type(event))
 
         event_queue.task_done()
 
@@ -236,10 +233,10 @@ def sse_listener() -> None:
                             try:
                                 process_sse(json.loads(data))
                             except Exception:
-                                get_logger().exception("Error processing event, skipping.")
+                                logger.exception("Error processing event, skipping.")
 
         except Exception:
-            get_logger().exception("Error while listening for events. Retrying in 2 seconds.")
+            logger.exception("Error while listening for events. Retrying in 2 seconds.")
             sleep(2)
             init = False
 
@@ -252,7 +249,7 @@ def process_sse(event: dict) -> None:
         else:
             process_event(event)
     except Exception:
-        get_logger().warning("Error processing event, skipping.")
+        logger.warning("Error processing event, skipping.")
 
 
 def run_sse_mode() -> None:
