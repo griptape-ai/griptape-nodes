@@ -1,8 +1,11 @@
 """Griptape Nodes package."""
 
+# ruff: noqa: S603, S607
+
 import argparse
 import importlib.metadata
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -20,7 +23,9 @@ from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
-INSTALL_SCRIPT = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.sh"
+GH_INSTALL_SCRIPT_SH = "/repos/griptape-ai/griptape-nodes/contents/install.sh?ref=main"
+GH_INSTALL_SCRIPT_PS = "/repos/griptape-ai/griptape-nodes/contents/install.ps1?ref=main"
+INSTALL_SCRIPT_SH = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.sh"
 INSTALL_SCRIPT_PS = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.ps1"
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 ENV_FILE = CONFIG_DIR / ".env"
@@ -213,12 +218,73 @@ def _auto_update() -> None:
 
 
 def _install_latest_release() -> None:
-    """Installs the latest release of the script using a shell command."""
-    with console.status("[bold green]Updating...", spinner="dots"):
+    """Installs the latest release of the script. Prefers GitHub CLI if available."""
+    console.print("[bold green]Starting update...[/bold green]")
+    console.print("[bold yellow]Checking for GitHub CLI...[/bold yellow]")
+
+    try:
+        __download_and_run_installer()
+    except subprocess.CalledProcessError as e:
+        console.print(f"[bold red]Error during update: {e}[/bold red]")
+        sys.exit(1)
+
+    console.print(
+        "[bold green]Update complete! Restart the engine by running 'griptape-nodes' (or just 'gtn').[/bold green]"
+    )
+    sys.exit(0)
+
+
+def __download_and_run_installer() -> None:
+    """Runs the update commands for the engine."""
+    gh_cli = shutil.which("gh")
+    if gh_cli:
+        console.print("[bold green]Found GitHub CLI. Using gh to fetch install script...[/bold green]")
+
         if OSManager.is_windows():
-            # Run via PowerShell
-            subprocess.run(  # noqa: S603
-                [  # noqa: S607
+            # Fetch install.ps1 contents using gh
+            ps_content = subprocess.check_output(
+                [
+                    gh_cli,
+                    "api",
+                    "-H",
+                    "Accept: application/vnd.github.v3.raw",
+                    GH_INSTALL_SCRIPT_PS,
+                ],
+                text=True,
+            )
+            # Run the PowerShell script from stdin
+            subprocess.run(
+                ["powershell", "-ExecutionPolicy", "ByPass", "-Command", "-"],
+                input=ps_content,
+                text=True,
+                check=True,
+            )
+        else:
+            # macOS or Linux
+            bash_content = subprocess.check_output(
+                [
+                    gh_cli,
+                    "api",
+                    "-H",
+                    "Accept: application/vnd.github.v3.raw",
+                    GH_INSTALL_SCRIPT_SH,
+                ],
+                text=True,
+            )
+            # Run the Bash script from stdin
+            subprocess.run(
+                ["bash"],
+                input=bash_content,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+    else:
+        console.print("[bold yellow]GitHub CLI not found. Falling back to direct download...[/bold yellow]")
+
+        if OSManager.is_windows():
+            subprocess.run(
+                [
                     "powershell",
                     "-ExecutionPolicy",
                     "ByPass",
@@ -228,29 +294,25 @@ def _install_latest_release() -> None:
                 check=True,
                 text=True,
             )
-        elif OSManager.is_mac() or OSManager.is_linux():
-            # Run via Bash/cURL
-            curl_process = subprocess.run(  # noqa: S603
-                ["curl", "-LsSf", INSTALL_SCRIPT],  # noqa: S607
+        else:
+            curl_process = subprocess.run(
+                [
+                    "curl",
+                    "-LsSf",
+                    INSTALL_SCRIPT_SH,
+                ],
                 capture_output=True,
                 check=False,
                 text=True,
             )
-            subprocess.run(  # noqa: S603
-                ["bash"],  # noqa: S607
+            curl_process.check_returncode()
+            subprocess.run(
+                ["bash"],
                 input=curl_process.stdout,
                 capture_output=True,
                 check=True,
                 text=True,
             )
-        else:
-            console.print(f"[bold red]Unsupported platform: {OSManager.platform()}[/bold red]")
-            sys.exit(1)
-
-    console.print(
-        "[bold green]Update complete! Restart the engine by running 'griptape-nodes' (or just 'gtn').[/bold green]"
-    )
-    sys.exit(0)
 
 
 def _get_current_version() -> str:
