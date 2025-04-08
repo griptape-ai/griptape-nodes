@@ -3,6 +3,11 @@ if (Get-Process griptape-nodes -ErrorAction SilentlyContinue) {
     exit
 }
 
+if (Get-Process gtn -ErrorAction SilentlyContinue) {
+    Write-Host "Error: an instance of 'gtn' is currently running. Please close it before continuing."
+    exit
+}
+
 Write-Host "`nInstalling uv...`n"
 try {
     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
