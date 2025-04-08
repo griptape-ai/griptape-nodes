@@ -1,8 +1,14 @@
+if (Get-Process griptape-nodes -ErrorAction SilentlyContinue) {
+    Write-Host "Error: an instance of 'griptape-nodes' is currently running. Please close it before continuing."
+    return
+}
+
 Write-Host "`nInstalling uv...`n"
 try {
     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 } catch {
     Write-Host "Failed to install uv with the default method. You may need to install it manually."
+    return 
 }
 
 # Verify uv is on the user's PATH
