@@ -1,8 +1,8 @@
-# AzureOpenAiImageDriverNode
+# AzureOpenAiImageDriver
 
 ## What is it?
 
-The AzureOpenAiImageDriverNode is a building block that sets up a connection to Microsoft Azure's OpenAI image generation service (DALL-E). Think of it as configuring a special artist that lives in Azure's cloud who can create images based on text descriptions.
+The AzureOpenAiImageDriver is a building block that sets up a connection to Microsoft Azure's OpenAI image generation service (DALL-E). Think of it as configuring a special artist that lives in Azure's cloud who can create images based on text descriptions.
 
 ## When would I use it?
 
@@ -16,9 +16,9 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the AzureOpenAiImageDriverNode to your workspace
+1. Add the AzureOpenAiImageDriver to your workspace
 1. Connect it to your flow
-1. Connect its output to nodes that need to generate images (like CreateImageNode)
+1. Connect its output to nodes that need to generate images (like CreateImage)
 
 ### Optional Configuration
 
@@ -36,10 +36,10 @@ Use this node when you want to:
 
 Imagine you want to create images using Azure's DALL-E 3:
 
-1. Add an AzureOpenAiImageDriverNode to your workflow
+1. Add an AzureOpenAiImageDriver to your workflow
 1. Set "image_generation_model" to "dall-e-3"
 1. Set "size" to "1024x1792" for vertical images
-1. Connect the "driver" output to a CreateImageNode's "driver" input
+1. Connect the "driver" output to a CreateImage's "driver" input
 1. Now that node will generate images using Azure's DALL-E with your settings
 
 ## Important Notes
