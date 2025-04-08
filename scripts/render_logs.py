@@ -1,5 +1,3 @@
-print("render logs!")
-
 # /// script
 # dependencies = []
 #

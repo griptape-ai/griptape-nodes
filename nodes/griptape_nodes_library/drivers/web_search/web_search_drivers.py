@@ -1,10 +1,10 @@
-from griptape.drivers.web_search.duck_duck_go import DuckDuckGoWebSearchDriver
+from griptape.drivers.web_search.duck_duck_go import DuckDuckGoWebSearchDriver as GtDuckDuckGoWebSearchDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class BaseWebSearchDriverNode(DataNode):
+class BaseWebSearchDriver(DataNode):
     """Base driver node for creating Griptape Drivers.
 
     This node provides a generic implementation for initializing Griptape tools with configurable parameters.
@@ -28,10 +28,10 @@ class BaseWebSearchDriverNode(DataNode):
         )
 
 
-class DuckDuckGoWebSearchDriverNode(BaseWebSearchDriverNode):
+class DuckDuckGoWebSearchDriver(BaseWebSearchDriver):
     def process(self) -> None:
         # Create the tool
-        driver = DuckDuckGoWebSearchDriver()
+        driver = GtDuckDuckGoWebSearchDriver()
 
         # Set the output
         self.parameter_output_values["driver"] = driver.to_dict()  # pyright: ignore[reportAttributeAccessIssue] TODO(collin): Make Web Search Drivers serializable

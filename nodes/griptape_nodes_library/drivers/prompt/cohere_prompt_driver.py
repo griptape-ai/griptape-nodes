@@ -1,14 +1,14 @@
 import cohere
-from griptape.drivers.prompt.cohere import CoherePromptDriver
+from griptape.drivers.prompt.cohere import CoherePromptDriver as GtCoherePromptDriver
 
-from griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
+from griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriver
 
 DEFAULT_MODEL = "command-r-plus"
 API_KEY_ENV_VAR = "COHERE_API_KEY"
 SERVICE = "Cohere"
 
 
-class CoherePromptDriverNode(BasePromptDriverNode):
+class CoherePromptDriver(BasePromptDriver):
     """Node for Cohere Prompt Driver.
 
     This node creates a Cohere prompt driver and outputs its configuration.
@@ -49,7 +49,7 @@ class CoherePromptDriverNode(BasePromptDriverNode):
         if top_k:
             kwargs["extra_params"]["k"] = top_k
 
-        self.parameter_output_values["prompt_driver"] = CoherePromptDriver(**kwargs)
+        self.parameter_output_values["prompt_driver"] = GtCoherePromptDriver(**kwargs)
 
     def validate_node(self) -> list[Exception] | None:
         # Items here are openai api key

@@ -1,3 +1,4 @@
+import logging
 from os import getenv
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from griptape_nodes.retained_mode.events.secrets_events import (
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+
+logger = logging.getLogger("griptape_nodes")
 
 
 class SecretsManager:
@@ -45,7 +48,7 @@ class SecretsManager:
 
         if secret_value is None:
             details = f"Secret {secret_key} not found: '{secret_key}'"
-            print(details)  # TODO(griptape): Move to Log
+            logger.error(details)
             return GetSecretValueResultFailure()
 
         return GetSecretValueResultSuccess(value=secret_value)
@@ -68,12 +71,12 @@ class SecretsManager:
 
         if not self.env_var_path.exists():
             details = f"Secret file does not exist: '{self.env_var_path}'"
-            print(details)  # TODO(griptape): Move to Log
+            logger.error(details)
             return DeleteSecretValueResultFailure()
 
         if not get_key(self.env_var_path, secret_name):
             details = f"Secret {secret_name} not found in {self.env_var_path}"
-            print(details)  # TODO(griptape): Move to Log
+            logger.error(details)
             return DeleteSecretValueResultFailure()
 
         unset_key(self.env_var_path, secret_name)
@@ -81,19 +84,15 @@ class SecretsManager:
         return DeleteSecretValueResultSuccess()
 
     def get_secret(self, secret_name: str, default: str | None = None) -> str | None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         value = get_key(self.env_var_path, secret_name)
         if value is None:
-            GriptapeNodes.get_logger().warning(
+            logger.warning(
                 "Secret %s not found in %s, looking in environment variables", secret_name, self.env_var_path
             )
             # Check if the secret is set in the environment variables
             value = getenv(secret_name)
         if value is None:
-            GriptapeNodes.get_logger().warning(
-                "Secret %s not found in environment variables, using default value %s", secret_name, default
-            )
+            logger.warning("Secret %s not found in environment variables, using default value %s", secret_name, default)
             # Check if the secret is set in the config manager
             value = default
         return value

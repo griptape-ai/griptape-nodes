@@ -2,14 +2,14 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.utils import Stream
 
-from griptape_nodes_library.agents.create_agent_node import CreateAgentNode
+from griptape_nodes_library.agents.create_agent import CreateAgent
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 
 
-class RunAgentNode(CreateAgentNode):
+class RunAgent(CreateAgent):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 

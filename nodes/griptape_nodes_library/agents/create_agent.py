@@ -3,14 +3,14 @@ from griptape.structures import Agent
 from griptape.utils import Stream
 
 from griptape_nodes.retained_mode.griptape_nodes import logger
-from griptape_nodes_library.agents.base_agent_node import BaseAgentNode
+from griptape_nodes_library.agents.base_agent import BaseAgent
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 
 
-class CreateAgentNode(BaseAgentNode):
+class CreateAgent(BaseAgent):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 

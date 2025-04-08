@@ -4,7 +4,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class KeyValuePairNode(DataNode):
+class KeyValuePair(DataNode):
     """Create a Key Value Pair."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
@@ -19,7 +19,6 @@ class KeyValuePairNode(DataNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="",
                 tooltip="Key for the key-value pair",
-                ui_options={"multiline": True},
             )
         )
 

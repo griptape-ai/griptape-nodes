@@ -1,5 +1,3 @@
-print("prompt an image!")
-
 # /// script
 # dependencies = []
 #
