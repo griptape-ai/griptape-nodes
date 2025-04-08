@@ -299,6 +299,13 @@ class BaseNode(ABC):
         param = self.get_parameter_by_name(param_name)
         return param.default_value if param else None
 
+    def remove_parameter_value(self, param_name: str) -> None:
+        if param_name in self.parameter_values:
+            del self.parameter_values[param_name]
+        else:
+            err = f"Attempted to remove value for Parameter '{param_name}' but no value was set."
+            raise KeyError(err)
+
     def get_next_control_output(self) -> Parameter | None:
         for param in self.parameters:
             if (
