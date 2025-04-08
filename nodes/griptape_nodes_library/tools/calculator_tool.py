@@ -1,14 +1,14 @@
-from griptape.tools import CalculatorTool
+from griptape.tools import CalculatorTool as GtCalculatorTool
 
-from griptape_nodes_library.tools.base_tool import BaseToolNode
+from griptape_nodes_library.tools.base_tool import BaseTool
 
 
-class CalculatorToolNode(BaseToolNode):
+class CalculatorTool(BaseTool):
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", True)
 
         # Create the tool
-        tool = CalculatorTool(off_prompt=off_prompt)
+        tool = GtCalculatorTool(off_prompt=off_prompt)
 
         # Set the output
         self.parameter_output_values["tool"] = tool

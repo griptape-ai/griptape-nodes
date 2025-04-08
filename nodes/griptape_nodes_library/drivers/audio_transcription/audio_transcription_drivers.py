@@ -2,10 +2,10 @@ import openai
 from griptape.drivers.audio_transcription.openai import OpenAiAudioTranscriptionDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes_library.drivers.base_driver import BaseDriverNode
+from griptape_nodes_library.drivers.base_driver import BaseDriver
 
 
-class BaseAudioTranscriptionDriverNode(BaseDriverNode):
+class BaseAudioTranscriptionDriver(BaseDriver):
     """Base driver node for creating Griptape Drivers.
 
     This node provides a generic implementation for initializing Griptape audio_transcription_drivers with configurable parameters.
@@ -28,7 +28,7 @@ class BaseAudioTranscriptionDriverNode(BaseDriverNode):
         )
 
 
-class OpenAiAudioTranscriptionDriverNode(BaseAudioTranscriptionDriverNode):
+class OpenAiAudioTranscriptionDriverNode(BaseAudioTranscriptionDriver):
     def process(self) -> None:
         model = self.parameter_values.get("model", None)
         if model:

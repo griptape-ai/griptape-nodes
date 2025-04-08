@@ -1,15 +1,15 @@
-from griptape.drivers.prompt.ollama import OllamaPromptDriver
+from griptape.drivers.prompt.ollama import OllamaPromptDriver as GtOllamaPromptDriver
 
 from griptape_nodes.exe_types.node_types import Parameter
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriverNode
+from griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriver
 
 DEFAULT_PORT = "11434"
 DEFAULT_BASE_URL = "http://127.0.0.1"
 DEFAULT_MODEL = "llama3.2"
 
 
-class OllamaPromptDriverNode(BasePromptDriverNode):
+class OllamaPromptDriver(BasePromptDriver):
     """Node for Ollama Prompt Driver.
 
     This node creates an Ollama prompt driver and outputs its configuration.
@@ -56,7 +56,7 @@ class OllamaPromptDriverNode(BasePromptDriverNode):
         }
 
         # Create the driver
-        driver = OllamaPromptDriver(**kwargs)
+        driver = GtOllamaPromptDriver(**kwargs)
 
         # Set the output
         self.parameter_output_values["prompt_driver"] = driver

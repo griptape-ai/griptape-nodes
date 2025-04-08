@@ -31,7 +31,7 @@ def dict_to_image_artifact(image_dict, image_format=None) -> ImageArtifact:
     return image_artifact
 
 
-class LoadImageNode(DataNode):
+class LoadImage(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 

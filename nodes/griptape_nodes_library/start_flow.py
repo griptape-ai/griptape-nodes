@@ -4,7 +4,7 @@ from griptape_nodes.exe_types.core_types import ControlParameterOutput
 from griptape_nodes.exe_types.node_types import StartNode
 
 
-class StartFlowNode(StartNode):
+class StartFlow(StartNode):
     def __init__(
         self,
         name: str,

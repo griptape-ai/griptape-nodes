@@ -7,7 +7,7 @@ The `ConvertAgentToToolNode` class is a specialized node for converting an agent
 ### Class Definition
 
 ```python
-class ConvertAgentToToolNode(BaseToolNode):
+class ConvertAgentToToolNode(BaseTool):
     """A node for converting an agent into a Griptape tool."""
 ```
 
