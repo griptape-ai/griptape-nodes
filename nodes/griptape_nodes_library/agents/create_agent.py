@@ -52,12 +52,13 @@ class CreateAgent(BaseAgent):
         if not agent_dict:
             logger.debug("No agent input, creating one")
             # Create the Agent
-            agent = Agent(**kwargs, stream=True)
+            agent = Agent(**kwargs)
         else:
             agent = Agent().from_dict(agent_dict)
         # Otherwise, append rules and tools to the existing agent
 
         prompt = params.get("prompt", None)
+        agent = self.set_context(agent)
         if prompt:
             full_output = ""
             # Check and see if the prompt driver is a stream driver
