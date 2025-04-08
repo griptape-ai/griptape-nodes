@@ -1008,6 +1008,7 @@ class ParameterKeyValulePair(Parameter):
         tooltip_as_output: str | list[dict] | None = None,
         allowed_modes: set[ParameterMode] | None = None,
         ui_options: dict | None = None,
+        traits: set[Trait.__class__ | Trait] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
@@ -1027,6 +1028,7 @@ class ParameterKeyValulePair(Parameter):
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
             ui_options=ui_options,
+            traits=traits,
             converters=converters,
             validators=validators,
             settable=settable,
@@ -1048,8 +1050,9 @@ class ParameterKeyValulePair(Parameter):
         self._kvp_type = kvp_type
 
 
-class ParameterDict(ParameterContainer):
+class ParameterDictionary(ParameterContainer):
     _kvp_type: ParameterType.KeyValueTypePair
+    _original_traits: set[Trait.__class__ | Trait]
 
     def __init__(  # noqa: PLR0913
         self,
@@ -1062,6 +1065,7 @@ class ParameterDict(ParameterContainer):
         tooltip_as_output: str | list[dict] | None = None,
         allowed_modes: set[ParameterMode] | None = None,
         ui_options: dict | None = None,
+        traits: set[Trait.__class__ | Trait] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
@@ -1081,6 +1085,7 @@ class ParameterDict(ParameterContainer):
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
             ui_options=ui_options,
+            traits=traits,
             converters=converters,
             validators=validators,
             settable=settable,
@@ -1088,6 +1093,11 @@ class ParameterDict(ParameterContainer):
             element_id=element_id,
             element_type=element_type,
         )
+
+        if traits:
+            self._original_traits = traits
+        else:
+            self._original_traits = set()
 
     def _custom_getter_for_property_type(self) -> str:
         base_type = super()._custom_getter_for_property_type()
@@ -1162,6 +1172,7 @@ class ParameterDict(ParameterContainer):
             tooltip_as_property=self.tooltip_as_property,
             allowed_modes=self.allowed_modes,
             ui_options=self.ui_options,
+            traits=self._original_traits,
             converters=self.converters,
             validators=self.validators,
             settable=self.settable,
