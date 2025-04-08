@@ -932,7 +932,6 @@ class ParameterList(ParameterContainer):
         for base_input_type in base_input_types:
             container_variant = f"list[{base_input_type}]"
             result.append(container_variant)
-            result.append(base_input_type)
 
         return result
 
@@ -1203,7 +1202,6 @@ class ParameterDictionary(ParameterContainer):
         for base_input_type in base_input_types:
             container_variant = f"dict[{base_input_type}]"
             result.append(container_variant)
-            result.append(base_input_type)
 
         return result
 
