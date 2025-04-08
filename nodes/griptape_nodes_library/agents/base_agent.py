@@ -2,7 +2,7 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.tasks import PromptTask
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -35,9 +35,9 @@ class BaseAgent(ControlNode):
                 tooltip="Connect a prompt driver to use. If not specified, will use the default OpenAI gpt-4o.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
-            Parameter(
+            ParameterList(
                 name="tools",
-                input_types=["list[Tool]", "Tool"],
+                input_types=["Tool"],
                 default_value=None,
                 tooltip="",
                 allowed_modes={ParameterMode.INPUT},
