@@ -15,7 +15,7 @@ class CreateAgent(BaseAgent):
         super().__init__(**kwargs)
 
     def get_tools(self) -> list:
-        tools = self.parameter_values.get("tools", None)
+        tools = self.get_parameter_value("tools")
         if tools:
             if not isinstance(tools, list):
                 tools = [tools]
