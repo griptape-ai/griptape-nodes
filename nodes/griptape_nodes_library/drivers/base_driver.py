@@ -4,7 +4,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class BaseDriverNode(DataNode):
+class BaseDriver(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 

@@ -11,7 +11,7 @@ API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 
 
-class BaseAgentNode(ControlNode):
+class BaseAgent(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 

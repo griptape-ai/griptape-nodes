@@ -12,7 +12,7 @@ DEFAULT_QUALITY = "hd"
 DEFAULT_STYLE = "natural"
 
 
-class DescribeImageNode(ControlNode):
+class DescribeImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 

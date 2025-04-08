@@ -1,7 +1,9 @@
-from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
+from griptape.drivers.image_generation.griptape_cloud import (
+    GriptapeCloudImageGenerationDriver as GtGriptapeCloudImageGenerationDriver,
+)
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes_library.drivers.image.base_image_driver import BaseImageDriverNode
+from griptape_nodes_library.drivers.image.base_image_driver import BaseImageDriver
 
 SERVICE = "Griptape"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -11,7 +13,7 @@ AVAILABLE_MODELS = ["dall-e-3"]
 AVAILABLE_SIZES = ["1024x1024", "1024x1792", "1792x1024"]
 
 
-class GriptapeCloudImageDriverNode(BaseImageDriverNode):
+class GriptapeCloudImageDriver(BaseImageDriver):
     """Node for Griptape Cloud Image Generation Driver.
 
     This node creates an Griptape Cloud image generation driver and outputs its configuration.
@@ -81,7 +83,7 @@ class GriptapeCloudImageDriverNode(BaseImageDriverNode):
             "image_size": size,
         }
 
-        self.parameter_output_values["driver"] = GriptapeCloudImageGenerationDriver(**kwargs)
+        self.parameter_output_values["driver"] = GtGriptapeCloudImageGenerationDriver(**kwargs)
 
     def validate_node(self) -> list[Exception] | None:
         exceptions = []

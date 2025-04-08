@@ -1,11 +1,11 @@
 from typing import Any
 
-from griptape.tools import WebScraperTool
+from griptape.tools import WebScraperTool as GtWebScraperTool
 
-from griptape_nodes_library.tools.base_tool import BaseToolNode
+from griptape_nodes_library.tools.base_tool import BaseTool
 
 
-class WebScraperToolNode(BaseToolNode):
+class WebScraperTool(BaseTool):
     def __init__(
         self,
         name: str,
@@ -17,7 +17,7 @@ class WebScraperToolNode(BaseToolNode):
         off_prompt = self.parameter_values.get("off_prompt", False)
 
         # Create the tool
-        tool = WebScraperTool(off_prompt=off_prompt)
+        tool = GtWebScraperTool(off_prompt=off_prompt)
 
         # Set the output
         self.parameter_output_values["tool"] = tool

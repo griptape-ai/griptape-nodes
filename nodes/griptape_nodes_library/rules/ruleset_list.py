@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class RulesetListNode(DataNode):
+class RulesetList(DataNode):
     """Combine rulesets to give an agent a more complex set of behaviors."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
