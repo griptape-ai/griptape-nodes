@@ -951,7 +951,7 @@ class FlowManager:
 
         return result
 
-    def on_delete_connection_request(self, request: DeleteConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915 TODO(griptape): resolve
+    def on_delete_connection_request(self, request: DeleteConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915, C901 TODO(griptape): resolve
         # Vet the two nodes first.
         source_node = None
         try:
@@ -1050,7 +1050,11 @@ class FlowManager:
             return result
 
         # After the connection has been removed, if it doesn't have PROPERTY as a type, wipe the set parameter value
-        target_node.set_parameter_value
+        if ParameterMode.PROPERTY not in target_param.allowed_modes:
+            try:
+                target_node.remove_parameter_value(target_param.name)
+            except KeyError as e:
+                logger.warning(e)
 
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
         source_node.after_outgoing_connection_removed(
