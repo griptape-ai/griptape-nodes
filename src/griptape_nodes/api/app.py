@@ -52,6 +52,15 @@ console = Console()
 logger = logging.getLogger(__name__)
 
 
+config_files = GriptapeNodes.ConfigManager().config_files
+if len(config_files) == 0:
+    logger.info("No configuration files were found. Will run using default values.")
+else:
+    logger.info("Configuration files were found at the following locations and merged in this order:")
+    for config_file in config_files:
+        logger.info("\t%s", config_file)
+
+
 def run_with_context(func: Callable) -> Callable:
     ctx = contextvars.copy_context()
 
