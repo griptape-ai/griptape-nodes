@@ -27,7 +27,7 @@ class WorkflowRegistry(SingletonMixin):
     class _RegistryKey:
         """Private class for workflow construction."""
 
-    _workflows: dict[str, Workflow] = {}
+    _workflows: dict[str, Workflow]
     _registry_key: _RegistryKey = _RegistryKey()
 
     # Create a new workflow with everything we'd need
