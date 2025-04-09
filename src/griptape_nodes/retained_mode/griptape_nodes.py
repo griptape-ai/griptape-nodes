@@ -123,6 +123,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromFileResultFailure,
     RegisterLibraryFromFileResultSuccess,
+    UnloadLibraryFromRegistryRequest,
+    UnloadLibraryFromRegistryResultFailure,
+    UnloadLibraryFromRegistryResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
@@ -149,6 +152,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     SetNodeMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import (
+    ClearAllObjectStateRequest,
+    ClearAllObjectStateResultFailure,
+    ClearAllObjectStateResultSuccess,
     RenameObjectRequest,
     RenameObjectResultFailure,
     RenameObjectResultSuccess,
@@ -396,6 +402,9 @@ class ObjectManager:
         _event_manager.assign_manager_to_request_type(
             request_type=RenameObjectRequest, callback=self.on_rename_object_request
         )
+        _event_manager.assign_manager_to_request_type(
+            request_type=ClearAllObjectStateRequest, callback=self.on_clear_all_object_state_request
+        )
 
     def on_rename_object_request(self, request: RenameObjectRequest) -> ResultPayload:
         # Does the source object exist?
@@ -447,6 +456,25 @@ class ObjectManager:
             log_level = logging.WARNING
         logger.log(level=log_level, msg=details)
         return RenameObjectResultSuccess(final_name=final_name)
+
+    def on_clear_all_object_state_request(self, request: ClearAllObjectStateRequest) -> ResultPayload:
+        if not request.i_know_what_im_doing:
+            logger.warning(
+                "Attempted to clear all object state and delete everything. Failed because they didn't know what they were doing."
+            )
+            return ClearAllObjectStateResultFailure()
+        # Let's try and clear it all.
+        try:
+            # Clear the existing flows, which will clear all nodes and connections.
+            GriptapeNodes.clear_data()
+        except Exception as e:
+            details = f"Attempted to clear all object state and delete everything. Failed with exception: {e}"
+            logger.exception(details)
+            return ClearAllObjectStateResultFailure()
+
+        details = "Successfully cleared all object state (deleted everything)."
+        logger.debug(details)
+        return ClearAllObjectStateResultSuccess()
 
     def get_filtered_subset(
         self,
@@ -2523,6 +2551,11 @@ class WorkflowManager:
         else:
             complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         try:
+            # TODO(griptape): scope the libraries loaded to JUST those used by this workflow, eventually: https://github.com/griptape-ai/griptape-nodes/issues/284
+            # Load (or reload, which should trigger a hot reload) all libraries
+            GriptapeNodes.LibraryManager().load_all_libraries_from_config()
+
+            # Now execute the workflow.
             with Path(complete_file_path).open() as file:
                 workflow_content = file.read()
             exec(workflow_content)  # noqa: S102
@@ -2535,7 +2568,6 @@ class WorkflowManager:
 
     def on_run_workflow_from_scratch_request(self, request: RunWorkflowFromScratchRequest) -> ResultPayload:
         # Check if file path exists
-
         relative_file_path = request.file_path
         complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         if not Path(complete_file_path).is_file():
@@ -2543,12 +2575,12 @@ class WorkflowManager:
             logger.error(details)
             return RunWorkflowFromScratchResultFailure()
 
-        try:
-            # Clear the existing flows
-            GriptapeNodes.clear_data()
-        except Exception as e:
-            details = f"Failed to clear the existing context when trying to run '{complete_file_path}'. Exception: {e}"
-            logger.exception(details)
+        # Start with a clean slate.
+        clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
+        clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+        if not clear_all_result.succeeded():
+            details = f"Failed to clear the existing object state when trying to run '{complete_file_path}'."
+            logger.error(details)
             return RunWorkflowFromScratchResultFailure()
 
         # Run the file, goddamn it
@@ -2582,8 +2614,37 @@ class WorkflowManager:
         except KeyError:
             logger.exception("Failed to get workflow from registry.")
             return RunWorkflowFromRegistryResultFailure()
+
         # get file_path from workflow
         relative_file_path = workflow.file_path
+
+        if request.run_with_clean_slate:
+            # Start with a clean slate.
+            clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
+            clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+            if not clear_all_result.succeeded():
+                details = f"Failed to clear the existing object state when preparing to run workflow '{request.workflow_name}'."
+                logger.error(details)
+                return RunWorkflowFromRegistryResultFailure()
+
+            # Unload all libraries now.
+            all_libraries_request = ListRegisteredLibrariesRequest()
+            all_libraries_result = GriptapeNodes.handle_request(all_libraries_request)
+            if not isinstance(all_libraries_result, ListRegisteredLibrariesResultSuccess):
+                details = (
+                    f"When preparing to run a workflow '{request.workflow_name}', failed to get registered libraries."
+                )
+                logger.error(details)
+                return RunWorkflowFromRegistryResultFailure()
+
+            for library_name in all_libraries_result.libraries:
+                unload_library_request = UnloadLibraryFromRegistryRequest(library_name=library_name)
+                unload_library_result = GriptapeNodes.handle_request(unload_library_request)
+                if not unload_library_result.succeeded():
+                    details = f"When preparing to run a workflow '{request.workflow_name}', failed to unload library '{library_name}'."
+                    logger.error(details)
+                    return RunWorkflowFromRegistryResultFailure()
+
         # run file
         success, details = self.run_workflow(relative_file_path=relative_file_path)
 
@@ -2989,6 +3050,9 @@ class LibraryManager:
         event_manager.assign_manager_to_request_type(
             GetAllInfoForAllLibrariesRequest, self.get_all_info_for_all_libraries_request
         )
+        event_manager.assign_manager_to_request_type(
+            UnloadLibraryFromRegistryRequest, self.unload_library_from_registry_request
+        )
 
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
@@ -3175,6 +3239,18 @@ class LibraryManager:
         logger.info(details)
         return RegisterLibraryFromFileResultSuccess(library_name=library_name)
 
+    def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
+        try:
+            LibraryRegistry.unregister_library(library_name=request.library_name)
+        except Exception as e:
+            details = f"Attempted to unload library '{request.library_name}'. Failed due to {e}"
+            logger.exception(details)
+            return UnloadLibraryFromRegistryResultFailure()
+
+        details = f"Successfully unloaded (and unregistered) library '{request.library_name}'."
+        logger.debug(details)
+        return UnloadLibraryFromRegistryResultSuccess()
+
     def get_all_info_for_all_libraries_request(self, request: GetAllInfoForAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         list_libraries_request = ListRegisteredLibrariesRequest()
         list_libraries_result = self.on_list_registered_libraries_request(list_libraries_request)
@@ -3290,7 +3366,7 @@ class LibraryManager:
         return result
 
     def _load_class_from_file(self, file_path: Path | str, class_name: str) -> type[BaseNode]:
-        """Dynamically load a class from a Python file.
+        """Dynamically load a class from a Python file with support for hot reloading.
 
         Args:
             file_path: Path to the Python file
@@ -3309,20 +3385,50 @@ class LibraryManager:
         # Generate a unique module name
         module_name = f"dynamic_module_{file_path.name.replace('.', '_')}_{hash(str(file_path))}"
 
-        # Load the module specification
-        spec = importlib.util.spec_from_file_location(module_name, file_path)
-        if spec is None or spec.loader is None:
-            msg = f"Could not load module specification from {file_path}"
-            raise ImportError(msg)
+        # Check if this module is already loaded
+        if module_name in sys.modules:
+            # For dynamically loaded modules, we need to re-create the module
+            # with a fresh spec rather than using importlib.reload
 
-        # Create the module
-        module = importlib.util.module_from_spec(spec)
+            # Remove the old module from sys.modules
+            old_module = sys.modules.pop(module_name)
 
-        # Add to sys.modules to handle recursive imports
-        sys.modules[module_name] = module
+            # Create a fresh spec and module
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            if spec is None or spec.loader is None:
+                msg = f"Could not load module specification from {file_path}"
+                raise ImportError(msg)
 
-        # Execute the module
-        spec.loader.exec_module(module)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+
+            try:
+                # Execute the module with the new code
+                spec.loader.exec_module(module)
+                details = f"Hot reloaded module: {module_name} from {file_path}"
+                logger.debug(details)
+            except Exception as e:
+                # Restore the old module in case of failure
+                sys.modules[module_name] = old_module
+                msg = f"Error reloading module {module_name} from {file_path}: {e}"
+                raise ImportError(msg) from e
+
+        # Load it for the first time
+        else:
+            # Load the module specification
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            if spec is None or spec.loader is None:
+                msg = f"Could not load module specification from {file_path}"
+                raise ImportError(msg)
+
+            # Create the module
+            module = importlib.util.module_from_spec(spec)
+
+            # Add to sys.modules to handle recursive imports
+            sys.modules[module_name] = module
+
+            # Execute the module
+            spec.loader.exec_module(module)
 
         # Get the class
         try:
@@ -3338,10 +3444,13 @@ class LibraryManager:
 
         return node_class
 
-    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        # App just got init'd. See if there are library JSONs to load!
+    def load_all_libraries_from_config(self) -> None:
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         self._load_libraries_from_config_category(config_category=user_libraries_section, load_as_default_library=False)
+
+    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+        # App just got init'd. See if there are library JSONs to load!
+        self.load_all_libraries_from_config()
 
         # See if there are workflow JSONs to load!
         default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
