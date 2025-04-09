@@ -49,6 +49,7 @@ class RunWorkflowWithCurrentStateResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class RunWorkflowFromRegistryRequest(RequestPayload):
     workflow_name: str
+    run_with_clean_slate: bool = True
 
 
 @dataclass

@@ -16,7 +16,7 @@ from dotenv.main import DotEnv
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
-from xdg_base_dirs import xdg_config_home
+from xdg_base_dirs import xdg_config_home, xdg_data_home
 
 from griptape_nodes.app import start_app
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
@@ -28,6 +28,7 @@ GH_INSTALL_SCRIPT_PS = "/repos/griptape-ai/griptape-nodes/contents/install.ps1?r
 INSTALL_SCRIPT_SH = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.sh"
 INSTALL_SCRIPT_PS = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.ps1"
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
+DATA_DIR = xdg_data_home() / "griptape_nodes"
 ENV_FILE = CONFIG_DIR / ".env"
 CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
 REPO_NAME = "griptape-ai/griptape-nodes"
@@ -61,12 +62,11 @@ def _run_init(api_key: str | None = None, workspace_directory: str | None = None
 def _get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="griptape-nodes", description="Griptape Nodes Engine.")
 
-    # The main command (engine|config|update|version|init)
     parser.add_argument(
         "command",
         help="Command to run",
         nargs="?",
-        choices=["init", "engine", "config", "update", "version"],
+        choices=["init", "engine", "config", "update", "uninstall", "version"],
         default="engine",
     )
 
@@ -107,10 +107,9 @@ def _init_system_config() -> bool:
         bool: True if the system config directory was created, False otherwise.
 
     """
-    config_dir = xdg_config_home() / "griptape_nodes"
     is_first_init = False
-    if not config_dir.exists():
-        config_dir.mkdir(parents=True, exist_ok=True)
+    if not CONFIG_DIR.exists():
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         is_first_init = True
 
     files_to_create = [
@@ -119,7 +118,7 @@ def _init_system_config() -> bool:
     ]
 
     for file_name in files_to_create:
-        file_path = config_dir / file_name[0]
+        file_path = CONFIG_DIR / file_name[0]
         if not file_path.exists():
             with Path.open(file_path, "w") as file:
                 file.write(file_name[1])
@@ -333,13 +332,37 @@ def _get_user_config() -> dict:
     return config_manager.user_config
 
 
-def _list_user_configs() -> list[Path]:
-    """Lists the user configuration files.
+def _list_user_configs() -> None:
+    """Lists the user configuration files."""
+    for config in config_manager.config_files:
+        console.print(f"[bold green]{config}[/bold green]")
 
-    Returns:
-        list[Path]: All config files.
-    """
-    return config_manager.config_files
+
+def _uninstall_self() -> None:
+    """Uninstalls itself by removing the config and data directories, and the executable."""
+    console.print("[bold red]Uninstalling Griptape Nodes...[/bold red]")
+    console.print(f"[bold yellow]Removing config directory '{CONFIG_DIR}'...[/bold yellow]")
+    shutil.rmtree(CONFIG_DIR)
+
+    console.print(f"[bold yellow]Removing data directory '{DATA_DIR}'...[/bold yellow]")
+    shutil.rmtree(DATA_DIR)
+
+    console.print("[bold yellow]Removing Griptape Nodes executable 'griptape-nodes'/'gtn'...[/bold yellow]")
+    subprocess.run(
+        ["uv", "tool", "uninstall", "griptape-nodes"],
+        check=True,
+        text=True,
+    )
+
+    console.print("[bold green]Uninstall complete![/bold green]")
+
+    remaining_config_files = config_manager.config_files
+    if remaining_config_files:
+        console.print("[bold yellow]Caveat! Some config files were intentionally not removed:[/bold yellow]")
+        for file in remaining_config_files:
+            console.print(f"[bold yellow]{file}[/bold yellow]")
+
+    sys.exit(0)
 
 
 def _process_args(args: argparse.Namespace) -> None:
@@ -359,12 +382,13 @@ def _process_args(args: argparse.Namespace) -> None:
         start_app()
     elif args.command == "config":
         if args.config_subcommand == "list":
-            for config in _list_user_configs():
-                console.print(f"[bold green]{config}[/bold green]")
+            _list_user_configs()
         else:
             sys.stdout.write(json.dumps(_get_user_config(), indent=2))
     elif args.command == "update":
         _install_latest_release()
+    elif args.command == "uninstall":
+        _uninstall_self()
     elif args.command == "version":
         version = _get_current_version()
         console.print(f"[bold green]{version}[/bold green]")
