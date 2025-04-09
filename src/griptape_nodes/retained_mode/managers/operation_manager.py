@@ -383,6 +383,6 @@ class OperationDepthManager:
 
     def retained_mode_code(self, request: RequestPayload) -> str:
         retained_mode_value = self.payload_converter.execute(request)
-        # save to a script.py.
+        # save to a workflow.py.
         # is there an effective way to do this without duplicating commands?
         return retained_mode_value

@@ -36,7 +36,7 @@ class ParameterType:
         key_type: str
         value_type: str
 
-    _builtin_aliases = {
+    _builtin_aliases: ClassVar[dict] = {
         "str": ParameterTypeBuiltin.STR,
         "string": ParameterTypeBuiltin.STR,
         "bool": ParameterTypeBuiltin.BOOL,
