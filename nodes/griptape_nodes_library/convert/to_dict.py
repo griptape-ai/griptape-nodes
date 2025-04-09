@@ -120,9 +120,9 @@ class ToDictionary(DataNode):
     def _convert_sequence_to_dict(self, sequence) -> dict:
         """Convert a list or tuple to dictionary."""
         result = {}
-
+        length_check = 2
         for i, item in enumerate(sequence):
-            if isinstance(item, tuple) and len(item) == 2:
+            if isinstance(item, tuple) and len(item) == length_check:
                 key, value = item
                 if hasattr(key, "__hash__") and key is not None:
                     result[key] = value
