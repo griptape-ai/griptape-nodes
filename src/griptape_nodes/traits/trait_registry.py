@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from griptape.mixins.singleton_mixin import SingletonMixin
 
@@ -12,11 +12,7 @@ if TYPE_CHECKING:
 class TraitRegistry(SingletonMixin):
     # I'm going to create a dictionary that stores all of the created traits we have so far?
     # Traits will be associated with certain key words
-    key_to_trait: dict[str, list[Trait.__class__]]
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.key_to_trait = {}
+    key_to_trait: ClassVar[dict[str, list[Trait.__class__]]] = {}
 
     @classmethod
     def create_traits(cls, key_word: str) -> list[Trait] | None:
