@@ -42,7 +42,6 @@ class BaseAgent(ControlNode):
                 tooltip="",
                 allowed_modes={ParameterMode.INPUT},
             )
-
             Parameter(
                 name="rulesets",
                 input_types=["list[Ruleset]", "Ruleset"],

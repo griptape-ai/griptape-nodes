@@ -798,6 +798,10 @@ class ParameterContainer(Parameter, ABC):
             element_type=element_type,
         )
 
+    @abstractmethod
+    def add_child_parameter(self) -> Parameter:
+        pass
+
 
 class ParameterList(ParameterContainer):
     _original_traits: set[Trait.__class__ | Trait]
@@ -850,6 +854,8 @@ class ParameterList(ParameterContainer):
             element_id=element_id,
             element_type=element_type,
         )
+        # I am going to add the first item in the list
+        self.add_child_parameter()
 
     def _custom_getter_for_property_type(self) -> str:
         base_type = super()._custom_getter_for_property_type()

@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from rich.logging import RichHandler
 from xdg_base_dirs import xdg_data_home
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import Parameter, ParameterContainer, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -1705,6 +1705,27 @@ class NodeManager:
 
             result = AddParameterToNodeResultFailure()
             return result
+
+        if request.parent_container_name:
+            parameter = node.get_parameter_by_name(request.parent_container_name)
+            if parameter is None:
+                details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{request.node_name}'. Failed because parameter didn't exist."
+                logger.error(details)
+                result = AddParameterToNodeResultFailure()
+                return result
+            if not isinstance(parameter, ParameterContainer):
+                details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{request.node_name}'. Failed because parameter wasn't a container."
+                logger.error(details)
+                result = AddParameterToNodeResultFailure()
+                return result
+            try:
+                parameter.add_child_parameter()
+            except Exception as e:
+                details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{request.node_name}'. Failed: {e}."
+                logger.exception(details)
+                result = AddParameterToNodeResultFailure()
+                return result
+            return AddParameterToNodeResultSuccess()
 
         # Does the Node already have a parameter by this name?
         if node.get_parameter_by_name(request.parameter_name) is not None:

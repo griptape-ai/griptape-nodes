@@ -31,6 +31,7 @@ class AddParameterToNodeRequest(RequestPayload):
     mode_allowed_input: bool = Field(default=True)
     mode_allowed_property: bool = Field(default=True)
     mode_allowed_output: bool = Field(default=True)
+    parent_container_name: str | None = None
 
     @classmethod
     def create(cls, **kwargs) -> AddParameterToNodeRequest:

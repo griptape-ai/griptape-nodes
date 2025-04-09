@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from griptape.events import EventBus
 
-from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import Parameter, ParameterContainer, ParameterList, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
@@ -33,7 +33,6 @@ class ResolutionContext:
         self.flow = flow
         self.focus_stack = []
         self.paused = False
-
 
 class InitializeSpotlightState(State):
     @staticmethod
@@ -122,6 +121,21 @@ class ExecuteNodeState(State):
     # TODO(kate): Can we refactor this method to make it a lot cleaner? might involve changing how parameter values are retrieved/stored.
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901
+
+        def handle_container_parameter(current_node:BaseNode, parameter:Parameter) -> None:
+            # if it's a container and it's value isn't already set.
+            if isinstance(parameter, ParameterContainer) and parameter.name not in current_node.parameter_values:
+                children = parameter.find_elements_by_type(Parameter, find_recursively=False)
+                if isinstance(parameter, ParameterList):
+                    build_parameter_value = []
+                else:
+                    build_parameter_value = {}
+                for child in children:
+                    handle_container_parameter(current_node, child)
+                    build_parameter_value.append(current_node.get_parameter_value(child.name))
+
+
+
         current_node = context.focus_stack[-1]
         # Get the parameters that have input values
         for parameter_name in current_node.parameter_output_values.copy():
@@ -142,6 +156,7 @@ class ExecuteNodeState(State):
         for parameter in current_node.parameters:
             if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
                 continue
+            handle_container_parameter(current_node,parameter)
             if parameter.name not in current_node.parameter_values and parameter.default_value:
                 # If a parameter value is not already set
                 value = parameter.default_value
