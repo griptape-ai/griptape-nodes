@@ -18,7 +18,7 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from xdg_base_dirs import xdg_config_home
 
-from griptape_nodes.api.app import main as api_main
+from griptape_nodes.app import start_app
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -356,7 +356,7 @@ def _process_args(args: argparse.Namespace) -> None:
         # Confusing double negation -- If `no_update` is set, we want to skip the update
         if not args.no_update:
             _auto_update()
-        api_main()
+        start_app()
     elif args.command == "config":
         if args.config_subcommand == "list":
             for config in _list_user_configs():

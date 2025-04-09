@@ -53,6 +53,14 @@
       }
     },
     {
+      "Number": {
+        "color": "border-blue-500",
+        "title": "Number",
+        "description": "Number Nodes.",
+        "icon": "Hash"
+      }
+    },
+    {
       "Text": {
         "color": "border-blue-500",
         "title": "Text",
@@ -249,6 +257,42 @@
       }
     },
     {
+      "class_name": "CreateFloat",
+      "file_path": "griptape_nodes_library/number/create_float.py",
+      "metadata": {
+        "category": "Number",
+        "description": "Creates and outputs a simple float value",
+        "display_name": "Create Float"
+      }
+    },
+    {
+      "class_name": "CreateInteger",
+      "file_path": "griptape_nodes_library/number/create_int.py",
+      "metadata": {
+        "category": "Number",
+        "description": "Creates and outputs a simple integer value",
+        "display_name": "Create Integer"
+      }
+    },
+    {
+      "class_name": "DisplayFloat",
+      "file_path": "griptape_nodes_library/number/display_float.py",
+      "metadata": {
+        "category": "Number",
+        "description": "Displays a simple float value",
+        "display_name": "Display Float"
+      }
+    },
+    {
+      "class_name": "DisplayInteger",
+      "file_path": "griptape_nodes_library/number/display_int.py",
+      "metadata": {
+        "category": "Number",
+        "description": "Displays a simple integer value",
+        "display_name": "Display Integer"
+      }
+    },
+    {
       "class_name": "CreateText",
       "file_path": "griptape_nodes_library/text/create_text.py",
       "metadata": {
@@ -294,6 +338,15 @@
       }
     },
     {
+      "class_name": "DisplayText",
+      "file_path": "griptape_nodes_library/text/display_text.py",
+      "metadata": {
+        "category": "Text",
+        "description": "Displays a text or string value",
+        "display_name": "Display Text"
+      }
+    },
+    {
       "class_name": "EndFlow",
       "file_path": "griptape_nodes_library/end_flow.py",
       "metadata": {
@@ -327,6 +380,15 @@
         "category": "Dictionary",
         "description": "Merges Key/Value pairs into a single dictionary",
         "display_name": "Merge Key Value Pair"
+      }
+    },
+    {
+      "class_name": "DisplayDictionary",
+      "file_path": "griptape_nodes_library/dict/display_dict.py",
+      "metadata": {
+        "category": "Dictionary",
+        "description": "Displays a dictionary or key-value pair",
+        "display_name": "Display Dictionary"
       }
     },
     {

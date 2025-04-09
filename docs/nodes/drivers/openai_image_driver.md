@@ -1,8 +1,8 @@
-# OpenAiImageDriverNode
+# OpenAiImageDriver
 
 ## What is it?
 
-The OpenAiImageDriverNode is a building block that sets up a connection to OpenAI's image generation service (DALL-E). Think of it as configuring a digital artist that can create images based on text descriptions.
+The OpenAiImageDriver is a building block that sets up a connection to OpenAI's image generation service (DALL-E). Think of it as configuring a digital artist that can create images based on text descriptions.
 
 ## When would I use it?
 
@@ -16,13 +16,13 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the OpenAiImageDriverNode to your workspace
+1. Add the OpenAiImageDriver to your workspace
 1. Connect it to your flow
-1. Connect its output to nodes that need to generate images (like CreateImageNode)
+1. Connect its output to nodes that need to generate images (like CreateImage)
 
 ### Optional Configuration
 
-This node inherits all settings from the BaseImageDriverNode, which may include:
+This node inherits all settings from the BaseImageDriver, which may include:
 
 - Model selection
 - Image size settings
@@ -36,9 +36,9 @@ This node inherits all settings from the BaseImageDriverNode, which may include:
 
 Imagine you want to create images using OpenAI's DALL-E:
 
-1. Add an OpenAiImageDriverNode to your workflow
+1. Add an OpenAiImageDriver to your workflow
 1. Configure any available settings
-1. Connect the "driver" output to a CreateImageNode's "driver" input
+1. Connect the "driver" output to a CreateImage's "driver" input
 1. Now that node will generate images using OpenAI's DALL-E
 
 ## Important Notes
