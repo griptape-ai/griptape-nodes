@@ -2551,7 +2551,11 @@ class ScriptManager:
         else:
             complete_file_path = ScriptRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         try:
-            # TODO(griptape): LOAD OR RELOAD ALL LIBRARIES
+            # TODO(griptape): scope the libraries loaded to JUST those used by this workflow, eventually.
+            # Load (or reload, which should trigger a hot reload) all libraries
+            GriptapeNodes.LibraryManager().load_all_libraries_from_config()
+
+            # Now execute the workflow.
             with Path(complete_file_path).open() as file:
                 script_content = file.read()
             exec(script_content)  # noqa: S102
@@ -3364,7 +3368,7 @@ class LibraryManager:
         return result
 
     def _load_class_from_file(self, file_path: Path | str, class_name: str) -> type[BaseNode]:
-        """Dynamically load a class from a Python file.
+        """Dynamically load a class from a Python file with support for hot reloading.
 
         Args:
             file_path: Path to the Python file
@@ -3383,20 +3387,34 @@ class LibraryManager:
         # Generate a unique module name
         module_name = f"dynamic_module_{file_path.name.replace('.', '_')}_{hash(str(file_path))}"
 
-        # Load the module specification
-        spec = importlib.util.spec_from_file_location(module_name, file_path)
-        if spec is None or spec.loader is None:
-            msg = f"Could not load module specification from {file_path}"
-            raise ImportError(msg)
+        # Check if this module is already loaded
+        if module_name in sys.modules:
+            # Reload the existing module
+            module = sys.modules[module_name]
+            try:
+                module = importlib.reload(module)
+                details = f"Reloaded module: {module_name} from {file_path}"
+                logger.debug(details)
+            except Exception as e:
+                msg = f"Error reloading module {module_name} from {file_path}: {e}"
+                raise ImportError(msg) from e
 
-        # Create the module
-        module = importlib.util.module_from_spec(spec)
+        # Load it for the first time
+        else:
+            # Load the module specification
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            if spec is None or spec.loader is None:
+                msg = f"Could not load module specification from {file_path}"
+                raise ImportError(msg)
 
-        # Add to sys.modules to handle recursive imports
-        sys.modules[module_name] = module
+            # Create the module
+            module = importlib.util.module_from_spec(spec)
 
-        # Execute the module
-        spec.loader.exec_module(module)
+            # Add to sys.modules to handle recursive imports
+            sys.modules[module_name] = module
+
+            # Execute the module
+            spec.loader.exec_module(module)
 
         # Get the class
         try:
@@ -3412,10 +3430,13 @@ class LibraryManager:
 
         return node_class
 
-    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        # App just got init'd. See if there are library JSONs to load!
+    def load_all_libraries_from_config(self) -> None:
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         self._load_libraries_from_config_category(config_category=user_libraries_section, load_as_default_library=False)
+
+    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+        # App just got init'd. See if there are library JSONs to load!
+        self.load_all_libraries_from_config()
 
         # See if there are script JSONs to load!
         default_script_section = "app_events.on_app_initialization_complete.scripts_to_register"
