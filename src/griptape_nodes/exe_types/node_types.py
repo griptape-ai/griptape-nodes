@@ -17,6 +17,8 @@ from griptape_nodes.exe_types.core_types import (
 )
 import contextlib
 
+from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
+
 
 class NodeResolutionState(Enum):
     """Possible states for a node during resolution."""
@@ -301,10 +303,11 @@ class BaseNode(ABC):
         return modified_parameters
 
     def kill_parameter_children(self, parameter:Parameter) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
         for child in parameter.find_elements_by_type(Parameter):
-                with contextlib.suppress(KeyError):
-                    self.remove_parameter_value(child.name)
-                self.remove_parameter(child)
+            GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(
+                    parameter_name = child.name,
+                    node_name=self.name))
 
     def get_parameter_value(self, param_name: str) -> Any:
         if param_name in self.parameter_values:
