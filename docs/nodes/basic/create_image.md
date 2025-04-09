@@ -1,8 +1,8 @@
-# CreateImageNode
+# CreateImage
 
 ## What is it?
 
-The CreateImageNode is a building block that lets you generate images using AI. Think of it as having an artist on call who can create images based on your description.
+The CreateImage is a building block that lets you generate images using AI. Think of it as having an artist on call who can create images based on your description.
 
 ## When would I use it?
 
@@ -16,7 +16,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the CreateImageNode to your workspace
+1. Add the CreateImage to your workspace
 1. Connect it to your flow
 
 ### Required Fields
@@ -39,7 +39,7 @@ Use this node when you want to:
 
 Imagine you want to create an image of a friendly robot:
 
-1. Add a CreateImageNode
+1. Add a CreateImage
 1. In the "prompt" field, type: "A friendly robot helping a child with homework"
 1. Run the node
 1. The image will be generated and saved in the Images folder by default

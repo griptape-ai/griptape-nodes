@@ -1,8 +1,8 @@
-# **VectorStoreToolNode Class Documentation**
+# **VectorStoreTool Class Documentation**
 
 ### Overview
 
-The `VectorStoreToolNode` class is a custom node in the Griptape framework that utilizes the `VectorStoreTool` to interact with a vector store. This node provides a flexible way to process and output data from a vector store.
+The `VectorStoreTool` class is a custom node in the Griptape framework that utilizes the `VectorStoreTool` to interact with a vector store. This node provides a flexible way to process and output data from a vector store.
 
 ### Attributes
 
@@ -37,8 +37,8 @@ If any of these conversions fail, it logs an exception and returns an empty dict
 ### Example Usage
 
 ```python
-# Create a VectorStoreToolNode instance
-node = VectorStoreToolNode()
+# Create a VectorStoreTool instance
+node = VectorStoreTool()
 
 # Set input parameters
 node.parameter_values["off_prompt"] = True

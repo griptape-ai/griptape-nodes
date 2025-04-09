@@ -1,8 +1,8 @@
-# **ExtractionToolNode Class Documentation**
+# **ExtractionTool Class Documentation**
 
 ### Overview
 
-The `ExtractionToolNode` class is a custom node in the Griptape framework that utilizes the `ExtractionTool` to extract data from various sources. This node provides a flexible way to process and output data using different extraction engines.
+The `ExtractionTool` class is a custom node in the Griptape framework that utilizes the `ExtractionTool` to extract data from various sources. This node provides a flexible way to process and output data using different extraction engines.
 
 ### Attributes
 
@@ -34,8 +34,8 @@ This method validates the node's inputs to ensure they are valid before processi
 ### Example Usage
 
 ```python
-# Create an ExtractionToolNode instance
-node = ExtractionToolNode()
+# Create an ExtractionTool instance
+node = ExtractionTool()
 
 # Set input parameters
 node.parameter_values["prompt_driver"] = GriptapeCloudPromptDriver(model="gpt-4o")

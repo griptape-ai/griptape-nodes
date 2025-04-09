@@ -1,8 +1,8 @@
-# StringListNode
+# StringList
 
 ## What is it?
 
-The StringListNode is a simple building block that creates or passes through a list of text strings. Think of it as a collection box where you can store multiple pieces of text together as a single unit.
+The StringList is a simple building block that creates or passes through a list of text strings. Think of it as a collection box where you can store multiple pieces of text together as a single unit.
 
 ## When would I use it?
 
@@ -16,7 +16,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the StringListNode to your workspace
+1. Add the StringList to your workspace
 1. Connect it to your flow
 
 ### Fields
@@ -31,7 +31,7 @@ Use this node when you want to:
 
 Imagine you want to create a list of options for an agent to choose from:
 
-1. Add a StringListNode to your workflow
+1. Add a StringList to your workflow
 1. Set the "string_list" to ["Option A", "Option B", "Option C"]
 1. Connect the "string_list" output to another node that needs this list of options
 

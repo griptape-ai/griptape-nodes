@@ -1,8 +1,8 @@
-# AudioTranscriptionToolNode
+# AudioTranscriptionTool
 
 ## What is it?
 
-The AudioTranscriptionToolNode is a custom node in Griptape that utilizes the OpenAI audio transcription service to transcribe audio files. It's designed to work seamlessly with other nodes in the Griptape workflow.
+The AudioTranscriptionTool is a custom node in Griptape that utilizes the OpenAI audio transcription service to transcribe audio files. It's designed to work seamlessly with other nodes in the Griptape workflow.
 
 ## When would I use it?
 
@@ -16,7 +16,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the AudioTranscriptionToolNode to your workspace
+1. Add the AudioTranscriptionTool to your workspace
 1. Connect it to other nodes that provide necessary input parameters (e.g., off_prompt, driver)
 
 ### Fields
@@ -33,13 +33,13 @@ Use this node when you want to:
 Imagine you have a workflow that generates and saves text:
 
 1. Create a flow with several nodes (like an agent that generates text and a node that saves it)
-1. Add the AudioTranscriptionToolNode at the end of your sequence, connecting it to nodes that provide off_prompt and driver parameters
+1. Add the AudioTranscriptionTool at the end of your sequence, connecting it to nodes that provide off_prompt and driver parameters
 1. Run the flow to see the audio transcription in action
 
 ## Important Notes
 
-- The AudioTranscriptionToolNode requires the OpenAI API key to be set as an environment variable.
-- Using the AudioTranscriptionToolNode with an invalid or missing driver will raise a ValueError.
+- The AudioTranscriptionTool requires the OpenAI API key to be set as an environment variable.
+- Using the AudioTranscriptionTool with an invalid or missing driver will raise a ValueError.
 
 ## Validation
 
@@ -52,4 +52,4 @@ The `validate_node` method checks for the following:
 ## Common Issues
 
 - **Invalid Driver**: Ensure that you're providing a valid driver when connecting this node to other nodes in your workflow.
-- **Missing API Key**: Verify that the OpenAI API key is set as an environment variable for the AudioTranscriptionToolNode to function correctly.
+- **Missing API Key**: Verify that the OpenAI API key is set as an environment variable for the AudioTranscriptionTool to function correctly.
