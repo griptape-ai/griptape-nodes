@@ -37,7 +37,7 @@ class DisplayDictionary(DataNode):
 
     def process(self) -> None:
         # Simply output the default value or any updated property value
-        self.parameter_values["dictionary_display"] = str(self.parameter_values["dictionary"])
+        self.parameter_output_values["dictionary_display"] = str(self.parameter_values["dictionary"])
 
         # Convert the dictionary to a string
         self.parameter_output_values["dictionary"] = self.parameter_values["dictionary"]
