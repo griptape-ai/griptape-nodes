@@ -1,57 +1,57 @@
-# CreateImage
+# CreateImage Node
 
-## What is it?
+## Overview
 
-The CreateImage is a building block that lets you generate images using AI. Think of it as having an artist on call who can create images based on your description.
+The `CreateImage` node is a control node designed to generate images using the Griptape Cloud services. It leverages the capabilities of the Griptape Cloud Image Generation Driver and the Griptape Cloud Prompt Driver to produce high-quality images based on user-defined prompts.
 
 ## When would I use it?
 
-Use this node when you want to:
+Use the `CreateImage` node when you need to generate images programmatically within a workflow. This node is particularly useful for applications requiring dynamic image creation based on textual descriptions or prompts.
 
-- Create images from text descriptions
-- Generate visual content for your projects
-- Illustrate concepts or ideas with AI-generated images
+## Basic Setup
 
-## How to use it
+1. **Add the Node**: Integrate the `CreateImage` node into your workflow.
+2. **Configure Parameters**: Set up the necessary parameters such as `agent`, `image_generation_driver`, and `prompt`.
 
-### Basic Setup
+## Configuration Options
 
-1. Add the CreateImage to your workspace
-1. Connect it to your flow
+- **agent**: 
+  - **Type**: `Agent` or `dict`
+  - **Description**: The agent responsible for managing the prompt and image generation tasks.
+  - **Modes**: Input, Output
 
-### Required Fields
+- **image_generation_driver**: 
+  - **Type**: `Image Generation Driver`
+  - **Description**: The driver used for image generation.
+  - **Default**: None
 
-- **prompt**: The description of the image you want to create (e.g., "a sunset over mountains with a lake")
+- **prompt**: 
+  - **Type**: `str`
+  - **Description**: The textual prompt for image generation.
+  - **Modes**: Input, Property
+  - **UI Options**: Placeholder text for user guidance.
 
-### Optional Configuration
+- **enhance_prompt**: 
+  - **Type**: `bool`
+  - **Description**: Flag to enhance the prompt for better image quality.
+  - **Default**: `True`
 
-- **agent**: An existing AI agent to use (if you already have one set up)
-- **driver**: Advanced - A custom image generation system (most users can leave this empty)
-- **output_file**: A specific filename for saving the image
-- **output_dir**: A folder where you want to save the image
+- **output**: 
+  - **Type**: `ImageArtifact`
+  - **Description**: The generated image artifact.
+  - **Modes**: Output
 
-### Outputs
+## Outputs
 
-- **output**: The generated image as an artifact that can be used by other nodes
-- **agent**: The agent that was used to create the image
+- **ImageArtifact**: The resulting image generated from the provided prompt.
 
-## Example
-
-Imagine you want to create an image of a friendly robot:
-
-1. Add a CreateImage
-1. In the "prompt" field, type: "A friendly robot helping a child with homework"
-1. Run the node
-1. The image will be generated and saved in the Images folder by default
 
 ## Important Notes
 
-- You need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY`
-- By default, images are saved to an "Images" folder in your workspace
-- The default AI model used is "dall-e-3" which creates high-quality images
+- **API Key Requirement**: Ensure that the `GT_CLOUD_API_KEY` environment variable is set for authentication with Griptape Cloud services.
+- **Default Settings**: The node uses `dall-e-3` as the default model and `hd` as the default quality.
 
 ## Common Issues
 
-- **Missing API Key**: Make sure your Griptape API key is properly set up
-- **No Image Generated**: Check that your prompt is clear and descriptive
-- **Cannot Find Image**: Look in the default Images directory or check the path you specified
+- **Missing API Key**: If the API key is not defined, a `KeyError` will be raised.
+- **Parameter Validation**: Ensure that both `agent` and `driver` parameters are correctly set to avoid validation errors.
