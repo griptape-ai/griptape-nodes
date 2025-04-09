@@ -14,6 +14,7 @@ from typing import Any, ClassVar, TextIO, TypeVar, cast
 
 import tomlkit
 from dotenv import load_dotenv
+from rich.logging import RichHandler
 from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
@@ -215,7 +216,6 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.managers.log_manager import LogManager
 from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -227,6 +227,9 @@ T = TypeVar("T")
 
 
 logger = logging.getLogger("griptape_nodes")
+logger.setLevel(logging.INFO)
+
+logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
 
 
 class SingletonMeta(type):
@@ -242,7 +245,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
     def __init__(self) -> None:
         # Initialize only if our managers haven't been created yet
         if not hasattr(self, "_event_manager"):
-            self._log_manager = LogManager()
             self._event_manager = EventManager()
             self._os_manager = OSManager(self._event_manager)
             self._config_manager = ConfigManager(self._event_manager)
@@ -283,10 +285,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def get_session_id(cls) -> str | None:
         return BaseEvent._session_id
-
-    @classmethod
-    def LogManager(cls) -> LogManager:
-        return GriptapeNodes.get_instance()._log_manager
 
     @classmethod
     def EventManager(cls) -> EventManager:
@@ -3350,7 +3348,7 @@ class LibraryManager:
         self._register_workflows_from_config(config_section=default_workflow_section)
 
     def _load_libraries_from_config_category(self, config_category: str, load_as_default_library: bool) -> None:  # noqa: FBT001
-        config_mgr = GriptapeNodes().ConfigManager()
+        config_mgr = GriptapeNodes.ConfigManager()
         libraries_to_register_category = config_mgr.get_config_value(config_category)
 
         if libraries_to_register_category is not None:
