@@ -15,10 +15,10 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the CreateRuleset to your workspace
-2. Set the "name" parameter to define the name for your ruleset (optional, defaults to "Behavior")
-3. Set the "rules" parameter to define the list of rules for your ruleset (optional, defaults to an 
-empty string, comma separated)
-4. Connect it to your flow (specifically into nodes that have a Ruleset parameter)
+1. Set the "name" parameter to define the name for your ruleset (optional, defaults to "Behavior")
+1. Set the "rules" parameter to define the list of rules for your ruleset (optional, defaults to an
+   empty string, comma separated)
+1. Connect it to your flow (specifically into nodes that have a Ruleset parameter)
 
 ### Parameters
 
@@ -34,16 +34,20 @@ empty string, comma separated)
 Imagine you want to create a new ruleset with the following name and rules:
 
 1. Add a CreateRuleset to your workflow
-2. Set the "name" parameter to:
+1. Set the "name" parameter to:
+
 ```
 MyBehavioralRules
 ```
+
 3. Set the "rules" parameter to:
+
 ```
 Rule 1: This is my first rule.
 Rule 2: This is my second rule.
 Rule 3: This is my third rule.
 ```
+
 4. Connect the output of this node to an agent's Ruleset parameter
 
 ## Important Notes

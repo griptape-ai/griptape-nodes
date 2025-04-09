@@ -2992,7 +2992,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, flow_nam
     return None
 
 
-def manage_alter_details(parameter: Parameter, base_node_obj:BaseNode) -> dict:
+def manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
     base_param = base_node_obj.get_parameter_by_name(parameter.name)
     if base_param:
         diff = base_param.equals(parameter)

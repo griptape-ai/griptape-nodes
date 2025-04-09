@@ -13,8 +13,7 @@ When you want to inspect an int value in your graph
 ### Basic Setup
 
 1. Add the DisplayInt to your workspace
-2. Connect any other node's intt output to this input
-
+1. Connect any other node's intt output to this input
 
 ### Parameters
 
