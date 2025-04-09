@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any, NamedTuple
 
@@ -31,7 +33,7 @@ class AddParameterToNodeRequest(RequestPayload):
     mode_allowed_output: bool = Field(default=True)
 
     @classmethod
-    def create(cls, **kwargs) -> "AddParameterToNodeRequest":
+    def create(cls, **kwargs) -> AddParameterToNodeRequest:
         if "allowed_modes" in kwargs:
             kwargs["mode_allowed_input"] = ParameterMode.INPUT in kwargs["allowed_modes"]
             kwargs["mode_allowed_output"] = ParameterMode.OUTPUT in kwargs["allowed_modes"]
@@ -150,7 +152,7 @@ class AlterParameterDetailsRequest(RequestPayload):
     ui_options: dict | None = None
 
     @classmethod
-    def create(cls, **kwargs) -> "AlterParameterDetailsRequest":
+    def create(cls, **kwargs) -> AlterParameterDetailsRequest:
         if "allowed_modes" in kwargs:
             kwargs["mode_allowed_input"] = ParameterMode.INPUT in kwargs["allowed_modes"]
             kwargs["mode_allowed_output"] = ParameterMode.OUTPUT in kwargs["allowed_modes"]
@@ -231,4 +233,23 @@ class GetCompatibleParametersResultSuccess(ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class GetCompatibleParametersResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNodeElementDetailsRequest(RequestPayload):
+    node_name: str
+    specific_element_id: str | None = None  # Pass None to use the root
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNodeElementDetailsResultSuccess(ResultPayloadSuccess):
+    element_details: dict[str, Any]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNodeElementDetailsResultFailure(ResultPayloadFailure):
     pass

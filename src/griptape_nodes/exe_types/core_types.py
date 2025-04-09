@@ -415,6 +415,34 @@ class Parameter(BaseNodeElement):
         self.input_types = input_types
         self.output_type = output_type
 
+    def to_dict(self) -> dict[str, Any]:
+        """Returns a nested dictionary representation of this node and its children."""
+        # Get the parent's version first.
+        our_dict = super().to_dict()
+        # Add in our deltas.
+        our_dict["name"] = self.name
+        our_dict["type"] = self.type
+        our_dict["input_types"] = self.input_types
+        our_dict["output_type"] = self.output_type
+        our_dict["default_value"] = self.default_value
+        our_dict["tooltip"] = self.tooltip
+        our_dict["tooltip_as_input"] = self.tooltip_as_input
+        our_dict["tooltip_as_output"] = self.tooltip_as_output
+        our_dict["tooltip_as_property"] = self.tooltip_as_property
+
+        our_dict["is_user_defined"] = self.user_defined
+        our_dict["ui_options"] = self.ui_options
+
+        # Let's bundle up the mode details.
+        allows_input = ParameterMode.INPUT in self.allowed_modes
+        allows_property = ParameterMode.PROPERTY in self.allowed_modes
+        allows_output = ParameterMode.OUTPUT in self.allowed_modes
+        our_dict["mode_allowed_input"] = allows_input
+        our_dict["mode_allowed_property"] = allows_property
+        our_dict["mode_allowed_output"] = allows_output
+
+        return our_dict
+
     @property
     def type(self) -> str:
         return self._custom_getter_for_property_type()
@@ -1174,6 +1202,13 @@ class Trait(ABC, BaseNodeElement):
             return False
         # Define what makes two traits equal - often based on identity or a key field
         return self.element_id == other.element_id
+
+    def to_dict(self) -> dict[str, Any]:
+        updated = super().to_dict()
+        updated["trait_ui_options"] = self.ui_options_for_trait()
+        updated["trait_name"] = self.__class__.__name__
+        updated["trait_display_options"] = self.display_options_for_trait()
+        return updated
 
     @classmethod
     @abstractmethod
