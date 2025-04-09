@@ -2,18 +2,18 @@
 
 ### Overview
 
-The `WebScraperToolNode` class is a specialized node for creating Griptape tools that utilize web scraping functionality. This node provides a basic structure for initializing web scraper tools and can be extended to support various web scraping techniques.
+The `WebScraperTool` class is a specialized node for creating Griptape tools that utilize web scraping functionality. This node provides a basic structure for initializing web scraper tools and can be extended to support various web scraping techniques.
 
 ### Class Definition
 
 ```python
-class WebScraperToolNode(BaseTool):
+class WebScraperTool(BaseTool):
     """A web scraper tool node for creating Griptape tools."""
 ```
 
 ### Initialization
 
-The `__init__` method initializes a new instance of the `WebScraperToolNode` class. It takes two parameters:
+The `__init__` method initializes a new instance of the `WebScraperTool` class. It takes two parameters:
 
 - **name (str)**: The name of the node.
 - **metadata (dict[Any, Any] | None)**: Optional metadata for the node.
@@ -24,7 +24,7 @@ def __init__(
     name: str,
     metadata: dict[Any, Any] | None = None,
 ) -> None:
-    """Initializes a new instance of the WebScraperToolNode class."""
+    """Initializes a new instance of the WebScraperTool class."""
     super().__init__(name, metadata)
 ```
 
@@ -42,10 +42,10 @@ def process(self) -> None:
 
 ### Example Usage
 
-To create a new instance of the `WebScraperToolNode` class, you can use the following code:
+To create a new instance of the `WebScraperTool` class, you can use the following code:
 
 ```python
-node = WebScraperToolNode("My Web Scraper")
+node = WebScraperTool("My Web Scraper")
 node.process()
 print(node.parameter_output_values["tool"])
 ```

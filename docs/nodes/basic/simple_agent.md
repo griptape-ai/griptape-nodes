@@ -1,8 +1,8 @@
-# SimpleAgentNode
+# SimpleAgent
 
 ## What is it?
 
-The SimpleAgentNode is a streamlined building block that lets you run an AI agent that was created earlier in your workflow. Think of it as giving instructions to an assistant that's already been set up.
+The SimpleAgent is a streamlined building block that lets you run an AI agent that was created earlier in your workflow. Think of it as giving instructions to an assistant that's already been set up.
 
 ## When would I use it?
 
@@ -16,9 +16,9 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the SimpleAgentNode to your workspace
+1. Add the SimpleAgent to your workspace
 1. Connect it to your flow
-1. Connect it to an existing agent (usually from a RunAgentNode)
+1. Connect it to an existing agent (usually from a RunAgent)
 
 ### Required Fields
 
@@ -34,7 +34,7 @@ Use this node when you want to:
 
 Imagine you already have an agent that knows about your project and you want to ask it another question:
 
-1. Connect the "agent" output from a previous RunAgentNode to the "agent" input of the SimpleAgentNode
+1. Connect the "agent" output from a previous RunAgent to the "agent" input of the SimpleAgent
 1. In the "prompt" field, type: "Summarize what we've discussed so far"
 1. Run the node
 1. The "output" will contain the agent's summary

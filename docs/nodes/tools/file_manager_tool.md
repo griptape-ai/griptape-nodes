@@ -2,13 +2,13 @@
 
 ## Overview
 
-The `FileManagerToolNode` is a custom node in Griptape that provides a generic implementation for initializing Griptape file manager tools with customizable parameters.
+The `FileManagerTool` is a custom node in Griptape that provides a generic implementation for initializing Griptape file manager tools with customizable parameters.
 
 ## Subclassing BaseTool
 
 #### What does it mean?
 
-The `FileManagerToolNode` class is a subclass of `BaseTool`, inheriting its properties and behavior. This allows us to build upon the existing functionality of `BaseTool` while adding our own specific implementation for file manager tools.
+The `FileManagerTool` class is a subclass of `BaseTool`, inheriting its properties and behavior. This allows us to build upon the existing functionality of `BaseTool` while adding our own specific implementation for file manager tools.
 
 #### Why would I use it?
 
@@ -21,7 +21,7 @@ Use this node when you want to:
 ## Class Definition
 
 ```python
-class FileManagerToolNode(BaseTool):
+class FileManagerTool(BaseTool):
     """
     A custom node for initializing Griptape file manager tools with customizable parameters.
     """
@@ -36,7 +36,7 @@ The `process` method is responsible for creating and setting the output of the f
 #### Example Usage
 
 ```python
-file_manager_tool_node = FileManagerToolNode("File Manager Tool")
+file_manager_tool_node = FileManagerTool("File Manager Tool")
 file_manager_tool_node.add_parameter(
     Parameter(
         name="off_prompt",
@@ -85,11 +85,11 @@ def process(self) -> None:
 
 ## Integration with Griptape Workflow
 
-The `FileManagerToolNode` can be integrated into a Griptape workflow by adding it as a node and configuring its parameters. The output of the file manager tool can then be used in subsequent nodes or workflows.
+The `FileManagerTool` can be integrated into a Griptape workflow by adding it as a node and configuring its parameters. The output of the file manager tool can then be used in subsequent nodes or workflows.
 
 ```python
 # Create a new file manager tool node
-file_manager_tool_node = FileManagerToolNode("File Manager Tool")
+file_manager_tool_node = FileManagerTool("File Manager Tool")
 
 # Add parameters to the node
 file_manager_tool_node.add_parameter(
@@ -112,10 +112,10 @@ file_manager_tool_node.parameter_output_values["tool"] = file_manager_tool
 
 ## Conclusion
 
-The `FileManagerToolNode` provides a convenient way to initialize Griptape file manager tools with customizable parameters. By subclassing `BaseTool` and adding our own implementation for file manager tools, we can create a flexible and reusable node that can be integrated into various Griptape workflows.
+The `FileManagerTool` provides a convenient way to initialize Griptape file manager tools with customizable parameters. By subclassing `BaseTool` and adding our own implementation for file manager tools, we can create a flexible and reusable node that can be integrated into various Griptape workflows.
 
 ### Best Practices
 
-- Use the `FileManagerToolNode` when you need to integrate a file manager tool from an external source or library.
+- Use the `FileManagerTool` when you need to integrate a file manager tool from an external source or library.
 - Configure the `off_prompt` parameter according to your specific use case.
 - Use the output of the file manager tool in subsequent nodes or workflows as needed.
