@@ -370,15 +370,17 @@ class GriptapeNodes(metaclass=SingletonMeta):
             return GetEngineVersionResultFailure()
 
     def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:
-        # Do we already have one?
-        if BaseEvent._session_id is not None:
-            details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID `{BaseEvent._session_id}' in place. Replacing it."
+        if BaseEvent._session_id is None:
+            details = f"Session '{request.session_id}' started at {datetime.now(tz=UTC)}."
+        else:
+            if BaseEvent._session_id == request.session_id:
+                details = f"Session '{request.session_id}' already in place. No action taken."
+            else:
+                details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID `{BaseEvent._session_id}' in place. Replacing it."
+
             logger.info(details)
 
         BaseEvent._session_id = request.session_id
-
-        details = f"Session '{request.session_id}' started at {datetime.now(tz=UTC)}."
-        logger.info(details)
 
         # TODO(griptape): Do we want to broadcast that a session started?
 
