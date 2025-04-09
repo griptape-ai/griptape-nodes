@@ -15,6 +15,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
+import contextlib
 
 
 class NodeResolutionState(Enum):
@@ -290,6 +291,12 @@ class BaseNode(ABC):
         )
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
+        # If a parameter value has been set at the top level of a container, wipe all children.
+        if isinstance(parameter, ParameterContainer):
+            for child in parameter.find_elements_by_type(Parameter):
+                with contextlib.suppress(KeyError):
+                    self.remove_parameter_value(child.name)
+                parameter.remove_child(child)
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=modified_parameters)
 
