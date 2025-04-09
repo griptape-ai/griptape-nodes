@@ -2727,7 +2727,7 @@ class WorkflowManager:
 
         # Find the metadata block.
         regex = r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
-        block_name = "workflow"
+        block_name = "script"
         matches = list(filter(lambda m: m.group("type") == block_name, re.finditer(regex, workflow_content)))
         if len(matches) != 1:
             details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed as it had {len(matches)} sections titled '{block_name}', and we expect exactly 1 such section."
