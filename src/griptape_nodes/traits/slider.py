@@ -11,7 +11,7 @@ class Slider(Trait):
     max: Any = 100
     element_id: str = field(default_factory=lambda: "Slider")
 
-    _allowed_modes = {ParameterMode.PROPERTY}
+    _allowed_modes: set = field(default_factory=lambda: {ParameterMode.PROPERTY})
 
     def __init__(self, min_val: float, max_val: float) -> None:
         super().__init__()

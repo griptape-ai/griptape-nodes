@@ -27,8 +27,12 @@ class ScriptRegistry(SingletonMixin):
     class _RegistryKey:
         """Private class for script construction."""
 
-    _scripts: dict[str, Script] = {}
+    _scripts: dict[str, Script]
     _registry_key: _RegistryKey = _RegistryKey()
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._scripts = {}
 
     # Create a new script with everything we'd need
     @classmethod
