@@ -2,13 +2,13 @@
 
 ## Overview
 
-The `CalculatorToolNode` is a custom node in Griptape that provides a generic implementation for initializing Griptape tools with customizable parameters.
+The `CalculatorTool` is a custom node in Griptape that provides a generic implementation for initializing Griptape tools with customizable parameters.
 
 ## Subclassing BaseTool
 
 #### What does it mean?
 
-The `CalculatorToolNode` class is a subclass of `BaseTool`, inheriting its properties and behavior. This allows us to build upon the existing functionality of `BaseTool` while adding our own specific implementation for calculator tools.
+The `CalculatorTool` class is a subclass of `BaseTool`, inheriting its properties and behavior. This allows us to build upon the existing functionality of `BaseTool` while adding our own specific implementation for calculator tools.
 
 #### Why would I use it?
 
@@ -21,7 +21,7 @@ Use this node when you want to:
 ## Class Definition
 
 ```python
-class CalculatorToolNode(BaseTool):
+class CalculatorTool(BaseTool):
     """
     A custom node for initializing Griptape tools with customizable parameters.
     """
@@ -36,7 +36,7 @@ The `process` method is responsible for creating and setting the output of the c
 #### Example Usage
 
 ```python
-calculator_tool_node = CalculatorToolNode("Calculator Tool")
+calculator_tool_node = CalculatorTool("Calculator Tool")
 calculator_tool_node.add_parameter(
     Parameter(
         name="off_prompt",
@@ -85,11 +85,11 @@ def process(self) -> None:
 
 ## Integration with Griptape Workflow
 
-The `CalculatorToolNode` can be integrated into a Griptape workflow by adding it as a node and configuring its parameters. The output of the calculator tool can then be used in subsequent nodes or workflows.
+The `CalculatorTool` can be integrated into a Griptape workflow by adding it as a node and configuring its parameters. The output of the calculator tool can then be used in subsequent nodes or workflows.
 
 ```python
 # Create a new calculator tool node
-calculator_tool_node = CalculatorToolNode("Calculator Tool")
+calculator_tool_node = CalculatorTool("Calculator Tool")
 
 # Add parameters to the node
 calculator_tool_node.add_parameter(
@@ -112,4 +112,4 @@ calculator_tool_node.parameter_output_values["tool"] = calculator_tool
 
 ## Conclusion
 
-The `CalculatorToolNode` provides a convenient way to initialize Griptape tools with customizable parameters. By subclassing `BaseTool` and adding our own implementation for calculator tools, we can create a flexible and reusable node that can be integrated into various Griptape workflows.
+The `CalculatorTool` provides a convenient way to initialize Griptape tools with customizable parameters. By subclassing `BaseTool` and adding our own implementation for calculator tools, we can create a flexible and reusable node that can be integrated into various Griptape workflows.

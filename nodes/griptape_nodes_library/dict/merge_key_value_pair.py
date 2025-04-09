@@ -68,17 +68,14 @@ class MergeKeyValuePair(DataNode):
         input_4 = self.parameter_values.get("key_value_pair_4", None)
 
         # Create a list of input texts if they aren't none
-        input_texts = [input_1, input_2, input_3, input_4]
+        input_dicts = [input_1, input_2, input_3, input_4]
         # Filter out None values from the list
-        input_texts = [text for text in input_texts if text is not None]
+        input_dicts = [text for text in input_dicts if text is not None]
 
         # Join all the kvps in to a single dict
         merged_dict = {}
-        for text in input_texts:
-            # Split the text into key and value
-            key, value = text.split(":")
-            # Add the key and value to the dict
-            merged_dict[key.strip()] = value.strip()
-
+        for input_dict in input_dicts:
+            if isinstance(input_dict, dict):
+                merged_dict.update(input_dict)
         # Set the output
         self.parameter_output_values["output"] = merged_dict

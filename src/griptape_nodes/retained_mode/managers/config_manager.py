@@ -58,13 +58,6 @@ class ConfigManager:
             event_manager.assign_manager_to_request_type(GetConfigValueRequest, self.on_handle_get_config_value_request)
             event_manager.assign_manager_to_request_type(SetConfigValueRequest, self.on_handle_set_config_value_request)
 
-            if len(self.config_files) == 0:
-                logger.info("No configuration files were found. Will run using default values.")
-            else:
-                logger.info("Configuration files were found at the following locations and merged in this order:")
-                for config_file in self.config_files:
-                    logger.info("\t%s", config_file)
-
     @property
     def workspace_path(self) -> Path:
         """Get the base file path from the configuration.

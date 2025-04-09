@@ -230,7 +230,7 @@ logger = logging.getLogger("griptape_nodes")
 
 
 class SingletonMeta(type):
-    _instances = {}
+    _instances: ClassVar[dict] = {}
 
     def __call__(cls, *args, **kwargs) -> Any:
         if cls not in cls._instances:
@@ -370,15 +370,17 @@ class GriptapeNodes(metaclass=SingletonMeta):
             return GetEngineVersionResultFailure()
 
     def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:
-        # Do we already have one?
-        if BaseEvent._session_id is not None:
-            details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID `{BaseEvent._session_id}' in place. Replacing it."
+        if BaseEvent._session_id is None:
+            details = f"Session '{request.session_id}' started at {datetime.now(tz=UTC)}."
+        else:
+            if BaseEvent._session_id == request.session_id:
+                details = f"Session '{request.session_id}' already in place. No action taken."
+            else:
+                details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID `{BaseEvent._session_id}' in place. Replacing it."
+
             logger.info(details)
 
         BaseEvent._session_id = request.session_id
-
-        details = f"Session '{request.session_id}' started at {datetime.now(tz=UTC)}."
-        logger.info(details)
 
         # TODO(griptape): Do we want to broadcast that a session started?
 
@@ -951,7 +953,7 @@ class FlowManager:
 
         return result
 
-    def on_delete_connection_request(self, request: DeleteConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915 TODO(griptape): resolve
+    def on_delete_connection_request(self, request: DeleteConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915, C901 TODO(griptape): resolve
         # Vet the two nodes first.
         source_node = None
         try:
@@ -1048,6 +1050,17 @@ class FlowManager:
 
             result = DeleteConnectionResultFailure()
             return result
+
+        # After the connection has been removed, if it doesn't have PROPERTY as a type, wipe the set parameter value and unresolve future nodes
+        if ParameterMode.PROPERTY not in target_param.allowed_modes:
+            try:
+                target_node.remove_parameter_value(target_param.name)
+                # It removed it accurately
+                # Unresolve future nodes that depended on that value
+                source_flow.connections.unresolve_future_nodes(target_node)
+                target_node.make_node_unresolved()
+            except KeyError as e:
+                logger.warning(e)
 
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
         source_node.after_outgoing_connection_removed(

@@ -1,8 +1,8 @@
-# LoadTextNode
+# LoadText
 
 ## What is it?
 
-The LoadTextNode is a building block that lets you read text from a file on your computer. Think of it as a way to bring existing text documents into your workflow.
+The LoadText is a building block that lets you read text from a file on your computer. Think of it as a way to bring existing text documents into your workflow.
 
 ## When would I use it?
 
@@ -16,7 +16,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the LoadTextNode to your workspace
+1. Add the LoadText to your workspace
 1. Connect it to your flow
 1. Specify the path to the file you want to load
 
@@ -33,7 +33,7 @@ Use this node when you want to:
 
 Imagine you want to load the contents of a text file to analyze with an agent:
 
-1. Add a LoadTextNode to your workflow
+1. Add a LoadText to your workflow
 1. Set the "path" to "C:/Documents/my_notes.txt" (or wherever your file is located)
 1. Connect the "output" to another node (like an agent) that will process the text
 1. When you run the flow, the contents of "my_notes.txt" will be loaded and made available

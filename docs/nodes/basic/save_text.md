@@ -1,8 +1,8 @@
-# SaveTextNode
+# SaveText
 
 ## What is it?
 
-The SaveTextNode is a building block that lets you save text content to a file on your computer. Think of it as a way to keep and store the text your workflow creates.
+The SaveText is a building block that lets you save text content to a file on your computer. Think of it as a way to keep and store the text your workflow creates.
 
 ## When would I use it?
 
@@ -16,7 +16,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the SaveTextNode to your workspace
+1. Add the SaveText to your workspace
 1. Connect it to your flow
 1. Connect a source of text to its input
 
@@ -36,7 +36,7 @@ Use this node when you want to:
 
 Imagine you have text from an agent that you want to save:
 
-1. Connect the "output" from your agent node to the "text" input of the SaveTextNode
+1. Connect the "output" from your agent node to the "text" input of the SaveText
 1. Set "output_path" to "my_agent_response.txt"
 1. Run your flow
 1. The text will be saved to a file named "my_agent_response.txt"
