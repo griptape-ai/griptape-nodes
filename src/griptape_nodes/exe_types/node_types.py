@@ -296,6 +296,7 @@ class BaseNode(ABC):
             for child in parameter.find_elements_by_type(Parameter):
                 with contextlib.suppress(KeyError):
                     self.remove_parameter_value(child.name)
+                self.parameters.remove(child)
                 parameter.remove_child(child)
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=modified_parameters)

@@ -17,10 +17,10 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @dataclass
 @PayloadRegistry.register
 class AddParameterToNodeRequest(RequestPayload):
-    parameter_name: str
     node_name: str
-    default_value: Any | None
-    tooltip: str | list[dict]
+    parameter_name: str | None = None
+    default_value: Any | None = None
+    tooltip: str | list[dict] | None = None
     tooltip_as_input: str | list[dict] | None = None
     tooltip_as_property: str | list[dict] | None = None
     tooltip_as_output: str | list[dict] | None = None

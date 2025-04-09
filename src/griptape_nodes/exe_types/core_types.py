@@ -854,6 +854,8 @@ class ParameterList(ParameterContainer):
             element_id=element_id,
             element_type=element_type,
         )
+        self.add_child_parameter()
+        self.add_child_parameter()
 
     def _custom_getter_for_property_type(self) -> str:
         base_type = super()._custom_getter_for_property_type()
