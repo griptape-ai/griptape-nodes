@@ -249,6 +249,15 @@
       }
     },
     {
+      "class_name": "DisplayText",
+      "file_path": "griptape_nodes_library/text/display_text.py",
+      "metadata": {
+        "category": "Text",
+        "description": "Displays a text or string value",
+        "display_name": "Display Text"
+      }
+    },
+    {
       "class_name": "CreateText",
       "file_path": "griptape_nodes_library/text/create_text.py",
       "metadata": {
@@ -309,6 +318,15 @@
         "category": "Image",
         "description": "Loads and displays an image file or artifact",
         "display_name": "Load Image"
+      }
+    },
+    {
+      "class_name": "DisplayDictionary",
+      "file_path": "griptape_nodes_library/dict/display_dict.py",
+      "metadata": {
+        "category": "Dictionary",
+        "description": "Displays a dictionary or key-value pair",
+        "display_name": "Display Dictionary"
       }
     },
     {
