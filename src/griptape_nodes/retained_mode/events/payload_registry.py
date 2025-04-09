@@ -1,4 +1,4 @@
-from typing import TypeVar
+from typing import ClassVar, TypeVar
 
 from griptape.mixins.singleton_mixin import SingletonMixin
 
@@ -10,11 +10,7 @@ T = TypeVar("T", bound=Payload, default=Payload)
 class PayloadRegistry(SingletonMixin):
     """Registry for payload types."""
 
-    _registry: dict[str, type[Payload]]
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._registry = {}
+    _registry: ClassVar[dict[str, type[Payload]]] = {}
 
     @classmethod
     def register(cls, payload_class: type[T]) -> type[T]:
