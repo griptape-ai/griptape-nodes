@@ -1,8 +1,8 @@
-# CreateString
+# CreateText
 
 ## What is it?
 
-The CreateString is a simple building block that creates a piece of text (a string) that you can use in your workflow. Think of it as a notepad where you can write text to use elsewhere.
+The CreateText is a simple building block that creates a piece of text (a string) that you can use in your workflow. Think of it as a notepad where you can write text to use elsewhere.
 
 ## When would I use it?
 
@@ -16,7 +16,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the CreateString to your workspace
+1. Add the CreateText to your workspace
 1. Connect it to your flow
 
 ### Fields
@@ -31,7 +31,7 @@ Use this node when you want to:
 
 Imagine you want to provide a standard greeting for an agent to use:
 
-1. Add a CreateString to your workflow
+1. Add a CreateText to your workflow
 1. Set the "text" value to "Hello! How can I help you today?"
 1. Connect the "text" output to another node that needs this greeting text
 
