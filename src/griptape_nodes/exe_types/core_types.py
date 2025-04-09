@@ -388,6 +388,9 @@ class Parameter(BaseNodeElement):
             return
         self._output_type = None
 
+    def __str__(self) -> str:
+        return f"Parameter(name={self.name}, type={self.type}, input_types={self.input_types}, output_type={self.output_type})"
+
     def add_trait(self, trait: type[Trait] | Trait) -> None:
         if not isinstance(trait, Trait):
             created = trait()
