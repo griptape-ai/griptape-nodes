@@ -122,6 +122,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromFileResultFailure,
     RegisterLibraryFromFileResultSuccess,
+    UnloadLibraryFromRegistryRequest,
+    UnloadLibraryFromRegistryResultFailure,
+    UnloadLibraryFromRegistryResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
@@ -148,6 +151,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     SetNodeMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import (
+    ClearAllObjectStateRequest,
+    ClearAllObjectStateResultFailure,
+    ClearAllObjectStateResultSuccess,
     RenameObjectRequest,
     RenameObjectResultFailure,
     RenameObjectResultSuccess,
@@ -396,6 +402,9 @@ class ObjectManager:
         _event_manager.assign_manager_to_request_type(
             request_type=RenameObjectRequest, callback=self.on_rename_object_request
         )
+        _event_manager.assign_manager_to_request_type(
+            request_type=ClearAllObjectStateRequest, callback=self.on_clear_all_object_state_request
+        )
 
     def on_rename_object_request(self, request: RenameObjectRequest) -> ResultPayload:
         # Does the source object exist?
@@ -447,6 +456,25 @@ class ObjectManager:
             log_level = logging.WARNING
         logger.log(level=log_level, msg=details)
         return RenameObjectResultSuccess(final_name=final_name)
+
+    def on_clear_all_object_state_request(self, request: ClearAllObjectStateRequest) -> ResultPayload:
+        if not request.i_know_what_im_doing:
+            logger.warning(
+                "Attempted to clear all object state and delete everything. Failed because they didn't know what they were doing."
+            )
+            return ClearAllObjectStateResultFailure()
+        # Let's try and clear it all.
+        try:
+            # Clear the existing flows, which will clear all nodes and connections.
+            GriptapeNodes.clear_data()
+        except Exception as e:
+            details = f"Attempted to clear all object state and delete everything. Failed with exception: {e}"
+            logger.exception(details)
+            return ClearAllObjectStateResultFailure()
+
+        details = "Successfully cleared all object state (deleted everything)."
+        logger.debug(details)
+        return ClearAllObjectStateResultSuccess()
 
     def get_filtered_subset(
         self,
@@ -2543,12 +2571,12 @@ class ScriptManager:
             logger.error(details)
             return RunScriptFromScratchResultFailure()
 
-        try:
-            # Clear the existing flows
-            GriptapeNodes.clear_data()
-        except Exception as e:
-            details = f"Failed to clear the existing context when trying to run '{complete_file_path}'. Exception: {e}"
-            logger.exception(details)
+        # Start with a clean slate.
+        clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
+        clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+        if not clear_all_result.succeeded():
+            details = f"Failed to clear the existing object state when trying to run '{complete_file_path}'."
+            logger.debug(details)
             return RunScriptFromScratchResultFailure()
 
         # Run the file, goddamn it
