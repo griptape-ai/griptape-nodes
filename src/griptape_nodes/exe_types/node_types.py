@@ -9,6 +9,9 @@ from griptape_nodes.exe_types.core_types import (
     ControlParameterInput,
     ControlParameterOutput,
     Parameter,
+    ParameterContainer,
+    ParameterDictionary,
+    ParameterList,
     ParameterMode,
     ParameterTypeBuiltin,
 )
@@ -297,6 +300,10 @@ class BaseNode(ABC):
         if param_name in self.parameter_values:
             return self.parameter_values[param_name]
         param = self.get_parameter_by_name(param_name)
+        if param:
+            value = handle_container_parameter(self,param)
+            if value:
+                return value
         return param.default_value if param else None
 
     def remove_parameter_value(self, param_name: str) -> None:
@@ -422,3 +429,19 @@ class Connection:
 
     def get_source_node(self) -> BaseNode:
         return self.source_node
+
+
+def handle_container_parameter(current_node:BaseNode, parameter:Parameter) -> Any:
+    # if it's a container and it's value isn't already set.
+    if isinstance(parameter, ParameterContainer):
+        children = parameter.find_elements_by_type(Parameter, find_recursively=False)
+        if isinstance(parameter, ParameterList):
+            build_parameter_value = []
+        elif isinstance(parameter, ParameterDictionary):
+            build_parameter_value = {}
+        build_parameter_value = []
+        for child in children:
+            value = current_node.get_parameter_value(child.name)
+            build_parameter_value.append(value)
+        return build_parameter_value
+    return None

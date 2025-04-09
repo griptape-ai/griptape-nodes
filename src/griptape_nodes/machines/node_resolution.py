@@ -122,20 +122,6 @@ class ExecuteNodeState(State):
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901
 
-        def handle_container_parameter(current_node:BaseNode, parameter:Parameter) -> None:
-            # if it's a container and it's value isn't already set.
-            if isinstance(parameter, ParameterContainer) and parameter.name not in current_node.parameter_values:
-                children = parameter.find_elements_by_type(Parameter, find_recursively=False)
-                if isinstance(parameter, ParameterList):
-                    build_parameter_value = []
-                else:
-                    build_parameter_value = {}
-                for child in children:
-                    handle_container_parameter(current_node, child)
-                    build_parameter_value.append(current_node.get_parameter_value(child.name))
-
-
-
         current_node = context.focus_stack[-1]
         # Get the parameters that have input values
         for parameter_name in current_node.parameter_output_values.copy():
@@ -156,20 +142,20 @@ class ExecuteNodeState(State):
         for parameter in current_node.parameters:
             if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
                 continue
-            handle_container_parameter(current_node,parameter)
-            if parameter.name not in current_node.parameter_values and parameter.default_value:
+            if parameter.name not in current_node.parameter_values:
                 # If a parameter value is not already set
-                value = parameter.default_value
-                modified_parameters = current_node.set_parameter_value(parameter.name, value)
-                if modified_parameters:
-                    for modified_parameter_name in modified_parameters:
-                        # TODO(kate): Move to a different type of event
-                        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+                value = current_node.get_parameter_value(parameter.name)
+                if value:
+                    modified_parameters = current_node.set_parameter_value(parameter.name, value)
+                    if modified_parameters:
+                        for modified_parameter_name in modified_parameters:
+                            # TODO(kate): Move to a different type of event
+                            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-                        modified_request = GetParameterDetailsRequest(
-                            parameter_name=modified_parameter_name, node_name=current_node.name
-                        )
-                        GriptapeNodes.handle_request(modified_request)
+                            modified_request = GetParameterDetailsRequest(
+                                parameter_name=modified_parameter_name, node_name=current_node.name
+                            )
+                            GriptapeNodes.handle_request(modified_request)
             if parameter.name in current_node.parameter_values:
                 parameter_value = current_node.get_parameter_value(parameter.name)
                 data_type = parameter.type
