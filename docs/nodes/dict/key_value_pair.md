@@ -19,7 +19,7 @@ Use this node when you want to:
 1. Add the KeyValuePair to your workspace
 1. Connect it to your flow
 
-### Required Fields
+### Parameters
 
 - **key**: The name or identifier for your value (e.g., "name", "temperature", "option")
 - **value**: The information you want to associate with the key (e.g., "John", "72", "enabled")
@@ -43,8 +43,3 @@ Imagine you want to create a setting for an image generation:
 - Both the key and value can be multiline text if needed
 - The key is usually a short identifier, while the value can be anything
 - If you need multiple key-value pairs, consider using the DictNode instead
-
-## Common Issues
-
-- **Empty Key**: Make sure you provide a key, or your dictionary might not work as expected
-- **Formatting Issues**: The key and value will be exactly as you enter them, including spaces

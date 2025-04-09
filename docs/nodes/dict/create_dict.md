@@ -1,8 +1,8 @@
-# DictNode
+# Dictionary
 
 ## What is it?
 
-The DictNode is a building block that lets you create a dictionary (a collection of key-value pairs). Think of it as creating a labeled container where each item has both a name (key) and a value.
+The Dictionary Node lets you create a dictionary (a collection of key-value pairs). Think of it as creating a labeled container where each item has both a name (key) and a value.
 
 ## When would I use it?
 
@@ -16,11 +16,11 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the DictNode to your workspace
+1. Add the Dictionary to your workspace
 1. Connect it to your flow
 1. Set up your keys and values
 
-### Required Fields
+### Parameters
 
 - **keys**: A list of names or labels for your values
 - **values**: A list of values that correspond to each key
@@ -43,9 +43,3 @@ Imagine you want to create a dictionary with information about a person:
 - Keys will be converted to strings (if possible) since dictionary keys are typically strings
 - Empty or None keys will be skipped (unless it's the only key and has a value)
 - If there are more keys than values, the extra keys will get None values
-
-## Common Issues
-
-- **Mismatched Lists**: Make sure your keys and values lists are the same length
-- **Invalid Keys**: Dictionary keys must be strings, so make sure keys can be converted to strings
-- **Empty Dictionary**: Check that you've provided valid keys and values

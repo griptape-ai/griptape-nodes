@@ -2,7 +2,7 @@
 
 ## What is it?
 
-The `MergeKeyValuePair` node is a data processing node that merges multiple key-value pairs into a single dictionary. It takes in four input parameters, each representing a key-value pair to be merged together.
+The `MergeKeyValuePair` node merges multiple key-value pairs into a single dictionary. It takes in four input parameters, each representing a key-value pair to be merged together.
 
 ## When would I use it?
 
@@ -21,14 +21,13 @@ Use this node when you need to combine multiple sets of key-value pairs into a s
 
 These inputs should be dictionaries containing key-value pairs.
 
-### Fields
+### Parameters
 
 - **`key_value_pair_1`, `key_value_pair_2`, `key_value_pair_3`, and `key_value_pair_4`**: These are the input parameters that represent the key-value pairs to be merged together. Each parameter is a dictionary with two values: a key and a value.
-- **`output`**: This is the output parameter that contains the merged key-value pair result.
 
 ### Outputs
 
-- The `output` parameter is a dictionary containing the merged key-value pairs.
+- **`output`** is a dictionary containing the merged key-value pairs.
 
 ## Example
 

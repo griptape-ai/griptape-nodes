@@ -20,7 +20,7 @@ Use this node when you want to:
 1. Connect it to your flow
 1. Connect it to a source of images (like a CreateImage)
 
-### Required Fields
+### Parameters
 
 - **image**: The image to load (this can be connected to an output from another node)
 
