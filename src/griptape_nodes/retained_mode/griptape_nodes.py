@@ -3389,13 +3389,29 @@ class LibraryManager:
 
         # Check if this module is already loaded
         if module_name in sys.modules:
-            # Reload the existing module
-            module = sys.modules[module_name]
+            # For dynamically loaded modules, we need to re-create the module
+            # with a fresh spec rather than using importlib.reload
+
+            # Remove the old module from sys.modules
+            old_module = sys.modules.pop(module_name)
+
+            # Create a fresh spec and module
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            if spec is None or spec.loader is None:
+                msg = f"Could not load module specification from {file_path}"
+                raise ImportError(msg)
+
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+
             try:
-                module = importlib.reload(module)
-                details = f"Reloaded module: {module_name} from {file_path}"
+                # Execute the module with the new code
+                spec.loader.exec_module(module)
+                details = f"Hot reloaded module: {module_name} from {file_path}"
                 logger.debug(details)
             except Exception as e:
+                # Restore the old module in case of failure
+                sys.modules[module_name] = old_module
                 msg = f"Error reloading module {module_name} from {file_path}: {e}"
                 raise ImportError(msg) from e
 
