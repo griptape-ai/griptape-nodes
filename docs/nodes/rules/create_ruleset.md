@@ -8,7 +8,7 @@ The CreateRuleset Node allows you to create and output a Ruleset object. Ruleset
 
 Use this node when you want to:
 
-- Constrain or direct the outout of another node that generates responses from an LLM
+- Constrain or direct the output of another node that generates responses from an LLM
 
 ## How to use it
 
