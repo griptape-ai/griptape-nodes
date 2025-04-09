@@ -293,16 +293,18 @@ class BaseNode(ABC):
         self.parameter_values[param_name] = final_value
         # If a parameter value has been set at the top level of a container, wipe all children.
         if isinstance(parameter, ParameterContainer):
-            for child in parameter.find_elements_by_type(Parameter):
-                with contextlib.suppress(KeyError):
-                    self.remove_parameter_value(child.name)
-                self.parameters.remove(child)
-                parameter.remove_child(child)
+            self.kill_parameter_children(parameter)
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=modified_parameters)
 
         # Return the complete set of modified parameters.
         return modified_parameters
+
+    def kill_parameter_children(self, parameter:Parameter) -> None:
+        for child in parameter.find_elements_by_type(Parameter):
+                with contextlib.suppress(KeyError):
+                    self.remove_parameter_value(child.name)
+                self.remove_parameter(child)
 
     def get_parameter_value(self, param_name: str) -> Any:
         if param_name in self.parameter_values:

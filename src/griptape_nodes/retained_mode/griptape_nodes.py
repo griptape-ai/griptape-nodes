@@ -938,6 +938,8 @@ class FlowManager:
             value = source_param.default_value
         else:
             value = None
+            if isinstance(target_param, ParameterContainer):
+                target_node.kill_parameter_children(target_param)
         # if it existed somewhere and actually has a value - Set the parameter!
         if value:
             GriptapeNodes.handle_request(
