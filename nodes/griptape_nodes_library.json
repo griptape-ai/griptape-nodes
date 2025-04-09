@@ -400,6 +400,24 @@
       }
     },
     {
+      "class_name": "LoadDictionary",
+      "file_path": "griptape_nodes_library/dict/load_dict.py",
+      "metadata": {
+        "category": "Dictionary",
+        "description": "Loads a dictionary or key-value pair",
+        "display_name": "Load Dictionary"
+      }
+    },
+    {
+      "class_name": "SaveDictionary",
+      "file_path": "griptape_nodes_library/dict/save_dict.py",
+      "metadata": {
+        "category": "Dictionary",
+        "description": "Saves a dictionary or key-value pair",
+        "display_name": "Save Dictionary"
+      }
+    },
+    {
       "class_name": "Reroute",
       "file_path": "griptape_nodes_library/utils/reroute.py",
       "metadata": {
