@@ -445,7 +445,9 @@ class Parameter(BaseNodeElement):
         other_dict = other.__dict__
         self_dict.pop("next", None)
         self_dict.pop("prev", None)
+        self_dict.pop("element_id", None)
         other_dict.pop("next", None)
+        other_dict.pop("element_id", None)
         other_dict.pop("prev", None)
         if self_dict == other_dict:
             return {}
