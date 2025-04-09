@@ -2551,6 +2551,7 @@ class ScriptManager:
         else:
             complete_file_path = ScriptRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         try:
+            # TODO(griptape): LOAD OR RELOAD ALL LIBRARIES
             with Path(complete_file_path).open() as file:
                 script_content = file.read()
             exec(script_content)  # noqa: S102
@@ -2563,7 +2564,6 @@ class ScriptManager:
 
     def on_run_script_from_scratch_request(self, request: RunScriptFromScratchRequest) -> ResultPayload:
         # Check if file path exists
-
         relative_file_path = request.file_path
         complete_file_path = ScriptRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         if not Path(complete_file_path).is_file():
@@ -2576,7 +2576,7 @@ class ScriptManager:
         clear_all_result = GriptapeNodes.handle_request(clear_all_request)
         if not clear_all_result.succeeded():
             details = f"Failed to clear the existing object state when trying to run '{complete_file_path}'."
-            logger.debug(details)
+            logger.error(details)
             return RunScriptFromScratchResultFailure()
 
         # Run the file, goddamn it
@@ -2610,8 +2610,39 @@ class ScriptManager:
         except KeyError:
             logger.exception("Failed to get script from registry.")
             return RunScriptFromRegistryResultFailure()
+
         # get file_path from script
         relative_file_path = script.file_path
+
+        if request.run_with_clean_slate:
+            # Start with a clean slate.
+            clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
+            clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+            if not clear_all_result.succeeded():
+                details = (
+                    f"Failed to clear the existing object state when preparing to run workflow '{request.script_name}'."
+                )
+                logger.error(details)
+                return RunScriptFromRegistryResultFailure()
+
+            # Unload all libraries now.
+            all_libraries_request = ListRegisteredLibrariesRequest()
+            all_libraries_result = GriptapeNodes.handle_request(all_libraries_request)
+            if not isinstance(all_libraries_result, ListRegisteredLibrariesResultSuccess):
+                details = (
+                    f"When preparing to run a workflow '{request.script_name}', failed to get registered libraries."
+                )
+                logger.error(details)
+                return RunScriptFromRegistryResultFailure()
+
+            for library_name in all_libraries_result.libraries:
+                unload_library_request = UnloadLibraryFromRegistryRequest(library_name=library_name)
+                unload_library_result = GriptapeNodes.handle_request(unload_library_request)
+                if not unload_library_result.succeeded():
+                    details = f"When preparing to run a workflow '{request.script_name}', failed to unload library '{library_name}'."
+                    logger.error(details)
+                    return RunScriptFromRegistryResultFailure()
+
         # run file
         success, details = self.run_script(relative_file_path=relative_file_path)
 
@@ -3017,6 +3048,9 @@ class LibraryManager:
         event_manager.assign_manager_to_request_type(
             GetAllInfoForAllLibrariesRequest, self.get_all_info_for_all_libraries_request
         )
+        event_manager.assign_manager_to_request_type(
+            UnloadLibraryFromRegistryRequest, self.unload_library_from_registry_request
+        )
 
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
@@ -3202,6 +3236,18 @@ class LibraryManager:
         details = f"Successfully loaded Library '{library_name}' from JSON file at {file_path}"
         logger.info(details)
         return RegisterLibraryFromFileResultSuccess(library_name=library_name)
+
+    def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
+        try:
+            LibraryRegistry.unregister_library(library_name=request.library_name)
+        except Exception as e:
+            details = f"Attempted to unload library '{request.library_name}'. Failed due to {e}"
+            logger.exception(details)
+            return UnloadLibraryFromRegistryResultFailure()
+
+        details = f"Successfully unloaded (and unregistered) library '{request.library_name}'."
+        logger.debug(details)
+        return UnloadLibraryFromRegistryResultSuccess()
 
     def get_all_info_for_all_libraries_request(self, request: GetAllInfoForAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         list_libraries_request = ListRegisteredLibrariesRequest()

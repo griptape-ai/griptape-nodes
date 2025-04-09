@@ -49,6 +49,7 @@ class RunScriptWithCurrentStateResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class RunScriptFromRegistryRequest(RequestPayload):
     script_name: str
+    run_with_clean_slate: bool = True
 
 
 @dataclass
