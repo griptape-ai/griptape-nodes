@@ -18,7 +18,7 @@ echo "Installing Griptape Nodes Engine..."
 echo ""
 uv tool install --force --python python3.13 --from git+https://github.com/griptape-ai/griptape-nodes.git@latest griptape_nodes
 
-# Install Griptape Nodes Library + Scripts
+# Install Griptape Nodes Library + Workflows
 : "${XDG_DATA_HOME:="$HOME/.local/share"}"
 REPO_NAME="griptape-nodes"
 
@@ -33,7 +33,7 @@ git clone --depth 1 --branch latest https://github.com/griptape-ai/griptape-node
 mkdir -p "$XDG_DATA_HOME/griptape_nodes"
 
 cp -R $REPO_NAME/nodes/ "$XDG_DATA_HOME/griptape_nodes/nodes"
-cp -R $REPO_NAME/scripts/ "$XDG_DATA_HOME/griptape_nodes/scripts"
+cp -R $REPO_NAME/workflows/ "$XDG_DATA_HOME/griptape_nodes/workflows"
 
 cd - >/dev/null
 rm -rf "$TMP_DIR"
