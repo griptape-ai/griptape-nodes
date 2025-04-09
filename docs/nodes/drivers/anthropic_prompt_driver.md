@@ -1,8 +1,8 @@
-# AnthropicPromptDriverNode
+# AnthropicPromptDriver
 
 ## What is it?
 
-The AnthropicPromptDriverNode is a building block that sets up a connection to Anthropic's AI models (like Claude). Think of it as configuring a special phone line that your workflow can use to talk to Claude.
+The AnthropicPromptDriver is a building block that sets up a connection to Anthropic's AI models (like Claude). Think of it as configuring a special phone line that your workflow can use to talk to Claude.
 
 ## When would I use it?
 
@@ -16,9 +16,9 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the AnthropicPromptDriverNode to your workspace
+1. Add the AnthropicPromptDriver to your workspace
 1. Connect it to your flow
-1. Connect its output to nodes that need to use Claude (like RunAgentNode)
+1. Connect its output to nodes that need to use Claude (like RunAgent)
 
 ### Required Fields
 
@@ -43,11 +43,11 @@ None - the node uses default settings if you don't change anything
 
 Imagine you want to create an agent that uses Claude with specific settings:
 
-1. Add an AnthropicPromptDriverNode to your workflow
+1. Add an AnthropicPromptDriver to your workflow
 1. Set "model" to "claude-3-5-sonnet-latest"
 1. Set "temperature" to 0.7 (for more creative responses)
 1. Set "max_tokens" to 2000 (for longer responses)
-1. Connect the "driver" output to a RunAgentNode's "prompt_driver" input
+1. Connect the "driver" output to a RunAgent's "prompt_driver" input
 1. Now that agent will use Claude with your custom settings
 
 ## Important Notes

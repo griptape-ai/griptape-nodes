@@ -26,7 +26,7 @@ class BaseAgent(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
-        self.add_parameter(
+        with ParameterGroup(group_name="Agent Configuration") as agent_configuration:
             Parameter(
                 name="prompt_driver",
                 type="PromptDriver",
@@ -35,8 +35,6 @@ class BaseAgent(ControlNode):
                 tooltip="Connect a prompt driver to use. If not specified, will use the default OpenAI gpt-4o.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
-        )
-        with ParameterGroup(group_name="Agent Abilities") as abilities_group:
             Parameter(
                 name="tools",
                 input_types=["list[Tool]", "Tool"],
@@ -44,14 +42,15 @@ class BaseAgent(ControlNode):
                 tooltip="",
                 allowed_modes={ParameterMode.INPUT},
             )
+
             Parameter(
                 name="rulesets",
                 input_types=["list[Ruleset]", "Ruleset"],
                 tooltip="Rulesets to apply to the agent to control its behavior.",
                 allowed_modes={ParameterMode.INPUT},
             )
-        self.add_node_element(abilities_group)
 
+        self.add_node_element(agent_configuration)
         self.add_parameter(
             Parameter(
                 name="prompt",
@@ -62,8 +61,16 @@ class BaseAgent(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
-
-        with ParameterGroup(group_name="Agent Response") as response_group:
+        self.add_parameter(
+            Parameter(
+                name="prompt_context",
+                type="dict",
+                default_value={},
+                tooltip="The context to pass to the agent. Use a key/value pair, or a dictionary of key/value pairs.",
+                allowed_modes={ParameterMode.INPUT},
+            )
+        )
+        with ParameterGroup(group_name="Agent Response") as output_group:
             Parameter(
                 name="output",
                 type="str",
@@ -72,7 +79,7 @@ class BaseAgent(ControlNode):
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"multiline": True, "placeholder_text": "Agent response"},
             )
-        self.add_node_element(response_group)
+        self.add_node_element(output_group)
 
     def validate_node(self) -> list[Exception] | None:
         # All env values are stored in the SecretsManager. Check if they exist using this method.
@@ -109,6 +116,12 @@ class BaseAgent(ControlNode):
                 return prompt_driver.stream
             return False
         return False
+
+    def set_context(self, agent: Agent) -> Agent:
+        if agent and agent.tasks:
+            task = agent.tasks[0]
+            task.context = self.get_parameter_value("prompt_context")
+        return agent
 
     def process(self) -> None:
         pass

@@ -1,21 +1,32 @@
+if (Get-Process griptape-nodes -ErrorAction SilentlyContinue) {
+    Write-Host "Error: an instance of 'griptape-nodes' is currently running. Please close it before continuing."
+    exit
+}
+
+if (Get-Process gtn -ErrorAction SilentlyContinue) {
+    Write-Host "Error: an instance of 'gtn' is currently running. Please close it before continuing."
+    exit
+}
+
 Write-Host "`nInstalling uv...`n"
 try {
     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 } catch {
     Write-Host "Failed to install uv with the default method. You may need to install it manually."
+    exit 
 }
 
 # Verify uv is on the user's PATH
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Write-Host "Error: Griptape Nodes dependency 'uv' was installed, but requires the terminal to be restarted to be run."
     Write-Host "Please close this terminal and open a new one, then run the install command you performed earlier."
-    return
+    exit
 }
 
 Write-Host "`nInstalling Griptape Nodes Engine...`n"
 uv tool install --force --python python3.13 --from "git+https://github.com/griptape-ai/griptape-nodes.git@latest" griptape_nodes
 
-# --- Install Griptape Nodes Library and Scripts ---
+# --- Install Griptape Nodes Library and Workflows ---
 if (-not $Env:XDG_DATA_HOME) {
     $Env:XDG_DATA_HOME = Join-Path $HOME ".local\share"
 }
@@ -38,8 +49,8 @@ if (!(Test-Path $DestDir)) {
 # Copy the nodes/ directory
 Copy-Item -Path (Join-Path $RepoName "nodes") -Destination $DestDir -Recurse -Force
 
-# Copy the scripts/ directory
-Copy-Item -Path (Join-Path $RepoName "scripts") -Destination $DestDir -Recurse -Force
+# Copy the workflows/ directory
+Copy-Item -Path (Join-Path $RepoName "workflows") -Destination $DestDir -Recurse -Force
 
 Pop-Location
 Remove-Item -Recurse -Force $TmpDir

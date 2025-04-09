@@ -1,6 +1,6 @@
 [project]
 name = "griptape_nodes"
-version = "0.9.1"
+version = "0.11.2"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -66,10 +66,8 @@ ignore = [
   "SIM108", # Intentional
   "SIM110", # Intentional
   "D105",   # Intentional
-  "N999",   # TODO(griptape): discuss with team
   "N802",   # TODO(griptape): discuss with team
   "TRY002", # TODO(griptape): discuss with team
-  "RUF012", # TODO(griptape): discuss with team
   "FBT003", # Intentional
   "RET504", # Intentional
 ]

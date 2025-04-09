@@ -38,8 +38,8 @@ def _find_config_files(filename: str, extension: str) -> list[Path]:
 
 
 @dataclass
-class ScriptSettingsDetail:
-    """Griptape-provided scripts are pathed differently and display in the GUI in a different section."""
+class WorkflowSettingsDetail:
+    """Griptape-provided workflows are pathed differently and display in the GUI in a different section."""
 
     file_name: str
     is_griptape_provided: bool
@@ -49,7 +49,7 @@ class AppInitializationComplete(BaseModel):
     libraries_to_register: list[str] = Field(
         default_factory=lambda: [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")]
     )
-    scripts_to_register: list[ScriptSettingsDetail] = Field(
+    workflows_to_register: list[WorkflowSettingsDetail] = Field(
         default_factory=lambda: []  # noqa: PIE807 (leaving as a lambda for list for when we are ready to re-populate)
     )
 
@@ -70,7 +70,7 @@ class AppEvents(BaseModel):
             "AlterParameterDetailsRequest",
             "SetConfigValueRequest",
             "SetConfigCategoryRequest",
-            "DeleteScriptRequest",
+            "DeleteWorkflowRequest",
             "ResolveNodeRequest",
             "StartFlowRequest",
             "CancelFlowRequest",

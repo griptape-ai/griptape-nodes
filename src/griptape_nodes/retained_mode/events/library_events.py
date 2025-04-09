@@ -156,3 +156,21 @@ class GetAllInfoForAllLibrariesResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class GetAllInfoForAllLibrariesResultFailure(ResultPayloadFailure):
     pass
+
+
+@dataclass
+@PayloadRegistry.register
+class UnloadLibraryFromRegistryRequest(RequestPayload):
+    library_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class UnloadLibraryFromRegistryResultSuccess(ResultPayloadSuccess):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class UnloadLibraryFromRegistryResultFailure(ResultPayloadFailure):
+    pass

@@ -38,10 +38,10 @@ Griptape Nodes employs a specific search order to load settings from environment
    - One key default is `workspace_directory`, which defaults to `<current_working_directory>/GriptapeNodes` if not specified in a loaded configuration file.
 
 1. **Runtime Management (`ConfigManager`)**
-   After initial settings are loaded, the `ConfigManager` handles runtime operations using the final resolved configuration, particularly the workspace directory. It's responsible for saving user-specific changes, like registered scripts, back to a configuration file within the workspace.
+   After initial settings are loaded, the `ConfigManager` handles runtime operations using the final resolved configuration, particularly the workspace directory. It's responsible for saving user-specific changes, like registered workflows, back to a configuration file within the workspace.
 
    - Once settings are loaded, the `ConfigManager` uses the final resolved `workspace_directory`.
-   - Modifications made at runtime (e.g., registering custom scripts) are typically saved by the `ConfigManager` into a `griptape_nodes_config.json` file located within this resolved `workspace_directory`.
+   - Modifications made at runtime (e.g., registering custom workflows) are typically saved by the `ConfigManager` into a `griptape_nodes_config.json` file located within this resolved `workspace_directory`.
 
 ## Loading Examples
 
