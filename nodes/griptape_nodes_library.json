@@ -53,6 +53,14 @@
       }
     },
     {
+      "Number": {
+        "color": "border-blue-500",
+        "title": "Number",
+        "description": "Number Nodes.",
+        "icon": "Hash"
+      }
+    },
+    {
       "Text": {
         "color": "border-blue-500",
         "title": "Text",
@@ -246,6 +254,42 @@
         "category": "Image",
         "description": "Describes an image",
         "display_name": "Describe Image"
+      }
+    },
+    {
+      "class_name": "CreateInteger",
+      "file_path": "griptape_nodes_library/number/create_int.py",
+      "metadata": {
+        "category": "Number",
+        "description": "Creates and outputs a simple integer value",
+        "display_name": "Create Integer"
+      }
+    },
+    {
+      "class_name": "DisplayInteger",
+      "file_path": "griptape_nodes_library/number/display_int.py",
+      "metadata": {
+        "category": "Number",
+        "description": "Displays a simple integer value",
+        "display_name": "Display Integer"
+      }
+    },
+    {
+      "class_name": "CreateFloat",
+      "file_path": "griptape_nodes_library/number/create_float.py",
+      "metadata": {
+        "category": "Number",
+        "description": "Creates and outputs a simple float value",
+        "display_name": "Create Float"
+      }
+    },
+    {
+      "class_name": "DisplayFloat",
+      "file_path": "griptape_nodes_library/number/display_float.py",
+      "metadata": {
+        "category": "Number",
+        "description": "Displays a simple float value",
+        "display_name": "Display Float"
       }
     },
     {
