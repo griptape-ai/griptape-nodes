@@ -2551,7 +2551,7 @@ class WorkflowManager:
         else:
             complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         try:
-            # TODO(griptape): scope the libraries loaded to JUST those used by this workflow, eventually.
+            # TODO(griptape): scope the libraries loaded to JUST those used by this workflow, eventually: https://github.com/griptape-ai/griptape-nodes/issues/284
             # Load (or reload, which should trigger a hot reload) all libraries
             GriptapeNodes.LibraryManager().load_all_libraries_from_config()
 
