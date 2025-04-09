@@ -280,13 +280,21 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
     app_event = AppEvent(payload=payload)
     __process_app_event(app_event)
 
+    engine_version_request = app_events.GetEngineVersionRequest()
+    engine_version_result = GriptapeNodes.get_instance().handle_engine_version_request(engine_version_request)
+    if isinstance(engine_version_result, app_events.GetEngineVersionResultSuccess):
+        engine_version = f"v{engine_version_result.major}.{engine_version_result.minor}.{engine_version_result.patch}"
+    else:
+        engine_version = "<UNKNOWN ENGINE VERSION>"
+
     message = Panel(
         Align.center(
             f"[bold green]Engine is ready to receive events[/bold green]\n"
-            f"[bold blue]Visit: [link={nodes_app_url}]{nodes_app_url}[/link][/bold blue]",
+            f"[bold green]Visit: [/bold green][bold blue][link={nodes_app_url}]{nodes_app_url}[/link][/bold blue]",
             vertical="middle",
         ),
-        title="🚀 Engine Started",
+        title="🚀 Griptape Nodes Engine Started",
+        subtitle=f"[green]{engine_version}[/green]",
         border_style="green",
         padding=(1, 4),
     )
