@@ -131,7 +131,7 @@ class BaseNodeElement:
     def add_child(self, child: BaseNodeElement) -> None:
         self._children.append(child)
 
-    def remove_child(self, child: BaseNodeElement) -> None:
+    def remove_child(self, child: BaseNodeElement | str) -> None:
         ui_elements: list[BaseNodeElement] = [self]
         for ui_element in ui_elements:
             if child in ui_element._children:
@@ -156,17 +156,6 @@ class BaseNodeElement:
                 elements.append(child)
             elements.extend(child.find_elements_by_type(element_type))
         return elements
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, BaseNodeElement):
-            return False
-        if isinstance(other, Parameter) and isinstance(self, Parameter):
-            return self.equals(other) == {}
-        self_dict = self.to_dict()
-        other_dict = other.to_dict()
-        self_dict.pop("element_id", None)
-        other_dict.pop("element_id", None)
-        return self_dict == other_dict
 
     @classmethod
     def get_current(cls) -> BaseNodeElement | None:
@@ -469,6 +458,10 @@ class Parameter(BaseNodeElement):
                 if item.equals(other_list[i]):  # If there are differences
                     list_differences = True
                     break
+            elif isinstance(item, BaseNodeElement) and isinstance(other_list[i], BaseNodeElement):
+                if item != other_list[i]:
+                    list_differences = True
+                    break
             # Otherwise use direct comparison
             elif item != other_list[i]:
                 list_differences = True
@@ -617,6 +610,11 @@ class Trait(ABC, BaseNodeElement):
     def __hash__(self) -> int:
         # Use a unique, immutable attribute for hashing
         return hash(self.element_id)
+
+    def __eq__(self, other: object) -> bool:
+        if not (isinstance(other, Trait)):
+            return False
+        return self.to_dict() == other.to_dict()
 
     @classmethod
     @abstractmethod

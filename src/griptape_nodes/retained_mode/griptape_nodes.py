@@ -2953,7 +2953,12 @@ def handle_parameter_creation_saving(file: TextIO, node: BaseNode, flow_name: st
         else:
             base_node_obj = type(node)(name="test")
             diff = manage_alter_details(parameter, base_node_obj)
-            if diff:
+            relevant = False
+            for key in diff:
+                if key in AlterParameterDetailsRequest.relevant_parameters():
+                    relevant = True
+                    break
+            if relevant:
                 diff["node_name"] = node.name
                 diff["parameter_name"] = parameter.name
                 creation_request = AlterParameterDetailsRequest.create(**diff)
