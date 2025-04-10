@@ -99,7 +99,7 @@ class BaseAgent(ControlNode):
 
     def getkey(self, value: str) -> str:
         key = self.config.get_config_value(f"nodes.{value}")
-        return key if key else ""
+        return key
 
     def get_default_prompt_driver(self) -> GriptapeCloudPromptDriver:
         return GriptapeCloudPromptDriver(

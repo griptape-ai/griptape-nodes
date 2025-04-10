@@ -144,14 +144,14 @@ class ConfigManager:
             The value associated with the key, or the entire category if key points to a dict.
         """
         value = get_dot_value(self.user_config, key)
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
-
         if value is None:
             msg = f"Config key '{key}' not found in config file."
             logger.error(msg)
             return None
 
         if isinstance(value, str) and value.startswith("$"):
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
             value = GriptapeNodes.SecretsManager().get_secret(value[1:], value)
 
         return value
