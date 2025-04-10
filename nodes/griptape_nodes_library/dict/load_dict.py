@@ -1,7 +1,6 @@
-import os
 from typing import Any
 
-from griptape.loaders import PdfLoader, TextLoader
+from griptape.loaders import TextLoader
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
@@ -57,11 +56,7 @@ class LoadDictionary(ControlNode):
         text_path = self.parameter_values["file_path"]
 
         # Load file content based on extension
-        ext = os.path.splitext(text_path)[1]  # noqa: PTH122
-        if ext.lower() == ".pdf":
-            text_data = PdfLoader().load(text_path)[0]
-        else:
-            text_data = TextLoader().load(text_path)
+        text_data = TextLoader().load(text_path)
 
         text_data_dict = to_dict(text_data.value)
         # Set output values
