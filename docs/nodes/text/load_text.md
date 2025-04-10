@@ -23,10 +23,9 @@ Use the LoadText node when:
 
 ### Parameters
 
-**Inputs:**
 - **path**: The file path to the text file you want to load (string)
 
-**Outputs:**
+### Outputs
 - **output**: The content of the file as a text string
 - **path**: The path to the loaded file (same as the input)
 

@@ -24,11 +24,10 @@ Use the SaveText node when:
 
 ### Parameters
 
-**Inputs:**
 - **text**: The text content to save (string)
 - **output_path**: The file path where the text should be saved (defaults to "griptape_output.txt")
 
-**Outputs:**
+### Outputs
 - **output_path**: The path of the file where the text was saved
 
 ## Example

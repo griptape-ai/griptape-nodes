@@ -1,49 +1,42 @@
-# RagToolNode
+# RagTool
 
 ## What is it?
 
-The RagToolNode is a custom node in Griptape that utilizes the Rag Tool to process and generate text. It's designed to work seamlessly with other nodes in the Griptape workflow.
+The RagTool is a building block that provides Retrieval Augmented Generation capabilities to your workflows. Think of it as a smart researcher that can find and use relevant information to enhance AI responses.
 
 ## When would I use it?
 
 Use this node when you want to:
 
-- Leverage the capabilities of the Rag Tool for text processing
-- Integrate the Rag Tool with other nodes in your workflow
-- Create a custom ruleset for the Rag Tool
+- Ground AI responses in your own data sources
+- Enable agents to access and reference specific information
+- Improve response accuracy with relevant context
+- Connect knowledge bases to your conversational agents
 
 ## How to use it
 
 ### Basic Setup
 
-1. Add the RagToolNode to your workspace
-1. Connect it to other nodes that provide necessary input parameters (e.g., description, off_prompt, rag_engine)
+1. Add the RagTool to your workspace
+2. Connect it to your flow
+3. Connect its output to nodes that need RAG capabilities (like an Agent)
 
-### Fields
+### Parameters
 
-- **description**: The text description of the tool. If not provided, defaults to "Contains information."
-- **off_prompt**: A boolean indicating whether to use an off-prompt for the Rag Tool.
-- **rag_engine**: The engine used by the Rag Tool. Required.
+- **description**: A description of what information this tool provides (default is "Contains information")
+- **off_prompt**: Whether to run RAG operations outside the main prompt (default is true)
+- **rag_engine**: The engine used to retrieve information (required)
 
 ### Outputs
 
-- **tool**: The created RagTool instance
-- **rules**: The created Ruleset instance
+- **tool**: The configured RAG tool that other nodes can use
+- **rules**: The ruleset used by the RAG tool
 
 ## Example
 
-Imagine you have a workflow that generates and saves text:
+Imagine you want to create an agent that can answer questions using your company documentation:
 
-1. Create a flow with several nodes (like an agent that generates text and a node that saves it)
-1. Add the RagToolNode at the end of your sequence, connecting it to nodes that provide description, off_prompt, and rag_engine parameters
-1. Run the flow to see the Rag Tool in action
-
-## Important Notes
-
-- The RagToolNode requires the rag_engine parameter to be set.
-- Using the RagToolNode with an invalid or missing rag_engine will raise a ValueError.
-
-## Common Issues
-
-- **Rag Engine Not Provided**: Ensure that you're providing the required rag_engine parameter when connecting this node to other nodes in your workflow.
-- **Incorrect Tool Output**: Verify that the tool and rules outputs are correctly set up for use in downstream nodes.
+1. Add a RagTool to your workflow
+2. Connect a vector store containing your documentation to the "rag_engine" input
+3. Connect the "tool" output to an Agent's "tools" input
+4. Now that agent can retrieve and reference specif
