@@ -16,8 +16,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the CreateFloat to your workspace
-2. Connect it to your flow
-3. Set the "value" parameter to a float value
+1. Connect it to your flow
+1. Set the "value" parameter to a float value
 
 ### Parameters
 

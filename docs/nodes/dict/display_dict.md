@@ -1,5 +1,4 @@
-**DisplayDictionary Class Documentation**
-=====================================
+# **DisplayDictionary Class Documentation**
 
 ## What is it?
 
@@ -13,8 +12,9 @@ When you want to be able to inspect what is in your dictionary
 
 ### Parameters
 
-- **dictionary**:  The dictionary content you're inputting
+- **dictionary**: The dictionary content you're inputting
 - **dictionary_display**: The dictionary content, displayed
 
 ### Outputs
+
 - **None**

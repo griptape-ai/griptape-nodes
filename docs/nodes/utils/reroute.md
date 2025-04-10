@@ -21,13 +21,14 @@ Use the Reroute node when:
 ### Basic Setup
 
 1. Add a Reroute node to your workflow
-2. Connect the source node output to the Reroute node's input
-3. Connect the Reroute node's output to the target node's input
-4. The node will automatically adapt to pass through the correct data types
+1. Connect the source node output to the Reroute node's input
+1. Connect the Reroute node's output to the target node's input
+1. The node will automatically adapt to pass through the correct data types
 
 ### Parameters
 
 **Inputs/Outputs:**
+
 - **passThru**: A parameter that can function as both input and output, dynamically adapting its allowed types based on connections
 
 ## Important Notes
