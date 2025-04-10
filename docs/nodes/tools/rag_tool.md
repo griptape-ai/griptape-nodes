@@ -18,8 +18,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the RagTool to your workspace
-2. Connect it to your flow
-3. Connect its output to nodes that need RAG capabilities (like an Agent)
+1. Connect it to your flow
+1. Connect its output to nodes that need RAG capabilities (like an Agent)
 
 ### Parameters
 
@@ -37,6 +37,6 @@ Use this node when you want to:
 Imagine you want to create an agent that can answer questions using your company documentation:
 
 1. Add a RagTool to your workflow
-2. Connect a vector store containing your documentation to the "rag_engine" input
-3. Connect the "tool" output to an Agent's "tools" input
-4. Now that agent can retrieve and reference specif
+1. Connect a vector store containing your documentation to the "rag_engine" input
+1. Connect the "tool" output to an Agent's "tools" input
+1. Now that agent can retrieve and reference specif

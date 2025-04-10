@@ -1,24 +1,23 @@
-# Getting Started with Griptape***[nodes]***
+# Getting Started with Griptape\*\*\*[nodes]\*\*\*
 
-An important bit of overview before we begin: Griptape***[nodes]*** is actually two things that work together: An Engine, and a UI.  The Engine will install and run on your computer, while the UI is served from the web, and you'll interact with your Engine through a web browser.
+An important bit of overview before we begin: Griptape\*\*\*[nodes]\*\*\* is actually two things that work together: An Engine, and a UI. The Engine will install and run on your computer, while the UI is served from the web, and you'll interact with your Engine through a web browser.
 
-> * If you'd rather not install the Engine locally, it is also easy to run it in a hosted environment. The instructions that follow will work the same for either approach.
+> - If you'd rather not install the Engine locally, it is also easy to run it in a hosted environment. The instructions that follow will work the same for either approach.
 
-> * There is no locally-hosted UI option
+> - There is no locally-hosted UI option
 
 There are just 4 easy steps:
 
 1. Sign up or Log in
-2. Install Your Engine
-3. Configuration
-3. Start Your Engine
+1. Install Your Engine
+1. Configuration
+1. Start Your Engine
 
 ## 1. Sign up or Log in
 
 To get started, visit [https://griptapenodes.com](https://griptapenodes.com) and click the sign-in button.
 
 ![Landing Page](assets/img/getting_started/getting_started-nodes_landing_page.png)
-
 
 You'll be presented with a Griptape **Cloud** authorization form.
 
@@ -50,14 +49,13 @@ You'll see this message when installation has completed:
 **************************************
 ```
 
-
-> You'll notice this message gives you two options for commands to run.  As previsouly mentioned, there is no difference between running `griptape-nodes` or `gtn`.  They both do the exact same thing.
+> You'll notice this message gives you two options for commands to run. As previsouly mentioned, there is no difference between running `griptape-nodes` or `gtn`. They both do the exact same thing.
 
 *After* typing and running `griptape-nodes` or `gtn` in the terminal *for the first time*, you will be asked a series of configuration questions.
 
 ## 3. Configuration
 
-**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape***[nodes]*** engine will save [configuration settings](reference/glossary.md#Configuration Settings), [project files](reference/glossary.md#Project Files), and [generated assets](reference/glossary.md#Generated Assets). It will also contain a [.env](reference/glossary.md#.env) for your project [secret keys](reference/glossary.md#Secret Keys).
+**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape\*\*\*[nodes]\*\*\* engine will save \[configuration settings\](reference/glossary.md#Configuration Settings), \[project files\](reference/glossary.md#Project Files), and \[generated assets\](reference/glossary.md#Generated Assets). It will also contain a [.env](reference/glossary.md#.env) for your project \[secret keys\](reference/glossary.md#Secret Keys).
 
 ```
 ╭───────────────────────────────────────────────────────────────────╮
@@ -74,7 +72,7 @@ Workspace Directory (/Users/user/Documents/local-dev/nodes-test-eng/GriptapeNode
 
 Pressing Enter will use the default: `working directory/GriptapeNodes`. Alternatively, you can set another location.
 
->You can always return to this dialog using the `gtn init` command if you need to make changes in the future.
+> You can always return to this dialog using the `gtn init` command if you need to make changes in the future.
 
 **Second**, you'll be prompted for your Griptape Cloud API Key. Return to the web browser and click the *Generate API Key* button. Copy that key and enter it in the next step.
 
@@ -96,6 +94,6 @@ Griptape API Key (YOUR-KEY-HERE):
 
 ## 4. Start Your Engine
 
-You're ready to proceed. Run either `griptape-nodes` or `gtn` and refresh your browser. You should be taken to an Untitled flow in Griptape***[nodes]***!.
+You're ready to proceed. Run either `griptape-nodes` or `gtn` and refresh your browser. You should be taken to an Untitled flow in Griptape\*\*\*[nodes]\*\*\*!.
 
 ![A Blank Griptape[nodes] editor](assets/img/getting_started/getting_started-blank_editor.png)

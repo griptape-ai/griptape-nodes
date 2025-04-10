@@ -1,10 +1,10 @@
-# Griptape***[nodes]*** Framework Glossary for Artists
+# Griptape\*\*\*[nodes]\*\*\* Framework Glossary for Artists
 
-## What is Griptape***[nodes]***?
+## What is Griptape\*\*\*[nodes]\*\*\*?
 
-Griptape***[nodes]*** is a creative toolkit (built with Python) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create art, generate images, process text, or even build other workhorse applications.
+Griptape\*\*\*[nodes]\*\*\* is a creative toolkit (built with Python) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create art, generate images, process text, or even build other workhorse applications.
 
-### The Big Ones in the Griptape***[nodes]*** world
+### The Big Ones in the Griptape\*\*\*[nodes]\*\*\* world
 
 - **Workflow**: A document containing nodes, connections, and values. While technically a Workflow is also a Script, avoid calling them Scripts, so that the term Script can communicate a clearly different thing than the term Workflow. This is also what we call the saved file.
 
@@ -22,27 +22,27 @@ Griptape***[nodes]*** is a creative toolkit (built with Python) that helps artis
 
 - **Libraries**: Collections of node definitions and/or scripts that extend functionality
 
-- **Node**: A single piece of the puzzle in your workflow. Nodes are like LEGO blocks that you can connect to create something bigger. Each node does one specific thing (like generating an image or processing text).  There are **types** of nodes:
+- **Node**: A single piece of the puzzle in your workflow. Nodes are like LEGO blocks that you can connect to create something bigger. Each node does one specific thing (like generating an image or processing text). There are **types** of nodes:
 
-    - **DataNode**: A node that handles information — it can transform data from one form to another, or simply hold data you set.
-    - **ControlNode**: A node that will "do some work".  Control Nodes usually take longer to run than DataNodes because, they're usually doing more work.
-    - **DriverNode**: A node that connects your project to outside services (like image generators or search engines).
+  - **DataNode**: A node that handles information — it can transform data from one form to another, or simply hold data you set.
+  - **ControlNode**: A node that will "do some work". Control Nodes usually take longer to run than DataNodes because, they're usually doing more work.
+  - **DriverNode**: A node that connects your project to outside services (like image generators or search engines).
 
 - **Tool**: A ready-to-use component that performs a specific function. Tools are like brushes in your digital toolkit — each designed for a specific purpose.
 
-    - **CalculatorTool**: Does math calculations for you.
-    - **DateTimeTool**: Works with dates and times.
-    - **FileManagerTool**: Helps manage files (saving, loading, etc.).
-    - **WebScraperTool**: Collects information from websites.
-    - **PromptSummaryTool**: Creates summaries of longer text.
+  - **CalculatorTool**: Does math calculations for you.
+  - **DateTimeTool**: Works with dates and times.
+  - **FileManagerTool**: Helps manage files (saving, loading, etc.).
+  - **WebScraperTool**: Collects information from websites.
+  - **PromptSummaryTool**: Creates summaries of longer text.
 
 - **Driver**: The connector between your project and external AI services or databases. Drivers are like adapters that let your project talk to specialized services.
 
-    - **PromptDriver**: Communicates with AI text generators (like GPT models).
-    - **WebSearchDriver**: Connects to search engines to find information.
-    - **EmbeddingDriver**: Transforms words and concepts into numerical form that AI can understand.
-    - **ImageGenerationDriver**: Connects to AI image generators (like DALL-E).
-    - **AudioTranscriptionDriver**: Converts spoken audio to written text.
+  - **PromptDriver**: Communicates with AI text generators (like GPT models).
+  - **WebSearchDriver**: Connects to search engines to find information.
+  - **EmbeddingDriver**: Transforms words and concepts into numerical form that AI can understand.
+  - **ImageGenerationDriver**: Connects to AI image generators (like DALL-E).
+  - **AudioTranscriptionDriver**: Converts spoken audio to written text.
 
 - **Engine**: The powerhouse that processes your creative requests. Engines are specialized components that transform inputs into creative outputs.
 
@@ -65,10 +65,10 @@ Griptape***[nodes]*** is a creative toolkit (built with Python) that helps artis
 
 - **Parameter**: A setting or value you can adjust on a node. Parameters are like the knobs and sliders in a music synthesizer — they let you fine-tune how things work.
 
-    - **ParameterMode**: Describes if a parameter is for input, output, internal, or any combination.
-    - **ParameterValue**: The "internal" value for a parameter (this is the data the node works with internally)
-    - **ParameterOutputValues**: The results or "output" value for your parameters (this is the data that results from what the node did)
-    - **ParameterUIOptions**: Settings for how parameters appear in the user interface.
+  - **ParameterMode**: Describes if a parameter is for input, output, internal, or any combination.
+  - **ParameterValue**: The "internal" value for a parameter (this is the data the node works with internally)
+  - **ParameterOutputValues**: The results or "output" value for your parameters (this is the data that results from what the node did)
+  - **ParameterUIOptions**: Settings for how parameters appear in the user interface.
 
 - **Default Value**: The pre-set value a parameter has before you change it. This is like the factory settings on a device.
 
@@ -80,11 +80,10 @@ Griptape***[nodes]*** is a creative toolkit (built with Python) that helps artis
 
 - **Type Hints**: Labels that suggest what kind of information a parameter expects. These are like labels on art supply containers telling you what's inside.
 
-    - **Any**: A type hint meaning a parameter can accept any kind of information.
-    - **List**: A type hint for a collection of items (like an array of colors or shapes).
-    - **Literal**: A type hint indicating a parameter only accepts specific preset values.
-    - **Union type**: A type hint showing a parameter can accept multiple specific types of information.
-
+  - **Any**: A type hint meaning a parameter can accept any kind of information.
+  - **List**: A type hint for a collection of items (like an array of colors or shapes).
+  - **Literal**: A type hint indicating a parameter only accepts specific preset values.
+  - **Union type**: A type hint showing a parameter can accept multiple specific types of information.
 
 - **Connection**: The link that allows nodes to communicate with each other. Connections are like the cables connecting different pieces of equipment.
 
@@ -92,18 +91,19 @@ Griptape***[nodes]*** is a creative toolkit (built with Python) that helps artis
 
 - **Data Types**:
 
-    - **Dictionary (dict)**: A way to store information as pairs of labels and values. Dictionaries are like organized containers where each item has a unique label.
-    - **Key-Value Pair**: A label (key) paired with its corresponding information (value).  Dictionaries are just a collection of Key-Value Pairs.
-    - **Integer (int)**: Whole numbers without decimal points, like 5, -10, or 1000.
-    - **Float (float)**: Numbers with decimal points, like 3.14, -0.5, or 2.0.
-    - **String (str)**: Text enclosed in quotes, like "hello", 'Python', or "123".
-    - **Boolean (bool)**: Represents either True or False.
-    - **List (list)**: An ordered collection of items that can be modified, like [1, 2, 3] or ["apple", "banana", "cherry"].
-    - **Tuple (tuple)**: An ordered collection of items that cannot be modified after creation, like (1, 2, 3) or ("red", "green", "blue").
-    - **Set (set)**: An unordered collection of unique items, like {1, 2, 3} or {"apple", "banana", "cherry"}.
-    - **None (NoneType)**: Represents the absence of a value or a null value.
+  - **Dictionary (dict)**: A way to store information as pairs of labels and values. Dictionaries are like organized containers where each item has a unique label.
+  - **Key-Value Pair**: A label (key) paired with its corresponding information (value). Dictionaries are just a collection of Key-Value Pairs.
+  - **Integer (int)**: Whole numbers without decimal points, like 5, -10, or 1000.
+  - **Float (float)**: Numbers with decimal points, like 3.14, -0.5, or 2.0.
+  - **String (str)**: Text enclosed in quotes, like "hello", 'Python', or "123".
+  - **Boolean (bool)**: Represents either True or False.
+  - **List (list)**: An ordered collection of items that can be modified, like [1, 2, 3] or ["apple", "banana", "cherry"].
+  - **Tuple (tuple)**: An ordered collection of items that cannot be modified after creation, like (1, 2, 3) or ("red", "green", "blue").
+  - **Set (set)**: An unordered collection of unique items, like {1, 2, 3} or {"apple", "banana", "cherry"}.
+  - **None (NoneType)**: Represents the absence of a value or a null value.
 
 - **Environment Variable**: Like secret notes that your computer keeps to help programs know important information.
+
 - **API Key**: A special password that grants your project access to external services like AI image generators. Think of it like a membership card that lets you use specific online services.
 
 <a id="Secret Keys"></a>
@@ -127,7 +127,6 @@ Griptape***[nodes]*** is a creative toolkit (built with Python) that helps artis
 
 - **.env**: A special file used to store environment variables, particularly sensitive information like API keys.
 
-
 ## AI Terms for Artists
 
 - **Temperature Control**: A setting that controls how creative or predictable an AI's responses will be. Lower temperature means more predictable, higher temperature means more creative and varied.
@@ -143,25 +142,36 @@ Griptape***[nodes]*** is a creative toolkit (built with Python) that helps artis
 - **Vector Store**: A specialized database that stores information in a way that captures relationships and meaning, not just the information itself.
 
 - **Diffusion Models**: AI systems that create images by gradually transforming random noise into detailed visuals based on text descriptions. Popular examples include Stable Diffusion and Midjourney.
+
 - **Text-to-Image Generation**: Technology that creates images based on written descriptions, allowing artists to visualize concepts through text prompts.
+
 - **Style Transfer**: AI technique that applies the visual style of one image (like a famous painting) to the content of another image.
+
 - **Inpainting/Outpainting**: Tools that can fill in missing parts of an image or extend it beyond its original borders based on surrounding context.
+
 - **Fine-tuning**: The process of adapting a pre-trained AI model to recognize and generate specific styles, subjects, or artistic elements.
+
 - **Latent Space**: A mathematical representation where AI models organize concepts; artists can explore this space to find creative variations and transitions between ideas.
+
 - **Tokens**: The basic units that AI language models process text in, similar to words or parts of words. Understanding token limits helps artists craft effective prompts.
+
 - **Multimodal AI**: Systems that can work with multiple types of content (text, images, audio) simultaneously, enabling more integrated creative workflows.
+
 - **LoRA (Low-Rank Adaptation)**: A technique that allows artists to train AI models on their specific style without extensive computing resources.
+
 - **Sampling Methods**: Different algorithms (like DDIM, Euler, etc.) that control how AI generates images, affecting detail levels, creativity, and coherence.
 
 ## AI Companies and Models (Updated Apr 9,2025)
 
 ### Anthropic
+
 - **Claude 3 Opus**: Anthropic's most capable model for complex creative tasks and detailed content generation
 - **Claude 3.5 Sonnet**: Balanced model offering strong creative capabilities with faster performance
-- **Claude 3.7 Sonnet**: Advanced reasoning-focused model for complex creative problem-solving 
+- **Claude 3.7 Sonnet**: Advanced reasoning-focused model for complex creative problem-solving
 - **Claude 3.5 Haiku**: Fastest model for rapid ideation and real-time creative collaboration
 
 ### OpenAI
+
 - **GPT-4o**: OpenAI's most advanced multimodal model for text, image, and audio processing
 - **GPT-4 Turbo**: Powerful large language model for sophisticated text generation and creative writing
 - **GPT-3.5 Turbo**: More economical model for standard creative text tasks
@@ -169,32 +179,38 @@ Griptape***[nodes]*** is a creative toolkit (built with Python) that helps artis
 - **Whisper**: Speech recognition model that can transcribe audio for creative projects
 
 ### Stability AI
+
 - **Stable Diffusion XL**: Text-to-image model with high-quality image generation capabilities
 - **Stable Diffusion 3**: Latest generation text-to-image model with improved coherence
 - **Stable Video**: Text-to-video generation model for creating short animated sequences
 
 ### Google
+
 - **Gemini Pro**: Google's advanced model for text generation and reasoning
 - **Gemini Ultra**: Google's most capable model for complex creative tasks
 - **Imagen**: Text-to-image generation model with photorealistic capabilities
 
 ### Cohere
+
 - **Command**: Specialized for instruction following and precise creative tasks
 - **Embed**: Creates semantic representations of text for organizing creative content
 
 ### Midjourney
+
 - **Midjourney V6**: Image generation model popular among artists for its distinctive aesthetic
 
 ### Meta
+
 - **Llama 3**: Open-weight foundation model adaptable for various creative applications
 - **Llama 3.1**: More advanced version with improved capabilities
 - **Segment Anything**: AI model for precise image segmentation in visual arts
 
 ### Ollama
+
 - **Local model hosting service**: Allows running various open-source AI models locally for creative projects
 
-
 - -
+
 ## Helpful Programming Concepts
 
 - **Callback**: A function that automatically runs when something specific happens. This is like setting up a camera to take a photo when motion is detected.
@@ -203,10 +219,10 @@ Griptape***[nodes]*** is a creative toolkit (built with Python) that helps artis
 
 - **Exception Handling**: The way your project deals with errors. This is like having backup plans for when things go wrong.
 
-    - **Authentication Error**: An error that occurs when your project can't prove it has permission to use a service.
-    - **KeyError**: An error when your project tries to access information using an incorrect label.
-    - **SyntaxError**: An error caused by incorrect formatting in code.
-    - **ValueError**: An error when your project tries to use an inappropriate value.
+  - **Authentication Error**: An error that occurs when your project can't prove it has permission to use a service.
+  - **KeyError**: An error when your project tries to access information using an incorrect label.
+  - **SyntaxError**: An error caused by incorrect formatting in code.
+  - **ValueError**: An error when your project tries to use an inappropriate value.
 
 - **Metadata**: Extra information about your content or components. This is like the information stored in digital photo files (camera type, date taken, etc.).
 
