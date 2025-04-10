@@ -22,15 +22,12 @@ class LoadDictionary(ControlNode):
             ".env",
             ".info",
             ".json",
-            ".log",
             ".text",
             ".txt",
             ".yaml",
             ".yml",
             ".csv",
             ".tsv",
-            ".md",
-            ".pdf",
         )
 
         # Add output parameters
