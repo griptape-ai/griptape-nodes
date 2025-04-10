@@ -922,6 +922,88 @@ class FlowManager:
 
             result = CreateConnectionResultFailure()
             return result
+
+        # Based on user feedback, if a connection already exists in a scenario where only ONE such connection can exist
+        # (e.g., connecting to a data input that already has a connection, or from a control output that is already wired up),
+        # detach the old connection and replace it with this one.
+        old_source_node_name = None
+        old_source_param_name = None
+        old_target_node_name = None
+        old_target_param_name = None
+        if source_param.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
+            # We're attempting FROM a Control Parameter. We can only have one such outgoing connection.
+
+            # Does another connection here already exist?
+            connection_mgr = source_flow.connections
+            # get outgoing connections
+            outgoing_connections_list = []
+            if request.source_node_name in connection_mgr.outgoing_index:
+                outgoing_connections_list = [
+                    OutgoingConnection(
+                        source_parameter_name=connection.source_parameter.name,
+                        target_node_name=connection.target_node.name,
+                        target_parameter_name=connection.target_parameter.name,
+                    )
+                    for connection_lists in connection_mgr.outgoing_index[request.source_node_name].values()
+                    for connection_id in connection_lists
+                    for connection in [connection_mgr.connections[connection_id]]
+                ]
+                if len(outgoing_connections_list) == 1:
+                    outgoing_connection = outgoing_connections_list[0]
+                    old_source_node_name = request.source_node_name
+                    old_source_param_name = request.source_parameter_name
+                    old_target_node_name = outgoing_connection.target_node_name
+                    old_target_param_name = outgoing_connection.target_parameter_name
+        elif not target_param.is_incoming_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
+            # We're attempting TO a Data Parameter. We can only have one such incoming connection.
+
+            # Does another connection here already exist?
+            connection_mgr = source_flow.connections
+
+            # get incoming connections
+            incoming_connections_list = []
+            if request.target_node_name in connection_mgr.incoming_index:
+                incoming_connections_list = [
+                    IncomingConnection(
+                        source_node_name=connection.source_node.name,
+                        source_parameter_name=connection.source_parameter.name,
+                        target_parameter_name=connection.target_parameter.name,
+                    )
+                    for connection_lists in connection_mgr.incoming_index[request.target_node_name].values()
+                    for connection_id in connection_lists
+                    for connection in [
+                        connection_mgr.connections[connection_id]
+                    ]  # This creates a temporary one-item list with the connection
+                ]
+                if len(incoming_connections_list) == 1:
+                    incoming_connection = incoming_connections_list[0]
+                    old_source_node_name = incoming_connection.source_node_name
+                    old_source_param_name = incoming_connection.source_parameter_name
+                    old_target_node_name = request.target_node_name
+                    old_target_param_name = request.target_parameter_name
+
+        # Do we have a previous connection we need to delete?
+        if (
+            (old_source_node_name is not None)
+            and (old_source_param_name is not None)
+            and (old_target_node_name is not None)
+            and (old_target_param_name is not None)
+        ):
+            delete_old_request = DeleteConnectionRequest(
+                source_node_name=old_source_node_name,
+                source_parameter_name=old_source_param_name,
+                target_node_name=old_target_node_name,
+                target_parameter_name=old_target_param_name,
+            )
+            delete_old_result = GriptapeNodes.handle_request(delete_old_request)
+            if delete_old_result.failed():
+                details = f"Attempted to connect '{request.source_node_name}.{request.source_parameter_name}'. Failed because there was a previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}' that could not be deleted."
+                logger.error(details)
+                result = CreateConnectionResultFailure()
+                return result
+
+            details = f"Deleted the previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}' to make room for the new connection."
+            logger.debug(details)
         try:
             # Actually create the Connection.
             source_flow.add_connection(
@@ -931,8 +1013,26 @@ class FlowManager:
                 target_parameter=target_param,
             )
         except ValueError as e:
-            details = f'Connection failed : "{e}"'
+            details = f'Connection failed: "{e}"'
             logger.error(details)
+
+            # Attempt to restore any old connection that may have been present.
+            if (
+                (old_source_node_name is not None)
+                and (old_source_param_name is not None)
+                and (old_target_node_name is not None)
+                and (old_target_param_name is not None)
+            ):
+                create_old_connection_request = CreateConnectionRequest(
+                    source_node_name=old_source_node_name,
+                    source_parameter_name=old_source_param_name,
+                    target_node_name=old_target_node_name,
+                    target_parameter_name=old_target_param_name,
+                )
+                create_old_connection_result = GriptapeNodes.handle_request(create_old_connection_request)
+                if create_old_connection_result.failed():
+                    details = "Failed attempting to restore the old Connection after failing the replacement. A thousand pardons."
+                    logger.error(details)
             return CreateConnectionResultFailure()
 
         # Let the source make any internal handling decisions now that the Connection has been made.
