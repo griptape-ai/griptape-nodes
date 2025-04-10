@@ -152,8 +152,6 @@ class ConfigManager:
             return None
 
         if isinstance(value, str) and value.startswith("$"):
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             value = GriptapeNodes.SecretsManager().get_secret(value[1:], value)
 
         return value
