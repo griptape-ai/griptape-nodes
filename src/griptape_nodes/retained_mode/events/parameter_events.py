@@ -52,7 +52,9 @@ class AddParameterToNodeRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class AddParameterToNodeResultSuccess(ResultPayloadSuccess):
-    pass
+    parameter_name: str
+    type: str
+    node_name: str
 
 
 @dataclass

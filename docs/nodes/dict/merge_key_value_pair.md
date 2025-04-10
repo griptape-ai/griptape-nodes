@@ -13,11 +13,11 @@ Use this node when you need to combine multiple sets of key-value pairs into a s
 ### Basic Setup
 
 1. Add the `MergeKeyValuePair` node to your workflow.
-2. Connect four input parameters to the node:
-	* `key_value_pair_1`
-	* `key_value_pair_2`
-	* `key_value_pair_3`
-	* `key_value_pair_4`
+1. Connect four input parameters to the node:
+   - `key_value_pair_1`
+   - `key_value_pair_2`
+   - `key_value_pair_3`
+   - `key_value_pair_4`
 
 These inputs should be dictionaries containing key-value pairs.
 
@@ -43,7 +43,7 @@ config4 = {"database": "oracle", "password": "secret"}
 You can use the `MergeKeyValuePair` node to merge these configurations into a single dictionary:
 
 1. Connect the four input parameters (`key_value_pair_1`, `key_value_pair_2`, `key_value_pair_3`, and `key_value_pair_4`) to the `MergeKeyValuePair` node.
-2. Set the values of each parameter to the corresponding configuration data.
+1. Set the values of each parameter to the corresponding configuration data.
 
 The output will be a single dictionary containing all the key-value pairs:
 

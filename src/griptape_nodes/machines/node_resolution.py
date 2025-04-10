@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from griptape.events import EventBus
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterContainer, ParameterList, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
@@ -33,6 +33,7 @@ class ResolutionContext:
         self.flow = flow
         self.focus_stack = []
         self.paused = False
+
 
 class InitializeSpotlightState(State):
     @staticmethod
@@ -121,7 +122,6 @@ class ExecuteNodeState(State):
     # TODO(kate): Can we refactor this method to make it a lot cleaner? might involve changing how parameter values are retrieved/stored.
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901
-
         current_node = context.focus_stack[-1]
         # Get the parameters that have input values
         for parameter_name in current_node.parameter_output_values.copy():

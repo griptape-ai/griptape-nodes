@@ -1721,14 +1721,20 @@ class NodeManager:
                 result = AddParameterToNodeResultFailure()
                 return result
             try:
-                parameter.add_child_parameter()
+                new_param = parameter.add_child_parameter()
             except Exception as e:
                 details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{request.node_name}'. Failed: {e}."
                 logger.exception(details)
                 result = AddParameterToNodeResultFailure()
                 return result
-            return AddParameterToNodeResultSuccess()
-
+            return AddParameterToNodeResultSuccess(
+                parameter_name=new_param.name, type=new_param.type, node_name=request.node_name
+            )
+        if request.parameter_name is None or request.default_value is None or request.tooltip is None:
+            details = f"Attempted to add Parameter to node '{request.node_name}'. Failed because default_value, tooltip, or parameter_name was not defined."
+            logger.error(details)
+            result = AddParameterToNodeResultFailure()
+            return result
         # Does the Node already have a parameter by this name?
         if node.get_parameter_by_name(request.parameter_name) is not None:
             details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{request.node_name}'. Failed because it already had a Parameter with that name on it. Parameter names must be unique within the Node."
@@ -1799,7 +1805,9 @@ class NodeManager:
         details = f"Successfully added Parameter '{request.parameter_name}' to Node '{request.node_name}'."
         logger.debug(details)
 
-        result = AddParameterToNodeResultSuccess()
+        result = AddParameterToNodeResultSuccess(
+            parameter_name=new_param.name, type=new_param.type, node_name=request.node_name
+        )
         return result
 
     def on_remove_parameter_from_node_request(self, request: RemoveParameterFromNodeRequest) -> ResultPayload:  # noqa: C901

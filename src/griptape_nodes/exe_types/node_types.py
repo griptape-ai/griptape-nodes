@@ -15,8 +15,6 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
-import contextlib
-
 from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
 
 
@@ -302,19 +300,18 @@ class BaseNode(ABC):
         # Return the complete set of modified parameters.
         return modified_parameters
 
-    def kill_parameter_children(self, parameter:Parameter) -> None:
+    def kill_parameter_children(self, parameter: Parameter) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         for child in parameter.find_elements_by_type(Parameter):
-            GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(
-                    parameter_name = child.name,
-                    node_name=self.name))
+            GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(parameter_name=child.name, node_name=self.name))
 
     def get_parameter_value(self, param_name: str) -> Any:
         if param_name in self.parameter_values:
             return self.parameter_values[param_name]
         param = self.get_parameter_by_name(param_name)
         if param:
-            value = handle_container_parameter(self,param)
+            value = handle_container_parameter(self, param)
             if value:
                 return value
         return param.default_value if param else None
@@ -444,7 +441,7 @@ class Connection:
         return self.source_node
 
 
-def handle_container_parameter(current_node:BaseNode, parameter:Parameter) -> Any:
+def handle_container_parameter(current_node: BaseNode, parameter: Parameter) -> Any:
     # if it's a container and it's value isn't already set.
     if isinstance(parameter, ParameterContainer):
         children = parameter.find_elements_by_type(Parameter, find_recursively=False)
