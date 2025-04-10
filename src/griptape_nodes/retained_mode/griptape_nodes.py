@@ -2951,8 +2951,14 @@ def handle_parameter_creation_saving(file: TextIO, node: BaseNode, flow_name: st
             code_string = f"GriptapeNodes().handle_request({creation_request})"
             file.write(code_string + "\n")
         else:
-            diff = manage_alter_details(parameter, type(node))
-            if diff:
+            base_node_obj = type(node)(name="test")
+            diff = manage_alter_details(parameter, base_node_obj)
+            relevant = False
+            for key in diff:
+                if key in AlterParameterDetailsRequest.relevant_parameters():
+                    relevant = True
+                    break
+            if relevant:
                 diff["node_name"] = node.name
                 diff["parameter_name"] = parameter.name
                 creation_request = AlterParameterDetailsRequest.create(**diff)
@@ -2991,8 +2997,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, flow_nam
     return None
 
 
-def manage_alter_details(parameter: Parameter, base_node: type) -> dict:
-    base_node_obj = base_node(name="test")
+def manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
     base_param = base_node_obj.get_parameter_by_name(parameter.name)
     if base_param:
         diff = base_param.equals(parameter)
