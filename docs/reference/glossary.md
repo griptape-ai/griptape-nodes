@@ -1,10 +1,10 @@
-# Griptape\*\*\*[nodes]\*\*\* Framework Glossary for Artists
+# Griptape **_Nodes_** Framework Glossary for Artists
 
-## What is Griptape\*\*\*[nodes]\*\*\*?
+## What is Griptape **_Nodes_**?
 
-Griptape\*\*\*[nodes]\*\*\* is a creative toolkit (built with Python) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create art, generate images, process text, or even build other workhorse applications.
+Griptape **_Nodes_** is a creative toolkit (built with Python) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create art, generate images, process text, or even build other workhorse applications.
 
-### The Big Ones in the Griptape\*\*\*[nodes]\*\*\* world
+### The Big Ones in the Griptape **_Nodes_** world
 
 - **Workflow**: A document containing nodes, connections, and values. While technically a Workflow is also a Script, avoid calling them Scripts, so that the term Script can communicate a clearly different thing than the term Workflow. This is also what we call the saved file.
 
@@ -24,51 +24,51 @@ Griptape\*\*\*[nodes]\*\*\* is a creative toolkit (built with Python) that helps
 
 - **Node**: A single piece of the puzzle in your workflow. Nodes are like LEGO blocks that you can connect to create something bigger. Each node does one specific thing (like generating an image or processing text). There are **types** of nodes:
 
-  - **DataNode**: A node that handles information — it can transform data from one form to another, or simply hold data you set.
-  - **ControlNode**: A node that will "do some work". Control Nodes usually take longer to run than DataNodes because, they're usually doing more work.
-  - **DriverNode**: A node that connects your project to outside services (like image generators or search engines).
+    - **DataNode**: A node that handles information — it can transform data from one form to another, or simply hold data you set.
+    - **ControlNode**: A node that will "do some work". Control Nodes usually take longer to run than DataNodes because, they're usually doing more work.
+    - **DriverNode**: A node that connects your project to outside services (like image generators or search engines).
 
 - **Tool**: A ready-to-use component that performs a specific function. Tools are like brushes in your digital toolkit — each designed for a specific purpose.
 
-  - **CalculatorTool**: Does math calculations for you.
-  - **DateTimeTool**: Works with dates and times.
-  - **FileManagerTool**: Helps manage files (saving, loading, etc.).
-  - **WebScraperTool**: Collects information from websites.
-  - **PromptSummaryTool**: Creates summaries of longer text.
+    - **CalculatorTool**: Does math calculations for you.
+    - **DateTimeTool**: Works with dates and times.
+    - **FileManagerTool**: Helps manage files (saving, loading, etc.).
+    - **WebScraperTool**: Collects information from websites.
+    - **PromptSummaryTool**: Creates summaries of longer text.
 
 - **Driver**: The connector between your project and external AI services or databases. Drivers are like adapters that let your project talk to specialized services.
 
-  - **PromptDriver**: Communicates with AI text generators (like GPT models).
-  - **WebSearchDriver**: Connects to search engines to find information.
-  - **EmbeddingDriver**: Transforms words and concepts into numerical form that AI can understand.
-  - **ImageGenerationDriver**: Connects to AI image generators (like DALL-E).
-  - **AudioTranscriptionDriver**: Converts spoken audio to written text.
+    - **PromptDriver**: Communicates with AI text generators (like GPT models).
+    - **WebSearchDriver**: Connects to search engines to find information.
+    - **EmbeddingDriver**: Transforms words and concepts into numerical form that AI can understand.
+    - **ImageGenerationDriver**: Connects to AI image generators (like DALL-E).
+    - **AudioTranscriptionDriver**: Converts spoken audio to written text.
 
 - **Engine**: The powerhouse that processes your creative requests. Engines are specialized components that transform inputs into creative outputs.
 
-  - **RagEngine**: Processes questions and generates answers based on provided information.
-  - **PromptSummaryEngine**: Creates concise summaries of longer text.
-  - **CsvExtractionEngine**: Pulls information from spreadsheet-like files.
-  - **JsonExtractionEngine**: Pulls information from structured data files.
+    - **RagEngine**: Processes questions and generates answers based on provided information.
+    - **PromptSummaryEngine**: Creates concise summaries of longer text.
+    - **CsvExtractionEngine**: Pulls information from spreadsheet-like files.
+    - **JsonExtractionEngine**: Pulls information from structured data files.
 
 - **Artifact**: A piece of content created during your project, like a generated image or text. Artifacts are the outputs of your creative process.
 
-  - **ErrorArtifact**: A notification when something goes wrong.
+    - **ErrorArtifact**: A notification when something goes wrong.
 
 - **Agent**: A helper that can perform tasks on your behalf, often using a combination of tools. Agents are like assistants that can navigate a sequence of operations for you.
 
 - **Ruleset**: A set of guidelines that control how your project behaves. Rulesets are like recipes that tell your project how to respond in different situations.
 
-  - **Rule**: A single instruction within a ruleset, like "if the user asks for an image, generate one."
+    - **Rule**: A single instruction within a ruleset, like "if the user asks for an image, generate one."
 
 ### Node Contents and Activities
 
 - **Parameter**: A setting or value you can adjust on a node. Parameters are like the knobs and sliders in a music synthesizer — they let you fine-tune how things work.
 
-  - **ParameterMode**: Describes if a parameter is for input, output, internal, or any combination.
-  - **ParameterValue**: The "internal" value for a parameter (this is the data the node works with internally)
-  - **ParameterOutputValues**: The results or "output" value for your parameters (this is the data that results from what the node did)
-  - **ParameterUIOptions**: Settings for how parameters appear in the user interface.
+    - **ParameterMode**: Describes if a parameter is for input, output, internal, or any combination.
+    - **ParameterValue**: The "internal" value for a parameter (this is the data the node works with internally)
+    - **ParameterOutputValues**: The results or "output" value for your parameters (this is the data that results from what the node did)
+    - **ParameterUIOptions**: Settings for how parameters appear in the user interface.
 
 - **Default Value**: The pre-set value a parameter has before you change it. This is like the factory settings on a device.
 
@@ -80,10 +80,10 @@ Griptape\*\*\*[nodes]\*\*\* is a creative toolkit (built with Python) that helps
 
 - **Type Hints**: Labels that suggest what kind of information a parameter expects. These are like labels on art supply containers telling you what's inside.
 
-  - **Any**: A type hint meaning a parameter can accept any kind of information.
-  - **List**: A type hint for a collection of items (like an array of colors or shapes).
-  - **Literal**: A type hint indicating a parameter only accepts specific preset values.
-  - **Union type**: A type hint showing a parameter can accept multiple specific types of information.
+    - **Any**: A type hint meaning a parameter can accept any kind of information.
+    - **List**: A type hint for a collection of items (like an array of colors or shapes).
+    - **Literal**: A type hint indicating a parameter only accepts specific preset values.
+    - **Union type**: A type hint showing a parameter can accept multiple specific types of information.
 
 - **Connection**: The link that allows nodes to communicate with each other. Connections are like the cables connecting different pieces of equipment.
 
@@ -91,16 +91,16 @@ Griptape\*\*\*[nodes]\*\*\* is a creative toolkit (built with Python) that helps
 
 - **Data Types**:
 
-  - **Dictionary (dict)**: A way to store information as pairs of labels and values. Dictionaries are like organized containers where each item has a unique label.
-  - **Key-Value Pair**: A label (key) paired with its corresponding information (value). Dictionaries are just a collection of Key-Value Pairs.
-  - **Integer (int)**: Whole numbers without decimal points, like 5, -10, or 1000.
-  - **Float (float)**: Numbers with decimal points, like 3.14, -0.5, or 2.0.
-  - **String (str)**: Text enclosed in quotes, like "hello", 'Python', or "123".
-  - **Boolean (bool)**: Represents either True or False.
-  - **List (list)**: An ordered collection of items that can be modified, like [1, 2, 3] or ["apple", "banana", "cherry"].
-  - **Tuple (tuple)**: An ordered collection of items that cannot be modified after creation, like (1, 2, 3) or ("red", "green", "blue").
-  - **Set (set)**: An unordered collection of unique items, like {1, 2, 3} or {"apple", "banana", "cherry"}.
-  - **None (NoneType)**: Represents the absence of a value or a null value.
+    - **Dictionary (dict)**: A way to store information as pairs of labels and values. Dictionaries are like organized containers where each item has a unique label.
+    - **Key-Value Pair**: A label (key) paired with its corresponding information (value). Dictionaries are just a collection of Key-Value Pairs.
+    - **Integer (int)**: Whole numbers without decimal points, like 5, -10, or 1000.
+    - **Float (float)**: Numbers with decimal points, like 3.14, -0.5, or 2.0.
+    - **String (str)**: Text enclosed in quotes, like "hello", 'Python', or "123".
+    - **Boolean (bool)**: Represents either True or False.
+    - **List (list)**: An ordered collection of items that can be modified, like [1, 2, 3] or ["apple", "banana", "cherry"].
+    - **Tuple (tuple)**: An ordered collection of items that cannot be modified after creation, like (1, 2, 3) or ("red", "green", "blue").
+    - **Set (set)**: An unordered collection of unique items, like {1, 2, 3} or {"apple", "banana", "cherry"}.
+    - **None (NoneType)**: Represents the absence of a value or a null value.
 
 - **Environment Variable**: Like secret notes that your computer keeps to help programs know important information.
 
@@ -113,7 +113,7 @@ Griptape\*\*\*[nodes]\*\*\* is a creative toolkit (built with Python) that helps
 
 <a id="Configuration Settings"></a>
 
-- **Configuration Settings**: Parameters and options that control how the Griptape[nodes] engine and its components operate.
+- **Configuration Settings**: Parameters and options that control how the Griptape_nodes\_ engine and its components operate.
 
 <a id="Project Files"></a>
 
@@ -121,7 +121,7 @@ Griptape\*\*\*[nodes]\*\*\* is a creative toolkit (built with Python) that helps
 
 <a id="Generated Assets"></a>
 
-- **Generated Assets**: Files and data produced by the Griptape[nodes] engine during execution, such as outputs, reports, or visualizations.
+- **Generated Assets**: Files and data produced by the Griptape_nodes\_ engine during execution, such as outputs, reports, or visualizations.
 
 <a id=".env"></a>
 
@@ -219,10 +219,10 @@ Griptape\*\*\*[nodes]\*\*\* is a creative toolkit (built with Python) that helps
 
 - **Exception Handling**: The way your project deals with errors. This is like having backup plans for when things go wrong.
 
-  - **Authentication Error**: An error that occurs when your project can't prove it has permission to use a service.
-  - **KeyError**: An error when your project tries to access information using an incorrect label.
-  - **SyntaxError**: An error caused by incorrect formatting in code.
-  - **ValueError**: An error when your project tries to use an inappropriate value.
+    - **Authentication Error**: An error that occurs when your project can't prove it has permission to use a service.
+    - **KeyError**: An error when your project tries to access information using an incorrect label.
+    - **SyntaxError**: An error caused by incorrect formatting in code.
+    - **ValueError**: An error when your project tries to use an inappropriate value.
 
 - **Metadata**: Extra information about your content or components. This is like the information stored in digital photo files (camera type, date taken, etc.).
 

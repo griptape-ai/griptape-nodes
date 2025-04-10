@@ -34,18 +34,19 @@ Use the CreateMultilineText node when:
 A workflow to create a prompt for an AI assistant:
 
 1. Add a CreateMultilineText node to your workflow
+
 1. Set the "text" parameter to:
 
-```
-You are a helpful tour guide assistant.
-Please provide information about the following location:
-- History of the place
-- Main attractions
-- Best time to visit
-- Local cuisine
-```
+    ```
+    You are a helpful tour guide assistant.
+    Please provide information about the following location:
+    - History of the place
+    - Main attractions
+    - Best time to visit
+    - Local cuisine
+    ```
 
-3. Connect the output to an Agent node's prompt parameter
+1. Connect the output to an Agent node's prompt parameter
 
 ## Important Notes
 
