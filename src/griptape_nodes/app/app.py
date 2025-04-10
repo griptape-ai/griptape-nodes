@@ -149,7 +149,7 @@ def _listen_for_api_events() -> None:
                                 logger.exception("Error processing event, skipping.")
 
         except Exception:
-            logger.error("Error while listening for events. Retrying in 2 seconds.")  # noqa: TRY400
+            logger.error("Error while listening for events. Retrying in 2 seconds.")
             sleep(2)
             init = False
 

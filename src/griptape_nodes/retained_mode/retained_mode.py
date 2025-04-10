@@ -459,7 +459,7 @@ class RetainedMode:
                     idx = int(idx_or_key)
                 except ValueError:
                     error_msg = f"Failed on key/index '{idx_or_key}' because it wasn't an int as expected."
-                    logger.exception(error_msg)
+                    logger.error(error_msg)
                     return GetParameterValueResultFailure()
 
                 # Handle negative indices

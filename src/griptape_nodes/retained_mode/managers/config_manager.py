@@ -168,7 +168,7 @@ class ConfigManager:
             try:
                 logger.setLevel(value.upper())
             except ValueError:
-                logger.exception("Invalid log level %s. Defaulting to INFO.", value)
+                logger.error("Invalid log level %s. Defaulting to INFO.", value)
                 logger.setLevel(logging.INFO)
         self.user_config = merge_dicts(self.user_config, delta)
         self._write_user_config()
