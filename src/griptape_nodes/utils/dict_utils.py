@@ -27,25 +27,46 @@ def to_dict(input_value) -> dict:
 
 def _convert_string_to_dict(input_str) -> dict:
     """Convert a string to a dictionary using various parsing strategies."""
-    # Try JSON first
+    # Import modules at the function start to avoid unbound errors
+    import ast
     import json
 
+    # Clean the input string
+    input_str = input_str.strip()
+
+    # Check if it looks like a dictionary (starts with { and ends with })
+    if input_str.startswith("{") and input_str.endswith("}"):
+        # Try Python literal evaluation first (handles single quotes)
+        try:
+            parsed = ast.literal_eval(input_str)
+            if isinstance(parsed, dict):
+                return parsed
+        except (SyntaxError, ValueError):
+            pass
+
+        # Try JSON parsing as fallback (handles double quotes)
+        try:
+            parsed = json.loads(input_str)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    # Try JSON parsing for non-dict-looking strings (arrays, etc.)
     try:
         parsed = json.loads(input_str)
         if isinstance(parsed, dict):
-            result = parsed
-        else:
-            result = {"value": parsed}
+            return parsed
+        return {"value": parsed}  # noqa: TRY300
     except json.JSONDecodeError:
-        # Process for key-value patterns
-        input_str = input_str.strip()
-        if ":" in input_str or "=" in input_str:
-            result = _process_key_value_string(input_str)
-        else:
-            # Default for plain strings
-            result = {"value": input_str}
+        pass
 
-    return result
+    # Process for key-value patterns
+    if ":" in input_str or "=" in input_str:
+        return _process_key_value_string(input_str)
+
+    # Default for plain strings
+    return {"value": input_str}
 
 
 def _process_key_value_string(input_str) -> dict:
