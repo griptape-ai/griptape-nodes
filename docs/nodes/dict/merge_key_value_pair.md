@@ -14,10 +14,10 @@ Use this node when you need to combine multiple sets of key-value pairs into a s
 
 1. Add the `MergeKeyValuePair` node to your workflow.
 1. Connect four input parameters to the node:
-   - `key_value_pair_1`
-   - `key_value_pair_2`
-   - `key_value_pair_3`
-   - `key_value_pair_4`
+    - `key_value_pair_1`
+    - `key_value_pair_2`
+    - `key_value_pair_3`
+    - `key_value_pair_4`
 
 These inputs should be dictionaries containing key-value pairs.
 

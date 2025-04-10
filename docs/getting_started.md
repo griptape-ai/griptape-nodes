@@ -1,6 +1,6 @@
-# Getting Started with Griptape\*\*\*[nodes]\*\*\*
+# Getting Started with Griptape **_Nodes_**
 
-An important bit of overview before we begin: Griptape\*\*\*[nodes]\*\*\* is actually two things that work together: An Engine, and a UI. The Engine will install and run on your computer, while the UI is served from the web, and you'll interact with your Engine through a web browser.
+An important bit of overview before we begin: Griptape **_Nodes_** is actually two things that work together: An Engine, and a UI. The Engine will install and run on your computer, while the UI is served from the web, and you'll interact with your Engine through a web browser.
 
 > - If you'd rather not install the Engine locally, it is also easy to run it in a hosted environment. The instructions that follow will work the same for either approach.
 
@@ -34,7 +34,7 @@ Copy the installation command from the **New Installation** section (it's the bi
 > Remember, you can install this on your local machine *or* a cloud-based workstation.
 
 <!--
-> * Griptape***[nodes]*** uses **uv**. **uv** is a Python package installer and environment manager.  If you already have it, great!  If not, this process will install it for you.  This is just info - nothing is required on your part either way.
+> * Griptape **_Nodes_** uses *uv*. *uv* is a Python package installer and environment manager.  If you already have it, great!  If not, this process will install it for you.  This is just info - nothing is required on your part either way.
 -->
 
 ![Installation Page](assets/img/getting_started/getting_started-installation_page.png)
@@ -55,7 +55,7 @@ You'll see this message when installation has completed:
 
 ## 3. Configuration
 
-**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape\*\*\*[nodes]\*\*\* engine will save \[configuration settings\](reference/glossary.md#Configuration Settings), \[project files\](reference/glossary.md#Project Files), and \[generated assets\](reference/glossary.md#Generated Assets). It will also contain a [.env](reference/glossary.md#.env) for your project \[secret keys\](reference/glossary.md#Secret Keys).
+**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape **_Nodes_** engine will save \[configuration settings\](reference/glossary.md#Configuration Settings), \[project files\](reference/glossary.md#Project Files), and \[generated assets\](reference/glossary.md#Generated Assets). It will also contain a [.env](reference/glossary.md#.env) for your project \[secret keys\](reference/glossary.md#Secret Keys).
 
 ```
 ╭───────────────────────────────────────────────────────────────────╮
@@ -94,6 +94,6 @@ Griptape API Key (YOUR-KEY-HERE):
 
 ## 4. Start Your Engine
 
-You're ready to proceed. Run either `griptape-nodes` or `gtn` and refresh your browser. You should be taken to an Untitled flow in Griptape\*\*\*[nodes]\*\*\*!.
+You're ready to proceed. Run either `griptape-nodes` or `gtn` and refresh your browser. You should be taken to an Untitled flow in Griptape **_Nodes_**!.
 
-![A Blank Griptape[nodes] editor](assets/img/getting_started/getting_started-blank_editor.png)
+![A Blank Griptape_nodes_ editor](assets/img/getting_started/getting_started-blank_editor.png)
