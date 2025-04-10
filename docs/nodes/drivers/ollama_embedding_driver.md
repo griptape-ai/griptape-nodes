@@ -20,7 +20,7 @@ Use this node when you want to:
 1. Connect it to your flow
 1. Connect its output to nodes that need to use text embeddings
 
-### Optional Configuration
+### Parameters
 
 - **base_url**: The URL where your Ollama server is running (default is "http://127.0.0.1")
 - **port**: The port your Ollama server is using (default is "11434")

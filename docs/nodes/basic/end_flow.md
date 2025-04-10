@@ -19,13 +19,13 @@ Use this node when you want to:
 1. Add the EndFlowNode to your workspace
 1. Connect it to the end of your flow
 
-### Fields
+### Parameters
 
 - **control**: This is an input connection point for the flow (you connect other nodes to this)
 
 ### Outputs
 
-- None - this node doesn't output anything, it just marks the end of the flow
+- **None** - this node doesn't output anything, it just marks the end of the flow
 
 ## Example
 

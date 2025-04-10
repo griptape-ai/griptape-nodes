@@ -1,12 +1,10 @@
-# Griptape Framework Glossary for Computer Artists
+# Griptape\*\*\*[nodes]\*\*\* Framework Glossary for Artists
 
-## What is Griptape?
+## What is Griptape\*\*\*[nodes]\*\*\*?
 
-**Griptape** is a creative toolkit (built with Python programming language) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create interactive art, generate images, process text, or build other creative applications.
+Griptape\*\*\*[nodes]\*\*\* is a creative toolkit (built with Python) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create art, generate images, process text, or even build other workhorse applications.
 
-## Building Blocks of Griptape
-
-### The Basics
+### The Big Ones in the Griptape\*\*\*[nodes]\*\*\* world
 
 - **Workflow**: A document containing nodes, connections, and values. While technically a Workflow is also a Script, avoid calling them Scripts, so that the term Script can communicate a clearly different thing than the term Workflow. This is also what we call the saved file.
 
@@ -24,12 +22,11 @@
 
 - **Libraries**: Collections of node definitions and/or scripts that extend functionality
 
-- **Node**: A single piece of the puzzle in your creative project. Nodes are like LEGO blocks that you can connect to create something bigger. Each node does one specific thing (like generating an image or processing text).
+- **Node**: A single piece of the puzzle in your workflow. Nodes are like LEGO blocks that you can connect to create something bigger. Each node does one specific thing (like generating an image or processing text). There are **types** of nodes:
 
-  - **DataNode**: A node that handles information — it can transform data from one form to another.
-  - **ControlNode**: A node that makes decisions in your project, like "if this happens, do that."
+  - **DataNode**: A node that handles information — it can transform data from one form to another, or simply hold data you set.
+  - **ControlNode**: A node that will "do some work". Control Nodes usually take longer to run than DataNodes because, they're usually doing more work.
   - **DriverNode**: A node that connects your project to outside services (like image generators or search engines).
-  - **ParameterNode**: A simple node that just holds a specific setting or value.
 
 - **Tool**: A ready-to-use component that performs a specific function. Tools are like brushes in your digital toolkit — each designed for a specific purpose.
 
@@ -64,93 +61,155 @@
 
   - **Rule**: A single instruction within a ruleset, like "if the user asks for an image, generate one."
 
-### Settings and Configuration
+### Node Contents and Activities
 
-- **Parameter**: A setting or value you can adjust in your project. Parameters are like the knobs and sliders in a music synthesizer — they let you fine-tune how things work.
+- **Parameter**: A setting or value you can adjust on a node. Parameters are like the knobs and sliders in a music synthesizer — they let you fine-tune how things work.
 
-  - **ParameterMode**: Determines if a parameter is for input, output, or both.
-  - **ParameterValues**: A collection of all current settings.
-  - **ParameterOutputValues**: The results produced by your parameters.
+  - **ParameterMode**: Describes if a parameter is for input, output, internal, or any combination.
+  - **ParameterValue**: The "internal" value for a parameter (this is the data the node works with internally)
+  - **ParameterOutputValues**: The results or "output" value for your parameters (this is the data that results from what the node did)
   - **ParameterUIOptions**: Settings for how parameters appear in the user interface.
-  - **NumberTypeOptions**: Options for number parameters (like minimum/maximum values).
-  - **StringTypeOptions**: Options for text parameters (like allowing multiple lines).
-
-- **Dictionary**: A way to store information as pairs of labels and values. Dictionaries are like organized containers where each item has a unique label.
-
-  - **Key-value pair**: A label (key) paired with its corresponding information (value).
-  - **SparseDictionary**: A more efficient dictionary that only stores necessary information.
-
-- **Graph-Based Architecture**: The overall design approach where different components (nodes) connect to each other to create a workflow. This is like how you might arrange physical equipment in a studio, connecting different devices to create a signal chain.
-
-## Technical Terms Made Simple
-
-- **API Key**: A special password that grants your project access to external services like AI image generators. Think of it like a membership card that lets you use specific online services.
-
-  - **API Key Environment Variable**: A secure place to store your API key.
-
-- **AST (Abstract Syntax Tree)**: A way computers understand the structure of code. This is like the grammar rules of programming languages.
-
-  - **ast.literal_eval**: A function that safely interprets simple written expressions.
-
-- **Connection**: The link that allows nodes to communicate with each other. Connections are like the cables connecting different pieces of equipment.
 
 - **Default Value**: The pre-set value a parameter has before you change it. This is like the factory settings on a device.
 
 - **Parameter Validation**: A check that ensures the values you enter make sense. This prevents errors like trying to use text where a number is needed.
 
-- **Off-prompt mode**: A setting where tools work automatically without asking for additional input.
+- **Off-prompt**: A Griptape secret-sauce way to keep some information private, even when working with LLMs.
 
 - **Stream Mode**: A continuous processing mode, like a live video feed rather than taking separate photos.
 
-- **Temperature Control**: A setting that controls how creative or predictable an AI's responses will be. Lower temperature means more predictable, higher temperature means more creative and varied.
+- **Type Hints**: Labels that suggest what kind of information a parameter expects. These are like labels on art supply containers telling you what's inside.
+
+  - **Any**: A type hint meaning a parameter can accept any kind of information.
+  - **List**: A type hint for a collection of items (like an array of colors or shapes).
+  - **Literal**: A type hint indicating a parameter only accepts specific preset values.
+  - **Union type**: A type hint showing a parameter can accept multiple specific types of information.
+
+- **Connection**: The link that allows nodes to communicate with each other. Connections are like the cables connecting different pieces of equipment.
+
+## Technical Terms Made Simple
+
+- **Data Types**:
+
+  - **Dictionary (dict)**: A way to store information as pairs of labels and values. Dictionaries are like organized containers where each item has a unique label.
+  - **Key-Value Pair**: A label (key) paired with its corresponding information (value). Dictionaries are just a collection of Key-Value Pairs.
+  - **Integer (int)**: Whole numbers without decimal points, like 5, -10, or 1000.
+  - **Float (float)**: Numbers with decimal points, like 3.14, -0.5, or 2.0.
+  - **String (str)**: Text enclosed in quotes, like "hello", 'Python', or "123".
+  - **Boolean (bool)**: Represents either True or False.
+  - **List (list)**: An ordered collection of items that can be modified, like [1, 2, 3] or ["apple", "banana", "cherry"].
+  - **Tuple (tuple)**: An ordered collection of items that cannot be modified after creation, like (1, 2, 3) or ("red", "green", "blue").
+  - **Set (set)**: An unordered collection of unique items, like {1, 2, 3} or {"apple", "banana", "cherry"}.
+  - **None (NoneType)**: Represents the absence of a value or a null value.
+
+- **Environment Variable**: Like secret notes that your computer keeps to help programs know important information.
+
+- **API Key**: A special password that grants your project access to external services like AI image generators. Think of it like a membership card that lets you use specific online services.
+
+<a id="Secret Keys"></a>
+
+- **Secret Keys**: Private credentials such as API tokens, passwords, and access keys that need to be kept secure but are required for certain operations.
+- **SecretsManager**: This is the actual mechanism by which your secret keys are handled so that they *stay* secret.
+
+<a id="Configuration Settings"></a>
+
+- **Configuration Settings**: Parameters and options that control how the Griptape[nodes] engine and its components operate.
+
+<a id="Project Files"></a>
+
+- **Project Files**: Documents, scripts, and other resources that make up a Griptape project.
+
+<a id="Generated Assets"></a>
+
+- **Generated Assets**: Files and data produced by the Griptape[nodes] engine during execution, such as outputs, reports, or visualizations.
+
+<a id=".env"></a>
+
+- **.env**: A special file used to store environment variables, particularly sensitive information like API keys.
 
 ## AI Terms for Artists
 
+- **Temperature Control**: A setting that controls how creative or predictable an AI's responses will be. Lower temperature means more predictable, higher temperature means more creative and varied.
+
 - **Embedding Model**: An AI tool that converts words, images, or other content into numbers that capture their meaning. This helps AI understand relationships between different concepts.
 
-- **GPT Models**: AI systems that can generate human-like text based on the input they receive.
-
-  - **GPT-4o**: A specific version of GPT with enhanced capabilities.
+- **LLM (Large Language Model)**: A type of AI system trained on vast amounts of text data to understand and generate human-like language. LLMs can write text, answer questions, summarize information, and even generate creative content.
 
 - **NLP (Natural Language Processing)**: The field of AI focused on helping computers understand and generate human language.
 
 - **Prompt**: The input text you provide to guide an AI model. For artists, this is similar to a creative brief or instructions to a collaborator.
 
-- **Response Format**: The type of output you receive from an AI (like plain text, formatted text, or structured data).
-
-- **Text Summarization**: The process of condensing longer text into shorter, essential versions.
-
 - **Vector Store**: A specialized database that stores information in a way that captures relationships and meaning, not just the information itself.
 
-## AI Services for Creative Projects
+- **Diffusion Models**: AI systems that create images by gradually transforming random noise into detailed visuals based on text descriptions. Popular examples include Stable Diffusion and Midjourney.
+
+- **Text-to-Image Generation**: Technology that creates images based on written descriptions, allowing artists to visualize concepts through text prompts.
+
+- **Style Transfer**: AI technique that applies the visual style of one image (like a famous painting) to the content of another image.
+
+- **Inpainting/Outpainting**: Tools that can fill in missing parts of an image or extend it beyond its original borders based on surrounding context.
+
+- **Fine-tuning**: The process of adapting a pre-trained AI model to recognize and generate specific styles, subjects, or artistic elements.
+
+- **Latent Space**: A mathematical representation where AI models organize concepts; artists can explore this space to find creative variations and transitions between ideas.
+
+- **Tokens**: The basic units that AI language models process text in, similar to words or parts of words. Understanding token limits helps artists craft effective prompts.
+
+- **Multimodal AI**: Systems that can work with multiple types of content (text, images, audio) simultaneously, enabling more integrated creative workflows.
+
+- **LoRA (Low-Rank Adaptation)**: A technique that allows artists to train AI models on their specific style without extensive computing resources.
+
+- **Sampling Methods**: Different algorithms (like DDIM, Euler, etc.) that control how AI generates images, affecting detail levels, creativity, and coherence.
+
+## AI Companies and Models (Updated Apr 9,2025)
 
 ### Anthropic
 
-- **Anthropic API**: A service providing advanced AI text generation capabilities (Claude).
+- **Claude 3 Opus**: Anthropic's most capable model for complex creative tasks and detailed content generation
+- **Claude 3.5 Sonnet**: Balanced model offering strong creative capabilities with faster performance
+- **Claude 3.7 Sonnet**: Advanced reasoning-focused model for complex creative problem-solving
+- **Claude 3.5 Haiku**: Fastest model for rapid ideation and real-time creative collaboration
 
-### Azure OpenAI
+### OpenAI
 
-- **Azure Deployment**: Microsoft's version of OpenAI services (like GPT and DALL-E).
-- **Azure Deployment Name**: The name of your specific setup within Azure.
-- **Azure Endpoint**: The connection point to access Azure AI services.
+- **GPT-4o**: OpenAI's most advanced multimodal model for text, image, and audio processing
+- **GPT-4 Turbo**: Powerful large language model for sophisticated text generation and creative writing
+- **GPT-3.5 Turbo**: More economical model for standard creative text tasks
+- **DALL-E 3**: Text-to-image generation model for creating visual art from descriptions
+- **Whisper**: Speech recognition model that can transcribe audio for creative projects
+
+### Stability AI
+
+- **Stable Diffusion XL**: Text-to-image model with high-quality image generation capabilities
+- **Stable Diffusion 3**: Latest generation text-to-image model with improved coherence
+- **Stable Video**: Text-to-video generation model for creating short animated sequences
+
+### Google
+
+- **Gemini Pro**: Google's advanced model for text generation and reasoning
+- **Gemini Ultra**: Google's most capable model for complex creative tasks
+- **Imagen**: Text-to-image generation model with photorealistic capabilities
 
 ### Cohere
 
-- **Cohere**: A text generation service with specialized features for different creative applications.
+- **Command**: Specialized for instruction following and precise creative tasks
+- **Embed**: Creates semantic representations of text for organizing creative content
 
-### DuckDuckGo
+### Midjourney
 
-- **DuckDuckGoWebSearchDriver**: A component that lets your project search the web using DuckDuckGo.
+- **Midjourney V6**: Image generation model popular among artists for its distinctive aesthetic
 
-### DALL-E
+### Meta
 
-- **DALL-E Model**: An AI system that creates images based on text descriptions.
-- **DALL-E 2 & 3**: Different versions of the DALL-E image generator, with version 3 being more advanced.
+- **Llama 3**: Open-weight foundation model adaptable for various creative applications
+- **Llama 3.1**: More advanced version with improved capabilities
+- **Segment Anything**: AI model for precise image segmentation in visual arts
 
 ### Ollama
 
-- **Ollama**: A service that helps integrate AI models into your applications.
-- **Ollama Prompt Driver**: A component that connects to Ollama's text generation capabilities.
+- **Local model hosting service**: Allows running various open-source AI models locally for creative projects
+
+- -
 
 ## Helpful Programming Concepts
 
@@ -165,15 +224,7 @@
   - **SyntaxError**: An error caused by incorrect formatting in code.
   - **ValueError**: An error when your project tries to use an inappropriate value.
 
-- **Lifecycle Management**: How your project handles creating, using, and closing components. This is like the startup and shutdown procedures for complex equipment.
-
 - **Metadata**: Extra information about your content or components. This is like the information stored in digital photo files (camera type, date taken, etc.).
-
-- **Node Extension**: Adding new features to existing nodes. This is like adding effects pedals to a guitar setup.
-
-- **Node Validation**: Checking if a node is properly set up before running it. This is like testing equipment before a performance.
-
-- **Parameter Interpolation**: Blending or calculating values from multiple sources to create a new value. This is similar to color mixing in visual art.
 
 ## Additional Terms
 
@@ -187,13 +238,4 @@
 
 - **UI (User Interface)**: The visual elements and controls that allow humans to interact with software. This includes buttons, sliders, text fields, and other interactive elements.
 
-- **Workflow**: A sequence of connected steps to accomplish a task. In Griptape, workflows are created by connecting nodes together to create more complex functionality.
-
 - **Framework**: A pre-built set of code that provides structure and functionality to build applications more easily. Frameworks are like art supply kits that come with the basic materials and tools you need.
-
-- **Type Hints**: Labels that suggest what kind of information a parameter expects. These are like labels on art supply containers telling you what's inside.
-
-  - **Any**: A type hint meaning a parameter can accept any kind of information.
-  - **List**: A type hint for a collection of items (like an array of colors or shapes).
-  - **Literal**: A type hint indicating a parameter only accepts specific preset values.
-  - **Union type**: A type hint showing a parameter can accept multiple specific types of information.

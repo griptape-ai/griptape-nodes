@@ -23,11 +23,9 @@ Use the CreateMultilineText node when:
 
 ### Parameters
 
-**Inputs:**
-
 - **text**: The multiline text content (string, defaults to empty string)
 
-**Outputs:**
+### Outputs
 
 - **text**: The multiline text content as a string
 

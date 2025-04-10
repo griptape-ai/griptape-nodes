@@ -56,57 +56,56 @@ markdown_extensions:
 nav:
   - Home:
       - Overview: index.md
-      - Setup: setup.md
+      - Getting Started: getting_started.md
       - Engine Configuration: configuration.md
-  - Nodes:
-      - Overview: nodes/overview.md
-      - Basic:
-          - Agent: nodes/basic/agent.md
-          - End Flow: nodes/basic/end_flow.md
-          - Start Flow: nodes/basic/start_flow.md
-      - Dict:
-          - Create Dict: nodes/dict/create_dict.md
-          - Display Dict: nodes/dict/display_dict.md
-          - Key Value Pair: nodes/dict/key_value_pair.md
-          - Merge Key Value Pair: nodes/dict/merge_key_value_pair.md
-      - Drivers:
-          - Anthropic Prompt Driver: nodes/drivers/anthropic_prompt_driver.md
-          - Cohere Prompt Driver: nodes/drivers/cohere_prompt_driver.md
-          - Griptape Cloud Image Driver: nodes/drivers/griptape_cloud_image_driver.md
-          - Griptape Cloud Prompt Driver: nodes/drivers/griptape_cloud_prompt_driver.md
-          - Ollama Embedding Driver: nodes/drivers/ollama_embedding_driver.md
-          - Ollama Prompt Driver: nodes/drivers/ollama_prompt_driver.md
-          - OpenAI Image Driver: nodes/drivers/openai_image_driver.md
-          - OpenAI Prompt Driver: nodes/drivers/openai_prompt_driver.md
-      - Image:
-          - Load Image: nodes/image/load_image.md
-      - Number:
-          - Create Float: nodes/number/create_float.md
-          - Create Int: nodes/number/create_int.md
-          - Display Float: nodes/number/display_float.md
-          - Display Int: nodes/number/display_int.md
-      - Rules:
-          - Create Ruleset: nodes/rules/create_ruleset.md
-          - Ruleset List: nodes/rules/ruleset_list.md
-      - Tasks:
-          - Create Image: nodes/tasks/create_image.md
-          - Describe Image: nodes/tasks/describe_image.md
-      - Text:
-          - Create Multiline Text: nodes/text/create_multiline_text.md
-          - Create Text: nodes/text/create_text.md
-          - Display Text: nodes/text/display_text.md
-          - Load Text: nodes/text/load_text.md
-          - Merge Texts: nodes/text/merge_texts.md
-          - Save Text: nodes/text/save_text.md
-      - Tools:
-          - Calculator Tool: nodes/tools/calculator_tool.md
-          - Date Time Tool: nodes/tools/date_time_tool.md
-          - RAG Tool: nodes/tools/rag_tool.md
-          - Tool List: nodes/tools/tool_list.md
-          - Web Scraper Tool: nodes/tools/web_scraper_tool.md
-      - Utils:
-          - Reroute: nodes/utils/reroute.md
-  - Commands: 
-      - Retained Mode: scripting/retained_mode.md
+
   - Reference: 
       - Glossary: reference/glossary.md
+      - Retained Mode: reference/retained_mode.md
+      - Nodes:
+          - Overview: nodes/overview.md
+          - Basic:
+              - Agent: nodes/basic/agent.md
+              - End Flow: nodes/basic/end_flow.md
+              - Start Flow: nodes/basic/start_flow.md
+          - Dict:
+              - Create Dict: nodes/dict/create_dict.md
+              - Display Dict: nodes/dict/display_dict.md
+              - Key Value Pair: nodes/dict/key_value_pair.md
+              - Merge Key Value Pair: nodes/dict/merge_key_value_pair.md
+          - Drivers:
+              - Anthropic Prompt Driver: nodes/drivers/anthropic_prompt_driver.md
+              - Cohere Prompt Driver: nodes/drivers/cohere_prompt_driver.md
+              - Griptape Cloud Image Driver: nodes/drivers/griptape_cloud_image_driver.md
+              - Griptape Cloud Prompt Driver: nodes/drivers/griptape_cloud_prompt_driver.md
+              - Ollama Embedding Driver: nodes/drivers/ollama_embedding_driver.md
+              - Ollama Prompt Driver: nodes/drivers/ollama_prompt_driver.md
+              - OpenAI Image Driver: nodes/drivers/openai_image_driver.md
+              - OpenAI Prompt Driver: nodes/drivers/openai_prompt_driver.md
+          - Image:
+              - Load Image: nodes/image/load_image.md
+              - Create Image: nodes/image/create_image.md
+              - Describe Image: nodes/image/describe_image.md
+          - Number:
+              - Create Float: nodes/number/create_float.md
+              - Create Int: nodes/number/create_int.md
+              - Display Float: nodes/number/display_float.md
+              - Display Int: nodes/number/display_int.md
+          - Rules:
+              - Create Ruleset: nodes/rules/create_ruleset.md
+              - Ruleset List: nodes/rules/ruleset_list.md
+          - Text:
+              - Create Multiline Text: nodes/text/create_multiline_text.md
+              - Create Text: nodes/text/create_text.md
+              - Display Text: nodes/text/display_text.md
+              - Load Text: nodes/text/load_text.md
+              - Merge Texts: nodes/text/merge_texts.md
+              - Save Text: nodes/text/save_text.md
+          - Tools:
+              - Calculator Tool: nodes/tools/calculator_tool.md
+              - Date Time Tool: nodes/tools/date_time_tool.md
+              - RAG Tool: nodes/tools/rag_tool.md
+              - Tool List: nodes/tools/tool_list.md
+              - Web Scraper Tool: nodes/tools/web_scraper_tool.md
+          - Utils:
+              - Reroute: nodes/utils/reroute.md

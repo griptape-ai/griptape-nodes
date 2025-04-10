@@ -248,7 +248,7 @@
     },
     {
       "class_name": "CreateImage",
-      "file_path": "griptape_nodes_library/tasks/create_image.py",
+      "file_path": "griptape_nodes_library/image/create_image.py",
       "metadata": {
         "category": "Image",
         "description": "Generates images using configurable image drivers",
@@ -257,7 +257,7 @@
     },
     {
       "class_name": "DescribeImage",
-      "file_path": "griptape_nodes_library/tasks/describe_image.py",
+      "file_path": "griptape_nodes_library/image/describe_image.py",
       "metadata": {
         "category": "Image",
         "description": "Describes an image",

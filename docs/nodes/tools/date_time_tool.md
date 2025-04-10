@@ -1,55 +1,38 @@
-# **DateTimeTool Class Documentation**
+# DateTimeTool
 
-### Overview
+## What is it?
 
-The `DateTimeTool` class is a custom node in the Griptape framework that utilizes the `DateTimeTool` to format and manipulate dates and times. This node provides a flexible way to process and output date and time data.
+The DateTimeTool is a building block that provides date and time capabilities to your workflows. Think of it as a digital calendar and clock that your agents can use to format, manipulate, and work with dates and times.
 
-### Attributes
+## When would I use it?
 
-- **`off_prompt`**: An optional boolean parameter indicating whether to prompt for input or not (default: True).
+Use this node when you want to:
 
-### Methods
+- Enable agents to access current date and time information
+- Format dates in different styles for various use cases
+- Perform date calculations like finding differences between dates
+- Convert between time zones and date formats
 
-#### `process()`
+## How to use it
 
-This method is responsible for processing the node's inputs and producing outputs. It:
+### Basic Setup
 
-1. Retrieves the value of the `off_prompt` parameter from the `parameter_values` dictionary.
-1. Creates an instance of the `DateTimeTool` using the extracted `off_prompt` value.
-1. Sets the output as the created tool.
+1. Add the DateTimeTool to your workspace
+1. Connect it to your flow
+1. Connect its output to nodes that need date/time capabilities (like an Agent)
 
-### Example Usage
+### Parameters
 
-```python
-# Create a DateTimeTool instance
-node = DateTimeTool()
+- **off_prompt**: Whether to run date/time operations outside the main prompt (default is true)
 
-# Set input parameters
-node.parameter_values["off_prompt"] = False
+### Outputs
 
-# Run the node's process method
-node.process()
-```
+- **tool**: The configured date/time tool that other nodes can use
 
-### Output
+## Example
 
-The `tool` attribute of the `parameter_output_values` dictionary will contain an instance of the `DateTimeTool` with the specified `off_prompt` value.
+Imagine you want to create an agent that can work with dates and times:
 
-### Supported Tools
-
-- **DateTimeTool**: Formats and manipulates dates and times, optionally prompting for input.
-
-### Rules
-
-The node supports adding rules to customize its behavior. In this example, no additional rules are added.
-
-### Configuration Options
-
-| Option | Description |
-| --- | --- |
-| `off_prompt` | A boolean indicating whether to prompt for input or not (default: True). |
-
-### Notes
-
-- The `DateTimeTool` is a built-in tool in the Griptape framework that provides functionality for formatting and manipulating dates and times.
-- By default, the `DateTimeTool` will prompt for input if `off_prompt` is set to False.
+1. Add a DateTimeTool to your workflow
+1. Connect the "tool" output to an Agent's "tools" input
+1. Now that agent can perform operations like getting the current date, formatting dates, or calculating date differences

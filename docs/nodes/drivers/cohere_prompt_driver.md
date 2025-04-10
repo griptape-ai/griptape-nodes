@@ -20,11 +20,7 @@ Use this node when you want to:
 1. Connect it to your flow
 1. Connect its output to nodes that need to use Cohere (like RunAgent)
 
-### Required Fields
-
-None - the node uses default settings if you don't change anything
-
-### Optional Configuration
+### Parameters
 
 - **model**: The Cohere model to use (default is "command-r-plus")
 - **max_attempts_on_fail**: How many times to retry if there's an error

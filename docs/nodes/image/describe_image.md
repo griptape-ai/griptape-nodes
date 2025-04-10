@@ -26,13 +26,11 @@ Use the DescribeImage node when:
 
 ### Parameters
 
-**Inputs:**
-
 - **agent**: The agent used to describe the image (Agent or dict)
 - **image**: The image artifact to be described (ImageArtifact)
 - **prompt**: Instructions for how to describe the image (string)
 
-**Outputs:**
+### Outputs
 
 - **output**: The textual description of the image (string)
 

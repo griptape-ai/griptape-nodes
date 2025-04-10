@@ -21,7 +21,7 @@ Use this node when you want to:
 
 ### Parameters
 
-- **integert**: A single int parameter that is created and output by this node
+- **integer**: A single int parameter that is created and output by this node
 
 ### Outputs
 
