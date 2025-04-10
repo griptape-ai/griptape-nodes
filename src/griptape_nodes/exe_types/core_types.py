@@ -859,7 +859,6 @@ class ParameterList(ParameterContainer):
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
         settable: bool = True,
-        user_defined: bool = False,
         element_id: str | None = None,
         element_type: str | None = None,
     ):
