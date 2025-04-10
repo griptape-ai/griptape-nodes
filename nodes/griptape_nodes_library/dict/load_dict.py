@@ -5,7 +5,6 @@ from griptape.loaders import PdfLoader, TextLoader
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.utils.dict_utils import to_dict
 
 
@@ -69,15 +68,11 @@ class LoadDictionary(ControlNode):
         else:
             text_data = TextLoader().load(text_path)
 
-        logger.info(f"Loaded file: {text_path} with extension: {ext}")
-        logger.info(f"Loaded data: {text_data.value}")
-        logger.info(f"Data type: {type(text_data.value)}")
-        converted = to_dict(text_data.value)
-        logger.info(f"Converted data: {converted}")
+        text_data_dict = to_dict(text_data.value)
         # Set output values
         self.parameter_output_values["file_path"] = text_path
-        self.parameter_output_values["output"] = to_dict(text_data.value)
+        self.parameter_output_values["output"] = text_data_dict
 
         # Also set in parameter_values for get_value compatibility
         self.parameter_values["file_path"] = text_path
-        self.parameter_values["output"] = to_dict(text_data.value)
+        self.parameter_values["output"] = text_data_dict
