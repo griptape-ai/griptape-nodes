@@ -13,8 +13,7 @@ When you want to inspect a text value in your graph
 ### Basic Setup
 
 1. Add the DisplayText to your workspace
-2. Connect any other node's float output to this input
-
+1. Connect any other node's float output to this input
 
 ### Parameters
 

@@ -16,8 +16,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the CreateText to your workspace
-2. Connect it to your flow
-3. Set the "text" parameter to a text value
+1. Connect it to your flow
+1. Set the "text" parameter to a text value
 
 ### Parameters
 
