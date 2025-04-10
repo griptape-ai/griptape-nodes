@@ -351,13 +351,8 @@ class BaseNode(ABC):
         return None
 
     def get_config_value(self, service: str, value: str) -> str:
-        try:
-            return self.config_manager.get_config_value(f"nodes.{service}.{value}")
-        except ValueError as e:
-            from griptape_nodes.retained_mode.griptape_nodes import logger
-
-            logger.exception(e)
-            return ""
+        config_value = self.config_manager.get_config_value(f"nodes.{service}.{value}")
+        return config_value if config_value else ""
 
     def set_config_value(self, service: str, value: str, new_value: str) -> None:
         self.config_manager.set_config_value(f"nodes.{service}.{value}", new_value)
