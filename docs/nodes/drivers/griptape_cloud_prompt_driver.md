@@ -20,11 +20,8 @@ Use this node when you want to:
 1. Connect it to your flow
 1. Connect its output to nodes that need to use AI models (like RunAgent)
 
-### Required Fields
 
-None - the node uses default settings if you don't change anything
-
-### Optional Configuration
+### Parameters
 
 - **model**: The AI model to use (default is "gpt-4o")
 - **response_format**: How you want responses formatted (options include "json_object")

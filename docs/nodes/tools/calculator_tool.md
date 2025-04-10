@@ -18,61 +18,13 @@ Use this node when you want to:
 - Initialize a calculator tool with specific settings (e.g., off-prompt mode)
 - Integrate calculator tools from various sources in your Griptape workflow
 
-## Class Definition
 
-```python
-class CalculatorTool(BaseTool):
-    """
-    A custom node for initializing Griptape tools with customizable parameters.
-    """
-```
+#### Parameters
 
-## Process Method
-
-#### What does it do?
-
-The `process` method is responsible for creating and setting the output of the calculator tool.
-
-#### Example Usage
-
-```python
-calculator_tool_node = CalculatorTool("Calculator Tool")
-calculator_tool_node.add_parameter(
-    Parameter(
-        name="off_prompt",
-        input_types=["bool"],
-        type="bool",
-        output_type="bool",
-        default_value=True,
-        tooltip="",
-    )
-)
-```
-
-#### Code Snippet
-
-```python
-def process(self) -> None:
-    """
-    Creates and sets the output of the calculator tool.
-    """
-    off_prompt = self.parameter_values.get("off_prompt", True)
-
-    # Create the tool
-    tool = CalculatorTool(off_prompt=off_prompt)
-
-    # Set the output
-    self.parameter_output_values["tool"] = tool
-```
-
-#### Fields
+**Inputs:**
 
 - **off_prompt**: A boolean indicating whether the calculator tool should operate in off-prompt mode.
-  - Input type: Boolean
-  - Type: Boolean
-  - Output type: Boolean
-  - Default value: True
-  - Tooltip:
+
 
 ## Advantages
 

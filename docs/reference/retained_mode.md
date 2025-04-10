@@ -1,4 +1,6 @@
-# Griptape RetainedMode Command Reference
+# Griptape***[nodes]*** Retained Mode Command Reference
+
+"Retained Mode" is python scripting interface to interact with the Griptape***[nodes]*** framework. These methods allow users to create, modify, and manage nodes, parameters, connections, and flows through a simplified Python API.
 
 > **Note:** The actual import command for RetainedMode is:
 >
@@ -9,10 +11,6 @@
 > However, for convenience, in the script editor of the GUI, this import is already done for you automatically, so you can freely use `cmd.` directly.
 
 ## Go to: [Flow Operations](#flow-operations) · [Node Operations](#node-operations) · [Parameter Operations](#parameter-operations) · [Connection Operations](#connection-operations) · [Library Operations](#library-operations) · [Config Operations](#config-operations) · [Utility Operations](#utility-operations)
-
-## Synopsis
-
-The RetainedMode class provides a surface-level scripting interface to interact with the Griptape Nodes framework. These methods allow users to create, modify, and manage nodes, parameters, connections, and flows through a simplified Python API.
 
 ## Flow Operations
 
@@ -941,21 +939,19 @@ Executes the provided Python code string in the Griptape environment.
 flow = cmd.create_flow(flow_name="MyFlow")
 
 # Create two nodes in the flow
-node1 = cmd.create_node(node_type="TextNode", node_name="TextInput", parent_flow_name="MyFlow")
-node2 = cmd.create_node(node_type="SummaryNode", node_name="TextSummary", parent_flow_name="MyFlow")
+node1 = cmd.create_node(node_type="CreateText", node_name="MyText", parent_flow_name="MyFlow")
+node2 = cmd.create_node(node_type="RunAgent", node_name="MyAgent", parent_flow_name="MyFlow")
 ```
 
 ### Setting Parameter Values and Creating Connections
 
 ```python
 # Set a parameter value
-cmd.set_value("TextInput.text", "This is a sample text to summarize.")
+cmd.set_value("MyText.text", "This is a sample text to summarize.")
 
 # Connect two nodes
-cmd.connect("TextInput.output", "TextSummary.input")
+cmd.connect("MyText.text", "MyAgent.prompt")
 
-# Create an execution chain
-cmd.exec_chain("TextInput", "TextSummary")
 ```
 
 ### Running a Flow
@@ -965,24 +961,32 @@ cmd.exec_chain("TextInput", "TextSummary")
 cmd.run_flow("MyFlow")
 
 # Get the result
-summary = cmd.get_value("TextSummary.result")
-print(summary)
+summary = cmd.get_value("MyAgent.output")
+print(summary) # <whatever that summary would be!>
 ```
 
-### Modifying Parameters
+### Working with Parameters
 
 ```python
 # Add a new parameter to a node
 cmd.add_param(
-    node_name="TextSummary",
-    parameter_name="max_length",
+    node_name="MyAgent",
+    parameter_name="sunglasses",
     default_value=100,
-    tooltip="Maximum length of the summary in characters",
-    type="int"
+    tooltip="The coolness of sunglasses",
+    type=["int"]
 )
 
 # Set the value of the new parameter
-cmd.set_value("TextSummary.max_length", 50)
+cmd.set_value("MyAgent.sunglasses", 50)
+
+# Change the parameter
+cmd.add_param(
+    node_name="MyAgent",
+    parameter_name="sunglasses",
+    tooltip="The coolness of sunglasses if halved",
+    edit=1
+)
 ```
 
 ### Listing and Querying
@@ -990,13 +994,13 @@ cmd.set_value("TextSummary.max_length", 50)
 ```python
 # List all nodes in a flow
 nodes = cmd.get_nodes_in_flow("MyFlow")
-print(nodes)
+print(nodes) # ["MyText","MyAgent"]
 
 # List all parameters on a node
-params = cmd.list_params("TextSummary")
-print(params)
+params = cmd.list_params("MyAgent")
+print(params) # ["agent", "prompt_driver", "tools", "rulesets", "prompt", "prompt_context", "output"]
 
 # Check if a node exists
-if cmd.exists("TextInput"):
-    print("TextInput node exists")
+if cmd.exists("MyText"):
+    print("MyText node exists") # True
 ```
