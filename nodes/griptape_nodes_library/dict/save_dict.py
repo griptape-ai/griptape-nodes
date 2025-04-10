@@ -62,19 +62,3 @@ class SaveDictionary(ControlNode):
             error_message = str(e)
             msg = f"Error saving file: {error_message}"
             raise ValueError(msg) from e
-
-        """
-        Should this ^^^ work more like this? :
-
-        from griptape.artifacts import TextArtifact
-        from griptape.loaders import TextLoader
-        from rich import print
-        myFile = "MyFile.txt"
-        artifact = TextArtifact(
-            value="This is some text",
-            encoding="utf-8",
-            meta={"jason": "is cool", "coffee": "is good"},
-        )
-        print(artifact)
-        TextLoader().save(myFile, artifact)
-        """
