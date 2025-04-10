@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from griptape.events import EventBus
@@ -202,10 +203,19 @@ class ExecuteNodeState(State):
             )
         )
         current_node.state = NodeResolutionState.RESOLVED
-        details = f"{current_node.name} resolved. \n Inputs: {TypeValidator.safe_serialize(current_node.parameter_values)} \n Outputs: {TypeValidator.safe_serialize(current_node.parameter_output_values)}"
+        details = f"{current_node.name} resolved."
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 
         logger.info(details)
+
+        # Serialization can be slow so only do it if the user wants debug details.
+        if logger.level <= logging.DEBUG:
+            logger.debug(
+                "INPUTS: %s\nOUTPUTS: %s",
+                TypeValidator.safe_serialize(current_node.parameter_values),
+                TypeValidator.safe_serialize(current_node.parameter_output_values),
+            )
+
         # Output values should already be saved!
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
