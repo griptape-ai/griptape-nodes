@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING, ClassVar, Generic, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -139,7 +139,7 @@ class EnumPropertyArray(PropertyArray[Enum]):
     """Base class for property arrays of Enum values."""
 
     # List of enum types for each component
-    enum_types: list[type[Enum] | None] = []
+    enum_types: ClassVar[list[type[Enum] | None]] = []
 
     def _process_enum_value(self, value, index) -> str | float | int:
         """Convert string to enum value if needed, using the enum type at the specified index."""
@@ -249,7 +249,7 @@ class Str4(PropertyArray[str]):
 class Enum2(EnumPropertyArray):
     """A 2D property array for Enum values."""
 
-    enum_types = [None, None]  # Placeholder, to be set by subclassing
+    enum_types: ClassVar[list] = [None, None]  # Placeholder, to be set by subclassing
 
     def __init__(self, x=None, y=None) -> None:
         # Set defaults based on enum types
@@ -269,7 +269,7 @@ class Enum2(EnumPropertyArray):
 class Enum3(EnumPropertyArray):
     """A 3D property array for Enum values."""
 
-    enum_types = [None, None, None]
+    enum_types: ClassVar[list] = [None, None, None]
 
     def __init__(self, x=None, y=None, z=None) -> None:
         # Set defaults based on enum types
@@ -294,7 +294,7 @@ class Enum3(EnumPropertyArray):
 class Enum4(EnumPropertyArray):
     """A 4D property array for Enum values."""
 
-    enum_types = [None, None, None, None]
+    enum_types: ClassVar[list] = [None, None, None, None]
 
     def __init__(self, x=None, y=None, z=None, w=None) -> None:
         # Set defaults based on enum types

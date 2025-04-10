@@ -21,6 +21,9 @@
             "python": ".venv/bin/python",
             "module": "src.griptape_nodes.__init__",
             "console": "integratedTerminal",
+            "args": [
+                "--no-update"
+            ]
         }
     ]
 }

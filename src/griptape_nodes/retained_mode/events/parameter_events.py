@@ -165,6 +165,25 @@ class AlterParameterDetailsRequest(RequestPayload):
         instance = cls(**known_attrs)
         return instance
 
+    @classmethod
+    def relevant_parameters(cls) -> list[str]:
+        return [
+            "parameter_name",
+            "node_name",
+            "type",
+            "input_types",
+            "output_type",
+            "default_value",
+            "tooltip",
+            "tooltip_as_input",
+            "tooltip_as_property",
+            "tooltip_as_output",
+            "mode_allowed_input",
+            "mode_allowed_property",
+            "mode_allowed_output",
+            "ui_options",
+        ]
+
 
 @dataclass
 @PayloadRegistry.register

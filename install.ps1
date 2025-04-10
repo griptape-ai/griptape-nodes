@@ -26,7 +26,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 Write-Host "`nInstalling Griptape Nodes Engine...`n"
 uv tool install --force --python python3.13 --from "git+https://github.com/griptape-ai/griptape-nodes.git@latest" griptape_nodes
 
-# --- Install Griptape Nodes Library and Scripts ---
+# --- Install Griptape Nodes Library and Workflows ---
 if (-not $Env:XDG_DATA_HOME) {
     $Env:XDG_DATA_HOME = Join-Path $HOME ".local\share"
 }
@@ -49,8 +49,8 @@ if (!(Test-Path $DestDir)) {
 # Copy the nodes/ directory
 Copy-Item -Path (Join-Path $RepoName "nodes") -Destination $DestDir -Recurse -Force
 
-# Copy the scripts/ directory
-Copy-Item -Path (Join-Path $RepoName "scripts") -Destination $DestDir -Recurse -Force
+# Copy the workflows/ directory
+Copy-Item -Path (Join-Path $RepoName "workflows") -Destination $DestDir -Recurse -Force
 
 Pop-Location
 Remove-Item -Recurse -Force $TmpDir
