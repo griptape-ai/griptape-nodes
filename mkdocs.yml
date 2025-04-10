@@ -61,7 +61,7 @@ nav:
 
   - Reference: 
       - Glossary: reference/glossary.md
-      - Retained Mode: reference/retained_mode.md
+      - Scripting: reference/retained_mode.md
       - Nodes:
           - Overview: nodes/overview.md
           - Basic:
@@ -109,3 +109,4 @@ nav:
               - Web Scraper Tool: nodes/tools/web_scraper_tool.md
           - Utils:
               - Reroute: nodes/utils/reroute.md
+      - Uninstall: uninstall.md

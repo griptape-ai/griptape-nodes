@@ -1,6 +1,6 @@
-# Griptape **_Nodes_** Retained Mode Command Reference
+# Griptape **_Nodes_** Scripting
 
-"Retained Mode" is python scripting interface to interact with the Griptape **_Nodes_** framework. These methods allow users to create, modify, and manage nodes, parameters, connections, and flows through a simplified Python API.
+"Retained Mode" is a python scripting interface to interact with Griptape**_[nodes]_**. These methods allow users to create, modify, and manage nodes, parameters, connections, and flows through a simplified Python API.
 
 > **Note:** The actual import command for RetainedMode is:
 >

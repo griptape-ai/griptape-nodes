@@ -97,3 +97,6 @@ Griptape API Key (YOUR-KEY-HERE):
 You're ready to proceed. Run either `griptape-nodes` or `gtn` and refresh your browser. You should be taken to an Untitled flow in Griptape **_Nodes_**!.
 
 ![A Blank Griptape_nodes_ editor](assets/img/getting_started/getting_started-blank_editor.png)
+
+# Uninstall
+If you are looking for how to uninstall, visit [the uninstall page](uninstall.md)

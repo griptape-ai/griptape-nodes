@@ -1,8 +1,8 @@
 # Griptape **_Nodes_** Framework Glossary for Artists
 
-## What is Griptape **_Nodes_**?
+## What is Griptape**[_nodes_]**?
 
-Griptape **_Nodes_** is a creative toolkit (built with Python) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create art, generate images, process text, or even build other workhorse applications.
+Griptape**[_nodes_]** is a creative toolkit (built with Python) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create art, generate images, process text, or even build other workhorse applications.
 
 ### The Big Ones in the Griptape **_Nodes_** world
 
