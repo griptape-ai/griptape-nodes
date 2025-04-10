@@ -21,7 +21,7 @@ class SaveText(ControlNode):
             Parameter(
                 name="text",
                 input_types=["str"],
-                allowed_modes={ParameterMode.INPUT},
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="The text content to save to file",
                 ui_options={"multiline": True, "placeholder_text": "Text to save to a file..."},
             )
