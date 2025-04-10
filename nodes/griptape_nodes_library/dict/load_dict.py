@@ -26,8 +26,6 @@ class LoadDictionary(ControlNode):
             ".txt",
             ".yaml",
             ".yml",
-            ".csv",
-            ".tsv",
         )
 
         # Add output parameters
