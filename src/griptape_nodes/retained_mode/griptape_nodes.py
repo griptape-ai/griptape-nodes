@@ -1180,10 +1180,10 @@ class FlowManager:
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             logger.exception(details)
-
-            # Cancel the flow run.
-            cancel_request = CancelFlowRequest(flow_name=flow_name)
-            GriptapeNodes.handle_request(cancel_request)
+            if flow.check_for_existing_running_flow():
+                # Cancel the flow run.
+                cancel_request = CancelFlowRequest(flow_name=flow_name)
+                GriptapeNodes.handle_request(cancel_request)
 
             return StartFlowResultFailure(validation_exceptions=[])
 
@@ -1259,8 +1259,9 @@ class FlowManager:
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
             logger.exception(details)
-            cancel_request = CancelFlowRequest(flow_name=flow_name)
-            GriptapeNodes.handle_request(cancel_request)
+            if flow.check_for_existing_running_flow():
+                cancel_request = CancelFlowRequest(flow_name=flow_name)
+                GriptapeNodes.handle_request(cancel_request)
             return SingleNodeStepResultFailure(validation_exceptions=[])
 
         # All completed happily
@@ -1288,8 +1289,9 @@ class FlowManager:
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
             logger.exception(details)
-            cancel_request = CancelFlowRequest(flow_name=flow_name)
-            GriptapeNodes.handle_request(cancel_request)
+            if flow.check_for_existing_running_flow():
+                cancel_request = CancelFlowRequest(flow_name=flow_name)
+                GriptapeNodes.handle_request(cancel_request)
             return SingleNodeStepResultFailure(validation_exceptions=[])
         details = f"Successfully granularly stepped flow with name {flow_name}"
         logger.debug(details)
@@ -1315,8 +1317,9 @@ class FlowManager:
         except Exception as e:
             details = f"Failed to continue execution step. An exception occurred: {e}."
             logger.exception(details)
-            cancel_request = CancelFlowRequest(flow_name=flow_name)
-            GriptapeNodes.handle_request(cancel_request)
+            if flow.check_for_existing_running_flow():
+                cancel_request = CancelFlowRequest(flow_name=flow_name)
+                GriptapeNodes.handle_request(cancel_request)
             return ContinueExecutionStepResultFailure()
         details = f"Successfully continued flow with name {flow_name}"
         logger.debug(details)
@@ -2439,7 +2442,7 @@ class NodeManager:
             raise KeyError(msg)
         return self._name_to_parent_flow_name[node_name]
 
-    def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
+    def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915, PLR0912
         node_name = request.node_name
         debug_mode = request.debug_mode
 
@@ -2507,8 +2510,9 @@ class NodeManager:
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             logger.exception(details)
-            cancel_request = CancelFlowRequest(flow_name=flow_name)
-            GriptapeNodes.handle_request(cancel_request)
+            if flow.check_for_existing_running_flow():
+                cancel_request = CancelFlowRequest(flow_name=flow_name)
+                GriptapeNodes.handle_request(cancel_request)
             return ResolveNodeResultFailure(validation_exceptions=[])
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         logger.debug(details)

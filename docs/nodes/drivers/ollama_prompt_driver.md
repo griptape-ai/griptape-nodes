@@ -20,7 +20,7 @@ Use this node when you want to:
 1. Connect it to your flow
 1. Connect its output to nodes that need to use local AI models (like RunAgent)
 
-### Optional Configuration
+### Parameters
 
 - **model**: The Ollama model to use (default is "llama3.2")
 - **temperature**: Controls randomness in responses (higher values = more creative, lower = more focused)

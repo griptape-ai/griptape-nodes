@@ -111,12 +111,13 @@ class ConfigManager:
 
     def delete_user_workflow(self, workflow: dict) -> None:
         default_workflows = self.get_config_value("app_events.on_app_initialization_complete.workflows_to_register")
-        default_workflows = [
-            saved_workflow
-            for saved_workflow in default_workflows
-            if saved_workflow["file_name"] != workflow["file_path"]
-        ]
-        self.set_config_value("app_events.on_app_initialization_complete.workflows_to_register", default_workflows)
+        if default_workflows:
+            default_workflows = [
+                saved_workflow
+                for saved_workflow in default_workflows
+                if saved_workflow["file_name"] != workflow["file_path"]
+            ]
+            self.set_config_value("app_events.on_app_initialization_complete.workflows_to_register", default_workflows)
 
     def get_full_path(self, relative_path: str) -> Path:
         """Get a full path by combining the base path with a relative path.
@@ -143,10 +144,10 @@ class ConfigManager:
             The value associated with the key, or the entire category if key points to a dict.
         """
         value = get_dot_value(self.user_config, key)
-
         if value is None:
             msg = f"Config key '{key}' not found in config file."
-            raise ValueError(msg)
+            logger.error(msg)
+            return None
 
         if isinstance(value, str) and value.startswith("$"):
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes

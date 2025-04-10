@@ -25,14 +25,12 @@ Use the CreateImage node when:
 
 ### Parameters
 
-**Inputs:**
-
 - **agent**: The agent responsible for handling prompt and image generation tasks (Agent or dict)
 - **image_generation_driver**: The driver used for image generation (defaults to None)
 - **prompt**: Text description of the image to generate (string)
 - **enhance_prompt**: Whether to enhance the prompt for better image quality (boolean, defaults to True)
 
-**Outputs:**
+### Outputs
 
 - **output**: The generated image as an ImageArtifact
 
