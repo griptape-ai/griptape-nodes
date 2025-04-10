@@ -292,8 +292,6 @@ class BaseNode(ABC):
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
         # If a parameter value has been set at the top level of a container, wipe all children.
-        if isinstance(parameter, ParameterContainer):
-            self.kill_parameter_children(parameter)
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=modified_parameters)
 
