@@ -351,7 +351,8 @@ class BaseNode(ABC):
         return None
 
     def get_config_value(self, service: str, value: str) -> str:
-        return self.config_manager.get_config_value(f"nodes.{service}.{value}")
+        config_value = self.config_manager.get_config_value(f"nodes.{service}.{value}")
+        return config_value
 
     def set_config_value(self, service: str, value: str, new_value: str) -> None:
         self.config_manager.set_config_value(f"nodes.{service}.{value}", new_value)
