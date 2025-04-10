@@ -42,8 +42,12 @@ class SaveDictionary(ControlNode):
 
     def process(self) -> None:
         """Process the node by saving text to a file."""
-        text = self.parameter_values.get("dict", "")
-        full_output_file = self.parameter_values.get("output_path", "griptape_output.txt")
+        text = self.parameter_values.get("dict", {})
+        full_output_file = self.parameter_values.get("output_path", None)
+        if full_output_file is None or full_output_file == "":
+            msg = "Output path is required"
+            logger.error(msg)
+            raise ValueError(msg)
 
         try:
             with Path(full_output_file).open("w") as f:
