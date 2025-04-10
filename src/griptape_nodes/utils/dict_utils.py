@@ -101,12 +101,18 @@ def _process_key_value_string(input_str) -> dict:
 def _convert_sequence_to_dict(sequence) -> dict:
     """Convert a list or tuple to dictionary."""
     result = {}
-    length_check = 2
+
+    min_kv_length = 2  # Minimum length for key-value pairs
     for i, item in enumerate(sequence):
-        if isinstance(item, tuple) and len(item) == length_check:
-            key, value = item
+        if isinstance(item, tuple) and len(item) >= min_kv_length:
+            key, *values = item  # Unpack first element as key, rest as values
             if hasattr(key, "__hash__") and key is not None:
-                result[key] = value
+                if len(values) == 1:
+                    # If there's only one value, don't keep it as a list
+                    result[key] = values[0]
+                else:
+                    # Multiple values, store as a list
+                    result[key] = values
             else:
                 result[f"item{i + 1}"] = item
         else:
