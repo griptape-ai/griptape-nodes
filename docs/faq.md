@@ -1,6 +1,8 @@
-# Griptape[**_nodes_**] Uninstall Documentation
+# Frequently Asked Questions
 
-Uninstalling Griptape[**_nodes_**] is easy:
+### How do I uninstall?
+
+Uninstalling Griptape [nodes] is easy:
 
 ```
 griptape-nodes uninstall

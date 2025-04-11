@@ -58,7 +58,7 @@ nav:
       - Overview: index.md
       - Getting Started: getting_started.md
       - Engine Configuration: configuration.md
-
+  - FAQ: faq.md
   - Reference: 
       - Glossary: reference/glossary.md
       - Scripting: reference/retained_mode.md
@@ -109,4 +109,3 @@ nav:
               - Web Scraper Tool: nodes/tools/web_scraper_tool.md
           - Utils:
               - Reroute: nodes/utils/reroute.md
-      - Uninstall: uninstall.md
