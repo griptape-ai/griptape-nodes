@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from rich.logging import RichHandler
 from xdg_base_dirs import xdg_data_home
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import Parameter, ParameterContainer, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -146,7 +146,6 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
-    ParameterInfoValue,
     SetNodeMetadataRequest,
     SetNodeMetadataResultFailure,
     SetNodeMetadataResultSuccess,
@@ -169,6 +168,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     GetCompatibleParametersRequest,
     GetCompatibleParametersResultFailure,
     GetCompatibleParametersResultSuccess,
+    GetNodeElementDetailsRequest,
+    GetNodeElementDetailsResultFailure,
+    GetNodeElementDetailsResultSuccess,
     GetParameterDetailsRequest,
     GetParameterDetailsResultFailure,
     GetParameterDetailsResultSuccess,
@@ -1064,6 +1066,8 @@ class FlowManager:
             value = source_param.default_value
         else:
             value = None
+            if isinstance(target_param, ParameterContainer):
+                target_node.kill_parameter_children(target_param)
         # if it existed somewhere and actually has a value - Set the parameter!
         if value:
             GriptapeNodes.handle_request(
@@ -1513,6 +1517,9 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(
             ValidateNodeDependenciesRequest, self.on_validate_node_dependencies_request
         )
+        event_manager.assign_manager_to_request_type(
+            GetNodeElementDetailsRequest, self.on_get_node_element_details_request
+        )
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old node name and its parent.
@@ -1820,7 +1827,7 @@ class NodeManager:
         )
         return result
 
-    def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912
+    def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -1832,6 +1839,33 @@ class NodeManager:
             result = AddParameterToNodeResultFailure()
             return result
 
+        if request.parent_container_name:
+            parameter = node.get_parameter_by_name(request.parent_container_name)
+            if parameter is None:
+                details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{request.node_name}'. Failed because parameter didn't exist."
+                logger.error(details)
+                result = AddParameterToNodeResultFailure()
+                return result
+            if not isinstance(parameter, ParameterContainer):
+                details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{request.node_name}'. Failed because parameter wasn't a container."
+                logger.error(details)
+                result = AddParameterToNodeResultFailure()
+                return result
+            try:
+                new_param = parameter.add_child_parameter()
+            except Exception as e:
+                details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{request.node_name}'. Failed: {e}."
+                logger.exception(details)
+                result = AddParameterToNodeResultFailure()
+                return result
+            return AddParameterToNodeResultSuccess(
+                parameter_name=new_param.name, type=new_param.type, node_name=request.node_name
+            )
+        if request.parameter_name is None or request.default_value is None or request.tooltip is None:
+            details = f"Attempted to add Parameter to node '{request.node_name}'. Failed because default_value, tooltip, or parameter_name was not defined."
+            logger.error(details)
+            result = AddParameterToNodeResultFailure()
+            return result
         # Does the Node already have a parameter by this name?
         if node.get_parameter_by_name(request.parameter_name) is not None:
             details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{request.node_name}'. Failed because it already had a Parameter with that name on it. Parameter names must be unique within the Node."
@@ -1902,7 +1936,9 @@ class NodeManager:
         details = f"Successfully added Parameter '{request.parameter_name}' to Node '{request.node_name}'."
         logger.debug(details)
 
-        result = AddParameterToNodeResultSuccess()
+        result = AddParameterToNodeResultSuccess(
+            parameter_name=new_param.name, type=new_param.type, node_name=request.node_name
+        )
         return result
 
     def on_remove_parameter_from_node_request(self, request: RemoveParameterFromNodeRequest) -> ResultPayload:  # noqa: C901
@@ -2033,6 +2069,47 @@ class NodeManager:
             is_user_defined=parameter.user_defined,
             ui_options=parameter.ui_options,
         )
+        return result
+
+    def on_get_node_element_details_request(self, request: GetNodeElementDetailsRequest) -> ResultPayload:
+        # Does this node exist?
+        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to get element details for Node '{request.node_name}', but no such Node was found."
+            logger.error(details)
+
+            result = GetNodeElementDetailsResultFailure()
+            return result
+
+        # Did they ask for a specific element ID?
+        if request.specific_element_id is None:
+            # No? Use the node's root element to search from.
+            element = node.root_ui_element
+        else:
+            element = node.findroot_ui_element.find_element_by_id(request.specific_element_id)
+            if element is None:
+                details = f"Attempted to get element details for element '{request.specific_element_id}' from Node '{request.node_name}'. Failed because it didn't have an element with that ID on it."
+                logger.error(details)
+
+                result = GetNodeElementDetailsResultFailure()
+                return result
+
+        element_details = element.to_dict()
+        # We need to get parameter values from here
+        param_to_value = {}
+        for parameter in element.find_elements_by_type(Parameter):
+            # How to do for grouping?
+            value = node.get_parameter_value(parameter.name)
+            if value:
+                element_id = parameter.element_id
+                param_to_value[element_id] = value
+        if param_to_value:
+            element_details["element_id_to_value"] = param_to_value
+        details = f"Successfully got element details for Node '{request.node_name}'."
+        logger.debug(details)
+        result = GetNodeElementDetailsResultSuccess(element_details=element_details)
         return result
 
     def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
@@ -2169,14 +2246,14 @@ class NodeManager:
         # Get the node
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
-            details = f'"{request.node_name}" not found'
+            details = f"Attempted to set parameter '{param_name}' value on node '{request.node_name}'. Failed because no such Node could be found."
             logger.error(details)
             return SetParameterValueResultFailure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
         if parameter is None:
-            details = f'"{request.node_name}.{param_name}" not found'
+            details = f"Attempted to set parameter value for '{request.node_name}.{param_name}'. Failed because no parameter with that name could be found."
             logger.error(details)
 
             result = SetParameterValueResultFailure()
@@ -2184,7 +2261,7 @@ class NodeManager:
 
         # Validate that parameters can be set at all
         if not parameter.settable:
-            details = f'"{request.node_name}.{request.parameter_name}" is not settable'
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             logger.error(details)
             result = SetParameterValueResultFailure()
             return result
@@ -2194,7 +2271,7 @@ class NodeManager:
         object_type = request.data_type if request.data_type else parameter.type
         # Is this value kosher for the types allowed?
         if not parameter.is_incoming_type_allowed(object_type):
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed.  type "{object_created.__class__.__name__}" not in allowed types:{parameter.input_types}'
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because the value's type of '{object_type}' was not in the Parameter's list of allowed types: {parameter.input_types}."
             logger.error(details)
 
             result = SetParameterValueResultFailure()
@@ -2203,18 +2280,18 @@ class NodeManager:
         try:
             parent_flow_name = self.get_node_parent_flow_by_name(node.name)
         except KeyError:
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Parent flow does not exist. Could not unresolve future nodes.'
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             logger.error(details)
             return SetParameterValueResultFailure()
         parent_flow = obj_mgr.attempt_get_object_by_name_as_type(parent_flow_name, ControlFlow)
         if not parent_flow:
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Parent flow does not exist. Could not unresolve future nodes.'
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             logger.error(details)
             return SetParameterValueResultFailure()
         try:
             parent_flow.connections.unresolve_future_nodes(node)
-        except Exception as e:
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Exception: {e}'
+        except Exception as err:
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because Exception: {err}"
             logger.error(details)
             return SetParameterValueResultFailure()
 
@@ -2223,7 +2300,7 @@ class NodeManager:
             modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
             finalized_value = node.get_parameter_value(request.parameter_name)
         except Exception as err:
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Exception: {err}'
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because Exception: {err}"
             logger.error(details)
             return SetParameterValueResultFailure()
 
@@ -2261,7 +2338,7 @@ class NodeManager:
     # want to give clear reasoning for each failure.
     # For PLR0915 (too many statements): very little reusable code here, want to be explicit and
     # make debugger use friendly.
-    def on_get_all_node_info_request(self, request: GetAllNodeInfoRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
+    def on_get_all_node_info_request(self, request: GetAllNodeInfoRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -2305,87 +2382,49 @@ class NodeManager:
 
             result = GetAllNodeInfoResultFailure()
             return result
-
-        list_parameters_request = ListParametersOnNodeRequest(node_name=request.node_name)
-        list_parameters_result = GriptapeNodes.NodeManager().on_list_parameters_on_node_request(list_parameters_request)
-        if not list_parameters_result.succeeded():
-            details = f"Attempted to get all info for Node named '{request.node_name}', but failed listing all Parameters on it."
-            logger.error(details)
-
-            result = GetAllNodeInfoResultFailure()
-            return result
-
         # Cast everything to get the linter off our back.
         try:
             get_metadata_success = cast("GetNodeMetadataResultSuccess", get_metadata_result)
             get_resolution_state_success = cast("GetNodeResolutionStateResultSuccess", get_resolution_state_result)
             list_connections_success = cast("ListConnectionsForNodeResultSuccess", list_connections_result)
-            list_parameters_success = cast("ListParametersOnNodeResultSuccess", list_parameters_result)
         except Exception as err:
             details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
             logger.error(details)
 
             result = GetAllNodeInfoResultFailure()
             return result
+        get_node_elements_request = GetNodeElementDetailsRequest(node_name=request.node_name)
+        get_node_elements_result = GriptapeNodes.NodeManager().on_get_node_element_details_request(
+            get_node_elements_request
+        )
+        if not get_node_elements_result.succeeded():
+            details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting details for elements."
+            logger.error(details)
+            result = GetAllNodeInfoResultFailure()
+            return result
+        try:
+            get_element_details_success = cast("GetNodeElementDetailsResultSuccess", get_node_elements_result)
+        except Exception as err:
+            details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
+            logger.exception(details)
+            result = GetAllNodeInfoResultFailure()
+            return result
 
-        # Now go through all the Parameters.
-        parameter_name_to_info = {}
-
-        for param_name in list_parameters_success.parameter_names:
-            # Parameter details up first.
-            get_parameter_details_request = GetParameterDetailsRequest(
-                parameter_name=param_name, node_name=request.node_name
-            )
-            get_parameter_details_result = GriptapeNodes.NodeManager().on_get_parameter_details_request(
-                get_parameter_details_request
-            )
-
-            if not get_parameter_details_result.succeeded():
-                details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting details for Parameter '{param_name}'."
-                logger.error(details)
-
-                result = GetAllNodeInfoResultFailure()
-                return result
-
-            # Now the...gulp...value.
-            get_parameter_value_request = GetParameterValueRequest(
-                parameter_name=param_name, node_name=request.node_name
-            )
-            get_parameter_value_result = GriptapeNodes.NodeManager().on_get_parameter_value_request(
-                get_parameter_value_request
-            )
-
-            if not get_parameter_value_result.succeeded():
-                details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting value for Parameter '{param_name}'."
-                logger.error(details)
-
-                result = GetAllNodeInfoResultFailure()
-                return result
-
-            # They may have succeeded, but are they OUR type of succeeded?
-            try:
-                get_parameter_details_success = cast("GetParameterDetailsResultSuccess", get_parameter_details_result)
-                get_parameter_value_success = cast("GetParameterValueResultSuccess", get_parameter_value_result)
-            except Exception as err:
-                details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
-                logger.error(details)
-
-                result = GetAllNodeInfoResultFailure()
-                return result
-
-            # OK, add it to the parameter dictionary.
-            parameter_name_to_info[param_name] = ParameterInfoValue(
-                details=get_parameter_details_success, value=get_parameter_value_success
-            )
-
+        # this will return the node element and the value
+        element_details = get_element_details_success.element_details
+        if "element_id_to_value" in element_details:
+            element_id_to_value = element_details["element_id_to_value"].copy()
+            del element_details["element_id_to_value"]
+        else:
+            element_id_to_value = {}
         details = f"Successfully got all node info for node '{request.node_name}'."
         logger.debug(details)
         result = GetAllNodeInfoResultSuccess(
             metadata=get_metadata_success.metadata,
             node_resolution_state=get_resolution_state_success.state,
             connections=list_connections_success,
-            parameter_name_to_info=parameter_name_to_info,
-            root_node_element=node.root_ui_element.to_dict(),
+            element_id_to_value=element_id_to_value,
+            root_node_element=element_details,
         )
         return result
 
