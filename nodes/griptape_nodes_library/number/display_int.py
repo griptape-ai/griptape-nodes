@@ -15,16 +15,15 @@ class DisplayInteger(DataNode):
     ) -> None:
         super().__init__(name, metadata)
 
-        # Add output parameter for the string
+        self.value = value
         self.add_parameter(
             Parameter(
                 name="integer",
-                default_value=value,
+                default_value=self.value,
                 type="int",
                 tooltip="The number to display",
             )
         )
 
     def process(self) -> None:
-        value = self.parameter_values.get("integer", 0)
-        self.parameter_output_values["integer"] = value
+        self.parameter_output_values["integer"] = self.parameter_values.get("integer", self.value)

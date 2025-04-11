@@ -15,16 +15,15 @@ class DisplayFloat(DataNode):
     ) -> None:
         super().__init__(name, metadata)
 
-        # Add output parameter for the string
+        self.value = value
         self.add_parameter(
             Parameter(
                 name="float",
-                default_value=value,
+                default_value=self.value,
                 type="float",
                 tooltip="The number to display",
             )
         )
 
     def process(self) -> None:
-        value = self.parameter_values.get("float", 0.0)
-        self.parameter_output_values["float"] = value
+        self.parameter_output_values["float"] = self.parameter_values.get("float", self.value)

@@ -16,11 +16,11 @@ class CreateInteger(DataNode):
     ) -> None:
         super().__init__(name, metadata)
 
-        # Add output parameter for the string
+        self.value = value
         self.add_parameter(
             Parameter(
                 name="integer",
-                default_value=value,
+                default_value=self.value,
                 output_type="int",
                 type="int",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
@@ -29,5 +29,4 @@ class CreateInteger(DataNode):
         )
 
     def process(self) -> None:
-        value = self.parameter_values.get("integer", 0)
-        self.parameter_output_values["integer"] = value
+        self.parameter_output_values["integer"] = self.parameter_values.get("integer", self.value)

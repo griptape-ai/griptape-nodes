@@ -17,7 +17,6 @@ class CreateFloat(DataNode):
         super().__init__(name, metadata)
 
         self.value = value
-        # Add output parameter for the string
         self.add_parameter(
             Parameter(
                 name="float",
