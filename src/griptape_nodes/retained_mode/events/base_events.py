@@ -38,6 +38,9 @@ class ResultPayload(Payload, ABC):
             bool: True if success, False if failure
         """
 
+    def failed(self) -> bool:
+        return not self.succeeded()
+
 
 # Success result payload abstract base class
 class ResultPayloadSuccess(ResultPayload, ABC):
