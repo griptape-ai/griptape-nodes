@@ -156,16 +156,17 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         self._context.resolution_machine.change_debug_mode(debug_mode)
 
     def granular_step(self) -> None:
-        self._context.resolution_machine.change_debug_mode(True)
-        if self._context.resolution_machine.is_complete() or (not self._context.resolution_machine.is_started()):
+        resolution_machine = self._context.resolution_machine
+        resolution_machine.change_debug_mode(True)
+        resolution_machine.update()
+
+        if resolution_machine.is_complete() or (not resolution_machine.is_started()):
             self.update()
-        else:
-            self._context.resolution_machine.update()
 
     def node_step(self) -> None:
         resolution_machine = self._context.resolution_machine
         resolution_machine.change_debug_mode(False)
+        resolution_machine.update()
+
         if resolution_machine.is_complete() or (not resolution_machine.is_started()):
             self.update()
-        else:
-            resolution_machine.update()
