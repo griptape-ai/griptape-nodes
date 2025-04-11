@@ -1,5 +1,8 @@
+from collections.abc import Callable, Generator
+
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
+from griptape.structures import Structure
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
 
@@ -91,10 +94,9 @@ class CreateImage(ControlNode):
             return exceptions
         return exceptions if exceptions else None
 
-    def process(self) -> None:
+    def process(self) -> Generator[Callable[[], Structure], Structure]:
         # Get the parameters from the node
         params = self.parameter_values
-
         agent = params.get("agent", None)
         if not agent:
             prompt_driver = GriptapeCloudPromptDriver(
@@ -110,7 +112,7 @@ class CreateImage(ControlNode):
 
         if enhance_prompt:
             logger.info("Enhancing prompt...")
-            result = agent.run(
+            result = yield lambda: agent.run(
                 [
                     """
 Enhance the following prompt for an image generation engine. Return only the image generation prompt.
@@ -144,8 +146,8 @@ Focus on qualities that will make this the most professional looking photo in th
         agent.add_task(PromptImageGenerationTask(**kwargs))
 
         # Run the agent
-        result = agent.run(prompt)
+        result = yield lambda: agent.run(prompt)
+
         self.parameter_output_values["output"] = result.output
-        try_throw_error(agent.output)
-        # Reset the agent
+        try_throw_error(result.output)
         agent._tasks = []

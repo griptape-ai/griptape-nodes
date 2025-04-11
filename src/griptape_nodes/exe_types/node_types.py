@@ -1,4 +1,6 @@
+import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Generator
 from enum import Enum, auto
 from typing import Any, Self
 
@@ -16,6 +18,8 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
+
+logger = logging.getLogger("griptape_nodes")
 
 
 class NodeResolutionState(Enum):
@@ -38,6 +42,7 @@ class BaseNode(ABC):
     parameter_output_values: dict[str, Any]
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
+    process_generator: Generator | None
 
     @property
     def parameters(self) -> list[Parameter]:
@@ -64,6 +69,7 @@ class BaseNode(ABC):
         self.parameter_output_values = {}
         self.root_ui_element = BaseNodeElement()
         self.config_manager = GriptapeNodes.ConfigManager()
+        self.process_generator = None
 
     def make_node_unresolved(self) -> None:
         self.state = NodeResolutionState.UNRESOLVED
@@ -365,7 +371,7 @@ class BaseNode(ABC):
     # Abstract method to process the node. Must be defined by the type
     # Must save the values of the output parameters in NodeContext.
     @abstractmethod
-    def process(self) -> None:
+    def process[T](self) -> Generator[Callable[[], T], T] | None:
         pass
 
     # if not implemented, it will return no issues.
