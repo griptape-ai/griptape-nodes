@@ -57,7 +57,14 @@ class CreateImage(ControlNode):
             )
         )
         self.add_parameter(
-            Parameter(name="enhance_prompt", input_types=["bool"], type="bool", tooltip="None", default_value=True)
+            Parameter(
+                name="enhance_prompt",
+                input_types=["bool"],
+                type="bool",
+                tooltip="None",
+                default_value=True,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
         )
         self.add_parameter(
             Parameter(
