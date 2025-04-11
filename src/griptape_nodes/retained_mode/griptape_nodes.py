@@ -2069,14 +2069,14 @@ class NodeManager:
         # Get the node
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
-            details = f'"{request.node_name}" not found'
+            details = f"Attempted to set parameter '{param_name}' value on node '{request.node_name}'. Failed because no such Node could be found."
             logger.error(details)
             return SetParameterValueResultFailure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
         if parameter is None:
-            details = f'"{request.node_name}.{param_name}" not found'
+            details = f"Attempted to set parameter value for '{request.node_name}.{param_name}'. Failed because no parameter with that name could be found."
             logger.error(details)
 
             result = SetParameterValueResultFailure()
@@ -2084,7 +2084,7 @@ class NodeManager:
 
         # Validate that parameters can be set at all
         if not parameter.settable:
-            details = f'"{request.node_name}.{request.parameter_name}" is not settable'
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             logger.error(details)
             result = SetParameterValueResultFailure()
             return result
@@ -2094,7 +2094,7 @@ class NodeManager:
         object_type = request.data_type if request.data_type else parameter.type
         # Is this value kosher for the types allowed?
         if not parameter.is_incoming_type_allowed(object_type):
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed.  type "{object_created.__class__.__name__}" not in allowed types:{parameter.input_types}'
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because the value's type of '{object_type}' was not in the Parameter's list of allowed types: {parameter.input_types}."
             logger.error(details)
 
             result = SetParameterValueResultFailure()
@@ -2103,18 +2103,18 @@ class NodeManager:
         try:
             parent_flow_name = self.get_node_parent_flow_by_name(node.name)
         except KeyError:
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Parent flow does not exist. Could not unresolve future nodes.'
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             logger.error(details)
             return SetParameterValueResultFailure()
         parent_flow = obj_mgr.attempt_get_object_by_name_as_type(parent_flow_name, ControlFlow)
         if not parent_flow:
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Parent flow does not exist. Could not unresolve future nodes.'
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             logger.error(details)
             return SetParameterValueResultFailure()
         try:
             parent_flow.connections.unresolve_future_nodes(node)
-        except Exception as e:
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Exception: {e}'
+        except Exception as err:
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because Exception: {err}"
             logger.error(details)
             return SetParameterValueResultFailure()
 
@@ -2123,7 +2123,7 @@ class NodeManager:
             modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
             finalized_value = node.get_parameter_value(request.parameter_name)
         except Exception as err:
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Exception: {err}'
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because Exception: {err}"
             logger.error(details)
             return SetParameterValueResultFailure()
 
