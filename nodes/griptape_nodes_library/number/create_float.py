@@ -12,7 +12,7 @@ class CreateFloat(DataNode):
         self,
         name: str,
         metadata: dict[Any, Any] | None = None,
-        value: str = "",
+        value: float = 0.0,
     ) -> None:
         super().__init__(name, metadata)
 
@@ -29,5 +29,5 @@ class CreateFloat(DataNode):
         )
 
     def process(self) -> None:
-        # Simply output the default value or any updated property value
-        self.parameter_output_values["float"] = self.parameter_values["float"]
+        value = self.parameter_values.get("float", 0.0)
+        self.parameter_output_values["float"] = value
