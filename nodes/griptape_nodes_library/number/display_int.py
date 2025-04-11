@@ -26,4 +26,4 @@ class DisplayInteger(DataNode):
         )
 
     def process(self) -> None:
-        self.parameter_output_values["integer"] = self.parameter_values.get("integer", self.value)
+        self.parameter_output_values["integer"] = self.parameter_values.get("integer")

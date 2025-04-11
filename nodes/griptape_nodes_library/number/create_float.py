@@ -29,4 +29,4 @@ class CreateFloat(DataNode):
         )
 
     def process(self) -> None:
-        self.parameter_output_values["float"] = self.parameter_values.get("float", self.value)
+        self.parameter_output_values["float"] = self.parameter_values.get("float")
