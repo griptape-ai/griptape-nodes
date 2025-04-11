@@ -11,20 +11,19 @@ class DisplayInteger(DataNode):
         self,
         name: str,
         metadata: dict[Any, Any] | None = None,
-        value: str = "",
+        value: int = 0,
     ) -> None:
         super().__init__(name, metadata)
 
-        # Add output parameter for the string
+        self.value = value
         self.add_parameter(
             Parameter(
-                name="int",
-                default_value=value,
+                name="integer",
+                default_value=self.value,
                 type="int",
                 tooltip="The number to display",
             )
         )
 
     def process(self) -> None:
-        # Simply output the default value or any updated property value
-        self.parameter_output_values["int"] = self.parameter_values["int"]
+        self.parameter_output_values["integer"] = self.parameter_values.get("integer")
