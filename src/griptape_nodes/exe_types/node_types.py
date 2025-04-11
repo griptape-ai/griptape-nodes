@@ -202,9 +202,7 @@ class BaseNode(ABC):
         curr_param = None
         prev_param = None
         for parameter in self.parameters:
-            if ParameterMode.INPUT in parameter.get_mode() and not parameter.is_incoming_type_allowed(
-                incoming_type=ParameterTypeBuiltin.CONTROL_TYPE.value
-            ):
+            if ParameterMode.INPUT in parameter.get_mode() and ParameterTypeBuiltin.CONTROL_TYPE.value not in parameter.input_types:
                 if not self.current_spotlight_parameter or prev_param is None:
                     # make a copy of the parameter and assign it to current spotlight
                     param_copy = parameter.copy()
@@ -324,7 +322,7 @@ class BaseNode(ABC):
     def get_next_control_output(self) -> Parameter | None:
         for param in self.parameters:
             if (
-                param.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value)
+                ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type
                 and ParameterMode.OUTPUT in param.allowed_modes
             ):
                 return param
@@ -392,7 +390,7 @@ class ControlNode(BaseNode):
     def get_next_control_output(self) -> Parameter | None:
         for param in self.parameters:
             if (
-                param.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value)
+                ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type
                 and ParameterMode.OUTPUT in param.allowed_modes
             ):
                 return param

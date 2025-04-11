@@ -146,7 +146,7 @@ class ExecuteNodeState(State):
             if parameter.name not in current_node.parameter_values:
                 # If a parameter value is not already set
                 value = current_node.get_parameter_value(parameter.name)
-                if value:
+                if value is not None:
                     modified_parameters = current_node.set_parameter_value(parameter.name, value)
                     if modified_parameters:
                         for modified_parameter_name in modified_parameters:
