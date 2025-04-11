@@ -90,6 +90,6 @@ Griptape API Key (YOUR-KEY-HERE):
 
 ## 4. Start Your Engine
 
-You're ready to proceed. Run either `griptape-nodes` or `gtn` and refresh your browser. You should be taken to an Untitled workflow in Griptape [nodes]!
+You're ready to proceed. Run either `griptape-nodes` or `gtn` and refresh your browser. You should be taken to an untitled workflow in Griptape [nodes]!
 
 ![A Blank Griptape_nodes_ editor](assets/img/getting_started/getting_started-blank_editor.png)
