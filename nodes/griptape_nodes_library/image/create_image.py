@@ -53,7 +53,7 @@ class CreateImage(ControlNode):
                 tooltip="None",
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"placeholder_text": "Enter your image generation prompt here."},
+                ui_options={"multiline": True, "placeholder_text": "Enter your image generation prompt here."},
             )
         )
         self.add_parameter(
