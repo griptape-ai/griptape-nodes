@@ -58,10 +58,10 @@ nav:
       - Overview: index.md
       - Getting Started: getting_started.md
       - Engine Configuration: configuration.md
-
+  - FAQ: faq.md
   - Reference: 
       - Glossary: reference/glossary.md
-      - Retained Mode: reference/retained_mode.md
+      - Scripting: reference/retained_mode.md
       - Nodes:
           - Overview: nodes/overview.md
           - Basic:
