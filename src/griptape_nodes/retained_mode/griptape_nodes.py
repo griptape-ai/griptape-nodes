@@ -927,70 +927,32 @@ class FlowManager:
 
         # Based on user feedback, if a connection already exists in a scenario where only ONE such connection can exist
         # (e.g., connecting to a data input that already has a connection, or from a control output that is already wired up),
-        # detach the old connection and replace it with this one.
+        # delete the old connection and replace it with this one.
         old_source_node_name = None
         old_source_param_name = None
         old_target_node_name = None
         old_target_param_name = None
-        if source_param.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
-            # We're attempting FROM a Control Parameter. We can only have one such outgoing connection.
 
-            # Does another connection here already exist?
-            connection_mgr = source_flow.connections
-            # get outgoing connections
-            outgoing_connections_list = []
-            if request.source_node_name in connection_mgr.outgoing_index:
-                outgoing_connections_list = [
-                    OutgoingConnection(
-                        source_parameter_name=connection.source_parameter.name,
-                        target_node_name=connection.target_node.name,
-                        target_parameter_name=connection.target_parameter.name,
-                    )
-                    for connection_lists in connection_mgr.outgoing_index[request.source_node_name].values()
-                    for connection_id in connection_lists
-                    for connection in [connection_mgr.connections[connection_id]]
-                ]
-                if len(outgoing_connections_list) == 1:
-                    outgoing_connection = outgoing_connections_list[0]
-                    old_source_node_name = request.source_node_name
-                    old_source_param_name = request.source_parameter_name
-                    old_target_node_name = outgoing_connection.target_node_name
-                    old_target_param_name = outgoing_connection.target_parameter_name
-        elif not target_param.is_incoming_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
-            # We're attempting TO a Data Parameter. We can only have one such incoming connection.
+        # Some scenarios restrict when we can have more than one connection. See if we're in such a scenario and replace the
+        # existing connection instead of adding a new one.
+        connection_mgr = source_flow.connections
+        # Try the OUTGOING restricted scenario first.
+        restricted_scenario_connection = connection_mgr.get_existing_connection_for_restricted_scenario(
+            node=source_node, parameter=source_param, is_source=True
+        )
+        if not restricted_scenario_connection:
+            # Check the incoming scenario.
+            restricted_scenario_connection = connection_mgr.get_existing_connection_for_restricted_scenario(
+                node=target_node, parameter=target_param, is_source=False
+            )
 
-            # Does another connection here already exist?
-            connection_mgr = source_flow.connections
+        if restricted_scenario_connection:
+            # Record the original data in case we need to back out of this.
+            old_source_node_name = restricted_scenario_connection.source_node.name
+            old_source_param_name = restricted_scenario_connection.source_parameter.name
+            old_target_node_name = restricted_scenario_connection.target_node.name
+            old_target_param_name = restricted_scenario_connection.target_parameter.name
 
-            # get incoming connections
-            incoming_connections_list = []
-            if request.target_node_name in connection_mgr.incoming_index:
-                incoming_connections_list = [
-                    IncomingConnection(
-                        source_node_name=connection.source_node.name,
-                        source_parameter_name=connection.source_parameter.name,
-                        target_parameter_name=connection.target_parameter.name,
-                    )
-                    for connection_lists in connection_mgr.incoming_index[request.target_node_name].values()
-                    for connection_id in connection_lists
-                    for connection in [
-                        connection_mgr.connections[connection_id]
-                    ]  # This creates a temporary one-item list with the connection
-                ]
-                if len(incoming_connections_list) == 1:
-                    incoming_connection = incoming_connections_list[0]
-                    old_source_node_name = incoming_connection.source_node_name
-                    old_source_param_name = incoming_connection.source_parameter_name
-                    old_target_node_name = request.target_node_name
-                    old_target_param_name = request.target_parameter_name
-
-        # Do we have a previous connection we need to delete?
-        if (
-            (old_source_node_name is not None)
-            and (old_source_param_name is not None)
-            and (old_target_node_name is not None)
-            and (old_target_param_name is not None)
-        ):
             delete_old_request = DeleteConnectionRequest(
                 source_node_name=old_source_node_name,
                 source_parameter_name=old_source_param_name,
