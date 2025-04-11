@@ -202,7 +202,10 @@ class BaseNode(ABC):
         curr_param = None
         prev_param = None
         for parameter in self.parameters:
-            if ParameterMode.INPUT in parameter.get_mode() and ParameterTypeBuiltin.CONTROL_TYPE.value not in parameter.input_types:
+            if (
+                ParameterMode.INPUT in parameter.get_mode()
+                and ParameterTypeBuiltin.CONTROL_TYPE.value not in parameter.input_types
+            ):
                 if not self.current_spotlight_parameter or prev_param is None:
                     # make a copy of the parameter and assign it to current spotlight
                     param_copy = parameter.copy()

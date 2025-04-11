@@ -348,6 +348,7 @@ class Parameter(BaseNodeElement):
     _ui_options: dict
     next: Parameter | None = None
     prev: Parameter | None = None
+    parent_container_name: str | None = None
 
     def __init__(  # noqa: PLR0913,PLR0912
         self,
@@ -370,6 +371,7 @@ class Parameter(BaseNodeElement):
         user_defined: bool = False,
         element_id: str | None = None,
         element_type: str | None = None,
+        parent_container_name: str | None = None,
     ):
         if not element_id:
             element_id = str(uuid.uuid4().hex)
@@ -414,6 +416,7 @@ class Parameter(BaseNodeElement):
         self.type = type
         self.input_types = input_types
         self.output_type = output_type
+        self.parent_container_name = parent_container_name
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children."""
@@ -859,6 +862,7 @@ class ParameterList(ParameterContainer):
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
         settable: bool = True,
+        user_defined: bool = False,
         element_id: str | None = None,
         element_type: str | None = None,
     ):
@@ -884,7 +888,7 @@ class ParameterList(ParameterContainer):
             converters=converters,
             validators=validators,
             settable=settable,
-            user_defined=True,
+            user_defined=user_defined,
             element_id=element_id,
             element_type=element_type,
         )
@@ -954,7 +958,8 @@ class ParameterList(ParameterContainer):
             converters=self.converters,
             validators=self.validators,
             settable=self.settable,
-            user_defined=self.user_defined,
+            user_defined=True,
+            parent_container_name=self.name,
         )
 
         # Add at the end.

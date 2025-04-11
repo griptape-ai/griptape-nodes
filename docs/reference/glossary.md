@@ -236,6 +236,6 @@ Griptape [nodes] is a creative toolkit (built with Python) that helps artists an
 
 - **CSV (Comma-Separated Values)**: A simple file format used to store tabular data, such as spreadsheet data. Each line represents a row, and commas separate the values in each column.
 
-- **UI (User Interface)**: The visual elements and controls that allow users to interact with software. This includes buttons, sliders, text fields, and other interactive elements.  In Griptape [nodes], we call our UI the "Editor"
+- **UI (User Interface)**: The visual elements and controls that allow users to interact with software. This includes buttons, sliders, text fields, and other interactive elements. In Griptape [nodes], we call our UI the "Editor"
 
 - **Framework**: A pre-built set of code that provides structure and functionality to build applications more easily. Frameworks are like art supply kits that come with the basic materials and tools you need.
