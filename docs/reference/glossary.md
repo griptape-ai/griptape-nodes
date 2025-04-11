@@ -1,8 +1,8 @@
 # Griptape [nodes] Glossary for Artists
 
-## What is Griptape**[_nodes_]**?
+## What is Griptape [nodes]?
 
-Griptape**[_nodes_]** is a creative toolkit (built with Python) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create art, generate images, process text, or even build other workhorse applications.
+Griptape [nodes] is a creative toolkit (built with Python) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create art, generate images, process text, or even build other workhorse applications.
 
 ### The Big Ones in the Griptape [nodes] world
 
@@ -113,7 +113,7 @@ Griptape**[_nodes_]** is a creative toolkit (built with Python) that helps artis
 
 <a id="Configuration Settings"></a>
 
-- **Configuration Settings**: Parameters and options that control how the Griptape_nodes\_ engine and its components operate.
+- **Configuration Settings**: Parameters and options that control how the Griptape [nodes] engine and its components operate.
 
 <a id="Project Files"></a>
 
@@ -121,7 +121,7 @@ Griptape**[_nodes_]** is a creative toolkit (built with Python) that helps artis
 
 <a id="Generated Assets"></a>
 
-- **Generated Assets**: Files and data produced by the Griptape_nodes\_ engine during execution, such as outputs, reports, or visualizations.
+- **Generated Assets**: Files and data produced by the Griptape [nodes] engine during execution, such as outputs, reports, or visualizations.
 
 <a id=".env"></a>
 
