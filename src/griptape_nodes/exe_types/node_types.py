@@ -9,9 +9,13 @@ from griptape_nodes.exe_types.core_types import (
     ControlParameterInput,
     ControlParameterOutput,
     Parameter,
+    ParameterContainer,
+    ParameterDictionary,
+    ParameterList,
     ParameterMode,
     ParameterTypeBuiltin,
 )
+from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
 
 
 class NodeResolutionState(Enum):
@@ -198,8 +202,9 @@ class BaseNode(ABC):
         curr_param = None
         prev_param = None
         for parameter in self.parameters:
-            if ParameterMode.INPUT in parameter.get_mode() and not parameter.is_incoming_type_allowed(
-                incoming_type=ParameterTypeBuiltin.CONTROL_TYPE.value
+            if (
+                ParameterMode.INPUT in parameter.get_mode()
+                and ParameterTypeBuiltin.CONTROL_TYPE.value not in parameter.input_types
             ):
                 if not self.current_spotlight_parameter or prev_param is None:
                     # make a copy of the parameter and assign it to current spotlight
@@ -221,6 +226,12 @@ class BaseNode(ABC):
             return True
         self.current_spotlight_parameter = None
         return False
+
+    def get_parameter_by_element_id(self, param_element_id: str) -> Parameter | None:
+        candidate = self.root_ui_element.find_element_by_id(element_id=param_element_id)
+        if (candidate is not None) and (isinstance(candidate, Parameter)):
+            return candidate
+        return None
 
     def get_parameter_by_name(self, param_name: str) -> Parameter | None:
         for parameter in self.parameters:
@@ -281,16 +292,27 @@ class BaseNode(ABC):
         )
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
+        # If a parameter value has been set at the top level of a container, wipe all children.
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=modified_parameters)
 
         # Return the complete set of modified parameters.
         return modified_parameters
 
+    def kill_parameter_children(self, parameter: Parameter) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        for child in parameter.find_elements_by_type(Parameter):
+            GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(parameter_name=child.name, node_name=self.name))
+
     def get_parameter_value(self, param_name: str) -> Any:
         if param_name in self.parameter_values:
             return self.parameter_values[param_name]
         param = self.get_parameter_by_name(param_name)
+        if param:
+            value = handle_container_parameter(self, param)
+            if value:
+                return value
         return param.default_value if param else None
 
     def remove_parameter_value(self, param_name: str) -> None:
@@ -303,7 +325,7 @@ class BaseNode(ABC):
     def get_next_control_output(self) -> Parameter | None:
         for param in self.parameters:
             if (
-                param.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value)
+                ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type
                 and ParameterMode.OUTPUT in param.allowed_modes
             ):
                 return param
@@ -351,7 +373,8 @@ class BaseNode(ABC):
         return None
 
     def get_config_value(self, service: str, value: str) -> str:
-        return self.config_manager.get_config_value(f"nodes.{service}.{value}")
+        config_value = self.config_manager.get_config_value(f"nodes.{service}.{value}")
+        return config_value
 
     def set_config_value(self, service: str, value: str, new_value: str) -> None:
         self.config_manager.set_config_value(f"nodes.{service}.{value}", new_value)
@@ -370,7 +393,7 @@ class ControlNode(BaseNode):
     def get_next_control_output(self) -> Parameter | None:
         for param in self.parameters:
             if (
-                param.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value)
+                ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type
                 and ParameterMode.OUTPUT in param.allowed_modes
             ):
                 return param
@@ -416,3 +439,19 @@ class Connection:
 
     def get_source_node(self) -> BaseNode:
         return self.source_node
+
+
+def handle_container_parameter(current_node: BaseNode, parameter: Parameter) -> Any:
+    # if it's a container and it's value isn't already set.
+    if isinstance(parameter, ParameterContainer):
+        children = parameter.find_elements_by_type(Parameter, find_recursively=False)
+        if isinstance(parameter, ParameterList):
+            build_parameter_value = []
+        elif isinstance(parameter, ParameterDictionary):
+            build_parameter_value = {}
+        build_parameter_value = []
+        for child in children:
+            value = current_node.get_parameter_value(child.name)
+            build_parameter_value.append(value)
+        return build_parameter_value
+    return None

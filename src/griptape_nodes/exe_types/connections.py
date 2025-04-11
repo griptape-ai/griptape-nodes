@@ -44,8 +44,8 @@ class Connections:
             errormsg = f"Input Connection not allowed on Parameter '{target_parameter.name}'."
             raise ValueError(errormsg)
         # Handle multiple inputs on parameters and multiple outputs on controls
-        if self.connection_allowed(source_node, source_parameter, source=True) and self.connection_allowed(
-            target_node, target_parameter, source=False
+        if self.connection_allowed(source_node, source_parameter, is_source=True) and self.connection_allowed(
+            target_node, target_parameter, is_source=False
         ):
             connection = Connection(source_node, source_parameter, target_node, target_parameter)
             # New index management.
@@ -64,26 +64,53 @@ class Connections:
         msg = "Connection not allowed because of multiple connections on the same parameter input or control output parameter"
         raise ValueError(msg)
 
-    def connection_allowed(self, node: BaseNode, parameter: Parameter, *, source: bool) -> bool:
-        # True if allowed, false if not
-        # Here are the rules:
-        # A Control Parameter can have multiple connections as an input, but only one output.
-        # A Data Parameter can have one connection as input, but multiple outputs.
-        if source and parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
+    def get_existing_connection_for_restricted_scenario(
+        self, node: BaseNode, parameter: Parameter, *, is_source: bool
+    ) -> Connection | None:
+        """Returns connections that may exist if we are in a restricted connection scenario (see below), or None if not in such as scenario.
+
+        Here are the rules as enforced by the engine:
+          * A Control Parameter can have multiple connections to an input, but only one connection on an output.
+          * A Data Parameter can have one connection on an input, but multiple outputs.
+
+        Args:
+            node: the Node we are querying
+            parameter: the parameter on the Node
+            is_source: are we assessing this node/parameter combo as a SOURCE for a connection or as a TARGET?
+
+        Returns:
+            None: if the source node/parameter isn't in a restricted scenario OR in a restricted scenario but no connection in place.
+            Connection: if in a restricted scenario and has a Connection.
+        """
+        connection_list = None
+        if is_source and ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
             connections = self.outgoing_index
             connections_from_node = connections.get(node.name, {})
-            connection_id = connections_from_node.get(parameter.name, [])
-            return len(connection_id) <= 0
-        if not source and not parameter.is_incoming_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
+            connection_list = connections_from_node.get(parameter.name, None)
+        if not is_source and ParameterTypeBuiltin.CONTROL_TYPE.value not in parameter.input_types:
             connections = self.incoming_index
             connections_from_node = connections.get(node.name, {})
-            connection_id = connections_from_node.get(parameter.name, [])
-            return len(connection_id) <= 0
-        return True
+            connection_list = connections_from_node.get(parameter.name, None)
+
+        if connection_list:
+            connection_id = connection_list[0]
+            connection = self.connections[connection_id]
+            return connection
+
+        # Not in a restricted scenario and/or no connection in place.
+        return None
+
+    def connection_allowed(self, node: BaseNode, parameter: Parameter, *, is_source: bool) -> bool:
+        # True if allowed, false if not
+        # See if we're in a scenario where we can only have one such connection which would prevent us from establishing an additional connection.
+        connection = self.get_existing_connection_for_restricted_scenario(
+            node=node, parameter=parameter, is_source=is_source
+        )
+        return connection is None
 
     def get_connected_node(self, node: BaseNode, parameter: Parameter) -> tuple[BaseNode, Parameter] | None:
         # Check to see if we should be getting the next connection or the previous connection based on the parameter.
-        if parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
+        if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
             connections = self.outgoing_index
         else:
             connections = self.incoming_index
@@ -99,7 +126,7 @@ class Connections:
         connection_id = connection_id[0]
         if connection_id in self.connections:
             connection = self.connections[connection_id]
-            if parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
+            if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
                 # Return the target (next place to go)
                 return connection.target_node, connection.target_parameter
             # Return the source (next place to chain back to)
@@ -162,7 +189,7 @@ class Connections:
             # If it is a data connection and has an OUTPUT type
             if (
                 ParameterMode.OUTPUT in parameter.allowed_modes
-                and not parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value)
+                and ParameterTypeBuiltin.CONTROL_TYPE.value != parameter.output_type
                 # check if a outgoing connection exists from this parameter
                 and parameter.name in self.outgoing_index[node.name]
             ):

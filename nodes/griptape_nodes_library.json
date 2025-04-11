@@ -248,7 +248,7 @@
     },
     {
       "class_name": "CreateImage",
-      "file_path": "griptape_nodes_library/tasks/create_image.py",
+      "file_path": "griptape_nodes_library/image/create_image.py",
       "metadata": {
         "category": "Image",
         "description": "Generates images using configurable image drivers",
@@ -257,7 +257,7 @@
     },
     {
       "class_name": "DescribeImage",
-      "file_path": "griptape_nodes_library/tasks/describe_image.py",
+      "file_path": "griptape_nodes_library/image/describe_image.py",
       "metadata": {
         "category": "Image",
         "description": "Describes an image",
@@ -397,6 +397,24 @@
         "category": "Dictionary",
         "description": "Displays a dictionary or key-value pair",
         "display_name": "Display Dictionary"
+      }
+    },
+    {
+      "class_name": "LoadDictionary",
+      "file_path": "griptape_nodes_library/dict/load_dict.py",
+      "metadata": {
+        "category": "Dictionary",
+        "description": "Loads a dictionary or key-value pair",
+        "display_name": "Load Dictionary"
+      }
+    },
+    {
+      "class_name": "SaveDictionary",
+      "file_path": "griptape_nodes_library/dict/save_dict.py",
+      "metadata": {
+        "category": "Dictionary",
+        "description": "Saves a dictionary or key-value pair",
+        "display_name": "Save Dictionary"
       }
     },
     {

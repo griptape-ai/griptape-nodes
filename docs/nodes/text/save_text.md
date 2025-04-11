@@ -18,17 +18,17 @@ Use the SaveText node when:
 ### Basic Setup
 
 1. Add a SaveText node to your workflow
-2. Connect a text output from another node to this node's text input
-3. Optionally specify the output file path
-4. Run your workflow to save the text to disk
+1. Connect a text output from another node to this node's text input
+1. Optionally specify the output file path
+1. Run your workflow to save the text to disk
 
 ### Parameters
 
-**Inputs:**
 - **text**: The text content to save (string)
 - **output_path**: The file path where the text should be saved (defaults to "griptape_output.txt")
 
-**Outputs:**
+### Outputs
+
 - **output_path**: The path of the file where the text was saved
 
 ## Example
@@ -36,9 +36,9 @@ Use the SaveText node when:
 A workflow to generate and save AI-created content:
 
 1. Add a SaveText node to your workflow
-2. Connect an Agent node's response output to the "text" input
-3. Set "output_path" to "C:/Users/username/Documents/agent_response.txt"
-4. When the workflow runs, the agent's response will be saved to the specified file
+1. Connect an Agent node's response output to the "text" input
+1. Set "output_path" to "C:/Users/username/Documents/agent_response.txt"
+1. When the workflow runs, the agent's response will be saved to the specified file
 
 ## Important Notes
 

@@ -1,6 +1,6 @@
 [project]
 name = "griptape_nodes"
-version = "0.11.2"
+version = "0.13.1"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -17,7 +17,16 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["mdformat>=0.7.22", "pyright>=1.1.396", "ruff>=0.11.0", "typos>=1.30.2"]
+dev = [
+  "mdformat>=0.7.22",
+  "mdformat-gfm>=0.4.1",
+  "mdformat-frontmatter>=2.0.8",
+  "mdformat-footnote>=0.1.1",
+  "mdformat-mkdocs>=4.1.2",
+  "pyright>=1.1.396",
+  "ruff>=0.11.0",
+  "typos>=1.30.2",
+]
 docs = [
   "mkdocs-material>=9.6.9",
   "mkdocs>=1.5.2",
@@ -67,6 +76,7 @@ ignore = [
   "SIM110", # Intentional
   "D105",   # Intentional
   "N802",   # TODO(griptape): discuss with team
+  "TRY400", # Intentional
   "TRY002", # TODO(griptape): discuss with team
   "FBT003", # Intentional
   "RET504", # Intentional

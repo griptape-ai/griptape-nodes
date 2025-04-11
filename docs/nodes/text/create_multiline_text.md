@@ -18,15 +18,15 @@ Use the CreateMultilineText node when:
 ### Basic Setup
 
 1. Add a CreateMultilineText node to your workflow
-2. Set the "text" parameter with your desired multiline content
-3. Connect the output to nodes that accept text input
+1. Set the "text" parameter with your desired multiline content
+1. Connect the output to nodes that accept text input
 
 ### Parameters
 
-**Inputs:**
 - **text**: The multiline text content (string, defaults to empty string)
 
-**Outputs:**
+### Outputs
+
 - **text**: The multiline text content as a string
 
 ## Example
@@ -34,16 +34,19 @@ Use the CreateMultilineText node when:
 A workflow to create a prompt for an AI assistant:
 
 1. Add a CreateMultilineText node to your workflow
-2. Set the "text" parameter to:
-```
-You are a helpful tour guide assistant.
-Please provide information about the following location:
-- History of the place
-- Main attractions
-- Best time to visit
-- Local cuisine
-```
-3. Connect the output to an Agent node's prompt parameter
+
+1. Set the "text" parameter to:
+
+    ```
+    You are a helpful tour guide assistant.
+    Please provide information about the following location:
+    - History of the place
+    - Main attractions
+    - Best time to visit
+    - Local cuisine
+    ```
+
+1. Connect the output to an Agent node's prompt parameter
 
 ## Important Notes
 

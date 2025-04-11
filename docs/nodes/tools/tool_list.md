@@ -23,18 +23,18 @@ Use this node when you want to:
 ### Fields
 
 - **tools**: A list of tools to combine into a single list.
-  - Input type: List of objects
-  - Allowed modes: INPUT
-  - Default value: Empty list
-  - Tooltip: List of tools to combine
+    - Input type: List of objects
+    - Allowed modes: INPUT
+    - Default value: Empty list
+    - Tooltip: List of tools to combine
 
 ### Outputs
 
 - **tool_list**: The combined list of tools.
-  - Output type: List of objects
-  - Allowed modes: OUTPUT
-  - Default value: Empty list
-  - Tooltip: Combined list of tools
+    - Output type: List of objects
+    - Allowed modes: OUTPUT
+    - Default value: Empty list
+    - Tooltip: Combined list of tools
 
 ## Example
 

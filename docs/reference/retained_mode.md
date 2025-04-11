@@ -1,4 +1,6 @@
-# Griptape RetainedMode Command Reference
+# Griptape [nodes] Scripting
+
+"Retained Mode" is a Python scripting interface to interact with Griptape [nodes]. These methods allow users to create, modify, and manage nodes, parameters, connections, and flows through a simplified Python API.
 
 > **Note:** The actual import command for RetainedMode is:
 >
@@ -9,10 +11,6 @@
 > However, for convenience, in the script editor of the GUI, this import is already done for you automatically, so you can freely use `cmd.` directly.
 
 ## Go to: [Flow Operations](#flow-operations) · [Node Operations](#node-operations) · [Parameter Operations](#parameter-operations) · [Connection Operations](#connection-operations) · [Library Operations](#library-operations) · [Config Operations](#config-operations) · [Utility Operations](#utility-operations)
-
-## Synopsis
-
-The RetainedMode class provides a surface-level scripting interface to interact with the Griptape Nodes framework. These methods allow users to create, modify, and manage nodes, parameters, connections, and flows through a simplified Python API.
 
 ## Flow Operations
 
@@ -26,10 +24,10 @@ Creates a new flow within the Griptape system.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| flow_name | string | ⚪ |
-| parent_flow_name | string | ⚪ |
+| Name             | Argument Type | Required |
+| ---------------- | :-----------: | :------: |
+| flow_name        |    string     |    ⚪    |
+| parent_flow_name |    string     |    ⚪    |
 
 #### Return Value
 
@@ -51,9 +49,9 @@ Deletes an existing flow.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| flow_name | string | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| flow_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -75,9 +73,9 @@ Lists all flows within a parent flow.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| parent_flow_name | string | ⚪ |
+| Name             | Argument Type | Required |
+| ---------------- | :-----------: | :------: |
+| parent_flow_name |    string     |    ⚪    |
 
 #### Return Value
 
@@ -99,9 +97,9 @@ Lists all nodes within a flow.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| flow_name | string | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| flow_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -123,9 +121,9 @@ Executes a flow.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| flow_name | string | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| flow_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -147,9 +145,9 @@ Resets a flow to its initial state.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| flow_name | string | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| flow_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -171,9 +169,9 @@ Returns the current state of a flow.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| flow_name | string | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| flow_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -195,9 +193,9 @@ Cancels the execution of a flow.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| flow_name | string | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| flow_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -219,9 +217,9 @@ Executes a single node step in a flow.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| flow_name | string | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| flow_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -243,9 +241,9 @@ Executes a single execution step in a flow.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| flow_name | string | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| flow_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -267,9 +265,9 @@ Continues the execution of a paused flow.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| flow_name | string | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| flow_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -291,13 +289,13 @@ Creates a new node.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| node_type | string | 🟢 |
-| specific_library_name | string | ⚪ |
-| node_name | string | ⚪ |
-| parent_flow_name | string | ⚪ |
-| metadata | dict | ⚪ |
+| Name                  | Argument Type | Required |
+| --------------------- | :-----------: | :------: |
+| node_type             |    string     |    🟢    |
+| specific_library_name |    string     |    ⚪    |
+| node_name             |    string     |    ⚪    |
+| parent_flow_name      |    string     |    ⚪    |
+| metadata              |     dict      |    ⚪    |
 
 #### Return Value
 
@@ -319,9 +317,9 @@ Deletes an existing node.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| node_name | string | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| node_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -343,9 +341,9 @@ Executes a single node.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| node_name | string | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| node_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -367,9 +365,9 @@ Returns the resolution state of a node.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| node_name | string | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| node_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -391,9 +389,9 @@ Returns the metadata for a node.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| node_name | string | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| node_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -415,10 +413,10 @@ Sets the metadata for a node.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| node_name | string | 🟢 |
-| metadata | dict | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| node_name |    string     |    🟢    |
+| metadata  |     dict      |    🟢    |
 
 #### Return Value
 
@@ -441,8 +439,8 @@ Checks if a node exists.
 #### Arguments
 
 | Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| node | string | 🟢 |
+| ---- | :-----------: | :------: |
+| node |    string     |    🟢    |
 
 #### Return Value
 
@@ -464,9 +462,9 @@ Lists objects in the system.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| \*\*kwargs | dict | ⚪ |
+| Name       | Argument Type | Required |
+| ---------- | :-----------: | :------: |
+| \*\*kwargs |     dict      |    ⚪    |
 
 #### Return Value
 
@@ -489,8 +487,8 @@ Lists all parameters on a node.
 #### Arguments
 
 | Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| node | string | 🟢 |
+| ---- | :-----------: | :------: |
+| node |    string     |    🟢    |
 
 #### Return Value
 
@@ -512,23 +510,23 @@ Adds a parameter to a node.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| node_name | string | 🟢 |
-| parameter_name | string | 🟢 |
-| default_value | any | 🟢 |
-| tooltip | string or list | 🟢 |
-| type | string | ⚪ |
-| input_types | list of strings | ⚪ |
-| output_type | string | ⚪ |
-| edit | boolean | ⚪ |
-| tooltip_as_input | string or list | ⚪ |
-| tooltip_as_property | string or list | ⚪ |
-| tooltip_as_output | string or list | ⚪ |
-| ui_options | ParameterUIOptions | ⚪ |
-| mode_allowed_input | boolean | ⚪ |
-| mode_allowed_property | boolean | ⚪ |
-| mode_allowed_output | boolean | ⚪ |
+| Name                  |   Argument Type    | Required |
+| --------------------- | :----------------: | :------: |
+| node_name             |       string       |    🟢    |
+| parameter_name        |       string       |    🟢    |
+| default_value         |        any         |    🟢    |
+| tooltip               |   string or list   |    🟢    |
+| type                  |       string       |    ⚪    |
+| input_types           |  list of strings   |    ⚪    |
+| output_type           |       string       |    ⚪    |
+| edit                  |      boolean       |    ⚪    |
+| tooltip_as_input      |   string or list   |    ⚪    |
+| tooltip_as_property   |   string or list   |    ⚪    |
+| tooltip_as_output     |   string or list   |    ⚪    |
+| ui_options            | ParameterUIOptions |    ⚪    |
+| mode_allowed_input    |      boolean       |    ⚪    |
+| mode_allowed_property |      boolean       |    ⚪    |
+| mode_allowed_output   |      boolean       |    ⚪    |
 
 #### Return Value
 
@@ -550,10 +548,10 @@ Removes a parameter from a node.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| node_name | string | 🟢 |
-| parameter_name | string | 🟢 |
+| Name           | Argument Type | Required |
+| -------------- | :-----------: | :------: |
+| node_name      |    string     |    🟢    |
+| parameter_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -575,10 +573,10 @@ Gets information about a parameter.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| node | string | 🟢 |
-| param | string | 🟢 |
+| Name  | Argument Type | Required |
+| ----- | :-----------: | :------: |
+| node  |    string     |    🟢    |
+| param |    string     |    🟢    |
 
 #### Return Value
 
@@ -600,10 +598,10 @@ Gets the value of a parameter.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| node | string | 🟢 |
-| param | string | 🟢 |
+| Name  | Argument Type | Required |
+| ----- | :-----------: | :------: |
+| node  |    string     |    🟢    |
+| param |    string     |    🟢    |
 
 #### Return Value
 
@@ -625,11 +623,11 @@ Sets the value of a parameter.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| node | string | 🟢 |
-| param | string | 🟢 |
-| value | any | 🟢 |
+| Name  | Argument Type | Required |
+| ----- | :-----------: | :------: |
+| node  |    string     |    🟢    |
+| param |    string     |    🟢    |
+| value |      any      |    🟢    |
 
 #### Return Value
 
@@ -651,10 +649,10 @@ Creates a connection between two parameters.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| source | string | 🟢 |
-| destination | string | 🟢 |
+| Name        | Argument Type | Required |
+| ----------- | :-----------: | :------: |
+| source      |    string     |    🟢    |
+| destination |    string     |    🟢    |
 
 #### Return Value
 
@@ -676,9 +674,9 @@ Creates execution connections between a sequence of nodes.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| \*node_names | string(s) | 🟢 |
+| Name         | Argument Type | Required |
+| ------------ | :-----------: | :------: |
+| \*node_names |   string(s)   |    🟢    |
 
 #### Return Value
 
@@ -700,12 +698,12 @@ Deletes a connection between parameters.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| source_node_name | string | 🟢 |
-| source_param_name | string | 🟢 |
-| target_node_name | string | 🟢 |
-| target_param_name | string | 🟢 |
+| Name              | Argument Type | Required |
+| ----------------- | :-----------: | :------: |
+| source_node_name  |    string     |    🟢    |
+| source_param_name |    string     |    🟢    |
+| target_node_name  |    string     |    🟢    |
+| target_param_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -727,9 +725,9 @@ Lists all connections for a node.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| node_name | string | 🟢 |
+| Name      | Argument Type | Required |
+| --------- | :-----------: | :------: |
+| node_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -773,9 +771,9 @@ Lists all node types in a library.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| library_name | string | 🟢 |
+| Name         | Argument Type | Required |
+| ------------ | :-----------: | :------: |
+| library_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -797,10 +795,10 @@ Gets metadata for a node type.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| library_name | string | 🟢 |
-| node_type_name | string | 🟢 |
+| Name           | Argument Type | Required |
+| -------------- | :-----------: | :------: |
+| library_name   |    string     |    🟢    |
+| node_type_name |    string     |    🟢    |
 
 #### Return Value
 
@@ -822,9 +820,9 @@ Gets a configuration value.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| category_and_key | string | 🟢 |
+| Name             | Argument Type | Required |
+| ---------------- | :-----------: | :------: |
+| category_and_key |    string     |    🟢    |
 
 #### Return Value
 
@@ -846,10 +844,10 @@ Sets a configuration value.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| category_and_key | string | 🟢 |
-| value | any | 🟢 |
+| Name             | Argument Type | Required |
+| ---------------- | :-----------: | :------: |
+| category_and_key |    string     |    🟢    |
+| value            |      any      |    🟢    |
 
 #### Return Value
 
@@ -871,9 +869,9 @@ Gets all configuration values in a category.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| category | string | ⚪ |
+| Name     | Argument Type | Required |
+| -------- | :-----------: | :------: |
+| category |    string     |    ⚪    |
 
 #### Return Value
 
@@ -895,10 +893,10 @@ Sets configuration values for a category.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| category | string | ⚪ |
-| contents | dict | ⚪ |
+| Name     | Argument Type | Required |
+| -------- | :-----------: | :------: |
+| category |    string     |    ⚪    |
+| contents |     dict      |    ⚪    |
 
 #### Return Value
 
@@ -920,9 +918,9 @@ Executes arbitrary Python code.
 
 #### Arguments
 
-| Name | Argument Type | Required |
-|------|:---------------:|:-------:|
-| python_str | string | 🟢 |
+| Name       | Argument Type | Required |
+| ---------- | :-----------: | :------: |
+| python_str |    string     |    🟢    |
 
 #### Return Value
 
@@ -941,21 +939,19 @@ Executes the provided Python code string in the Griptape environment.
 flow = cmd.create_flow(flow_name="MyFlow")
 
 # Create two nodes in the flow
-node1 = cmd.create_node(node_type="TextNode", node_name="TextInput", parent_flow_name="MyFlow")
-node2 = cmd.create_node(node_type="SummaryNode", node_name="TextSummary", parent_flow_name="MyFlow")
+node1 = cmd.create_node(node_type="CreateText", node_name="MyText", parent_flow_name="MyFlow")
+node2 = cmd.create_node(node_type="RunAgent", node_name="MyAgent", parent_flow_name="MyFlow")
 ```
 
 ### Setting Parameter Values and Creating Connections
 
 ```python
 # Set a parameter value
-cmd.set_value("TextInput.text", "This is a sample text to summarize.")
+cmd.set_value("MyText.text", "This is a sample text to summarize.")
 
 # Connect two nodes
-cmd.connect("TextInput.output", "TextSummary.input")
+cmd.connect("MyText.text", "MyAgent.prompt")
 
-# Create an execution chain
-cmd.exec_chain("TextInput", "TextSummary")
 ```
 
 ### Running a Flow
@@ -965,24 +961,32 @@ cmd.exec_chain("TextInput", "TextSummary")
 cmd.run_flow("MyFlow")
 
 # Get the result
-summary = cmd.get_value("TextSummary.result")
-print(summary)
+summary = cmd.get_value("MyAgent.output")
+print(summary) # <whatever that summary would be!>
 ```
 
-### Modifying Parameters
+### Working with Parameters
 
 ```python
 # Add a new parameter to a node
 cmd.add_param(
-    node_name="TextSummary",
-    parameter_name="max_length",
+    node_name="MyAgent",
+    parameter_name="sunglasses",
     default_value=100,
-    tooltip="Maximum length of the summary in characters",
-    type="int"
+    tooltip="The coolness of sunglasses",
+    type=["int"]
 )
 
 # Set the value of the new parameter
-cmd.set_value("TextSummary.max_length", 50)
+cmd.set_value("MyAgent.sunglasses", 50)
+
+# Change the parameter
+cmd.add_param(
+    node_name="MyAgent",
+    parameter_name="sunglasses",
+    tooltip="The coolness of sunglasses if halved",
+    edit=1
+)
 ```
 
 ### Listing and Querying
@@ -990,13 +994,13 @@ cmd.set_value("TextSummary.max_length", 50)
 ```python
 # List all nodes in a flow
 nodes = cmd.get_nodes_in_flow("MyFlow")
-print(nodes)
+print(nodes) # ["MyText","MyAgent"]
 
 # List all parameters on a node
-params = cmd.list_params("TextSummary")
-print(params)
+params = cmd.list_params("MyAgent")
+print(params) # ["agent", "prompt_driver", "tools", "rulesets", "prompt", "prompt_context", "output"]
 
 # Check if a node exists
-if cmd.exists("TextInput"):
-    print("TextInput node exists")
+if cmd.exists("MyText"):
+    print("MyText node exists") # True
 ```

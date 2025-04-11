@@ -270,7 +270,7 @@ class ControlFlow:
             # if it's a control node, there could be a flow.
             control_param = False
             for parameter in node.parameters:
-                if parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
+                if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
                     control_param = True
                     break
             if not control_param:
@@ -284,7 +284,7 @@ class ControlFlow:
                 has_control_connection = False
                 for param_name in cn_mgr.incoming_index[node.name]:
                     param = node.get_parameter_by_name(param_name)
-                    if param and param.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
+                    if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
                         # there is a control connection coming in
                         has_control_connection = True
                         break
@@ -329,7 +329,7 @@ class ControlFlow:
             parameters = self.connections.incoming_index[node.name]
             for parameter_name in parameters:
                 parameter = node.get_parameter_by_name(parameter_name)
-                if parameter and parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
+                if parameter and ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
                     # this is a control connection
                     connection_ids = self.connections.incoming_index[node.name][parameter_name]
                     for connection_id in connection_ids:
@@ -405,7 +405,7 @@ class ControlFlow:
             if input_connections:
                 for input_node, input_parameter in input_connections:
                     if (
-                        not input_parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value)
+                        ParameterTypeBuiltin.CONTROL_TYPE.value != input_parameter.output_type
                         and input_node not in node_list
                     ):
                         node_list.append(input_node)

@@ -17,10 +17,10 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @dataclass
 @PayloadRegistry.register
 class AddParameterToNodeRequest(RequestPayload):
-    parameter_name: str
     node_name: str
-    default_value: Any | None
-    tooltip: str | list[dict]
+    parameter_name: str | None = None
+    default_value: Any | None = None
+    tooltip: str | list[dict] | None = None
     tooltip_as_input: str | list[dict] | None = None
     tooltip_as_property: str | list[dict] | None = None
     tooltip_as_output: str | list[dict] | None = None
@@ -31,6 +31,7 @@ class AddParameterToNodeRequest(RequestPayload):
     mode_allowed_input: bool = Field(default=True)
     mode_allowed_property: bool = Field(default=True)
     mode_allowed_output: bool = Field(default=True)
+    parent_container_name: str | None = None
 
     @classmethod
     def create(cls, **kwargs) -> AddParameterToNodeRequest:
@@ -51,7 +52,9 @@ class AddParameterToNodeRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class AddParameterToNodeResultSuccess(ResultPayloadSuccess):
-    pass
+    parameter_name: str
+    type: str
+    node_name: str
 
 
 @dataclass
@@ -166,6 +169,25 @@ class AlterParameterDetailsRequest(RequestPayload):
         # Create instance with known attributes and extra_attrs dict
         instance = cls(**known_attrs)
         return instance
+
+    @classmethod
+    def relevant_parameters(cls) -> list[str]:
+        return [
+            "parameter_name",
+            "node_name",
+            "type",
+            "input_types",
+            "output_type",
+            "default_value",
+            "tooltip",
+            "tooltip_as_input",
+            "tooltip_as_property",
+            "tooltip_as_output",
+            "mode_allowed_input",
+            "mode_allowed_property",
+            "mode_allowed_output",
+            "ui_options",
+        ]
 
 
 @dataclass

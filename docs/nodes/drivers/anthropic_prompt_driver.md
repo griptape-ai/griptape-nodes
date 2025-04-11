@@ -20,13 +20,9 @@ Use this node when you want to:
 1. Connect it to your flow
 1. Connect its output to nodes that need to use Claude (like RunAgent)
 
-### Required Fields
+### Parameters
 
-None - the node uses default settings if you don't change anything
-
-### Optional Configuration
-
-- **model**: The Claude model to use (default is "claude-3-5-sonnet-latest")
+- **model**: The Claude model to use (default is "claude-3-7-sonnet-latest")
 - **stream**: Whether to receive responses as they're generated (true) or all at once (false)
 - **temperature**: Controls randomness in responses (higher values = more creative, lower = more focused)
 - **max_attempts_on_fail**: How many times to retry if there's an error

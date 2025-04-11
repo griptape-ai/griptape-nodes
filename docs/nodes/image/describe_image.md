@@ -19,19 +19,19 @@ Use the DescribeImage node when:
 ### Basic Setup
 
 1. Add a DescribeImage node to your workflow
-2. Connect an Agent node to the agent parameter
-3. Connect an ImageArtifact to the image parameter
-4. Set a prompt describing what information you want about the image
-5. Connect the output to nodes that can process text output
+1. Connect an Agent node to the agent parameter
+1. Connect an ImageArtifact to the image parameter
+1. Set a prompt describing what information you want about the image
+1. Connect the output to nodes that can process text output
 
 ### Parameters
 
-**Inputs:**
 - **agent**: The agent used to describe the image (Agent or dict)
 - **image**: The image artifact to be described (ImageArtifact)
 - **prompt**: Instructions for how to describe the image (string)
-  
-**Outputs:**
+
+### Outputs
+
 - **output**: The textual description of the image (string)
 
 ## Important Notes

@@ -10,8 +10,8 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.button import Button
 
 
-class SaveText(ControlNode):
-    """Save text to a file."""
+class SaveDictionary(ControlNode):
+    """Save dict to a file."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
@@ -19,11 +19,11 @@ class SaveText(ControlNode):
         # Add text input parameter
         self.add_parameter(
             Parameter(
-                name="text",
-                input_types=["str"],
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                tooltip="The text content to save to file",
-                ui_options={"multiline": True, "placeholder_text": "Text to save to a file..."},
+                name="dict",
+                input_types=["dict"],
+                allowed_modes={ParameterMode.INPUT},
+                tooltip="The dictionary content to save to file",
+                ui_options={"multiline": True, "placeholder_text": "Dictionary to save to a file..."},
             )
         )
 
@@ -42,12 +42,16 @@ class SaveText(ControlNode):
 
     def process(self) -> None:
         """Process the node by saving text to a file."""
-        text = self.parameter_values.get("text", "")
-        full_output_file = self.parameter_values.get("output_path", "griptape_output.txt")
+        text = self.parameter_values.get("dict", {})
+        full_output_file = self.parameter_values.get("output_path", None)
+        if full_output_file is None or full_output_file == "":
+            msg = "Output path is required"
+            logger.error(msg)
+            raise ValueError(msg)
 
         try:
             with Path(full_output_file).open("w") as f:
-                f.write(text)
+                f.write(str(text))
             success_msg = f"Saved file: {full_output_file}"
             logger.info(success_msg)
 
@@ -58,19 +62,3 @@ class SaveText(ControlNode):
             error_message = str(e)
             msg = f"Error saving file: {error_message}"
             raise ValueError(msg) from e
-
-        """
-        Should this ^^^ work more like this? :
-
-        from griptape.artifacts import TextArtifact
-        from griptape.loaders import TextLoader
-        from rich import print
-        myFile = "MyFile.txt"
-        artifact = TextArtifact(
-            value="This is some text",
-            encoding="utf-8",
-            meta={"jason": "is cool", "coffee": "is good"},
-        )
-        print(artifact)
-        TextLoader().save(myFile, artifact)
-        """

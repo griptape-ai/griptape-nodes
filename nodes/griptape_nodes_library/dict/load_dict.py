@@ -1,13 +1,13 @@
-import os
 from typing import Any
 
-from griptape.loaders import PdfLoader, TextLoader
+from griptape.loaders import TextLoader
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.utils.dict_utils import to_dict
 
 
-class LoadText(ControlNode):
+class LoadDictionary(ControlNode):
     def __init__(
         self,
         name: str,
@@ -21,15 +21,10 @@ class LoadText(ControlNode):
             ".env",
             ".info",
             ".json",
-            ".log",
             ".text",
             ".txt",
             ".yaml",
             ".yml",
-            ".csv",
-            ".tsv",
-            ".md",
-            ".pdf",
         )
 
         # Add output parameters
@@ -48,8 +43,9 @@ class LoadText(ControlNode):
             Parameter(
                 name="output",
                 allowed_modes={ParameterMode.OUTPUT},
-                output_type="str",
-                default_value="",
+                type="dict",
+                output_type="dict",
+                default_value={},
                 tooltip="The text content of the loaded file.",
                 ui_options={"multiline": True, "placeholder_text": "Text will load here."},
             )
@@ -57,19 +53,16 @@ class LoadText(ControlNode):
 
     def process(self) -> None:
         # Get the selected file
-        text_path = self.parameter_values["path"]
+        text_path = self.parameter_values["file_path"]
 
         # Load file content based on extension
-        ext = os.path.splitext(text_path)[1]  # noqa: PTH122
-        if ext.lower() == ".pdf":
-            text_data = PdfLoader().load(text_path)[0]
-        else:
-            text_data = TextLoader().load(text_path)
+        text_data = TextLoader().load(text_path)
 
+        text_data_dict = to_dict(text_data.value)
         # Set output values
-        self.parameter_output_values["path"] = text_path
-        self.parameter_output_values["output"] = text_data.value
+        self.parameter_output_values["file_path"] = text_path
+        self.parameter_output_values["output"] = text_data_dict
 
         # Also set in parameter_values for get_value compatibility
-        self.parameter_values["path"] = text_path
-        self.parameter_values["output"] = text_data.value
+        self.parameter_values["file_path"] = text_path
+        self.parameter_values["output"] = text_data_dict

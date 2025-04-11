@@ -19,7 +19,7 @@ Use this node when you want to:
 1. Add the StartFlow to your workspace (it may be added automatically when you create a new workflow)
 1. Connect it to the first action node in your flow
 
-### Fields
+### Parameters
 
 - **control**: This is an output connection point for the flow (you connect this to other nodes)
 

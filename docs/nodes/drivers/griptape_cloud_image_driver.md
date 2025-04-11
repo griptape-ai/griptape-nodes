@@ -44,7 +44,7 @@ Imagine you want to create images using Griptape Cloud:
 - You need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY`
 - Currently, only DALL-E 3 is supported through this driver
 - The node will automatically adjust image sizes based on model capabilities:
-  - DALL-E 3 only supports 1024x1024, 1024x1792, and 1792x1024
+- DALL-E 3 only supports 1024x1024, 1024x1792, and 1792x1024
 
 ## Common Issues
 
