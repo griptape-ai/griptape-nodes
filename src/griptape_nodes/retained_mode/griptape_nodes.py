@@ -941,7 +941,7 @@ class FlowManager:
             node=source_node, parameter=source_param, is_source=True
         )
         if not restricted_scenario_connection:
-            # Check the incoming scenario.
+            # Check the INCOMING scenario.
             restricted_scenario_connection = connection_mgr.get_existing_connection_for_restricted_scenario(
                 node=target_node, parameter=target_param, is_source=False
             )

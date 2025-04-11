@@ -76,7 +76,7 @@ class Connections:
         Args:
             node: the Node we are querying
             parameter: the parameter on the Node
-            is_source: are we assessing this node/parameter combo as a SOURCE for a connection or as a TARGT?
+            is_source: are we assessing this node/parameter combo as a SOURCE for a connection or as a TARGET?
 
         Returns:
             None: if the source node/parameter isn't in a restricted scenario OR in a restricted scenario but no connection in place.
