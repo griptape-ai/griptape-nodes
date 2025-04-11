@@ -12,7 +12,7 @@ class CreateInteger(DataNode):
         self,
         name: str,
         metadata: dict[Any, Any] | None = None,
-        value: str = "",
+        value: int = 0,
     ) -> None:
         super().__init__(name, metadata)
 
@@ -29,5 +29,5 @@ class CreateInteger(DataNode):
         )
 
     def process(self) -> None:
-        # Simply output the default value or any updated property value
-        self.parameter_output_values["integer"] = self.parameter_values["integer"]
+        value = self.parameter_values.get("integer", 0)
+        self.parameter_output_values["integer"] = value
