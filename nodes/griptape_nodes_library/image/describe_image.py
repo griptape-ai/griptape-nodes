@@ -80,17 +80,19 @@ class DescribeImage(ControlNode):
     def process(self) -> None:
         # Get the parameters from the node
         params = self.parameter_values
-
         agent = params.get("agent", None)
+        default_prompt_driver = GriptapeCloudPromptDriver(
+            model="gpt-4o",
+            api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
+            stream=True,
+        )
         if not agent:
-            prompt_driver = GriptapeCloudPromptDriver(
-                model="gpt-4o",
-                api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
-                stream=True,
-            )
-            agent = Agent(prompt_driver=prompt_driver)
+            agent = Agent(prompt_driver=default_prompt_driver)
         else:
             agent = Agent().from_dict(agent)
+            # make sure the agent is using a PromptTask
+            if not isinstance(agent.tasks[0], PromptTask):
+                agent.add_task(PromptTask(prompt_driver=default_prompt_driver))
         prompt = params.get("prompt", "")
         if prompt == "":
             prompt = "Describe the image"
@@ -98,11 +100,8 @@ class DescribeImage(ControlNode):
         if image_artifact is None:
             self.parameter_output_values["output"] = "No image provided"
             return
-        # Make sure the agent is using a PromptTask
-        agent.add_task(PromptTask())
 
         # Run the agent
-
         result = agent.run([prompt, image_artifact])
         self.parameter_output_values["output"] = result.output.value
         try_throw_error(agent.output)
