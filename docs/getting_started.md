@@ -1,10 +1,10 @@
 # Getting Started with Griptape [nodes]
 
-An important bit of overview before we begin: Griptape [nodes] is actually two things that work together: An Engine, and a UI. The Engine will install and run on your computer, while the UI is served from the web, and you'll interact with your Engine through a web browser.
+An important bit of overview before we begin: Griptape [nodes] is actually two things that work together - an Engine and an Editor. The Engine will install and run on your computer, while the Editor is served from the web, and you'll interact with your Engine through a web browser.
 
 > - If you'd rather not install the Engine locally, it is also easy to run it in a hosted environment. The instructions that follow will work the same for either approach.
 
-> - There is no locally-hosted UI option
+> - There is no locally-hosted Editor option
 
 There are just 4 easy steps:
 
@@ -51,7 +51,7 @@ You'll see this message when installation has completed:
 
 ## 3. Configuration
 
-**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape [Nodes] engine will save [configuration settings](reference/glossary.md#Configuration Settings), [project files](reference/glossary.md#Project Files), and [generated assets](reference/glossary.md#Generated Assets). It will also contain a [.env](reference/glossary.md#.env) for your project [secret keys](reference/glossary.md#Secret Keys).
+**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape [nodes] engine will save [configuration settings](reference/glossary.md#Configuration Settings), [project files](reference/glossary.md#Project Files), and [generated assets](reference/glossary.md#Generated Assets). It will also contain a [.env](reference/glossary.md#.env) for your project [secret keys](reference/glossary.md#Secret Keys).
 
 ```
 ╭───────────────────────────────────────────────────────────────────╮
@@ -79,7 +79,7 @@ Workspace directory set to: /Users/user/Documents/local-dev/nodes-test-eng/Gript
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Griptape API Key                                                                                                        │
 │         A Griptape API Key is needed to proceed.                                                                        │
-│         This key allows the Griptape Nodes engine to communicate with the Griptape Nodes Editor.                        │
+│         This key allows the Griptape Nodes Engine to communicate with the Griptape Nodes Editor.                        │
 │         In order to get a key, visit https://nodes.griptape.ai in your browser and click the button "Generate API Key". │
 │         Once the key is created, copy and paste its value here to proceed.                                              │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -90,6 +90,6 @@ Griptape API Key (YOUR-KEY-HERE):
 
 ## 4. Start Your Engine
 
-You're ready to proceed. Run either `griptape-nodes` or `gtn` and refresh your browser. You should be taken to an Untitled flow in Griptape [nodes]!
+You're ready to proceed. Run either `griptape-nodes` or `gtn` and refresh your browser. You should be taken to an Untitled workflow in Griptape [nodes]!
 
 ![A Blank Griptape_nodes_ editor](assets/img/getting_started/getting_started-blank_editor.png)
