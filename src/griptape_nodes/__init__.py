@@ -128,7 +128,7 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
         explainer = f"""[bold cyan]Griptape API Key[/bold cyan]
         A Griptape API Key is needed to proceed.
         This key allows the Griptape Nodes engine to communicate with the Griptape Nodes Editor.
-        In order to get your key, return to your [link={NODES_APP_URL}]{NODES_APP_URL}[/link] tab in your browser and click the button 
+        In order to get your key, return to the [link={NODES_APP_URL}]{NODES_APP_URL}[/link] tab in your browser and click the button 
         "Generate API Key".
         Once the key is generated, copy and paste its value here to proceed."""
         console.print(Panel(explainer, expand=False))
