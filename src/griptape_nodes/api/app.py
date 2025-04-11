@@ -219,7 +219,7 @@ def sse_listener() -> None:
                                 message = Panel(
                                     Align.center(
                                         f"[bold green]Engine is ready to receive events[/bold green]\n"
-                                        f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link][/bold blue]",
+                                        f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link][/bold blue] to access the IDE",
                                         vertical="middle",
                                     ),
                                     title="🚀 Engine Started",
