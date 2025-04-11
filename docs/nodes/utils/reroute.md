@@ -27,8 +27,6 @@ Use the Reroute node when:
 
 ### Parameters
 
-**Inputs/Outputs:**
-
 - **passThru**: A parameter that can function as both input and output, dynamically adapting its allowed types based on connections
 
 ## Important Notes
