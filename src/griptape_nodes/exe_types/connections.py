@@ -69,12 +69,12 @@ class Connections:
         # Here are the rules:
         # A Control Parameter can have multiple connections as an input, but only one output.
         # A Data Parameter can have one connection as input, but multiple outputs.
-        if source and parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
+        if source and ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
             connections = self.outgoing_index
             connections_from_node = connections.get(node.name, {})
             connection_id = connections_from_node.get(parameter.name, [])
             return len(connection_id) <= 0
-        if not source and not parameter.is_incoming_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
+        if not source and ParameterTypeBuiltin.CONTROL_TYPE.value not in parameter.input_types:
             connections = self.incoming_index
             connections_from_node = connections.get(node.name, {})
             connection_id = connections_from_node.get(parameter.name, [])
@@ -83,7 +83,7 @@ class Connections:
 
     def get_connected_node(self, node: BaseNode, parameter: Parameter) -> tuple[BaseNode, Parameter] | None:
         # Check to see if we should be getting the next connection or the previous connection based on the parameter.
-        if parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
+        if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
             connections = self.outgoing_index
         else:
             connections = self.incoming_index
@@ -99,7 +99,7 @@ class Connections:
         connection_id = connection_id[0]
         if connection_id in self.connections:
             connection = self.connections[connection_id]
-            if parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value):
+            if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
                 # Return the target (next place to go)
                 return connection.target_node, connection.target_parameter
             # Return the source (next place to chain back to)
@@ -162,7 +162,7 @@ class Connections:
             # If it is a data connection and has an OUTPUT type
             if (
                 ParameterMode.OUTPUT in parameter.allowed_modes
-                and not parameter.is_outgoing_type_allowed(ParameterTypeBuiltin.CONTROL_TYPE.value)
+                and ParameterTypeBuiltin.CONTROL_TYPE.value != parameter.output_type
                 # check if a outgoing connection exists from this parameter
                 and parameter.name in self.outgoing_index[node.name]
             ):

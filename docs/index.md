@@ -1,4 +1,5 @@
 # Unleash Your AI Superpowers with Griptape [nodes]
+
 Imagine being able to harness the full power of today's most advanced AI models without writing a single line of complex code. That's exactly what Griptape [nodes] delivers.
 What if you could:
 

@@ -354,7 +354,7 @@ def deserialize_event(json_data) -> BaseEvent:
     if event_type == "EventRequest":
         if request_type:
             return EventRequest.from_dict(data, request_type)
-        msg = f"Cannot deserialize EventRequest: unknown payload type {request_type_name}"
+        msg = f"Cannot deserialize EventRequest: unknown payload type '{request_type_name}'"
         raise ValueError(msg)
     if event_type == "EventResultSuccess":
         if request_type and result_type:

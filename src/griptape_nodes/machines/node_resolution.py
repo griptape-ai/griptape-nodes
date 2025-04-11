@@ -80,7 +80,7 @@ class EvaluateParameterState(State):
     def on_enter(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1]
         current_parameter = current_node.get_current_parameter()
-        if not current_parameter:
+        if current_parameter is None:
             return ExecuteNodeState
         # if not in debug mode - keep going!
         EventBus.publish_event(
@@ -143,19 +143,20 @@ class ExecuteNodeState(State):
         for parameter in current_node.parameters:
             if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
                 continue
-            if parameter.name not in current_node.parameter_values and parameter.default_value:
+            if parameter.name not in current_node.parameter_values:
                 # If a parameter value is not already set
-                value = parameter.default_value
-                modified_parameters = current_node.set_parameter_value(parameter.name, value)
-                if modified_parameters:
-                    for modified_parameter_name in modified_parameters:
-                        # TODO(kate): Move to a different type of event
-                        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+                value = current_node.get_parameter_value(parameter.name)
+                if value is not None:
+                    modified_parameters = current_node.set_parameter_value(parameter.name, value)
+                    if modified_parameters:
+                        for modified_parameter_name in modified_parameters:
+                            # TODO(kate): Move to a different type of event
+                            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-                        modified_request = GetParameterDetailsRequest(
-                            parameter_name=modified_parameter_name, node_name=current_node.name
-                        )
-                        GriptapeNodes.handle_request(modified_request)
+                            modified_request = GetParameterDetailsRequest(
+                                parameter_name=modified_parameter_name, node_name=current_node.name
+                            )
+                            GriptapeNodes.handle_request(modified_request)
             if parameter.name in current_node.parameter_values:
                 parameter_value = current_node.get_parameter_value(parameter.name)
                 data_type = parameter.type
