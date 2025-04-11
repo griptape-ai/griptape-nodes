@@ -16,11 +16,12 @@ class CreateFloat(DataNode):
     ) -> None:
         super().__init__(name, metadata)
 
+        self.value = value
         # Add output parameter for the string
         self.add_parameter(
             Parameter(
                 name="float",
-                default_value=value,
+                default_value=self.value,
                 output_type="float",
                 type="float",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
@@ -29,5 +30,4 @@ class CreateFloat(DataNode):
         )
 
     def process(self) -> None:
-        value = self.parameter_values.get("float", 0.0)
-        self.parameter_output_values["float"] = value
+        self.parameter_output_values["float"] = self.parameter_values.get("float", self.value)
