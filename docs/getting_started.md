@@ -68,8 +68,6 @@ Workspace Directory (/Users/user/Documents/local-dev/nodes-test-eng/GriptapeNode
 
 Pressing Enter will use the default: `<current_working_directory>/GriptapeNodes`, where `<current_working_directory>` is the directory from which you're running the `gtn` command. Alternatively, you can specify any location you prefer.
 
-Pressing Enter will use the default: `working directory/GriptapeNodes`. Alternatively, you can set another location.
-
 > You can always return to this dialog using the `gtn init` command if you need to make changes in the future.
 
 **Second**, you'll be prompted for your Griptape Cloud API Key. Return to the web browser and click the *Generate API Key* button. Copy that key and enter it in the next step.
