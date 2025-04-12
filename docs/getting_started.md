@@ -51,7 +51,7 @@ You'll see this message when installation has completed:
 
 ## 3. Configuration
 
-**First**, you'll be prompted to set your *workspace directory*. The workspace directory is the root for your projects, saved workflows, and potentially project-specific settings.
+**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape [nodes] engine will save [configuration settings](reference/glossary.md#Configuration Settings), [project files](reference/glossary.md#Project Files), and [generated assets](reference/glossary.md#Generated Assets). It will also contain a [.env](reference/glossary.md#.env) for your project [secret keys](reference/glossary.md#Secret Keys).
 ```
 ╭───────────────────────────────────────────────────────────────────╮
 │ Workspace Directory                                               │
