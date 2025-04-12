@@ -58,6 +58,9 @@ nav:
       - Overview: index.md
       - Getting Started: getting_started.md
       - Engine Configuration: configuration.md
+  - How-To:
+      - Making Custom Nodes: how_to/making_custom_nodes.md
+      - Making Custom Scripts: how_to/making_custom_scripts.md
   - FAQ: faq.md
   - Reference: 
       - Glossary: reference/glossary.md
