@@ -2,7 +2,7 @@
 
 ## Where does my stuff save?
 
-Can't find where Griptape [nodes] is hiding on your system? No worries! Run this command in your terminal to reveal where everything is stored:
+Run this command in your terminal to reveal where stuff is stored:
 
 For Mac/Linux:
 ```bash
