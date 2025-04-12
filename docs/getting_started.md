@@ -51,22 +51,22 @@ You'll see this message when installation has completed:
 
 ## 3. Configuration
 
-**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape [nodes] engine will save \[configuration settings\](reference/glossary.md#Configuration Settings), \[project files\](reference/glossary.md#Project Files), and \[generated assets\](reference/glossary.md#Generated Assets). It will also contain a [.env](reference/glossary.md#.env) for your project \[secret keys\](reference/glossary.md#Secret Keys).
-
+**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape [nodes] engine will save [configuration settings](reference/glossary.md#Configuration Settings), [project files](reference/glossary.md#Project Files), and [generated assets](reference/glossary.md#Generated Assets). It will also contain a [.env](reference/glossary.md#.env) for your project [secret keys](reference/glossary.md#Secret Keys).
 ```
 ╭───────────────────────────────────────────────────────────────────╮
 │ Workspace Directory                                               │
-│     Select the workspace directory.  This is the location where   │
-│     Griptape Nodes will store your saved workflows, configuration │
-│     data, and secrets.                                            │
+│     Select the workspace directory. This is the root for your     │
+│     projects, saved workflows, and potentially project-specific   │
+│     settings. By default, this will be set to                     │
+│     "<current_working_directory>/GriptapeNodes", which is the     │
+│     directory from which you run the 'gtn' command.               │
 │     You may enter a custom directory or press Return to accept    │
-│     the default workspace directory                               │
+│     the default workspace directory.                              │
 ╰───────────────────────────────────────────────────────────────────╯
-
 Workspace Directory (/Users/user/Documents/local-dev/nodes-test-eng/GriptapeNodes)
 ```
 
-Pressing Enter will use the default: `working directory/GriptapeNodes`. Alternatively, you can set another location.
+Pressing Enter will use the default: `<current_working_directory>/GriptapeNodes`, where `<current_working_directory>` is the directory from which you're running the `gtn` command. Alternatively, you can specify any location you prefer.
 
 > You can always return to this dialog using the `gtn init` command if you need to make changes in the future.
 
