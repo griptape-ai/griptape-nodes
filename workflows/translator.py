@@ -1,10 +1,7 @@
-from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd
+from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd  # noqa: N813
 
 # Create flows
-try:
-    cmd.create_flow(flow_name="translator")
-except:
-    pass
+cmd.create_flow(flow_name="translator")
 
 # Create nodes
 cmd.create_node(
