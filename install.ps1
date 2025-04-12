@@ -8,7 +8,7 @@ try {
 # Verify uv is on the user's PATH
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Write-Host "Error: Griptape Nodes dependency 'uv' was installed but requires the terminal instance to be restarted to be run."
-    Write-Host "Please close this terminal instance, open a new terminal instance, and then run the install command you performed earlier."
+    Write-Host "Please close this terminal instance, open a new terminal instance, and then re-run the install command you performed earlier."
     exit 1
 }
 
