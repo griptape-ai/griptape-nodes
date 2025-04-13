@@ -37,35 +37,35 @@ Use this node when you want to:
 
 ## Example
 
-Imagine you want to create an agent that can search the web and summarize information:
+Imagine you want to create an agent that can write haikus based on prompt_context:
 
-1. Add a CreateAgent
-2. Add a web search tool to the "tools" parameter
-3. Add context information to "prompt_context" if needed (such as {"topic": "artificial intelligence"})
-4. In the "prompt" field, type: "Search for the latest developments in AI and summarize them"
-5. Run the node
-6. The "output" will contain the agent's response with the summary
-7. The "agent" output can be connected to other nodes that need to use this configured agent
+
+1. Add a KeyValuePair
+2. Set the "key" to "topic" and "value" to "swimming"
+3. Add a CreateAgent
+4. Set the "prompt" to "write me a haiku about {{topic}}"
+5. Connect the KeyValuePair dictionary output to the CreateAgent prompt_context input
+5. Run the workflow
+6. The CreateAgent "output" will contain a haiku about swimming!
 
 ## Important Notes
 
 - If you don't provide a prompt, the node will create the agent without running it and the output will contain exactly "Agent Created"
 - The node supports both streaming and non-streaming prompt drivers
 - Tools and rulesets can be provided as individual items or as lists
-- The prompt_context parameter allows you to provide additional context to the agent as key-value pairs
-- You need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY`
+- The prompt_context parameter allows you to provide additional context to the agent as a dictionary
+- By default, you need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY` for the node to work.  Depending on the models you want to use, the keys you need will be different.
 - CreateAgent is designed for detailed configuration while RunAgent is for execution. Use CreateAgent when you need to:
-  - Configure an agent once and run it multiple times with different prompts
-  - Set up complex combinations of tools and rulesets
-  - Create specialized agents for different tasks in your workflow
+    - Configure an agent once and run it multiple times with different prompts
+    - Set up complex combinations of tools and rulesets
+    - Create specialized agents for different tasks in your workflow
 - When you pass an agent from one node to another using the agent output pin, the conversation memory is maintained, which means:
-  - The agent "remembers" previous interactions in the same flow
-  - Context from previous prompts influences how the agent interprets new prompts
-  - You can build multi-turn conversations across multiple nodes
-  - The agent can reference information provided in earlier steps of your workflow
+    - The agent "remembers" previous interactions in the same flow
+    - Context from previous prompts influences how the agent interprets new prompts
+    - You can build multi-turn conversations across multiple nodes
+    - The agent can reference information provided in earlier steps of your workflow
 
 ## Common Issues
 
-- **Configuration Mismatch**: Ensure your tools and rulesets are compatible with each other
-- **Missing Prompt Driver**: If not specified, the node will use a default prompt driver
+- **Missing Prompt Driver**: If not specified, the node will use the default prompt driver (It will use the GT_CLOUD_API_KEY and gpt-4o)
 - **Streaming Issues**: If using a streaming prompt driver, ensure your flow supports handling streamed outputs

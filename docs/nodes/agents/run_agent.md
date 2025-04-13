@@ -50,7 +50,7 @@ Or with an existing agent:
 
 ## Important Notes
 
-- If no agent is provided, the node creates a default agent using GPT-4o
+- If no agent is provided, the node will use your GT_CLOUD_API_KEY and gpt-4o
 - The node automatically uses the Griptape Cloud API with streaming enabled
 - You need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY`
 - If you don't provide a prompt, the node will just create the agent without running it and the output will contain exactly "Agent Created"
