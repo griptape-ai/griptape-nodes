@@ -1939,6 +1939,8 @@ class NodeManager:
         if parameter_group is not None:
             for child in parameter_group.find_elements_by_type(Parameter):
                 GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, request.node_name))
+            node.remove_group_by_name(request.parameter_name)
+            return RemoveParameterFromNodeResultSuccess()
 
         # No tricky stuff, users!
         if parameter.user_defined is False:
