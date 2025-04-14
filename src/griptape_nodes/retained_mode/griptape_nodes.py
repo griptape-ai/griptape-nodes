@@ -1929,12 +1929,16 @@ class NodeManager:
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(request.parameter_name)
-        if parameter is None:
+        parameter_group = node.get_group_by_name(request.parameter_name)
+        if parameter is None and parameter_group is None:
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because it didn't have a Parameter with that name on it."
             logger.error(details)
 
             result = RemoveParameterFromNodeResultFailure()
             return result
+        if parameter_group is not None:
+            for child in parameter_group.find_elements_by_type(Parameter):
+                GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, request.node_name))
 
         # No tricky stuff, users!
         if parameter.user_defined is False:
