@@ -6,6 +6,10 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayloadFailure,
     ResultPayloadSuccess,
 )
+from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
+from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest
+from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileRequest
+from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
@@ -172,3 +176,56 @@ class LoadWorkflowMetadataResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class LoadWorkflowMetadataResultFailure(ResultPayloadFailure):
     pass
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeNodeCommandsRequest(RequestPayload):
+    node_name: str | None
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeNodeCommandsResultSuccess(ResultPayloadSuccess):
+    create_node_request: CreateNodeRequest
+    parameter_requests: list[RequestPayload]
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeNodeCommandsResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeFlowCommandsRequest(RequestPayload):
+    flow_name: str | None
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeFlowCommandsResultSuccess(ResultPayloadSuccess):
+    create_flow_request: CreateFlowRequest
+    node_requests: list[SerializeNodeCommandsRequest]
+    connection_requests: list[CreateConnectionRequest]
+    sub_flow_requests: list[SerializeFlowCommandsRequest]
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeFlowCommandsResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeWorkflowCommandsRequest(RequestPayload):
+    workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeWorkflowCommandsResultSuccess(ResultPayloadSuccess):
+    library_requests: list[RegisterLibraryFromFileRequest]
+    flow_request: SerializeFlowCommandsRequest

@@ -221,6 +221,12 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowRequest,
     SaveWorkflowResultFailure,
     SaveWorkflowResultSuccess,
+    SerializeFlowCommandsRequest,
+    SerializeFlowCommandsResultFailure,
+    SerializeFlowCommandsResultSuccess,
+    SerializeNodeCommandsRequest,
+    SerializeNodeCommandsResultFailure,
+    SerializeNodeCommandsResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -2923,6 +2929,8 @@ class WorkflowManager:
             self.on_save_workflow_request,
         )
         event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
+        event_manager.assign_manager_to_request_type(SerializeFlowCommandsRequest, self.on_serialize_flow_request)
+        event_manager.assign_manager_to_request_type(SerializeNodeCommandsRequest, self.on_serialize_node_request)
 
     def run_workflow(self, relative_file_path: str) -> tuple[bool, str]:
         relative_file_path_obj = Path(relative_file_path)
@@ -3092,6 +3100,82 @@ class WorkflowManager:
             return RenameWorkflowResultFailure()
 
         return RenameWorkflowResultSuccess()
+
+    def on_serialize_flow_request(self, request: SerializeFlowCommandsRequest) -> ResultPayload:
+        pass
+
+    def on_serialize_node_request(self, request: SerializeNodeCommandsRequest) -> ResultPayload:  # noqa: C901
+        node_name = request.node_name
+        if node_name is None:
+            # Grab from the context manager.
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to serialize a Node from the Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return SerializeNodeCommandsResultFailure()
+            node_name = GriptapeNodes.ContextManager().pop_node()
+
+        # Does this node exist?
+        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to serialize a Node '{node_name}', but no such Node was found."
+            logger.error(details)
+
+            result = SerializeNodeCommandsResultFailure()
+            return result
+
+        # This is our current dude.
+        with GriptapeNodes.ContextManager().node(node_name=node_name):
+            # Get creation details.
+            create_request = CreateNodeRequest(
+                node_type=node.__class__.__name__,
+                node_name=node.name,
+                specific_library_name=node.metadata["library"],
+                metadata=node.metadata,
+            )
+
+            # We're going to compare this node instance vs. a canonical one. Rez that one up.
+            reference_node = type(node)(name="REFERENCE NODE")
+
+            # Now all of the parameters.
+            parameter_requests = []
+            for parameter in node.parameters:
+                param_dict = vars(parameter)
+                # Create the parameter, or alter it on the existing node
+                if parameter.user_defined:
+                    param_dict["node_name"] = node.name
+                    add_param_request = AddParameterToNodeRequest.create(**param_dict)
+                    parameter_requests.append(add_param_request)
+                else:
+                    # Not user defined. Get any deltas from a canonical one.
+                    diff = manage_alter_details(parameter, reference_node)
+                    relevant = False
+                    for key in diff:
+                        if key in AlterParameterDetailsRequest.relevant_parameters():
+                            relevant = True
+                            break
+                    if relevant:
+                        diff["node_name"] = node.name
+                        diff["parameter_name"] = parameter.name
+                        alter_param_request = AlterParameterDetailsRequest.create(**diff)
+                        parameter_requests.append(alter_param_request)
+                if parameter.name in node.parameter_values and parameter.name not in node.parameter_output_values:
+                    try:
+                        # SetParameterValueRequest event
+                        set_param_value_request = handle_parameter_value_saving(parameter, node)
+                        parameter_requests.append(set_param_value_request)
+                    except Exception as e:
+                        details = f"Failed to serialize Node because failed to save parameter creation for node '{node.name}'. Error: {e}"
+                        logger.error(details)
+                        return SerializeNodeCommandsResultFailure()
+
+        # Hooray
+        details = f"Successfully serialized node '{node_name}' into commands."
+        logger.debug(details)
+        result = SerializeNodeCommandsResultSuccess(
+            create_node_request=create_request, parameter_requests=parameter_requests
+        )
+        return result
 
     def on_load_workflow_metadata_request(self, request: LoadWorkflowMetadata) -> ResultPayload:
         # Let us go into the darkness.
@@ -3346,14 +3430,16 @@ def handle_parameter_creation_saving(file: TextIO, node: BaseNode, flow_name: st
                 file.write(code_string + "\n")
         if parameter.name in node.parameter_values and parameter.name not in node.parameter_output_values:
             # SetParameterValueRequest event
-            code_string = handle_parameter_value_saving(parameter, node, flow_name)
-            if code_string:
+            set_param_value_request = handle_parameter_value_saving(parameter, node)
+            if set_param_value_request:
+                code_string = f"GriptapeNodes().handle_request({set_param_value_request})"
                 file.write(code_string + "\n")
 
 
-def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, flow_name: str) -> str | None:
-    flow_manager = GriptapeNodes()._flow_manager
-    parent_flow = flow_manager.get_flow_by_name(flow_name)
+def handle_parameter_value_saving(parameter: Parameter, node: BaseNode) -> SetParameterValueRequest | None:
+    # Get the node's parent flow.
+    parent_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node.name)
+    parent_flow = GriptapeNodes.FlowManager().get_flow_by_name(parent_flow_name)
     if not (
         node.name in parent_flow.connections.incoming_index
         and parameter.name in parent_flow.connections.incoming_index[node.name]
@@ -3368,12 +3454,12 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, flow_nam
             value = str(value.__dict__)
             safe_conversion = True
         if safe_conversion:
-            creation_request = SetParameterValueRequest(
+            set_param_value_request = SetParameterValueRequest(
                 parameter_name=parameter.name,
                 node_name=node.name,
                 value=value,
             )
-            return f"GriptapeNodes().handle_request({creation_request})"
+            return set_param_value_request
     return None
 
 
