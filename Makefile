@@ -60,7 +60,7 @@ check: check/format check/lint check/types check/spell ## Run all checks.
 .PHONY: check/format
 check/format:
 	@uv run ruff format --check
-	@uv run mdformat --check .
+	@uv run mdformat --check . --exclude .venv/**/*.md
 
 .PHONY: check/lint
 check/lint:
