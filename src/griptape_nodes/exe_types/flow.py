@@ -113,7 +113,6 @@ class ControlFlow:
         self.single_node_resolution = True
         # Get the node resolution machine for the current flow!
         resolution_machine = self.control_flow_machine._context.resolution_machine
-        self.control_flow_machine._context.current_node = node
         # Set debug mode
         resolution_machine.change_debug_mode(debug_mode)
         # Resolve the node.
