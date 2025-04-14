@@ -3091,6 +3091,8 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode) -> str |
         elif hasattr(value, "__dict__"):
             value = str(value.__dict__)
             safe_conversion = True
+        elif isinstance(value,(str,dict)):
+            safe_conversion = True
         if safe_conversion:
             creation_request = SetParameterValueRequest(
                 parameter_name=parameter.name,
