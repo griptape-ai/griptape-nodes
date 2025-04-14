@@ -80,6 +80,10 @@ class BaseAgent(ControlNode):
             )
         self.add_node_element(output_group)
 
+        # Store parameter groups for later use
+        self.agent_configuration_group = agent_configuration
+        self.agent_response_group = output_group
+
     def validate_node(self) -> list[Exception] | None:
         # All env values are stored in the SecretsManager. Check if they exist using this method.
         exceptions = []
