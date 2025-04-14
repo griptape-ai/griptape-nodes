@@ -186,6 +186,8 @@ class BaseNode(ABC):
         self.add_node_element(param)
 
     def remove_parameter(self, param: Parameter) -> None:
+        for child in param.find_elements_by_type(Parameter):
+            self.remove_node_element(child)
         self.remove_node_element(param)
 
     def add_node_element(self, ui_element: BaseNodeElement) -> None:

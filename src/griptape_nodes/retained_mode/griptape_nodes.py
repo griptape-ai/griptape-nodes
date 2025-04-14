@@ -588,7 +588,7 @@ class ObjectManager:
         return None
 
     def del_obj_by_name(self, name: str) -> None:
-        # Does the object have any children? delete those 
+        # Does the object have any children? delete those
         obj = self._name_to_objects[name]
         if isinstance(obj, BaseNodeElement):
             children = obj.find_elements_by_type(BaseNodeElement)
