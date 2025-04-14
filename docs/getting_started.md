@@ -80,8 +80,9 @@ Workspace directory set to: /Users/user/Documents/local-dev/nodes-test-eng/Gript
 │ Griptape API Key                                                                                                        │
 │         A Griptape API Key is needed to proceed.                                                                        │
 │         This key allows the Griptape Nodes Engine to communicate with the Griptape Nodes Editor.                        │
-│         In order to get a key, visit https://nodes.griptape.ai in your browser and click the button "Generate API Key". │
-│         Once the key is created, copy and paste its value here to proceed.                                              │
+│         In order to get your key, return to the https://nodes.griptape.ai tab in your browser and click the button      │
+│         "Generate API Key".                                                                                             │
+│         Once the key is generated, copy and paste its value here to proceed.                                            │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 Griptape API Key (YOUR-KEY-HERE):
 ```
