@@ -2,8 +2,6 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.utils import Stream
 
-from griptape_nodes.exe_types.core_types import ParameterGroup
-from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.agents.create_agent import CreateAgent
 
 DEFAULT_MODEL = "gpt-4o"
@@ -17,15 +15,8 @@ class RunAgent(CreateAgent):
 
         # Remove unused inputs
 
-        # Get Parameter Groups
-        parameter_groups = [element for element in self.root_ui_element.children if isinstance(element, ParameterGroup)]
         # Remove all Agent Configurations
-        for group in parameter_groups:
-            if group.group_name == "Agent Configuration":
-                try:
-                    self.remove_node_element(group)
-                except Exception as e:
-                    logger.error(f"Error removing element: {e}")
+        self.remove_node_element(self.agent_configuration_group)
 
         # Remove unused parameters
         param = self.get_parameter_by_name("rulesets")
@@ -37,9 +28,6 @@ class RunAgent(CreateAgent):
         param = self.get_parameter_by_name("prompt_driver")
         if param:
             self.remove_parameter(param)
-        group = self.get_parameter_by_name("Agent Abilities")
-        if group:
-            self.remove_parameter(group)
 
     def process(self) -> None:
         # Get input values
