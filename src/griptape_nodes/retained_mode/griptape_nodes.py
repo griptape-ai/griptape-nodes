@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from rich.logging import RichHandler
 from xdg_base_dirs import xdg_data_home
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterContainer, ParameterMode, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, ParameterContainer, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -588,6 +588,18 @@ class ObjectManager:
         return None
 
     def del_obj_by_name(self, name: str) -> None:
+        # Does the object have any children? delete those 
+        obj = self._name_to_objects[name]
+        if isinstance(obj, BaseNodeElement):
+            children = obj.find_elements_by_type(BaseNodeElement)
+            for child in children:
+                obj.remove_child(child)
+                if isinstance(child, BaseNode):
+                    GriptapeNodes.handle_request(DeleteNodeRequest(child.name))
+                    return
+                if isinstance(child, Parameter) and isinstance(obj, BaseNode):
+                    GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, obj.name))
+                    return
         del self._name_to_objects[name]
 
 
