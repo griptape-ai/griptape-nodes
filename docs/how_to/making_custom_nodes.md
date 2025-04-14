@@ -17,13 +17,14 @@ This template provides a structured foundation with all the necessary boilerplat
 ## Custom Node Development Workflow
 
 1. **Use the template repository** - Create your own repository from the GitHub template
-2. **Set up your environment** - Clone the repo to your Griptape Nodes workspace directory 
-3. **Configure your library** - Rename directories and update package information in `pyproject.toml`
-4. **Create your nodes** - Define node classes (either ControlNode or DataNode) with appropriate parameters
-5. **Implement your logic** - Code the required `process()` method and any additional functionality
-6. **Configure library metadata** - Set up your library.json file with nodes and category information
-7. **Register with the engine** - Add your library to Griptape Nodes through the settings interface
-8. **Test and use** - Create flows using your custom nodes in the Griptape Nodes interface
+1. **Set up your environment** - Clone the repo to your Griptape Nodes workspace directory
+1. **Configure your library** - Rename directories and update package information in `pyproject.toml`
+1. **Create your nodes** - Define node classes (either ControlNode or DataNode) with appropriate parameters
+1. **Implement your logic** - Code the required `process()` method and any additional functionality
+1. **Configure library metadata** - Set up your library.json file with nodes and category information
+1. **Register with the engine** - Add your library to Griptape Nodes through the settings interface
+1. **Test and use** - Create flows using your custom nodes in the Griptape Nodes interface
+
 ## Best Practices for Custom Node Development
 
 - Keep nodes focused on single responsibilities
