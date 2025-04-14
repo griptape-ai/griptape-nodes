@@ -13,6 +13,8 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 class CreateFlowRequest(RequestPayload):
     parent_flow_name: str | None
     flow_name: str | None = None
+    # When None or True, this Flow will be pushed as the new current context.
+    set_as_new_context: bool | None = True
 
 
 @dataclass
@@ -30,7 +32,7 @@ class CreateFlowResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class DeleteFlowRequest(RequestPayload):
-    flow_name: str
+    flow_name: str | None = None
 
 
 @dataclass
@@ -48,7 +50,7 @@ class DeleteFlowResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class ListNodesInFlowRequest(RequestPayload):
-    flow_name: str
+    flow_name: str | None = None
 
 
 @dataclass

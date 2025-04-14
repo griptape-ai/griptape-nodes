@@ -22,6 +22,8 @@ class CreateNodeRequest(RequestPayload):
     node_name: str | None = None
     override_parent_flow_name: str | None = None
     metadata: dict | None = None
+    # When None or True, this Flow will be pushed as the new current context.
+    set_as_new_context: bool | None = True
 
 
 @dataclass
@@ -39,7 +41,7 @@ class CreateNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class DeleteNodeRequest(RequestPayload):
-    node_name: str
+    node_name: str | None = None  # If none, uses current context's node
 
 
 @dataclass
