@@ -14,6 +14,11 @@ class RunAgent(CreateAgent):
         super().__init__(**kwargs)
 
         # Remove unused inputs
+
+        # Remove all Agent Configurations
+        self.remove_node_element(self.agent_configuration_group)
+
+        # Remove unused parameters
         param = self.get_parameter_by_name("rulesets")
         if param:
             self.remove_parameter(param)
@@ -23,9 +28,6 @@ class RunAgent(CreateAgent):
         param = self.get_parameter_by_name("prompt_driver")
         if param:
             self.remove_parameter(param)
-        group = self.get_parameter_by_name("Agent Abilities")
-        if group:
-            self.remove_parameter(group)
 
     def process(self) -> None:
         # Get input values
@@ -43,6 +45,8 @@ class RunAgent(CreateAgent):
             agent = Agent().from_dict(agent_dict)
 
         prompt = params.get("prompt", None)
+        agent = self.set_context(agent)
+
         if prompt:
             full_output = ""
             # Check and see if the prompt driver is a stream driver
