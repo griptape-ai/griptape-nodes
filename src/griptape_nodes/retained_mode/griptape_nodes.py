@@ -3071,30 +3071,33 @@ def handle_parameter_creation_saving(file: TextIO, node: BaseNode, flow_name: st
                 file.write(code_string + "\n")
         if parameter.name in node.parameter_values or parameter.name in node.parameter_output_values:
             # SetParameterValueRequest event
-            code_string = handle_parameter_value_saving(parameter, node, flow_name)
+            code_string = handle_parameter_value_saving(parameter, node)
             if code_string:
                 file.write(code_string + "\n")
 
 
-def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, flow_name: str) -> str | None:
-    flow_manager = GriptapeNodes()._flow_manager
-    #parent_flow = flow_manager.get_flow_by_name(flow_name)
-    value = node.get_parameter_value(parameter.name)
+def handle_parameter_value_saving(parameter: Parameter, node: BaseNode) -> str | None:
+    value = None
+    if parameter.name in node.parameter_values:
+        value = node.get_parameter_value(parameter.name)
+    elif parameter.name in node.parameter_output_values:
+        value = node.parameter_output_values[parameter.name]
     safe_conversion = False
-    if hasattr(value, "__str__") and value.__class__.__str__ is not object.__str__:
-        value = str(value)
-        safe_conversion = True
-    # If it doesn't have a custom __str__, convert to dict if possible
-    elif hasattr(value, "__dict__"):
-        value = str(value.__dict__)
-        safe_conversion = True
-    if safe_conversion:
-        creation_request = SetParameterValueRequest(
-            parameter_name=parameter.name,
-            node_name=node.name,
-            value=value,
-        )
-        return f"GriptapeNodes().handle_request({creation_request})"
+    if value:
+        if hasattr(value, "__str__") and value.__class__.__str__ is not object.__str__:
+            value = str(value)
+            safe_conversion = True
+        # If it doesn't have a custom __str__, convert to dict if possible
+        elif hasattr(value, "__dict__"):
+            value = str(value.__dict__)
+            safe_conversion = True
+        if safe_conversion:
+            creation_request = SetParameterValueRequest(
+                parameter_name=parameter.name,
+                node_name=node.name,
+                value=value,
+            )
+            return f"GriptapeNodes().handle_request({creation_request})"
     return None
 
 
