@@ -6,7 +6,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayloadFailure,
     ResultPayloadSuccess,
 )
-from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
 from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest
 from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileRequest
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
@@ -181,7 +180,7 @@ class LoadWorkflowMetadataResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class SerializeNodeCommandsRequest(RequestPayload):
-    node_name: str | None
+    node_name: str | None = None
 
 
 @dataclass
@@ -200,16 +199,25 @@ class SerializeNodeCommandsResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class SerializeFlowCommandsRequest(RequestPayload):
-    flow_name: str | None
+    flow_name: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class SerializeFlowCommandsResultSuccess(ResultPayloadSuccess):
+    @dataclass
+    class IndexedConnectionSerialization:
+        # Companion class to create connections from node indices, since we can't predict the names.
+        # These are indices into the SerializeNodeCommandsRequest list we maintain.
+        source_node_index: int
+        source_parameter_name: str
+        target_node_index: int
+        target_parameter_name: str
+
     create_flow_request: CreateFlowRequest
-    node_requests: list[SerializeNodeCommandsRequest]
-    connection_requests: list[CreateConnectionRequest]
-    sub_flow_requests: list[SerializeFlowCommandsRequest]
+    serialize_node_results: list[SerializeNodeCommandsResultSuccess]
+    connection_results: list[IndexedConnectionSerialization]
+    sub_flow_creation_results: list["SerializeFlowCommandsResultSuccess"]
 
 
 @dataclass

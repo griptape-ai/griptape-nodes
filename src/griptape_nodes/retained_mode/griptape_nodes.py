@@ -642,6 +642,15 @@ class FlowManager:
         msg = f"Flow with name {flow_name} doesn't exist"
         raise ValueError(msg)
 
+    def get_children_for_flow(self, parent_flow_name: str | None) -> list[str]:
+        """Gets a list of all direct descendents of the specified flow name."""
+        ret_val = []
+        for flow_name, parent_name in self._name_to_parent_name.items():
+            if parent_name == parent_flow_name:
+                ret_val.append(flow_name)
+
+        return ret_val
+
     def does_canvas_exist(self) -> bool:
         """Determines if there is already an existing flow with no parent flow.Returns True if there is an existing flow with no parent flow.Return False if there is no existing flow with no parent flow."""
         return any([parent is None for parent in self._name_to_parent_name.values()])  # noqa: C419
@@ -3102,7 +3111,81 @@ class WorkflowManager:
         return RenameWorkflowResultSuccess()
 
     def on_serialize_flow_request(self, request: SerializeFlowCommandsRequest) -> ResultPayload:
-        pass
+        flow_name = request.flow_name
+        if flow_name is None:
+            # Grab from the context manager.
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = "Attempted to serialize a Flow from the Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return SerializeFlowCommandsResultFailure()
+            flow_name = GriptapeNodes.ContextManager().get_current_flow_name()
+
+        # Does this flow exist?
+        obj_mgr = GriptapeNodes.ObjectManager()
+        flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+        if flow is None:
+            details = f"Attempted to serialze a Flow '{flow_name}', but no such Flow was found."
+            logger.error(details)
+            result = SerializeFlowCommandsResultFailure()
+            return result
+
+        with GriptapeNodes.ContextManager().flow(flow_name):
+            # The base flow creation.
+            create_flow_request = CreateFlowRequest(parent_flow_name=None)
+
+            serialize_node_results = []
+
+            # Now each of the child nodes in the node.
+            node_name_to_index = {}
+            for node_index, node in enumerate(obj_mgr.get_filtered_subset(type=BaseNode).values()):
+                node_name_to_index[node.name] = node_index
+
+                with GriptapeNodes.ContextManager().node(node.name):
+                    serialize_node_request = SerializeNodeCommandsRequest()
+                    serialize_node_result = self.on_serialize_node_request(serialize_node_request)
+                    if serialize_node_result.failed():
+                        details = f"Attempted to serialize Flow '{flow_name}'. Failed while attempting to serialize Node '{node.name}' within the Flow."
+                        logger.error(details)
+                        return SerializeFlowCommandsResultFailure()
+
+                    serialize_node_results.append(serialize_node_result)
+
+            # We'll have to do a patch-up of all the connections, since we can't predict all of the node names being accurate
+            # when we're restored.
+            # Create all of the connections
+            create_connection_results = []
+            for connection in flow.connections.connections.values():
+                source_node_index = node_name_to_index[connection.source_node.name]
+                target_node_index = node_name_to_index[connection.target_node.name]
+                create_connection_result = SerializeFlowCommandsResultSuccess.IndexedConnectionSerialization(
+                    source_node_index=source_node_index,
+                    source_parameter_name=connection.source_parameter.name,
+                    target_node_index=target_node_index,
+                    target_parameter_name=connection.target_parameter.name,
+                )
+                create_connection_results.append(create_connection_result)
+
+            # Now sub-flows.
+            child_flows = GriptapeNodes.FlowManager().get_children_for_flow(flow_name)
+            sub_flow_creation_results = []
+            for child_flow in child_flows:
+                with GriptapeNodes.ContextManager().flow(flow_name=child_flow):
+                    child_flow_request = SerializeFlowCommandsRequest()
+                    child_flow_result = self.on_serialize_flow_request(child_flow_request)
+                    if child_flow_result.failed():
+                        details = f"Attempted to serialize parent flow '{flow_name}'. Failed while serializing child flow '{child_flow}'."
+                        logger.error(details)
+                        return SerializeFlowCommandsResultFailure()
+                    sub_flow_creation_results.append(child_flow_result)
+
+        details = f"Successfully serialized Flow '{flow_name}' into commands."
+        result = SerializeFlowCommandsResultSuccess(
+            create_flow_request=create_flow_request,
+            serialize_node_results=serialize_node_results,
+            connection_results=create_connection_results,
+            sub_flow_creation_results=sub_flow_creation_results,
+        )
+        return result
 
     def on_serialize_node_request(self, request: SerializeNodeCommandsRequest) -> ResultPayload:  # noqa: C901
         node_name = request.node_name
@@ -3112,10 +3195,10 @@ class WorkflowManager:
                 details = "Attempted to serialize a Node from the Current Context. Failed because the Current Context is empty."
                 logger.error(details)
                 return SerializeNodeCommandsResultFailure()
-            node_name = GriptapeNodes.ContextManager().pop_node()
+            node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
             details = f"Attempted to serialize a Node '{node_name}', but no such Node was found."
@@ -3283,7 +3366,7 @@ class WorkflowManager:
                     file.write(code_string + "\n")
                     # Save the parameters
                     try:
-                        handle_parameter_creation_saving(file, node, flow_name)
+                        handle_parameter_creation_saving(file, node)
                     except Exception as e:
                         details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
                         logger.error(details)
@@ -3405,7 +3488,7 @@ def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: 
     return connection_request_workflows
 
 
-def handle_parameter_creation_saving(file: TextIO, node: BaseNode, flow_name: str) -> None:
+def handle_parameter_creation_saving(file: TextIO, node: BaseNode) -> None:
     for parameter in node.parameters:
         param_dict = vars(parameter)
         # Create the parameter, or alter it on the existing node
