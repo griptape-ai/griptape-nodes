@@ -139,12 +139,7 @@ def _listen_for_api_events() -> None:
                         else:
                             try:
                                 event = json.loads(data)
-                                # With heartbeat events, we skip the regular processing and just send the heartbeat
-                                if event.get("request_type") == "Heartbeat":
-                                    session_id = GriptapeNodes.get_session_id()
-                                    socket.heartbeat(session_id=session_id, request=event)
-                                else:
-                                    __process_api_event(event)
+                                __process_api_event(event)
                             except Exception:
                                 logger.exception("Error processing event, skipping.")
 
@@ -176,6 +171,14 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
     if type(result_event.payload).__name__ == "NodeStartProcessEvent":
         GriptapeNodes.get_instance().EventManager().current_active_node = result_event.payload.node_name
     event_json = result_event.json()
+
+    if type(result_event.payload).__name__ == "ResumeNodeProcessingEvent":
+        node_name = result_event.payload.node_name
+        logger.info("Resuming Node %s", node_name)
+        flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
+        # TODO(collin, kate): https://github.com/griptape-ai/griptape-nodes/issues/391
+        event_queue.put(EventRequest(request=execution_events.ContinueExecutionStepRequest(flow_name=flow_name)))
+
     if type(result_event.payload).__name__ == "NodeFinishProcessEvent":
         if result_event.payload.node_name != GriptapeNodes.get_instance().EventManager().current_active_node:
             msg = "Node start and finish do not match."
