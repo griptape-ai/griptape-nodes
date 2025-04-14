@@ -19,9 +19,9 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the WebScraperTool to your workspace
-2. Configure the "name" parameter if you want to customize the tool's identifier
-3. Set the "off_prompt" parameter based on your preference
-4. Connect the "tool" output to an agent or other node that can utilize tools
+1. Configure the "name" parameter if you want to customize the tool's identifier
+1. Set the "off_prompt" parameter based on your preference
+1. Connect the "tool" output to an agent or other node that can utilize tools
 
 ### Parameters
 
@@ -38,10 +38,10 @@ Use this node when you want to:
 Imagine you want to create an agent that can research information from websites:
 
 1. Add a WebScraperTool to your workflow
-2. Set the "name" parameter to "WebResearcher"
-3. Set "off_prompt" to True for more efficient processing
-4. Connect the "tool" output to an Agent's "tools" input
-5. Now your agent can scrape and analyze web content when prompted
+1. Set the "name" parameter to "WebResearcher"
+1. Set "off_prompt" to True for more efficient processing
+1. Connect the "tool" output to an Agent's "tools" input
+1. Now your agent can scrape and analyze web content when prompted
 
 ## Important Notes
 

@@ -18,8 +18,8 @@ Use the DisplayDictionary node when:
 ### Basic Setup
 
 1. Add the DisplayDictionary node to your workflow
-2. Connect any node that outputs a dictionary to the "dictionary" input of this node
-3. The dictionary content will be displayed in the node's interface
+1. Connect any node that outputs a dictionary to the "dictionary" input of this node
+1. The dictionary content will be displayed in the node's interface
 
 ### Parameters
 
@@ -35,9 +35,9 @@ Use the DisplayDictionary node when:
 Imagine you're working with a workflow that processes user data:
 
 1. Add a DisplayDictionary node to your workflow
-2. Connect the output of a node that produces user data (like a database query or API response) to the "dictionary" input
-3. The DisplayDictionary node will show the user data structure in a readable format
-4. You can continue your workflow by connecting the "dictionary" output to other nodes that need this data
+1. Connect the output of a node that produces user data (like a database query or API response) to the "dictionary" input
+1. The DisplayDictionary node will show the user data structure in a readable format
+1. You can continue your workflow by connecting the "dictionary" output to other nodes that need this data
 
 ## Important Notes
 

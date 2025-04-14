@@ -19,8 +19,8 @@ Use the MergeKeyValuePair node when:
 ### Basic Setup
 
 1. Add the MergeKeyValuePair node to your workflow
-2. Connect up to four dictionary outputs from other nodes to the inputs of this node
-3. The node will combine all input dictionaries into a single output dictionary
+1. Connect up to four dictionary outputs from other nodes to the inputs of this node
+1. The node will combine all input dictionaries into a single output dictionary
 
 ### Parameters
 
@@ -38,10 +38,10 @@ Use the MergeKeyValuePair node when:
 Imagine you're building a workflow that needs to combine configuration settings from different sources:
 
 1. Add a MergeKeyValuePair node to your workflow
-2. Connect a dictionary with database settings to "key_value_pair_1" (e.g., {"host": "localhost", "port": 5432})
-3. Connect a dictionary with authentication settings to "key_value_pair_2" (e.g., {"username": "admin", "password": "secure123"})
-4. Connect a dictionary with application settings to "key_value_pair_3" (e.g., {"app_name": "MyApp", "debug": true})
-5. The output will be a single dictionary containing all these settings: {"host": "localhost", "port": 5432, "username": "admin", "password": "secure123", "app_name": "MyApp", "debug": true}
+1. Connect a dictionary with database settings to "key_value_pair_1" (e.g., {"host": "localhost", "port": 5432})
+1. Connect a dictionary with authentication settings to "key_value_pair_2" (e.g., {"username": "admin", "password": "secure123"})
+1. Connect a dictionary with application settings to "key_value_pair_3" (e.g., {"app_name": "MyApp", "debug": true})
+1. The output will be a single dictionary containing all these settings: {"host": "localhost", "port": 5432, "username": "admin", "password": "secure123", "app_name": "MyApp", "debug": true}
 
 ## Important Notes
 

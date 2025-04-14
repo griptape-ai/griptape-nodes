@@ -5,11 +5,13 @@
 Run this command in your terminal to reveal where stuff is stored:
 
 For Mac/Linux:
+
 ```bash
 find ~/.local -name "*griptape*" -o -name "*gtn*" | sort
 ```
 
 For Windows PowerShell:
+
 ```powershell
 Get-ChildItem -Path $env:LOCALAPPDATA -Recurse -Filter "*griptape*" | Select-Object FullName
 ```
@@ -19,11 +21,13 @@ Get-ChildItem -Path $env:LOCALAPPDATA -Recurse -Filter "*griptape*" | Select-Obj
 Looking for the exact installation location of your Griptape [nodes]? This command will show you precisely where it's installed:
 
 For Mac/Linux:
+
 ```bash
 echo -e "Main executable: $(readlink -f $(which gtn))\nApp directory: $(find ~/.local/share -type d -name "griptape_nodes" -o -name "griptape-nodes" | head -1)"
 ```
 
 For Windows PowerShell:
+
 ```powershell
 Write-Host "Main executable: $(Get-Command gtn | Select-Object -ExpandProperty Source)"
 Write-Host "App directory: $(Get-ChildItem -Path $env:LOCALAPPDATA -Recurse -Directory -Filter "*griptape*" | Select-Object -First 1 -ExpandProperty FullName)"
@@ -36,7 +40,6 @@ Need to part ways with Griptape [nodes]? It's a simple goodbye with a single com
 ```bash
 griptape-nodes uninstall
 ```
-
 
 When regret inevitably washes over you, have no fear. Open arms await; just revisit [Getting Started](getting_started.md)
 

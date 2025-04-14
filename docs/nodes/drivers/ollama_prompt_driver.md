@@ -17,8 +17,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the OllamaPromptDriver to your workspace
-2. Connect it to your flow
-3. Connect its output to nodes that need to use local AI models (like RunAgent)
+1. Connect it to your flow
+1. Connect its output to nodes that need to use local AI models (like RunAgent)
 
 ### Parameters
 

@@ -19,9 +19,9 @@ Use the KeyValuePair node when:
 ### Basic Setup
 
 1. Add the KeyValuePair node to your workflow
-2. Set the "key" parameter to your desired dictionary key
-3. Set the "value" parameter to the value you want associated with that key
-4. Connect the "dictionary" output to other nodes that require dictionary input
+1. Set the "key" parameter to your desired dictionary key
+1. Set the "value" parameter to the value you want associated with that key
+1. Connect the "dictionary" output to other nodes that require dictionary input
 
 ### Parameters
 
@@ -37,9 +37,9 @@ Use the KeyValuePair node when:
 Imagine you're creating a workflow that needs to set configuration options:
 
 1. Add a KeyValuePair node to your workflow
-2. Set the "key" parameter to "max_tokens"
-3. Set the "value" parameter to "1024"
-4. Connect the "dictionary" output to a node that requires configuration parameters
+1. Set the "key" parameter to "max_tokens"
+1. Set the "value" parameter to "1024"
+1. Connect the "dictionary" output to a node that requires configuration parameters
 
 The output will be a dictionary: `{"max_tokens": "1024"}`
 

@@ -18,8 +18,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the CreateAgent to your workspace
-2. Configure the agent's capabilities (tools and rulesets)
-3. Connect it to your flow
+1. Configure the agent's capabilities (tools and rulesets)
+1. Connect it to your flow
 
 ### Parameters
 
@@ -39,14 +39,13 @@ Use this node when you want to:
 
 Imagine you want to create an agent that can write haikus based on prompt_context:
 
-
 1. Add a KeyValuePair
-2. Set the "key" to "topic" and "value" to "swimming"
-3. Add a CreateAgent
-4. Set the "prompt" to "write me a haiku about {{topic}}"
-5. Connect the KeyValuePair dictionary output to the CreateAgent prompt_context input
-5. Run the workflow
-6. The CreateAgent "output" will contain a haiku about swimming!
+1. Set the "key" to "topic" and "value" to "swimming"
+1. Add a CreateAgent
+1. Set the "prompt" to "write me a haiku about {{topic}}"
+1. Connect the KeyValuePair dictionary output to the CreateAgent prompt_context input
+1. Run the workflow
+1. The CreateAgent "output" will contain a haiku about swimming!
 
 ## Important Notes
 
@@ -54,7 +53,7 @@ Imagine you want to create an agent that can write haikus based on prompt_contex
 - The node supports both streaming and non-streaming prompt drivers
 - Tools and rulesets can be provided as individual items or as lists
 - The prompt_context parameter allows you to provide additional context to the agent as a dictionary
-- By default, you need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY` for the node to work.  Depending on the models you want to use, the keys you need will be different.
+- By default, you need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY` for the node to work. Depending on the models you want to use, the keys you need will be different.
 - CreateAgent is designed for detailed configuration while RunAgent is for execution. Use CreateAgent when you need to:
     - Configure an agent once and run it multiple times with different prompts
     - Set up complex combinations of tools and rulesets

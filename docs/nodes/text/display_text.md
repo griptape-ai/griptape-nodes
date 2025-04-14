@@ -19,9 +19,9 @@ Use the DisplayText node when:
 ### Basic Setup
 
 1. Add a DisplayText node to your workflow
-2. Set the initial text value if desired
-3. Connect inputs to the text parameter or manually enter text
-4. Connect the text output to other nodes that require text input
+1. Set the initial text value if desired
+1. Connect inputs to the text parameter or manually enter text
+1. Connect the text output to other nodes that require text input
 
 ### Parameters
 
@@ -36,9 +36,8 @@ Use the DisplayText node when:
 Imagine you're building a workflow that processes and displays information:
 
 1. Add a DisplayText node to your workflow
-2. Connect the output from a RunAgent node to the DisplayText node's text parameter
-3. When the workflow runs, the AI-generated content will replace the initial text
-
+1. Connect the output from a RunAgent node to the DisplayText node's text parameter
+1. When the workflow runs, the AI-generated content will replace the initial text
 
 ## Important Notes
 

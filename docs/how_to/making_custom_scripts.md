@@ -19,11 +19,13 @@ Retained mode provides a comprehensive interface for interacting with Griptape N
 There are two primary ways to develop and use scripts in Griptape Nodes:
 
 1. **Using the Script Editor** - Create scripts directly in the Griptape Nodes script editor for immediate execution
+
     - Access the script editor through the Griptape Nodes interface
     - Write your script using retained mode commands
     - Execute directly from the editor to modify or control your flows
 
-2. **Importing External Scripts** - Import pre-written scripts into the script editor
+1. **Importing External Scripts** - Import pre-written scripts into the script editor
+
     - Create reusable script modules in external files
     - Import them using Python's import system in the script editor
     - Execute the imported functionality from within the editor

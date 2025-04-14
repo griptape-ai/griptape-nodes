@@ -18,8 +18,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the CreateFloat to your workspace
-2. Set your desired float value
-3. Connect it to your flow
+1. Set your desired float value
+1. Connect it to your flow
 
 ### Parameters
 
@@ -34,9 +34,9 @@ Use this node when you want to:
 Imagine you want to set a temperature value for an AI model:
 
 1. Add a CreateFloat to your workflow
-2. Set the "float" value to 0.7
-3. Connect the output to a model's temperature parameter
-4. The AI model will now use 0.7 as its temperature setting
+1. Set the "float" value to 0.7
+1. Connect the output to a model's temperature parameter
+1. The AI model will now use 0.7 as its temperature setting
 
 ## Important Notes
 

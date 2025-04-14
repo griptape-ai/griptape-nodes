@@ -16,8 +16,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the CreateText to your workspace
-2. Connect it to your flow
-3. Set the "text" parameter to a text value
+1. Connect it to your flow
+1. Set the "text" parameter to a text value
 
 ### Parameters
 
@@ -32,5 +32,5 @@ Use this node when you want to:
 To create a welcome message for a user:
 
 1. Add a CreateText node to your workflow
-2. Set the "text" parameter to "Welcome to our application!"
-3. Connect this node to other nodes that need to display this message
+1. Set the "text" parameter to "Welcome to our application!"
+1. Connect this node to other nodes that need to display this message

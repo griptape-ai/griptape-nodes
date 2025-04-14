@@ -15,7 +15,7 @@ Use this node/class when you want to:
 ### Basic Setup
 
 1. Add the DisplayInteger to your workspace
-2. Connect any other node's integer output to this input
+1. Connect any other node's integer output to this input
 
 ### Parameters
 
@@ -30,8 +30,8 @@ Use this node/class when you want to:
 Imagine you want to visualize the token count used in your workflow:
 
 1. Add a DisplayInteger to your workflow
-2. Connect the "token_count" output from another node to the DisplayInteger's input
-3. The DisplayInteger will now show the current token count in your graph
+1. Connect the "token_count" output from another node to the DisplayInteger's input
+1. The DisplayInteger will now show the current token count in your graph
 
 ## Important Notes
 

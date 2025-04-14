@@ -18,9 +18,9 @@ Use the MergeTexts node when:
 ### Basic Setup
 
 1. Add a MergeTexts node to your workflow
-2. Connect multiple text outputs from other nodes to this node's inputs
-3. Optionally configure the separator string
-4. Connect the output to nodes that require the combined text
+1. Connect multiple text outputs from other nodes to this node's inputs
+1. Optionally configure the separator string
+1. Connect the output to nodes that require the combined text
 
 ### Parameters
 
@@ -36,9 +36,9 @@ Use the MergeTexts node when:
 A workflow to create a complete document from separate sections:
 
 1. Add a MergeTexts node to your workflow
-2. Connect outputs from three different text nodes (e.g., title, body, conclusion)
-3. Set the merge_string parameter to "\n\n" for paragraph separation
-4. The output will contain all text segments combined with the specified separator
+1. Connect outputs from three different text nodes (e.g., title, body, conclusion)
+1. Set the merge_string parameter to "\\n\\n" for paragraph separation
+1. The output will contain all text segments combined with the specified separator
 
 ## Important Notes
 

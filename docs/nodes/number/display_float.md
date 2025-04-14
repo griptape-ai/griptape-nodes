@@ -13,7 +13,7 @@ When you want to inspect a floating-point number value in your graph
 ### Basic Setup
 
 1. Add the DisplayFloat to your workspace
-2. Connect any other node's float output to this input
+1. Connect any other node's float output to this input
 
 ### Parameters
 
@@ -28,8 +28,8 @@ When you want to inspect a floating-point number value in your graph
 Imagine you want to visualize the temperature setting used in your workflow:
 
 1. Add a DisplayFloat to your workflow
-2. Connect the "temperature" output from another node to the DisplayFloat's input
-3. The DisplayFloat will now show the current temperature value in your graph
+1. Connect the "temperature" output from another node to the DisplayFloat's input
+1. The DisplayFloat will now show the current temperature value in your graph
 
 ## Important Notes
 

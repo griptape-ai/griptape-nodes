@@ -19,9 +19,9 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the DescribeImage node to your workspace
-2. Connect an image source to the "image" input
-3. Optionally provide specific instructions in the "prompt" field
-4. Run the node to generate a description of the image
+1. Connect an image source to the "image" input
+1. Optionally provide specific instructions in the "prompt" field
+1. Run the node to generate a description of the image
 
 ### Parameters
 
@@ -39,10 +39,10 @@ Use this node when you want to:
 Imagine you want to get a detailed description of a landscape photograph:
 
 1. Add a DescribeImage node to your workflow
-2. Connect an image output from another node to the "image" input
-3. In the "prompt" field, type: "Describe this landscape in detail, including colors, features, and mood"
-4. Run the node
-5. The "output" will contain a detailed description of the landscape image
+1. Connect an image output from another node to the "image" input
+1. In the "prompt" field, type: "Describe this landscape in detail, including colors, features, and mood"
+1. Run the node
+1. The "output" will contain a detailed description of the landscape image
 
 ## Important Notes
 

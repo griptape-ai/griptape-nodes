@@ -18,8 +18,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the DateTimeTool to your workspace
-2. Connect it to your flow
-3. Connect its output to nodes that need date/time capabilities (like an Agent)
+1. Connect it to your flow
+1. Connect its output to nodes that need date/time capabilities (like an Agent)
 
 ### Parameters
 
@@ -34,5 +34,5 @@ Use this node when you want to:
 Imagine you want to create an agent that can work with dates and times:
 
 1. Add a DateTimeTool to your workflow
-2. Connect the "tool" output to an Agent's "tools" input
-3. Now that agent can perform operations like getting the current date, formatting dates, or calculating date differences
+1. Connect the "tool" output to an Agent's "tools" input
+1. Now that agent can perform operations like getting the current date, formatting dates, or calculating date differences
