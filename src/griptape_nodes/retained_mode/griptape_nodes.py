@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import io
 import json
@@ -17,6 +18,8 @@ from dotenv import load_dotenv
 from rich.logging import RichHandler
 from xdg_base_dirs import xdg_data_home
 
+from griptape.artifacts import ImageArtifact, BlobArtifact
+from griptape.structures import Agent
 from griptape_nodes.exe_types.core_types import Parameter, ParameterContainer, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
@@ -2235,6 +2238,17 @@ class NodeManager:
         object_created = request.value
         # Well this seems kind of stupid
         object_type = request.data_type if request.data_type else parameter.type
+        if object_type == "ImageArtifact":
+            try:
+                creation_dict = ast.literal_eval(object_created)
+                object_created = ImageArtifact.from_dict(creation_dict)
+            except Exception:
+                details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because that Parameter value was not serializable."
+                logger.error(details)
+                # Set to unresolved, because this will have to be reran.
+                node.state = NodeResolutionState.UNRESOLVED
+                result = SetParameterValueResultFailure()
+                return result
         # Is this value kosher for the types allowed?
         if not parameter.is_incoming_type_allowed(object_type):
             details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because the value's type of '{object_type}' was not in the Parameter's list of allowed types: {parameter.input_types}."
@@ -3089,12 +3103,15 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode) -> str |
         value = node.parameter_output_values[parameter.name]
     safe_conversion = False
     if value:
-        if hasattr(value, "__str__") and value.__class__.__str__ is not object.__str__:
-            value = str(value)
-            safe_conversion = True
         # If it doesn't have a custom __str__, convert to dict if possible
+        if hasattr(value, "to_dict") and callable(value.to_dict):
+            value = str(value.to_dict())
+            safe_conversion = True
         elif hasattr(value, "__dict__"):
             value = str(value.__dict__)
+            safe_conversion = True
+        elif hasattr(value, "__str__") and value.__class__.__str__ is not object.__str__:
+            value = str(value)
             safe_conversion = True
         elif isinstance(value,(str,dict)):
             safe_conversion = True

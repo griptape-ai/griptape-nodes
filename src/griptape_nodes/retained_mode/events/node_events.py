@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import Any
 
-from griptape_nodes.exe_types.node_types import NodeResolutionState
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
