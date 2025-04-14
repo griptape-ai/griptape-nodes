@@ -201,7 +201,7 @@ class BaseNode(ABC):
                 return True
         return False
 
-    def get_group_by_name(self, group:str) -> ParameterGroup | None:
+    def get_group_by_name(self, group: str) -> ParameterGroup | None:
         group_items = self.root_ui_element.find_elements_by_type(ParameterGroup)
         for group_item in group_items:
             if group_item.group_name == group:

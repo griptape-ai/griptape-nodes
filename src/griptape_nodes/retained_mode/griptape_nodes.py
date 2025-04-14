@@ -17,7 +17,13 @@ from dotenv import load_dotenv
 from rich.logging import RichHandler
 from xdg_base_dirs import xdg_data_home
 
-from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, ParameterContainer, ParameterMode, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import (
+    BaseNodeElement,
+    Parameter,
+    ParameterContainer,
+    ParameterMode,
+    ParameterTypeBuiltin,
+)
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
