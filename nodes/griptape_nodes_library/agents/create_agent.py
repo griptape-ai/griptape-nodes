@@ -1,7 +1,12 @@
+from collections.abc import Iterator
+from typing import cast
+
+from griptape.artifacts import TextArtifact
 from griptape.events import TextChunkEvent
-from griptape.structures import Agent
+from griptape.structures import Agent, Structure
 from griptape.utils import Stream
 
+from griptape_nodes.exe_types.node_types import AsyncResult
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.agents.base_agent import BaseAgent
 
@@ -30,7 +35,9 @@ class CreateAgent(BaseAgent):
             return rulesets
         return []
 
-    def process(self) -> None:
+    def process(
+        self,
+    ) -> AsyncResult[Iterator[TextArtifact] | Structure]:
         # Get input values
         params = self.parameter_values
         prompt_driver = params.get("prompt_driver", self.get_default_prompt_driver())
@@ -54,7 +61,7 @@ class CreateAgent(BaseAgent):
             # Create the Agent
             agent = Agent(**kwargs)
         else:
-            agent = Agent().from_dict(agent_dict)
+            agent = Agent.from_dict(agent_dict)
         # Otherwise, append rules and tools to the existing agent
 
         prompt = params.get("prompt", None)
@@ -64,12 +71,13 @@ class CreateAgent(BaseAgent):
             # Check and see if the prompt driver is a stream driver
             if self.is_stream(agent):
                 # Run the agent
-                for artifact in Stream(agent, event_types=[TextChunkEvent]).run(prompt):
+                agent_stream = cast("Iterator", (yield lambda: Stream(agent, event_types=[TextChunkEvent]).run(prompt)))
+                for artifact in agent_stream:
                     full_output += artifact.value
                     self.parameter_output_values["output"] = full_output
             else:
                 # Run the agent
-                result = agent.run(prompt)
+                result = cast("Structure", (yield lambda: agent.run(prompt)))
                 full_output = result.output.value
             self.parameter_output_values["output"] = full_output
         else:

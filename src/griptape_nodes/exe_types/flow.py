@@ -8,6 +8,7 @@ from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState, StartNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
+from griptape_nodes.retained_mode.events.execution_events import StartFlowRequest
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
@@ -74,27 +75,25 @@ class ControlFlow:
                         return True
         return False
 
-    def start_flow(self, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+    def start_flow(self, flow_name: str, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
             errormsg = "Flow already has been started. Cannot start flow when it has already been started."
             raise Exception(errormsg)
-        if start_node:
-            logger.info("start with %s", start_node.name)
-            self.control_flow_machine.start_flow(start_node, debug_mode)
-        elif not self.flow_queue.empty():
+
+        if start_node is None:
+            if self.flow_queue.empty():
+                errormsg = "No Flow exists. You must create at least one control connection."
+                raise Exception(errormsg)
             start_node = self.flow_queue.get()
-            self.control_flow_machine.start_flow(start_node, debug_mode)
-            self.flow_queue.task_done()
-            if not debug_mode:
-                while not self.flow_queue.empty():
-                    if not self.check_for_existing_running_flow():
-                        start_node = self.flow_queue.get()
-                        self.control_flow_machine.start_flow(start_node, debug_mode)
-                        self.flow_queue.task_done()
-        else:
-            errormsg = "No Flow exists. You must create at least one control connection."
-            raise Exception(errormsg)
+
+        self.control_flow_machine.start_flow(start_node, debug_mode)
+        self.flow_queue.task_done()
+        if not debug_mode and not self.flow_queue.empty() and not self.check_for_existing_running_flow():
+            next_node = self.flow_queue.get()
+            GriptapeNodes().handle_request(StartFlowRequest(flow_name=flow_name, flow_node_name=next_node.name))
 
     def check_for_existing_running_flow(self) -> bool:
         if self.control_flow_machine._current_state is not CompleteState and self.control_flow_machine._current_state:

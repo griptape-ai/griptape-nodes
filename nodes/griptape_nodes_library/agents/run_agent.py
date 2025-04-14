@@ -1,8 +1,17 @@
+import logging
+from collections.abc import Iterator
+from typing import cast
+
+from griptape.artifacts import TextArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.structures import Agent
+from griptape.structures import Agent, Structure
 from griptape.utils import Stream
 
+from griptape_nodes.exe_types.node_types import AsyncResult
 from griptape_nodes_library.agents.create_agent import CreateAgent
+
+logger = logging.getLogger("griptape_nodes")
+
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -14,6 +23,11 @@ class RunAgent(CreateAgent):
         super().__init__(**kwargs)
 
         # Remove unused inputs
+
+        # Remove all Agent Configurations
+        self.remove_node_element(self.agent_configuration_group)
+
+        # Remove unused parameters
         param = self.get_parameter_by_name("rulesets")
         if param:
             self.remove_parameter(param)
@@ -23,11 +37,8 @@ class RunAgent(CreateAgent):
         param = self.get_parameter_by_name("prompt_driver")
         if param:
             self.remove_parameter(param)
-        group = self.get_parameter_by_name("Agent Abilities")
-        if group:
-            self.remove_parameter(group)
 
-    def process(self) -> None:
+    def process(self) -> AsyncResult[Iterator[TextArtifact] | Structure]:
         # Get input values
         params = self.parameter_values
         agent_dict = params.get("agent", None)
@@ -40,19 +51,22 @@ class RunAgent(CreateAgent):
             )
             agent = Agent(prompt_driver=prompt_driver)
         else:
-            agent = Agent().from_dict(agent_dict)
+            agent = Agent.from_dict(agent_dict)
 
         prompt = params.get("prompt", None)
+        agent = self.set_context(agent)
+
         if prompt:
             full_output = ""
             # Check and see if the prompt driver is a stream driver
             if self.is_stream(agent):
                 # Run the agent
-                for artifact in Stream(agent).run(prompt):
+                agent_stream = cast("Iterator", (yield lambda: Stream(agent).run(prompt)))
+                for artifact in agent_stream:
                     full_output += artifact.value
             else:
                 # Run the agent
-                result = agent.run(prompt)
+                result = cast("Structure", (yield lambda: agent.run(prompt)))
                 full_output = result.output.value
             self.parameter_output_values["output"] = full_output
         else:
