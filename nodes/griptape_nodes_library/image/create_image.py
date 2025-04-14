@@ -104,7 +104,7 @@ class CreateImage(ControlNode):
             )
             agent = Agent(prompt_driver=prompt_driver)
         else:
-            agent = Agent().from_dict(agent)
+            agent = Agent.from_dict(agent)
         prompt = params.get("prompt", "")
         enhance_prompt = params.get("enhance_prompt", True)
 
