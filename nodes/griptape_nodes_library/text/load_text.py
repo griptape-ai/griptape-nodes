@@ -35,7 +35,7 @@ class LoadText(ControlNode):
         # Add output parameters
         self.add_parameter(
             Parameter(
-                name="path",
+                name="file_path",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 input_types=["str"],
                 type="str",
@@ -51,6 +51,7 @@ class LoadText(ControlNode):
                 output_type="str",
                 default_value="",
                 tooltip="The text content of the loaded file.",
+                ui_options={"multiline": True, "placeholder_text": "Text will load here."},
             )
         )
 

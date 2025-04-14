@@ -7,6 +7,7 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.traits.button import Button
 
 
 class SaveText(ControlNode):
@@ -20,8 +21,9 @@ class SaveText(ControlNode):
             Parameter(
                 name="text",
                 input_types=["str"],
-                allowed_modes={ParameterMode.INPUT},
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="The text content to save to file",
+                ui_options={"multiline": True, "placeholder_text": "Text to save to a file..."},
             )
         )
 
@@ -34,6 +36,7 @@ class SaveText(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="griptape_output.txt",
                 tooltip="The output filename",
+                traits={Button(button_type="save")},
             )
         )
 

@@ -38,6 +38,9 @@ class ResultPayload(Payload, ABC):
             bool: True if success, False if failure
         """
 
+    def failed(self) -> bool:
+        return not self.succeeded()
+
 
 # Success result payload abstract base class
 class ResultPayloadSuccess(ResultPayload, ABC):
@@ -93,7 +96,7 @@ class BaseEvent(BaseModel, ABC):
     # Custom JSON encoder for the payload
     class Config:
         arbitrary_types_allowed = True
-        json_encoders = {
+        json_encoders: ClassVar[dict] = {
             # Use to_dict() methods for Griptape objects
             BaseArtifact: lambda obj: obj.to_dict(),
             BaseTool: lambda obj: obj.to_dict(),
@@ -354,7 +357,7 @@ def deserialize_event(json_data) -> BaseEvent:
     if event_type == "EventRequest":
         if request_type:
             return EventRequest.from_dict(data, request_type)
-        msg = f"Cannot deserialize EventRequest: unknown payload type {request_type_name}"
+        msg = f"Cannot deserialize EventRequest: unknown payload type '{request_type_name}'"
         raise ValueError(msg)
     if event_type == "EventResultSuccess":
         if request_type and result_type:

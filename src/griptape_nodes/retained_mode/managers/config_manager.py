@@ -19,9 +19,8 @@ from griptape_nodes.retained_mode.events.config_events import (
     SetConfigValueResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.managers.settings import Settings, WorkflowSettingsDetail, _find_config_files
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
-
-from .settings import ScriptSettingsDetail, Settings, _find_config_files
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -57,13 +56,6 @@ class ConfigManager:
             )
             event_manager.assign_manager_to_request_type(GetConfigValueRequest, self.on_handle_get_config_value_request)
             event_manager.assign_manager_to_request_type(SetConfigValueRequest, self.on_handle_set_config_value_request)
-
-            if len(self.config_files) == 0:
-                logger.info("No configuration files were found. Will run using default values.")
-            else:
-                logger.info("Configuration files were found at the following locations and merged in this order:")
-                for config_file in self.config_files:
-                    logger.info("\t%s", config_file)
 
     @property
     def workspace_path(self) -> Path:
@@ -108,21 +100,24 @@ class ConfigManager:
 
         return [config_file for config_file in possible_config_files if config_file.exists()]
 
-    def save_user_script_json(self, script_file_name: str) -> None:
-        script_details = ScriptSettingsDetail(file_name=script_file_name, is_griptape_provided=False)
-        config_loc = "app_events.on_app_initialization_complete.scripts_to_register"
-        existing_scripts = self.get_config_value(config_loc)
-        if not existing_scripts:
-            existing_scripts = []
-        existing_scripts.append(script_details.__dict__)
-        self.set_config_value(config_loc, existing_scripts)
+    def save_user_workflow_json(self, workflow_file_name: str) -> None:
+        workflow_details = WorkflowSettingsDetail(file_name=workflow_file_name, is_griptape_provided=False)
+        config_loc = "app_events.on_app_initialization_complete.workflows_to_register"
+        existing_workflows = self.get_config_value(config_loc)
+        if not existing_workflows:
+            existing_workflows = []
+        existing_workflows.append(workflow_details.__dict__)
+        self.set_config_value(config_loc, existing_workflows)
 
-    def delete_user_script(self, script: dict) -> None:
-        default_scripts = self.get_config_value("app_events.on_app_initialization_complete.scripts_to_register")
-        default_scripts = [
-            saved_script for saved_script in default_scripts if saved_script["file_name"] != script["file_path"]
-        ]
-        self.set_config_value("app_events.on_app_initialization_complete.scripts_to_register", default_scripts)
+    def delete_user_workflow(self, workflow: dict) -> None:
+        default_workflows = self.get_config_value("app_events.on_app_initialization_complete.workflows_to_register")
+        if default_workflows:
+            default_workflows = [
+                saved_workflow
+                for saved_workflow in default_workflows
+                if saved_workflow["file_name"] != workflow["file_path"]
+            ]
+            self.set_config_value("app_events.on_app_initialization_complete.workflows_to_register", default_workflows)
 
     def get_full_path(self, relative_path: str) -> Path:
         """Get a full path by combining the base path with a relative path.
@@ -149,10 +144,10 @@ class ConfigManager:
             The value associated with the key, or the entire category if key points to a dict.
         """
         value = get_dot_value(self.user_config, key)
-
         if value is None:
             msg = f"Config key '{key}' not found in config file."
-            raise ValueError(msg)
+            logger.error(msg)
+            return None
 
         if isinstance(value, str) and value.startswith("$"):
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -173,7 +168,7 @@ class ConfigManager:
             try:
                 logger.setLevel(value.upper())
             except ValueError:
-                logger.exception("Invalid log level %s. Defaulting to INFO.", value)
+                logger.error("Invalid log level %s. Defaulting to INFO.", value)
                 logger.setLevel(logging.INFO)
         self.user_config = merge_dicts(self.user_config, delta)
         self._write_user_config()

@@ -26,3 +26,21 @@ class RenameObjectResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class RenameObjectResultFailure(ResultPayloadFailure):
     next_available_name: str | None
+
+
+# This request will wipe all Flows, Nodes, Connections, everything.
+# But you knew that, right? You knew what you were doing when you called it?
+@dataclass
+@PayloadRegistry.register
+class ClearAllObjectStateRequest(RequestPayload):
+    i_know_what_im_doing: bool = False
+
+
+@PayloadRegistry.register
+class ClearAllObjectStateResultSuccess(ResultPayloadSuccess):
+    pass
+
+
+@PayloadRegistry.register
+class ClearAllObjectStateResultFailure(ResultPayloadFailure):
+    pass

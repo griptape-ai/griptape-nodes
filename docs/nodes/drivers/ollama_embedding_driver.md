@@ -1,8 +1,8 @@
-# OllamaEmbeddingDriverNode
+# OllamaEmbeddingDriver
 
 ## What is it?
 
-The OllamaEmbeddingDriverNode is a building block that sets up a connection to Ollama's embedding service. Think of it as configuring a tool that can convert text into special number patterns (embeddings) that help AI understand relationships between different pieces of text.
+The OllamaEmbeddingDriver is a building block that sets up a connection to Ollama's embedding service. Think of it as configuring a tool that can convert text into special number patterns (embeddings) that help AI understand relationships between different pieces of text.
 
 ## When would I use it?
 
@@ -16,11 +16,11 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the OllamaEmbeddingDriverNode to your workspace
+1. Add the OllamaEmbeddingDriver to your workspace
 1. Connect it to your flow
 1. Connect its output to nodes that need to use text embeddings
 
-### Optional Configuration
+### Parameters
 
 - **base_url**: The URL where your Ollama server is running (default is "http://127.0.0.1")
 - **port**: The port your Ollama server is using (default is "11434")
@@ -34,7 +34,7 @@ Use this node when you want to:
 
 Imagine you want to create embeddings to use for finding similar text:
 
-1. Add an OllamaEmbeddingDriverNode to your workflow
+1. Add an OllamaEmbeddingDriver to your workflow
 1. Set "base_url" to match your Ollama server (usually "http://127.0.0.1")
 1. Set "embedding_model" to "all-minilm" or another embedding model you've pulled into Ollama
 1. Connect the "driver" output to a node that processes embeddings

@@ -56,6 +56,44 @@ class LibraryRegistry(SingletonMixin):
         return library
 
     @classmethod
+    def unregister_library(cls, library_name: str) -> None:
+        instance = cls()
+
+        if library_name not in instance._libraries:
+            msg = f"Library '{library_name}' was requested to be unregistered, but it wasn't registered in the first place."
+            raise KeyError(msg)
+
+        # See which nodes in the collision table were attached to this library.
+        # A previous collision may get "promoted" back to being an alias when this library goes away.
+        collisions_to_delete = []  # Track separately so we can delete after the iter loop.
+        for collision_node_name, library_name_set in instance._collision_node_names_to_library_names.items():
+            if library_name in library_name_set:
+                # Remove it, then see if we've "un-collisioned" this name.
+                library_name_set.remove(library_name)
+                if len(library_name_set) == 1:
+                    # No longer a collision. Promote back to the alias table and mark this collision for delete.
+                    lone_library = library_name_set.pop()
+                    instance._node_aliases[collision_node_name] = lone_library
+                    collisions_to_delete.append(collision_node_name)
+
+        # Actually delete any collisions outside of the iteration loop.
+        for collision_to_delete in collisions_to_delete:
+            del instance._collision_node_names_to_library_names[collision_to_delete]
+
+        # Now walk the alias table and delete anything that matches this library.
+        aliases_to_delete = []
+        for alias_node_name, alias_library_name in instance._node_aliases.items():
+            if alias_library_name == library_name:
+                aliases_to_delete.append(alias_node_name)
+
+        # Actually delete the aliases.
+        for alias_node_to_delete in aliases_to_delete:
+            del instance._node_aliases[alias_node_to_delete]
+
+        # Now delete the library from the registry.
+        del instance._libraries[library_name]
+
+    @classmethod
     def get_library(cls, name: str) -> Library:
         instance = cls()
         if name not in instance._libraries:

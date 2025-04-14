@@ -3,7 +3,7 @@ from griptape.structures import Agent
 from griptape.utils import Stream
 
 from griptape_nodes.retained_mode.griptape_nodes import logger
-from nodes.griptape_nodes_library.agents.base_agent import BaseAgent
+from griptape_nodes_library.agents.base_agent import BaseAgent
 
 DEFAULT_MODEL = "gpt-4o"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -15,7 +15,7 @@ class CreateAgent(BaseAgent):
         super().__init__(**kwargs)
 
     def get_tools(self) -> list:
-        tools = self.parameter_values.get("tools", None)
+        tools = self.get_parameter_value("tools")
         if tools:
             if not isinstance(tools, list):
                 tools = [tools]
@@ -52,12 +52,13 @@ class CreateAgent(BaseAgent):
         if not agent_dict:
             logger.debug("No agent input, creating one")
             # Create the Agent
-            agent = Agent(**kwargs, stream=True)
+            agent = Agent(**kwargs)
         else:
             agent = Agent().from_dict(agent_dict)
         # Otherwise, append rules and tools to the existing agent
 
         prompt = params.get("prompt", None)
+        agent = self.set_context(agent)
         if prompt:
             full_output = ""
             # Check and see if the prompt driver is a stream driver

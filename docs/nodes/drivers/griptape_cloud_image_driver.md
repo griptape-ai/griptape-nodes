@@ -1,8 +1,8 @@
-# GriptapeCloudImageDriverNode
+# GriptapeCloudImageDriver
 
 ## What is it?
 
-The GriptapeCloudImageDriverNode is a building block that sets up a connection to Griptape Cloud's image generation service. Think of it as configuring a special artist in the cloud who can create images based on text descriptions.
+The GriptapeCloudImageDriver is a building block that sets up a connection to Griptape Cloud's image generation service. Think of it as configuring a special artist in the cloud who can create images based on text descriptions.
 
 ## When would I use it?
 
@@ -16,9 +16,9 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the GriptapeCloudImageDriverNode to your workspace
+1. Add the GriptapeCloudImageDriver to your workspace
 1. Connect it to your flow
-1. Connect its output to nodes that need to generate images (like CreateImageNode)
+1. Connect its output to nodes that need to generate images (like CreateImage)
 
 ### Optional Configuration
 
@@ -34,9 +34,9 @@ Use this node when you want to:
 
 Imagine you want to create images using Griptape Cloud:
 
-1. Add a GriptapeCloudImageDriverNode to your workflow
+1. Add a GriptapeCloudImageDriver to your workflow
 1. Set "size" to "1024x1792" for vertical images
-1. Connect the "driver" output to a CreateImageNode's "driver" input
+1. Connect the "driver" output to a CreateImage's "driver" input
 1. Now that node will generate images using Griptape Cloud with your settings
 
 ## Important Notes
@@ -44,7 +44,7 @@ Imagine you want to create images using Griptape Cloud:
 - You need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY`
 - Currently, only DALL-E 3 is supported through this driver
 - The node will automatically adjust image sizes based on model capabilities:
-  - DALL-E 3 only supports 1024x1024, 1024x1792, and 1792x1024
+- DALL-E 3 only supports 1024x1024, 1024x1792, and 1792x1024
 
 ## Common Issues
 

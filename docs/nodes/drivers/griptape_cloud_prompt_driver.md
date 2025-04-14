@@ -1,8 +1,8 @@
-# GriptapeCloudPromptDriverNode
+# GriptapeCloudPromptDriver
 
 ## What is it?
 
-The GriptapeCloudPromptDriverNode is a building block that sets up a connection to Griptape Cloud's AI services. Think of it as configuring a special channel that your workflow can use to talk to AI models through Griptape's cloud platform.
+The GriptapeCloudPromptDriver is a building block that sets up a connection to Griptape Cloud's AI services. Think of it as configuring a special channel that your workflow can use to talk to AI models through Griptape's cloud platform.
 
 ## When would I use it?
 
@@ -16,15 +16,11 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the GriptapeCloudPromptDriverNode to your workspace
+1. Add the GriptapeCloudPromptDriver to your workspace
 1. Connect it to your flow
-1. Connect its output to nodes that need to use AI models (like RunAgentNode)
+1. Connect its output to nodes that need to use AI models (like RunAgent)
 
-### Required Fields
-
-None - the node uses default settings if you don't change anything
-
-### Optional Configuration
+### Parameters
 
 - **model**: The AI model to use (default is "gpt-4o")
 - **response_format**: How you want responses formatted (options include "json_object")
@@ -44,11 +40,11 @@ None - the node uses default settings if you don't change anything
 
 Imagine you want to create an agent that uses GPT-4o through Griptape Cloud:
 
-1. Add a GriptapeCloudPromptDriverNode to your workflow
+1. Add a GriptapeCloudPromptDriver to your workflow
 1. Set "model" to "gpt-4o"
 1. Set "temperature" to 0.7 (for more creative responses)
 1. Set "stream" to true (to see responses as they're generated)
-1. Connect the "driver" output to a RunAgentNode's "prompt_driver" input
+1. Connect the "driver" output to a RunAgent's "prompt_driver" input
 1. Now that agent will use Griptape Cloud with your custom settings
 
 ## Important Notes

@@ -223,7 +223,28 @@ class PayloadConverter:
     @staticmethod
     def _handle_SetParameterValueRequest(payload) -> str:
         """Handle SetParameterValueRequest payloads."""
-        return f"""cmd.set_value("{payload.node_name}.{payload.parameter_name}",value="{payload.value}")"""
+        max_length = 100  # Adjust this as needed
+
+        # Safely convert payload.value to string
+        try:
+            value_str = str(payload.value)
+        except Exception:
+            value_str = "<unconvertible value>"
+
+        # Handle multiline strings
+        value_str = value_str.replace("\n", "\\n").replace("\r", "\\r")
+
+        # Escape quotes to prevent breaking the command string
+        value_str = value_str.replace('"', '\\"')
+
+        # Truncate if necessary
+        if len(value_str) > max_length:
+            # Be careful with Unicode when truncating
+            truncated_value = value_str[:max_length] + "..."
+        else:
+            truncated_value = value_str
+
+        return f"""cmd.set_value("{payload.node_name}.{payload.parameter_name}",value="{truncated_value}")"""
 
     # CONNECTION OPERATION HANDLERS
 
@@ -383,6 +404,6 @@ class OperationDepthManager:
 
     def retained_mode_code(self, request: RequestPayload) -> str:
         retained_mode_value = self.payload_converter.execute(request)
-        # save to a script.py.
+        # save to a workflow.py.
         # is there an effective way to do this without duplicating commands?
         return retained_mode_value

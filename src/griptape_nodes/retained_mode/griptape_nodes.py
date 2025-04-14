@@ -14,14 +14,15 @@ from typing import Any, ClassVar, TextIO, TypeVar, cast
 
 import tomlkit
 from dotenv import load_dotenv
+from rich.logging import RichHandler
 from xdg_base_dirs import xdg_data_home
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import Parameter, ParameterContainer, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry
-from griptape_nodes.node_library.script_registry import LibraryNameAndVersion, ScriptMetadata, ScriptRegistry
+from griptape_nodes.node_library.workflow_registry import LibraryNameAndVersion, WorkflowMetadata, WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
     AppStartSessionRequest,
@@ -122,6 +123,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromFileResultFailure,
     RegisterLibraryFromFileResultSuccess,
+    UnloadLibraryFromRegistryRequest,
+    UnloadLibraryFromRegistryResultFailure,
+    UnloadLibraryFromRegistryResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
@@ -142,12 +146,14 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
-    ParameterInfoValue,
     SetNodeMetadataRequest,
     SetNodeMetadataResultFailure,
     SetNodeMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import (
+    ClearAllObjectStateRequest,
+    ClearAllObjectStateResultFailure,
+    ClearAllObjectStateResultSuccess,
     RenameObjectRequest,
     RenameObjectResultFailure,
     RenameObjectResultSuccess,
@@ -162,6 +168,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     GetCompatibleParametersRequest,
     GetCompatibleParametersResultFailure,
     GetCompatibleParametersResultSuccess,
+    GetNodeElementDetailsRequest,
+    GetNodeElementDetailsResultFailure,
+    GetNodeElementDetailsResultSuccess,
     GetParameterDetailsRequest,
     GetParameterDetailsResultFailure,
     GetParameterDetailsResultSuccess,
@@ -176,35 +185,6 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueResultFailure,
     SetParameterValueResultSuccess,
 )
-from griptape_nodes.retained_mode.events.script_events import (
-    DeleteScriptRequest,
-    DeleteScriptResultFailure,
-    DeleteScriptResultSuccess,
-    ListAllScriptsRequest,
-    ListAllScriptsResultFailure,
-    ListAllScriptsResultSuccess,
-    LoadScriptMetadata,
-    LoadScriptMetadataResultFailure,
-    LoadScriptMetadataResultSuccess,
-    RegisterScriptRequest,
-    RegisterScriptResultFailure,
-    RegisterScriptResultSuccess,
-    RenameScriptRequest,
-    RenameScriptResultFailure,
-    RenameScriptResultSuccess,
-    RunScriptFromRegistryRequest,
-    RunScriptFromRegistryResultFailure,
-    RunScriptFromRegistryResultSuccess,
-    RunScriptFromScratchRequest,
-    RunScriptFromScratchResultFailure,
-    RunScriptFromScratchResultSuccess,
-    RunScriptWithCurrentStateRequest,
-    RunScriptWithCurrentStateResultFailure,
-    RunScriptWithCurrentStateResultSuccess,
-    SaveSceneRequest,
-    SaveSceneResultFailure,
-    SaveSceneResultSuccess,
-)
 from griptape_nodes.retained_mode.events.validation_events import (
     ValidateFlowDependenciesRequest,
     ValidateFlowDependenciesResultFailure,
@@ -213,13 +193,41 @@ from griptape_nodes.retained_mode.events.validation_events import (
     ValidateNodeDependenciesResultFailure,
     ValidateNodeDependenciesResultSuccess,
 )
+from griptape_nodes.retained_mode.events.workflow_events import (
+    DeleteWorkflowRequest,
+    DeleteWorkflowResultFailure,
+    DeleteWorkflowResultSuccess,
+    ListAllWorkflowsRequest,
+    ListAllWorkflowsResultFailure,
+    ListAllWorkflowsResultSuccess,
+    LoadWorkflowMetadata,
+    LoadWorkflowMetadataResultFailure,
+    LoadWorkflowMetadataResultSuccess,
+    RegisterWorkflowRequest,
+    RegisterWorkflowResultFailure,
+    RegisterWorkflowResultSuccess,
+    RenameWorkflowRequest,
+    RenameWorkflowResultFailure,
+    RenameWorkflowResultSuccess,
+    RunWorkflowFromRegistryRequest,
+    RunWorkflowFromRegistryResultFailure,
+    RunWorkflowFromRegistryResultSuccess,
+    RunWorkflowFromScratchRequest,
+    RunWorkflowFromScratchResultFailure,
+    RunWorkflowFromScratchResultSuccess,
+    RunWorkflowWithCurrentStateRequest,
+    RunWorkflowWithCurrentStateResultFailure,
+    RunWorkflowWithCurrentStateResultSuccess,
+    SaveWorkflowRequest,
+    SaveWorkflowResultFailure,
+    SaveWorkflowResultSuccess,
+)
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.managers.log_manager import LogManager
 from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-from griptape_nodes.retained_mode.managers.settings import ScriptSettingsDetail
+from griptape_nodes.retained_mode.managers.settings import WorkflowSettingsDetail
 
 load_dotenv()
 
@@ -227,10 +235,13 @@ T = TypeVar("T")
 
 
 logger = logging.getLogger("griptape_nodes")
+logger.setLevel(logging.INFO)
+
+logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
 
 
 class SingletonMeta(type):
-    _instances = {}
+    _instances: ClassVar[dict] = {}
 
     def __call__(cls, *args, **kwargs) -> Any:
         if cls not in cls._instances:
@@ -242,7 +253,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
     def __init__(self) -> None:
         # Initialize only if our managers haven't been created yet
         if not hasattr(self, "_event_manager"):
-            self._log_manager = LogManager()
             self._event_manager = EventManager()
             self._os_manager = OSManager(self._event_manager)
             self._config_manager = ConfigManager(self._event_manager)
@@ -251,7 +261,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._node_manager = NodeManager(self._event_manager)
             self._flow_manager = FlowManager(self._event_manager)
             self._library_manager = LibraryManager(self._event_manager)
-            self._script_manager = ScriptManager(self._event_manager)
+            self._workflow_manager = WorkflowManager(self._event_manager)
             self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
             self._operation_depth_manager = OperationDepthManager(self._config_manager)
 
@@ -285,10 +295,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return BaseEvent._session_id
 
     @classmethod
-    def LogManager(cls) -> LogManager:
-        return GriptapeNodes.get_instance()._log_manager
-
-    @classmethod
     def EventManager(cls) -> EventManager:
         return GriptapeNodes.get_instance()._event_manager
 
@@ -309,8 +315,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._node_manager
 
     @classmethod
-    def ScriptManager(cls) -> ScriptManager:
-        return GriptapeNodes.get_instance()._script_manager
+    def WorkflowManager(cls) -> WorkflowManager:
+        return GriptapeNodes.get_instance()._workflow_manager
 
     @classmethod
     def ArbitraryCodeExecManager(cls) -> ArbitraryCodeExecManager:
@@ -366,19 +372,21 @@ class GriptapeNodes(metaclass=SingletonMeta):
             return GetEngineVersionResultFailure()
         except Exception as err:
             details = f"Attempted to get engine version. Failed due to '{err}'."
-            logger.exception(details)
+            logger.error(details)
             return GetEngineVersionResultFailure()
 
     def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:
-        # Do we already have one?
-        if BaseEvent._session_id is not None:
-            details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID `{BaseEvent._session_id}' in place. Replacing it."
+        if BaseEvent._session_id is None:
+            details = f"Session '{request.session_id}' started at {datetime.now(tz=UTC)}."
+        else:
+            if BaseEvent._session_id == request.session_id:
+                details = f"Session '{request.session_id}' already in place. No action taken."
+            else:
+                details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID `{BaseEvent._session_id}' in place. Replacing it."
+
             logger.info(details)
 
         BaseEvent._session_id = request.session_id
-
-        details = f"Session '{request.session_id}' started at {datetime.now(tz=UTC)}."
-        logger.info(details)
 
         # TODO(griptape): Do we want to broadcast that a session started?
 
@@ -395,6 +403,9 @@ class ObjectManager:
         self._name_to_objects = {}
         _event_manager.assign_manager_to_request_type(
             request_type=RenameObjectRequest, callback=self.on_rename_object_request
+        )
+        _event_manager.assign_manager_to_request_type(
+            request_type=ClearAllObjectStateRequest, callback=self.on_clear_all_object_state_request
         )
 
     def on_rename_object_request(self, request: RenameObjectRequest) -> ResultPayload:
@@ -447,6 +458,25 @@ class ObjectManager:
             log_level = logging.WARNING
         logger.log(level=log_level, msg=details)
         return RenameObjectResultSuccess(final_name=final_name)
+
+    def on_clear_all_object_state_request(self, request: ClearAllObjectStateRequest) -> ResultPayload:
+        if not request.i_know_what_im_doing:
+            logger.warning(
+                "Attempted to clear all object state and delete everything. Failed because they didn't know what they were doing."
+            )
+            return ClearAllObjectStateResultFailure()
+        # Let's try and clear it all.
+        try:
+            # Clear the existing flows, which will clear all nodes and connections.
+            GriptapeNodes.clear_data()
+        except Exception as e:
+            details = f"Attempted to clear all object state and delete everything. Failed with exception: {e}"
+            logger.error(details)
+            return ClearAllObjectStateResultFailure()
+
+        details = "Successfully cleared all object state (deleted everything)."
+        logger.debug(details)
+        return ClearAllObjectStateResultSuccess()
 
     def get_filtered_subset(
         self,
@@ -707,7 +737,7 @@ class FlowManager:
             is_running = flow.check_for_existing_running_flow()
         except Exception:
             details = f"Error while trying to get status of '{request.flow_name}'."
-            logger.exception(details)
+            logger.error(details)
             result = GetIsFlowRunningResultFailure()
             return result
         return GetIsFlowRunningResultSuccess(is_running=is_running)
@@ -784,7 +814,7 @@ class FlowManager:
             source_node = GriptapeNodes.NodeManager().get_node_by_name(request.source_node_name)
         except ValueError as err:
             details = f'Connection failed: "{request.source_node_name}" does not exist. Error: {err}.'
-            logger.exception(details)
+            logger.error(details)
 
             result = CreateConnectionResultFailure()
             return result
@@ -794,7 +824,7 @@ class FlowManager:
             target_node = GriptapeNodes.NodeManager().get_node_by_name(request.target_node_name)
         except ValueError as err:
             details = f'Connection failed: "{request.target_node_name}" does not exist. Error: {err}.'
-            logger.exception(details)
+            logger.error(details)
             result = CreateConnectionResultFailure()
             return result
 
@@ -807,7 +837,7 @@ class FlowManager:
             source_flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name=source_flow_name)
         except KeyError as err:
             details = f'Connection "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}" failed: {err}.'
-            logger.exception(details)
+            logger.error(details)
 
             result = CreateConnectionResultFailure()
             return result
@@ -818,7 +848,7 @@ class FlowManager:
             GriptapeNodes.FlowManager().get_flow_by_name(flow_name=target_flow_name)
         except KeyError as err:
             details = f'Connection "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}" failed: {err}.'
-            logger.exception(details)
+            logger.error(details)
 
             result = CreateConnectionResultFailure()
             return result
@@ -894,6 +924,50 @@ class FlowManager:
 
             result = CreateConnectionResultFailure()
             return result
+
+        # Based on user feedback, if a connection already exists in a scenario where only ONE such connection can exist
+        # (e.g., connecting to a data input that already has a connection, or from a control output that is already wired up),
+        # delete the old connection and replace it with this one.
+        old_source_node_name = None
+        old_source_param_name = None
+        old_target_node_name = None
+        old_target_param_name = None
+
+        # Some scenarios restrict when we can have more than one connection. See if we're in such a scenario and replace the
+        # existing connection instead of adding a new one.
+        connection_mgr = source_flow.connections
+        # Try the OUTGOING restricted scenario first.
+        restricted_scenario_connection = connection_mgr.get_existing_connection_for_restricted_scenario(
+            node=source_node, parameter=source_param, is_source=True
+        )
+        if not restricted_scenario_connection:
+            # Check the INCOMING scenario.
+            restricted_scenario_connection = connection_mgr.get_existing_connection_for_restricted_scenario(
+                node=target_node, parameter=target_param, is_source=False
+            )
+
+        if restricted_scenario_connection:
+            # Record the original data in case we need to back out of this.
+            old_source_node_name = restricted_scenario_connection.source_node.name
+            old_source_param_name = restricted_scenario_connection.source_parameter.name
+            old_target_node_name = restricted_scenario_connection.target_node.name
+            old_target_param_name = restricted_scenario_connection.target_parameter.name
+
+            delete_old_request = DeleteConnectionRequest(
+                source_node_name=old_source_node_name,
+                source_parameter_name=old_source_param_name,
+                target_node_name=old_target_node_name,
+                target_parameter_name=old_target_param_name,
+            )
+            delete_old_result = GriptapeNodes.handle_request(delete_old_request)
+            if delete_old_result.failed():
+                details = f"Attempted to connect '{request.source_node_name}.{request.source_parameter_name}'. Failed because there was a previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}' that could not be deleted."
+                logger.error(details)
+                result = CreateConnectionResultFailure()
+                return result
+
+            details = f"Deleted the previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}' to make room for the new connection."
+            logger.debug(details)
         try:
             # Actually create the Connection.
             source_flow.add_connection(
@@ -903,8 +977,26 @@ class FlowManager:
                 target_parameter=target_param,
             )
         except ValueError as e:
-            details = f'Connection failed : "{e}"'
-            logger.exception(details)
+            details = f'Connection failed: "{e}"'
+            logger.error(details)
+
+            # Attempt to restore any old connection that may have been present.
+            if (
+                (old_source_node_name is not None)
+                and (old_source_param_name is not None)
+                and (old_target_node_name is not None)
+                and (old_target_param_name is not None)
+            ):
+                create_old_connection_request = CreateConnectionRequest(
+                    source_node_name=old_source_node_name,
+                    source_parameter_name=old_source_param_name,
+                    target_node_name=old_target_node_name,
+                    target_parameter_name=old_target_param_name,
+                )
+                create_old_connection_result = GriptapeNodes.handle_request(create_old_connection_request)
+                if create_old_connection_result.failed():
+                    details = "Failed attempting to restore the old Connection after failing the replacement. A thousand pardons."
+                    logger.error(details)
             return CreateConnectionResultFailure()
 
         # Let the source make any internal handling decisions now that the Connection has been made.
@@ -936,6 +1028,8 @@ class FlowManager:
             value = source_param.default_value
         else:
             value = None
+            if isinstance(target_param, ParameterContainer):
+                target_node.kill_parameter_children(target_param)
         # if it existed somewhere and actually has a value - Set the parameter!
         if value:
             GriptapeNodes.handle_request(
@@ -951,14 +1045,14 @@ class FlowManager:
 
         return result
 
-    def on_delete_connection_request(self, request: DeleteConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915 TODO(griptape): resolve
+    def on_delete_connection_request(self, request: DeleteConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915, C901 TODO(griptape): resolve
         # Vet the two nodes first.
         source_node = None
         try:
             source_node = GriptapeNodes.NodeManager().get_node_by_name(request.source_node_name)
         except ValueError as err:
             details = f'Connection not deleted "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}". Error: {err}'
-            logger.exception(details)
+            logger.error(details)
 
             result = DeleteConnectionResultFailure()
             return result
@@ -968,7 +1062,7 @@ class FlowManager:
             target_node = GriptapeNodes.NodeManager().get_node_by_name(request.target_node_name)
         except ValueError as err:
             details = f'Connection not deleted "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}". Error: {err}'
-            logger.exception(details)
+            logger.error(details)
 
             result = DeleteConnectionResultFailure()
             return result
@@ -982,7 +1076,7 @@ class FlowManager:
             source_flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name=source_flow_name)
         except KeyError as err:
             details = f'Connection not deleted "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}". Error: {err}'
-            logger.exception(details)
+            logger.error(details)
 
             result = DeleteConnectionResultFailure()
             return result
@@ -993,7 +1087,7 @@ class FlowManager:
             GriptapeNodes.FlowManager().get_flow_by_name(flow_name=target_flow_name)
         except KeyError as err:
             details = f'Connection not deleted "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}". Error: {err}'
-            logger.exception(details)
+            logger.error(details)
 
             result = DeleteConnectionResultFailure()
             return result
@@ -1049,6 +1143,17 @@ class FlowManager:
             result = DeleteConnectionResultFailure()
             return result
 
+        # After the connection has been removed, if it doesn't have PROPERTY as a type, wipe the set parameter value and unresolve future nodes
+        if ParameterMode.PROPERTY not in target_param.allowed_modes:
+            try:
+                target_node.remove_parameter_value(target_param.name)
+                # It removed it accurately
+                # Unresolve future nodes that depended on that value
+                source_flow.connections.unresolve_future_nodes(target_node)
+                target_node.make_node_unresolved()
+            except KeyError as e:
+                logger.warning(e)
+
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
         source_node.after_outgoing_connection_removed(
             source_parameter=source_param,
@@ -1083,8 +1188,8 @@ class FlowManager:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Cannot start flow. Error: {err}"
-            logger.exception(details)
-            return StartFlowResultFailure(validation_exceptions=[])
+            logger.error(details)
+            return StartFlowResultFailure(validation_exceptions=[err])
         # A node has been provided to either start or to run up to.
         if request.flow_node_name:
             flow_node_name = request.flow_node_name
@@ -1127,20 +1232,20 @@ class FlowManager:
                         details = f"{details}\n\t{exception}"
                 logger.error(details)
                 return StartFlowResultFailure(validation_exceptions=result.exceptions)
-        except Exception:
-            details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed"
-            logger.exception(details)
-            return StartFlowResultFailure(validation_exceptions=[])
+        except Exception as e:
+            details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed: {e}"
+            logger.error(details)
+            return StartFlowResultFailure(validation_exceptions=[e])
         # By now, it has been validated with no exceptions.
         try:
             flow.start_flow(start_node, debug_mode)
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
-            logger.exception(details)
-
-            # Cancel the flow run.
-            cancel_request = CancelFlowRequest(flow_name=flow_name)
-            GriptapeNodes.handle_request(cancel_request)
+            logger.error(details)
+            if flow.check_for_existing_running_flow():
+                # Cancel the flow run.
+                cancel_request = CancelFlowRequest(flow_name=flow_name)
+                GriptapeNodes.handle_request(cancel_request)
 
             return StartFlowResultFailure(validation_exceptions=[])
 
@@ -1159,13 +1264,13 @@ class FlowManager:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Could not get flow state. Error: {err}"
-            logger.exception(details)
+            logger.error(details)
             return GetFlowStateResultFailure()
         try:
             control_node, resolving_node = flow.flow_state()
         except Exception as e:
             details = f"Failed to get flow state of flow with name {flow_name}. Exception occurred: {e} "
-            logger.exception(details)
+            logger.error(details)
             return GetFlowStateResultFailure()
         details = f"Successfully got flow state for flow with name {flow_name}."
         logger.debug(details)
@@ -1182,14 +1287,14 @@ class FlowManager:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Could not cancel flow execution. Error: {err}"
-            logger.exception(details)
+            logger.error(details)
 
             return CancelFlowResultFailure()
         try:
             flow.cancel_flow_run()
         except Exception as e:
             details = f"Could not cancel flow execution. Exception: {e}"
-            logger.exception(details)
+            logger.error(details)
 
             return CancelFlowResultFailure()
         details = f"Successfully cancelled flow execution with name {flow_name}"
@@ -1208,16 +1313,17 @@ class FlowManager:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Could not step flow. No flow with name {flow_name} exists. Error: {err}"
-            logger.exception(details)
+            logger.error(details)
 
-            return SingleNodeStepResultFailure(validation_exceptions=[])
+            return SingleNodeStepResultFailure(validation_exceptions=[err])
         try:
             flow.single_node_step()
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
-            logger.exception(details)
-            cancel_request = CancelFlowRequest(flow_name=flow_name)
-            GriptapeNodes.handle_request(cancel_request)
+            logger.error(details)
+            if flow.check_for_existing_running_flow():
+                cancel_request = CancelFlowRequest(flow_name=flow_name)
+                GriptapeNodes.handle_request(cancel_request)
             return SingleNodeStepResultFailure(validation_exceptions=[])
 
         # All completed happily
@@ -1237,16 +1343,17 @@ class FlowManager:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Could not single step flow. Error: {err}."
-            logger.exception(details)
+            logger.error(details)
 
             return SingleExecutionStepResultFailure()
         try:
             flow.single_execution_step()
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
-            logger.exception(details)
-            cancel_request = CancelFlowRequest(flow_name=flow_name)
-            GriptapeNodes.handle_request(cancel_request)
+            logger.error(details)
+            if flow.check_for_existing_running_flow():
+                cancel_request = CancelFlowRequest(flow_name=flow_name)
+                GriptapeNodes.handle_request(cancel_request)
             return SingleNodeStepResultFailure(validation_exceptions=[])
         details = f"Successfully granularly stepped flow with name {flow_name}"
         logger.debug(details)
@@ -1264,16 +1371,17 @@ class FlowManager:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Failed to continue execution step. Error: {err}"
-            logger.exception(details)
+            logger.error(details)
 
             return ContinueExecutionStepResultFailure()
         try:
             flow.continue_executing()
         except Exception as e:
             details = f"Failed to continue execution step. An exception occurred: {e}."
-            logger.exception(details)
-            cancel_request = CancelFlowRequest(flow_name=flow_name)
-            GriptapeNodes.handle_request(cancel_request)
+            logger.error(details)
+            if flow.check_for_existing_running_flow():
+                cancel_request = CancelFlowRequest(flow_name=flow_name)
+                GriptapeNodes.handle_request(cancel_request)
             return ContinueExecutionStepResultFailure()
         details = f"Successfully continued flow with name {flow_name}"
         logger.debug(details)
@@ -1289,13 +1397,13 @@ class FlowManager:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Failed to unresolve flow. Error: {err}"
-            logger.exception(details)
+            logger.error(details)
             return UnresolveFlowResultFailure()
         try:
             flow.unresolve_whole_flow()
         except Exception as e:
             details = f"Failed to unresolve flow. An exception occurred: {e}."
-            logger.exception(details)
+            logger.error(details)
             return UnresolveFlowResultFailure()
         details = f"Unresolved flow with name {flow_name}"
         logger.debug(details)
@@ -1308,7 +1416,7 @@ class FlowManager:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Failed to validate flow. Error: {err}"
-            logger.exception(details)
+            logger.error(details)
             return ValidateFlowDependenciesResultFailure()
         if request.flow_node_name:
             flow_node_name = request.flow_node_name
@@ -1371,6 +1479,9 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(
             ValidateNodeDependenciesRequest, self.on_validate_node_dependencies_request
         )
+        event_manager.assign_manager_to_request_type(
+            GetNodeElementDetailsRequest, self.on_get_node_element_details_request
+        )
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old node name and its parent.
@@ -1399,7 +1510,7 @@ class NodeManager:
             flow = flow_mgr.get_flow_by_name(parent_flow_name)
         except KeyError as err:
             details = f"Could not create Node of type '{request.node_type}'. Error: {err}"
-            logger.exception(details)
+            logger.error(details)
 
             result = CreateNodeResultFailure()
             return result
@@ -1426,7 +1537,7 @@ class NodeManager:
 
             traceback.print_exc()
             details = f"Could not create Node '{final_node_name}' of type '{request.node_type}': {err}"
-            logger.exception(details)
+            logger.error(details)
 
             result = CreateNodeResultFailure()
             return result
@@ -1469,7 +1580,7 @@ class NodeManager:
             parent_flow = GriptapeNodes().FlowManager().get_flow_by_name(parent_flow_name)
         except KeyError as err:
             details = f"Attempted to delete a Node '{request.node_name}'. Error: {err}"
-            logger.exception(details)
+            logger.error(details)
 
             result = DeleteNodeResultFailure()
             return result
@@ -1611,7 +1722,7 @@ class NodeManager:
             parent_flow = GriptapeNodes().FlowManager().get_flow_by_name(parent_flow_name)
         except KeyError as err:
             details = f"Attempted to list Connections for a Node '{request.node_name}'. Error: {err}"
-            logger.exception(details)
+            logger.error(details)
 
             result = ListConnectionsForNodeResultFailure()
             return result
@@ -1678,7 +1789,7 @@ class NodeManager:
         )
         return result
 
-    def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912
+    def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -1690,6 +1801,33 @@ class NodeManager:
             result = AddParameterToNodeResultFailure()
             return result
 
+        if request.parent_container_name:
+            parameter = node.get_parameter_by_name(request.parent_container_name)
+            if parameter is None:
+                details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{request.node_name}'. Failed because parameter didn't exist."
+                logger.error(details)
+                result = AddParameterToNodeResultFailure()
+                return result
+            if not isinstance(parameter, ParameterContainer):
+                details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{request.node_name}'. Failed because parameter wasn't a container."
+                logger.error(details)
+                result = AddParameterToNodeResultFailure()
+                return result
+            try:
+                new_param = parameter.add_child_parameter()
+            except Exception as e:
+                details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{request.node_name}'. Failed: {e}."
+                logger.exception(details)
+                result = AddParameterToNodeResultFailure()
+                return result
+            return AddParameterToNodeResultSuccess(
+                parameter_name=new_param.name, type=new_param.type, node_name=request.node_name
+            )
+        if request.parameter_name is None or request.default_value is None or request.tooltip is None:
+            details = f"Attempted to add Parameter to node '{request.node_name}'. Failed because default_value, tooltip, or parameter_name was not defined."
+            logger.error(details)
+            result = AddParameterToNodeResultFailure()
+            return result
         # Does the Node already have a parameter by this name?
         if node.get_parameter_by_name(request.parameter_name) is not None:
             details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{request.node_name}'. Failed because it already had a Parameter with that name on it. Parameter names must be unique within the Node."
@@ -1754,13 +1892,15 @@ class NodeManager:
             node.add_parameter(new_param)
         except Exception as e:
             details = f"Couldn't add parameter with name {request.parameter_name} to node. Error: {e}"
-            logger.exception(details)
+            logger.error(details)
             return AddParameterToNodeResultFailure()
 
         details = f"Successfully added Parameter '{request.parameter_name}' to Node '{request.node_name}'."
         logger.debug(details)
 
-        result = AddParameterToNodeResultSuccess()
+        result = AddParameterToNodeResultSuccess(
+            parameter_name=new_param.name, type=new_param.type, node_name=request.node_name
+        )
         return result
 
     def on_remove_parameter_from_node_request(self, request: RemoveParameterFromNodeRequest) -> ResultPayload:  # noqa: C901
@@ -1891,6 +2031,47 @@ class NodeManager:
             is_user_defined=parameter.user_defined,
             ui_options=parameter.ui_options,
         )
+        return result
+
+    def on_get_node_element_details_request(self, request: GetNodeElementDetailsRequest) -> ResultPayload:
+        # Does this node exist?
+        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to get element details for Node '{request.node_name}', but no such Node was found."
+            logger.error(details)
+
+            result = GetNodeElementDetailsResultFailure()
+            return result
+
+        # Did they ask for a specific element ID?
+        if request.specific_element_id is None:
+            # No? Use the node's root element to search from.
+            element = node.root_ui_element
+        else:
+            element = node.findroot_ui_element.find_element_by_id(request.specific_element_id)
+            if element is None:
+                details = f"Attempted to get element details for element '{request.specific_element_id}' from Node '{request.node_name}'. Failed because it didn't have an element with that ID on it."
+                logger.error(details)
+
+                result = GetNodeElementDetailsResultFailure()
+                return result
+
+        element_details = element.to_dict()
+        # We need to get parameter values from here
+        param_to_value = {}
+        for parameter in element.find_elements_by_type(Parameter):
+            # How to do for grouping?
+            value = node.get_parameter_value(parameter.name)
+            if value:
+                element_id = parameter.element_id
+                param_to_value[element_id] = value
+        if param_to_value:
+            element_details["element_id_to_value"] = param_to_value
+        details = f"Successfully got element details for Node '{request.node_name}'."
+        logger.debug(details)
+        result = GetNodeElementDetailsResultSuccess(element_details=element_details)
         return result
 
     def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
@@ -2027,14 +2208,14 @@ class NodeManager:
         # Get the node
         node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
         if node is None:
-            details = f'"{request.node_name}" not found'
+            details = f"Attempted to set parameter '{param_name}' value on node '{request.node_name}'. Failed because no such Node could be found."
             logger.error(details)
             return SetParameterValueResultFailure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
         if parameter is None:
-            details = f'"{request.node_name}.{param_name}" not found'
+            details = f"Attempted to set parameter value for '{request.node_name}.{param_name}'. Failed because no parameter with that name could be found."
             logger.error(details)
 
             result = SetParameterValueResultFailure()
@@ -2042,7 +2223,7 @@ class NodeManager:
 
         # Validate that parameters can be set at all
         if not parameter.settable:
-            details = f'"{request.node_name}.{request.parameter_name}" is not settable'
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             logger.error(details)
             result = SetParameterValueResultFailure()
             return result
@@ -2052,7 +2233,7 @@ class NodeManager:
         object_type = request.data_type if request.data_type else parameter.type
         # Is this value kosher for the types allowed?
         if not parameter.is_incoming_type_allowed(object_type):
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed.  type "{object_created.__class__.__name__}" not in allowed types:{parameter.input_types}'
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because the value's type of '{object_type}' was not in the Parameter's list of allowed types: {parameter.input_types}."
             logger.error(details)
 
             result = SetParameterValueResultFailure()
@@ -2061,19 +2242,19 @@ class NodeManager:
         try:
             parent_flow_name = self.get_node_parent_flow_by_name(node.name)
         except KeyError:
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Parent flow does not exist. Could not unresolve future nodes.'
-            logger.exception(details)
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
+            logger.error(details)
             return SetParameterValueResultFailure()
         parent_flow = obj_mgr.attempt_get_object_by_name_as_type(parent_flow_name, ControlFlow)
         if not parent_flow:
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Parent flow does not exist. Could not unresolve future nodes.'
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             logger.error(details)
             return SetParameterValueResultFailure()
         try:
             parent_flow.connections.unresolve_future_nodes(node)
-        except Exception as e:
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Exception: {e}'
-            logger.exception(details)
+        except Exception as err:
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because Exception: {err}"
+            logger.error(details)
             return SetParameterValueResultFailure()
 
         # Values are actually stored on the NODE.
@@ -2081,8 +2262,8 @@ class NodeManager:
             modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
             finalized_value = node.get_parameter_value(request.parameter_name)
         except Exception as err:
-            details = f'set_value for "{request.node_name}.{request.parameter_name}" failed. Exception: {err}'
-            logger.exception(details)
+            details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because Exception: {err}"
+            logger.error(details)
             return SetParameterValueResultFailure()
 
         if modified_parameters:
@@ -2119,7 +2300,7 @@ class NodeManager:
     # want to give clear reasoning for each failure.
     # For PLR0915 (too many statements): very little reusable code here, want to be explicit and
     # make debugger use friendly.
-    def on_get_all_node_info_request(self, request: GetAllNodeInfoRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
+    def on_get_all_node_info_request(self, request: GetAllNodeInfoRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -2163,87 +2344,49 @@ class NodeManager:
 
             result = GetAllNodeInfoResultFailure()
             return result
-
-        list_parameters_request = ListParametersOnNodeRequest(node_name=request.node_name)
-        list_parameters_result = GriptapeNodes.NodeManager().on_list_parameters_on_node_request(list_parameters_request)
-        if not list_parameters_result.succeeded():
-            details = f"Attempted to get all info for Node named '{request.node_name}', but failed listing all Parameters on it."
-            logger.error(details)
-
-            result = GetAllNodeInfoResultFailure()
-            return result
-
         # Cast everything to get the linter off our back.
         try:
             get_metadata_success = cast("GetNodeMetadataResultSuccess", get_metadata_result)
             get_resolution_state_success = cast("GetNodeResolutionStateResultSuccess", get_resolution_state_result)
             list_connections_success = cast("ListConnectionsForNodeResultSuccess", list_connections_result)
-            list_parameters_success = cast("ListParametersOnNodeResultSuccess", list_parameters_result)
         except Exception as err:
             details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
-            logger.exception(details)
+            logger.error(details)
 
             result = GetAllNodeInfoResultFailure()
             return result
+        get_node_elements_request = GetNodeElementDetailsRequest(node_name=request.node_name)
+        get_node_elements_result = GriptapeNodes.NodeManager().on_get_node_element_details_request(
+            get_node_elements_request
+        )
+        if not get_node_elements_result.succeeded():
+            details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting details for elements."
+            logger.error(details)
+            result = GetAllNodeInfoResultFailure()
+            return result
+        try:
+            get_element_details_success = cast("GetNodeElementDetailsResultSuccess", get_node_elements_result)
+        except Exception as err:
+            details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
+            logger.exception(details)
+            result = GetAllNodeInfoResultFailure()
+            return result
 
-        # Now go through all the Parameters.
-        parameter_name_to_info = {}
-
-        for param_name in list_parameters_success.parameter_names:
-            # Parameter details up first.
-            get_parameter_details_request = GetParameterDetailsRequest(
-                parameter_name=param_name, node_name=request.node_name
-            )
-            get_parameter_details_result = GriptapeNodes.NodeManager().on_get_parameter_details_request(
-                get_parameter_details_request
-            )
-
-            if not get_parameter_details_result.succeeded():
-                details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting details for Parameter '{param_name}'."
-                logger.error(details)
-
-                result = GetAllNodeInfoResultFailure()
-                return result
-
-            # Now the...gulp...value.
-            get_parameter_value_request = GetParameterValueRequest(
-                parameter_name=param_name, node_name=request.node_name
-            )
-            get_parameter_value_result = GriptapeNodes.NodeManager().on_get_parameter_value_request(
-                get_parameter_value_request
-            )
-
-            if not get_parameter_value_result.succeeded():
-                details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting value for Parameter '{param_name}'."
-                logger.error(details)
-
-                result = GetAllNodeInfoResultFailure()
-                return result
-
-            # They may have succeeded, but are they OUR type of succeeded?
-            try:
-                get_parameter_details_success = cast("GetParameterDetailsResultSuccess", get_parameter_details_result)
-                get_parameter_value_success = cast("GetParameterValueResultSuccess", get_parameter_value_result)
-            except Exception as err:
-                details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
-                logger.exception(details)
-
-                result = GetAllNodeInfoResultFailure()
-                return result
-
-            # OK, add it to the parameter dictionary.
-            parameter_name_to_info[param_name] = ParameterInfoValue(
-                details=get_parameter_details_success, value=get_parameter_value_success
-            )
-
+        # this will return the node element and the value
+        element_details = get_element_details_success.element_details
+        if "element_id_to_value" in element_details:
+            element_id_to_value = element_details["element_id_to_value"].copy()
+            del element_details["element_id_to_value"]
+        else:
+            element_id_to_value = {}
         details = f"Successfully got all node info for node '{request.node_name}'."
         logger.debug(details)
         result = GetAllNodeInfoResultSuccess(
             metadata=get_metadata_success.metadata,
             node_resolution_state=get_resolution_state_success.state,
             connections=list_connections_success,
-            parameter_name_to_info=parameter_name_to_info,
-            root_node_element=node.root_ui_element.to_dict(),
+            element_id_to_value=element_id_to_value,
+            root_node_element=element_details,
         )
         return result
 
@@ -2253,7 +2396,7 @@ class NodeManager:
             node = GriptapeNodes.NodeManager().get_node_by_name(request.node_name)
         except ValueError as err:
             details = f"Attempted to get compatible parameters for node '{request.node_name}', but that node does not exist. Error: {err}."
-            logger.exception(details)
+            logger.error(details)
             return GetCompatibleParametersResultFailure()
 
         # Vet the parameter.
@@ -2276,7 +2419,7 @@ class NodeManager:
             flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(request.node_name)
         except KeyError as err:
             details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}', but the node's parent flow could not be found: {err}"
-            logger.exception(details)
+            logger.error(details)
             return GetCompatibleParametersResultFailure()
 
         # Iterate through all nodes in this Flow (yes, this restriction still sucks)
@@ -2293,7 +2436,7 @@ class NodeManager:
             list_nodes_in_flow_success = cast("ListNodesInFlowResultSuccess", list_nodes_in_flow_result)
         except Exception as err:
             details = f"Attempted to get compatible parameters for '{request.node_name}.{request.parameter_name}'. Failed due to {err}"
-            logger.exception(details)
+            logger.error(details)
             return GetCompatibleParametersResultFailure()
 
         # Walk through all nodes that are NOT us to find compatible Parameters.
@@ -2305,7 +2448,7 @@ class NodeManager:
                     test_node = GriptapeNodes.NodeManager().get_node_by_name(test_node_name)
                 except ValueError as err:
                     details = f"Attempted to get compatible parameters for node '{request.node_name}', and sought to test against {test_node_name}, but that node does not exist. Error: {err}."
-                    logger.exception(details)
+                    logger.error(details)
                     return GetCompatibleParametersResultFailure()
 
                 # Get Parameters from Node
@@ -2361,7 +2504,7 @@ class NodeManager:
             raise KeyError(msg)
         return self._name_to_parent_flow_name[node_name]
 
-    def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
+    def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915, PLR0912
         node_name = request.node_name
         debug_mode = request.debug_mode
 
@@ -2372,27 +2515,27 @@ class NodeManager:
             return ResolveNodeResultFailure(validation_exceptions=[])
         try:
             node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
-        except ValueError:
-            details = f'Resolve failure. "{node_name}" does not exist.'
-            logger.exception(details)
+        except ValueError as e:
+            details = f'Resolve failure. "{node_name}" does not exist. {e}'
+            logger.error(details)
 
-            return ResolveNodeResultFailure(validation_exceptions=[])
+            return ResolveNodeResultFailure(validation_exceptions=[e])
         # try to get the flow parent of this node
         try:
             flow_name = self._name_to_parent_flow_name[node_name]
-        except KeyError:
-            details = f'Failed to fetch parent flow for "{node_name}"'
-            logger.exception(details)
+        except KeyError as e:
+            details = f'Failed to fetch parent flow for "{node_name}": {e}'
+            logger.error(details)
 
-            return ResolveNodeResultFailure(validation_exceptions=[])
+            return ResolveNodeResultFailure(validation_exceptions=[e])
         try:
             obj_mgr = GriptapeNodes()._object_manager
             flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
-        except KeyError:
-            details = f'Failed to fetch parent flow for "{node_name}"'
-            logger.exception(details)
+        except KeyError as e:
+            details = f'Failed to fetch parent flow for "{node_name}": {e}'
+            logger.error(details)
 
-            return ResolveNodeResultFailure(validation_exceptions=[])
+            return ResolveNodeResultFailure(validation_exceptions=[e])
 
         if flow is None:
             details = f'Failed to fetch parent flow for "{node_name}"'
@@ -2400,10 +2543,10 @@ class NodeManager:
             return ResolveNodeResultFailure(validation_exceptions=[])
         try:
             flow.connections.unresolve_future_nodes(node)
-        except Exception:
-            details = f'Failed to mark future nodes dirty. Unable to kick off flow from "{node_name}"'
-            logger.exception(details)
-            return ResolveNodeResultFailure(validation_exceptions=[])
+        except Exception as e:
+            details = f'Failed to mark future nodes dirty. Unable to kick off flow from "{node_name}": {e}'
+            logger.error(details)
+            return ResolveNodeResultFailure(validation_exceptions=[e])
         # Validate here.
         result = self.on_validate_node_dependencies_request(ValidateNodeDependenciesRequest(node_name=node_name))
         try:
@@ -2422,16 +2565,17 @@ class NodeManager:
                 return StartFlowResultFailure(validation_exceptions=result.exceptions)
         except Exception as e:
             details = f"Failed to resolve node '{node_name}'. Flow Validation Failed. Error: {e}"
-            logger.exception(details)
-            return StartFlowResultFailure(validation_exceptions=[])
+            logger.error(details)
+            return StartFlowResultFailure(validation_exceptions=[e])
         try:
             flow.resolve_singular_node(node, debug_mode)
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
-            logger.exception(details)
-            cancel_request = CancelFlowRequest(flow_name=flow_name)
-            GriptapeNodes.handle_request(cancel_request)
-            return ResolveNodeResultFailure(validation_exceptions=[])
+            logger.error(details)
+            if flow.check_for_existing_running_flow():
+                cancel_request = CancelFlowRequest(flow_name=flow_name)
+                GriptapeNodes.handle_request(cancel_request)
+            return ResolveNodeResultFailure(validation_exceptions=[e])
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         logger.debug(details)
         return ResolveNodeResultSuccess()
@@ -2448,7 +2592,7 @@ class NodeManager:
             flow_name = self.get_node_parent_flow_by_name(node_name)
         except Exception as e:
             details = f'Failed to validate node dependencies. Node with "{node_name}" has no parent flow. Error: {e}'
-            logger.exception(details)
+            logger.error(details)
             return ValidateNodeDependenciesResultFailure()
         flow = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
         if not flow:
@@ -2467,200 +2611,233 @@ class NodeManager:
         )
 
 
-class ScriptManager:
-    SCRIPT_METADATA_HEADER: ClassVar[str] = "script"
+class WorkflowManager:
+    WORKFLOW_METADATA_HEADER: ClassVar[str] = "script"
 
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(
-            RunScriptFromScratchRequest, self.on_run_script_from_scratch_request
+            RunWorkflowFromScratchRequest, self.on_run_workflow_from_scratch_request
         )
         event_manager.assign_manager_to_request_type(
-            RunScriptWithCurrentStateRequest,
-            self.on_run_script_with_current_state_request,
+            RunWorkflowWithCurrentStateRequest,
+            self.on_run_workflow_with_current_state_request,
         )
         event_manager.assign_manager_to_request_type(
-            RunScriptFromRegistryRequest,
-            self.on_run_script_from_registry_request,
+            RunWorkflowFromRegistryRequest,
+            self.on_run_workflow_from_registry_request,
         )
         event_manager.assign_manager_to_request_type(
-            RegisterScriptRequest,
-            self.on_register_script_request,
+            RegisterWorkflowRequest,
+            self.on_register_workflow_request,
         )
         event_manager.assign_manager_to_request_type(
-            ListAllScriptsRequest,
-            self.on_list_all_scripts_request,
+            ListAllWorkflowsRequest,
+            self.on_list_all_workflows_request,
         )
         event_manager.assign_manager_to_request_type(
-            DeleteScriptRequest,
-            self.on_delete_scripts_request,
+            DeleteWorkflowRequest,
+            self.on_delete_workflows_request,
         )
         event_manager.assign_manager_to_request_type(
-            RenameScriptRequest,
-            self.on_rename_script_request,
+            RenameWorkflowRequest,
+            self.on_rename_workflow_request,
         )
 
         event_manager.assign_manager_to_request_type(
-            SaveSceneRequest,
-            self.on_save_scene_request,
+            SaveWorkflowRequest,
+            self.on_save_workflow_request,
         )
-        event_manager.assign_manager_to_request_type(LoadScriptMetadata, self.on_load_script_metadata_request)
+        event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
 
-    def run_script(self, relative_file_path: str) -> tuple[bool, str]:
+    def run_workflow(self, relative_file_path: str) -> tuple[bool, str]:
         relative_file_path_obj = Path(relative_file_path)
         if relative_file_path_obj.is_absolute():
             complete_file_path = relative_file_path_obj
         else:
-            complete_file_path = ScriptRegistry.get_complete_file_path(relative_file_path=relative_file_path)
+            complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         try:
+            # TODO(griptape): scope the libraries loaded to JUST those used by this workflow, eventually: https://github.com/griptape-ai/griptape-nodes/issues/284
+            # Load (or reload, which should trigger a hot reload) all libraries
+            GriptapeNodes.LibraryManager().load_all_libraries_from_config()
+
+            # Now execute the workflow.
             with Path(complete_file_path).open() as file:
-                script_content = file.read()
-            exec(script_content)  # noqa: S102
+                workflow_content = file.read()
+            exec(workflow_content)  # noqa: S102
         except Exception as e:
             return (
                 False,
-                f"Failed to run script on path '{complete_file_path}'. Exception: {e}",
+                f"Failed to run workflow on path '{complete_file_path}'. Exception: {e}",
             )
-        return True, f"Succeeded in running script on path '{complete_file_path}'."
+        return True, f"Succeeded in running workflow on path '{complete_file_path}'."
 
-    def on_run_script_from_scratch_request(self, request: RunScriptFromScratchRequest) -> ResultPayload:
+    def on_run_workflow_from_scratch_request(self, request: RunWorkflowFromScratchRequest) -> ResultPayload:
         # Check if file path exists
-
         relative_file_path = request.file_path
-        complete_file_path = ScriptRegistry.get_complete_file_path(relative_file_path=relative_file_path)
+        complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         if not Path(complete_file_path).is_file():
             details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
             logger.error(details)
-            return RunScriptFromScratchResultFailure()
+            return RunWorkflowFromScratchResultFailure()
 
-        try:
-            # Clear the existing flows
-            GriptapeNodes.clear_data()
-        except Exception as e:
-            details = f"Failed to clear the existing context when trying to run '{complete_file_path}'. Exception: {e}"
-            logger.exception(details)
-            return RunScriptFromScratchResultFailure()
+        # Start with a clean slate.
+        clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
+        clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+        if not clear_all_result.succeeded():
+            details = f"Failed to clear the existing object state when trying to run '{complete_file_path}'."
+            logger.error(details)
+            return RunWorkflowFromScratchResultFailure()
 
         # Run the file, goddamn it
-        success, details = self.run_script(relative_file_path=relative_file_path)
+        success, details = self.run_workflow(relative_file_path=relative_file_path)
         if success:
             logger.debug(details)
-            return RunScriptFromScratchResultSuccess()
+            return RunWorkflowFromScratchResultSuccess()
 
         logger.error(details)
-        return RunScriptFromScratchResultFailure()
+        return RunWorkflowFromScratchResultFailure()
 
-    def on_run_script_with_current_state_request(self, request: RunScriptWithCurrentStateRequest) -> ResultPayload:
+    def on_run_workflow_with_current_state_request(self, request: RunWorkflowWithCurrentStateRequest) -> ResultPayload:
         relative_file_path = request.file_path
-        complete_file_path = ScriptRegistry.get_complete_file_path(relative_file_path=relative_file_path)
+        complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         if not Path(complete_file_path).is_file():
             details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
             logger.error(details)
-            return RunScriptWithCurrentStateResultFailure()
-        success, details = self.run_script(relative_file_path=relative_file_path)
+            return RunWorkflowWithCurrentStateResultFailure()
+        success, details = self.run_workflow(relative_file_path=relative_file_path)
 
         if success:
             logger.debug(details)
-            return RunScriptWithCurrentStateResultSuccess()
+            return RunWorkflowWithCurrentStateResultSuccess()
         logger.error(details)
-        return RunScriptWithCurrentStateResultFailure()
+        return RunWorkflowWithCurrentStateResultFailure()
 
-    def on_run_script_from_registry_request(self, request: RunScriptFromRegistryRequest) -> ResultPayload:
-        # get script from registry
+    def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
+        # get workflow from registry
         try:
-            script = ScriptRegistry.get_script_by_name(request.script_name)
+            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
         except KeyError:
-            logger.exception("Failed to get script from registry.")
-            return RunScriptFromRegistryResultFailure()
-        # get file_path from script
-        relative_file_path = script.file_path
+            logger.error("Failed to get workflow from registry.")
+            return RunWorkflowFromRegistryResultFailure()
+
+        # get file_path from workflow
+        relative_file_path = workflow.file_path
+
+        if request.run_with_clean_slate:
+            # Start with a clean slate.
+            clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
+            clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+            if not clear_all_result.succeeded():
+                details = f"Failed to clear the existing object state when preparing to run workflow '{request.workflow_name}'."
+                logger.error(details)
+                return RunWorkflowFromRegistryResultFailure()
+
+            # Unload all libraries now.
+            all_libraries_request = ListRegisteredLibrariesRequest()
+            all_libraries_result = GriptapeNodes.handle_request(all_libraries_request)
+            if not isinstance(all_libraries_result, ListRegisteredLibrariesResultSuccess):
+                details = (
+                    f"When preparing to run a workflow '{request.workflow_name}', failed to get registered libraries."
+                )
+                logger.error(details)
+                return RunWorkflowFromRegistryResultFailure()
+
+            for library_name in all_libraries_result.libraries:
+                unload_library_request = UnloadLibraryFromRegistryRequest(library_name=library_name)
+                unload_library_result = GriptapeNodes.handle_request(unload_library_request)
+                if not unload_library_result.succeeded():
+                    details = f"When preparing to run a workflow '{request.workflow_name}', failed to unload library '{library_name}'."
+                    logger.error(details)
+                    return RunWorkflowFromRegistryResultFailure()
+
         # run file
-        success, details = self.run_script(relative_file_path=relative_file_path)
+        success, details = self.run_workflow(relative_file_path=relative_file_path)
 
         if success:
             logger.debug(details)
-            return RunScriptFromRegistryResultSuccess()
+            return RunWorkflowFromRegistryResultSuccess()
 
         logger.error(details)
-        return RunScriptFromRegistryResultFailure()
+        return RunWorkflowFromRegistryResultFailure()
 
-    def on_register_script_request(self, request: RegisterScriptRequest) -> ResultPayload:
+    def on_register_workflow_request(self, request: RegisterWorkflowRequest) -> ResultPayload:
         try:
-            script = ScriptRegistry.generate_new_script(metadata=request.metadata, file_path=request.file_name)
+            workflow = WorkflowRegistry.generate_new_workflow(metadata=request.metadata, file_path=request.file_name)
         except Exception as e:
-            details = f"Failed to register script with name '{request.metadata.name}'. Error: {e}"
-            logger.exception(details)
-            return RegisterScriptResultFailure()
-        return RegisterScriptResultSuccess(script_name=script.metadata.name)
+            details = f"Failed to register workflow with name '{request.metadata.name}'. Error: {e}"
+            logger.error(details)
+            return RegisterWorkflowResultFailure()
+        return RegisterWorkflowResultSuccess(workflow_name=workflow.metadata.name)
 
-    def on_list_all_scripts_request(self, _request: ListAllScriptsRequest) -> ResultPayload:
+    def on_list_all_workflows_request(self, _request: ListAllWorkflowsRequest) -> ResultPayload:
         try:
-            scripts = ScriptRegistry.list_scripts()
+            workflows = WorkflowRegistry.list_workflows()
         except Exception:
-            details = "Failed to list all scripts."
-            logger.exception(details)
-            return ListAllScriptsResultFailure()
-        return ListAllScriptsResultSuccess(scripts=scripts)
+            details = "Failed to list all workflows."
+            logger.error(details)
+            return ListAllWorkflowsResultFailure()
+        return ListAllWorkflowsResultSuccess(workflows=workflows)
 
-    def on_delete_scripts_request(self, request: DeleteScriptRequest) -> ResultPayload:
+    def on_delete_workflows_request(self, request: DeleteWorkflowRequest) -> ResultPayload:
         try:
-            script = ScriptRegistry.delete_script_by_name(request.name)
+            workflow = WorkflowRegistry.delete_workflow_by_name(request.name)
         except Exception as e:
-            details = f"Failed to remove script from registry with name '{request.name}'. Exception: {e}"
-            logger.exception(details)
-            return DeleteScriptResultFailure()
+            details = f"Failed to remove workflow from registry with name '{request.name}'. Exception: {e}"
+            logger.error(details)
+            return DeleteWorkflowResultFailure()
         config_manager = GriptapeNodes.get_instance()._config_manager
         try:
-            config_manager.delete_user_script(script.__dict__)
+            config_manager.delete_user_workflow(workflow.__dict__)
         except Exception as e:
-            details = f"Failed to remove script from user config with name '{request.name}'. Exception: {e}"
-            logger.exception(details)
-            return DeleteScriptResultFailure()
+            details = f"Failed to remove workflow from user config with name '{request.name}'. Exception: {e}"
+            logger.error(details)
+            return DeleteWorkflowResultFailure()
         # delete the actual file
-        full_path = config_manager.workspace_path.joinpath(script.file_path)
+        full_path = config_manager.workspace_path.joinpath(workflow.file_path)
         try:
             full_path.unlink()
         except Exception as e:
-            details = f"Failed to delete script file with path '{script.file_path}'. Exception: {e}"
-            logger.exception(details)
-            return DeleteScriptResultFailure()
-        return DeleteScriptResultSuccess()
-
-    def on_rename_script_request(self, request: RenameScriptRequest) -> ResultPayload:
-        save_scene_request = GriptapeNodes.handle_request(SaveSceneRequest(file_name=request.requested_name))
-
-        if isinstance(save_scene_request, SaveSceneResultFailure):
-            details = f"Attempted to rename script '{request.script_name}' to '{request.requested_name}'. Failed while attempting to save."
+            details = f"Failed to delete workflow file with path '{workflow.file_path}'. Exception: {e}"
             logger.error(details)
-            return RenameScriptResultFailure()
+            return DeleteWorkflowResultFailure()
+        return DeleteWorkflowResultSuccess()
 
-        delete_script_result = GriptapeNodes.handle_request(DeleteScriptRequest(name=request.script_name))
-        if isinstance(delete_script_result, DeleteScriptResultFailure):
-            details = f"Attempted to rename script '{request.script_name}' to '{request.requested_name}'. Failed while attempting to remove the original file name from the registry."
+    def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
+        save_workflow_request = GriptapeNodes.handle_request(SaveWorkflowRequest(file_name=request.requested_name))
+
+        if isinstance(save_workflow_request, SaveWorkflowResultFailure):
+            details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to save."
             logger.error(details)
-            return RenameScriptResultFailure()
+            return RenameWorkflowResultFailure()
 
-        return RenameScriptResultSuccess()
+        delete_workflow_result = GriptapeNodes.handle_request(DeleteWorkflowRequest(name=request.workflow_name))
+        if isinstance(delete_workflow_result, DeleteWorkflowResultFailure):
+            details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to remove the original file name from the registry."
+            logger.error(details)
+            return RenameWorkflowResultFailure()
 
-    def on_load_script_metadata_request(self, request: LoadScriptMetadata) -> ResultPayload:
+        return RenameWorkflowResultSuccess()
+
+    def on_load_workflow_metadata_request(self, request: LoadWorkflowMetadata) -> ResultPayload:
         # Let us go into the darkness.
         complete_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(request.file_name)
         if not Path(complete_file_path).is_file():
-            details = f"Attempted to load script metadata for a file at '{complete_file_path}. Failed because no file could be found at that path."
+            details = f"Attempted to load workflow metadata for a file at '{complete_file_path}. Failed because no file could be found at that path."
             logger.error(details)
-            return LoadScriptMetadataResultFailure()
+            return LoadWorkflowMetadataResultFailure()
 
         # Open 'er up.
         with complete_file_path.open("r") as file:
-            script_content = file.read()
+            workflow_content = file.read()
 
         # Find the metadata block.
         regex = r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
         block_name = "script"
-        matches = list(filter(lambda m: m.group("type") == block_name, re.finditer(regex, script_content)))
+        matches = list(filter(lambda m: m.group("type") == block_name, re.finditer(regex, workflow_content)))
         if len(matches) != 1:
-            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed as it had {len(matches)} sections titled '{block_name}', and we expect exactly 1 such section."
+            details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed as it had {len(matches)} sections titled '{block_name}', and we expect exactly 1 such section."
             logger.error(details)
-            return LoadScriptMetadataResultFailure()
+            return LoadWorkflowMetadataResultFailure()
 
         # Now attempt to parse out the metadata section, stripped of comment prefixes.
         metadata_content_toml = "".join(
@@ -2671,29 +2848,29 @@ class ScriptManager:
         try:
             toml_doc = tomlkit.parse(metadata_content_toml)
         except Exception as err:
-            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed because the metadata was not valid TOML: {err}"
-            logger.exception(details)
-            return LoadScriptMetadataResultFailure()
+            details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed because the metadata was not valid TOML: {err}"
+            logger.error(details)
+            return LoadWorkflowMetadataResultFailure()
 
         try:
             griptape_nodes_tool_section = toml_doc["tool"]["griptape-nodes"]  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
         except Exception as err:
-            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed because the '[tools.griptape-nodes]' section could not be found: {err}"
-            logger.exception(details)
-            return LoadScriptMetadataResultFailure()
+            details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed because the '[tools.griptape-nodes]' section could not be found: {err}"
+            logger.error(details)
+            return LoadWorkflowMetadataResultFailure()
 
         try:
             # Is it kosher?
-            script_metadata = ScriptMetadata.model_validate(griptape_nodes_tool_section)
+            workflow_metadata = WorkflowMetadata.model_validate(griptape_nodes_tool_section)
         except Exception as err:
             # No, it is haram.
-            details = f"Attempted to load script metadata for a file at '{complete_file_path}'. Failed because the metadata did not match the requisite schema with error: {err}"
-            logger.exception(details)
-            return LoadScriptMetadataResultFailure()
+            details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed because the metadata did not match the requisite schema with error: {err}"
+            logger.error(details)
+            return LoadWorkflowMetadataResultFailure()
 
-        return LoadScriptMetadataResultSuccess(metadata=script_metadata)
+        return LoadWorkflowMetadataResultSuccess(metadata=workflow_metadata)
 
-    def on_save_scene_request(self, request: SaveSceneRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (need lots of branches to cover negative cases)
+    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (need lots of branches to cover negative cases)
         obj_manager = GriptapeNodes.get_instance()._object_manager
         node_manager = GriptapeNodes.get_instance()._node_manager
         config_manager = GriptapeNodes.get_instance()._config_manager
@@ -2715,25 +2892,25 @@ class ScriptManager:
         engine_version_request = GetEngineVersionRequest()
         engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
         if not engine_version_result.succeeded():
-            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version."
+            details = f"Attempted to save workflow '{relative_file_path}', but failed getting the engine version."
             logger.error(details)
-            return SaveSceneResultFailure()
+            return SaveWorkflowResultFailure()
         try:
             engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
             engine_version = (
                 f"{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
             )
         except Exception as err:
-            details = f"Attempted to save scene '{relative_file_path}', but failed getting the engine version: {err}"
-            logger.exception(details)
-            return SaveSceneResultFailure()
+            details = f"Attempted to save workflow '{relative_file_path}', but failed getting the engine version: {err}"
+            logger.error(details)
+            return SaveWorkflowResultFailure()
 
         try:
             with file_path.open("w") as file:
                 # Now the critical import.
                 file.write("from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes\n")
                 # Write all flows to a file, get back the strings for connections
-                connection_request_scripts = handle_flow_saving(file, obj_manager, created_flows)
+                connection_request_workflows = handle_flow_saving(file, obj_manager, created_flows)
                 # Now all of the flows have been created.
                 for node in obj_manager.get_filtered_subset(type=BaseNode).values():
                     flow_name = node_manager.get_node_parent_flow_by_name(node.name)
@@ -2749,9 +2926,9 @@ class ScriptManager:
                     try:
                         handle_parameter_creation_saving(file, node, flow_name)
                     except Exception as e:
-                        details = f"Failed to save scene because failed to save parameter creation for node '{node.name}'. Error: {e}"
-                        logger.exception(details)
-                        return SaveSceneResultFailure()
+                        details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
+                        logger.error(details)
+                        return SaveWorkflowResultFailure()
 
                     # See if this node uses a library we need to know about.
                     library_used = node.metadata["library"]
@@ -2761,27 +2938,27 @@ class ScriptManager:
                         library_metadata_request
                     )
                     if not library_metadata_result.succeeded():
-                        details = f"Attempted to save scene '{relative_file_path}', but failed to get library metadata for library '{library_used}'."
+                        details = f"Attempted to save workflow '{relative_file_path}', but failed to get library metadata for library '{library_used}'."
                         logger.error(details)
-                        return SaveSceneResultFailure()
+                        return SaveWorkflowResultFailure()
                     try:
                         library_metadata_success = cast("GetLibraryMetadataResultSuccess", library_metadata_result)
                         library_version = library_metadata_success.metadata["library_version"]
                     except Exception as err:
-                        details = f"Attempted to save scene '{relative_file_path}', but failed to get library version from metadata for library '{library_used}': {err}."
-                        logger.exception(details)
-                        return SaveSceneResultFailure()
+                        details = f"Attempted to save workflow '{relative_file_path}', but failed to get library version from metadata for library '{library_used}': {err}."
+                        logger.error(details)
+                        return SaveWorkflowResultFailure()
                     library_and_version = LibraryNameAndVersion(
                         library_name=library_used, library_version=library_version
                     )
                     node_libraries_used.add(library_and_version)
                 # Now all nodes AND parameters have been created
-                file.write(connection_request_scripts)
+                file.write(connection_request_workflows)
 
-                # Now that we have the info about what's actually being used, save out the script metadata.
-                script_metadata = ScriptMetadata(
+                # Now that we have the info about what's actually being used, save out the workflow metadata.
+                workflow_metadata = WorkflowMetadata(
                     name=str(file_name),
-                    schema_version=ScriptMetadata.LATEST_SCHEMA_VERSION,
+                    schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
                     engine_version_created_with=engine_version,
                     node_libraries_referenced=list(node_libraries_used),
                 )
@@ -2790,7 +2967,7 @@ class ScriptManager:
                     toml_doc = tomlkit.document()
                     toml_doc.add("dependencies", tomlkit.item([]))
                     griptape_tool_table = tomlkit.table()
-                    metadata_dict = script_metadata.model_dump()
+                    metadata_dict = workflow_metadata.model_dump()
                     for key, value in metadata_dict.items():
                         # Strip out the Nones since TOML doesn't like those.
                         if value is not None:
@@ -2798,16 +2975,16 @@ class ScriptManager:
                     toml_doc["tool"] = tomlkit.table()
                     toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
                 except Exception as err:
-                    details = f"Attempted to save scene '{relative_file_path}', but failed to get metadata into TOML format: {err}."
-                    logger.exception(details)
-                    return SaveSceneResultFailure()
+                    details = f"Attempted to save workflow '{relative_file_path}', but failed to get metadata into TOML format: {err}."
+                    logger.error(details)
+                    return SaveWorkflowResultFailure()
 
                 # Format the metadata block with comment markers for each line
                 toml_lines = tomlkit.dumps(toml_doc).split("\n")
                 commented_toml_lines = ["# " + line for line in toml_lines]
 
                 # Create the complete metadata block
-                header = f"# /// {ScriptManager.SCRIPT_METADATA_HEADER}"
+                header = f"# /// {WorkflowManager.WORKFLOW_METADATA_HEADER}"
                 metadata_lines = [header]
                 metadata_lines.extend(commented_toml_lines)
                 metadata_lines.append("# ///")
@@ -2816,16 +2993,16 @@ class ScriptManager:
 
                 file.write(metadata_block)
         except Exception as e:
-            details = f"Failed to save scene, exception: {e}"
-            logger.exception(details)
-            return SaveSceneResultFailure()
+            details = f"Failed to save workflow, exception: {e}"
+            logger.error(details)
+            return SaveWorkflowResultFailure()
 
-        # save the created scene to a personal json file
-        registered_scripts = ScriptRegistry.list_scripts()
-        if file_name not in registered_scripts:
-            config_manager.save_user_script_json(relative_file_path)
-            ScriptRegistry.generate_new_script(metadata=script_metadata, file_path=relative_file_path)
-        return SaveSceneResultSuccess(file_path=str(file_path))
+        # save the created workflow to a personal json file
+        registered_workflows = WorkflowRegistry.list_workflows()
+        if file_name not in registered_workflows:
+            config_manager.save_user_workflow_json(relative_file_path)
+            WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
+        return SaveWorkflowResultSuccess(file_path=str(file_path))
 
 
 def create_flows_in_order(flow_name, flow_manager, created_flows, file) -> list | None:
@@ -2853,7 +3030,7 @@ def create_flows_in_order(flow_name, flow_manager, created_flows, file) -> list 
 
 def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: list) -> str:
     flow_manager = GriptapeNodes.get_instance()._flow_manager
-    connection_request_scripts = ""
+    connection_request_workflows = ""
     for flow_name, flow in obj_manager.get_filtered_subset(type=ControlFlow).items():
         create_flows_in_order(flow_name, flow_manager, created_flows, file)
         # While creating flows - let's create all of our connections
@@ -2865,8 +3042,8 @@ def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: 
                 target_parameter_name=connection.target_parameter.name,
             )
             code_string = f"GriptapeNodes().handle_request({creation_request})"
-            connection_request_scripts += code_string + "\n"
-    return connection_request_scripts
+            connection_request_workflows += code_string + "\n"
+    return connection_request_workflows
 
 
 def handle_parameter_creation_saving(file: TextIO, node: BaseNode, flow_name: str) -> None:
@@ -2879,8 +3056,14 @@ def handle_parameter_creation_saving(file: TextIO, node: BaseNode, flow_name: st
             code_string = f"GriptapeNodes().handle_request({creation_request})"
             file.write(code_string + "\n")
         else:
-            diff = manage_alter_details(parameter, type(node))
-            if diff:
+            base_node_obj = type(node)(name="test")
+            diff = manage_alter_details(parameter, base_node_obj)
+            relevant = False
+            for key in diff:
+                if key in AlterParameterDetailsRequest.relevant_parameters():
+                    relevant = True
+                    break
+            if relevant:
                 diff["node_name"] = node.name
                 diff["parameter_name"] = parameter.name
                 creation_request = AlterParameterDetailsRequest.create(**diff)
@@ -2919,8 +3102,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, flow_nam
     return None
 
 
-def manage_alter_details(parameter: Parameter, base_node: type) -> dict:
-    base_node_obj = base_node(name="test")
+def manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
     base_param = base_node_obj.get_parameter_by_name(parameter.name)
     if base_param:
         diff = base_param.equals(parameter)
@@ -2978,6 +3160,9 @@ class LibraryManager:
         event_manager.assign_manager_to_request_type(
             GetAllInfoForAllLibrariesRequest, self.get_all_info_for_all_libraries_request
         )
+        event_manager.assign_manager_to_request_type(
+            UnloadLibraryFromRegistryRequest, self.unload_library_from_registry_request
+        )
 
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
@@ -3003,7 +3188,7 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to list node types in a Library named '{request.library}'. Failed because no Library with that name was registered."
-            logger.exception(details)
+            logger.error(details)
 
             result = ListNodeTypesInLibraryResultFailure()
             return result
@@ -3026,7 +3211,7 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get metadata for Library '{request.library}'. Failed because no Library with that name was registered."
-            logger.exception(details)
+            logger.error(details)
 
             result = GetLibraryMetadataResultFailure()
             return result
@@ -3045,7 +3230,7 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get node metadata for a node type '{request.node_type}' in a Library named '{request.library}'. Failed because no Library with that name was registered."
-            logger.exception(details)
+            logger.error(details)
 
             result = GetNodeMetadataFromLibraryResultFailure()
             return result
@@ -3055,7 +3240,7 @@ class LibraryManager:
             metadata = library.get_node_metadata(node_type=request.node_type)
         except KeyError:
             details = f"Attempted to get node metadata for a node type '{request.node_type}' in a Library named '{request.library}'. Failed because no node type of that name could be found in the Library."
-            logger.exception(details)
+            logger.error(details)
 
             result = GetNodeMetadataFromLibraryResultFailure()
             return result
@@ -3074,7 +3259,7 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get categories in a Library named '{request.library}'. Failed because no Library with that name was registered."
-            logger.exception(details)
+            logger.error(details)
             result = ListCategoriesInLibraryResultFailure()
             return result
 
@@ -3100,7 +3285,7 @@ class LibraryManager:
                 library_data = json.load(f)
         except json.JSONDecodeError:
             details = f"Attempted to load Library JSON file. Failed because the file at path {json_path} was improperly formatted."
-            logger.exception(details)
+            logger.error(details)
             return RegisterLibraryFromFileResultFailure()
         # Extract library information
         try:
@@ -3109,7 +3294,7 @@ class LibraryManager:
             nodes_metadata = library_data.get("nodes", [])
         except KeyError as e:
             details = f"Attempted to load Library JSON file from '{file_path}'. Failed because it was missing required field in library metadata: {e}"
-            logger.exception(details)
+            logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
         categories = library_data.get("categories", None)
@@ -3130,7 +3315,7 @@ class LibraryManager:
         except KeyError as err:
             # Library already exists
             details = f"Attempted to load Library JSON file from '{file_path}'. Failed because a Library '{library_name}' already exists. Error: {err}."
-            logger.exception(details)
+            logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
         # Update library metadata
@@ -3156,13 +3341,25 @@ class LibraryManager:
 
             except (KeyError, ImportError, AttributeError) as e:
                 details = f"Attempted to load Library JSON file from '{file_path}'. Failed due to an error loading node {node_meta.get('class_name', 'unknown')}: {e}"
-                logger.exception(details)
+                logger.error(details)
                 return RegisterLibraryFromFileResultFailure()
 
         # Success!
         details = f"Successfully loaded Library '{library_name}' from JSON file at {file_path}"
         logger.info(details)
         return RegisterLibraryFromFileResultSuccess(library_name=library_name)
+
+    def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
+        try:
+            LibraryRegistry.unregister_library(library_name=request.library_name)
+        except Exception as e:
+            details = f"Attempted to unload library '{request.library_name}'. Failed due to {e}"
+            logger.error(details)
+            return UnloadLibraryFromRegistryResultFailure()
+
+        details = f"Successfully unloaded (and unregistered) library '{request.library_name}'."
+        logger.debug(details)
+        return UnloadLibraryFromRegistryResultSuccess()
 
     def get_all_info_for_all_libraries_request(self, request: GetAllInfoForAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         list_libraries_request = ListRegisteredLibrariesRequest()
@@ -3193,7 +3390,7 @@ class LibraryManager:
                 library_name_to_all_info[library_name] = library_all_info_success
         except Exception as err:
             details = f"Attempted to get all info for all libraries. Encountered error {err}."
-            logger.exception(details)
+            logger.error(details)
             return GetAllInfoForAllLibrariesResultFailure()
 
         # We're home free now
@@ -3208,7 +3405,7 @@ class LibraryManager:
             LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed because no Library with that name was registered."
-            logger.exception(details)
+            logger.error(details)
             result = GetAllInfoForLibraryResultFailure()
             return result
 
@@ -3245,7 +3442,7 @@ class LibraryManager:
             details = (
                 f"Attempted to get all library info for a Library named '{request.library}'. Encountered error: {err}."
             )
-            logger.exception(details)
+            logger.error(details)
             return GetAllInfoForLibraryResultFailure()
 
         # Now build the map of node types to metadata.
@@ -3263,7 +3460,7 @@ class LibraryManager:
                 node_metadata_result_success = cast("GetNodeMetadataFromLibraryResultSuccess", node_metadata_result)
             except Exception as err:
                 details = f"Attempted to get all library info for a Library named '{request.library}'. Encountered error: {err}."
-                logger.exception(details)
+                logger.error(details)
                 return GetAllInfoForLibraryResultFailure()
 
             # Put it into the map.
@@ -3279,7 +3476,7 @@ class LibraryManager:
         return result
 
     def _load_class_from_file(self, file_path: Path | str, class_name: str) -> type[BaseNode]:
-        """Dynamically load a class from a Python file.
+        """Dynamically load a class from a Python file with support for hot reloading.
 
         Args:
             file_path: Path to the Python file
@@ -3298,20 +3495,50 @@ class LibraryManager:
         # Generate a unique module name
         module_name = f"dynamic_module_{file_path.name.replace('.', '_')}_{hash(str(file_path))}"
 
-        # Load the module specification
-        spec = importlib.util.spec_from_file_location(module_name, file_path)
-        if spec is None or spec.loader is None:
-            msg = f"Could not load module specification from {file_path}"
-            raise ImportError(msg)
+        # Check if this module is already loaded
+        if module_name in sys.modules:
+            # For dynamically loaded modules, we need to re-create the module
+            # with a fresh spec rather than using importlib.reload
 
-        # Create the module
-        module = importlib.util.module_from_spec(spec)
+            # Remove the old module from sys.modules
+            old_module = sys.modules.pop(module_name)
 
-        # Add to sys.modules to handle recursive imports
-        sys.modules[module_name] = module
+            # Create a fresh spec and module
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            if spec is None or spec.loader is None:
+                msg = f"Could not load module specification from {file_path}"
+                raise ImportError(msg)
 
-        # Execute the module
-        spec.loader.exec_module(module)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+
+            try:
+                # Execute the module with the new code
+                spec.loader.exec_module(module)
+                details = f"Hot reloaded module: {module_name} from {file_path}"
+                logger.debug(details)
+            except Exception as e:
+                # Restore the old module in case of failure
+                sys.modules[module_name] = old_module
+                msg = f"Error reloading module {module_name} from {file_path}: {e}"
+                raise ImportError(msg) from e
+
+        # Load it for the first time
+        else:
+            # Load the module specification
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            if spec is None or spec.loader is None:
+                msg = f"Could not load module specification from {file_path}"
+                raise ImportError(msg)
+
+            # Create the module
+            module = importlib.util.module_from_spec(spec)
+
+            # Add to sys.modules to handle recursive imports
+            sys.modules[module_name] = module
+
+            # Execute the module
+            spec.loader.exec_module(module)
 
         # Get the class
         try:
@@ -3327,17 +3554,20 @@ class LibraryManager:
 
         return node_class
 
-    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        # App just got init'd. See if there are library JSONs to load!
+    def load_all_libraries_from_config(self) -> None:
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         self._load_libraries_from_config_category(config_category=user_libraries_section, load_as_default_library=False)
 
-        # See if there are script JSONs to load!
-        default_script_section = "app_events.on_app_initialization_complete.scripts_to_register"
-        self._register_scripts_from_config(config_section=default_script_section)
+    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+        # App just got init'd. See if there are library JSONs to load!
+        self.load_all_libraries_from_config()
+
+        # See if there are workflow JSONs to load!
+        default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
+        self._register_workflows_from_config(config_section=default_workflow_section)
 
     def _load_libraries_from_config_category(self, config_category: str, load_as_default_library: bool) -> None:  # noqa: FBT001
-        config_mgr = GriptapeNodes().ConfigManager()
+        config_mgr = GriptapeNodes.ConfigManager()
         libraries_to_register_category = config_mgr.get_config_value(config_category)
 
         if libraries_to_register_category is not None:
@@ -3348,34 +3578,34 @@ class LibraryManager:
                 )
                 GriptapeNodes().handle_request(library_load_request)
 
-    # TODO(griptape): Move to ScriptManager
-    def _register_scripts_from_config(self, config_section: str) -> None:  # noqa: C901, PLR0912 (need lots of branches for error checking)
+    # TODO(griptape): Move to WorkflowManager
+    def _register_workflows_from_config(self, config_section: str) -> None:  # noqa: C901, PLR0912 (need lots of branches for error checking)
         config_mgr = GriptapeNodes().ConfigManager()
-        scripts_to_register = config_mgr.get_config_value(config_section)
+        workflows_to_register = config_mgr.get_config_value(config_section)
         successful_registrations = []
         failed_registrations = []
-        if scripts_to_register is not None:
-            for script_to_register in scripts_to_register:
+        if workflows_to_register is not None:
+            for workflow_to_register in workflows_to_register:
                 try:
-                    script_detail = ScriptSettingsDetail(
-                        file_name=script_to_register["file_name"],
-                        is_griptape_provided=script_to_register["is_griptape_provided"],
+                    workflow_detail = WorkflowSettingsDetail(
+                        file_name=workflow_to_register["file_name"],
+                        is_griptape_provided=workflow_to_register["is_griptape_provided"],
                     )
                 except Exception as err:
-                    err_str = f"Error attempting to get info about script to register '{script_to_register}': {err}. SKIPPING IT."
-                    failed_registrations.append(script_to_register)
-                    logger.exception(err_str)
+                    err_str = f"Error attempting to get info about workflow to register '{workflow_to_register}': {err}. SKIPPING IT."
+                    failed_registrations.append(workflow_to_register)
+                    logger.error(err_str)
                     continue
 
-                # Adjust path depending on if it's a Griptape-provided script or a user one.
-                if script_detail.is_griptape_provided:
-                    final_file_path = xdg_data_home().joinpath(script_detail.file_name)
+                # Adjust path depending on if it's a Griptape-provided workflow or a user one.
+                if workflow_detail.is_griptape_provided:
+                    final_file_path = xdg_data_home().joinpath(workflow_detail.file_name)
                 else:
-                    final_file_path = config_mgr.workspace_path.joinpath(script_detail.file_name)
+                    final_file_path = config_mgr.workspace_path.joinpath(workflow_detail.file_name)
 
-                # Attempt to extract the metadata out of the script.
-                load_metadata_request = LoadScriptMetadata(file_name=str(final_file_path))
-                load_metadata_result = GriptapeNodes.ScriptManager().on_load_script_metadata_request(
+                # Attempt to extract the metadata out of the workflow.
+                load_metadata_request = LoadWorkflowMetadata(file_name=str(final_file_path))
+                load_metadata_result = GriptapeNodes.WorkflowManager().on_load_workflow_metadata_request(
                     load_metadata_request
                 )
                 if not load_metadata_result.succeeded():
@@ -3384,22 +3614,22 @@ class LibraryManager:
                     continue
 
                 try:
-                    successful_metadata_result = cast("LoadScriptMetadataResultSuccess", load_metadata_result)
+                    successful_metadata_result = cast("LoadWorkflowMetadataResultSuccess", load_metadata_result)
                 except Exception as err:
-                    err_str = f"Error attempting to get info about script to register '{final_file_path}': {err}. SKIPPING IT."
+                    err_str = f"Error attempting to get info about workflow to register '{final_file_path}': {err}. SKIPPING IT."
                     failed_registrations.append(final_file_path)
-                    logger.exception(err_str)
+                    logger.error(err_str)
                     continue
 
-                script_metadata = successful_metadata_result.metadata
+                workflow_metadata = successful_metadata_result.metadata
 
                 # Register it as a success.
-                script_register_request = RegisterScriptRequest(
-                    metadata=script_metadata, file_name=str(final_file_path)
+                workflow_register_request = RegisterWorkflowRequest(
+                    metadata=workflow_metadata, file_name=str(final_file_path)
                 )
-                register_result = GriptapeNodes().handle_request(script_register_request)
+                register_result = GriptapeNodes().handle_request(workflow_register_request)
 
-                details = f"'{script_metadata.name}' ({final_file_path!s})"
+                details = f"'{workflow_metadata.name}' ({final_file_path!s})"
 
                 if register_result.succeeded():
                     # put this in the good pile
@@ -3409,14 +3639,14 @@ class LibraryManager:
                     failed_registrations.append(details)
 
         if len(successful_registrations) == 0 and len(failed_registrations) == 0:
-            logger.info("No scripts were registered.")
+            logger.info("No workflows were registered.")
         if len(successful_registrations) > 0:
-            details = "Scripts successfully registered:"
+            details = "Workflows successfully registered:"
             for successful_registration in successful_registrations:
                 details = f"{details}\n\t{successful_registration}"
             logger.info(details)
         if len(failed_registrations) > 0:
-            details = "Scripts that FAILED to register:"
+            details = "Workflows that FAILED to register:"
             for failed_registration in failed_registrations:
                 details = f"{details}\n\t{failed_registration}"
             logger.error(details)

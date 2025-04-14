@@ -47,6 +47,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     SetNodeMetadataRequest,
 )
+from griptape_nodes.retained_mode.events.object_events import (
+    RenameObjectRequest,
+)
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     AlterParameterDetailsRequest,
@@ -459,7 +462,7 @@ class RetainedMode:
                     idx = int(idx_or_key)
                 except ValueError:
                     error_msg = f"Failed on key/index '{idx_or_key}' because it wasn't an int as expected."
-                    logger.exception(error_msg)
+                    logger.error(error_msg)
                     return GetParameterValueResultFailure()
 
                 # Handle negative indices
@@ -816,7 +819,16 @@ class RetainedMode:
         result = GriptapeNodes().handle_request(request)
         return result
 
-    # This "lists" everything.  Analogous to Maya's "ls"
+    @classmethod
+    def rename(cls, object_name: str, requested_name: str) -> ResultPayload:
+        request = RenameObjectRequest(
+            object_name=object_name,
+            requested_name=requested_name,
+            allow_next_closest_name_available=True,
+        )
+        result = GriptapeNodes().handle_request(request)
+        return result
+
     @classmethod
     def ls(cls, **kwargs) -> list:
         rsl = GriptapeNodes.ObjectManager()

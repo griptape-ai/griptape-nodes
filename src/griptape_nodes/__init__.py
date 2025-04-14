@@ -1,8 +1,11 @@
 """Griptape Nodes package."""
 
+# ruff: noqa: S603, S607
+
 import argparse
 import importlib.metadata
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -13,16 +16,19 @@ from dotenv.main import DotEnv
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
-from xdg_base_dirs import xdg_config_home
+from xdg_base_dirs import xdg_config_home, xdg_data_home
 
-from griptape_nodes.api.app import main as api_main
+from griptape_nodes.app import start_app
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
-INSTALL_SCRIPT = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.sh"
+GH_INSTALL_SCRIPT_SH = "/repos/griptape-ai/griptape-nodes/contents/install.sh?ref=main"
+GH_INSTALL_SCRIPT_PS = "/repos/griptape-ai/griptape-nodes/contents/install.ps1?ref=main"
+INSTALL_SCRIPT_SH = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.sh"
 INSTALL_SCRIPT_PS = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.ps1"
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
+DATA_DIR = xdg_data_home() / "griptape_nodes"
 ENV_FILE = CONFIG_DIR / ".env"
 CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
 REPO_NAME = "griptape-ai/griptape-nodes"
@@ -56,12 +62,11 @@ def _run_init(api_key: str | None = None, workspace_directory: str | None = None
 def _get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="griptape-nodes", description="Griptape Nodes Engine.")
 
-    # The main command (engine|config|update|version|init)
     parser.add_argument(
         "command",
         help="Command to run",
         nargs="?",
-        choices=["init", "engine", "config", "update", "version"],
+        choices=["init", "engine", "config", "update", "uninstall", "version"],
         default="engine",
     )
 
@@ -102,10 +107,9 @@ def _init_system_config() -> bool:
         bool: True if the system config directory was created, False otherwise.
 
     """
-    config_dir = xdg_config_home() / "griptape_nodes"
     is_first_init = False
-    if not config_dir.exists():
-        config_dir.mkdir(parents=True, exist_ok=True)
+    if not CONFIG_DIR.exists():
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         is_first_init = True
 
     files_to_create = [
@@ -114,7 +118,7 @@ def _init_system_config() -> bool:
     ]
 
     for file_name in files_to_create:
-        file_path = config_dir / file_name[0]
+        file_path = CONFIG_DIR / file_name[0]
         if not file_path.exists():
             with Path.open(file_path, "w") as file:
                 file.write(file_name[1])
@@ -214,12 +218,73 @@ def _auto_update() -> None:
 
 
 def _install_latest_release() -> None:
-    """Installs the latest release of the script using a shell command."""
-    with console.status("[bold green]Updating...", spinner="dots"):
+    """Installs the latest release of the script. Prefers GitHub CLI if available."""
+    console.print("[bold green]Starting update...[/bold green]")
+    console.print("[bold yellow]Checking for GitHub CLI...[/bold yellow]")
+
+    try:
+        __download_and_run_installer()
+    except subprocess.CalledProcessError as e:
+        console.print(f"[bold red]Error during update: {e}[/bold red]")
+        sys.exit(1)
+
+    console.print(
+        "[bold green]Update complete! Restart the engine by running 'griptape-nodes' (or just 'gtn').[/bold green]"
+    )
+    sys.exit(0)
+
+
+def __download_and_run_installer() -> None:
+    """Runs the update commands for the engine."""
+    gh_cli = shutil.which("gh")
+    if gh_cli:
+        console.print("[bold green]Found GitHub CLI. Using gh to fetch install script...[/bold green]")
+
         if OSManager.is_windows():
-            # Run via PowerShell
-            subprocess.run(  # noqa: S603
-                [  # noqa: S607
+            # Fetch install.ps1 contents using gh
+            ps_content = subprocess.check_output(
+                [
+                    gh_cli,
+                    "api",
+                    "-H",
+                    "Accept: application/vnd.github.v3.raw",
+                    GH_INSTALL_SCRIPT_PS,
+                ],
+                text=True,
+            )
+            # Run the PowerShell script from stdin
+            subprocess.run(
+                ["powershell", "-ExecutionPolicy", "ByPass", "-Command", "-"],
+                input=ps_content,
+                text=True,
+                check=True,
+            )
+        else:
+            # macOS or Linux
+            bash_content = subprocess.check_output(
+                [
+                    gh_cli,
+                    "api",
+                    "-H",
+                    "Accept: application/vnd.github.v3.raw",
+                    GH_INSTALL_SCRIPT_SH,
+                ],
+                text=True,
+            )
+            # Run the Bash script from stdin
+            subprocess.run(
+                ["bash"],
+                input=bash_content,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+    else:
+        console.print("[bold yellow]GitHub CLI not found. Falling back to direct download...[/bold yellow]")
+
+        if OSManager.is_windows():
+            subprocess.run(
+                [
                     "powershell",
                     "-ExecutionPolicy",
                     "ByPass",
@@ -229,29 +294,25 @@ def _install_latest_release() -> None:
                 check=True,
                 text=True,
             )
-        elif OSManager.is_mac() or OSManager.is_linux():
-            # Run via Bash/cURL
-            curl_process = subprocess.run(  # noqa: S603
-                ["curl", "-LsSf", INSTALL_SCRIPT],  # noqa: S607
+        else:
+            curl_process = subprocess.run(
+                [
+                    "curl",
+                    "-LsSf",
+                    INSTALL_SCRIPT_SH,
+                ],
                 capture_output=True,
                 check=False,
                 text=True,
             )
-            subprocess.run(  # noqa: S603
-                ["bash"],  # noqa: S607
+            curl_process.check_returncode()
+            subprocess.run(
+                ["bash"],
                 input=curl_process.stdout,
                 capture_output=True,
                 check=True,
                 text=True,
             )
-        else:
-            console.print(f"[bold red]Unsupported platform: {OSManager.platform()}[/bold red]")
-            sys.exit(1)
-
-    console.print(
-        "[bold green]Update complete! Restart the engine by running 'griptape-nodes' (or just 'gtn').[/bold green]"
-    )
-    sys.exit(0)
 
 
 def _get_current_version() -> str:
@@ -272,13 +333,37 @@ def _get_user_config() -> dict:
     return config_manager.user_config
 
 
-def _list_user_configs() -> list[Path]:
-    """Lists the user configuration files.
+def _list_user_configs() -> None:
+    """Lists the user configuration files."""
+    for config in config_manager.config_files:
+        console.print(f"[bold green]{config}[/bold green]")
 
-    Returns:
-        list[Path]: All config files.
-    """
-    return config_manager.config_files
+
+def _uninstall_self() -> None:
+    """Uninstalls itself by removing the config and data directories, and the executable."""
+    console.print("[bold red]Uninstalling Griptape Nodes...[/bold red]")
+    console.print(f"[bold yellow]Removing config directory '{CONFIG_DIR}'...[/bold yellow]")
+    shutil.rmtree(CONFIG_DIR)
+
+    console.print(f"[bold yellow]Removing data directory '{DATA_DIR}'...[/bold yellow]")
+    shutil.rmtree(DATA_DIR)
+
+    console.print("[bold yellow]Removing Griptape Nodes executable 'griptape-nodes'/'gtn'...[/bold yellow]")
+    subprocess.run(
+        ["uv", "tool", "uninstall", "griptape-nodes"],
+        check=True,
+        text=True,
+    )
+
+    console.print("[bold green]Uninstall complete![/bold green]")
+
+    remaining_config_files = config_manager.config_files
+    if remaining_config_files:
+        console.print("[bold yellow]Caveat! Some config files were intentionally not removed:[/bold yellow]")
+        for file in remaining_config_files:
+            console.print(f"[bold yellow]{file}[/bold yellow]")
+
+    sys.exit(0)
 
 
 def _process_args(args: argparse.Namespace) -> None:
@@ -295,15 +380,16 @@ def _process_args(args: argparse.Namespace) -> None:
         # Confusing double negation -- If `no_update` is set, we want to skip the update
         if not args.no_update:
             _auto_update()
-        api_main()
+        start_app()
     elif args.command == "config":
         if args.config_subcommand == "list":
-            for config in _list_user_configs():
-                console.print(f"[bold green]{config}[/bold green]")
+            _list_user_configs()
         else:
             sys.stdout.write(json.dumps(_get_user_config(), indent=2))
     elif args.command == "update":
         _install_latest_release()
+    elif args.command == "uninstall":
+        _uninstall_self()
     elif args.command == "version":
         version = _get_current_version()
         console.print(f"[bold green]{version}[/bold green]")

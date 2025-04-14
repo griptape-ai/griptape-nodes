@@ -53,6 +53,14 @@
       }
     },
     {
+      "Number": {
+        "color": "border-blue-500",
+        "title": "Number",
+        "description": "Number Nodes.",
+        "icon": "Hash"
+      }
+    },
+    {
       "Text": {
         "color": "border-blue-500",
         "title": "Text",
@@ -74,6 +82,14 @@
         "title": "Tools",
         "description": "Tools an agent can use.",
         "icon": "Wrench"
+      }
+    },
+    {
+      "Convert": {
+        "color": "border-cyan-500",
+        "title": "Convert",
+        "description": "Convert nodes.",
+        "icon": "Shuffle"
       }
     },
     {
@@ -232,7 +248,7 @@
     },
     {
       "class_name": "CreateImage",
-      "file_path": "griptape_nodes_library/tasks/create_image.py",
+      "file_path": "griptape_nodes_library/image/create_image.py",
       "metadata": {
         "category": "Image",
         "description": "Generates images using configurable image drivers",
@@ -241,11 +257,47 @@
     },
     {
       "class_name": "DescribeImage",
-      "file_path": "griptape_nodes_library/tasks/describe_image.py",
+      "file_path": "griptape_nodes_library/image/describe_image.py",
       "metadata": {
         "category": "Image",
         "description": "Describes an image",
         "display_name": "Describe Image"
+      }
+    },
+    {
+      "class_name": "CreateFloat",
+      "file_path": "griptape_nodes_library/number/create_float.py",
+      "metadata": {
+        "category": "Number",
+        "description": "Creates and outputs a simple float value",
+        "display_name": "Create Float"
+      }
+    },
+    {
+      "class_name": "CreateInteger",
+      "file_path": "griptape_nodes_library/number/create_int.py",
+      "metadata": {
+        "category": "Number",
+        "description": "Creates and outputs a simple integer value",
+        "display_name": "Create Integer"
+      }
+    },
+    {
+      "class_name": "DisplayFloat",
+      "file_path": "griptape_nodes_library/number/display_float.py",
+      "metadata": {
+        "category": "Number",
+        "description": "Displays a simple float value",
+        "display_name": "Display Float"
+      }
+    },
+    {
+      "class_name": "DisplayInteger",
+      "file_path": "griptape_nodes_library/number/display_int.py",
+      "metadata": {
+        "category": "Number",
+        "description": "Displays a simple integer value",
+        "display_name": "Display Integer"
       }
     },
     {
@@ -294,6 +346,15 @@
       }
     },
     {
+      "class_name": "DisplayText",
+      "file_path": "griptape_nodes_library/text/display_text.py",
+      "metadata": {
+        "category": "Text",
+        "description": "Displays a text or string value",
+        "display_name": "Display Text"
+      }
+    },
+    {
       "class_name": "EndFlow",
       "file_path": "griptape_nodes_library/end_flow.py",
       "metadata": {
@@ -330,6 +391,33 @@
       }
     },
     {
+      "class_name": "DisplayDictionary",
+      "file_path": "griptape_nodes_library/dict/display_dict.py",
+      "metadata": {
+        "category": "Dictionary",
+        "description": "Displays a dictionary or key-value pair",
+        "display_name": "Display Dictionary"
+      }
+    },
+    {
+      "class_name": "LoadDictionary",
+      "file_path": "griptape_nodes_library/dict/load_dict.py",
+      "metadata": {
+        "category": "Dictionary",
+        "description": "Loads a dictionary or key-value pair",
+        "display_name": "Load Dictionary"
+      }
+    },
+    {
+      "class_name": "SaveDictionary",
+      "file_path": "griptape_nodes_library/dict/save_dict.py",
+      "metadata": {
+        "category": "Dictionary",
+        "description": "Saves a dictionary or key-value pair",
+        "display_name": "Save Dictionary"
+      }
+    },
+    {
       "class_name": "Reroute",
       "file_path": "griptape_nodes_library/utils/reroute.py",
       "metadata": {
@@ -345,6 +433,51 @@
         "category": "Utility",
         "description": "Entry point for control flow graphs",
         "display_name": "Start Flow"
+      }
+    },
+    {
+      "class_name": "ToBool",
+      "file_path": "griptape_nodes_library/convert/to_bool.py",
+      "metadata": {
+        "category": "Convert",
+        "description": "Convert data to a boolean",
+        "display_name": "To Bool"
+      }
+    },
+    {
+      "class_name": "ToDictionary",
+      "file_path": "griptape_nodes_library/convert/to_dict.py",
+      "metadata": {
+        "category": "Convert",
+        "description": "Convert data to a dictionary",
+        "display_name": "To Dictionary"
+      }
+    },
+    {
+      "class_name": "ToFloat",
+      "file_path": "griptape_nodes_library/convert/to_float.py",
+      "metadata": {
+        "category": "Convert",
+        "description": "Convert data to a float",
+        "display_name": "To Float"
+      }
+    },
+    {
+      "class_name": "ToInteger",
+      "file_path": "griptape_nodes_library/convert/to_int.py",
+      "metadata": {
+        "category": "Convert",
+        "description": "Convert data to an integer",
+        "display_name": "To Integer"
+      }
+    },
+    {
+      "class_name": "ToText",
+      "file_path": "griptape_nodes_library/convert/to_text.py",
+      "metadata": {
+        "category": "Convert",
+        "description": "Convert data to text",
+        "display_name": "To Text"
       }
     }
   ]
