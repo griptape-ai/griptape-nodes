@@ -42,7 +42,7 @@ class RunAgent(CreateAgent):
             )
             agent = Agent(prompt_driver=prompt_driver)
         else:
-            agent = Agent().from_dict(agent_dict)
+            agent = Agent.from_dict(agent_dict)
 
         prompt = params.get("prompt", None)
         agent = self.set_context(agent)

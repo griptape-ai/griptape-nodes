@@ -54,7 +54,7 @@ class CreateAgent(BaseAgent):
             # Create the Agent
             agent = Agent(**kwargs)
         else:
-            agent = Agent().from_dict(agent_dict)
+            agent = Agent.from_dict(agent_dict)
         # Otherwise, append rules and tools to the existing agent
 
         prompt = params.get("prompt", None)
