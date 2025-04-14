@@ -139,7 +139,14 @@ def _listen_for_api_events() -> None:
                         else:
                             try:
                                 event = json.loads(data)
-                                __process_api_event(event)
+                                # With heartbeat events, we skip the regular processing and just send the heartbeat
+                                # Technically no longer needed since https://github.com/griptape-ai/griptape-nodes/pull/369
+                                # but we don't have a proper EventRequest for it yet.
+                                if event.get("request_type") == "Heartbeat":
+                                    session_id = GriptapeNodes.get_session_id()
+                                    socket.heartbeat(session_id=session_id, request=event)
+                                else:
+                                    __process_api_event(event)
                             except Exception:
                                 logger.exception("Error processing event, skipping.")
 
