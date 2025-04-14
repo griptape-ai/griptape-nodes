@@ -18,8 +18,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the RunAgent to your workspace
-2. Connect it to your flow
-3. Provide a prompt or connect an existing agent
+1. Connect it to your flow
+1. Provide a prompt or connect an existing agent
 
 ### Parameters
 
@@ -37,16 +37,16 @@ Use this node when you want to:
 Imagine you want to ask an AI agent a question:
 
 1. Add a RunAgent
-2. Add contextual information to "prompt_context" if needed (such as {"user_location": "New York"})
-3. In the "prompt" field, type: "Explain quantum computing in simple terms"
-4. Run the node
-5. The "output" will contain the agent's explanation of quantum computing
+1. Add contextual information to "prompt_context" if needed (such as {"user_location": "New York"})
+1. In the "prompt" field, type: "Explain quantum computing in simple terms"
+1. Run the node
+1. The "output" will contain the agent's explanation of quantum computing
 
 Or with an existing agent:
 
 1. Connect an agent output from another node to the RunAgent's "agent" input
-2. Provide a new prompt and any additional context
-3. Run the node to get a response using the connected agent's capabilities
+1. Provide a new prompt and any additional context
+1. Run the node to get a response using the connected agent's capabilities
 
 ## Important Notes
 
@@ -55,15 +55,15 @@ Or with an existing agent:
 - You need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY`
 - If you don't provide a prompt, the node will just create the agent without running it and the output will contain exactly "Agent Created"
 - RunAgent is more execution-focused while CreateAgent is configuration-focused. Use RunAgent when you:
-  - Need to quickly run a prompt without complex configuration
-  - Want to use a pre-configured agent that was created earlier in your workflow
-  - Are building a chain of conversational interactions
+    - Need to quickly run a prompt without complex configuration
+    - Want to use a pre-configured agent that was created earlier in your workflow
+    - Are building a chain of conversational interactions
 - When connecting multiple RunAgent nodes by passing the agent output to the next node's agent input:
-  - Conversation memory is preserved throughout the chain
-  - The agent will "remember" all previous prompts and responses
-  - Context builds up across nodes, allowing for follow-up questions
-  - References to earlier information will be understood by the agent
-  - This enables building complex multi-turn conversations across your workflow
+    - Conversation memory is preserved throughout the chain
+    - The agent will "remember" all previous prompts and responses
+    - Context builds up across nodes, allowing for follow-up questions
+    - References to earlier information will be understood by the agent
+    - This enables building complex multi-turn conversations across your workflow
 
 ## Common Issues
 
