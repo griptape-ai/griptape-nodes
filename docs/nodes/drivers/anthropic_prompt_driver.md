@@ -40,11 +40,11 @@ Use this node when you want to:
 Imagine you want to create an agent that uses Claude with specific settings:
 
 1. Add an AnthropicPromptDriver to your workflow
-1. Set "model" to "claude-3-5-sonnet-latest"
-1. Set "temperature" to 0.7 (for more creative responses)
-1. Set "max_tokens" to 2000 (for longer responses)
-1. Connect the "driver" output to a RunAgent's "prompt_driver" input
-1. Now that agent will use Claude with your custom settings
+2. Set "model" to "claude-3-5-sonnet-latest"
+3. Set "temperature" to 0.7 (for more creative responses)
+4. Set "max_tokens" to 2000 (for longer responses)
+5. Connect the "driver" output to a RunAgent's "prompt_driver" input
+6. Now that agent will use Claude with your custom settings
 
 ## Important Notes
 

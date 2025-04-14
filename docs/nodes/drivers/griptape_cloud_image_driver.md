@@ -17,10 +17,10 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the GriptapeCloudImageDriver to your workspace
-1. Connect it to your flow
-1. Connect its output to nodes that need to generate images (like CreateImage)
+2. Connect it to your flow
+3. Connect its output to nodes that need to generate images (like CreateImage)
 
-### Optional Configuration
+### Parameters
 
 - **image_generation_model**: The model to use (default is "dall-e-3")
 - **image_deployment_name**: The deployment name (default matches the model name)
@@ -35,9 +35,9 @@ Use this node when you want to:
 Imagine you want to create images using Griptape Cloud:
 
 1. Add a GriptapeCloudImageDriver to your workflow
-1. Set "size" to "1024x1792" for vertical images
-1. Connect the "driver" output to a CreateImage's "driver" input
-1. Now that node will generate images using Griptape Cloud with your settings
+2. Set "size" to "1024x1792" for vertical images
+3. Connect the "driver" output to a CreateImage's "driver" input
+4. Now that node will generate images using Griptape Cloud with your settings
 
 ## Important Notes
 

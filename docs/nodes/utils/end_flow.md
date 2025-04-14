@@ -17,7 +17,7 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the EndFlowNode to your workspace
-1. Connect it to the end of your flow
+2. Connect it to the end of your flow
 
 ### Parameters
 

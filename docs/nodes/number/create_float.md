@@ -2,27 +2,49 @@
 
 ## What is it?
 
-The CreateFloat node allows you to define a new float value, which can be used in your workflow.
+The CreateFloat is a simple building block that creates a single floating-point number value. Think of it as a way to define and store a decimal number that can be used throughout your workflow.
 
 ## When would I use it?
 
 Use this node when you want to:
 
-- Define a constant float value for use in calculations
-- Create a dynamic float value based on other parameters or properties
+- Define a numerical value with decimal precision
+- Create a configurable number parameter for your workflow
+- Set up values for mathematical operations
+- Establish thresholds, rates, or other decimal values
 
 ## How to use it
 
 ### Basic Setup
 
 1. Add the CreateFloat to your workspace
-1. Connect it to your flow
-1. Set the "value" parameter to a float value
+2. Set your desired float value
+3. Connect it to your flow
 
 ### Parameters
 
-- **float**: A single float parameter that is created and output by this node
+- **float**: A floating-point number value (default is 0.0)
 
 ### Outputs
 
-- **float**: A single float parameter that is created and output by this node
+- **float**: The floating-point value that can be used by other nodes
+
+## Example
+
+Imagine you want to set a temperature value for an AI model:
+
+1. Add a CreateFloat to your workflow
+2. Set the "float" value to 0.7
+3. Connect the output to a model's temperature parameter
+4. The AI model will now use 0.7 as its temperature setting
+
+## Important Notes
+
+- This node creates a single floating-point value
+- The default value is 0.0 if none is specified
+- You can update the value through the node's properties
+- Floating-point numbers can represent decimal values like 0.5, 3.14159, or -2.75
+
+## Common Issues
+
+- None

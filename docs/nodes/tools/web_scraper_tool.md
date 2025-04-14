@@ -1,64 +1,60 @@
-# **Web Scraper Tool Node Documentation**
+# WebScraperTool
 
-### Overview
+## What is it?
 
-The `WebScraperTool` class is a specialized node for creating Griptape tools that utilize web scraping functionality. This node provides a basic structure for initializing web scraper tools and can be extended to support various web scraping techniques.
+The WebScraperTool is a node that creates a web scraping capability for your workflows. It wraps Griptape's WebScraperTool functionality, allowing your agents to extract and process information from websites.
 
-### Class Definition
+## When would I use it?
 
-```python
-class WebScraperTool(BaseTool):
-    """A web scraper tool node for creating Griptape tools."""
-```
+Use this node when you want to:
 
-### Initialization
+- Enable your agents to access and extract information from web pages
+- Gather data from online sources for analysis
+- Incorporate web content into your AI workflows
+- Research information available on public websites
+- Monitor web content for specific information
 
-The `__init__` method initializes a new instance of the `WebScraperTool` class. It takes two parameters:
+## How to use it
 
-- **name (str)**: The name of the node.
-- **metadata (dict[Any, Any] | None)**: Optional metadata for the node.
+### Basic Setup
 
-```python
-def __init__(
-    self,
-    name: str,
-    metadata: dict[Any, Any] | None = None,
-) -> None:
-    """Initializes a new instance of the WebScraperTool class."""
-    super().__init__(name, metadata)
-```
+1. Add the WebScraperTool to your workspace
+2. Configure the "name" parameter if you want to customize the tool's identifier
+3. Set the "off_prompt" parameter based on your preference
+4. Connect the "tool" output to an agent or other node that can utilize tools
 
-### Processing
+### Parameters
 
-The `process` method is called when the node is executed. It retrieves the values of the defined parameters and creates a new instance of the `WebScraperTool` class based on those values.
+- **name**: A custom name for the tool (required)
+- **off_prompt**: Whether to run web scraping operations outside the main prompt (default is False)
+- **metadata**: Optional metadata dictionary for the tool
 
-```python
-def process(self) -> None:
-    """Processes the node and sets the output parameter."""
-    off_prompt = self.parameter_values.get("off_prompt", False)
-    tool = WebScraperTool(off_prompt=off_prompt)
-    self.parameter_output_values["tool"] = tool
-```
+### Outputs
 
-### Example Usage
+- **tool**: The configured web scraper tool that can be used by other nodes
 
-To create a new instance of the `WebScraperTool` class, you can use the following code:
+## Example
 
-```python
-node = WebScraperTool("My Web Scraper")
-node.process()
-print(node.parameter_output_values["tool"])
-```
+Imagine you want to create an agent that can research information from websites:
 
-This will create a new node with the name "My Web Scraper" and process it to set the output parameter to the created web scraper tool instance.
+1. Add a WebScraperTool to your workflow
+2. Set the "name" parameter to "WebResearcher"
+3. Set "off_prompt" to True for more efficient processing
+4. Connect the "tool" output to an Agent's "tools" input
+5. Now your agent can scrape and analyze web content when prompted
 
-### Notes
+## Important Notes
 
-- The `WebScraperTool` class is not defined in this code snippet. It is assumed to be a separate class that provides the actual web scraping functionality.
-- The `parameter_values` and `parameter_output_values` attributes are not defined in this code snippet. They are assumed to be dictionaries that store the input and output parameters of the node, respectively.
+- The tool respects website terms of service and robots.txt files
+- Performance may vary depending on the structure and complexity of websites
+- Some websites may block automated scraping attempts
+- The tool works best with text-based content rather than dynamic JavaScript-heavy sites
+- Consider rate limiting and ethical use to avoid overloading websites
 
-### Best Practices
+## Common Issues
 
-- When creating new nodes, ensure that you follow the same naming conventions and structure as existing nodes.
-- Use meaningful parameter names and descriptions to make your nodes more user-friendly.
-- Consider adding additional functionality or features to your nodes as needed.
+- **Access Denied**: Some websites actively block web scrapers
+- **Content Not Found**: Dynamic content loaded via JavaScript might not be accessible
+- **Rate Limiting**: Excessive requests may trigger rate limiting from websites
+- **Changing Layouts**: Website structure changes can affect scraping reliability
+- **Processing Large Pages**: Very large web pages may take longer to process or exceed token limits

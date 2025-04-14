@@ -2,44 +2,65 @@
 
 ## What is it?
 
-The Dictionary Node lets you create a dictionary (a collection of key-value pairs). Think of it as creating a labeled container where each item has both a name (key) and a value.
+The Dictionary node lets you create a dictionary (a collection of key-value pairs) by providing separate lists of keys and values. It's a simple way to organize related data with named values that can be used throughout your workflow.
 
 ## When would I use it?
 
 Use this node when you want to:
 
-- Organize data with named values
-- Create a structured collection of related information
-- Pass multiple values as a single unit to other nodes
+- Organize related data with named values
+- Create structured data to pass to other nodes
+- Build configuration settings for other components
+- Prepare data in a format that's easy to access by key
+- Combine multiple values into a single organized structure
 
 ## How to use it
 
 ### Basic Setup
 
-1. Add the Dictionary to your workspace
-1. Connect it to your flow
-1. Set up your keys and values
+1. Add the Dictionary node to your workspace
+2. Set up your lists of keys and values
+3. Connect the dictionary output to other nodes that need structured data
 
 ### Parameters
 
-- **keys**: A list of names or labels for your values
-- **values**: A list of values that correspond to each key
+- **keys**: A list of strings that will be used as dictionary keys
+- **values**: A list of values (strings, numbers, booleans, etc.) that correspond to each key
 
 ### Outputs
 
-- **dict**: The completed dictionary that can be used by other nodes
+- **dict**: The constructed dictionary containing all key-value pairs
 
 ## Example
 
-Imagine you want to create a dictionary with information about a person:
+Imagine you want to create a configuration dictionary for a user profile:
 
-1. Set "keys" to ["name", "age", "city"]
-1. Set "values" to ["Alice", 28, "New York"]
-1. The output dictionary will be: {"name": "Alice", "age": 28, "city": "New York"}
+1. Add a Dictionary node to your workflow
+2. Set the "keys" parameter to:
+   ```
+   ["name", "age", "premium_member", "interests"]
+   ```
+3. Set the "values" parameter to:
+   ```
+   ["Jane Smith", 32, true, ["hiking", "photography", "coding"]]
+   ```
+4. The output dictionary will be:
+   ```
+   {"name": "Jane Smith", "age": 32, "premium_member": true, "interests": ["hiking", "photography", "coding"]}
+   ```
+5. Connect this dictionary to other nodes that need user profile information
 
 ## Important Notes
 
-- The keys and values lists should be the same length - each key needs a corresponding value
-- Keys will be converted to strings (if possible) since dictionary keys are typically strings
-- Empty or None keys will be skipped (unless it's the only key and has a value)
-- If there are more keys than values, the extra keys will get None values
+- Keys are automatically converted to strings
+- If you provide more keys than values, the extra keys will be assigned `None` values
+- Empty or `None` keys are skipped unless it's the only key and has a value
+- You can provide single values instead of lists, and they'll be converted to single-item lists
+- The node works with various value types including strings, numbers, booleans, and nested lists
+- The dictionary format is compatible with nodes that accept dictionary inputs
+
+## Common Issues
+
+- **Mismatched Lists**: If your keys and values lists have different lengths, some keys may have `None` values or some values may be ignored
+- **Key Conversion**: All keys are converted to strings, which may cause unexpected behavior if you're using complex objects as keys
+- **Empty Keys**: Empty strings or `None` values used as keys may be skipped depending on their values

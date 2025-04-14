@@ -18,8 +18,8 @@ Use the LoadText node when:
 ### Basic Setup
 
 1. Add a LoadText node to your workflow
-1. Set the "path" parameter to the location of your text file
-1. Connect the output to nodes that can process text content
+2. Set the "path" parameter to the location of your text file
+3. Connect the output to nodes that can process text content
 
 ### Parameters
 
@@ -35,5 +35,5 @@ Use the LoadText node when:
 A workflow to analyze the content of a local text file:
 
 1. Add a LoadText node to your workflow
-1. Set the "path" parameter to something like "C:/Users/username/Documents/project_notes.txt"
-1. Connect the "output" to an Agent node
+2. Set the "path" parameter to something like "C:/Users/username/Documents/project_notes.txt"
+3. Connect the "output" to an Agent node

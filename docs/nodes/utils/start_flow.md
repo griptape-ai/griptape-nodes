@@ -17,7 +17,7 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the StartFlow to your workspace (it may be added automatically when you create a new workflow)
-1. Connect it to the first action node in your flow
+2. Connect it to the first action node in your flow
 
 ### Parameters
 
@@ -32,9 +32,9 @@ Use this node when you want to:
 Imagine you're creating a workflow that generates and saves text:
 
 1. Start with a StartFlow
-1. Connect it to a RunAgent that will generate text
-1. Connect that to a SaveText to save the generated text
-1. Connect that to an EndFlowNode to complete the flow
+2. Connect it to a RunAgent that will generate text
+3. Connect that to a SaveText to save the generated text
+4. Connect that to an EndFlowNode to complete the flow
 
 The StartFlow tells the system "start here and follow the connections."
 

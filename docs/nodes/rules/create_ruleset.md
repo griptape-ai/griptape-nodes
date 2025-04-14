@@ -15,9 +15,9 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the CreateRuleset to your workspace
-1. Set the "name" parameter to define the name for your ruleset (optional, defaults to "Behavior")
-1. Set the "rules" parameter to define the list of rules for your ruleset (optional, defaults to an empty string, comma separated)
-1. Connect it to your flow (specifically into nodes that have a Ruleset parameter)
+2. Set the "name" parameter to define the name for your ruleset (optional, defaults to "Behavior")
+3. Set the "rules" parameter to define the list of rules for your ruleset (optional, defaults to an empty string, comma separated)
+4. Connect it to your flow (specifically into nodes that have a Ruleset parameter)
 
 ### Parameters
 
