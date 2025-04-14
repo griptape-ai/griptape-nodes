@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+from griptape_nodes.exe_types.node_types import NodeResolutionState
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -22,6 +23,7 @@ class CreateNodeRequest(RequestPayload):
     node_name: str | None = None
     override_parent_flow_name: str | None = None
     metadata: dict | None = None
+    resolved: int = 1
 
 
 @dataclass

@@ -1549,6 +1549,10 @@ class NodeManager:
         obj_mgr.add_object_by_name(node.name, node)
         self._name_to_parent_flow_name[node.name] = parent_flow_name
 
+        if request.resolved:
+            print(NodeResolutionState(request.resolved))
+            node.state = NodeResolutionState(request.resolved)
+
         # Phew.
         details = f"Successfully created Node '{final_node_name}' of type '{request.node_type}'."
         log_level = logging.DEBUG
@@ -2919,6 +2923,7 @@ class WorkflowManager:
                         node_name=node.name,
                         metadata=node.metadata,
                         override_parent_flow_name=flow_name,
+                        resolved=node.state.value
                     )
                     code_string = f"GriptapeNodes().handle_request({creation_request})"
                     file.write(code_string + "\n")
