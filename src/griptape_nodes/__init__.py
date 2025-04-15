@@ -340,29 +340,63 @@ def _list_user_configs() -> None:
 
 
 def _uninstall_self() -> None:
-    """Uninstalls itself by removing the config and data directories, and the executable."""
-    console.print("[bold red]Uninstalling Griptape Nodes...[/bold red]")
-    console.print(f"[bold yellow]Removing config directory '{CONFIG_DIR}'...[/bold yellow]")
-    shutil.rmtree(CONFIG_DIR)
+    """Uninstalls itself by removing config/data directories and the executable."""
+    console.print("[bold]Uninstalling Griptape Nodes...[/bold]")
 
-    console.print(f"[bold yellow]Removing data directory '{DATA_DIR}'...[/bold yellow]")
-    shutil.rmtree(DATA_DIR)
+    # Remove config directory
+    if CONFIG_DIR.exists():
+        console.print(f"Removing config directory '{CONFIG_DIR}'...")
+        try:
+            shutil.rmtree(CONFIG_DIR)
+        except OSError as exc:
+            console.print(f"[bold red]Error removing config directory '{CONFIG_DIR}': {exc}[/bold red]")
+    else:
+        console.print(f"[yellow]Config directory '{CONFIG_DIR}' does not exist; skipping.[/yellow]")
 
-    console.print("[bold yellow]Removing Griptape Nodes executable 'griptape-nodes'/'gtn'...[/bold yellow]")
-    subprocess.run(
-        ["uv", "tool", "uninstall", "griptape-nodes"],
-        check=True,
-        text=True,
-    )
+    # Remove data directory
+    if DATA_DIR.exists():
+        console.print(f"Removing data directory '{DATA_DIR}'...")
+        try:
+            shutil.rmtree(DATA_DIR)
+        except OSError as exc:
+            console.print(f"[bold red]Error removing data directory '{DATA_DIR}': {exc}[/bold red]")
+    else:
+        console.print(f"[yellow]Data directory '{DATA_DIR}' does not exist; skipping.[/yellow]")
 
-    console.print("[bold green]Uninstall complete![/bold green]")
+    # Remove the executable/tool
+    executable_path = shutil.which("griptape-nodes")
+    executable_removed = False
+    if executable_path:
+        console.print(f"Removing Griptape Nodes executable ({executable_path})...")
+        try:
+            subprocess.run(
+                ["uv", "tool", "uninstall", "griptape-nodes"],
+                check=True,
+                text=True,
+            )
+            executable_removed = True
+        except subprocess.CalledProcessError:
+            executable_removed = False
+    else:
+        console.print("[yellow]Griptape Nodes executable not found; skipping removal.[/yellow]")
 
+    console.print("[bold green]Uninstall complete![/bold green]\n")
+
+    console.print("[bold]Caveats:[/bold]")
+    # Handle any remaining config files not removed by design
     remaining_config_files = config_manager.config_files
     if remaining_config_files:
-        console.print("[bold yellow]Caveat! Some config files were intentionally not removed:[/bold yellow]")
+        console.print("- Some config files were intentionally not removed:")
         for file in remaining_config_files:
-            console.print(f"[bold yellow]{file}[/bold yellow]")
+            console.print(f"\t[yellow]- {file}[/yellow]")
 
+    if not executable_removed:
+        console.print(
+            "- The uninstaller was not able to remove the 'griptape-nodes' executable. "
+            "Please remove the executable manually by running '[bold]uv tool uninstall griptape-nodes[/bold]'."
+        )
+
+    # Exit the process
     sys.exit(0)
 
 

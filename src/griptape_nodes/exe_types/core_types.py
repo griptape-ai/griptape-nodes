@@ -504,7 +504,7 @@ class Parameter(BaseNodeElement):
             ui_options = ui_options | trait.ui_options_for_trait()
         ui_options = ui_options | self._ui_options
         return ui_options
-    
+
     @ui_options.setter
     def ui_options(self, value: dict) -> None:
         # Here you can validate the input if needed
