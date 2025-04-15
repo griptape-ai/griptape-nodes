@@ -669,6 +669,14 @@ class FlowManager:
         # Who is the parent?
         parent_name = request.parent_flow_name
 
+        # This one's tricky. If they said "None" for the parent, they could either be saying:
+        # 1. Create me as the canvas (i.e., the top-level flow, of which there can be only one)
+        # 2. Use whatever the current context is to be the parent.
+        # We'll explore #2 first.
+        if GriptapeNodes.ContextManager().has_current_flow():
+            # Aha! Just use that.
+            parent_name = GriptapeNodes.ContextManager().get_current_flow_name()
+
         parent = obj_mgr.attempt_get_object_by_name_as_type(parent_name, ControlFlow)
         if parent_name is None:
             # We're trying to create the canvas. Ensure that parent does NOT already exist.
@@ -3153,12 +3161,12 @@ class WorkflowManager:
                 with GriptapeNodes.ContextManager().node(node.name):
                     serialize_node_request = SerializeNodeCommandsRequest()
                     serialize_node_result = self.on_serialize_node_request(serialize_node_request)
-                    if serialize_node_result.failed():
+                    if not isinstance(serialize_node_result, SerializeNodeCommandsResultSuccess):
                         details = f"Attempted to serialize Flow '{flow_name}'. Failed while attempting to serialize Node '{node.name}' within the Flow."
                         logger.error(details)
                         return SerializeFlowCommandsResultFailure()
 
-                    serialized_node_commands.append(serialize_node_result)
+                    serialized_node_commands.append(serialize_node_result.serialized_node_commands)
 
             # We'll have to do a patch-up of all the connections, since we can't predict all of the node names being accurate
             # when we're restored.
@@ -3182,11 +3190,11 @@ class WorkflowManager:
                 with GriptapeNodes.ContextManager().flow(flow_name=child_flow):
                     child_flow_request = SerializeFlowCommandsRequest()
                     child_flow_result = self.on_serialize_flow_request(child_flow_request)
-                    if child_flow_result.failed():
+                    if not isinstance(child_flow_result, SerializeFlowCommandsResultSuccess):
                         details = f"Attempted to serialize parent flow '{flow_name}'. Failed while serializing child flow '{child_flow}'."
                         logger.error(details)
                         return SerializeFlowCommandsResultFailure()
-                    sub_flow_commands.append(child_flow_result)
+                    sub_flow_commands.append(child_flow_result.serialized_flow_commands)
 
         serialized_flow = SerializedFlowCommands(
             create_flow_command=create_flow_request,
