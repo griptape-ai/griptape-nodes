@@ -221,6 +221,8 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowRequest,
     SaveWorkflowResultFailure,
     SaveWorkflowResultSuccess,
+    SerializedFlowCommands,
+    SerializedNodeCommands,
     SerializeFlowCommandsRequest,
     SerializeFlowCommandsResultFailure,
     SerializeFlowCommandsResultSuccess,
@@ -3133,7 +3135,7 @@ class WorkflowManager:
             # The base flow creation.
             create_flow_request = CreateFlowRequest(parent_flow_name=None)
 
-            serialize_node_results = []
+            serialized_node_commands = []
 
             # Now each of the child nodes in the node.
             node_name_to_index = {}
@@ -3148,26 +3150,26 @@ class WorkflowManager:
                         logger.error(details)
                         return SerializeFlowCommandsResultFailure()
 
-                    serialize_node_results.append(serialize_node_result)
+                    serialized_node_commands.append(serialize_node_result)
 
             # We'll have to do a patch-up of all the connections, since we can't predict all of the node names being accurate
             # when we're restored.
             # Create all of the connections
-            create_connection_results = []
+            create_connection_commands = []
             for connection in flow.connections.connections.values():
                 source_node_index = node_name_to_index[connection.source_node.name]
                 target_node_index = node_name_to_index[connection.target_node.name]
-                create_connection_result = SerializeFlowCommandsResultSuccess.IndexedConnectionSerialization(
+                create_connection_command = SerializedFlowCommands.IndexedConnectionSerialization(
                     source_node_index=source_node_index,
                     source_parameter_name=connection.source_parameter.name,
                     target_node_index=target_node_index,
                     target_parameter_name=connection.target_parameter.name,
                 )
-                create_connection_results.append(create_connection_result)
+                create_connection_commands.append(create_connection_command)
 
             # Now sub-flows.
             child_flows = GriptapeNodes.FlowManager().get_children_for_flow(flow_name)
-            sub_flow_creation_results = []
+            sub_flow_commands = []
             for child_flow in child_flows:
                 with GriptapeNodes.ContextManager().flow(flow_name=child_flow):
                     child_flow_request = SerializeFlowCommandsRequest()
@@ -3176,15 +3178,16 @@ class WorkflowManager:
                         details = f"Attempted to serialize parent flow '{flow_name}'. Failed while serializing child flow '{child_flow}'."
                         logger.error(details)
                         return SerializeFlowCommandsResultFailure()
-                    sub_flow_creation_results.append(child_flow_result)
+                    sub_flow_commands.append(child_flow_result)
 
-        details = f"Successfully serialized Flow '{flow_name}' into commands."
-        result = SerializeFlowCommandsResultSuccess(
-            create_flow_request=create_flow_request,
-            serialize_node_results=serialize_node_results,
-            connection_results=create_connection_results,
-            sub_flow_creation_results=sub_flow_creation_results,
+        serialized_flow = SerializedFlowCommands(
+            create_flow_command=create_flow_request,
+            serialized_node_commands=serialized_node_commands,
+            serialized_connections=create_connection_commands,
+            sub_flows_commands=sub_flow_commands,
         )
+        details = f"Successfully serialized Flow '{flow_name}' into commands."
+        result = SerializeFlowCommandsResultSuccess(serialized_flow_commands=serialized_flow)
         return result
 
     def on_serialize_node_request(self, request: SerializeNodeCommandsRequest) -> ResultPayload:  # noqa: C901
@@ -3221,14 +3224,14 @@ class WorkflowManager:
             reference_node = type(node)(name="REFERENCE NODE")
 
             # Now all of the parameters.
-            parameter_requests = []
+            parameter_commands = []
             for parameter in node.parameters:
                 param_dict = vars(parameter)
                 # Create the parameter, or alter it on the existing node
                 if parameter.user_defined:
                     param_dict["node_name"] = node.name
                     add_param_request = AddParameterToNodeRequest.create(**param_dict)
-                    parameter_requests.append(add_param_request)
+                    parameter_commands.append(add_param_request)
                 else:
                     # Not user defined. Get any deltas from a canonical one.
                     diff = manage_alter_details(parameter, reference_node)
@@ -3241,23 +3244,24 @@ class WorkflowManager:
                         diff["node_name"] = node.name
                         diff["parameter_name"] = parameter.name
                         alter_param_request = AlterParameterDetailsRequest.create(**diff)
-                        parameter_requests.append(alter_param_request)
+                        parameter_commands.append(alter_param_request)
                 if parameter.name in node.parameter_values and parameter.name not in node.parameter_output_values:
                     try:
                         # SetParameterValueRequest event
                         set_param_value_request = handle_parameter_value_saving(parameter, node)
-                        parameter_requests.append(set_param_value_request)
+                        parameter_commands.append(set_param_value_request)
                     except Exception as e:
                         details = f"Failed to serialize Node because failed to save parameter creation for node '{node.name}'. Error: {e}"
                         logger.error(details)
                         return SerializeNodeCommandsResultFailure()
 
         # Hooray
+        serialized_node_commands = SerializedNodeCommands(
+            create_node_command=create_request, parameter_commands=parameter_commands
+        )
         details = f"Successfully serialized node '{node_name}' into commands."
         logger.debug(details)
-        result = SerializeNodeCommandsResultSuccess(
-            create_node_request=create_request, parameter_requests=parameter_requests
-        )
+        result = SerializeNodeCommandsResultSuccess(serialized_node_commands=serialized_node_commands)
         return result
 
     def on_load_workflow_metadata_request(self, request: LoadWorkflowMetadata) -> ResultPayload:

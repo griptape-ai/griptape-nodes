@@ -178,6 +178,29 @@ class LoadWorkflowMetadataResultFailure(ResultPayloadFailure):
 
 
 @dataclass
+class SerializedNodeCommands:
+    create_node_command: CreateNodeRequest
+    parameter_commands: list[RequestPayload]
+
+
+@dataclass
+class SerializedFlowCommands:
+    @dataclass
+    class IndexedConnectionSerialization:
+        # Companion class to create connections from node indices, since we can't predict the names.
+        # These are indices into the SerializeNodeCommandsRequest list we maintain.
+        source_node_index: int
+        source_parameter_name: str
+        target_node_index: int
+        target_parameter_name: str
+
+    create_flow_command: CreateFlowRequest
+    serialized_node_commands: list[SerializedNodeCommands]
+    serialized_connections: list[IndexedConnectionSerialization]
+    sub_flows_commands: list["SerializedFlowCommands"]
+
+
+@dataclass
 @PayloadRegistry.register
 class SerializeNodeCommandsRequest(RequestPayload):
     node_name: str | None = None
@@ -186,8 +209,7 @@ class SerializeNodeCommandsRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class SerializeNodeCommandsResultSuccess(ResultPayloadSuccess):
-    create_node_request: CreateNodeRequest
-    parameter_requests: list[RequestPayload]
+    serialized_node_commands: SerializedNodeCommands
 
 
 @dataclass
@@ -205,19 +227,7 @@ class SerializeFlowCommandsRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class SerializeFlowCommandsResultSuccess(ResultPayloadSuccess):
-    @dataclass
-    class IndexedConnectionSerialization:
-        # Companion class to create connections from node indices, since we can't predict the names.
-        # These are indices into the SerializeNodeCommandsRequest list we maintain.
-        source_node_index: int
-        source_parameter_name: str
-        target_node_index: int
-        target_parameter_name: str
-
-    create_flow_request: CreateFlowRequest
-    serialize_node_results: list[SerializeNodeCommandsResultSuccess]
-    connection_results: list[IndexedConnectionSerialization]
-    sub_flow_creation_results: list["SerializeFlowCommandsResultSuccess"]
+    serialized_flow_commands: SerializedFlowCommands
 
 
 @dataclass
