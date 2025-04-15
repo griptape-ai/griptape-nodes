@@ -114,6 +114,7 @@ class ConfigManager:
             json_file=self._find_config_files("griptape_nodes_config.json"),
             toml_file=self._find_config_files("griptape_nodes_config.toml"),
             yaml_file=self._find_config_files("griptape_nodes_config.yaml"),
+            extra="allow",
         )
         settings = Settings()
         workspace_path = Path(settings.workspace_directory).resolve()
@@ -132,6 +133,7 @@ class ConfigManager:
                 *self._find_config_files("griptape_nodes_config.yaml"),
                 workspace_path / "griptape_nodes_config.yaml",
             ],
+            extra="allow",
         )
         settings = Settings()
         self.user_config = settings.model_dump()
