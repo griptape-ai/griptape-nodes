@@ -382,19 +382,23 @@ def _uninstall_self() -> None:
 
     console.print("[bold green]Uninstall complete![/bold green]\n")
 
-    console.print("[bold]Caveats:[/bold]")
+    caveats = []
     # Handle any remaining config files not removed by design
     remaining_config_files = config_manager.config_files
     if remaining_config_files:
-        console.print("- Some config files were intentionally not removed:")
-        for file in remaining_config_files:
-            console.print(f"\t[yellow]- {file}[/yellow]")
+        caveats.append("- Some config files were intentionally not removed:")
+        caveats.extend(f"\t[yellow]- {file}[/yellow]" for file in remaining_config_files)
 
     if not executable_removed:
-        console.print(
-            "- The uninstaller was not able to remove the 'griptape-nodes' executable. "
+        caveats.append(
+            "- The uninstaller was not able to remove the Griptape Nodes executable. "
             "Please remove the executable manually by running '[bold]uv tool uninstall griptape-nodes[/bold]'."
         )
+
+    if caveats:
+        console.print("[bold]Caveats:[/bold]")
+        for line in caveats:
+            console.print(line)
 
     # Exit the process
     sys.exit(0)
