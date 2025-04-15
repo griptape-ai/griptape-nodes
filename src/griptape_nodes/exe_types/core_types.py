@@ -275,6 +275,7 @@ class ParameterGroup(BaseNodeElement):
         our_dict = super().to_dict()
         # Add in our deltas.
         our_dict["group_name"] = self.group_name
+        our_dict["ui_options"] = self.ui_options
         return our_dict
 
 
