@@ -197,6 +197,12 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
     DeleteWorkflowResultFailure,
     DeleteWorkflowResultSuccess,
+    DeserializeFlowCommandsRequest,
+    DeserializeFlowCommandsResultFailure,
+    DeserializeFlowCommandsResultSuccess,
+    DeserializeNodeCommandsRequest,
+    DeserializeNodeCommandsResultFailure,
+    DeserializeNodeCommandsResultSuccess,
     ListAllWorkflowsRequest,
     ListAllWorkflowsResultFailure,
     ListAllWorkflowsResultSuccess,
@@ -2942,6 +2948,8 @@ class WorkflowManager:
         event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
         event_manager.assign_manager_to_request_type(SerializeFlowCommandsRequest, self.on_serialize_flow_request)
         event_manager.assign_manager_to_request_type(SerializeNodeCommandsRequest, self.on_serialize_node_request)
+        event_manager.assign_manager_to_request_type(DeserializeFlowCommandsRequest, self.on_deserialize_flow_request)
+        event_manager.assign_manager_to_request_type(DeserializeNodeCommandsRequest, self.on_deserialize_node_request)
 
     def run_workflow(self, relative_file_path: str) -> tuple[bool, str]:
         relative_file_path_obj = Path(relative_file_path)
@@ -3190,6 +3198,66 @@ class WorkflowManager:
         result = SerializeFlowCommandsResultSuccess(serialized_flow_commands=serialized_flow)
         return result
 
+    def on_deserialize_flow_request(self, request: DeserializeFlowCommandsRequest) -> ResultPayload:
+        # Create our new flow. This will set it as the context.
+        create_flow_result = GriptapeNodes.handle_request(request.serialized_flow_commands.create_flow_command)
+        if not isinstance(create_flow_result, CreateFlowResultSuccess):
+            details = "Attempted to deserialize a Flow from serialized commands. Failed."
+            logger.error(details)
+            return DeserializeFlowCommandsResultFailure()
+
+        flow_name = create_flow_result.flow_name
+
+        # Deserializing a flow goes in a specific order.
+
+        # Create the nodes.
+        # Preserve the indices because we will need to tie these back together with the Connections later.
+        deserialized_node_results = []
+        for serialized_node in request.serialized_flow_commands.serialized_node_commands:
+            deserialize_node_request = DeserializeNodeCommandsRequest(serialized_node_commands=serialized_node)
+            deserialized_node_result = GriptapeNodes.handle_request(deserialize_node_request)
+            if deserialized_node_result.failed():
+                details = (
+                    f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a node within the flow."
+                )
+                logger.error(details)
+                return DeserializeFlowCommandsResultFailure()
+            deserialized_node_results.append(deserialized_node_result)
+
+        # Now apply the connections.
+        # We didn't know the exact name that would be used for the nodes, but we knew the indices.
+        # Tie the indices back to the node names.
+        for indexed_connection in request.serialized_flow_commands.serialized_connections:
+            source_node_result = deserialized_node_results[indexed_connection.source_node_index]
+            source_node_name = source_node_result.node_name
+            target_node_result = deserialized_node_results[indexed_connection.target_node_index]
+            target_node_name = target_node_result.node_name
+
+            create_connection_request = CreateConnectionRequest(
+                source_node_name=source_node_name,
+                source_parameter_name=indexed_connection.source_parameter_name,
+                target_node_name=target_node_name,
+                target_parameter_name=indexed_connection.target_parameter_name,
+            )
+            create_connection_result = GriptapeNodes.handle_request(create_connection_request)
+            if create_connection_result.failed():
+                details = f"Attemped to deserialize a Flow '{flow_name}'. Failed while deserializing a Connection from '{source_node_name}.{indexed_connection.source_parameter_name}' to '{target_node_name}.{indexed_connection.target_parameter_name}' within the flow."
+                logger.error(details)
+                return DeserializeFlowCommandsResultFailure()
+
+        # Now the child flows.
+        for sub_flow_command in request.serialized_flow_commands.sub_flows_commands:
+            sub_flow_request = DeserializeFlowCommandsRequest(serialized_flow_commands=sub_flow_command)
+            sub_flow_result = GriptapeNodes.handle_request(sub_flow_request)
+            if sub_flow_result.failed():
+                details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a sub-flow within the Flow."
+                logger.error(details)
+                return DeserializeFlowCommandsResultFailure()
+
+        details = f"Successfully deserialized Flow '{flow_name}'."
+        logger.debug(details)
+        return DeserializeFlowCommandsResultSuccess(flow_name=flow_name)
+
     def on_serialize_node_request(self, request: SerializeNodeCommandsRequest) -> ResultPayload:  # noqa: C901
         node_name = request.node_name
         if node_name is None:
@@ -3263,6 +3331,26 @@ class WorkflowManager:
         logger.debug(details)
         result = SerializeNodeCommandsResultSuccess(serialized_node_commands=serialized_node_commands)
         return result
+
+    def on_deserialize_node_request(self, request: DeserializeNodeCommandsRequest) -> ResultPayload:
+        create_node_result = GriptapeNodes.handle_request(request.serialized_node_commands.create_node_command)
+        if not isinstance(create_node_result, CreateNodeResultSuccess):
+            details = "Attemped to deserialize a Node. Failed during creation."
+            logger.error(details)
+            return DeserializeNodeCommandsResultFailure()
+        node_name = create_node_result.node_name
+
+        # Now all of the parameter commands.
+        for parameter_command in request.serialized_node_commands.parameter_commands:
+            parameter_result = GriptapeNodes.handle_request(parameter_command)
+            if parameter_result.failed():
+                details = f"Attempted to deserialize a Node '{node_name}'. Failed during Parameter deserialization."
+                logger.error(details)
+                return DeserializeNodeCommandsResultFailure()
+
+        details = f"Successfully deserialized node '{node_name}' from commands."
+        logger.debug(details)
+        return DeserializeNodeCommandsResultSuccess(node_name=node_name)
 
     def on_load_workflow_metadata_request(self, request: LoadWorkflowMetadata) -> ResultPayload:
         # Let us go into the darkness.

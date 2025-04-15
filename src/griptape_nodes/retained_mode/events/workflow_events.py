@@ -220,6 +220,24 @@ class SerializeNodeCommandsResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class DeserializeNodeCommandsRequest(RequestPayload):
+    serialized_node_commands: SerializedNodeCommands
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeNodeCommandsResultSuccess(ResultPayloadSuccess):
+    node_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeNodeCommandsResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
 class SerializeFlowCommandsRequest(RequestPayload):
     flow_name: str | None = None
 
@@ -233,6 +251,24 @@ class SerializeFlowCommandsResultSuccess(ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class SerializeFlowCommandsResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeFlowCommandsRequest(RequestPayload):
+    serialized_flow_commands: SerializedFlowCommands
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeFlowCommandsResultSuccess(ResultPayloadSuccess):
+    flow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeFlowCommandsResultFailure(ResultPayloadFailure):
     pass
 
 
