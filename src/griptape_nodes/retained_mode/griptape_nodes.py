@@ -673,7 +673,7 @@ class FlowManager:
         # 1. Create me as the canvas (i.e., the top-level flow, of which there can be only one)
         # 2. Use whatever the current context is to be the parent.
         # We'll explore #2 first.
-        if GriptapeNodes.ContextManager().has_current_flow():
+        if (parent_name is None) and (GriptapeNodes.ContextManager().has_current_flow()):
             # Aha! Just use that.
             parent_name = GriptapeNodes.ContextManager().get_current_flow_name()
 
