@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from collections.abc import Generator
+from concurrent.futures import Future, ThreadPoolExecutor
+from typing import TYPE_CHECKING, Any
 
 from griptape.events import EventBus
+from griptape.utils import with_contextvars
 
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
@@ -17,6 +20,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     NodeStartProcessEvent,
     ParameterSpotlightEvent,
     ParameterValueUpdateEvent,
+    ResumeNodeProcessingEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import GetParameterDetailsRequest, SetParameterValueRequest
 
@@ -24,16 +28,21 @@ if TYPE_CHECKING:
     from griptape_nodes.exe_types.flow import ControlFlow
 
 
+logger = logging.getLogger("griptape_nodes")
+
+
 # This is on a per-node basis
 class ResolutionContext:
     flow: ControlFlow
     focus_stack: list[BaseNode]
     paused: bool
+    scheduled_value: Any | None
 
     def __init__(self, flow: ControlFlow) -> None:
         self.flow = flow
         self.focus_stack = []
         self.paused = False
+        self.scheduled_value = None
 
 
 class InitializeSpotlightState(State):
@@ -120,9 +129,13 @@ class EvaluateParameterState(State):
 
 
 class ExecuteNodeState(State):
+    executor: ThreadPoolExecutor = ThreadPoolExecutor()
+
     # TODO(kate): Can we refactor this method to make it a lot cleaner? might involve changing how parameter values are retrieved/stored.
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         current_node = context.focus_stack[-1]
         # Get the parameters that have input values
         for parameter_name in current_node.parameter_output_values.copy():
@@ -151,7 +164,6 @@ class ExecuteNodeState(State):
                     if modified_parameters:
                         for modified_parameter_name in modified_parameters:
                             # TODO(kate): Move to a different type of event
-                            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
                             modified_request = GetParameterDetailsRequest(
                                 parameter_name=modified_parameter_name, node_name=current_node.name
@@ -182,6 +194,8 @@ class ExecuteNodeState(State):
 
     @staticmethod
     def on_update(context: ResolutionContext) -> type[State] | None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         # Once everything has been set
         current_node = context.focus_stack[-1]
         # To set the event manager without circular import errors
@@ -190,13 +204,24 @@ class ExecuteNodeState(State):
                 wrapped_event=ExecutionEvent(payload=NodeStartProcessEvent(node_name=current_node.name))
             )
         )
+        logger.info("Node %s is processing.", current_node.name)
+
         try:
-            current_node.process()  # Pass in the NodeContext!
+            work_is_scheduled = ExecuteNodeState._process_node(
+                context=context,
+                current_node=current_node,
+            )
+            if work_is_scheduled:
+                logger.info("Pausing Node %s to run background work", current_node.name)
+                return None
         except Exception as e:
             msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
             current_node.state = NodeResolutionState.UNRESOLVED
             context.flow.cancel_flow_run()
             raise RuntimeError(msg) from e
+
+        logger.info("Node %s finished processing.", current_node.name)
+
         # To set the event manager without circular import errors
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
@@ -205,7 +230,6 @@ class ExecuteNodeState(State):
         )
         current_node.state = NodeResolutionState.RESOLVED
         details = f"{current_node.name} resolved."
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 
         logger.info(details)
 
@@ -263,6 +287,61 @@ class ExecuteNodeState(State):
         if len(context.focus_stack):
             return EvaluateParameterState
         return CompleteState
+
+    @staticmethod
+    def _process_node(context: ResolutionContext, current_node: BaseNode) -> bool:
+        """Run the process method of the node.
+
+        If the node's process method returns a generator, take the next value from the generator (a callable) and run
+        that in a thread pool executor. The result of that callable will be passed to the generator when it is resumed.
+
+        This has the effect of pausing at a yield expression, running the expression in a thread, and resuming when the thread pool is done.
+
+        Args:
+            context (ResolutionContext): The resolution context.
+            current_node (BaseNode): The current node.
+
+        Returns:
+            bool: True if work has been scheduled, False if the node is done processing.
+        """
+
+        def on_future_done(future: Future) -> None:
+            """Called when the future is done.
+
+            Stores the result of the future in the node's context, and publishes an event to resume the flow.
+            """
+            context.scheduled_value = future.result()
+            EventBus.publish_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
+                )
+            )
+
+        # Only start the processing if we don't already have a generator
+        if current_node.process_generator is None:
+            result = current_node.process()
+
+            # If the process returned a generator, we need to store it for later
+            if isinstance(result, Generator):
+                current_node.process_generator = result
+
+        # We now have a generator, so we need to run it
+        if current_node.process_generator is not None:
+            try:
+                func = current_node.process_generator.send(context.scheduled_value)
+                # Once we've passed on the scheduled value, we should clear it out just in case
+                context.scheduled_value = None
+                future = ExecuteNodeState.executor.submit(func)
+                future.add_done_callback(with_contextvars(on_future_done))
+            except StopIteration:
+                # If that was the last generator, clear out the generator and indicate that there is no more work scheduled
+                current_node.process_generator = None
+                context.scheduled_value = None
+                return False
+            else:
+                # If the generator is not done, indicate that there is work scheduled
+                return True
+        return False
 
 
 class CompleteState(State):

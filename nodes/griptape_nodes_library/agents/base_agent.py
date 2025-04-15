@@ -1,9 +1,12 @@
+from collections.abc import Iterator
+
+from griptape.artifacts import TextArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.structures import Agent
+from griptape.structures import Agent, Structure
 from griptape.tasks import PromptTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 DEFAULT_MODEL = "gpt-4o"
@@ -80,6 +83,10 @@ class BaseAgent(ControlNode):
             )
         self.add_node_element(output_group)
 
+        # Store parameter groups for later use
+        self.agent_configuration_group = agent_configuration
+        self.agent_response_group = output_group
+
     def validate_node(self) -> list[Exception] | None:
         # All env values are stored in the SecretsManager. Check if they exist using this method.
         exceptions = []
@@ -122,5 +129,7 @@ class BaseAgent(ControlNode):
             task.context = self.get_parameter_value("prompt_context")
         return agent
 
-    def process(self) -> None:
+    def process(
+        self,
+    ) -> AsyncResult[Iterator[TextArtifact] | Structure] | None:
         pass

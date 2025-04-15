@@ -1,10 +1,11 @@
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
+from griptape.structures import Structure
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
@@ -91,10 +92,9 @@ class CreateImage(ControlNode):
             return exceptions
         return exceptions if exceptions else None
 
-    def process(self) -> None:
+    def process(self) -> AsyncResult[Structure]:
         # Get the parameters from the node
         params = self.parameter_values
-
         agent = params.get("agent", None)
         if not agent:
             prompt_driver = GriptapeCloudPromptDriver(
@@ -104,13 +104,15 @@ class CreateImage(ControlNode):
             )
             agent = Agent(prompt_driver=prompt_driver)
         else:
-            agent = Agent().from_dict(agent)
+            agent = Agent.from_dict(agent)
         prompt = params.get("prompt", "")
         enhance_prompt = params.get("enhance_prompt", True)
 
         if enhance_prompt:
             logger.info("Enhancing prompt...")
-            result = agent.run(
+            # agent.run is a blocking operation that will hold up the rest of the engine.
+            # By using `yield lambda`, the engine can run this in the background and resume when it's done.
+            result = yield lambda: agent.run(
                 [
                     """
 Enhance the following prompt for an image generation engine. Return only the image generation prompt.
@@ -143,8 +145,9 @@ Focus on qualities that will make this the most professional looking photo in th
         # Add the actual image gen *task
         agent.add_task(PromptImageGenerationTask(**kwargs))
 
-        # Run the agent
-        result = agent.run(prompt)
+        # Run the agent asynchronously
+        result = yield lambda: agent.run(prompt)
+
         self.parameter_output_values["output"] = result.output
         try_throw_error(agent.output)
         # Reset the agent
