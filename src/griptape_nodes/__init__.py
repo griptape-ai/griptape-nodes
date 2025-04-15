@@ -8,6 +8,7 @@ import json
 import shutil
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
 import httpx
@@ -414,6 +415,8 @@ def _process_args(args: argparse.Namespace) -> None:
         # Confusing double negation -- If `no_update` is set, we want to skip the update
         if not args.no_update:
             _auto_update()
+
+        webbrowser.open(NODES_APP_URL, new=2)  # new=2 opens in a new tab
         start_app()
     elif args.command == "config":
         if args.config_subcommand == "list":
