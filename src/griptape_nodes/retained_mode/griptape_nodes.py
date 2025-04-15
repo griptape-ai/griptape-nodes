@@ -1935,7 +1935,7 @@ class NodeManager:
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(request.parameter_name)
-        parameter_group = node.get_group_by_name(request.parameter_name)
+        parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
         if parameter is None and parameter_group is None:
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because it didn't have a Parameter with that name on it."
             logger.error(details)
@@ -2112,12 +2112,18 @@ class NodeManager:
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(request.parameter_name)
+        parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
         if parameter is None:
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because it didn't have a Parameter with that name on it."
-            logger.error(details)
+            parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
+            if parameter_group is None:
+                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because it didn't have a Parameter with that name on it."
+                logger.error(details)
 
-            result = AlterParameterDetailsResultFailure()
-            return result
+                result = AlterParameterDetailsResultFailure()
+                return result
+            if request.ui_options is not None:
+                parameter_group.ui_options = request.ui_options
+            return AlterParameterDetailsResultSuccess()
 
         # TODO(griptape): Verify that we can get through all the OTHER tricky stuff before we proceed to actually making changes.
         # Now change all the values on the Parameter.
