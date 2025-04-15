@@ -7,6 +7,7 @@ import logging
 import re
 import sys
 from contextlib import redirect_stdout
+from dataclasses import fields, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from re import Pattern
@@ -658,6 +659,13 @@ class FlowManager:
                 ret_val.append(flow_name)
 
         return ret_val
+
+    def get_canvas_name(self) -> str:
+        for flow_name, parent_flow_name in self._name_to_parent_name.items():
+            if parent_flow_name is None:
+                return flow_name
+        msg = "No Flow found that had no parent."
+        raise ValueError(msg)
 
     def does_canvas_exist(self) -> bool:
         """Determines if there is already an existing flow with no parent flow.Returns True if there is an existing flow with no parent flow.Return False if there is no existing flow with no parent flow."""
@@ -3413,9 +3421,9 @@ class WorkflowManager:
         return LoadWorkflowMetadataResultSuccess(metadata=workflow_metadata)
 
     def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (need lots of branches to cover negative cases)
-        obj_manager = GriptapeNodes.get_instance()._object_manager
-        node_manager = GriptapeNodes.get_instance()._node_manager
-        config_manager = GriptapeNodes.get_instance()._config_manager
+        obj_manager = GriptapeNodes.ObjectManager()
+        node_manager = GriptapeNodes.NodeManager()
+        config_manager = GriptapeNodes.ConfigManager()
 
         # open my file
         if request.file_name:
@@ -3447,10 +3455,57 @@ class WorkflowManager:
             logger.error(details)
             return SaveWorkflowResultFailure()
 
+        # Serialize the canvas (top level flow)
+        try:
+            canvas_flow_name = GriptapeNodes.FlowManager().get_canvas_name()
+        except Exception as err:
+            details = f"Attempted to save workflow '{relative_file_path}', but failed finding a canvas: {err}"
+            logger.error(details)
+            return SaveWorkflowResultFailure()
+
+        serialize_flow_commands_request = SerializeFlowCommandsRequest(flow_name=canvas_flow_name)
+        serialize_flow_commands_result = GriptapeNodes.handle_request(serialize_flow_commands_request)
+        if not isinstance(serialize_flow_commands_result, SerializeFlowCommandsResultSuccess):
+            details = f"Attempted to save workflow '{relative_file_path}'. Failed attempting to serialize the workflow."
+            logger.error(details)
+            return SaveWorkflowResultFailure()
+        serialized_flow = serialize_flow_commands_result.serialized_flow_commands
+
         try:
             with file_path.open("w") as file:
-                # Now the critical import.
-                file.write("from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes\n")
+                # Now the critical imports.
+                import_statements = [
+                    "from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest",
+                    "from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest",
+                    "from griptape_nodes.retained_mode.events.parameter_events import AlterParameterDetailsRequest",
+                    "from griptape_nodes.retained_mode.events.workflow_events import SerializedFlowCommands, SerializedNodeCommands",
+                    "from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes as api",
+                ]
+                for import_statement in import_statements:
+                    file.write(f"{import_statement}\n")
+
+                # Create the flow.
+                create_flow = generate_griptape_command(serialized_flow.create_flow_command)
+                file.write(create_flow + "\n")
+
+                # TODO: Set as current context
+                for node_command in serialized_flow.serialized_node_commands:
+                    create_node = generate_griptape_command(node_command.create_node_command)
+                    file.write(create_node + "\n")
+                    for param_command in node_command.parameter_commands:
+                        param_request = generate_griptape_command(param_command)
+                        file.write(param_request + "\n")
+
+                file.write("\n# *************END STEP BY STEP APPROACH***************\n")
+                # Generate the construction code
+                class_hierarchy = {}
+                _build_class_hierarchy(serialized_flow, class_hierarchy)
+                construction_code = _generate_object_construction(
+                    serialized_flow, indent_level=0, class_hierarchy=class_hierarchy
+                )
+                file.write(construction_code)
+
+                file.write("\n# *************END SERIALIZED AS OBJECT APPROACH***************\n")
                 # Write all flows to a file, get back the strings for connections
                 connection_request_workflows = handle_flow_saving(file, obj_manager, created_flows)
                 # Now all of the flows have been created.
@@ -3545,6 +3600,155 @@ class WorkflowManager:
             config_manager.save_user_workflow_json(relative_file_path)
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
         return SaveWorkflowResultSuccess(file_path=str(file_path))
+
+
+def _build_class_hierarchy(obj, hierarchy: dict[str, str]):
+    """Build a mapping of class names to their full qualified names.
+
+    This helps us correctly handle nested classes.
+
+    Args:
+        obj: The object to analyze
+        hierarchy: Dictionary to populate with class name mappings
+    """
+    if obj is None:
+        return
+
+    if is_dataclass(obj):
+        cls = type(obj)
+        class_name = cls.__name__
+
+        # Get the qualified name (includes parent classes)
+        qualname = getattr(cls, "__qualname__", class_name)
+
+        # Add to our hierarchy map if it's a nested class (contains a dot)
+        if "." in qualname:
+            hierarchy[class_name] = qualname
+
+        # Process all fields recursively
+        for field_name, field_value in vars(obj).items():
+            if field_value is not None:
+                _build_class_hierarchy(field_value, hierarchy)
+
+    elif isinstance(obj, (list, tuple)):
+        for item in obj:
+            _build_class_hierarchy(item, hierarchy)
+
+    elif isinstance(obj, dict):
+        for key, value in obj.items():
+            _build_class_hierarchy(value, hierarchy)
+
+
+def _generate_object_construction(obj, indent_level=0, class_hierarchy=None):
+    """Generate Python code to construct an object, handling nested structures.
+
+    Args:
+        obj: The object to generate construction code for
+        indent_level: Current indentation level
+        class_hierarchy: Mapping of class names to their qualified names
+
+    Returns:
+        String containing Python code
+    """
+    if class_hierarchy is None:
+        class_hierarchy = {}
+
+    indent = "    " * indent_level
+
+    if obj is None:
+        return "None"
+    elif isinstance(obj, str):
+        # Use double quotes for strings
+        return '"' + obj.replace('"', '\\"').replace("\n", "\\n") + '"'
+    elif isinstance(obj, (int, float, bool)):
+        return str(obj)
+    elif isinstance(obj, list):
+        if not obj:
+            return "[]"
+
+        items_code = []
+        for item in obj:
+            item_code = _generate_object_construction(item, indent_level + 1, class_hierarchy)
+            items_code.append(f"{indent}    {item_code}")
+
+        return "[\n" + ",\n".join(items_code) + "\n" + indent + "]"
+    elif isinstance(obj, dict):
+        if not obj:
+            return "{}"
+
+        items_code = []
+        for key, value in obj.items():
+            if isinstance(key, str):
+                key_str = '"' + key.replace('"', '\\"') + '"'
+            else:
+                key_str = str(key)
+
+            value_code = _generate_object_construction(value, indent_level + 1, class_hierarchy)
+            items_code.append(f"{indent}    {key_str}: {value_code}")
+
+        return "{\n" + ",\n".join(items_code) + "\n" + indent + "}"
+    elif is_dataclass(obj):
+        cls = type(obj)
+        class_name = cls.__name__
+
+        # Use the fully qualified name if it's in our hierarchy map
+        full_class_name = class_hierarchy.get(class_name, class_name)
+
+        args = []
+        for field_name, field_value in vars(obj).items():
+            value_code = _generate_object_construction(field_value, indent_level + 1, class_hierarchy)
+            args.append(f"{indent}    {field_name}={value_code}")
+
+        return f"{full_class_name}(\n" + ",\n".join(args) + "\n" + indent + ")"
+    else:
+        # Fall back to repr for other types
+        return repr(obj)
+
+
+def serialize_value(value: Any) -> str:
+    """Serialize a Python value to its string representation for code generation."""
+    if value is None:
+        return "None"
+    if isinstance(value, str):
+        # Escape single quotes and use repr to handle special characters
+        return repr(value)
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, dict):
+        items = [f"{serialize_value(k)}: {serialize_value(v)}" for k, v in value.items()]
+        return "{" + ", ".join(items) + "}"
+    if isinstance(value, list):
+        items = [serialize_value(item) for item in value]
+        return "[" + ", ".join(items) + "]"
+    # For complex objects, try to use their string representation
+    # This might not work for all types of objects
+    return repr(value)
+
+
+def generate_command_code(command: Any) -> str:
+    """Generate Python code for a command object."""
+    if not is_dataclass(command):
+        msg = f"Expected a dataclass object, got {type(command)}"
+        raise ValueError(msg)
+
+    # Get the class name
+    class_name = type(command).__name__
+
+    # Get all fields
+    field_values = []
+    for field in fields(command):
+        value = getattr(command, field.name)
+        field_values.append(f"{field.name}={serialize_value(value)}")
+
+    # Generate the code
+    code = f"{class_name}({', '.join(field_values)})"
+    return code
+
+
+def generate_griptape_command(command: Any) -> str:
+    """Generate a command for a given command object."""
+    command_code = generate_command_code(command)
+    return f"api.handle_request({command_code})"
 
 
 def create_flows_in_order(flow_name, flow_manager, created_flows, file) -> list | None:
