@@ -147,11 +147,8 @@ def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
             )
             workspace_path = Path(workspace_directory).expanduser().resolve()
 
-            current_config = json.loads(CONFIG_FILE.read_text())
-            current_config["workspace_directory"] = str(workspace_path)
-            CONFIG_FILE.write_text(json.dumps(current_config, indent=2))
-
-            config_manager.load_user_config()
+            config_manager.workspace_path = workspace_path
+            config_manager.set_config_value("workspace_directory", str(workspace_path))
 
             valid_workspace = True
         except OSError as e:
