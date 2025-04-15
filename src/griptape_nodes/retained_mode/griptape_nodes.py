@@ -2119,17 +2119,35 @@ class NodeManager:
             result = AlterParameterDetailsResultFailure()
             return result
 
-        # No tricky stuff, users!
-        if parameter.user_defined is False and request.request_id:
-            # TODO(griptape): there may be SOME properties on a non-user-defined Parameter that can be changed
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be removed from a Node."
-            logger.error(details)
-
-            result = AlterParameterDetailsResultFailure()
-            return result
-
         # TODO(griptape): Verify that we can get through all the OTHER tricky stuff before we proceed to actually making changes.
         # Now change all the values on the Parameter.
+        altered = False
+        if request.tooltip is not None:
+            altered = True
+            parameter.tooltip = request.tooltip
+        if request.tooltip_as_input is not None:
+            altered = True
+            parameter.tooltip_as_input = request.tooltip_as_input
+        if request.tooltip_as_property is not None:
+            altered = True
+            parameter.tooltip_as_property = request.tooltip_as_property
+        if request.tooltip_as_output is not None:
+            altered = True
+            parameter.tooltip_as_output = request.tooltip_as_output
+        if request.ui_options is not None:
+            altered = True
+            parameter.ui_options = request.ui_options
+        if parameter.user_defined is False and request.request_id in (None, -1):
+            # TODO(griptape): there may be SOME properties on a non-user-defined Parameter that can be changed
+            if altered:
+                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
+                logger.warning(details)
+                result = AlterParameterDetailsResultSuccess()
+            else:
+                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Could not alter values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
+                logger.error(details)
+                result = AlterParameterDetailsResultFailure()
+            return result
         if request.type is not None:
             parameter.type = request.type
         if request.input_types is not None:
@@ -2157,16 +2175,6 @@ class NodeManager:
                 parameter.allowed_modes.add(ParameterMode.OUTPUT)
             else:
                 parameter.allowed_modes.discard(ParameterMode.OUTPUT)
-        if request.tooltip is not None:
-            parameter.tooltip = request.tooltip
-        if request.tooltip_as_input is not None:
-            parameter.tooltip_as_input = request.tooltip_as_input
-        if request.tooltip_as_property is not None:
-            parameter.tooltip_as_property = request.tooltip_as_property
-        if request.tooltip_as_output is not None:
-            parameter.tooltip_as_output = request.tooltip_as_output
-        if request.ui_options is not None:
-            parameter.ui_options = request.ui_options
 
         details = (
             f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{request.node_name}'."
