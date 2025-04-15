@@ -20,7 +20,7 @@ Use this node when you want to:
 1. Connect it to other nodes that provide necessary input parameters (e.g., tools)
 1. Run the flow to see the combined list of tools
 
-### Fields
+### Parameters
 
 - **tools**: A list of tools to combine into a single list.
     - Input type: List of objects
@@ -48,13 +48,6 @@ Imagine you have a workflow that generates and saves text:
 
 - The ToolList requires input tools to be provided when running the flow.
 - Using nested lists for tool inputs will result in flattened output.
-
-## Validation
-
-The `process` method checks for the following:
-
-- If no tools are provided, it returns an empty list of exceptions.
-- If the input tools are not a list, it raises a ValueError.
 
 ## Common Issues
 

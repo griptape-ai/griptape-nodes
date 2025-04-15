@@ -505,6 +505,11 @@ class Parameter(BaseNodeElement):
         ui_options = ui_options | self._ui_options
         return ui_options
 
+    @ui_options.setter
+    def ui_options(self, value: dict) -> None:
+        # Here you can validate the input if needed
+        self._ui_options = value
+
     @property
     def input_types(self) -> list[str]:
         return self._custom_getter_for_property_input_types()

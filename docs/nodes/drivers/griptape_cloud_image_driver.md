@@ -20,7 +20,7 @@ Use this node when you want to:
 1. Connect it to your flow
 1. Connect its output to nodes that need to generate images (like CreateImage)
 
-### Optional Configuration
+### Parameters
 
 - **image_generation_model**: The model to use (default is "dall-e-3")
 - **image_deployment_name**: The deployment name (default matches the model name)
