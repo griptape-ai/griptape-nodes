@@ -1039,6 +1039,7 @@ class FlowManager:
                     node_name=target_node.name,
                     value=value,
                     data_type=source_param.type,
+                    request_id=request.request_id,
                 )
             )
 
@@ -2214,6 +2215,7 @@ class NodeManager:
                 "griptape.drivers",
                 "griptape.structures",
                 "griptape.tools",
+                "griptape.rules",
             ]
             for module_name in possible_modules:
                 try:
@@ -2226,13 +2228,13 @@ class NodeManager:
         if cls and hasattr(cls, "from_dict") and callable(cls.from_dict):
             try:
                 object_finalized = cls.from_dict(object_created)
-                return object_finalized
             except Exception:
                 return None
+            return object_finalized
         return None
 
     # added ignoring C901 since this method is overly long because of granular error checking, not actual complexity.
-    def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: PLR0911 C901 TODO(griptape): resolve
+    def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -2268,14 +2270,15 @@ class NodeManager:
         try:
             creation_dict = ast.literal_eval(object_created)
             if isinstance(creation_dict, dict) and not parameter.is_incoming_type_allowed("dict"):
-                success = self.check_errant_types(object_type=object_type, object_created=creation_dict)
-                if success is None:
+                object_finalized = self.check_errant_types(object_type=object_type, object_created=creation_dict)
+                if object_finalized is None:
                     details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because that Parameter value was not serializable."
                     logger.error(details)
                     # Set to unresolved, because this will have to be reran.
                     node.state = NodeResolutionState.UNRESOLVED
                     result = SetParameterValueResultFailure()
                     return result
+                object_created = object_finalized
         except Exception:  # noqa: S110
             pass
         # Is this value kosher for the types allowed?
@@ -2333,6 +2336,7 @@ class NodeManager:
                     node_name=target_node.name,
                     value=finalized_value,
                     data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
+                    request_id=request.request_id,
                 )
             )
 
@@ -2968,6 +2972,7 @@ class WorkflowManager:
                         metadata=node.metadata,
                         override_parent_flow_name=flow_name,
                         resolved=node.state.value,
+                        request_id=-1,
                     )
                     code_string = f"GriptapeNodes().handle_request({creation_request})"
                     file.write(code_string + "\n")
@@ -3085,6 +3090,7 @@ def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: 
         # While creating flows - let's create all of our connections
         for connection in flow.connections.connections.values():
             creation_request = CreateConnectionRequest(
+                request_id=-1,
                 source_node_name=connection.source_node.name,
                 source_parameter_name=connection.source_parameter.name,
                 target_node_name=connection.target_node.name,
