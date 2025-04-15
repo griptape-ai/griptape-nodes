@@ -25,7 +25,7 @@ jobs:
       - name: Init environment
         uses: ./.github/actions/init-environment
       - name: Run formatter
-        run: uv run ruff format --check
+        run: make check/format
   type-check:
     runs-on: ubuntu-latest
     strategy:

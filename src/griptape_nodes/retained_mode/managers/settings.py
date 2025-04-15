@@ -22,6 +22,9 @@ def _find_config_files(filename: str, extension: str) -> list[Path]:
         config_files.append(current_path / f"{filename}.{extension}")
         current_path = current_path.parent
 
+    # Search `GriptapeNodes/` inside home directory (a frequently installed location)
+    config_files.append(Path.home() / "GriptapeNodes" / f"{filename}.{extension}")
+
     # Search `GriptapeNodes/` inside current working directory (this is the implicit default)
     config_files.append(Path.cwd() / "GriptapeNodes" / f"{filename}.{extension}")
 

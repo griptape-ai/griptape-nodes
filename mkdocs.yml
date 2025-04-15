@@ -58,16 +58,18 @@ nav:
       - Overview: index.md
       - Getting Started: getting_started.md
       - Engine Configuration: configuration.md
+  - How-To:
+      - Making Custom Nodes: how_to/making_custom_nodes.md
+      - Making Custom Scripts: how_to/making_custom_scripts.md
   - FAQ: faq.md
   - Reference: 
       - Glossary: reference/glossary.md
       - Scripting: reference/retained_mode.md
       - Nodes:
           - Overview: nodes/overview.md
-          - Basic:
-              - Agent: nodes/basic/agent.md
-              - End Flow: nodes/basic/end_flow.md
-              - Start Flow: nodes/basic/start_flow.md
+          - Agents:
+              - Create Agent: nodes/agents/create_agent.md
+              - Run Agent: nodes/agents/run_agent.md
           - Dict:
               - Create Dict: nodes/dict/create_dict.md
               - Display Dict: nodes/dict/display_dict.md
@@ -108,4 +110,6 @@ nav:
               - Tool List: nodes/tools/tool_list.md
               - Web Scraper Tool: nodes/tools/web_scraper_tool.md
           - Utils:
+              - End Flow: nodes/utils/end_flow.md
               - Reroute: nodes/utils/reroute.md
+              - Start Flow: nodes/utils/start_flow.md
