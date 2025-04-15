@@ -2238,17 +2238,50 @@ class NodeManager:
         object_created = request.value
         # Well this seems kind of stupid
         object_type = request.data_type if request.data_type else parameter.type
-        if object_type == "ImageArtifact":
-            try:
-                creation_dict = ast.literal_eval(object_created)
-                object_created = ImageArtifact.from_dict(creation_dict)
-            except Exception:
-                details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because that Parameter value was not serializable."
-                logger.error(details)
-                # Set to unresolved, because this will have to be reran.
-                node.state = NodeResolutionState.UNRESOLVED
-                result = SetParameterValueResultFailure()
-                return result
+        try:
+            creation_dict = ast.literal_eval(object_created)
+            if isinstance(creation_dict, dict) and not parameter.is_incoming_type_allowed("dict"):
+                cls = None
+                object_created = creation_dict
+                if "type" in object_created:
+                    create_type = object_created["type"]
+                else:
+                    create_type = object_type
+                if create_type in globals():
+                    cls = globals()[object_type]
+                else:
+                    # List of common modules where your classes might be defined
+                    # Add or modify based on your actual imports
+                    possible_modules = [
+                        "griptape.artifacts",
+                        "griptape.drivers",
+                        "griptape.structures",
+                        "griptape.tools"
+                    ]
+                    for module_name in possible_modules:
+                        try:
+                            module = importlib.import_module(module_name)
+                            if hasattr(module, create_type):
+                                cls = getattr(module, create_type)
+                                break
+                        except (ImportError, AttributeError):
+                            continue
+                success = False
+                if cls and hasattr(cls, "from_dict") and callable(cls.from_dict):
+                    try:
+                        object_created=cls.from_dict(object_created)
+                        success = True
+                    except Exception:
+                        pass
+                if not success:
+                    details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because that Parameter value was not serializable."
+                    logger.error(details)
+                    # Set to unresolved, because this will have to be reran.
+                    node.state = NodeResolutionState.UNRESOLVED
+                    result = SetParameterValueResultFailure()
+                    return result
+        except Exception:
+            pass
         # Is this value kosher for the types allowed?
         if not parameter.is_incoming_type_allowed(object_type):
             details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because the value's type of '{object_type}' was not in the Parameter's list of allowed types: {parameter.input_types}."
@@ -2291,7 +2324,8 @@ class NodeManager:
                 )
                 GriptapeNodes.handle_request(modified_request)
         # Mark node as unresolved
-        node.state = NodeResolutionState.UNRESOLVED
+        if request.request_id != -1:
+            node.state = NodeResolutionState.UNRESOLVED
         # Get the flow
         # Pass the value through!
         # Optional data_type parameter for internal handling!
@@ -2943,7 +2977,7 @@ class WorkflowManager:
                     file.write(code_string + "\n")
                     # Save the parameters
                     try:
-                        handle_parameter_creation_saving(file, node, flow_name)
+                        handle_parameter_creation_saving(file, node)
                     except Exception as e:
                         details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
                         logger.error(details)
@@ -3065,7 +3099,7 @@ def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: 
     return connection_request_workflows
 
 
-def handle_parameter_creation_saving(file: TextIO, node: BaseNode, flow_name: str) -> None:
+def handle_parameter_creation_saving(file: TextIO, node: BaseNode) -> None:
     for parameter in node.parameters:
         param_dict = vars(parameter)
         # Create the parameter, or alter it on the existing node
@@ -3120,6 +3154,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode) -> str |
                 parameter_name=parameter.name,
                 node_name=node.name,
                 value=value,
+                request_id=-1
             )
             return f"GriptapeNodes().handle_request({creation_request})"
     return None
