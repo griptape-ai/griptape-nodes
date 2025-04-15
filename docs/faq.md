@@ -1,41 +1,32 @@
 # Frequently Asked Questions
 
-## Where does my stuff save?
+## Where is my workspace (where do my files save)?
 
-Run this command in your terminal to reveal where stuff is stored:
+Run this command and it will report back your workspace location:
+
+```bash
+gtn config | grep workspace
+```
+
+## Where is Griptape [nodes] installed?
+
+Looking for the exact installation location of your Griptape [nodes]? This command will show you precisely where it's installed:
 
 For Mac/Linux:
 
 ```bash
-find ~/.local -name "*griptape*" -o -name "*gtn*" | sort
+dirname $(dirname $(readlink -f $(which griptape-nodes)))
 ```
 
 For Windows PowerShell:
 
 ```powershell
-Get-ChildItem -Path $env:LOCALAPPDATA -Recurse -Filter "*griptape*" | Select-Object FullName
-```
-
-## Where is Griptape&nbsp;[nodes] installed?
-
-Looking for the exact installation location of your Griptape&nbsp;[nodes]? This command will show you precisely where it's installed:
-
-For Mac/Linux:
-
-```bash
-echo -e "Main executable: $(readlink -f $(which gtn))\nApp directory: $(find ~/.local/share -type d -name "griptape_nodes" -o -name "griptape-nodes" | head -1)"
-```
-
-For Windows PowerShell:
-
-```powershell
-Write-Host "Main executable: $(Get-Command gtn | Select-Object -ExpandProperty Source)"
-Write-Host "App directory: $(Get-ChildItem -Path $env:LOCALAPPDATA -Recurse -Directory -Filter "*griptape*" | Select-Object -First 1 -ExpandProperty FullName)"
+$(Split-Path -Parent (Split-Path -Parent (Get-Command griptape-nodes | Select-Object -ExpandProperty Source)))
 ```
 
 ## How do I uninstall?
 
-Need to part ways with Griptape&nbsp;[nodes]? It's a simple goodbye with a single command:
+Need to part ways with Griptape [nodes]? It's a simple goodbye with a single command:
 
 ```bash
 griptape-nodes uninstall
