@@ -87,6 +87,7 @@ class AppEvents(BaseModel):
 
 class Settings(BaseSettings):
     workspace_directory: str = Field(default=str(Path().cwd() / "GriptapeNodes"))
+    ui_settings: dict[str, Any] = Field(default_factory=lambda: {"zoom slider": True, "minimap": False})
     app_events: AppEvents = Field(default_factory=AppEvents)
     nodes: dict[str, Any] = Field(
         default_factory=lambda: {
