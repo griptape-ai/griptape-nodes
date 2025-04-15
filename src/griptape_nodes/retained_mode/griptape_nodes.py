@@ -245,8 +245,6 @@ logger.setLevel(logging.INFO)
 
 logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
 
-LOAD_WORKFLOW_REQUEST_ID = -1
-
 
 class SingletonMeta(type):
     _instances: ClassVar[dict] = {}
@@ -2169,7 +2167,7 @@ class NodeManager:
         # Now change all the values on the Parameter.
         self.modify_alterable_fields(request, parameter)
         # The rest of these are not alterable
-        if parameter.user_defined is False and request.request_id not in (None, LOAD_WORKFLOW_REQUEST_ID):
+        if parameter.user_defined is False and request.request_id:
             # TODO(griptape): there may be SOME properties on a non-user-defined Parameter that can be changed
             details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
             logger.warning(details)

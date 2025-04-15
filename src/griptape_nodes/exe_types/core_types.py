@@ -206,15 +206,16 @@ class BaseNodeElement:
         }
 
     def add_child(self, child: BaseNodeElement) -> None:
+        if child._parent is not None:
+            msg = f"Child {child.element_id} cannot have more than one parent."
+            raise ValueError(msg)
         child._parent = self
-        # TODO(kate): Would a child ever have multiple parents
         self._children.append(child)
 
     def remove_child(self, child: BaseNodeElement | str) -> None:
         ui_elements: list[BaseNodeElement] = [self]
         for ui_element in ui_elements:
             if child in ui_element._children:
-                # TODO(kate): Are there ever multiple parents?
                 child._parent = None
                 ui_element._children.remove(child)
                 break
