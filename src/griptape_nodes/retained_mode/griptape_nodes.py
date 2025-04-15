@@ -2137,7 +2137,7 @@ class NodeManager:
         if request.ui_options is not None:
             altered = True
             parameter.ui_options = request.ui_options
-        if parameter.user_defined is False and request.request_id in (None, -1):
+        if parameter.user_defined is False and request.request_id not in (None, -1):
             # TODO(griptape): there may be SOME properties on a non-user-defined Parameter that can be changed
             if altered:
                 details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
