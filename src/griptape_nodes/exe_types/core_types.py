@@ -250,7 +250,7 @@ class BaseNodeElement:
 class ParameterGroup(BaseNodeElement):
     """UI element for a group of parameters."""
 
-    ui_options: dict = field(default={})
+    ui_options: dict = field(default_factory=dict)
     group_name: str
 
     def to_dict(self) -> dict[str, Any]:
