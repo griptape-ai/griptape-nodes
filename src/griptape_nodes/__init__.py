@@ -343,25 +343,17 @@ def _uninstall_self() -> None:
     """Uninstalls itself by removing config/data directories and the executable."""
     console.print("[bold]Uninstalling Griptape Nodes...[/bold]")
 
-    # Remove config directory
-    if CONFIG_DIR.exists():
-        console.print(f"[bold]Removing config directory '{CONFIG_DIR}'...[/bold]")
-        try:
-            shutil.rmtree(CONFIG_DIR)
-        except OSError as exc:
-            console.print(f"[red]Error removing config directory '{CONFIG_DIR}': {exc}[/red]")
-    else:
-        console.print(f"[yellow]Config directory '{CONFIG_DIR}' does not exist; skipping.[/yellow]")
-
-    # Remove data directory
-    if DATA_DIR.exists():
-        console.print(f"[bold]Removing data directory '{DATA_DIR}'...[/bold]")
-        try:
-            shutil.rmtree(DATA_DIR)
-        except OSError as exc:
-            console.print(f"[bold]Error removing data directory '{DATA_DIR}': {exc}[/bold]")
-    else:
-        console.print(f"[yellow]Data directory '{DATA_DIR}' does not exist; skipping.[/yellow]")
+    # Remove config and data directories
+    dirs = [(CONFIG_DIR, "Config Dir"), (DATA_DIR, "Data Dir")]
+    for dir_path, dir_name in dirs:
+        if dir_path.exists():
+            console.print(f"[bold]Removing {dir_name} '{dir_path}'...[/bold]")
+            try:
+                shutil.rmtree(dir_path)
+            except OSError as exc:
+                console.print(f"[red]Error removing {dir_name} '{dir_path}': {exc}[/red]")
+        else:
+            console.print(f"[yellow]{dir_name} '{dir_path}' does not exist; skipping.[/yellow]")
 
     # Remove the executable/tool
     executable_path = shutil.which("griptape-nodes")
@@ -395,6 +387,7 @@ def _uninstall_self() -> None:
             "Please remove the executable manually by running '[bold]uv tool uninstall griptape-nodes[/bold]'."
         )
 
+    # If there were any caveats to the uninstallation process, print them
     if caveats:
         console.print("[bold]Caveats:[/bold]")
         for line in caveats:
