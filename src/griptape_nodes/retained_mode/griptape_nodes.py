@@ -2964,6 +2964,7 @@ class WorkflowManager:
                 # Write all flows to a file, get back the strings for connections
                 connection_request_workflows = handle_flow_saving(file, obj_manager, created_flows)
                 # Now all of the flows have been created.
+                values_created = {}
                 for node in obj_manager.get_filtered_subset(type=BaseNode).values():
                     flow_name = node_manager.get_node_parent_flow_by_name(node.name)
                     creation_request = CreateNodeRequest(
@@ -2978,7 +2979,7 @@ class WorkflowManager:
                     file.write(code_string + "\n")
                     # Save the parameters
                     try:
-                        handle_parameter_creation_saving(file, node)
+                        handle_parameter_creation_saving(file, node, values_created)
                     except Exception as e:
                         details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
                         logger.error(details)
@@ -3101,7 +3102,7 @@ def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: 
     return connection_request_workflows
 
 
-def handle_parameter_creation_saving(file: TextIO, node: BaseNode) -> None:
+def handle_parameter_creation_saving(file: TextIO, node: BaseNode, values_created:dict) -> None:
     for parameter in node.parameters:
         param_dict = vars(parameter)
         # Create the parameter, or alter it on the existing node
@@ -3126,12 +3127,12 @@ def handle_parameter_creation_saving(file: TextIO, node: BaseNode) -> None:
                 file.write(code_string + "\n")
         if parameter.name in node.parameter_values or parameter.name in node.parameter_output_values:
             # SetParameterValueRequest event
-            code_string = handle_parameter_value_saving(parameter, node)
+            code_string = handle_parameter_value_saving(parameter, node, values_created)
             if code_string:
                 file.write(code_string + "\n")
 
 
-def handle_parameter_value_saving(parameter: Parameter, node: BaseNode) -> str | None:
+def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_created:dict) -> str | None:
     value = None
     if parameter.name in node.parameter_values:
         value = node.get_parameter_value(parameter.name)
@@ -3140,18 +3141,32 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode) -> str |
         value = node.parameter_output_values[parameter.name]
     safe_conversion = False
     if value is not None:
+        if value in values_created:
+            var_name = values_created[value]
+            # We've already created this object. we're all good.
+            return f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={values_created[value]}))"
+        # Set it up as a object in the code 
+        imports = []
+        reconstruction_code = ""
+        var_name = f"{node.name}_{parameter.name}_value"
+        values_created[value] = var_name
         # If it doesn't have a custom __str__, convert to dict if possible
         if hasattr(value, "to_dict") and callable(value.to_dict):
-            value = str(value.to_dict())
-            safe_conversion = True
-        elif hasattr(value, "__dict__"):
-            value = str(value.__dict__)
-            safe_conversion = True
-        elif hasattr(value, "__str__") and value.__class__.__str__ is not object.__str__:
-            value = str(value)
-            safe_conversion = True
-        elif type(value).__module__ == "builtins":
-            safe_conversion = True
+            # For objects with to_dict method
+            obj_dict = value.to_dict()
+            reconstruction_code = f"{var_name} = {obj_dict!r}\n"
+            # If we know the class, we can reconstruct it and add import
+            if hasattr(value, "__class__"):
+                class_name = value.__class__.__name__
+                module_name = value.__class__.__module__
+                if module_name != "builtins":
+                    imports.append(f"from {module_name} import {class_name}")
+                reconstruction_code += f"{var_name} = {class_name}.from_dict({var_name})\n"
+        elif isinstance(value, (int, float, str, bool, list, dict, tuple, set)) or value is None:
+            # For basic types, use repr to create a literal
+            reconstruction_code = f"{var_name} = {value!r}\n"
+        else:
+
         if safe_conversion:
             creation_request = SetParameterValueRequest(
                 parameter_name=parameter.name, node_name=node.name, value=value, request_id=-1
