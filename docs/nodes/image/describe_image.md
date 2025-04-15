@@ -2,47 +2,60 @@
 
 ## What is it?
 
-The DescribeImage node uses Griptape Cloud API to analyze and describe the contents of an image. It processes an image artifact based on a provided prompt and generates a textual description of what the image contains.
+The DescribeImage node uses AI to generate textual descriptions of images. It leverages vision-capable models to analyze image content and produce detailed descriptions based on your specific prompting instructions.
 
 ## When would I use it?
 
-Use the DescribeImage node when:
+Use this node when you want to:
 
-- You need to extract textual information from images
-- You want to generate captions or descriptions for visual content
-- You need to analyze the content of images programmatically
-- You're building accessibility features that require image descriptions
-- You want to create searchable text from image collections
+- Generate textual descriptions of images
+- Extract information from visual content
+- Create alt text for accessibility purposes
+- Analyze the content of photographs, diagrams, or other visual media
+- Convert visual information into text format for further processing
 
 ## How to use it
 
 ### Basic Setup
 
-1. Add a DescribeImage node to your workflow
-1. Connect an Agent node to the agent parameter
-1. Connect an ImageArtifact to the image parameter
-1. Set a prompt describing what information you want about the image
-1. Connect the output to nodes that can process text output
+1. Add the DescribeImage node to your workspace
+1. Connect an image source to the "image" input
+1. Optionally provide specific instructions in the "prompt" field
+1. Run the node to generate a description of the image
 
 ### Parameters
 
-- **agent**: The agent used to describe the image (Agent or dict)
-- **image**: The image artifact to be described (ImageArtifact)
-- **prompt**: Instructions for how to describe the image (string)
+- **agent**: An optional existing agent configuration to use for image description
+- **image**: The image you would like to describe (required)
+- **prompt**: Instructions for how you want the image described (defaults to "Describe the image")
 
 ### Outputs
 
-- **output**: The textual description of the image (string)
+- **output**: The textual description of the provided image
+- **agent**: The agent object used for the description, which can be connected to other nodes
+
+## Example
+
+Imagine you want to get a detailed description of a landscape photograph:
+
+1. Add a DescribeImage node to your workflow
+1. Connect an image output from another node to the "image" input
+1. In the "prompt" field, type: "Describe this landscape in detail, including colors, features, and mood"
+1. Run the node
+1. The "output" will contain a detailed description of the landscape image
 
 ## Important Notes
 
-- You must set the `GT_CLOUD_API_KEY` environment variable for authentication with Griptape Cloud
-- The quality of descriptions depends on the clarity of your prompt
-- For best results, be specific about what aspects of the image you want described
+- The node requires a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY`
+- By default, the node uses the gpt-4o model through the Griptape Cloud API
+- If no prompt is provided, the default "Describe the image" will be used
+- If no image is provided, the output will be "No image provided"
+- You can provide your own agent configuration for more customized behavior
+- The quality of descriptions depends on the clarity and content of the provided image
 
 ## Common Issues
 
-- Missing API key will result in a KeyError
-- Unclear prompts may lead to generic or unhelpful descriptions
-- Complex or ambiguous images may result in less accurate descriptions
-- Very large images might take longer to process
+- **Missing API Key**: Ensure your Griptape API key is properly set up as the environment variable
+- **No Image Provided**: Make sure you've connected a valid image to the "image" input
+- **Poor Description Quality**: Try refining your prompt to be more specific about what aspects of the image you want described
+- **Processing Errors**: Very complex images or unusual content might result in less accurate descriptions
