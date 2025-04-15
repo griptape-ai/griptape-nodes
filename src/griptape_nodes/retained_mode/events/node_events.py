@@ -23,6 +23,7 @@ class CreateNodeRequest(RequestPayload):
     override_parent_flow_name: str | None = None
     metadata: dict | None = None
     resolved: int = 1
+    initial_setup:bool = False
 
 
 @dataclass

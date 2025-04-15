@@ -993,6 +993,7 @@ class FlowManager:
                     source_parameter_name=old_source_param_name,
                     target_node_name=old_target_node_name,
                     target_parameter_name=old_target_param_name,
+                    initial_setup=request.initial_setup
                 )
                 create_old_connection_result = GriptapeNodes.handle_request(create_old_connection_request)
                 if create_old_connection_result.failed():
@@ -1032,14 +1033,13 @@ class FlowManager:
             if isinstance(target_param, ParameterContainer):
                 target_node.kill_parameter_children(target_param)
         # if it existed somewhere and actually has a value - Set the parameter!
-        if value:
+        if value and request.initial_setup is False:
             GriptapeNodes.handle_request(
                 SetParameterValueRequest(
                     parameter_name=target_param.name,
                     node_name=target_node.name,
                     value=value,
                     data_type=source_param.type,
-                    request_id=request.request_id,
                 )
             )
 
@@ -2202,37 +2202,6 @@ class NodeManager:
         )
         return result
 
-    def check_errant_types(self, object_type: str, object_created: dict) -> Any:
-        cls = None
-        create_type = object_created.get("type", object_type)
-        if create_type in globals():
-            cls = globals()[object_type]
-        else:
-            # List of common modules where your classes might be defined
-            # Add or modify based on your actual imports
-            possible_modules = [
-                "griptape.artifacts",
-                "griptape.drivers",
-                "griptape.structures",
-                "griptape.tools",
-                "griptape.rules",
-            ]
-            for module_name in possible_modules:
-                try:
-                    module = importlib.import_module(module_name)
-                    if hasattr(module, create_type):
-                        cls = getattr(module, create_type)
-                        break
-                except (ImportError, AttributeError):
-                    continue
-        if cls and hasattr(cls, "from_dict") and callable(cls.from_dict):
-            try:
-                object_finalized = cls.from_dict(object_created)
-            except Exception:
-                return None
-            return object_finalized
-        return None
-
     # added ignoring C901 since this method is overly long because of granular error checking, not actual complexity.
     def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Does this node exist?
@@ -2267,20 +2236,6 @@ class NodeManager:
         object_created = request.value
         # Well this seems kind of stupid
         object_type = request.data_type if request.data_type else parameter.type
-        try:
-            creation_dict = ast.literal_eval(object_created)
-            if isinstance(creation_dict, dict) and not parameter.is_incoming_type_allowed("dict"):
-                object_finalized = self.check_errant_types(object_type=object_type, object_created=creation_dict)
-                if object_finalized is None:
-                    details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because that Parameter value was not serializable."
-                    logger.error(details)
-                    # Set to unresolved, because this will have to be reran.
-                    node.state = NodeResolutionState.UNRESOLVED
-                    result = SetParameterValueResultFailure()
-                    return result
-                object_created = object_finalized
-        except Exception:  # noqa: S110
-            pass
         # Is this value kosher for the types allowed?
         if not parameter.is_incoming_type_allowed(object_type):
             details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because the value's type of '{object_type}' was not in the Parameter's list of allowed types: {parameter.input_types}."
@@ -2323,22 +2278,21 @@ class NodeManager:
                 )
                 GriptapeNodes.handle_request(modified_request)
         # Mark node as unresolved
-        if request.request_id != -1:
+        if request.initial_setup is False:
             node.state = NodeResolutionState.UNRESOLVED
-        # Get the flow
-        # Pass the value through!
-        # Optional data_type parameter for internal handling!
-        conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
-        for target_node, target_parameter in conn_output_nodes:
-            GriptapeNodes.get_instance().handle_request(
-                SetParameterValueRequest(
-                    parameter_name=target_parameter.name,
-                    node_name=target_node.name,
-                    value=finalized_value,
-                    data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
-                    request_id=request.request_id,
+            # Get the flow
+            # Pass the value through!
+            # Optional data_type parameter for internal handling!
+            conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
+            for target_node, target_parameter in conn_output_nodes:
+                GriptapeNodes.get_instance().handle_request(
+                    SetParameterValueRequest(
+                        parameter_name=target_parameter.name,
+                        node_name=target_node.name,
+                        value=finalized_value,
+                        data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
+                    )
                 )
-            )
 
         # Cool.
         details = f"Successfully set value on Node '{request.node_name}' Parameter '{request.parameter_name}'."
@@ -2967,23 +2921,26 @@ class WorkflowManager:
                 values_created = {}
                 for node in obj_manager.get_filtered_subset(type=BaseNode).values():
                     flow_name = node_manager.get_node_parent_flow_by_name(node.name)
+                    # Save the parameters
+                    try:
+                        parameter_string, saved_properly = handle_parameter_creation_saving(node, values_created)
+                    except Exception as e:
+                        details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
+                        logger.error(details)
+                        return SaveWorkflowResultFailure()
+
                     creation_request = CreateNodeRequest(
                         node_type=node.__class__.__name__,
                         node_name=node.name,
                         metadata=node.metadata,
                         override_parent_flow_name=flow_name,
-                        resolved=node.state.value,
-                        request_id=-1,
+                        resolved=node.state.value if saved_properly else 1, #Unresolved if something failed to save or create
+                        initial_setup=True
                     )
                     code_string = f"GriptapeNodes().handle_request({creation_request})"
                     file.write(code_string + "\n")
-                    # Save the parameters
-                    try:
-                        handle_parameter_creation_saving(file, node, values_created)
-                    except Exception as e:
-                        details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
-                        logger.error(details)
-                        return SaveWorkflowResultFailure()
+                    # Add all parameter deetails now
+                    file.write(parameter_string)
 
                     # See if this node uses a library we need to know about.
                     library_used = node.metadata["library"]
@@ -3091,26 +3048,28 @@ def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: 
         # While creating flows - let's create all of our connections
         for connection in flow.connections.connections.values():
             creation_request = CreateConnectionRequest(
-                request_id=-1,
                 source_node_name=connection.source_node.name,
                 source_parameter_name=connection.source_parameter.name,
                 target_node_name=connection.target_node.name,
                 target_parameter_name=connection.target_parameter.name,
+                initial_setup=True
             )
             code_string = f"GriptapeNodes().handle_request({creation_request})"
             connection_request_workflows += code_string + "\n"
     return connection_request_workflows
 
 
-def handle_parameter_creation_saving(file: TextIO, node: BaseNode, values_created:dict) -> None:
+def handle_parameter_creation_saving(node: BaseNode, values_created:dict) -> tuple[str,bool]:
+    parameter_details = ""
+    saved_properly = True
     for parameter in node.parameters:
         param_dict = vars(parameter)
         # Create the parameter, or alter it on the existing node
         if parameter.user_defined:
             param_dict["node_name"] = node.name
             creation_request = AddParameterToNodeRequest.create(**param_dict)
-            code_string = f"GriptapeNodes().handle_request({creation_request})"
-            file.write(code_string + "\n")
+            code_string = f"GriptapeNodes().handle_request({creation_request})\n"
+            parameter_details += code_string
         else:
             base_node_obj = type(node)(name="test")
             diff = manage_alter_details(parameter, base_node_obj)
@@ -3123,13 +3082,17 @@ def handle_parameter_creation_saving(file: TextIO, node: BaseNode, values_create
                 diff["node_name"] = node.name
                 diff["parameter_name"] = parameter.name
                 creation_request = AlterParameterDetailsRequest.create(**diff)
-                code_string = f"GriptapeNodes().handle_request({creation_request})"
-                file.write(code_string + "\n")
+                code_string = f"GriptapeNodes().handle_request({creation_request})\n"
+                parameter_details += code_string
         if parameter.name in node.parameter_values or parameter.name in node.parameter_output_values:
             # SetParameterValueRequest event
             code_string = handle_parameter_value_saving(parameter, node, values_created)
             if code_string:
-                file.write(code_string + "\n")
+                code_string = code_string + "\n"
+                parameter_details += code_string
+            else:
+                saved_properly = False
+    return parameter_details, saved_properly
 
 
 def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_created:dict) -> str | None:
@@ -3141,38 +3104,53 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_c
         value = node.parameter_output_values[parameter.name]
     safe_conversion = False
     if value is not None:
-        if value in values_created:
-            var_name = values_created[value]
+        try:
+            hash(value)
+            value_id = value
+        except TypeError:
+            value_id = id(value)
+        if value_id in values_created:
+            var_name = values_created[value_id]
             # We've already created this object. we're all good.
-            return f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={values_created[value]}))"
-        # Set it up as a object in the code 
+            return f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True))"
+        # Set it up as a object in the code
         imports = []
         reconstruction_code = ""
         var_name = f"{node.name}_{parameter.name}_value"
-        values_created[value] = var_name
+        values_created[value_id] = var_name
         # If it doesn't have a custom __str__, convert to dict if possible
         if hasattr(value, "to_dict") and callable(value.to_dict):
             # For objects with to_dict method
-            obj_dict = value.to_dict()
-            reconstruction_code = f"{var_name} = {obj_dict!r}\n"
-            # If we know the class, we can reconstruct it and add import
-            if hasattr(value, "__class__"):
-                class_name = value.__class__.__name__
-                module_name = value.__class__.__module__
-                if module_name != "builtins":
-                    imports.append(f"from {module_name} import {class_name}")
-                reconstruction_code += f"{var_name} = {class_name}.from_dict({var_name})\n"
+            reconstruction_code = handle_object(value,var_name,imports)
+            if reconstruction_code != "":
+                safe_conversion = True
         elif isinstance(value, (int, float, str, bool, list, dict, tuple, set)) or value is None:
             # For basic types, use repr to create a literal
             reconstruction_code = f"{var_name} = {value!r}\n"
-        else:
-
+            safe_conversion = True
         if safe_conversion:
-            creation_request = SetParameterValueRequest(
-                parameter_name=parameter.name, node_name=node.name, value=value, request_id=-1
-            )
-            return f"GriptapeNodes().handle_request({creation_request})"
+            # Add the request handling code
+            final_code = reconstruction_code + f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True))"
+            # Combine imports and code
+            import_statements = ""
+            if imports:
+                import_statements = "\n".join(list(set(imports))) + "\n\n"  # Remove duplicates with set()
+            return import_statements + final_code
+        #TODO(kate): If safe conversion doesn't work, node has to be unresolved.
     return None
+
+def handle_object(value:Any, var_name:str, imports:list) -> str:
+    obj_dict = value.to_dict()
+    reconstruction_code = f"{var_name} = {obj_dict!r}\n"
+    # If we know the class, we can reconstruct it and add import
+    if hasattr(value, "__class__"):
+        class_name = value.__class__.__name__
+        module_name = value.__class__.__module__
+        if module_name != "builtins":
+            imports.append(f"from {module_name} import {class_name}")
+        reconstruction_code += f"{var_name} = {class_name}.from_dict({var_name})\n"
+        return reconstruction_code
+    return ""
 
 
 def manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
