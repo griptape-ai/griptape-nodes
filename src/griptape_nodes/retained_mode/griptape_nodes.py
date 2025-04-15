@@ -3133,10 +3133,11 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode) -> str |
     value = None
     if parameter.name in node.parameter_values:
         value = node.get_parameter_value(parameter.name)
-    elif parameter.name in node.parameter_output_values:
+    # Output values are more important
+    if parameter.name in node.parameter_output_values:
         value = node.parameter_output_values[parameter.name]
     safe_conversion = False
-    if value:
+    if value is not None:
         # If it doesn't have a custom __str__, convert to dict if possible
         if hasattr(value, "to_dict") and callable(value.to_dict):
             value = str(value.to_dict())
@@ -3147,7 +3148,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode) -> str |
         elif hasattr(value, "__str__") and value.__class__.__str__ is not object.__str__:
             value = str(value)
             safe_conversion = True
-        elif isinstance(value,(str,dict)):
+        elif type(value).__module__ == "builtins":
             safe_conversion = True
         if safe_conversion:
             creation_request = SetParameterValueRequest(
