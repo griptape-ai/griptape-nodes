@@ -245,6 +245,8 @@ logger.setLevel(logging.INFO)
 
 logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
 
+LOAD_WORKFLOW_REQUEST_ID = -1
+
 
 class SingletonMeta(type):
     _instances: ClassVar[dict] = {}
@@ -2098,7 +2100,45 @@ class NodeManager:
         result = GetNodeElementDetailsResultSuccess(element_details=element_details)
         return result
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
+    def modify_alterable_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
+        if request.tooltip is not None:
+            parameter.tooltip = request.tooltip
+        if request.tooltip_as_input is not None:
+            parameter.tooltip_as_input = request.tooltip_as_input
+        if request.tooltip_as_property is not None:
+            parameter.tooltip_as_property = request.tooltip_as_property
+        if request.tooltip_as_output is not None:
+            parameter.tooltip_as_output = request.tooltip_as_output
+        if request.ui_options is not None:
+            parameter.ui_options = request.ui_options
+
+    def modify_key_parameter_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
+        if request.type is not None:
+            parameter.type = request.type
+        if request.input_types is not None:
+            parameter.input_types = request.input_types
+        if request.output_type is not None:
+            parameter.output_type = request.output_type
+        if request.mode_allowed_input is not None:
+            # TODO(griptape): may alter existing connections
+            if request.mode_allowed_input is True:
+                parameter.allowed_modes.add(ParameterMode.INPUT)
+            else:
+                parameter.allowed_modes.discard(ParameterMode.INPUT)
+        if request.mode_allowed_property is not None:
+            # TODO(griptape): may alter existing connections
+            if request.mode_allowed_property is True:
+                parameter.allowed_modes.add(ParameterMode.PROPERTY)
+            else:
+                parameter.allowed_modes.discard(ParameterMode.PROPERTY)
+        if request.mode_allowed_output is not None:
+            # TODO(griptape): may alter existing connections
+            if request.mode_allowed_output is True:
+                parameter.allowed_modes.add(ParameterMode.OUTPUT)
+            else:
+                parameter.allowed_modes.discard(ParameterMode.OUTPUT)
+
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -2127,60 +2167,19 @@ class NodeManager:
 
         # TODO(griptape): Verify that we can get through all the OTHER tricky stuff before we proceed to actually making changes.
         # Now change all the values on the Parameter.
-        altered = False
-        if request.tooltip is not None:
-            altered = True
-            parameter.tooltip = request.tooltip
-        if request.tooltip_as_input is not None:
-            altered = True
-            parameter.tooltip_as_input = request.tooltip_as_input
-        if request.tooltip_as_property is not None:
-            altered = True
-            parameter.tooltip_as_property = request.tooltip_as_property
-        if request.tooltip_as_output is not None:
-            altered = True
-            parameter.tooltip_as_output = request.tooltip_as_output
-        if request.ui_options is not None:
-            altered = True
-            parameter.ui_options = request.ui_options
-        if parameter.user_defined is False and request.request_id not in (None, -1):
+        self.modify_alterable_fields(request, parameter)
+        # The rest of these are not alterable
+        if parameter.user_defined is False and request.request_id not in (None, LOAD_WORKFLOW_REQUEST_ID):
             # TODO(griptape): there may be SOME properties on a non-user-defined Parameter that can be changed
-            if altered:
-                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
-                logger.warning(details)
-                result = AlterParameterDetailsResultSuccess()
-            else:
-                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Could not alter values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
-                logger.error(details)
-                result = AlterParameterDetailsResultFailure()
+            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
+            logger.warning(details)
+            result = AlterParameterDetailsResultSuccess()
             return result
-        if request.type is not None:
-            parameter.type = request.type
-        if request.input_types is not None:
-            parameter.input_types = request.input_types
-        if request.output_type is not None:
-            parameter.output_type = request.output_type
+        self.modify_key_parameter_fields(request, parameter)
+        # This field requires the node as well
         if request.default_value is not None:
             # TODO(griptape): vet that default value matches types allowed
             node.parameter_values[request.parameter_name] = request.default_value
-        if request.mode_allowed_input is not None:
-            # TODO(griptape): may alter existing connections
-            if request.mode_allowed_input is True:
-                parameter.allowed_modes.add(ParameterMode.INPUT)
-            else:
-                parameter.allowed_modes.discard(ParameterMode.INPUT)
-        if request.mode_allowed_property is not None:
-            # TODO(griptape): may alter existing connections
-            if request.mode_allowed_property is True:
-                parameter.allowed_modes.add(ParameterMode.PROPERTY)
-            else:
-                parameter.allowed_modes.discard(ParameterMode.PROPERTY)
-        if request.mode_allowed_output is not None:
-            # TODO(griptape): may alter existing connections
-            if request.mode_allowed_output is True:
-                parameter.allowed_modes.add(ParameterMode.OUTPUT)
-            else:
-                parameter.allowed_modes.discard(ParameterMode.OUTPUT)
 
         details = (
             f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{request.node_name}'."
