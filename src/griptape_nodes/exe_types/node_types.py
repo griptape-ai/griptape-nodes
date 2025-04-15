@@ -205,7 +205,7 @@ class BaseNode(ABC):
         group_items = self.root_ui_element.find_elements_by_type(ParameterGroup)
         for group_item in group_items:
             if group_item.group_name == group:
-                for child in group_item.find_elements_by_type(Parameter):
+                for child in group_item.find_elements_by_type(BaseNodeElement):
                     self.remove_node_element(child)
                 self.remove_node_element(group_item)
                 return True
