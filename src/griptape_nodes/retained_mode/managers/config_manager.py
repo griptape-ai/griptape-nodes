@@ -42,9 +42,7 @@ class ConfigManager:
         Args:
             event_manager: The EventManager instance to use for event handling.
         """
-        settings = Settings()
-        self.user_config = settings.model_dump()
-        self._workspace_path = settings.workspace_directory
+        self.load_user_config()
 
         if event_manager is not None:
             # Register all our listeners.
@@ -96,9 +94,16 @@ class ConfigManager:
             *_find_config_files("griptape_nodes_config", "json"),
             *_find_config_files("griptape_nodes_config", "toml"),
             *_find_config_files("griptape_nodes_config", "yaml"),
+            self.workspace_path / "griptape_nodes_config.json",
         ]
 
         return [config_file for config_file in possible_config_files if config_file.exists()]
+
+    def load_user_config(self) -> None:
+        """Load user configuration from the config file."""
+        settings = Settings()
+        self.user_config = settings.model_dump()
+        self._workspace_path = settings.workspace_directory
 
     def save_user_workflow_json(self, workflow_file_name: str) -> None:
         workflow_details = WorkflowSettingsDetail(file_name=workflow_file_name, is_griptape_provided=False)
@@ -250,6 +255,9 @@ class ConfigManager:
 
         This method creates the config file if it doesn't exist and writes the
         current configuration to it.
+
+        Args:
+            user_config: The user configuration to write to the file.
         """
         if not self.user_config_path.exists():
             self.user_config_path.parent.mkdir(parents=True, exist_ok=True)

@@ -55,6 +55,7 @@ def main() -> None:
 
 def _run_init(api_key: str | None = None, workspace_directory: str | None = None) -> None:
     """Runs through the engine init steps, optionally skipping prompts if the user provided `--api-key`."""
+    __init_system_config()
     _prompt_for_workspace(workspace_directory)
     _prompt_for_api_key(api_key)
 
@@ -100,32 +101,6 @@ def _get_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _init_system_config() -> bool:
-    """Initializes the system config directory if it doesn't exist.
-
-    Returns:
-        bool: True if the system config directory was created, False otherwise.
-
-    """
-    is_first_init = False
-    if not CONFIG_DIR.exists():
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        is_first_init = True
-
-    files_to_create = [
-        (ENV_FILE, ""),
-        (CONFIG_FILE, "{}"),
-    ]
-
-    for file_name in files_to_create:
-        file_path = CONFIG_DIR / file_name[0]
-        if not file_path.exists():
-            with Path.open(file_path, "w") as file:
-                file.write(file_name[1])
-
-    return is_first_init
-
-
 def _prompt_for_api_key(api_key: str | None = None) -> None:
     """Prompts the user for their GT_CLOUD_API_KEY unless it's provided."""
     if api_key is None:
@@ -155,23 +130,13 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
 
 def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
     """Prompts the user for their workspace directory and stores it in config directory."""
-    if workspace_directory_arg is not None:
-        try:
-            workspace_path = Path(workspace_directory_arg).expanduser().resolve()
-        except OSError as e:
-            console.print(f"[bold red]Invalid workspace directory argument: {e}[/bold red]")
-        else:
-            config_manager.workspace_path = str(workspace_path)
-            console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
-            return
-
     explainer = """[bold cyan]Workspace Directory[/bold cyan]
     Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows, configuration data, and secrets.
     You may enter a custom directory or press Return to accept the default workspace directory"""
     console.print(Panel(explainer, expand=False))
 
     valid_workspace = False
-    default_workspace_directory = config_manager.get_config_value("workspace_directory")
+    default_workspace_directory = workspace_directory_arg or config_manager.get_config_value("workspace_directory")
     while not valid_workspace:
         try:
             workspace_directory = Prompt.ask(
@@ -179,10 +144,19 @@ def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
                 default=default_workspace_directory,
                 show_default=True,
             )
-            config_manager.workspace_path = str(Path(workspace_directory).expanduser().resolve())
+            workspace_path = Path(workspace_directory).expanduser().resolve()
+
+            current_config = json.loads(CONFIG_FILE.read_text())
+            current_config["workspace_directory"] = str(workspace_path)
+            CONFIG_FILE.write_text(json.dumps(current_config, indent=2))
+
+            config_manager.load_user_config()
+
             valid_workspace = True
         except OSError as e:
             console.print(f"[bold red]Invalid workspace directory: {e}[/bold red]")
+        except json.JSONDecodeError as e:
+            console.print(f"[bold red]Error reading config file: {e}[/bold red]")
     console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
 
 
@@ -401,14 +375,12 @@ def _uninstall_self() -> None:
 
 
 def _process_args(args: argparse.Namespace) -> None:
-    is_first_init = _init_system_config()
-
     if args.command == "init":
         _run_init(api_key=args.api_key, workspace_directory=args.workspace_directory)
         console.print("Initialization complete! You can now run the engine with 'griptape-nodes' (or just 'gtn').")
     elif args.command == "engine":
-        if is_first_init:
-            # Default init flow if it's truly the first time
+        if not CONFIG_DIR.exists():
+            # Default init flow if there is no config directory
             _run_init()
 
         # Confusing double negation -- If `no_update` is set, we want to skip the update
@@ -430,6 +402,23 @@ def _process_args(args: argparse.Namespace) -> None:
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)
+
+
+def __init_system_config() -> None:
+    """Initializes the system config directory if it doesn't exist."""
+    if not CONFIG_DIR.exists():
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    files_to_create = [
+        (ENV_FILE, ""),
+        (CONFIG_FILE, "{}"),
+    ]
+
+    for file_name in files_to_create:
+        file_path = CONFIG_DIR / file_name[0]
+        if not file_path.exists():
+            with Path.open(file_path, "w") as file:
+                file.write(file_name[1])
 
 
 if __name__ == "__main__":
