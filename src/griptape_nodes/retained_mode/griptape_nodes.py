@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import importlib.util
 import io
 import json
@@ -993,7 +992,7 @@ class FlowManager:
                     source_parameter_name=old_source_param_name,
                     target_node_name=old_target_node_name,
                     target_parameter_name=old_target_param_name,
-                    initial_setup=request.initial_setup
+                    initial_setup=request.initial_setup,
                 )
                 create_old_connection_result = GriptapeNodes.handle_request(create_old_connection_request)
                 if create_old_connection_result.failed():
@@ -2072,6 +2071,14 @@ class NodeManager:
             if value:
                 element_id = parameter.element_id
                 param_to_value[element_id] = value
+                if value.__class__.__module__ != "__builtin__":
+                    if hasattr(value, "to_dict"):
+                        # If the object has a __dict__, use that
+                        param_to_value[element_id] = value.to_dict()
+                    elif hasattr(value, "__dict__"):
+                        param_to_value[element_id] = value.__dict__
+                else:
+                    param_to_value[element_id] = value
         if param_to_value:
             element_details["element_id_to_value"] = param_to_value
         details = f"Successfully got element details for Node '{request.node_name}'."
@@ -2203,7 +2210,7 @@ class NodeManager:
         return result
 
     # added ignoring C901 since this method is overly long because of granular error checking, not actual complexity.
-    def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -2934,8 +2941,10 @@ class WorkflowManager:
                         node_name=node.name,
                         metadata=node.metadata,
                         override_parent_flow_name=flow_name,
-                        resolved=node.state.value if saved_properly else 1, #Unresolved if something failed to save or create
-                        initial_setup=True
+                        resolved=node.state.value
+                        if saved_properly
+                        else 1,  # Unresolved if something failed to save or create
+                        initial_setup=True,
                     )
                     code_string = f"GriptapeNodes().handle_request({creation_request})"
                     file.write(code_string + "\n")
@@ -3052,14 +3061,14 @@ def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: 
                 source_parameter_name=connection.source_parameter.name,
                 target_node_name=connection.target_node.name,
                 target_parameter_name=connection.target_parameter.name,
-                initial_setup=True
+                initial_setup=True,
             )
             code_string = f"GriptapeNodes().handle_request({creation_request})"
             connection_request_workflows += code_string + "\n"
     return connection_request_workflows
 
 
-def handle_parameter_creation_saving(node: BaseNode, values_created:dict) -> tuple[str,bool]:
+def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tuple[str, bool]:
     parameter_details = ""
     saved_properly = True
     for parameter in node.parameters:
@@ -3095,7 +3104,7 @@ def handle_parameter_creation_saving(node: BaseNode, values_created:dict) -> tup
     return parameter_details, saved_properly
 
 
-def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_created:dict) -> str | None:
+def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_created: dict) -> str | None:  # noqa: C901
     value = None
     if parameter.name in node.parameter_values:
         value = node.get_parameter_value(parameter.name)
@@ -3121,7 +3130,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_c
         # If it doesn't have a custom __str__, convert to dict if possible
         if hasattr(value, "to_dict") and callable(value.to_dict):
             # For objects with to_dict method
-            reconstruction_code = handle_object(value,var_name,imports)
+            reconstruction_code = handle_object(value, var_name, imports)
             if reconstruction_code != "":
                 safe_conversion = True
         elif isinstance(value, (int, float, str, bool, list, dict, tuple, set)) or value is None:
@@ -3130,16 +3139,20 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_c
             safe_conversion = True
         if safe_conversion:
             # Add the request handling code
-            final_code = reconstruction_code + f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True))"
+            final_code = (
+                reconstruction_code
+                + f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True))"
+            )
             # Combine imports and code
             import_statements = ""
             if imports:
                 import_statements = "\n".join(list(set(imports))) + "\n\n"  # Remove duplicates with set()
             return import_statements + final_code
-        #TODO(kate): If safe conversion doesn't work, node has to be unresolved.
+        # TODO(kate): If safe conversion doesn't work, node has to be unresolved.
     return None
 
-def handle_object(value:Any, var_name:str, imports:list) -> str:
+
+def handle_object(value: Any, var_name: str, imports: list) -> str:
     obj_dict = value.to_dict()
     reconstruction_code = f"{var_name} = {obj_dict!r}\n"
     # If we know the class, we can reconstruct it and add import

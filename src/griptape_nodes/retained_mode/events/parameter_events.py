@@ -89,7 +89,7 @@ class SetParameterValueRequest(RequestPayload):
     node_name: str
     value: Any
     data_type: str | None = None
-    initial_setup:bool = False
+    initial_setup: bool = False
 
 
 @dataclass
@@ -154,7 +154,7 @@ class AlterParameterDetailsRequest(RequestPayload):
     mode_allowed_property: bool | None = None
     mode_allowed_output: bool | None = None
     ui_options: dict | None = None
-    initial_setup:bool = False
+    initial_setup: bool = False
 
     @classmethod
     def create(cls, **kwargs) -> AlterParameterDetailsRequest:
