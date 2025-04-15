@@ -2,54 +2,58 @@
 
 ## What is it?
 
-The SaveText node is a utility node that writes text content to a file on your local system. It allows you to persist text output from your workflow as a file on disk.
+SaveText is a utility node that allows you to save text content to a file on your local system. This node provides a simple interface for writing text data to disk with a customizable output path.
 
 ## When would I use it?
 
-Use the SaveText node when:
+Use this node when you want to:
 
-- You need to save generated text content to a file
-- You want to export workflow results for later use
-- You're creating reports, documents, or data files from your workflow
-- You need to persist the output of AI agents or other text processing
+- Save generated text content to a file
+- Export results from your workflow to a text file
+- Store conversation logs or outputs for later reference
+- Create text files as part of your automated workflow
+- Persist data between workflow runs
 
 ## How to use it
 
 ### Basic Setup
 
-1. Add a SaveText node to your workflow
-1. Connect a text output from another node to this node's text input
-1. Optionally specify the output file path
-1. Run your workflow to save the text to disk
+1. Add the SaveText node to your workspace
+1. Connect a text source to the "text" input or enter text directly
+1. Specify an output path or use the default
+1. Run your workflow to save the text to the specified file
 
 ### Parameters
 
-- **text**: The text content to save (string)
-- **output_path**: The file path where the text should be saved (defaults to "griptape_output.txt")
+- **text**: The text content you want to save to a file (supports multiline text)
+- **output_path**: The file path where the text will be saved (default is "griptape_output.txt")
 
 ### Outputs
 
-- **output_path**: The path of the file where the text was saved
+- **output_path**: The path to the saved file (confirms successful save operation)
 
 ## Example
 
-A workflow to generate and save AI-created content:
+Imagine you want to save the output of an AI agent to a text file:
 
-1. Add a SaveText node to your workflow
-1. Connect an Agent node's response output to the "text" input
-1. Set "output_path" to "C:/Users/username/Documents/agent_response.txt"
-1. When the workflow runs, the agent's response will be saved to the specified file
+1. Add an Agent node to your workflow
+1. Set up the agent with a prompt to generate some content
+1. Add a SaveText node
+1. Connect the Agent's "output" to the SaveText "text" input
+1. Set the "output_path" to "my_agent_response.txt"
+1. Run the workflow
+1. The agent's response will be saved to "my_agent_response.txt" on your local system
 
 ## Important Notes
 
-- If no output path is specified, text is saved to "griptape_output.txt" in the current directory
-- The node will create a new file or overwrite an existing file with the same name
-- Directories in the path must already exist - the node won't create new directories
-- Relative paths are resolved relative to the current working directory
+- The node will create the file if it doesn't exist, or overwrite it if it does
+- The output_path parameter includes a save button in the UI for easy file selection
+- You can use either relative or absolute paths for the output file
+- The node will create any necessary parent directories if they don't exist
+- The text is saved with UTF-8 encoding
 
 ## Common Issues
 
-- **Permission Error**: Ensure you have write permissions for the specified location
-- **Directory Not Found**: Verify that all directories in the path exist
-- **No Content Saved**: Check that the text input is properly connected and contains content
-- **Path Format**: On Windows, use either forward slashes (/) or escaped backslashes (\\\\)
+- **Permission Errors**: Ensure you have write permissions for the specified directory
+- **Invalid Path**: Make sure the path is valid for your operating system
+- **File Already Exists**: Be aware that existing files will be overwritten without confirmation

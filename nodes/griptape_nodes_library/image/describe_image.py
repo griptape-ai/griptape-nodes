@@ -89,7 +89,7 @@ class DescribeImage(ControlNode):
         if not agent:
             agent = Agent(prompt_driver=default_prompt_driver)
         else:
-            agent = Agent().from_dict(agent)
+            agent = Agent.from_dict(agent)
             # make sure the agent is using a PromptTask
             if not isinstance(agent.tasks[0], PromptTask):
                 agent.add_task(PromptTask(prompt_driver=default_prompt_driver))

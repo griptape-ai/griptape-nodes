@@ -26,3 +26,11 @@ Use this node when you want to:
 ### Outputs
 
 - **text**: A single text parameter that is created and output by this node
+
+## Example
+
+To create a welcome message for a user:
+
+1. Add a CreateText node to your workflow
+1. Set the "text" parameter to "Welcome to our application!"
+1. Connect this node to other nodes that need to display this message
