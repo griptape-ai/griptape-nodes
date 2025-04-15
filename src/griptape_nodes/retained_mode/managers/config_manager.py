@@ -49,6 +49,8 @@ class ConfigManager:
         """
         self.load_user_config()
 
+        self._set_log_level(self.user_config.get("log_level", logging.INFO))
+
         if event_manager is not None:
             # Register all our listeners.
             event_manager.assign_manager_to_request_type(
@@ -206,11 +208,7 @@ class ConfigManager:
         delta = set_dot_value({}, key, value)
         workspace_dir = self.workspace_path
         if key == "log_level":
-            try:
-                logger.setLevel(value.upper())
-            except ValueError:
-                logger.error("Invalid log level %s. Defaulting to INFO.", value)
-                logger.setLevel(logging.INFO)
+            self._set_log_level(value)
         elif key == "workspace_directory":
             # If the key is workspace_directory, we want to write the value
             # to the home config directory (~/.config/griptape_nodes) and not the workspace directory.
@@ -223,6 +221,7 @@ class ConfigManager:
         # because the workspace changing may influence the config files we load.
         if key == "workspace_directory":
             self.load_user_config()
+        logger.debug("Config value '%s' set to '%s'", key, value)
 
     def on_handle_get_config_category_request(self, request: GetConfigCategoryRequest) -> ResultPayload:
         if request.category is None or request.category == "":
@@ -335,3 +334,15 @@ class ConfigManager:
             current_path = current_path.parent
 
         return config_files
+
+    def _set_log_level(self, level: str) -> None:
+        """Set the log level for the logger.
+
+        Args:
+            level: The log level to set (e.g., 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL').
+        """
+        try:
+            logger.setLevel(level.upper())
+        except ValueError:
+            logger.error("Invalid log level %s. Defaulting to INFO.", level)
+            logger.setLevel(logging.INFO)
