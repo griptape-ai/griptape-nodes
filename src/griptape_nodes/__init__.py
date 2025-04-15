@@ -345,21 +345,21 @@ def _uninstall_self() -> None:
 
     # Remove config directory
     if CONFIG_DIR.exists():
-        console.print(f"Removing config directory '{CONFIG_DIR}'...")
+        console.print(f"[bold]Removing config directory '{CONFIG_DIR}'...[/bold]")
         try:
             shutil.rmtree(CONFIG_DIR)
         except OSError as exc:
-            console.print(f"[bold red]Error removing config directory '{CONFIG_DIR}': {exc}[/bold red]")
+            console.print(f"[red]Error removing config directory '{CONFIG_DIR}': {exc}[/red]")
     else:
         console.print(f"[yellow]Config directory '{CONFIG_DIR}' does not exist; skipping.[/yellow]")
 
     # Remove data directory
     if DATA_DIR.exists():
-        console.print(f"Removing data directory '{DATA_DIR}'...")
+        console.print(f"[bold]Removing data directory '{DATA_DIR}'...[/bold]")
         try:
             shutil.rmtree(DATA_DIR)
         except OSError as exc:
-            console.print(f"[bold red]Error removing data directory '{DATA_DIR}': {exc}[/bold red]")
+            console.print(f"[bold]Error removing data directory '{DATA_DIR}': {exc}[/bold]")
     else:
         console.print(f"[yellow]Data directory '{DATA_DIR}' does not exist; skipping.[/yellow]")
 
@@ -367,7 +367,7 @@ def _uninstall_self() -> None:
     executable_path = shutil.which("griptape-nodes")
     executable_removed = False
     if executable_path:
-        console.print(f"Removing Griptape Nodes executable ({executable_path})...")
+        console.print(f"[bold]Removing Griptape Nodes executable ({executable_path})...[/bold]")
         try:
             subprocess.run(
                 ["uv", "tool", "uninstall", "griptape-nodes"],
@@ -380,7 +380,7 @@ def _uninstall_self() -> None:
     else:
         console.print("[yellow]Griptape Nodes executable not found; skipping removal.[/yellow]")
 
-    console.print("[bold green]Uninstall complete![/bold green]\n")
+    console.print("[bold green]Uninstall complete![/bold green]")
 
     caveats = []
     # Handle any remaining config files not removed by design
