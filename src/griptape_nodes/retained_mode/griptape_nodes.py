@@ -3626,7 +3626,7 @@ class LibraryManager:
                 # Prepend the image paths appropriately.
                 if workflow_metadata.image is not None:
                     if workflow_detail.is_griptape_provided:
-                        workflow_metadata.image = xdg_data_home().joinpath(workflow_metadata.image)  # type: ignore
+                        workflow_metadata.image = xdg_data_home().joinpath(workflow_metadata.image)  # type: ignore  # noqa: PGH003
                     else:
                         workflow_metadata.image = config_mgr.workspace_path.joinpath(workflow_metadata.image)
 
