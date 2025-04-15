@@ -18,8 +18,6 @@ from dotenv import load_dotenv
 from rich.logging import RichHandler
 from xdg_base_dirs import xdg_data_home
 
-from griptape.artifacts import ImageArtifact, BlobArtifact
-from griptape.structures import Agent
 from griptape_nodes.exe_types.core_types import Parameter, ParameterContainer, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
@@ -1553,7 +1551,6 @@ class NodeManager:
         self._name_to_parent_flow_name[node.name] = parent_flow_name
 
         if request.resolved:
-            print(NodeResolutionState(request.resolved))
             node.state = NodeResolutionState(request.resolved)
 
         # Phew.
@@ -2204,6 +2201,36 @@ class NodeManager:
         )
         return result
 
+    def check_errant_types(self, object_type: str, object_created: dict) -> Any:
+        cls = None
+        create_type = object_created.get("type", object_type)
+        if create_type in globals():
+            cls = globals()[object_type]
+        else:
+            # List of common modules where your classes might be defined
+            # Add or modify based on your actual imports
+            possible_modules = [
+                "griptape.artifacts",
+                "griptape.drivers",
+                "griptape.structures",
+                "griptape.tools",
+            ]
+            for module_name in possible_modules:
+                try:
+                    module = importlib.import_module(module_name)
+                    if hasattr(module, create_type):
+                        cls = getattr(module, create_type)
+                        break
+                except (ImportError, AttributeError):
+                    continue
+        if cls and hasattr(cls, "from_dict") and callable(cls.from_dict):
+            try:
+                object_finalized = cls.from_dict(object_created)
+                return object_finalized
+            except Exception:
+                return None
+        return None
+
     # added ignoring C901 since this method is overly long because of granular error checking, not actual complexity.
     def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: PLR0911 C901 TODO(griptape): resolve
         # Does this node exist?
@@ -2241,46 +2268,15 @@ class NodeManager:
         try:
             creation_dict = ast.literal_eval(object_created)
             if isinstance(creation_dict, dict) and not parameter.is_incoming_type_allowed("dict"):
-                cls = None
-                object_created = creation_dict
-                if "type" in object_created:
-                    create_type = object_created["type"]
-                else:
-                    create_type = object_type
-                if create_type in globals():
-                    cls = globals()[object_type]
-                else:
-                    # List of common modules where your classes might be defined
-                    # Add or modify based on your actual imports
-                    possible_modules = [
-                        "griptape.artifacts",
-                        "griptape.drivers",
-                        "griptape.structures",
-                        "griptape.tools"
-                    ]
-                    for module_name in possible_modules:
-                        try:
-                            module = importlib.import_module(module_name)
-                            if hasattr(module, create_type):
-                                cls = getattr(module, create_type)
-                                break
-                        except (ImportError, AttributeError):
-                            continue
-                success = False
-                if cls and hasattr(cls, "from_dict") and callable(cls.from_dict):
-                    try:
-                        object_created=cls.from_dict(object_created)
-                        success = True
-                    except Exception:
-                        pass
-                if not success:
+                success = self.check_errant_types(object_type=object_type, object_created=creation_dict)
+                if success is None:
                     details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because that Parameter value was not serializable."
                     logger.error(details)
                     # Set to unresolved, because this will have to be reran.
                     node.state = NodeResolutionState.UNRESOLVED
                     result = SetParameterValueResultFailure()
                     return result
-        except Exception:
+        except Exception:  # noqa: S110
             pass
         # Is this value kosher for the types allowed?
         if not parameter.is_incoming_type_allowed(object_type):
@@ -2971,7 +2967,7 @@ class WorkflowManager:
                         node_name=node.name,
                         metadata=node.metadata,
                         override_parent_flow_name=flow_name,
-                        resolved=node.state.value
+                        resolved=node.state.value,
                     )
                     code_string = f"GriptapeNodes().handle_request({creation_request})"
                     file.write(code_string + "\n")
@@ -3152,10 +3148,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode) -> str |
             safe_conversion = True
         if safe_conversion:
             creation_request = SetParameterValueRequest(
-                parameter_name=parameter.name,
-                node_name=node.name,
-                value=value,
-                request_id=-1
+                parameter_name=parameter.name, node_name=node.name, value=value, request_id=-1
             )
             return f"GriptapeNodes().handle_request({creation_request})"
     return None
