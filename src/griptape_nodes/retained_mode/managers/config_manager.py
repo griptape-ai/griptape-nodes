@@ -42,9 +42,7 @@ class ConfigManager:
         Args:
             event_manager: The EventManager instance to use for event handling.
         """
-        settings = Settings()
-        self.user_config = settings.model_dump()
-        self._workspace_path = settings.workspace_directory
+        self.load_user_config()
 
         if event_manager is not None:
             # Register all our listeners.
@@ -96,9 +94,16 @@ class ConfigManager:
             *_find_config_files("griptape_nodes_config", "json"),
             *_find_config_files("griptape_nodes_config", "toml"),
             *_find_config_files("griptape_nodes_config", "yaml"),
+            self.workspace_path / "griptape_nodes_config.json",
         ]
 
         return [config_file for config_file in possible_config_files if config_file.exists()]
+
+    def load_user_config(self) -> None:
+        """Load user configuration from the config file."""
+        settings = Settings()
+        self.user_config = settings.model_dump()
+        self._workspace_path = settings.workspace_directory
 
     def save_user_workflow_json(self, workflow_file_name: str) -> None:
         workflow_details = WorkflowSettingsDetail(file_name=workflow_file_name, is_griptape_provided=False)
@@ -171,7 +176,7 @@ class ConfigManager:
                 logger.error("Invalid log level %s. Defaulting to INFO.", value)
                 logger.setLevel(logging.INFO)
         self.user_config = merge_dicts(self.user_config, delta)
-        self._write_user_config()
+        self._write_user_config(delta)
 
     def on_handle_get_config_category_request(self, request: GetConfigCategoryRequest) -> ResultPayload:
         if request.category is None or request.category == "":
@@ -207,7 +212,7 @@ class ConfigManager:
         if request.category is None or request.category == "":
             # Assign the whole shebang.
             self.user_config = request.contents
-            self._write_user_config()
+            self._write_user_config(request.contents)
             details = "Successfully assigned the entire config dictionary."
             logger.info(details)
             return SetConfigCategoryResultSuccess()
@@ -245,14 +250,17 @@ class ConfigManager:
         logger.info(details)
         return SetConfigValueResultSuccess()
 
-    def _write_user_config(self) -> None:
+    def _write_user_config(self, user_config: dict) -> None:
         """Write the user configuration to the config file.
 
         This method creates the config file if it doesn't exist and writes the
         current configuration to it.
+
+        Args:
+            user_config: The user configuration to write to the file.
         """
         if not self.user_config_path.exists():
             self.user_config_path.parent.mkdir(parents=True, exist_ok=True)
             self.user_config_path.touch()
             self.user_config_path.write_text(json.dumps({}, indent=2))
-        self.user_config_path.write_text(json.dumps(self.user_config, indent=2))
+        self.user_config_path.write_text(json.dumps(user_config, indent=2))
