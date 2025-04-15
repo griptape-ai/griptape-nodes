@@ -16,9 +16,9 @@ For Windows PowerShell:
 Get-ChildItem -Path $env:LOCALAPPDATA -Recurse -Filter "*griptape*" | Select-Object FullName
 ```
 
-## Where is Griptape [nodes] installed?
+## Where is Griptape&nbsp;[nodes] installed?
 
-Looking for the exact installation location of your Griptape [nodes]? This command will show you precisely where it's installed:
+Looking for the exact installation location of your Griptape&nbsp;[nodes]? This command will show you precisely where it's installed:
 
 For Mac/Linux:
 
@@ -35,7 +35,7 @@ Write-Host "App directory: $(Get-ChildItem -Path $env:LOCALAPPDATA -Recurse -Dir
 
 ## How do I uninstall?
 
-Need to part ways with Griptape [nodes]? It's a simple goodbye with a single command:
+Need to part ways with Griptape&nbsp;[nodes]? It's a simple goodbye with a single command:
 
 ```bash
 griptape-nodes uninstall
