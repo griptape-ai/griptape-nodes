@@ -99,7 +99,6 @@ from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowResultFailure,
     DeleteFlowResultSuccess,
     GetTopLevelFlowRequest,
-    GetTopLevelFlowResultFailure,
     GetTopLevelFlowResultSuccess,
     ListFlowsInFlowRequest,
     ListFlowsInFlowResultFailure,
@@ -652,7 +651,7 @@ class FlowManager:
                 return GetTopLevelFlowResultSuccess(flow_name=flow_name)
         msg = "Attempted to get top level flow, but no such flow exists"
         logger.info(msg)
-        return GetTopLevelFlowResultFailure()
+        return GetTopLevelFlowResultSuccess(flow_name=None)
 
     def does_canvas_exist(self) -> bool:
         """Determines if there is already an existing flow with no parent flow.Returns True if there is an existing flow with no parent flow.Return False if there is no existing flow with no parent flow."""

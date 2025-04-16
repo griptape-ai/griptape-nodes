@@ -92,10 +92,4 @@ class GetTopLevelFlowRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetTopLevelFlowResultSuccess(ResultPayloadSuccess):
-    flow_name: str
-
-
-@dataclass
-@PayloadRegistry.register
-class GetTopLevelFlowResultFailure(ResultPayloadFailure):
-    pass
+    flow_name: str | None
