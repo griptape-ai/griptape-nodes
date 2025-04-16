@@ -15,6 +15,7 @@ class CreateConnectionRequest(RequestPayload):
     source_parameter_name: str
     target_node_name: str
     target_parameter_name: str
+    # initial_setup prevents unnessecary work when we are on loading a workflow from a file.
     initial_setup: bool = False
 
 

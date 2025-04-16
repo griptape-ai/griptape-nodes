@@ -23,7 +23,8 @@ class CreateNodeRequest(RequestPayload):
     node_name: str | None = None
     override_parent_flow_name: str | None = None
     metadata: dict | None = None
-    resolved: str = NodeResolutionState.UNRESOLVED.value
+    resolution: str = NodeResolutionState.UNRESOLVED.value
+    # initial_setup prevents unnessecary work when we are on loading a workflow from a file.
     initial_setup: bool = False
 
 

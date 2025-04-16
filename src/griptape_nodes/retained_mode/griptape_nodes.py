@@ -1579,7 +1579,7 @@ class NodeManager:
         obj_mgr.add_object_by_name(node.name, node)
         self._name_to_parent_flow_name[node.name] = parent_flow_name
 
-        node.state = NodeResolutionState(request.resolved)
+        node.state = NodeResolutionState(request.resolution)
 
         # Phew.
         details = f"Successfully created Node '{final_node_name}' of type '{request.node_type}'."
@@ -2109,7 +2109,6 @@ class NodeManager:
 
     def _set_param_to_value(self, node: BaseNode, element: BaseNodeElement, param_to_value: dict) -> None:
         for parameter in element.find_elements_by_type(Parameter):
-            # How to do for grouping?
             if parameter.name in node.parameter_output_values:
                 value = node.parameter_output_values[parameter.name]
             else:
@@ -2992,15 +2991,16 @@ class WorkflowManager:
                         details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
                         logger.error(details)
                         return SaveWorkflowResultFailure()
-
+                    if saved_properly:
+                        resolution = node.state.value
+                    else:
+                        resolution = NodeResolutionState.UNRESOLVED.value
                     creation_request = CreateNodeRequest(
                         node_type=node.__class__.__name__,
                         node_name=node.name,
                         metadata=node.metadata,
                         override_parent_flow_name=flow_name,
-                        resolved=node.state.value
-                        if saved_properly
-                        else NodeResolutionState.UNRESOLVED.value,  # Unresolved if something failed to save or create
+                        resolution=resolution,  # Unresolved if something failed to save or create
                         initial_setup=True,
                     )
                     code_string = f"GriptapeNodes().handle_request({creation_request})"
@@ -3250,10 +3250,60 @@ def _convert_value_to_str_representation(var_name: str, value: Any, imports: lis
         # For objects with to_dict method
         reconstruction_code = _create_object_in_file(value, var_name, imports)
         return reconstruction_code
-    if isinstance(value, (int, float, str, bool, list, dict, tuple, set)) or value is None:
+    if isinstance(value, (int, float, str, bool)) or value is None:
         # For basic types, use repr to create a literal
         return f"{var_name} = {value!r}\n"
+    if isinstance(value, (list, dict, tuple, set)):
+        reconstruction_code = _convert_container_to_str_representation(var_name, value, imports, type(value))
+        return reconstruction_code
     return ""
+
+
+def _convert_container_to_str_representation(var_name: str, value: Any, imports: list, value_type: type) -> str:
+    """Creates code to reconstruct a container type (list, dict, tuple, set) with its elements.
+
+    Args:
+        var_name (str): The variable name to assign the container to
+        value (Any): The container value to convert to code
+        imports (list): List to which any required import statements will be appended
+        value_type (type): The type of container (list, dict, tuple, or set)
+
+    Returns:
+        str: Python code as a string that will reconstruct the container
+    """
+    # Get the initialization brackets from an empty container
+    empty_container = value_type()
+    init_brackets = repr(empty_container)
+    # Initialize the container
+    code = f"{var_name} = {init_brackets}\n"
+    temp_var_base = f"{var_name}_item"
+    if value_type is dict:
+        # Process dictionary items
+        for i, (k, v) in enumerate(value.items()):
+            temp_var = f"{temp_var_base}_{i}"
+            # Convert the value to code
+            value_code = _convert_value_to_str_representation(temp_var, v, imports)
+            if value_code:
+                code += value_code
+                code += f"{var_name}[{k!r}] = {temp_var}\n"
+            else:
+                code += f"{var_name}[{k!r}] = {v!r}\n"
+    else:
+        # Process sequence items (list, tuple, set)
+        # For immutable types like tuple and set, we need to build a list first
+        for i, item in enumerate(value):
+            temp_var = f"{temp_var_base}_{i}"
+            # Convert the item to code
+            item_code = _convert_value_to_str_representation(temp_var, item, imports)
+            if item_code != "":
+                code += item_code
+                code += f"{var_name}.append({temp_var})\n"
+            else:
+                code += f"{var_name}.append({item!r})\n"
+        # Convert the list to the final type if needed
+        if value_type in (tuple, set):
+            code += f"{var_name} = {value_type.__name__}({var_name})\n"
+    return code
 
 
 def _create_object_in_file(value: Any, var_name: str, imports: list) -> str:

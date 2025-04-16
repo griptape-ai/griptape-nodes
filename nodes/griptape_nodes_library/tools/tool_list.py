@@ -19,7 +19,7 @@ class ToolList(DataNode):
                 name="tool_1",
                 input_types=["Tool"],
                 allowed_modes={ParameterMode.INPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Tool to add to the list",
             )
         )
@@ -28,7 +28,7 @@ class ToolList(DataNode):
                 name="tool_2",
                 input_types=["Tool"],
                 allowed_modes={ParameterMode.INPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Tool to add to the list",
             )
         )
@@ -37,7 +37,7 @@ class ToolList(DataNode):
                 name="tool_3",
                 input_types=["Tool"],
                 allowed_modes={ParameterMode.INPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Tool to add to the list",
             )
         )
@@ -46,7 +46,7 @@ class ToolList(DataNode):
                 name="tool_4",
                 input_types=["Tool"],
                 allowed_modes={ParameterMode.INPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Tool to add to the list",
             )
         )
@@ -57,7 +57,7 @@ class ToolList(DataNode):
                 name="tools",
                 output_type="list[Tool]",
                 allowed_modes={ParameterMode.OUTPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Combined list of tools",
             )
         )

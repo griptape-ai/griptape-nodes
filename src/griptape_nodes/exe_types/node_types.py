@@ -346,8 +346,18 @@ class BaseNode(ABC):
         return param.default_value if param else None
 
     def remove_parameter_value(self, param_name: str) -> None:
+        parameter = self.get_parameter_by_name(param_name)
+        if not parameter:
+            err = f"Attempted to remove value for Parameter '{param_name}' but no parameter doesn't exist."
+            raise KeyError(err)
         if param_name in self.parameter_values:
             del self.parameter_values[param_name]
+            # special handling if it's in a container.
+            if parameter.parent_container_name and parameter.parent_container_name in self.parameter_values:
+                del self.parameter_values[parameter.parent_container_name]
+                new_val = self.get_parameter_value(parameter.parent_container_name)
+                if new_val is not None:
+                    self.set_parameter_value(parameter.parent_container_name, new_val)
         else:
             err = f"Attempted to remove value for Parameter '{param_name}' but no value was set."
             raise KeyError(err)
@@ -482,6 +492,7 @@ def handle_container_parameter(current_node: BaseNode, parameter: Parameter) -> 
         build_parameter_value = []
         for child in children:
             value = current_node.get_parameter_value(child.name)
-            build_parameter_value.append(value)
+            if value is not None:
+                build_parameter_value.append(value)
         return build_parameter_value
     return None
