@@ -1833,7 +1833,7 @@ class NodeManager:
             result = AddParameterToNodeResultFailure()
             return result
 
-        if request.parent_container_name:
+        if request.parent_container_name and not request.initial_setup:
             parameter = node.get_parameter_by_name(request.parent_container_name)
             if parameter is None:
                 details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{request.node_name}'. Failed because parameter didn't exist."
@@ -1855,7 +1855,7 @@ class NodeManager:
             return AddParameterToNodeResultSuccess(
                 parameter_name=new_param.name, type=new_param.type, node_name=request.node_name
             )
-        if request.parameter_name is None or request.default_value is None or request.tooltip is None:
+        if request.parameter_name is None or request.tooltip is None:
             details = f"Attempted to add Parameter to node '{request.node_name}'. Failed because default_value, tooltip, or parameter_name was not defined."
             logger.error(details)
             result = AddParameterToNodeResultFailure()
@@ -1922,6 +1922,10 @@ class NodeManager:
         )
         try:
             node.add_parameter(new_param)
+            if request.parent_container_name and request.initial_setup:
+                parameter_parent = node.get_parameter_by_name(request.parent_container_name)
+                if parameter_parent is not None:
+                    parameter_parent.add_child(new_param)
         except Exception as e:
             details = f"Couldn't add parameter with name {request.parameter_name} to node. Error: {e}"
             logger.error(details)
@@ -3133,6 +3137,7 @@ def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tu
         # Create the parameter, or alter it on the existing node
         if parameter.user_defined:
             param_dict["node_name"] = node.name
+            param_dict["initial_setup"] = True
             creation_request = AddParameterToNodeRequest.create(**param_dict)
             code_string = f"GriptapeNodes().handle_request({creation_request})\n"
             parameter_details += code_string
@@ -3147,6 +3152,7 @@ def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tu
             if relevant:
                 diff["node_name"] = node.name
                 diff["parameter_name"] = parameter.name
+                diff["initial_setup"] = True
                 creation_request = AlterParameterDetailsRequest.create(**diff)
                 code_string = f"GriptapeNodes().handle_request({creation_request})\n"
                 parameter_details += code_string
