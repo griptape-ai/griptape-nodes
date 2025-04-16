@@ -377,12 +377,12 @@ def _process_args(args: argparse.Namespace) -> None:
         if not CONFIG_DIR.exists():
             # Default init flow if there is no config directory
             _run_init()
+            webbrowser.open(NODES_APP_URL)
 
         # Confusing double negation -- If `no_update` is set, we want to skip the update
         if not args.no_update:
             _auto_update()
 
-        webbrowser.open(NODES_APP_URL, new=2)  # new=2 opens in a new tab
         start_app()
     elif args.command == "config":
         if args.config_subcommand == "list":
