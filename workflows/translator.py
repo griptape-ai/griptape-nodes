@@ -235,13 +235,10 @@ cmd.connect("prompt_header.output", "to_english.prompt")
 #
 # [tool.griptape-nodes]
 # name = "translator"
+# description = "Example workflow demonstrating how Griptape Nodes can be used to translate from one language to another."
+# image = "thumbnail_translator.jpeg"
 # schema_version = "0.1.0"
-# engine_version_created_with = "0.3.2"
-# node_libraries_referenced = [
-#     [
-#       "Griptape Nodes Library",
-#       "0.1.0"
-#     ]
-#   ]
+# engine_version_created_with = "0.14.1"
+# node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
 #
 # ///
