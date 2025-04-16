@@ -2,63 +2,50 @@
 
 ## What is it?
 
-The `MergeKeyValuePair` node merges multiple key-value pairs into a single dictionary. It takes in four input parameters, each representing a key-value pair to be merged together.
+The `MergeKeyValuePair` node merges multiple dictionaries into a single dictionary. It takes up to four input dictionaries and combines them into one unified output dictionary.
 
 ## When would I use it?
 
-Use this node when you need to combine multiple sets of key-value pairs into a single, unified dictionary. This can be useful for tasks such as data aggregation, configuration merging, or data normalization.
+Use the MergeKeyValuePair node when:
+
+- You need to combine multiple dictionaries into a single dictionary
+- You're working with separate configuration settings that need to be unified
+- You want to aggregate data from different sources into one structure
+- You're building complex parameter sets from individual components
+- You need to consolidate related key-value pairs from different parts of your workflow
 
 ## How to use it
 
 ### Basic Setup
 
-1. Add the `MergeKeyValuePair` node to your workflow.
-1. Connect four input parameters to the node:
-    - `key_value_pair_1`
-    - `key_value_pair_2`
-    - `key_value_pair_3`
-    - `key_value_pair_4`
-
-These inputs should be dictionaries containing key-value pairs.
+1. Add the MergeKeyValuePair node to your workflow
+1. Connect up to four dictionary outputs from other nodes to the inputs of this node
+1. The node will combine all input dictionaries into a single output dictionary
 
 ### Parameters
 
-- **`key_value_pair_1`, `key_value_pair_2`, `key_value_pair_3`, and `key_value_pair_4`**: These are the input parameters that represent the key-value pairs to be merged together. Each parameter is a dictionary with two values: a key and a value.
+- **key_value_pair_1**: First dictionary to merge (dictionary input)
+- **key_value_pair_2**: Second dictionary to merge (dictionary input)
+- **key_value_pair_3**: Third dictionary to merge (dictionary input)
+- **key_value_pair_4**: Fourth dictionary to merge (dictionary input)
 
 ### Outputs
 
-- **`output`** is a dictionary containing the merged key-value pairs.
+- **output**: A single dictionary containing all key-value pairs from the input dictionaries
 
 ## Example
 
-Imagine you're working with configuration data from multiple sources. You have four sets of configuration data, each represented as a dictionary:
+Imagine you're building a workflow that needs to combine configuration settings from different sources:
 
-```python
-config1 = {"database": "mysql", "host": "localhost"}
-config2 = {"database": "postgres", "port": 5432}
-config3 = {"database": "sqlite", "username": "admin"}
-config4 = {"database": "oracle", "password": "secret"}
-```
-
-You can use the `MergeKeyValuePair` node to merge these configurations into a single dictionary:
-
-1. Connect the four input parameters (`key_value_pair_1`, `key_value_pair_2`, `key_value_pair_3`, and `key_value_pair_4`) to the `MergeKeyValuePair` node.
-1. Set the values of each parameter to the corresponding configuration data.
-
-The output will be a single dictionary containing all the key-value pairs:
-
-```python
-merged_config = {
-    "database": "mysql",
-    "host": "localhost",
-    "port": 5432,
-    "username": "admin",
-    "password": "secret"
-}
-```
+1. Add a MergeKeyValuePair node to your workflow
+1. Connect a dictionary with database settings to "key_value_pair_1" (e.g., {"host": "localhost", "port": 5432})
+1. Connect a dictionary with authentication settings to "key_value_pair_2" (e.g., {"username": "admin", "password": "secure123"})
+1. Connect a dictionary with application settings to "key_value_pair_3" (e.g., {"app_name": "MyApp", "debug": true})
+1. The output will be a single dictionary containing all these settings: {"host": "localhost", "port": 5432, "username": "admin", "password": "secure123", "app_name": "MyApp", "debug": true}
 
 ## Important Notes
 
-- The `MergeKeyValuePair` node assumes that all input parameters are dictionaries with two values: a key and a value.
-- If any of the input parameters are missing or empty, they will be ignored in the merge process.
-- The output dictionary contains only the key-value pairs from the non-empty input parameters.
+- If the same key appears in multiple input dictionaries, the value from the later dictionary will overwrite earlier values
+- The node ignores any inputs that are not dictionaries or are None
+- You don't need to connect all four inputs - the node works with any number of inputs from one to four
+- The order of inputs matters when there are key conflicts

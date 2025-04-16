@@ -22,10 +22,7 @@ def handle_parameter_tooltips(payload, params) -> list:
         params.append(f'tooltip_as_output="{payload.tooltip_as_output}"')
 
     if getattr(payload, "ui_options", None) is not None:
-        payload_ui = vars(payload.ui_options)
-        for key, val in payload_ui:
-            if not val:
-                payload_ui.pop(key)
+        payload_ui = payload.ui_options
         if payload_ui:
             params.append(f"ui_options={payload_ui}")  # No quotes for object
     return params

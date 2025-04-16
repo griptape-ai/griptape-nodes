@@ -39,4 +39,4 @@ Imagine you want to create an agent that can answer questions using your company
 1. Add a RagTool to your workflow
 1. Connect a vector store containing your documentation to the "rag_engine" input
 1. Connect the "tool" output to an Agent's "tools" input
-1. Now that agent can retrieve and reference specif
+1. Now that agent can retrieve and reference specific information from your documentation when answering questions

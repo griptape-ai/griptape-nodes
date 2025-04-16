@@ -29,6 +29,14 @@ Use the Reroute node when:
 
 - **passThru**: A parameter that can function as both input and output, dynamically adapting its allowed types based on connections
 
+### Outputs
+
+- **passThru**: The data passed through the node without modification
+
+## Example
+
+Add a Reroute node between two distant nodes in your workflow to improve organization. For instance, connect an image output from a node at the top of your workflow to a Reroute node, then connect that Reroute node's output to an image processing node at the bottom of your workflow.
+
 ## Important Notes
 
 - The Reroute node does not modify the data passing through it

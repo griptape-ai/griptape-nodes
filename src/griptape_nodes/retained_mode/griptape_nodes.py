@@ -18,7 +18,13 @@ from dotenv import load_dotenv
 from rich.logging import RichHandler
 from xdg_base_dirs import xdg_data_home
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterContainer, ParameterMode, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import (
+    BaseNodeElement,
+    Parameter,
+    ParameterContainer,
+    ParameterMode,
+    ParameterTypeBuiltin,
+)
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -615,6 +621,18 @@ class ObjectManager:
         return None
 
     def del_obj_by_name(self, name: str) -> None:
+        # Does the object have any children? delete those
+        obj = self._name_to_objects[name]
+        if isinstance(obj, BaseNodeElement):
+            children = obj.find_elements_by_type(BaseNodeElement)
+            for child in children:
+                obj.remove_child(child)
+                if isinstance(child, BaseNode):
+                    GriptapeNodes.handle_request(DeleteNodeRequest(child.name))
+                    return
+                if isinstance(child, Parameter) and isinstance(obj, BaseNode):
+                    GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, obj.name))
+                    return
         del self._name_to_objects[name]
 
 
@@ -2004,12 +2022,18 @@ class NodeManager:
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(request.parameter_name)
-        if parameter is None:
+        parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
+        if parameter is None and parameter_group is None:
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because it didn't have a Parameter with that name on it."
             logger.error(details)
 
             result = RemoveParameterFromNodeResultFailure()
             return result
+        if parameter_group is not None:
+            for child in parameter_group.find_elements_by_type(Parameter):
+                GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, request.node_name))
+            node.remove_group_by_name(request.parameter_name)
+            return RemoveParameterFromNodeResultSuccess()
 
         # No tricky stuff, users!
         if parameter.user_defined is False:
@@ -2161,47 +2185,25 @@ class NodeManager:
         result = GetNodeElementDetailsResultSuccess(element_details=element_details)
         return result
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
-        # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+    def modify_alterable_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
+        if request.tooltip is not None:
+            parameter.tooltip = request.tooltip
+        if request.tooltip_as_input is not None:
+            parameter.tooltip_as_input = request.tooltip_as_input
+        if request.tooltip_as_property is not None:
+            parameter.tooltip_as_property = request.tooltip_as_property
+        if request.tooltip_as_output is not None:
+            parameter.tooltip_as_output = request.tooltip_as_output
+        if request.ui_options is not None:
+            parameter.ui_options = request.ui_options
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
-        if node is None:
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}', but no such Node was found."
-            logger.error(details)
-
-            result = AlterParameterDetailsResultFailure()
-            return result
-
-        # Does the Parameter actually exist on the Node?
-        parameter = node.get_parameter_by_name(request.parameter_name)
-        if parameter is None:
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because it didn't have a Parameter with that name on it."
-            logger.error(details)
-
-            result = AlterParameterDetailsResultFailure()
-            return result
-
-        # No tricky stuff, users!
-        if parameter.user_defined is False and request.request_id:
-            # TODO(griptape): there may be SOME properties on a non-user-defined Parameter that can be changed
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be removed from a Node."
-            logger.error(details)
-
-            result = AlterParameterDetailsResultFailure()
-            return result
-
-        # TODO(griptape): Verify that we can get through all the OTHER tricky stuff before we proceed to actually making changes.
-        # Now change all the values on the Parameter.
+    def modify_key_parameter_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
         if request.type is not None:
             parameter.type = request.type
         if request.input_types is not None:
             parameter.input_types = request.input_types
         if request.output_type is not None:
             parameter.output_type = request.output_type
-        if request.default_value is not None:
-            # TODO(griptape): vet that default value matches types allowed
-            node.parameter_values[request.parameter_name] = request.default_value
         if request.mode_allowed_input is not None:
             # TODO(griptape): may alter existing connections
             if request.mode_allowed_input is True:
@@ -2220,16 +2222,49 @@ class NodeManager:
                 parameter.allowed_modes.add(ParameterMode.OUTPUT)
             else:
                 parameter.allowed_modes.discard(ParameterMode.OUTPUT)
-        if request.tooltip is not None:
-            parameter.tooltip = request.tooltip
-        if request.tooltip_as_input is not None:
-            parameter.tooltip_as_input = request.tooltip_as_input
-        if request.tooltip_as_property is not None:
-            parameter.tooltip_as_property = request.tooltip_as_property
-        if request.tooltip_as_output is not None:
-            parameter.tooltip_as_output = request.tooltip_as_output
-        if request.ui_options is not None:
-            parameter.ui_options = request.ui_options
+
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:
+        # Does this node exist?
+        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+
+        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}', but no such Node was found."
+            logger.error(details)
+
+            result = AlterParameterDetailsResultFailure()
+            return result
+
+        # Does the Parameter actually exist on the Node?
+        parameter = node.get_parameter_by_name(request.parameter_name)
+        parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
+        if parameter is None:
+            parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
+            if parameter_group is None:
+                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because it didn't have a Parameter with that name on it."
+                logger.error(details)
+
+                result = AlterParameterDetailsResultFailure()
+                return result
+            if request.ui_options is not None:
+                parameter_group.ui_options = request.ui_options
+            return AlterParameterDetailsResultSuccess()
+
+        # TODO(griptape): Verify that we can get through all the OTHER tricky stuff before we proceed to actually making changes.
+        # Now change all the values on the Parameter.
+        self.modify_alterable_fields(request, parameter)
+        # The rest of these are not alterable
+        if parameter.user_defined is False and request.request_id:
+            # TODO(griptape): there may be SOME properties on a non-user-defined Parameter that can be changed
+            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
+            logger.warning(details)
+            result = AlterParameterDetailsResultSuccess()
+            return result
+        self.modify_key_parameter_fields(request, parameter)
+        # This field requires the node as well
+        if request.default_value is not None:
+            # TODO(griptape): vet that default value matches types allowed
+            node.parameter_values[request.parameter_name] = request.default_value
 
         details = (
             f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{request.node_name}'."
@@ -4091,7 +4126,7 @@ class LibraryManager:
                 library.register_new_node_type(node_class, metadata=node_metadata)
 
             except (KeyError, ImportError, AttributeError) as e:
-                details = f"Attempted to load Library JSON file from '{file_path}'. Failed due to an error loading node {node_meta.get('class_name', 'unknown')}: {e}"
+                details = f"Attempted to load Library JSON file from '{file_path}'. Failed due to an error loading node '{node_meta.get('class_name', 'unknown')}': {e}"
                 logger.error(details)
                 return RegisterLibraryFromFileResultFailure()
 
@@ -4239,6 +4274,7 @@ class LibraryManager:
         Raises:
             ImportError: If the module cannot be imported
             AttributeError: If the class doesn't exist in the module
+            TypeError: If the loaded class isn't a BaseNode-derived class
         """
         # Ensure file_path is a Path object
         file_path = Path(file_path)
@@ -4289,18 +4325,22 @@ class LibraryManager:
             sys.modules[module_name] = module
 
             # Execute the module
-            spec.loader.exec_module(module)
+            try:
+                spec.loader.exec_module(module)
+            except Exception as err:
+                msg = f"Class '{class_name}' from module '{file_path}' failed to load with error: {err}"
+                raise ImportError(msg) from err
 
         # Get the class
         try:
             node_class = getattr(module, class_name)
-        except AttributeError as e:
-            msg = f"Class '{class_name}' not found in module {file_path}"
-            raise AttributeError(msg) from e
+        except AttributeError as err:
+            msg = f"Class '{class_name}' not found in module '{file_path}'"
+            raise AttributeError(msg) from err
 
         # Verify it's a BaseNode subclass
         if not issubclass(node_class, BaseNode):
-            msg = f"{class_name} must inherit from BaseNode"
+            msg = f"'{class_name}' must inherit from BaseNode"
             raise TypeError(msg)
 
         return node_class

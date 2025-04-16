@@ -8,6 +8,7 @@ import json
 import shutil
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
 import httpx
@@ -55,6 +56,7 @@ def main() -> None:
 
 def _run_init(api_key: str | None = None, workspace_directory: str | None = None) -> None:
     """Runs through the engine init steps, optionally skipping prompts if the user provided `--api-key`."""
+    __init_system_config()
     _prompt_for_workspace(workspace_directory)
     _prompt_for_api_key(api_key)
 
@@ -100,32 +102,6 @@ def _get_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _init_system_config() -> bool:
-    """Initializes the system config directory if it doesn't exist.
-
-    Returns:
-        bool: True if the system config directory was created, False otherwise.
-
-    """
-    is_first_init = False
-    if not CONFIG_DIR.exists():
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        is_first_init = True
-
-    files_to_create = [
-        (ENV_FILE, ""),
-        (CONFIG_FILE, "{}"),
-    ]
-
-    for file_name in files_to_create:
-        file_path = CONFIG_DIR / file_name[0]
-        if not file_path.exists():
-            with Path.open(file_path, "w") as file:
-                file.write(file_name[1])
-
-    return is_first_init
-
-
 def _prompt_for_api_key(api_key: str | None = None) -> None:
     """Prompts the user for their GT_CLOUD_API_KEY unless it's provided."""
     if api_key is None:
@@ -155,23 +131,13 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
 
 def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
     """Prompts the user for their workspace directory and stores it in config directory."""
-    if workspace_directory_arg is not None:
-        try:
-            workspace_path = Path(workspace_directory_arg).expanduser().resolve()
-        except OSError as e:
-            console.print(f"[bold red]Invalid workspace directory argument: {e}[/bold red]")
-        else:
-            config_manager.workspace_path = str(workspace_path)
-            console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
-            return
-
     explainer = """[bold cyan]Workspace Directory[/bold cyan]
     Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows, configuration data, and secrets.
     You may enter a custom directory or press Return to accept the default workspace directory"""
     console.print(Panel(explainer, expand=False))
 
     valid_workspace = False
-    default_workspace_directory = config_manager.get_config_value("workspace_directory")
+    default_workspace_directory = workspace_directory_arg or config_manager.get_config_value("workspace_directory")
     while not valid_workspace:
         try:
             workspace_directory = Prompt.ask(
@@ -179,10 +145,16 @@ def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
                 default=default_workspace_directory,
                 show_default=True,
             )
-            config_manager.workspace_path = str(Path(workspace_directory).expanduser().resolve())
+            workspace_path = Path(workspace_directory).expanduser().resolve()
+
+            config_manager.workspace_path = workspace_path
+            config_manager.set_config_value("workspace_directory", str(workspace_path))
+
             valid_workspace = True
         except OSError as e:
             console.print(f"[bold red]Invalid workspace directory: {e}[/bold red]")
+        except json.JSONDecodeError as e:
+            console.print(f"[bold red]Error reading config file: {e}[/bold red]")
     console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
 
 
@@ -340,46 +312,77 @@ def _list_user_configs() -> None:
 
 
 def _uninstall_self() -> None:
-    """Uninstalls itself by removing the config and data directories, and the executable."""
-    console.print("[bold red]Uninstalling Griptape Nodes...[/bold red]")
-    console.print(f"[bold yellow]Removing config directory '{CONFIG_DIR}'...[/bold yellow]")
-    shutil.rmtree(CONFIG_DIR)
+    """Uninstalls itself by removing config/data directories and the executable."""
+    console.print("[bold]Uninstalling Griptape Nodes...[/bold]")
 
-    console.print(f"[bold yellow]Removing data directory '{DATA_DIR}'...[/bold yellow]")
-    shutil.rmtree(DATA_DIR)
+    # Remove config and data directories
+    dirs = [(CONFIG_DIR, "Config Dir"), (DATA_DIR, "Data Dir")]
+    for dir_path, dir_name in dirs:
+        if dir_path.exists():
+            console.print(f"[bold]Removing {dir_name} '{dir_path}'...[/bold]")
+            try:
+                shutil.rmtree(dir_path)
+            except OSError as exc:
+                console.print(f"[red]Error removing {dir_name} '{dir_path}': {exc}[/red]")
+        else:
+            console.print(f"[yellow]{dir_name} '{dir_path}' does not exist; skipping.[/yellow]")
 
-    console.print("[bold yellow]Removing Griptape Nodes executable 'griptape-nodes'/'gtn'...[/bold yellow]")
-    subprocess.run(
-        ["uv", "tool", "uninstall", "griptape-nodes"],
-        check=True,
-        text=True,
-    )
+    # Remove the executable/tool
+    executable_path = shutil.which("griptape-nodes")
+    executable_removed = False
+    if executable_path:
+        console.print(f"[bold]Removing Griptape Nodes executable ({executable_path})...[/bold]")
+        try:
+            subprocess.run(
+                ["uv", "tool", "uninstall", "griptape-nodes"],
+                check=True,
+                text=True,
+            )
+            executable_removed = True
+        except subprocess.CalledProcessError:
+            executable_removed = False
+    else:
+        console.print("[yellow]Griptape Nodes executable not found; skipping removal.[/yellow]")
 
     console.print("[bold green]Uninstall complete![/bold green]")
 
+    caveats = []
+    # Handle any remaining config files not removed by design
     remaining_config_files = config_manager.config_files
     if remaining_config_files:
-        console.print("[bold yellow]Caveat! Some config files were intentionally not removed:[/bold yellow]")
-        for file in remaining_config_files:
-            console.print(f"[bold yellow]{file}[/bold yellow]")
+        caveats.append("- Some config files were intentionally not removed:")
+        caveats.extend(f"\t[yellow]- {file}[/yellow]" for file in remaining_config_files)
 
+    if not executable_removed:
+        caveats.append(
+            "- The uninstaller was not able to remove the Griptape Nodes executable. "
+            "Please remove the executable manually by running '[bold]uv tool uninstall griptape-nodes[/bold]'."
+        )
+
+    # If there were any caveats to the uninstallation process, print them
+    if caveats:
+        console.print("[bold]Caveats:[/bold]")
+        for line in caveats:
+            console.print(line)
+
+    # Exit the process
     sys.exit(0)
 
 
 def _process_args(args: argparse.Namespace) -> None:
-    is_first_init = _init_system_config()
-
     if args.command == "init":
         _run_init(api_key=args.api_key, workspace_directory=args.workspace_directory)
         console.print("Initialization complete! You can now run the engine with 'griptape-nodes' (or just 'gtn').")
     elif args.command == "engine":
-        if is_first_init:
-            # Default init flow if it's truly the first time
+        if not CONFIG_DIR.exists():
+            # Default init flow if there is no config directory
             _run_init()
 
         # Confusing double negation -- If `no_update` is set, we want to skip the update
         if not args.no_update:
             _auto_update()
+
+        webbrowser.open(NODES_APP_URL, new=2)  # new=2 opens in a new tab
         start_app()
     elif args.command == "config":
         if args.config_subcommand == "list":
@@ -396,6 +399,23 @@ def _process_args(args: argparse.Namespace) -> None:
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)
+
+
+def __init_system_config() -> None:
+    """Initializes the system config directory if it doesn't exist."""
+    if not CONFIG_DIR.exists():
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    files_to_create = [
+        (ENV_FILE, ""),
+        (CONFIG_FILE, "{}"),
+    ]
+
+    for file_name in files_to_create:
+        file_path = CONFIG_DIR / file_name[0]
+        if not file_path.exists():
+            with Path.open(file_path, "w") as file:
+                file.write(file_name[1])
 
 
 if __name__ == "__main__":

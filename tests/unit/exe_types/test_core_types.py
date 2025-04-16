@@ -55,6 +55,7 @@ class TestBaseNodeElement:
                             "element_id": ANY,
                             "element_type": "ParameterGroup",
                             "group_name": "group1",
+                            "ui_options": {},
                             "children": [{"element_id": "leaf1", "element_type": "BaseNodeElement", "children": []}],
                         },
                     ],
@@ -106,6 +107,7 @@ class TestBaseNodeElement:
                             "element_id": ANY,
                             "element_type": "ParameterGroup",
                             "group_name": "group1",
+                            "ui_options": {},
                             "children": [
                                 {
                                     "element_id": "leaf1",
@@ -176,6 +178,7 @@ class TestBaseNodeElement:
                             "element_id": ANY,
                             "element_type": "ParameterGroup",
                             "group_name": "group1",
+                            "ui_options": {},
                             "children": [],
                         },
                     ],

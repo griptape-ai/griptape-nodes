@@ -23,14 +23,12 @@ Use the RulesetList node when:
 
 ### Parameters
 
-**Inputs:**
-
 - **ruleset_1**: The first ruleset to add to the combined list
 - **ruleset_2**: The second ruleset to add to the combined list
 - **ruleset_3**: The third ruleset to add to the combined list
 - **ruleset_4**: The fourth ruleset to add to the combined list
 
-**Outputs:**
+### Outputs
 
 - **rulesets**: A combined list containing all non-null input rulesets
 
