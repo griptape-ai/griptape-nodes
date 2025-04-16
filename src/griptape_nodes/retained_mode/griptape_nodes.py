@@ -3164,7 +3164,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_c
         # If it doesn't have a custom __str__, convert to dict if possible
         if hasattr(value, "to_dict") and callable(value.to_dict):
             # For objects with to_dict method
-            reconstruction_code = handle_object(value, var_name, imports)
+            reconstruction_code = _create_object_in_file(value, var_name, imports)
             if reconstruction_code != "":
                 safe_conversion = True
         elif isinstance(value, (int, float, str, bool, list, dict, tuple, set)) or value is None:
@@ -3185,8 +3185,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_c
         # TODO(kate): If safe conversion doesn't work, node has to be unresolved.
     return None
 
-
-def handle_object(value: Any, var_name: str, imports: list) -> str:
+def _create_object_in_file(value: Any, var_name: str, imports: list) -> str:
     obj_dict = value.to_dict()
     reconstruction_code = f"{var_name} = {obj_dict!r}\n"
     # If we know the class, we can reconstruct it and add import
