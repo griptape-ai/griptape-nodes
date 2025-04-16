@@ -27,7 +27,7 @@ from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_
 
 logger = logging.getLogger("griptape_nodes")
 
-CONFIG_DIR = xdg_config_home() / "griptape_nodes"
+USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config.json"
 
 
 class ConfigManager:
@@ -81,8 +81,8 @@ class ConfigManager:
         self._workspace_path = str(Path(path).resolve())
 
     @property
-    def user_config_path(self) -> Path:
-        """Get the path to the user config file.
+    def workspace_config_path(self) -> Path:
+        """Get the path to the workspace config file.
 
         Returns:
             Path object representing the user config file.
@@ -97,44 +97,29 @@ class ConfigManager:
             List of Path objects representing the config files.
         """
         possible_config_files = [
-            *self._find_config_files("griptape_nodes_config.json"),
-            self.workspace_path / "griptape_nodes_config.json",
-            *self._find_config_files("griptape_nodes_config.toml"),
-            self.workspace_path / "griptape_nodes_config.toml",
-            *self._find_config_files("griptape_nodes_config.yaml"),
-            self.workspace_path / "griptape_nodes_config.yaml",
+            USER_CONFIG_PATH,
+            self.workspace_config_path,
         ]
 
         return [config_file for config_file in possible_config_files if config_file.exists()]
 
     def load_user_config(self) -> None:
         """Load user configuration from the config file."""
-        # We need to load the fully merged config once so that
-        # we can get the workspace directory which will inform where to get more config files.
-        # Workspace directory should probably be decoupled from the config file.
+        # We need to load the user config file first so we can get the workspace directory which may contain a workspace config file.
         # TODO(collin): https://github.com/griptape-ai/griptape-nodes/issues/424
+        # Load the user config file to get the workspace directory.
         Settings.model_config = SettingsConfigDict(
-            json_file=self._find_config_files("griptape_nodes_config.json"),
-            toml_file=self._find_config_files("griptape_nodes_config.toml"),
-            yaml_file=self._find_config_files("griptape_nodes_config.yaml"),
+            json_file=USER_CONFIG_PATH,
             extra="allow",
         )
         settings = Settings()
         workspace_path = Path(settings.workspace_directory).resolve()
 
-        # Now we load the config again, this time considering the workspace directory.
+        # Merge in any settings from the workspace directory.
         Settings.model_config = SettingsConfigDict(
             json_file=[
-                *self._find_config_files("griptape_nodes_config.json"),
+                USER_CONFIG_PATH,
                 workspace_path / "griptape_nodes_config.json",
-            ],
-            toml_file=[
-                *self._find_config_files("griptape_nodes_config.toml"),
-                workspace_path / "griptape_nodes_config.toml",
-            ],
-            yaml_file=[
-                *self._find_config_files("griptape_nodes_config.yaml"),
-                workspace_path / "griptape_nodes_config.yaml",
             ],
             extra="allow",
         )
@@ -194,7 +179,7 @@ class ConfigManager:
         if isinstance(value, str) and value.startswith("$"):
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-            value = GriptapeNodes.SecretsManager().get_secret(value[1:], value)
+            value = GriptapeNodes.SecretsManager().get_secret(value[1:])
 
         return value
 
@@ -206,19 +191,17 @@ class ConfigManager:
             value: The value to associate with the key.
         """
         delta = set_dot_value({}, key, value)
-        workspace_dir = self.workspace_path
         if key == "log_level":
             self._set_log_level(value)
         elif key == "workspace_directory":
-            # If the key is workspace_directory, we want to write the value
-            # to the home config directory (~/.config/griptape_nodes) and not the workspace directory.
-            workspace_dir = CONFIG_DIR
             self.workspace_path = value
         self.user_config = merge_dicts(self.user_config, delta)
-        self._write_user_config_delta(delta, workspace_dir)
+        self._write_user_config_delta(delta)
 
         # If the key is workspace_directory, we need to fully reload the user config
         # because the workspace changing may influence the config files we load.
+        # Also need to reload registered workflows.
+        # TODO(collin): https://github.com/griptape-ai/griptape-nodes/issues/437
         if key == "workspace_directory":
             self.load_user_config()
         logger.debug("Config value '%s' set to '%s'", key, value)
@@ -256,7 +239,7 @@ class ConfigManager:
 
         if request.category is None or request.category == "":
             # Assign the whole shebang.
-            self._write_user_config_delta(request.contents, self.user_config_path)
+            self._write_user_config_delta(request.contents)
             details = "Successfully assigned the entire config dictionary."
             logger.info(details)
             return SetConfigCategoryResultSuccess()
@@ -290,11 +273,11 @@ class ConfigManager:
             return SetConfigValueResultFailure()
 
         self.set_config_value(key=request.category_and_key, value=request.value)
-        details = f"Successfully assigned the config value for category.key '{request.category_and_key}'."
+        details = f"Successfully assigned the config value for '{request.category_and_key}'."
         logger.info(details)
         return SetConfigValueResultSuccess()
 
-    def _write_user_config_delta(self, user_config_delta: dict, workspace_dir: Path) -> None:
+    def _write_user_config_delta(self, user_config_delta: dict) -> None:
         """Write the user configuration to the config file.
 
         This method creates the config file if it doesn't exist and writes the
@@ -304,36 +287,13 @@ class ConfigManager:
             user_config_delta: The user configuration delta to write to the file Will be merged with the existing config on disk.
             workspace_dir: The path to the config file
         """
-        user_config_path = workspace_dir / "griptape_nodes_config.json"
-
-        if not user_config_path.exists():
-            user_config_path.parent.mkdir(parents=True, exist_ok=True)
-            user_config_path.touch()
-            user_config_path.write_text(json.dumps({}, indent=2))
-        current_config = json.loads(user_config_path.read_text())
+        if not USER_CONFIG_PATH.exists():
+            USER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            USER_CONFIG_PATH.touch()
+            USER_CONFIG_PATH.write_text(json.dumps({}, indent=2))
+        current_config = json.loads(USER_CONFIG_PATH.read_text())
         merged_config = merge_dicts(current_config, user_config_delta)
-        user_config_path.write_text(json.dumps(merged_config, indent=2))
-
-    def _find_config_files(self, filename: str) -> list[Path]:
-        """Find configuration files in the workspace directory and parent directories.
-
-        Searches in the following priority order:
-        1. XDG_CONFIG_HOME (e.g., `~/.config/griptape_nodes/griptape_nodes_config.json`)
-        2. Current working directory
-        3. Parent directories up to HOME
-        """
-        config_files = []
-
-        # Search XDG_CONFIG_HOME (e.g., `~/.config/griptape_nodes/griptape_nodes_config.json`)
-        config_files.append(xdg_config_home() / "griptape_nodes" / filename)
-
-        # Recursively search parent directories up to HOME
-        current_path = Path.cwd()
-        while current_path not in (Path.home(), current_path.parent) and current_path != current_path.parent:
-            config_files.append(current_path / filename)
-            current_path = current_path.parent
-
-        return config_files
+        USER_CONFIG_PATH.write_text(json.dumps(merged_config, indent=2))
 
     def _set_log_level(self, level: str) -> None:
         """Set the log level for the logger.
