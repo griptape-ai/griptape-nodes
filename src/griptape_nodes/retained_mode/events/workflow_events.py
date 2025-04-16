@@ -194,9 +194,16 @@ class SerializedFlowCommands:
         target_node_index: int
         target_parameter_name: str
 
+    # The command to create the flow that contains all of this.
     create_flow_command: CreateFlowRequest
+
+    # Handles creating all of the nodes themselves, along with modifying Parameters and Values.
     serialized_node_commands: list[SerializedNodeCommands]
+
+    # Creates the connections between Nodes.
     serialized_connections: list[IndexedConnectionSerialization]
+
+    # Cascades into sub-flows within this serialization.
     sub_flows_commands: list["SerializedFlowCommands"]
 
 

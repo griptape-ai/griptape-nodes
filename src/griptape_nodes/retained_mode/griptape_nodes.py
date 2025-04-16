@@ -3485,10 +3485,13 @@ class WorkflowManager:
                     file.write(f"{import_statement}\n")
 
                 # Create the flow.
-                create_flow = generate_griptape_command(serialized_flow.create_flow_command)
+                create_flow_request = generate_griptape_command(serialized_flow.create_flow_command)
+                # Prepend with the result, since we'll need that.
+                create_flow = f"create_flow_result = {create_flow_request}"
                 file.write(create_flow + "\n")
 
-                # TODO: Set as current context
+                # Set as current context
+                # TODO
                 for node_command in serialized_flow.serialized_node_commands:
                     create_node = generate_griptape_command(node_command.create_node_command)
                     file.write(create_node + "\n")
