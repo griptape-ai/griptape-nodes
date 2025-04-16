@@ -9,7 +9,7 @@ SERVICE = "OpenAI"
 DEFAULT_MODEL = "whisper-1"
 
 
-class AudioTranscriptionTool(BaseTool):
+class AudioTranscription(BaseTool):
     def process(self) -> None:
         self.parameter_values.get("off_prompt", True)
         driver = self.parameter_values.get("driver", None)

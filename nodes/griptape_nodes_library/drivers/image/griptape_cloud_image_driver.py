@@ -13,7 +13,7 @@ AVAILABLE_MODELS = ["dall-e-3"]
 AVAILABLE_SIZES = ["1024x1024", "1024x1792", "1792x1024"]
 
 
-class GriptapeCloudImageDriver(BaseImageDriver):
+class GriptapeCloudImage(BaseImageDriver):
     """Node for Griptape Cloud Image Generation Driver.
 
     This node creates an Griptape Cloud image generation driver and outputs its configuration.

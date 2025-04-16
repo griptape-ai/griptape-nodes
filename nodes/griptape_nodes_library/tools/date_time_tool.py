@@ -3,7 +3,7 @@ from griptape.tools import DateTimeTool as GtDateTimeTool
 from griptape_nodes_library.tools.base_tool import BaseTool
 
 
-class DateTimeTool(BaseTool):
+class DateTime(BaseTool):
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", False)
 

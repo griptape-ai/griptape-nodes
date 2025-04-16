@@ -4,7 +4,7 @@ from griptape.tools import RagTool as GtRagTool
 from griptape_nodes_library.tools.base_tool import BaseTool
 
 
-class RagTool(BaseTool):
+class InfoRetriever(BaseTool):
     def process(self) -> None:
         description = self.parameter_values.get("description", "Contains information.")
         off_prompt = self.parameter_values.get("off_prompt", False)

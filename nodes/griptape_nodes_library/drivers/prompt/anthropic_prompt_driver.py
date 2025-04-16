@@ -11,7 +11,7 @@ API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 SERVICE = "Anthropic"
 
 
-class AnthropicPromptDriver(BasePromptDriver):
+class AnthropicPrompt(BasePromptDriver):
     """Node for Anthropic Prompt Driver.
 
     This node creates an Anthropic prompt driver and outputs its configuration.

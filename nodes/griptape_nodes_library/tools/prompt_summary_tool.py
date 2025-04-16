@@ -4,7 +4,7 @@ from griptape.tools import PromptSummaryTool as GtPromptSummaryTool
 from griptape_nodes_library.tools.base_tool import BaseTool
 
 
-class PromptSummaryTool(BaseTool):
+class PromptSummary(BaseTool):
     """A tool generator class that creates a configured PromptSummaryTool.
 
     This class extends BaseTool to create a tool specifically for summarizing text.
