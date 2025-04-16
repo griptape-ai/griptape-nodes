@@ -650,6 +650,8 @@ class FlowManager:
         for flow_name, parent in self._name_to_parent_name.items():
             if parent is None:
                 return GetTopLevelFlowResultSuccess(flow_name=flow_name)
+        msg = "Attempted to get top level flow, but no such flow exists"
+        logger.info(msg)
         return GetTopLevelFlowResultFailure()
 
     def does_canvas_exist(self) -> bool:
