@@ -98,6 +98,9 @@ from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
     DeleteFlowResultFailure,
     DeleteFlowResultSuccess,
+    GetTopLevelFlowRequest,
+    GetTopLevelFlowResultFailure,
+    GetTopLevelFlowResultSuccess,
     ListFlowsInFlowRequest,
     ListFlowsInFlowResultFailure,
     ListFlowsInFlowResultSuccess,
@@ -633,6 +636,7 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(
             ValidateFlowDependenciesRequest, self.on_validate_flow_dependencies_request
         )
+        event_manager.assign_manager_to_request_type(GetTopLevelFlowRequest, self.on_get_top_level_flow_request)
 
         self._name_to_parent_name = {}
 
@@ -641,6 +645,14 @@ class FlowManager:
             return self._name_to_parent_name[flow_name]
         msg = f"Flow with name {flow_name} doesn't exist"
         raise ValueError(msg)
+
+    def on_get_top_level_flow_request(self, request: GetTopLevelFlowRequest) -> ResultPayload:  # noqa: ARG002 (the request has to be assigned to the method)
+        for flow_name, parent in self._name_to_parent_name.items():
+            if parent is None:
+                return GetTopLevelFlowResultSuccess(flow_name=flow_name)
+        msg = "No top level flow (flow with no parent) exists"
+        logger.error(msg)
+        return GetTopLevelFlowResultFailure()
 
     def does_canvas_exist(self) -> bool:
         """Determines if there is already an existing flow with no parent flow.Returns True if there is an existing flow with no parent flow.Return False if there is no existing flow with no parent flow."""
