@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import ClassVar, NamedTuple
+from typing import ClassVar
 
 from griptape.mixins.singleton_mixin import SingletonMixin
 from pydantic import BaseModel
 
-
-class LibraryNameAndVersion(NamedTuple):
-    library_name: str
-    library_version: str
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 
 
 class WorkflowMetadata(BaseModel):

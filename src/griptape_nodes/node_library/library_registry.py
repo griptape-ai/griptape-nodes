@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 from typing import Any, NamedTuple, Self, cast
 
@@ -8,6 +9,11 @@ from griptape.mixins.singleton_mixin import SingletonMixin
 from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class LibraryNameAndVersion(NamedTuple):
+    library_name: str
+    library_version: str
 
 
 class LibraryNodeIdentifier(NamedTuple):

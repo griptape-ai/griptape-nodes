@@ -28,8 +28,8 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
-from griptape_nodes.node_library.library_registry import LibraryRegistry
-from griptape_nodes.node_library.workflow_registry import LibraryNameAndVersion, WorkflowMetadata, WorkflowRegistry
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
+from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
     AppStartSessionRequest,
@@ -3190,13 +3190,15 @@ class WorkflowManager:
             result = SerializeFlowCommandsResultFailure()
             return result
 
+        node_libraries_in_use = set()
+
         with GriptapeNodes.ContextManager().flow(flow_name):
             # The base flow creation.
             create_flow_request = CreateFlowRequest(parent_flow_name=None)
 
             serialized_node_commands = []
 
-            # Now each of the child nodes in the node.
+            # Now each of the child nodes in the flow.
             node_name_to_index = {}
             for node_index, node in enumerate(obj_mgr.get_filtered_subset(type=BaseNode).values()):
                 node_name_to_index[node.name] = node_index
@@ -3209,7 +3211,9 @@ class WorkflowManager:
                         logger.error(details)
                         return SerializeFlowCommandsResultFailure()
 
-                    serialized_node_commands.append(serialize_node_result.serialized_node_commands)
+                    serialized_node = serialize_node_result.serialized_node_commands
+                    serialized_node_commands.append(serialized_node)
+                    node_libraries_in_use.add(serialized_node.node_library_details)
 
             # We'll have to do a patch-up of all the connections, since we can't predict all of the node names being accurate
             # when we're restored.
@@ -3237,13 +3241,18 @@ class WorkflowManager:
                         details = f"Attempted to serialize parent flow '{flow_name}'. Failed while serializing child flow '{child_flow}'."
                         logger.error(details)
                         return SerializeFlowCommandsResultFailure()
-                    sub_flow_commands.append(child_flow_result.serialized_flow_commands)
+                    serialized_flow = child_flow_result.serialized_flow_commands
+                    sub_flow_commands.append(serialized_flow)
+
+                    # Merge in all child flow library details.
+                    node_libraries_in_use.union(serialized_flow.node_libraries_used)
 
         serialized_flow = SerializedFlowCommands(
             create_flow_command=create_flow_request,
             serialized_node_commands=serialized_node_commands,
             serialized_connections=create_connection_commands,
             sub_flows_commands=sub_flow_commands,
+            node_libraries_used=node_libraries_in_use,
         )
         details = f"Successfully serialized Flow '{flow_name}' into commands."
         result = SerializeFlowCommandsResultSuccess(serialized_flow_commands=serialized_flow)
@@ -3309,7 +3318,7 @@ class WorkflowManager:
         logger.debug(details)
         return DeserializeFlowCommandsResultSuccess(flow_name=flow_name)
 
-    def on_serialize_node_request(self, request: SerializeNodeCommandsRequest) -> ResultPayload:  # noqa: C901
+    def on_serialize_node_request(self, request: SerializeNodeCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         node_name = request.node_name
         if node_name is None:
             # Grab from the context manager.
@@ -3331,11 +3340,30 @@ class WorkflowManager:
 
         # This is our current dude.
         with GriptapeNodes.ContextManager().node(node_name=node_name):
+            # Get the library and version details.
+            library_used = node.metadata["library"]
+            # Get the library metadata so we can get the version.
+            library_metadata_request = GetLibraryMetadataRequest(library=library_used)
+            library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
+                library_metadata_request
+            )
+            if not library_metadata_result.succeeded():
+                details = f"Attempted to serialize node '{node_name}', but failed to get library metadata for library '{library_used}'."
+                logger.error(details)
+                return SerializeNodeCommandsResultFailure()
+            if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
+                details = f"Attempted to serialize node '{node_name}', but failed to get library version from metadata for library '{library_used}'."
+                logger.error(details)
+                return SerializeNodeCommandsResultFailure()
+
+            library_version = library_metadata_result.metadata["library_version"]
+            library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
+
             # Get creation details.
             create_request = CreateNodeRequest(
                 node_type=node.__class__.__name__,
                 node_name=node.name,
-                specific_library_name=node.metadata["library"],
+                specific_library_name=library_details.library_name,
                 metadata=node.metadata,
             )
 
@@ -3376,7 +3404,9 @@ class WorkflowManager:
 
         # Hooray
         serialized_node_commands = SerializedNodeCommands(
-            create_node_command=create_request, parameter_commands=parameter_commands
+            create_node_command=create_request,
+            parameter_commands=parameter_commands,
+            node_library_details=library_details,
         )
         details = f"Successfully serialized node '{node_name}' into commands."
         logger.debug(details)
@@ -3456,8 +3486,6 @@ class WorkflowManager:
         return LoadWorkflowMetadataResultSuccess(metadata=workflow_metadata)
 
     def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (need lots of branches to cover negative cases)
-        obj_manager = GriptapeNodes.ObjectManager()
-        node_manager = GriptapeNodes.NodeManager()
         config_manager = GriptapeNodes.ConfigManager()
 
         # open my file
@@ -3468,7 +3496,6 @@ class WorkflowManager:
             file_name = datetime.now(tz=local_tz).strftime("%d.%m_%H.%M")
         relative_file_path = f"{file_name}.py"
         file_path = config_manager.workspace_path.joinpath(relative_file_path)
-        created_flows = []
         node_libraries_used = set()
 
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3506,131 +3533,193 @@ class WorkflowManager:
             return SaveWorkflowResultFailure()
         serialized_flow = serialize_flow_commands_result.serialized_flow_commands
 
+        # Now that we have the info about what's actually being used, save out the workflow metadata.
+        workflow_metadata = WorkflowMetadata(
+            name=str(file_name),
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with=engine_version,
+            node_libraries_referenced=list(serialized_flow.node_libraries_used),
+        )
+
         try:
-            with file_path.open("w") as file:
-                # Now the critical imports.
-                import_statements = [
-                    "from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest",
-                    "from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest",
-                    "from griptape_nodes.retained_mode.events.parameter_events import AlterParameterDetailsRequest",
-                    "from griptape_nodes.retained_mode.events.workflow_events import SerializedFlowCommands, SerializedNodeCommands",
-                    "from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes as api",
-                ]
-                for import_statement in import_statements:
-                    file.write(f"{import_statement}\n")
-
-                # Create the flow.
-                create_flow_request = generate_griptape_command(serialized_flow.create_flow_command)
-                # Prepend with the result, since we'll need that.
-                create_flow = f"create_flow_result = {create_flow_request}"
-                file.write(create_flow + "\n")
-
-                # Set as current context
-                # TODO
-                for node_command in serialized_flow.serialized_node_commands:
-                    create_node = generate_griptape_command(node_command.create_node_command)
-                    file.write(create_node + "\n")
-                    for param_command in node_command.parameter_commands:
-                        param_request = generate_griptape_command(param_command)
-                        file.write(param_request + "\n")
-
-                file.write("\n# *************END STEP BY STEP APPROACH***************\n")
-                # Generate the construction code
-                class_hierarchy = {}
-                _build_class_hierarchy(serialized_flow, class_hierarchy)
-                construction_code = _generate_object_construction(
-                    serialized_flow, indent_level=0, class_hierarchy=class_hierarchy
-                )
-                file.write(construction_code)
-
-                file.write("\n# *************END SERIALIZED AS OBJECT APPROACH***************\n")
-                # Write all flows to a file, get back the strings for connections
-                connection_request_workflows = handle_flow_saving(file, obj_manager, created_flows)
-                # Now all of the flows have been created.
-                for node in obj_manager.get_filtered_subset(type=BaseNode).values():
-                    flow_name = node_manager.get_node_parent_flow_by_name(node.name)
-                    creation_request = CreateNodeRequest(
-                        node_type=node.__class__.__name__,
-                        node_name=node.name,
-                        metadata=node.metadata,
-                        override_parent_flow_name=flow_name,
-                    )
-                    code_string = f"GriptapeNodes().handle_request({creation_request})"
-                    file.write(code_string + "\n")
-                    # Save the parameters
-                    try:
-                        handle_parameter_creation_saving(file, node)
-                    except Exception as e:
-                        details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
-                        logger.error(details)
-                        return SaveWorkflowResultFailure()
-
-                    # See if this node uses a library we need to know about.
-                    library_used = node.metadata["library"]
-                    # Get the library metadata so we can get the version.
-                    library_metadata_request = GetLibraryMetadataRequest(library=library_used)
-                    library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
-                        library_metadata_request
-                    )
-                    if not library_metadata_result.succeeded():
-                        details = f"Attempted to save workflow '{relative_file_path}', but failed to get library metadata for library '{library_used}'."
-                        logger.error(details)
-                        return SaveWorkflowResultFailure()
-                    try:
-                        library_metadata_success = cast("GetLibraryMetadataResultSuccess", library_metadata_result)
-                        library_version = library_metadata_success.metadata["library_version"]
-                    except Exception as err:
-                        details = f"Attempted to save workflow '{relative_file_path}', but failed to get library version from metadata for library '{library_used}': {err}."
-                        logger.error(details)
-                        return SaveWorkflowResultFailure()
-                    library_and_version = LibraryNameAndVersion(
-                        library_name=library_used, library_version=library_version
-                    )
-                    node_libraries_used.add(library_and_version)
-                # Now all nodes AND parameters have been created
-                file.write(connection_request_workflows)
-
-                # Now that we have the info about what's actually being used, save out the workflow metadata.
-                workflow_metadata = WorkflowMetadata(
-                    name=str(file_name),
-                    schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
-                    engine_version_created_with=engine_version,
-                    node_libraries_referenced=list(node_libraries_used),
-                )
-
-                try:
-                    toml_doc = tomlkit.document()
-                    toml_doc.add("dependencies", tomlkit.item([]))
-                    griptape_tool_table = tomlkit.table()
-                    metadata_dict = workflow_metadata.model_dump()
-                    for key, value in metadata_dict.items():
-                        # Strip out the Nones since TOML doesn't like those.
-                        if value is not None:
-                            griptape_tool_table.add(key=key, value=value)
-                    toml_doc["tool"] = tomlkit.table()
-                    toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
-                except Exception as err:
-                    details = f"Attempted to save workflow '{relative_file_path}', but failed to get metadata into TOML format: {err}."
-                    logger.error(details)
-                    return SaveWorkflowResultFailure()
-
-                # Format the metadata block with comment markers for each line
-                toml_lines = tomlkit.dumps(toml_doc).split("\n")
-                commented_toml_lines = ["# " + line for line in toml_lines]
-
-                # Create the complete metadata block
-                header = f"# /// {WorkflowManager.WORKFLOW_METADATA_HEADER}"
-                metadata_lines = [header]
-                metadata_lines.extend(commented_toml_lines)
-                metadata_lines.append("# ///")
-                metadata_lines.append("\n\n")
-                metadata_block = "\n".join(metadata_lines)
-
-                file.write(metadata_block)
-        except Exception as e:
-            details = f"Failed to save workflow, exception: {e}"
+            toml_doc = tomlkit.document()
+            toml_doc.add("dependencies", tomlkit.item([]))
+            griptape_tool_table = tomlkit.table()
+            metadata_dict = workflow_metadata.model_dump()
+            for key, value in metadata_dict.items():
+                # Strip out the Nones since TOML doesn't like those.
+                if value is not None:
+                    griptape_tool_table.add(key=key, value=value)
+            toml_doc["tool"] = tomlkit.table()
+            toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
+        except Exception as err:
+            details = f"Attempted to save workflow '{relative_file_path}', but failed to get metadata into TOML format: {err}."
             logger.error(details)
             return SaveWorkflowResultFailure()
+
+        # Format the metadata block with comment markers for each line
+        toml_lines = tomlkit.dumps(toml_doc).split("\n")
+        commented_toml_lines = ["# " + line for line in toml_lines]
+
+        # Create the complete metadata block
+        header = f"# /// {WorkflowManager.WORKFLOW_METADATA_HEADER}"
+        metadata_lines = [header]
+        metadata_lines.extend(commented_toml_lines)
+        metadata_lines.append("# ///")
+        metadata_lines.append("\n\n")
+        metadata_block = "\n".join(metadata_lines)
+
+        # Generate the code string
+        code_parts = []
+
+        # Imports section
+        imports = [
+            "from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest",
+            "from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest",
+            "from griptape_nodes.retained_mode.events.parameter_events import AlterParameterDetailsRequest",
+            "from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest",
+            "from griptape_nodes.retained_mode.events.workflow_events import SerializedFlowCommands, SerializedNodeCommands",
+            "from griptape_nodes.retained_mode.griptape_nodes import ContextManager",
+            "from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes as api",
+        ]
+        code_parts.append("\n".join(imports))
+        code_parts.append("")  # Add a blank line after imports
+
+        # Generate the flow and all its components (start with flow_index=0)
+        flow_code = _generate_flow_code(serialized_flow, indent_level=0, flow_index=0)
+        code_parts.append(flow_code)
+
+        # Join all parts with newlines and write to file
+        final_code = "\n".join(code_parts)
+        with file_path.open("w") as file:
+            file.write(metadata_block)
+            file.write(final_code)
+
+        # try:
+        #     with file_path.open("w") as file:
+        #         # Now the critical imports.
+        #         import_statements = [
+        #             "from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest",
+        #             "from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest",
+        #             "from griptape_nodes.retained_mode.events.parameter_events import AlterParameterDetailsRequest",
+        #             "from griptape_nodes.retained_mode.events.workflow_events import SerializedFlowCommands, SerializedNodeCommands",
+        #             "from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes as api",
+        #         ]
+        #         for import_statement in import_statements:
+        #             file.write(f"{import_statement}\n")
+
+        #         # Create the flow.
+        #         create_flow_request = generate_griptape_command(serialized_flow.create_flow_command)
+        #         # Prepend with the result, since we'll need that.
+        #         create_flow = f"create_flow_result = {create_flow_request}"
+        #         file.write(create_flow + "\n")
+
+        #         # Set as current context
+        #         # TODO
+        #         for node_command in serialized_flow.serialized_node_commands:
+        #             create_node = generate_griptape_command(node_command.create_node_command)
+        #             file.write(create_node + "\n")
+        #             for param_command in node_command.parameter_commands:
+        #                 param_request = generate_griptape_command(param_command)
+        #                 file.write(param_request + "\n")
+
+        #         file.write("\n# *************END STEP BY STEP APPROACH***************\n")
+        #         # Generate the construction code
+        #         class_hierarchy = {}
+        #         _build_class_hierarchy(serialized_flow, class_hierarchy)
+        #         construction_code = _generate_object_construction(
+        #             serialized_flow, indent_level=0, class_hierarchy=class_hierarchy
+        #         )
+        #         file.write(construction_code)
+
+        #         file.write("\n# *************END SERIALIZED AS OBJECT APPROACH***************\n")
+        #         # Write all flows to a file, get back the strings for connections
+        #         connection_request_workflows = handle_flow_saving(file, obj_manager, created_flows)
+        #         # Now all of the flows have been created.
+        #         for node in obj_manager.get_filtered_subset(type=BaseNode).values():
+        #             flow_name = node_manager.get_node_parent_flow_by_name(node.name)
+        #             creation_request = CreateNodeRequest(
+        #                 node_type=node.__class__.__name__,
+        #                 node_name=node.name,
+        #                 metadata=node.metadata,
+        #                 override_parent_flow_name=flow_name,
+        #             )
+        #             code_string = f"GriptapeNodes().handle_request({creation_request})"
+        #             file.write(code_string + "\n")
+        #             # Save the parameters
+        #             try:
+        #                 handle_parameter_creation_saving(file, node)
+        #             except Exception as e:
+        #                 details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
+        #                 logger.error(details)
+        #                 return SaveWorkflowResultFailure()
+
+        #             # See if this node uses a library we need to know about.
+        #             library_used = node.metadata["library"]
+        #             # Get the library metadata so we can get the version.
+        #             library_metadata_request = GetLibraryMetadataRequest(library=library_used)
+        #             library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
+        #                 library_metadata_request
+        #             )
+        #             if not library_metadata_result.succeeded():
+        #                 details = f"Attempted to save workflow '{relative_file_path}', but failed to get library metadata for library '{library_used}'."
+        #                 logger.error(details)
+        #                 return SaveWorkflowResultFailure()
+        #             try:
+        #                 library_metadata_success = cast("GetLibraryMetadataResultSuccess", library_metadata_result)
+        #                 library_version = library_metadata_success.metadata["library_version"]
+        #             except Exception as err:
+        #                 details = f"Attempted to save workflow '{relative_file_path}', but failed to get library version from metadata for library '{library_used}': {err}."
+        #                 logger.error(details)
+        #                 return SaveWorkflowResultFailure()
+        #             library_and_version = LibraryNameAndVersion(
+        #                 library_name=library_used, library_version=library_version
+        #             )
+        #             node_libraries_used.add(library_and_version)
+        #         # Now all nodes AND parameters have been created
+        #         file.write(connection_request_workflows)
+
+        #         # Now that we have the info about what's actually being used, save out the workflow metadata.
+        #         workflow_metadata = WorkflowMetadata(
+        #             name=str(file_name),
+        #             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+        #             engine_version_created_with=engine_version,
+        #             node_libraries_referenced=list(node_libraries_used),
+        #         )
+
+        #         try:
+        #             toml_doc = tomlkit.document()
+        #             toml_doc.add("dependencies", tomlkit.item([]))
+        #             griptape_tool_table = tomlkit.table()
+        #             metadata_dict = workflow_metadata.model_dump()
+        #             for key, value in metadata_dict.items():
+        #                 # Strip out the Nones since TOML doesn't like those.
+        #                 if value is not None:
+        #                     griptape_tool_table.add(key=key, value=value)
+        #             toml_doc["tool"] = tomlkit.table()
+        #             toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
+        #         except Exception as err:
+        #             details = f"Attempted to save workflow '{relative_file_path}', but failed to get metadata into TOML format: {err}."
+        #             logger.error(details)
+        #             return SaveWorkflowResultFailure()
+
+        #         # Format the metadata block with comment markers for each line
+        #         toml_lines = tomlkit.dumps(toml_doc).split("\n")
+        #         commented_toml_lines = ["# " + line for line in toml_lines]
+
+        #         # Create the complete metadata block
+        #         header = f"# /// {WorkflowManager.WORKFLOW_METADATA_HEADER}"
+        #         metadata_lines = [header]
+        #         metadata_lines.extend(commented_toml_lines)
+        #         metadata_lines.append("# ///")
+        #         metadata_lines.append("\n\n")
+        #         metadata_block = "\n".join(metadata_lines)
+
+        #         file.write(metadata_block)
+        # except Exception as e:
+        #     details = f"Failed to save workflow, exception: {e}"
+        #     logger.error(details)
+        #     return SaveWorkflowResultFailure()
 
         # save the created workflow to a personal json file
         registered_workflows = WorkflowRegistry.list_workflows()
@@ -3638,6 +3727,224 @@ class WorkflowManager:
             config_manager.save_user_workflow_json(relative_file_path)
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
         return SaveWorkflowResultSuccess(file_path=str(file_path))
+
+
+def _generate_flow_code(serialized_flow: SerializedFlowCommands, indent_level: int = 0, flow_index: int = 0) -> str:
+    """
+    Generate code for a flow and all its components.
+
+    Args:
+        serialized_flow: The serialized flow commands
+        indent_level: The current indentation level
+        flow_index: The index of this flow (for generating unique variable names)
+
+    Returns:
+        str: The generated code as a string
+    """
+    lines = []
+    indent = "    " * indent_level
+
+    # Create a unique flow result variable name
+    flow_result_var = f"flow_{flow_index}_result"
+    flow_name_var = f"flow_{flow_index}_name"
+
+    # Create the flow
+    lines.append(f"{indent}# Create a new flow")
+    create_flow_code = generate_griptape_command(serialized_flow.create_flow_command)
+    lines.append(f"{indent}{flow_result_var} = {create_flow_code}")
+    lines.append(f"{indent}{flow_name_var} = {flow_result_var}.flow_name")
+
+    # Flow context
+    lines.append(f"{indent}# Set the current context to this flow")
+    lines.append(f"{indent}with api.ContextManager().flow({flow_name_var}):")
+
+    # First, count occurrences of each node type to generate proper variable names
+    node_type_counts = {}
+    node_var_names = {}
+
+    for i, node_command in enumerate(serialized_flow.serialized_node_commands):
+        node_type = node_command.create_node_command.node_type
+        clean_type = "".join(c.lower() for c in node_type if c.isalnum())
+
+        # Get the current count for this type and increment it
+        type_count = node_type_counts.get(clean_type, 0)
+        node_type_counts[clean_type] = type_count + 1
+
+        # Generate variable name using type-specific counter
+        node_var_names[i] = f"{clean_type}_{type_count}_name"
+
+    # Process nodes
+    node_lines = _generate_nodes_code(serialized_flow.serialized_node_commands, indent_level + 1, node_var_names)
+    lines.append(node_lines)
+
+    # Process connections
+    if serialized_flow.serialized_connections:
+        connection_lines = _generate_connections_code(
+            serialized_flow.serialized_connections, node_var_names, indent_level + 1
+        )
+        lines.append(connection_lines)
+
+    # Process sub-flows
+    if serialized_flow.sub_flows_commands:
+        sub_flow_indent = "    " * (indent_level + 1)
+        lines.append(f"{sub_flow_indent}# Process sub-flows")
+
+        for sub_flow_index, sub_flow in enumerate(serialized_flow.sub_flows_commands):
+            # Pass a new flow index for each sub-flow
+            next_flow_index = flow_index * 100 + sub_flow_index + 1  # Create a unique index
+            sub_flow_code = _generate_flow_code(sub_flow, indent_level + 1, next_flow_index)
+            lines.append(sub_flow_code)
+
+    return "\n".join(lines)
+
+
+def _replace_node_name_in_command(command, node_var_name):
+    """
+    Create a modified version of the command with the node_name updated.
+
+    Args:
+        command: The original command
+        node_var_name: The node variable name to use
+
+    Returns:
+        A string representation of the command with the node_name field updated
+    """
+    # We need to generate the command code first
+    command_code = generate_command_code(command)
+
+    # Replace any node_name="specific_name" with node_name=variable_name
+    # This regex looks for node_name="any_string" and replaces it with node_name=variable_name
+    import re
+
+    modified_code = re.sub(r'node_name="[^"]*"', f"node_name={node_var_name}", command_code)
+
+    return modified_code
+
+
+def _generate_nodes_code(
+    node_commands: list[SerializedNodeCommands], indent_level: int, node_var_names: dict[int, str]
+) -> str:
+    """
+    Generate code for a list of node commands.
+
+    Args:
+        node_commands: The list of node commands
+        indent_level: The current indentation level
+        node_var_names: Dictionary mapping node indices to variable names
+
+    Returns:
+        str: The generated code as a string
+    """
+    lines = []
+    indent = "    " * indent_level
+
+    for i, node_command in enumerate(node_commands):
+        # Get the node variable name
+        node_var_name = node_var_names[i]
+        node_type = node_command.create_node_command.node_type
+
+        # Create node
+        lines.append(f"{indent}# Create {node_type} node")
+        create_node_code = generate_griptape_command(node_command.create_node_command)
+        lines.append(f"{indent}{node_var_name}_result = {create_node_code}")
+        # Store node name in a variable for later use in connections
+        lines.append(f"{indent}{node_var_name} = {node_var_name}_result.node_name")
+
+        # If there are parameter commands, create a node context
+        if node_command.parameter_commands:
+            lines.append(f"{indent}# Set the current context to this node")
+            lines.append(f"{indent}with api.ContextManager().node({node_var_name}):")
+
+            param_indent = "    " * (indent_level + 1)
+            for param_command in node_command.parameter_commands:
+                lines.append(f"{param_indent}# Configure node parameter")
+
+                # Instead of using the generate_griptape_command function directly,
+                # first get the modified command code with the node_name replaced
+                modified_command_code = _replace_node_name_in_command(param_command, node_var_name)
+                param_request = f"api.handle_request({modified_command_code})"
+                lines.append(f"{param_indent}{param_request}")
+
+        # Add blank line between nodes
+        if i < len(node_commands) - 1:
+            lines.append("")
+
+    return "\n".join(lines)
+
+
+def _generate_connections_code(
+    connections: list[SerializedFlowCommands.IndexedConnectionSerialization],
+    node_var_names: dict[int, str],
+    indent_level: int,
+) -> str:
+    """
+    Generate code for connections between nodes.
+
+    Args:
+        connections: The list of connections
+        node_var_names: Dictionary mapping node indices to variable names
+        indent_level: The current indentation level
+
+    Returns:
+        str: The generated code as a string
+    """
+    lines = []
+    indent = "    " * indent_level
+
+    if connections:
+        lines.append("")  # Add blank line before connections
+        lines.append(f"{indent}# Create connections between nodes")
+
+    for connection in connections:
+        source_idx = connection.source_node_index
+        target_idx = connection.target_node_index
+
+        # Get the node variable names directly from the dictionary
+        source_var_name = node_var_names[source_idx]
+        target_var_name = node_var_names[target_idx]
+
+        lines.append(f"{indent}# Connect {source_var_name} to {target_var_name}")
+
+        # Create connection using CreateConnectionRequest with variable references
+        connection_payload = (
+            f"CreateConnectionRequest(\n"
+            f"{indent}    source_node_name={source_var_name},\n"
+            f'{indent}    source_parameter_name="{connection.source_parameter_name}",\n'
+            f"{indent}    target_node_name={target_var_name},\n"
+            f'{indent}    target_parameter_name="{connection.target_parameter_name}"\n'
+            f"{indent})"
+        )
+
+        lines.append(f"{indent}api.handle_request({connection_payload})")
+
+    return "\n".join(lines)
+
+
+def serialize_value(value: Any) -> str:
+    """Serialize a Python value to its string representation for code generation."""
+    if value is None:
+        return "None"
+    if isinstance(value, str):
+        # Use double quotes for strings and escape double quotes inside strings
+        escaped = value.replace('"', '\\"')
+        return f'"{escaped}"'
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, dict):
+        items = [f"{serialize_value(k)}: {serialize_value(v)}" for k, v in value.items()]
+        return "{" + ", ".join(items) + "}"
+    if isinstance(value, list):
+        items = [serialize_value(item) for item in value]
+        return "[" + ", ".join(items) + "]"
+    # For complex objects, try to use their string representation
+    # But be careful - their __repr__ might use single quotes
+    repr_value = repr(value)
+    # Replace any single-quoted strings with double-quoted ones
+    # This regex finds strings like 'text' and replaces them with "text"
+    import re
+
+    double_quoted_repr = re.sub(r"'([^']*)'", r'"\1"', repr_value)
+    return double_quoted_repr
 
 
 def _build_class_hierarchy(obj, hierarchy: dict[str, str]):
@@ -3741,26 +4048,6 @@ def _generate_object_construction(obj, indent_level=0, class_hierarchy=None):
     else:
         # Fall back to repr for other types
         return repr(obj)
-
-
-def serialize_value(value: Any) -> str:
-    """Serialize a Python value to its string representation for code generation."""
-    if value is None:
-        return "None"
-    if isinstance(value, str):
-        # Escape single quotes and use repr to handle special characters
-        return repr(value)
-    if isinstance(value, (int, float, bool)):
-        return str(value)
-    if isinstance(value, dict):
-        items = [f"{serialize_value(k)}: {serialize_value(v)}" for k, v in value.items()]
-        return "{" + ", ".join(items) + "}"
-    if isinstance(value, list):
-        items = [serialize_value(item) for item in value]
-        return "[" + ", ".join(items) + "]"
-    # For complex objects, try to use their string representation
-    # This might not work for all types of objects
-    return repr(value)
 
 
 def generate_command_code(command: Any) -> str:

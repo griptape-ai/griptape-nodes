@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -7,7 +8,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayloadSuccess,
 )
 from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest
-from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileRequest
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -181,6 +181,7 @@ class LoadWorkflowMetadataResultFailure(ResultPayloadFailure):
 class SerializedNodeCommands:
     create_node_command: CreateNodeRequest
     parameter_commands: list[RequestPayload]
+    node_library_details: LibraryNameAndVersion
 
 
 @dataclass
@@ -193,6 +194,9 @@ class SerializedFlowCommands:
         source_parameter_name: str
         target_node_index: int
         target_parameter_name: str
+
+    # Which node libraries are in use by this flow (includes child flows)
+    node_libraries_used: set[LibraryNameAndVersion]
 
     # The command to create the flow that contains all of this.
     create_flow_command: CreateFlowRequest
@@ -277,16 +281,3 @@ class DeserializeFlowCommandsResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class DeserializeFlowCommandsResultFailure(ResultPayloadFailure):
     pass
-
-
-@dataclass
-@PayloadRegistry.register
-class SerializeWorkflowCommandsRequest(RequestPayload):
-    workflow_name: str
-
-
-@dataclass
-@PayloadRegistry.register
-class SerializeWorkflowCommandsResultSuccess(ResultPayloadSuccess):
-    library_requests: list[RegisterLibraryFromFileRequest]
-    flow_request: SerializeFlowCommandsRequest
