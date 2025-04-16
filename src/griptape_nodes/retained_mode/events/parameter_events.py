@@ -90,6 +90,7 @@ class SetParameterValueRequest(RequestPayload):
     value: Any
     data_type: str | None = None
     initial_setup: bool = False
+    is_output: bool = False
 
 
 @dataclass

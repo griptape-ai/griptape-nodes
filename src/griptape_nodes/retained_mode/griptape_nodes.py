@@ -2099,12 +2099,24 @@ class NodeManager:
         element_details = element.to_dict()
         # We need to get parameter values from here
         param_to_value = {}
+        self._set_param_to_value(node, element, param_to_value)
+        if param_to_value:
+            element_details["element_id_to_value"] = param_to_value
+        details = f"Successfully got element details for Node '{request.node_name}'."
+        logger.debug(details)
+        result = GetNodeElementDetailsResultSuccess(element_details=element_details)
+        return result
+
+    def _set_param_to_value(self, node: BaseNode, element: BaseNodeElement, param_to_value: dict) -> None:
         for parameter in element.find_elements_by_type(Parameter):
             # How to do for grouping?
-            value = node.get_parameter_value(parameter.name)
-            if value:
+            if parameter.name in node.parameter_output_values:
+                value = node.parameter_output_values[parameter.name]
+            else:
+                value = node.get_parameter_value(parameter.name)
+            if value is not None:
                 element_id = parameter.element_id
-                if value.__class__.__module__ != "__builtin__":
+                if value.__class__.__module__ != "builtins":
                     if hasattr(value, "to_dict"):
                         # If the object has a __dict__, use that
                         param_to_value[element_id] = value.to_dict()
@@ -2112,12 +2124,6 @@ class NodeManager:
                         param_to_value[element_id] = value.__dict__
                 else:
                     param_to_value[element_id] = value
-        if param_to_value:
-            element_details["element_id_to_value"] = param_to_value
-        details = f"Successfully got element details for Node '{request.node_name}'."
-        logger.debug(details)
-        result = GetNodeElementDetailsResultSuccess(element_details=element_details)
-        return result
 
     def modify_alterable_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
         if request.tooltip is not None:
@@ -2254,7 +2260,7 @@ class NodeManager:
         return result
 
     # added ignoring C901 since this method is overly long because of granular error checking, not actual complexity.
-    def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
+    def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -2284,7 +2290,6 @@ class NodeManager:
             result = SetParameterValueResultFailure()
             return result
 
-        object_created = request.value
         # Well this seems kind of stupid
         object_type = request.data_type if request.data_type else parameter.type
         # Is this value kosher for the types allowed?
@@ -2315,21 +2320,13 @@ class NodeManager:
 
         # Values are actually stored on the NODE.
         try:
-            modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
-            finalized_value = node.get_parameter_value(request.parameter_name)
+            finalized_value = self._set_and_pass_through_values(request, node)
         except Exception as err:
             details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because Exception: {err}"
             logger.error(details)
             return SetParameterValueResultFailure()
-
-        if modified_parameters:
-            for modified_parameter_name in modified_parameters:
-                modified_request = GetParameterDetailsRequest(
-                    parameter_name=modified_parameter_name, node_name=node.name
-                )
-                GriptapeNodes.handle_request(modified_request)
         # Mark node as unresolved
-        if request.initial_setup is False:
+        if request.initial_setup is False and not request.is_output:
             node.state = NodeResolutionState.UNRESOLVED
             # Get the flow
             # Pass the value through!
@@ -2351,6 +2348,22 @@ class NodeManager:
 
         result = SetParameterValueResultSuccess(finalized_value=finalized_value, data_type=parameter.type)
         return result
+
+    def _set_and_pass_through_values(self, request: SetParameterValueRequest, node: BaseNode) -> Any:
+        object_created = request.value
+        if request.is_output:
+            # set it to output values
+            node.parameter_output_values[request.parameter_name] = object_created
+            return object_created
+        modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
+        finalized_value = node.get_parameter_value(request.parameter_name)
+        if modified_parameters:
+            for modified_parameter_name in modified_parameters:
+                modified_request = GetParameterDetailsRequest(
+                    parameter_name=modified_parameter_name, node_name=node.name
+                )
+                GriptapeNodes.handle_request(modified_request)
+        return finalized_value
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     # For PLR0911 (too many return statements): don't want to do a ton of nested chains of success,
@@ -3176,11 +3189,13 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_c
         - The function will reuse already created values to avoid duplication
     """
     value = None
+    is_output = False
     if parameter.name in node.parameter_values:
         value = node.get_parameter_value(parameter.name)
     # Output values are more important
     if parameter.name in node.parameter_output_values:
         value = node.parameter_output_values[parameter.name]
+        is_output = True
     if value is not None:
         try:
             hash(value)
@@ -3190,7 +3205,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_c
         if value_id in values_created:
             var_name = values_created[value_id]
             # We've already created this object. we're all good.
-            return f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True))"
+            return f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True, is_output={is_output}))"
         # Set it up as a object in the code
         imports = []
         var_name = f"{node.name}_{parameter.name}_value"
@@ -3201,7 +3216,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_c
             # Add the request handling code
             final_code = (
                 reconstruction_code
-                + f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True))"
+                + f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True, is_output={is_output}))"
             )
             # Combine imports and code
             import_statements = ""
