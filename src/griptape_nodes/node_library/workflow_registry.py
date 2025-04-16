@@ -6,7 +6,9 @@ from typing import ClassVar
 from griptape.mixins.singleton_mixin import SingletonMixin
 from pydantic import BaseModel
 
-from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+from griptape_nodes.node_library.library_registry import (
+    LibraryNameAndVersion,  # noqa: TC001 (if moved into a TYPE_CHECKING block, Pydantic complains)
+)
 
 
 class WorkflowMetadata(BaseModel):

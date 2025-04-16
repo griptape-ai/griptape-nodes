@@ -11,7 +11,7 @@ from dataclasses import fields, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from re import Pattern
-from typing import Any, ClassVar, TextIO, TypeVar, cast
+from typing import Any, ClassVar, TypeVar, cast
 
 import tomlkit
 from dotenv import load_dotenv
@@ -3381,7 +3381,7 @@ class WorkflowManager:
                     parameter_commands.append(add_param_request)
                 else:
                     # Not user defined. Get any deltas from a canonical one.
-                    diff = manage_alter_details(parameter, reference_node)
+                    diff = WorkflowManager._manage_alter_details(parameter, reference_node)
                     relevant = False
                     for key in diff:
                         if key in AlterParameterDetailsRequest.relevant_parameters():
@@ -3395,7 +3395,7 @@ class WorkflowManager:
                 if parameter.name in node.parameter_values and parameter.name not in node.parameter_output_values:
                     try:
                         # SetParameterValueRequest event
-                        set_param_value_request = handle_parameter_value_saving(parameter, node)
+                        set_param_value_request = WorkflowManager._handle_parameter_value_saving(parameter, node)
                         parameter_commands.append(set_param_value_request)
                     except Exception as e:
                         details = f"Failed to serialize Node because failed to save parameter creation for node '{node.name}'. Error: {e}"
@@ -3485,7 +3485,7 @@ class WorkflowManager:
 
         return LoadWorkflowMetadataResultSuccess(metadata=workflow_metadata)
 
-    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (need lots of branches to cover negative cases)
+    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: PLR0915 (need lots of branches to cover negative cases)
         config_manager = GriptapeNodes.ConfigManager()
 
         # open my file
@@ -3496,7 +3496,6 @@ class WorkflowManager:
             file_name = datetime.now(tz=local_tz).strftime("%d.%m_%H.%M")
         relative_file_path = f"{file_name}.py"
         file_path = config_manager.workspace_path.joinpath(relative_file_path)
-        node_libraries_used = set()
 
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -3585,7 +3584,7 @@ class WorkflowManager:
         code_parts.append("")  # Add a blank line after imports
 
         # Generate the flow and all its components (start with flow_index=0)
-        flow_code = _generate_flow_code(serialized_flow, indent_level=0, flow_index=0)
+        flow_code = WorkflowManager._generate_flow_code(serialized_flow, indent_level=0, flow_index=0)
         code_parts.append(flow_code)
 
         # Join all parts with newlines and write to file
@@ -3594,132 +3593,6 @@ class WorkflowManager:
             file.write(metadata_block)
             file.write(final_code)
 
-        # try:
-        #     with file_path.open("w") as file:
-        #         # Now the critical imports.
-        #         import_statements = [
-        #             "from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest",
-        #             "from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest",
-        #             "from griptape_nodes.retained_mode.events.parameter_events import AlterParameterDetailsRequest",
-        #             "from griptape_nodes.retained_mode.events.workflow_events import SerializedFlowCommands, SerializedNodeCommands",
-        #             "from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes as api",
-        #         ]
-        #         for import_statement in import_statements:
-        #             file.write(f"{import_statement}\n")
-
-        #         # Create the flow.
-        #         create_flow_request = generate_griptape_command(serialized_flow.create_flow_command)
-        #         # Prepend with the result, since we'll need that.
-        #         create_flow = f"create_flow_result = {create_flow_request}"
-        #         file.write(create_flow + "\n")
-
-        #         # Set as current context
-        #         # TODO
-        #         for node_command in serialized_flow.serialized_node_commands:
-        #             create_node = generate_griptape_command(node_command.create_node_command)
-        #             file.write(create_node + "\n")
-        #             for param_command in node_command.parameter_commands:
-        #                 param_request = generate_griptape_command(param_command)
-        #                 file.write(param_request + "\n")
-
-        #         file.write("\n# *************END STEP BY STEP APPROACH***************\n")
-        #         # Generate the construction code
-        #         class_hierarchy = {}
-        #         _build_class_hierarchy(serialized_flow, class_hierarchy)
-        #         construction_code = _generate_object_construction(
-        #             serialized_flow, indent_level=0, class_hierarchy=class_hierarchy
-        #         )
-        #         file.write(construction_code)
-
-        #         file.write("\n# *************END SERIALIZED AS OBJECT APPROACH***************\n")
-        #         # Write all flows to a file, get back the strings for connections
-        #         connection_request_workflows = handle_flow_saving(file, obj_manager, created_flows)
-        #         # Now all of the flows have been created.
-        #         for node in obj_manager.get_filtered_subset(type=BaseNode).values():
-        #             flow_name = node_manager.get_node_parent_flow_by_name(node.name)
-        #             creation_request = CreateNodeRequest(
-        #                 node_type=node.__class__.__name__,
-        #                 node_name=node.name,
-        #                 metadata=node.metadata,
-        #                 override_parent_flow_name=flow_name,
-        #             )
-        #             code_string = f"GriptapeNodes().handle_request({creation_request})"
-        #             file.write(code_string + "\n")
-        #             # Save the parameters
-        #             try:
-        #                 handle_parameter_creation_saving(file, node)
-        #             except Exception as e:
-        #                 details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
-        #                 logger.error(details)
-        #                 return SaveWorkflowResultFailure()
-
-        #             # See if this node uses a library we need to know about.
-        #             library_used = node.metadata["library"]
-        #             # Get the library metadata so we can get the version.
-        #             library_metadata_request = GetLibraryMetadataRequest(library=library_used)
-        #             library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
-        #                 library_metadata_request
-        #             )
-        #             if not library_metadata_result.succeeded():
-        #                 details = f"Attempted to save workflow '{relative_file_path}', but failed to get library metadata for library '{library_used}'."
-        #                 logger.error(details)
-        #                 return SaveWorkflowResultFailure()
-        #             try:
-        #                 library_metadata_success = cast("GetLibraryMetadataResultSuccess", library_metadata_result)
-        #                 library_version = library_metadata_success.metadata["library_version"]
-        #             except Exception as err:
-        #                 details = f"Attempted to save workflow '{relative_file_path}', but failed to get library version from metadata for library '{library_used}': {err}."
-        #                 logger.error(details)
-        #                 return SaveWorkflowResultFailure()
-        #             library_and_version = LibraryNameAndVersion(
-        #                 library_name=library_used, library_version=library_version
-        #             )
-        #             node_libraries_used.add(library_and_version)
-        #         # Now all nodes AND parameters have been created
-        #         file.write(connection_request_workflows)
-
-        #         # Now that we have the info about what's actually being used, save out the workflow metadata.
-        #         workflow_metadata = WorkflowMetadata(
-        #             name=str(file_name),
-        #             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
-        #             engine_version_created_with=engine_version,
-        #             node_libraries_referenced=list(node_libraries_used),
-        #         )
-
-        #         try:
-        #             toml_doc = tomlkit.document()
-        #             toml_doc.add("dependencies", tomlkit.item([]))
-        #             griptape_tool_table = tomlkit.table()
-        #             metadata_dict = workflow_metadata.model_dump()
-        #             for key, value in metadata_dict.items():
-        #                 # Strip out the Nones since TOML doesn't like those.
-        #                 if value is not None:
-        #                     griptape_tool_table.add(key=key, value=value)
-        #             toml_doc["tool"] = tomlkit.table()
-        #             toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
-        #         except Exception as err:
-        #             details = f"Attempted to save workflow '{relative_file_path}', but failed to get metadata into TOML format: {err}."
-        #             logger.error(details)
-        #             return SaveWorkflowResultFailure()
-
-        #         # Format the metadata block with comment markers for each line
-        #         toml_lines = tomlkit.dumps(toml_doc).split("\n")
-        #         commented_toml_lines = ["# " + line for line in toml_lines]
-
-        #         # Create the complete metadata block
-        #         header = f"# /// {WorkflowManager.WORKFLOW_METADATA_HEADER}"
-        #         metadata_lines = [header]
-        #         metadata_lines.extend(commented_toml_lines)
-        #         metadata_lines.append("# ///")
-        #         metadata_lines.append("\n\n")
-        #         metadata_block = "\n".join(metadata_lines)
-
-        #         file.write(metadata_block)
-        # except Exception as e:
-        #     details = f"Failed to save workflow, exception: {e}"
-        #     logger.error(details)
-        #     return SaveWorkflowResultFailure()
-
         # save the created workflow to a personal json file
         registered_workflows = WorkflowRegistry.list_workflows()
         if file_name not in registered_workflows:
@@ -3727,460 +3600,353 @@ class WorkflowManager:
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
         return SaveWorkflowResultSuccess(file_path=str(file_path))
 
+    @staticmethod
+    def _generate_flow_code(serialized_flow: SerializedFlowCommands, indent_level: int = 0, flow_index: int = 0) -> str:
+        """Generate code for a flow and all its components.
 
-def _generate_flow_code(serialized_flow: SerializedFlowCommands, indent_level: int = 0, flow_index: int = 0) -> str:
-    """
-    Generate code for a flow and all its components.
+        Args:
+            serialized_flow: The serialized flow commands
+            indent_level: The current indentation level
+            flow_index: The index of this flow (for generating unique variable names)
 
-    Args:
-        serialized_flow: The serialized flow commands
-        indent_level: The current indentation level
-        flow_index: The index of this flow (for generating unique variable names)
+        Returns:
+            str: The generated code as a string
+        """
+        lines = []
+        indent = "    " * indent_level
 
-    Returns:
-        str: The generated code as a string
-    """
-    lines = []
-    indent = "    " * indent_level
+        # Create a unique flow result variable name
+        flow_result_var = f"flow_{flow_index}_result"
+        flow_name_var = f"flow_{flow_index}_name"
 
-    # Create a unique flow result variable name
-    flow_result_var = f"flow_{flow_index}_result"
-    flow_name_var = f"flow_{flow_index}_name"
+        # Create the flow
+        lines.append(f"{indent}# Create a new flow")
+        create_flow_code = WorkflowManager._generate_griptape_command(serialized_flow.create_flow_command)
+        lines.append(f"{indent}{flow_result_var} = {create_flow_code}")
+        lines.append(f"{indent}{flow_name_var} = {flow_result_var}.flow_name")
 
-    # Create the flow
-    lines.append(f"{indent}# Create a new flow")
-    create_flow_code = generate_griptape_command(serialized_flow.create_flow_command)
-    lines.append(f"{indent}{flow_result_var} = {create_flow_code}")
-    lines.append(f"{indent}{flow_name_var} = {flow_result_var}.flow_name")
+        # Flow context
+        lines.append(f"{indent}# Set the current context to this flow")
+        lines.append(f"{indent}with api.ContextManager().flow({flow_name_var}):")
 
-    # Flow context
-    lines.append(f"{indent}# Set the current context to this flow")
-    lines.append(f"{indent}with api.ContextManager().flow({flow_name_var}):")
+        # First, count occurrences of each node type to generate proper variable names
+        node_type_counts = {}
+        node_var_names = {}
 
-    # First, count occurrences of each node type to generate proper variable names
-    node_type_counts = {}
-    node_var_names = {}
+        for i, node_command in enumerate(serialized_flow.serialized_node_commands):
+            node_type = node_command.create_node_command.node_type
+            clean_type = "".join(c.lower() for c in node_type if c.isalnum())
 
-    for i, node_command in enumerate(serialized_flow.serialized_node_commands):
-        node_type = node_command.create_node_command.node_type
-        clean_type = "".join(c.lower() for c in node_type if c.isalnum())
+            # Get the current count for this type and increment it
+            type_count = node_type_counts.get(clean_type, 0)
+            node_type_counts[clean_type] = type_count + 1
 
-        # Get the current count for this type and increment it
-        type_count = node_type_counts.get(clean_type, 0)
-        node_type_counts[clean_type] = type_count + 1
+            # Generate variable name using type-specific counter
+            node_var_names[i] = f"{clean_type}_{type_count}_name"
 
-        # Generate variable name using type-specific counter
-        node_var_names[i] = f"{clean_type}_{type_count}_name"
-
-    # Process nodes
-    node_lines = _generate_nodes_code(serialized_flow.serialized_node_commands, indent_level + 1, node_var_names)
-    lines.append(node_lines)
-
-    # Process connections
-    if serialized_flow.serialized_connections:
-        connection_lines = _generate_connections_code(
-            serialized_flow.serialized_connections, node_var_names, indent_level + 1
+        # Process nodes
+        node_lines = WorkflowManager._generate_nodes_code(
+            serialized_flow.serialized_node_commands, indent_level + 1, node_var_names
         )
-        lines.append(connection_lines)
+        lines.append(node_lines)
 
-    # Process sub-flows
-    if serialized_flow.sub_flows_commands:
-        sub_flow_indent = "    " * (indent_level + 1)
-        lines.append(f"{sub_flow_indent}# Process sub-flows")
+        # Process connections
+        if serialized_flow.serialized_connections:
+            connection_lines = WorkflowManager._generate_connections_code(
+                serialized_flow.serialized_connections, node_var_names, indent_level + 1
+            )
+            lines.append(connection_lines)
 
-        for sub_flow_index, sub_flow in enumerate(serialized_flow.sub_flows_commands):
-            # Pass a new flow index for each sub-flow
-            next_flow_index = flow_index * 100 + sub_flow_index + 1  # Create a unique index
-            sub_flow_code = _generate_flow_code(sub_flow, indent_level + 1, next_flow_index)
-            lines.append(sub_flow_code)
+        # Process sub-flows
+        if serialized_flow.sub_flows_commands:
+            sub_flow_indent = "    " * (indent_level + 1)
+            lines.append(f"{sub_flow_indent}# Process sub-flows")
 
-    return "\n".join(lines)
+            for sub_flow_index, sub_flow in enumerate(serialized_flow.sub_flows_commands):
+                # Pass a new flow index for each sub-flow
+                next_flow_index = flow_index * 100 + sub_flow_index + 1  # Create a unique index
+                sub_flow_code = WorkflowManager._generate_flow_code(sub_flow, indent_level + 1, next_flow_index)
+                lines.append(sub_flow_code)
 
+        return "\n".join(lines)
 
-def _replace_node_name_in_command(command, node_var_name):
-    """
-    Create a modified version of the command with the node_name updated.
+    @staticmethod
+    def _replace_node_name_in_command(command: RequestPayload, node_var_name: str) -> str:
+        """Create a modified version of the command with the node_name updated.
 
-    Args:
-        command: The original command
-        node_var_name: The node variable name to use
+        Args:
+            command: The original command
+            node_var_name: The node variable name to use
 
-    Returns:
-        A string representation of the command with the node_name field updated
-    """
-    # We need to generate the command code first
-    command_code = generate_command_code(command)
+        Returns:
+            A string representation of the command with the node_name field updated
+        """
+        # We need to generate the command code first
+        command_code = WorkflowManager._generate_command_code(command)
 
-    # Replace any node_name="specific_name" with node_name=variable_name
-    # This regex looks for node_name="any_string" and replaces it with node_name=variable_name
-    import re
+        # Replace any node_name="specific_name" with node_name=variable_name
+        # This regex looks for node_name="any_string" and replaces it with node_name=variable_name
+        import re
 
-    modified_code = re.sub(r'node_name="[^"]*"', f"node_name={node_var_name}", command_code)
+        modified_code = re.sub(r'node_name="[^"]*"', f"node_name={node_var_name}", command_code)
 
-    return modified_code
+        return modified_code
 
+    @staticmethod
+    def _generate_nodes_code(
+        node_commands: list[SerializedNodeCommands], indent_level: int, node_var_names: dict[int, str]
+    ) -> str:
+        """Generate code for a list of node commands.
 
-def _generate_nodes_code(
-    node_commands: list[SerializedNodeCommands], indent_level: int, node_var_names: dict[int, str]
-) -> str:
-    """
-    Generate code for a list of node commands.
+        Args:
+            node_commands: The list of node commands
+            indent_level: The current indentation level
+            node_var_names: Dictionary mapping node indices to variable names
 
-    Args:
-        node_commands: The list of node commands
-        indent_level: The current indentation level
-        node_var_names: Dictionary mapping node indices to variable names
+        Returns:
+            str: The generated code as a string
+        """
+        lines = []
+        indent = "    " * indent_level
 
-    Returns:
-        str: The generated code as a string
-    """
-    lines = []
-    indent = "    " * indent_level
+        for i, node_command in enumerate(node_commands):
+            # Get the node variable name
+            node_var_name = node_var_names[i]
+            node_type = node_command.create_node_command.node_type
 
-    for i, node_command in enumerate(node_commands):
-        # Get the node variable name
-        node_var_name = node_var_names[i]
-        node_type = node_command.create_node_command.node_type
+            # Create node
+            lines.append(f"{indent}# Create {node_type} node")
+            create_node_code = WorkflowManager._generate_griptape_command(node_command.create_node_command)
+            lines.append(f"{indent}{node_var_name}_result = {create_node_code}")
+            # Store node name in a variable for later use in connections
+            lines.append(f"{indent}{node_var_name} = {node_var_name}_result.node_name")
 
-        # Create node
-        lines.append(f"{indent}# Create {node_type} node")
-        create_node_code = generate_griptape_command(node_command.create_node_command)
-        lines.append(f"{indent}{node_var_name}_result = {create_node_code}")
-        # Store node name in a variable for later use in connections
-        lines.append(f"{indent}{node_var_name} = {node_var_name}_result.node_name")
+            # If there are parameter commands, create a node context
+            if node_command.parameter_commands:
+                lines.append(f"{indent}# Set the current context to this node")
+                lines.append(f"{indent}with api.ContextManager().node({node_var_name}):")
 
-        # If there are parameter commands, create a node context
-        if node_command.parameter_commands:
-            lines.append(f"{indent}# Set the current context to this node")
-            lines.append(f"{indent}with api.ContextManager().node({node_var_name}):")
+                param_indent = "    " * (indent_level + 1)
+                for param_command in node_command.parameter_commands:
+                    lines.append(f"{param_indent}# Configure node parameter")
 
-            param_indent = "    " * (indent_level + 1)
-            for param_command in node_command.parameter_commands:
-                lines.append(f"{param_indent}# Configure node parameter")
+                    # Instead of using the generate_griptape_command function directly,
+                    # first get the modified command code with the node_name replaced
+                    modified_command_code = WorkflowManager._replace_node_name_in_command(param_command, node_var_name)
+                    param_request = f"api.handle_request({modified_command_code})"
+                    lines.append(f"{param_indent}{param_request}")
 
-                # Instead of using the generate_griptape_command function directly,
-                # first get the modified command code with the node_name replaced
-                modified_command_code = _replace_node_name_in_command(param_command, node_var_name)
-                param_request = f"api.handle_request({modified_command_code})"
-                lines.append(f"{param_indent}{param_request}")
+            # Add blank line between nodes
+            if i < len(node_commands) - 1:
+                lines.append("")
 
-        # Add blank line between nodes
-        if i < len(node_commands) - 1:
-            lines.append("")
+        return "\n".join(lines)
 
-    return "\n".join(lines)
+    @staticmethod
+    def _generate_connections_code(
+        connections: list[SerializedFlowCommands.IndexedConnectionSerialization],
+        node_var_names: dict[int, str],
+        indent_level: int,
+    ) -> str:
+        """Generate code for connections between nodes.
 
+        Args:
+            connections: The list of connections
+            node_var_names: Dictionary mapping node indices to variable names
+            indent_level: The current indentation level
 
-def _generate_connections_code(
-    connections: list[SerializedFlowCommands.IndexedConnectionSerialization],
-    node_var_names: dict[int, str],
-    indent_level: int,
-) -> str:
-    """
-    Generate code for connections between nodes.
+        Returns:
+            str: The generated code as a string
+        """
+        lines = []
+        indent = "    " * indent_level
 
-    Args:
-        connections: The list of connections
-        node_var_names: Dictionary mapping node indices to variable names
-        indent_level: The current indentation level
+        if connections:
+            lines.append("")  # Add blank line before connections
+            lines.append(f"{indent}# Create connections between nodes")
 
-    Returns:
-        str: The generated code as a string
-    """
-    lines = []
-    indent = "    " * indent_level
+        for connection in connections:
+            source_idx = connection.source_node_index
+            target_idx = connection.target_node_index
 
-    if connections:
-        lines.append("")  # Add blank line before connections
-        lines.append(f"{indent}# Create connections between nodes")
+            # Get the node variable names directly from the dictionary
+            source_var_name = node_var_names[source_idx]
+            target_var_name = node_var_names[target_idx]
 
-    for connection in connections:
-        source_idx = connection.source_node_index
-        target_idx = connection.target_node_index
+            lines.append(f"{indent}# Connect {source_var_name} to {target_var_name}")
 
-        # Get the node variable names directly from the dictionary
-        source_var_name = node_var_names[source_idx]
-        target_var_name = node_var_names[target_idx]
+            # Create connection using CreateConnectionRequest with variable references
+            connection_payload = (
+                f"CreateConnectionRequest(\n"
+                f"{indent}    source_node_name={source_var_name},\n"
+                f'{indent}    source_parameter_name="{connection.source_parameter_name}",\n'
+                f"{indent}    target_node_name={target_var_name},\n"
+                f'{indent}    target_parameter_name="{connection.target_parameter_name}"\n'
+                f"{indent})"
+            )
 
-        lines.append(f"{indent}# Connect {source_var_name} to {target_var_name}")
+            lines.append(f"{indent}api.handle_request({connection_payload})")
 
-        # Create connection using CreateConnectionRequest with variable references
-        connection_payload = (
-            f"CreateConnectionRequest(\n"
-            f"{indent}    source_node_name={source_var_name},\n"
-            f'{indent}    source_parameter_name="{connection.source_parameter_name}",\n'
-            f"{indent}    target_node_name={target_var_name},\n"
-            f'{indent}    target_parameter_name="{connection.target_parameter_name}"\n'
-            f"{indent})"
-        )
+        return "\n".join(lines)
 
-        lines.append(f"{indent}api.handle_request({connection_payload})")
+    @staticmethod
+    def _serialize_value(value: Any) -> str:
+        """Serialize a Python value to its string representation for code generation."""
+        if value is None:
+            return "None"
+        if isinstance(value, str):
+            # Use double quotes for strings and escape double quotes inside strings
+            escaped = value.replace('"', '\\"')
+            return f'"{escaped}"'
+        if isinstance(value, (int, float, bool)):
+            return str(value)
+        if isinstance(value, dict):
+            items = [
+                f"{WorkflowManager._serialize_value(k)}: {WorkflowManager._serialize_value(v)}"
+                for k, v in value.items()
+            ]
+            return "{" + ", ".join(items) + "}"
+        if isinstance(value, list):
+            items = [WorkflowManager._serialize_value(item) for item in value]
+            return "[" + ", ".join(items) + "]"
+        # For complex objects, try to use their string representation
+        # But be careful - their __repr__ might use single quotes
+        repr_value = repr(value)
+        # Replace any single-quoted strings with double-quoted ones
+        # This regex finds strings like 'text' and replaces them with "text"
+        import re
 
-    return "\n".join(lines)
+        double_quoted_repr = re.sub(r"'([^']*)'", r'"\1"', repr_value)
+        return double_quoted_repr
 
+    @staticmethod
+    def _generate_object_construction(obj: object, indent_level=0, class_hierarchy=None) -> str:  # noqa: C901, PLR0911, PLR0912
+        """Generate Python code to construct an object, handling nested structures.
 
-def serialize_value(value: Any) -> str:
-    """Serialize a Python value to its string representation for code generation."""
-    if value is None:
-        return "None"
-    if isinstance(value, str):
-        # Use double quotes for strings and escape double quotes inside strings
-        escaped = value.replace('"', '\\"')
-        return f'"{escaped}"'
-    if isinstance(value, (int, float, bool)):
-        return str(value)
-    if isinstance(value, dict):
-        items = [f"{serialize_value(k)}: {serialize_value(v)}" for k, v in value.items()]
-        return "{" + ", ".join(items) + "}"
-    if isinstance(value, list):
-        items = [serialize_value(item) for item in value]
-        return "[" + ", ".join(items) + "]"
-    # For complex objects, try to use their string representation
-    # But be careful - their __repr__ might use single quotes
-    repr_value = repr(value)
-    # Replace any single-quoted strings with double-quoted ones
-    # This regex finds strings like 'text' and replaces them with "text"
-    import re
+        Args:
+            obj: The object to generate construction code for
+            indent_level: Current indentation level
+            class_hierarchy: Mapping of class names to their qualified names
 
-    double_quoted_repr = re.sub(r"'([^']*)'", r'"\1"', repr_value)
-    return double_quoted_repr
+        Returns:
+            String containing Python code
+        """
+        if class_hierarchy is None:
+            class_hierarchy = {}
 
+        indent = "    " * indent_level
 
-def _build_class_hierarchy(obj, hierarchy: dict[str, str]):
-    """Build a mapping of class names to their full qualified names.
+        if obj is None:
+            return "None"
+        if isinstance(obj, str):
+            # Use double quotes for strings
+            return '"' + obj.replace('"', '\\"').replace("\n", "\\n") + '"'
+        if isinstance(obj, (int, float, bool)):
+            return str(obj)
+        if isinstance(obj, list):
+            if not obj:
+                return "[]"
 
-    This helps us correctly handle nested classes.
+            items_code = []
+            for item in obj:
+                item_code = WorkflowManager._generate_object_construction(item, indent_level + 1, class_hierarchy)
+                items_code.append(f"{indent}    {item_code}")
 
-    Args:
-        obj: The object to analyze
-        hierarchy: Dictionary to populate with class name mappings
-    """
-    if obj is None:
-        return
+            return "[\n" + ",\n".join(items_code) + "\n" + indent + "]"
+        if isinstance(obj, dict):
+            if not obj:
+                return "{}"
 
-    if is_dataclass(obj):
-        cls = type(obj)
-        class_name = cls.__name__
+            items_code = []
+            for key, value in obj.items():
+                if isinstance(key, str):
+                    key_str = '"' + key.replace('"', '\\"') + '"'
+                else:
+                    key_str = str(key)
 
-        # Get the qualified name (includes parent classes)
-        qualname = getattr(cls, "__qualname__", class_name)
+                value_code = WorkflowManager._generate_object_construction(value, indent_level + 1, class_hierarchy)
+                items_code.append(f"{indent}    {key_str}: {value_code}")
 
-        # Add to our hierarchy map if it's a nested class (contains a dot)
-        if "." in qualname:
-            hierarchy[class_name] = qualname
+            return "{\n" + ",\n".join(items_code) + "\n" + indent + "}"
+        if is_dataclass(obj):
+            cls = type(obj)
+            class_name = cls.__name__
 
-        # Process all fields recursively
-        for field_name, field_value in vars(obj).items():
-            if field_value is not None:
-                _build_class_hierarchy(field_value, hierarchy)
+            # Use the fully qualified name if it's in our hierarchy map
+            full_class_name = class_hierarchy.get(class_name, class_name)
 
-    elif isinstance(obj, (list, tuple)):
-        for item in obj:
-            _build_class_hierarchy(item, hierarchy)
+            args = []
+            for field_name, field_value in vars(obj).items():
+                value_code = WorkflowManager._generate_object_construction(
+                    field_value, indent_level + 1, class_hierarchy
+                )
+                args.append(f"{indent}    {field_name}={value_code}")
 
-    elif isinstance(obj, dict):
-        for key, value in obj.items():
-            _build_class_hierarchy(value, hierarchy)
-
-
-def _generate_object_construction(obj, indent_level=0, class_hierarchy=None):
-    """Generate Python code to construct an object, handling nested structures.
-
-    Args:
-        obj: The object to generate construction code for
-        indent_level: Current indentation level
-        class_hierarchy: Mapping of class names to their qualified names
-
-    Returns:
-        String containing Python code
-    """
-    if class_hierarchy is None:
-        class_hierarchy = {}
-
-    indent = "    " * indent_level
-
-    if obj is None:
-        return "None"
-    elif isinstance(obj, str):
-        # Use double quotes for strings
-        return '"' + obj.replace('"', '\\"').replace("\n", "\\n") + '"'
-    elif isinstance(obj, (int, float, bool)):
-        return str(obj)
-    elif isinstance(obj, list):
-        if not obj:
-            return "[]"
-
-        items_code = []
-        for item in obj:
-            item_code = _generate_object_construction(item, indent_level + 1, class_hierarchy)
-            items_code.append(f"{indent}    {item_code}")
-
-        return "[\n" + ",\n".join(items_code) + "\n" + indent + "]"
-    elif isinstance(obj, dict):
-        if not obj:
-            return "{}"
-
-        items_code = []
-        for key, value in obj.items():
-            if isinstance(key, str):
-                key_str = '"' + key.replace('"', '\\"') + '"'
-            else:
-                key_str = str(key)
-
-            value_code = _generate_object_construction(value, indent_level + 1, class_hierarchy)
-            items_code.append(f"{indent}    {key_str}: {value_code}")
-
-        return "{\n" + ",\n".join(items_code) + "\n" + indent + "}"
-    elif is_dataclass(obj):
-        cls = type(obj)
-        class_name = cls.__name__
-
-        # Use the fully qualified name if it's in our hierarchy map
-        full_class_name = class_hierarchy.get(class_name, class_name)
-
-        args = []
-        for field_name, field_value in vars(obj).items():
-            value_code = _generate_object_construction(field_value, indent_level + 1, class_hierarchy)
-            args.append(f"{indent}    {field_name}={value_code}")
-
-        return f"{full_class_name}(\n" + ",\n".join(args) + "\n" + indent + ")"
-    else:
+            return f"{full_class_name}(\n" + ",\n".join(args) + "\n" + indent + ")"
         # Fall back to repr for other types
         return repr(obj)
 
+    @staticmethod
+    def _generate_command_code(command: Any) -> str:
+        """Generate Python code for a command object."""
+        if not is_dataclass(command):
+            msg = f"Expected a dataclass object, got {type(command)}"
+            raise ValueError(msg)
 
-def generate_command_code(command: Any) -> str:
-    """Generate Python code for a command object."""
-    if not is_dataclass(command):
-        msg = f"Expected a dataclass object, got {type(command)}"
-        raise ValueError(msg)
+        # Get the class name
+        class_name = type(command).__name__
 
-    # Get the class name
-    class_name = type(command).__name__
+        # Get all fields
+        field_values = []
+        for field in fields(command):
+            value = getattr(command, field.name)
+            field_values.append(f"{field.name}={WorkflowManager._serialize_value(value)}")
 
-    # Get all fields
-    field_values = []
-    for field in fields(command):
-        value = getattr(command, field.name)
-        field_values.append(f"{field.name}={serialize_value(value)}")
+        # Generate the code
+        code = f"{class_name}({', '.join(field_values)})"
+        return code
 
-    # Generate the code
-    code = f"{class_name}({', '.join(field_values)})"
-    return code
+    @staticmethod
+    def _generate_griptape_command(command: Any) -> str:
+        """Generate a command for a given command object."""
+        command_code = WorkflowManager._generate_command_code(command)
+        return f"api.handle_request({command_code})"
 
-
-def generate_griptape_command(command: Any) -> str:
-    """Generate a command for a given command object."""
-    command_code = generate_command_code(command)
-    return f"api.handle_request({command_code})"
-
-
-def create_flows_in_order(flow_name, flow_manager, created_flows, file) -> list | None:
-    # If this flow is already created, we can return
-    if flow_name in created_flows:
+    @staticmethod
+    def _handle_parameter_value_saving(parameter: Parameter, node: BaseNode) -> SetParameterValueRequest | None:
+        # Get the node's parent flow.
+        parent_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node.name)
+        parent_flow = GriptapeNodes.FlowManager().get_flow_by_name(parent_flow_name)
+        if not (
+            node.name in parent_flow.connections.incoming_index
+            and parameter.name in parent_flow.connections.incoming_index[node.name]
+        ):
+            value = node.get_parameter_value(parameter.name)
+            safe_conversion = False
+            if hasattr(value, "__str__") and value.__class__.__str__ is not object.__str__:
+                value = str(value)
+                safe_conversion = True
+            # If it doesn't have a custom __str__, convert to dict if possible
+            elif hasattr(value, "__dict__"):
+                value = str(value.__dict__)
+                safe_conversion = True
+            if safe_conversion:
+                set_param_value_request = SetParameterValueRequest(
+                    parameter_name=parameter.name,
+                    node_name=node.name,
+                    value=value,
+                )
+                return set_param_value_request
         return None
 
-    # Get the parent of this flow
-    parent = flow_manager.get_parent_flow(flow_name)
-
-    # If there's a parent, create it first
-    if parent:
-        create_flows_in_order(parent, flow_manager, created_flows, file)
-
-    # Now create this flow (only if not already created)
-    if flow_name not in created_flows:
-        # Here you would actually send the request and handle response
-        creation_request = CreateFlowRequest(flow_name=flow_name, parent_flow_name=parent)
-        code_string = f"GriptapeNodes().handle_request({creation_request})"
-        file.write(code_string + "\n")
-        created_flows.append(flow_name)
-
-    return created_flows
-
-
-def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: list) -> str:
-    flow_manager = GriptapeNodes.get_instance()._flow_manager
-    connection_request_workflows = ""
-    for flow_name, flow in obj_manager.get_filtered_subset(type=ControlFlow).items():
-        create_flows_in_order(flow_name, flow_manager, created_flows, file)
-        # While creating flows - let's create all of our connections
-        for connection in flow.connections.connections.values():
-            creation_request = CreateConnectionRequest(
-                source_node_name=connection.source_node.name,
-                source_parameter_name=connection.source_parameter.name,
-                target_node_name=connection.target_node.name,
-                target_parameter_name=connection.target_parameter.name,
-            )
-            code_string = f"GriptapeNodes().handle_request({creation_request})"
-            connection_request_workflows += code_string + "\n"
-    return connection_request_workflows
-
-
-def handle_parameter_creation_saving(file: TextIO, node: BaseNode) -> None:
-    for parameter in node.parameters:
-        param_dict = vars(parameter)
-        # Create the parameter, or alter it on the existing node
-        if parameter.user_defined:
-            param_dict["node_name"] = node.name
-            creation_request = AddParameterToNodeRequest.create(**param_dict)
-            code_string = f"GriptapeNodes().handle_request({creation_request})"
-            file.write(code_string + "\n")
+    @staticmethod
+    def _manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
+        base_param = base_node_obj.get_parameter_by_name(parameter.name)
+        if base_param:
+            diff = base_param.equals(parameter)
         else:
-            base_node_obj = type(node)(name="test")
-            diff = manage_alter_details(parameter, base_node_obj)
-            relevant = False
-            for key in diff:
-                if key in AlterParameterDetailsRequest.relevant_parameters():
-                    relevant = True
-                    break
-            if relevant:
-                diff["node_name"] = node.name
-                diff["parameter_name"] = parameter.name
-                creation_request = AlterParameterDetailsRequest.create(**diff)
-                code_string = f"GriptapeNodes().handle_request({creation_request})"
-                file.write(code_string + "\n")
-        if parameter.name in node.parameter_values and parameter.name not in node.parameter_output_values:
-            # SetParameterValueRequest event
-            set_param_value_request = handle_parameter_value_saving(parameter, node)
-            if set_param_value_request:
-                code_string = f"GriptapeNodes().handle_request({set_param_value_request})"
-                file.write(code_string + "\n")
-
-
-def handle_parameter_value_saving(parameter: Parameter, node: BaseNode) -> SetParameterValueRequest | None:
-    # Get the node's parent flow.
-    parent_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node.name)
-    parent_flow = GriptapeNodes.FlowManager().get_flow_by_name(parent_flow_name)
-    if not (
-        node.name in parent_flow.connections.incoming_index
-        and parameter.name in parent_flow.connections.incoming_index[node.name]
-    ):
-        value = node.get_parameter_value(parameter.name)
-        safe_conversion = False
-        if hasattr(value, "__str__") and value.__class__.__str__ is not object.__str__:
-            value = str(value)
-            safe_conversion = True
-        # If it doesn't have a custom __str__, convert to dict if possible
-        elif hasattr(value, "__dict__"):
-            value = str(value.__dict__)
-            safe_conversion = True
-        if safe_conversion:
-            set_param_value_request = SetParameterValueRequest(
-                parameter_name=parameter.name,
-                node_name=node.name,
-                value=value,
-            )
-            return set_param_value_request
-    return None
-
-
-def manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
-    base_param = base_node_obj.get_parameter_by_name(parameter.name)
-    if base_param:
-        diff = base_param.equals(parameter)
-    else:
-        return vars(parameter)
-    return diff
+            return vars(parameter)
+        return diff
 
 
 class ArbitraryCodeExecManager:
