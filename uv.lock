@@ -304,7 +304,6 @@ dependencies = [
     { name = "griptape", extra = ["drivers-prompt-anthropic", "drivers-prompt-ollama", "drivers-web-scraper-trafilatura", "loaders-image"] },
     { name = "httpx" },
     { name = "pydantic" },
-    { name = "pydantic-settings" },
     { name = "python-dotenv" },
     { name = "tomlkit" },
     { name = "websockets" },
@@ -339,7 +338,6 @@ requires-dist = [
     { name = "griptape", extras = ["drivers-prompt-anthropic", "drivers-prompt-ollama", "loaders-image", "drivers-web-scraper-trafilatura"], git = "https://github.com/griptape-ai/griptape.git?branch=main" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
-    { name = "pydantic-settings", specifier = ">=2.8.1" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "tomlkit", specifier = ">=0.13.2" },
     { name = "websockets", specifier = ">=15.0.1,<16.0.0" },
@@ -1059,19 +1057,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ef/fd/24ea4302d7a527d672c5be06e17df16aabfb4e9fdc6e0b345c21580f3d2a/pydantic_core-2.33.1-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:401d7b76e1000d0dd5538e6381d28febdcacb097c8d340dde7d7fc6e13e9f95d", size = 1812963 },
     { url = "https://files.pythonhosted.org/packages/5f/95/4fbc2ecdeb5c1c53f1175a32d870250194eb2fdf6291b795ab08c8646d5d/pydantic_core-2.33.1-cp313-cp313t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7aeb055a42d734c0255c9e489ac67e75397d59c6fbe60d155851e9782f276a9c", size = 1986896 },
     { url = "https://files.pythonhosted.org/packages/71/ae/fe31e7f4a62431222d8f65a3bd02e3fa7e6026d154a00818e6d30520ea77/pydantic_core-2.33.1-cp313-cp313t-win_amd64.whl", hash = "sha256:338ea9b73e6e109f15ab439e62cb3b78aa752c7fd9536794112e14bee02c8d18", size = 1931810 },
-]
-
-[[package]]
-name = "pydantic-settings"
-version = "2.8.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pydantic" },
-    { name = "python-dotenv" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/88/82/c79424d7d8c29b994fb01d277da57b0a9b09cc03c3ff875f9bd8a86b2145/pydantic_settings-2.8.1.tar.gz", hash = "sha256:d5c663dfbe9db9d5e1c646b2e161da12f0d734d422ee56f567d0ea2cee4e8585", size = 83550 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/53/a64f03044927dc47aafe029c42a5b7aabc38dfb813475e0e1bf71c4a59d0/pydantic_settings-2.8.1-py3-none-any.whl", hash = "sha256:81942d5ac3d905f7f3ee1a70df5dfb62d5569c12f51a5a647defc1c3d9ee2e9c", size = 30839 },
 ]
 
 [[package]]
