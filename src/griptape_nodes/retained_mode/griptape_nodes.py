@@ -99,6 +99,8 @@ from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
     DeleteFlowResultFailure,
     DeleteFlowResultSuccess,
+    GetTopLevelFlowRequest,
+    GetTopLevelFlowResultSuccess,
     ListFlowsInFlowRequest,
     ListFlowsInFlowResultFailure,
     ListFlowsInFlowResultSuccess,
@@ -660,6 +662,7 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(
             ValidateFlowDependenciesRequest, self.on_validate_flow_dependencies_request
         )
+        event_manager.assign_manager_to_request_type(GetTopLevelFlowRequest, self.on_get_top_level_flow_request)
 
         self._name_to_parent_name = {}
 
@@ -684,6 +687,14 @@ class FlowManager:
                 return flow_name
         msg = "No Flow found that had no parent."
         raise ValueError(msg)
+
+    def on_get_top_level_flow_request(self, request: GetTopLevelFlowRequest) -> ResultPayload:  # noqa: ARG002 (the request has to be assigned to the method)
+        for flow_name, parent in self._name_to_parent_name.items():
+            if parent is None:
+                return GetTopLevelFlowResultSuccess(flow_name=flow_name)
+        msg = "Attempted to get top level flow, but no such flow exists"
+        logger.debug(msg)
+        return GetTopLevelFlowResultSuccess(flow_name=None)
 
     def does_canvas_exist(self) -> bool:
         """Determines if there is already an existing flow with no parent flow.Returns True if there is an existing flow with no parent flow.Return False if there is no existing flow with no parent flow."""
@@ -4422,7 +4433,7 @@ class LibraryManager:
                 GriptapeNodes().handle_request(library_load_request)
 
     # TODO(griptape): Move to WorkflowManager
-    def _register_workflows_from_config(self, config_section: str) -> None:  # noqa: C901, PLR0912 (need lots of branches for error checking)
+    def _register_workflows_from_config(self, config_section: str) -> None:  # noqa: C901, PLR0912, PLR0915 (need lots of branches for error checking)
         config_mgr = GriptapeNodes().ConfigManager()
         workflows_to_register = config_mgr.get_config_value(config_section)
         successful_registrations = []
@@ -4465,6 +4476,13 @@ class LibraryManager:
                     continue
 
                 workflow_metadata = successful_metadata_result.metadata
+
+                # Prepend the image paths appropriately.
+                if workflow_metadata.image is not None:
+                    if workflow_detail.is_griptape_provided:
+                        workflow_metadata.image = xdg_data_home().joinpath(workflow_metadata.image)  # type: ignore  # noqa: PGH003
+                    else:
+                        workflow_metadata.image = config_mgr.workspace_path.joinpath(workflow_metadata.image)
 
                 # Register it as a success.
                 workflow_register_request = RegisterWorkflowRequest(

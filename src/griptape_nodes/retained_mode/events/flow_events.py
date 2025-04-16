@@ -83,3 +83,15 @@ class ListFlowsInFlowResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class ListFlowsInFlowResultFailure(ResultPayloadFailure):
     pass
+
+
+@dataclass
+@PayloadRegistry.register
+class GetTopLevelFlowRequest(RequestPayload):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class GetTopLevelFlowResultSuccess(ResultPayloadSuccess):
+    flow_name: str | None

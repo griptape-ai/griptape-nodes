@@ -27,7 +27,19 @@ class AppInitializationComplete(BaseModel):
         default_factory=lambda: [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")]
     )
     workflows_to_register: list[WorkflowSettingsDetail] = Field(
-        default_factory=lambda: []  # noqa: PIE807 (leaving as a lambda for list for when we are ready to re-populate)
+        default_factory=lambda: [
+            WorkflowSettingsDetail(
+                file_name=str(xdg_data_home() / "griptape_nodes/workflows/translator.py"), is_griptape_provided=True
+            ),
+            WorkflowSettingsDetail(
+                file_name=str(xdg_data_home() / "griptape_nodes/workflows/compare_prompts.py"),
+                is_griptape_provided=True,
+            ),
+            WorkflowSettingsDetail(
+                file_name=str(xdg_data_home() / "griptape_nodes/workflows/prompt_an_image.py"),
+                is_griptape_provided=True,
+            ),
+        ]
     )
 
 
