@@ -1,7 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
-from enum import Enum, auto
+from enum import StrEnum, auto
 from typing import Any, Self, TypeVar
 
 from griptape.events import BaseEvent
@@ -27,7 +27,7 @@ T = TypeVar("T")
 AsyncResult = Generator[Callable[[], T], T]
 
 
-class NodeResolutionState(Enum):
+class NodeResolutionState(StrEnum):
     """Possible states for a node during resolution."""
 
     UNRESOLVED = auto()

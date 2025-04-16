@@ -1579,8 +1579,7 @@ class NodeManager:
         obj_mgr.add_object_by_name(node.name, node)
         self._name_to_parent_flow_name[node.name] = parent_flow_name
 
-        if request.resolved:
-            node.state = NodeResolutionState(request.resolved)
+        node.state = NodeResolutionState(request.resolved)
 
         # Phew.
         details = f"Successfully created Node '{final_node_name}' of type '{request.node_type}'."
@@ -2988,7 +2987,7 @@ class WorkflowManager:
                         override_parent_flow_name=flow_name,
                         resolved=node.state.value
                         if saved_properly
-                        else 1,  # Unresolved if something failed to save or create
+                        else NodeResolutionState.UNRESOLVED.value,  # Unresolved if something failed to save or create
                         initial_setup=True,
                     )
                     code_string = f"GriptapeNodes().handle_request({creation_request})"
@@ -3149,14 +3148,39 @@ def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tu
     return parameter_details, saved_properly
 
 
-def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_created: dict) -> str | None:  # noqa: C901
+def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_created: dict) -> str | None:
+    """Generates code to save a parameter value for a node in a Griptape workflow.
+
+    This function handles the process of creating code that will reconstruct and set
+    parameter values for nodes. It performs the following steps:
+    1. Retrieves the parameter value from the node's parameter values or output values
+    2. Checks if the value has already been created in the generated code
+    3. If not, generates code to reconstruct the value
+    4. Creates a SetParameterValueRequest to apply the value to the node
+
+    Args:
+        parameter (Parameter): The parameter object containing metadata
+        node (BaseNode): The node object that contains the parameter
+        values_created (dict): Dictionary mapping value identifiers to variable names
+                              that have already been created in the code
+
+    Returns:
+        str | None: Python code as a string that will reconstruct and set the parameter
+                   value when executed. Returns None if the parameter has no value or
+                   if the value cannot be properly represented.
+
+    Notes:
+        - Parameter output values take precedence over regular parameter values
+        - For values that can be hashed, the value itself is used as the key in values_created
+        - For unhashable values, the object's id is used as the key
+        - The function will reuse already created values to avoid duplication
+    """
     value = None
     if parameter.name in node.parameter_values:
         value = node.get_parameter_value(parameter.name)
     # Output values are more important
     if parameter.name in node.parameter_output_values:
         value = node.parameter_output_values[parameter.name]
-    safe_conversion = False
     if value is not None:
         try:
             hash(value)
@@ -3169,20 +3193,11 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_c
             return f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True))"
         # Set it up as a object in the code
         imports = []
-        reconstruction_code = ""
         var_name = f"{node.name}_{parameter.name}_value"
         values_created[value_id] = var_name
+        reconstruction_code = _convert_value_to_str_representation(var_name, value, imports)
         # If it doesn't have a custom __str__, convert to dict if possible
-        if hasattr(value, "to_dict") and callable(value.to_dict):
-            # For objects with to_dict method
-            reconstruction_code = _create_object_in_file(value, var_name, imports)
-            if reconstruction_code != "":
-                safe_conversion = True
-        elif isinstance(value, (int, float, str, bool, list, dict, tuple, set)) or value is None:
-            # For basic types, use repr to create a literal
-            reconstruction_code = f"{var_name} = {value!r}\n"
-            safe_conversion = True
-        if safe_conversion:
+        if reconstruction_code != "":
             # Add the request handling code
             final_code = (
                 reconstruction_code
@@ -3193,10 +3208,57 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_c
             if imports:
                 import_statements = "\n".join(list(set(imports))) + "\n\n"  # Remove duplicates with set()
             return import_statements + final_code
-        # TODO(kate): If safe conversion doesn't work, node has to be unresolved.
     return None
 
+
+def _convert_value_to_str_representation(var_name: str, value: Any, imports: list) -> str:
+    """Converts a Python value to its string representation as executable code.
+
+    This function generates Python code that can recreate the given value
+    when executed. It handles different types of values with specific strategies:
+    - Objects with a 'to_dict' method: Uses _create_object_in_file for reconstruction
+    - Basic Python types: Uses their repr representation
+    - If not representable: Returns empty string
+
+    Args:
+        var_name (str): The variable name to assign the value to in the generated code
+        value (Any): The Python value to convert to code
+        imports (list): List to which any required import statements will be appended
+
+    Returns:
+        str: Python code as a string that will reconstruct the value when executed.
+             Returns empty string if the value cannot be properly represented.
+    """
+    reconstruction_code = ""
+    # If it doesn't have a custom __str__, convert to dict if possible
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        # For objects with to_dict method
+        reconstruction_code = _create_object_in_file(value, var_name, imports)
+        return reconstruction_code
+    if isinstance(value, (int, float, str, bool, list, dict, tuple, set)) or value is None:
+        # For basic types, use repr to create a literal
+        return f"{var_name} = {value!r}\n"
+    return ""
+
+
 def _create_object_in_file(value: Any, var_name: str, imports: list) -> str:
+    """Creates Python code to reconstruct an object from its dictionary representation and adds necessary import statements.
+
+    Args:
+        value (Any): The object to be serialized into Python code
+        var_name (str): The name of the variable to assign the object to in the generated code
+        imports (list): List to which import statements will be appended
+
+    Returns:
+        str: Python code string that reconstructs the object when executed
+             Returns empty string if object cannot be properly reconstructed
+
+    Notes:
+        - The function assumes the object has a 'to_dict()' method to serialize it. It is only called if the object does have that method.
+        - For class instances, it will add appropriate import statements to 'imports'
+        - The generated code will create a dictionary representation first, then
+          reconstruct the object using a 'from_dict' class method
+    """
     obj_dict = value.to_dict()
     reconstruction_code = f"{var_name} = {obj_dict!r}\n"
     # If we know the class, we can reconstruct it and add import
