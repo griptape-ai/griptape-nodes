@@ -479,6 +479,15 @@
         "description": "Convert data to text",
         "display_name": "To Text"
       }
+    },
+    {
+      "class_name": "Note",
+      "file_path": "griptape_nodes_library/note.py",
+      "metadata": {
+        "category": "Utility",
+        "description": "Create a note in the workflow",
+        "display_name": "Note"
+      }
     }
   ]
 }
