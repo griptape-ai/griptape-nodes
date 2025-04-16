@@ -451,6 +451,7 @@ class Parameter(BaseNodeElement):
         our_dict["mode_allowed_input"] = allows_input
         our_dict["mode_allowed_property"] = allows_property
         our_dict["mode_allowed_output"] = allows_output
+        our_dict["parent_container_name"] = self.parent_container_name
 
         return our_dict
 

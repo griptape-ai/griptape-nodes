@@ -37,11 +37,6 @@ class AddParameterToNodeRequest(RequestPayload):
 
     @classmethod
     def create(cls, **kwargs) -> AddParameterToNodeRequest:
-        if "allowed_modes" in kwargs:
-            kwargs["mode_allowed_input"] = ParameterMode.INPUT in kwargs["allowed_modes"]
-            kwargs["mode_allowed_output"] = ParameterMode.OUTPUT in kwargs["allowed_modes"]
-            kwargs["mode_allowed_property"] = ParameterMode.PROPERTY in kwargs["allowed_modes"]
-            kwargs.pop("allowed_modes")
         if "name" in kwargs:
             name = kwargs.pop("name")
             kwargs["parameter_name"] = name

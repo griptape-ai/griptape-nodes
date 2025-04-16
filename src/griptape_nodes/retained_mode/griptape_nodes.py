@@ -1919,13 +1919,16 @@ class NodeManager:
             tooltip_as_output=request.tooltip_as_output,
             allowed_modes=allowed_modes,
             ui_options=request.ui_options,
+            parent_container_name=request.parent_container_name,
         )
         try:
-            node.add_parameter(new_param)
             if request.parent_container_name and request.initial_setup:
                 parameter_parent = node.get_parameter_by_name(request.parent_container_name)
                 if parameter_parent is not None:
                     parameter_parent.add_child(new_param)
+            else:
+                logger.info(new_param.name)
+                node.add_parameter(new_param)
         except Exception as e:
             details = f"Couldn't add parameter with name {request.parameter_name} to node. Error: {e}"
             logger.error(details)
@@ -3133,7 +3136,7 @@ def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tu
     parameter_details = ""
     saved_properly = True
     for parameter in node.parameters:
-        param_dict = vars(parameter)
+        param_dict = parameter.to_dict()
         # Create the parameter, or alter it on the existing node
         if parameter.user_defined:
             param_dict["node_name"] = node.name
