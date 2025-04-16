@@ -154,6 +154,7 @@ class BaseNodeElement:
 
     _children: list[BaseNodeElement] = field(default_factory=list)
     _stack: ClassVar[list[BaseNodeElement]] = []
+    _parent: BaseNodeElement | None = field(default=None)
 
     @property
     def children(self) -> list[BaseNodeElement]:
@@ -205,12 +206,17 @@ class BaseNodeElement:
         }
 
     def add_child(self, child: BaseNodeElement) -> None:
+        if child._parent is not None:
+            msg = f"Child {child.element_id} cannot have more than one parent."
+            raise ValueError(msg)
+        child._parent = self
         self._children.append(child)
 
     def remove_child(self, child: BaseNodeElement | str) -> None:
         ui_elements: list[BaseNodeElement] = [self]
         for ui_element in ui_elements:
             if child in ui_element._children:
+                child._parent = None
                 ui_element._children.remove(child)
                 break
             ui_elements.extend(ui_element._children)
@@ -245,6 +251,7 @@ class BaseNodeElement:
 class ParameterGroup(BaseNodeElement):
     """UI element for a group of parameters."""
 
+    ui_options: dict = field(default_factory=dict)
     group_name: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -269,6 +276,7 @@ class ParameterGroup(BaseNodeElement):
         our_dict = super().to_dict()
         # Add in our deltas.
         our_dict["group_name"] = self.group_name
+        our_dict["ui_options"] = self.ui_options
         return our_dict
 
 
@@ -503,11 +511,12 @@ class Parameter(BaseNodeElement):
         for trait in traits:
             ui_options = ui_options | trait.ui_options_for_trait()
         ui_options = ui_options | self._ui_options
+        if self._parent is not None and isinstance(self._parent, ParameterGroup):
+            ui_options = ui_options | self._parent.ui_options
         return ui_options
 
     @ui_options.setter
     def ui_options(self, value: dict) -> None:
-        # Here you can validate the input if needed
         self._ui_options = value
 
     @property

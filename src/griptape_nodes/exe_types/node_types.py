@@ -13,6 +13,7 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterContainer,
     ParameterDictionary,
+    ParameterGroup,
     ParameterList,
     ParameterMode,
     ParameterTypeBuiltin,
@@ -196,7 +197,26 @@ class BaseNode(ABC):
         self.add_node_element(param)
 
     def remove_parameter(self, param: Parameter) -> None:
+        for child in param.find_elements_by_type(Parameter):
+            self.remove_node_element(child)
         self.remove_node_element(param)
+
+    def remove_group_by_name(self, group: str) -> bool:
+        group_items = self.root_ui_element.find_elements_by_type(ParameterGroup)
+        for group_item in group_items:
+            if group_item.group_name == group:
+                for child in group_item.find_elements_by_type(BaseNodeElement):
+                    self.remove_node_element(child)
+                self.remove_node_element(group_item)
+                return True
+        return False
+
+    def get_group_by_name_or_element_id(self, group: str) -> ParameterGroup | None:
+        group_items = self.root_ui_element.find_elements_by_type(ParameterGroup)
+        for group_item in group_items:
+            if group in (group_item.group_name, group_item.element_id):
+                return group_item
+        return None
 
     def add_node_element(self, ui_element: BaseNodeElement) -> None:
         self.root_ui_element.add_child(ui_element)

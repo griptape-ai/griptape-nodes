@@ -7,37 +7,11 @@ from pydantic_settings import (
     BaseSettings,
     JsonConfigSettingsSource,
     PydanticBaseSettingsSource,
+    SettingsConfigDict,
     TomlConfigSettingsSource,
     YamlConfigSettingsSource,
 )
-from xdg_base_dirs import xdg_config_dirs, xdg_config_home, xdg_data_home
-
-
-def _find_config_files(filename: str, extension: str) -> list[Path]:
-    config_files = []
-
-    # Recursively search parent directories up to HOME
-    current_path = Path.cwd()
-    while current_path not in (Path.home(), current_path.parent) and current_path != current_path.parent:
-        config_files.append(current_path / f"{filename}.{extension}")
-        current_path = current_path.parent
-
-    # Search `GriptapeNodes/` inside home directory (a frequently installed location)
-    config_files.append(Path.home() / "GriptapeNodes" / f"{filename}.{extension}")
-
-    # Search `GriptapeNodes/` inside current working directory (this is the implicit default)
-    config_files.append(Path.cwd() / "GriptapeNodes" / f"{filename}.{extension}")
-
-    # Search XDG_CONFIG_HOME (e.g., `~/.config/griptape_nodes/griptape_nodes_config.yaml`)
-    config_files.append(xdg_config_home() / "griptape_nodes" / f"{filename}.{extension}")
-
-    # Search XDG_CONFIG_DIRS (e.g., `/etc/xdg/griptape_nodes/gt_nodes.yaml`)
-    config_files.extend([Path(xdg_dir) / "griptape_nodes" / f"{filename}.{extension}" for xdg_dir in xdg_config_dirs()])
-
-    # Reverse the list so that the most specific paths are checked first
-    config_files.reverse()
-
-    return config_files
+from xdg_base_dirs import xdg_data_home
 
 
 @dataclass
@@ -86,6 +60,8 @@ class AppEvents(BaseModel):
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(extra="allow")
+
     workspace_directory: str = Field(default=str(Path().cwd() / "GriptapeNodes"))
     app_events: AppEvents = Field(default_factory=AppEvents)
     nodes: dict[str, Any] = Field(
@@ -125,12 +101,6 @@ class Settings(BaseSettings):
         }
     )
     log_level: str = Field(default="INFO")
-
-    class Config:
-        json_file = _find_config_files("griptape_nodes_config", "json")
-        toml_file = _find_config_files("griptape_nodes_config", "toml")
-        yaml_file = _find_config_files("griptape_nodes_config", "yaml")
-        extra = "allow"
 
     @classmethod
     def settings_customise_sources(

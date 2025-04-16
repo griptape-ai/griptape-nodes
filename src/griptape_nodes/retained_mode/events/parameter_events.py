@@ -154,6 +154,7 @@ class AlterParameterDetailsRequest(RequestPayload):
     mode_allowed_property: bool | None = None
     mode_allowed_output: bool | None = None
     ui_options: dict | None = None
+    traits: set[str] | None = None
     initial_setup: bool = False
 
     @classmethod
@@ -189,6 +190,7 @@ class AlterParameterDetailsRequest(RequestPayload):
             "mode_allowed_property",
             "mode_allowed_output",
             "ui_options",
+            "traits",
         ]
 
 
