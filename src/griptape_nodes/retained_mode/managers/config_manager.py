@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from pydantic_settings import SettingsConfigDict
+from pydantic import ValidationError
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -91,7 +91,10 @@ class ConfigManager:
 
     @property
     def config_files(self) -> list[Path]:
-        """Get a list of config files to check for.
+        """Get a list of config files in ascending order of priority.
+
+        The last file shown has the highest priority and overrides
+        any settings found in earlier files.
 
         Returns:
             List of Path objects representing the config files.
@@ -106,26 +109,33 @@ class ConfigManager:
     def load_user_config(self) -> None:
         """Load user configuration from the config file."""
         # We need to load the user config file first so we can get the workspace directory which may contain a workspace config file.
-        # TODO(collin): https://github.com/griptape-ai/griptape-nodes/issues/424
         # Load the user config file to get the workspace directory.
-        Settings.model_config = SettingsConfigDict(
-            json_file=USER_CONFIG_PATH,
-            extra="allow",
-        )
-        settings = Settings()
-        workspace_path = Path(settings.workspace_directory).resolve()
+        full_config = Settings().model_dump()
+        if USER_CONFIG_PATH.exists():
+            try:
+                user_config = json.loads(USER_CONFIG_PATH.read_text())
+                full_config = merge_dicts(full_config, user_config)
+            except json.JSONDecodeError as e:
+                logger.error("Error parsing user config file: %s", e)
+        else:
+            logger.info("User config file not found")
 
         # Merge in any settings from the workspace directory.
-        Settings.model_config = SettingsConfigDict(
-            json_file=[
-                USER_CONFIG_PATH,
-                workspace_path / "griptape_nodes_config.json",
-            ],
-            extra="allow",
-        )
-        settings = Settings()
-        self.user_config = settings.model_dump()
-        self.workspace_path = settings.workspace_directory
+        self.workspace_path = full_config["workspace_directory"]
+        if self.workspace_config_path.exists():
+            try:
+                workspace_config = json.loads(self.workspace_config_path.read_text())
+                full_config = merge_dicts(full_config, workspace_config)
+            except json.JSONDecodeError as e:
+                logger.error("Error parsing workspace config file: %s", e)
+
+        # Validate the full config against the Settings model.
+        try:
+            Settings.model_validate(full_config)
+            self.user_config = full_config
+        except ValidationError as e:
+            logger.error("Error validating config file: %s", e)
+            self.user_config = Settings().model_dump()
 
     def save_user_workflow_json(self, workflow_file_name: str) -> None:
         workflow_details = WorkflowSettingsDetail(file_name=workflow_file_name, is_griptape_provided=False)
