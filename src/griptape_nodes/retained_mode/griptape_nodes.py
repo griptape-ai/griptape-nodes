@@ -2070,7 +2070,6 @@ class NodeManager:
             value = node.get_parameter_value(parameter.name)
             if value:
                 element_id = parameter.element_id
-                param_to_value[element_id] = value
                 if value.__class__.__module__ != "__builtin__":
                     if hasattr(value, "to_dict"):
                         # If the object has a __dict__, use that
