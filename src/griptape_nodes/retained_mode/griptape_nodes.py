@@ -3375,7 +3375,7 @@ class LibraryManager:
                 library.register_new_node_type(node_class, metadata=node_metadata)
 
             except (KeyError, ImportError, AttributeError) as e:
-                details = f"Attempted to load Library JSON file from '{file_path}'. Failed due to an error loading node {node_meta.get('class_name', 'unknown')}: {e}"
+                details = f"Attempted to load Library JSON file from '{file_path}'. Failed due to an error loading node '{node_meta.get('class_name', 'unknown')}': {e}"
                 logger.error(details)
                 return RegisterLibraryFromFileResultFailure()
 
@@ -3523,6 +3523,7 @@ class LibraryManager:
         Raises:
             ImportError: If the module cannot be imported
             AttributeError: If the class doesn't exist in the module
+            TypeError: If the loaded class isn't a BaseNode-derived class
         """
         # Ensure file_path is a Path object
         file_path = Path(file_path)
@@ -3573,18 +3574,22 @@ class LibraryManager:
             sys.modules[module_name] = module
 
             # Execute the module
-            spec.loader.exec_module(module)
+            try:
+                spec.loader.exec_module(module)
+            except Exception as err:
+                msg = f"Class '{class_name}' from module '{file_path}' failed to load with error: {err}"
+                raise ImportError(msg) from err
 
         # Get the class
         try:
             node_class = getattr(module, class_name)
-        except AttributeError as e:
-            msg = f"Class '{class_name}' not found in module {file_path}"
-            raise AttributeError(msg) from e
+        except AttributeError as err:
+            msg = f"Class '{class_name}' not found in module '{file_path}'"
+            raise AttributeError(msg) from err
 
         # Verify it's a BaseNode subclass
         if not issubclass(node_class, BaseNode):
-            msg = f"{class_name} must inherit from BaseNode"
+            msg = f"'{class_name}' must inherit from BaseNode"
             raise TypeError(msg)
 
         return node_class
