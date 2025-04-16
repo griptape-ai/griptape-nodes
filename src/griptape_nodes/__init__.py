@@ -306,9 +306,13 @@ def _get_user_config() -> dict:
 
 
 def _list_user_configs() -> None:
-    """Lists the user configuration files."""
-    for config in config_manager.config_files:
-        console.print(f"[bold green]{config}[/bold green]")
+    """Lists user configuration files in ascending precedence."""
+    num_config_files = len(config_manager.config_files)
+    console.print(
+        f"[bold]User Configuration Files (lowest precedence (1.) ⟶ highest precedence ({num_config_files}.)):[/bold]"
+    )
+    for idx, config in enumerate(config_manager.config_files):
+        console.print(f"[green]{idx + 1}. {config}[/green]")
 
 
 def _uninstall_self() -> None:
