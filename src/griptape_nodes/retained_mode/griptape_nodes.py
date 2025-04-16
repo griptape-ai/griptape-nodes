@@ -3584,10 +3584,10 @@ class WorkflowManager:
 
         # Imports section
         imports = [
+            "from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest",
             "from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest",
             "from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest",
             "from griptape_nodes.retained_mode.events.parameter_events import AlterParameterDetailsRequest",
-            "from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest",
             "from griptape_nodes.retained_mode.griptape_nodes import ContextManager",
             "from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes as api",
         ]
@@ -3599,7 +3599,7 @@ class WorkflowManager:
         code_parts.append(flow_code)
 
         # Join all parts with newlines and write to file
-        final_code = "\n".join(code_parts)
+        final_code = "\n".join(code_parts) + "\n"
         with file_path.open("w") as file:
             file.write(metadata_block)
             file.write(final_code)
@@ -3632,8 +3632,28 @@ class WorkflowManager:
 
         # Create the flow
         lines.append(f"{indent}# Create a new flow")
-        create_flow_code = WorkflowManager._generate_griptape_command(serialized_flow.create_flow_command)
-        lines.append(f"{indent}{flow_result_var} = {create_flow_code}")
+
+        # Get the command code with proper formatting
+        create_flow_code = WorkflowManager._generate_command_code(serialized_flow.create_flow_command)
+
+        # Format properly as an API call with correct indentation, taking into account the current indent level
+        if "\n" in create_flow_code:
+            cmd_lines = create_flow_code.split("\n")
+
+            # Build properly indented flow creation code with list comprehensions
+            flow_lines = [f"{indent}{flow_result_var} = api.handle_request(", f"{indent}    {cmd_lines[0]}"]
+
+            # Add middle lines with proper indentation using list comprehension
+            flow_lines.extend([f"{indent}        {line}" for line in cmd_lines[1:-1]])
+
+            # Add final lines
+            flow_lines.extend([f"{indent}    {cmd_lines[-1]}", f"{indent})"])
+
+            # Add all lines at once
+            lines.extend(flow_lines)
+        else:
+            lines.append(f"{indent}{flow_result_var} = api.handle_request({create_flow_code})")
+
         lines.append(f"{indent}{flow_name_var} = {flow_result_var}.flow_name")
 
         # Flow context
@@ -3655,13 +3675,13 @@ class WorkflowManager:
             # Generate variable name using type-specific counter
             node_var_names[i] = f"{clean_type}_{type_count}_name"
 
-        # Process nodes
+        # Process nodes - pass the new indent level
         node_lines = WorkflowManager._generate_nodes_code(
             serialized_flow.serialized_node_commands, indent_level + 1, node_var_names
         )
         lines.append(node_lines)
 
-        # Process connections
+        # Process connections - pass the new indent level
         if serialized_flow.serialized_connections:
             connection_lines = WorkflowManager._generate_connections_code(
                 serialized_flow.serialized_connections, node_var_names, indent_level + 1
@@ -3674,8 +3694,8 @@ class WorkflowManager:
             lines.append(f"{sub_flow_indent}# Process sub-flows")
 
             for sub_flow_index, sub_flow in enumerate(serialized_flow.sub_flows_commands):
-                # Pass a new flow index for each sub-flow
-                next_flow_index = flow_index * 100 + sub_flow_index + 1  # Create a unique index
+                # Pass a new flow index for each sub-flow and the increased indent level
+                next_flow_index = flow_index * 100 + sub_flow_index + 1
                 sub_flow_code = WorkflowManager._generate_flow_code(sub_flow, indent_level + 1, next_flow_index)
                 lines.append(sub_flow_code)
 
@@ -3727,8 +3747,28 @@ class WorkflowManager:
 
             # Create node
             lines.append(f"{indent}# Create {node_type} node")
-            create_node_code = WorkflowManager._generate_griptape_command(node_command.create_node_command)
-            lines.append(f"{indent}{node_var_name}_result = {create_node_code}")
+
+            # Generate prettified command code
+            create_node_code = WorkflowManager._generate_command_code(node_command.create_node_command)
+
+            # Format properly as an API call with correct indentation
+            if "\n" in create_node_code:
+                cmd_lines = create_node_code.split("\n")
+
+                # Build properly indented node creation code
+                node_lines = [f"{indent}{node_var_name}_result = api.handle_request(", f"{indent}    {cmd_lines[0]}"]
+
+                # Add middle lines with proper indentation using list comprehension
+                node_lines.extend([f"{indent}        {line}" for line in cmd_lines[1:-1]])
+
+                # Add final lines
+                node_lines.extend([f"{indent}    {cmd_lines[-1]}", f"{indent})"])
+
+                # Add all lines at once
+                lines.extend(node_lines)
+            else:
+                lines.append(f"{indent}{node_var_name}_result = api.handle_request({create_node_code})")
+
             # Store node name in a variable for later use in connections
             lines.append(f"{indent}{node_var_name} = {node_var_name}_result.node_name")
 
@@ -3741,11 +3781,27 @@ class WorkflowManager:
                 for param_command in node_command.parameter_commands:
                     lines.append(f"{param_indent}# Configure node parameter")
 
-                    # Instead of using the generate_griptape_command function directly,
-                    # first get the modified command code with the node_name replaced
+                    # Get the modified command code with the node_name replaced
                     modified_command_code = WorkflowManager._replace_node_name_in_command(param_command, node_var_name)
-                    param_request = f"api.handle_request({modified_command_code})"
-                    lines.append(f"{param_indent}{param_request}")
+
+                    # Format it as an API call with proper indentation
+                    if "\n" in modified_command_code:
+                        cmd_lines = modified_command_code.split("\n")
+
+                        # Build properly indented parameter request code
+                        param_lines = [f"{param_indent}api.handle_request(", f"{param_indent}    {cmd_lines[0]}"]
+
+                        # Add middle lines with proper indentation using list comprehension
+                        param_lines.extend([f"{param_indent}        {line}" for line in cmd_lines[1:-1]])
+
+                        # Add final lines
+                        param_lines.extend([f"{param_indent}    {cmd_lines[-1]}", f"{param_indent})"])
+
+                        # Add all lines at once
+                        lines.extend(param_lines)
+                    else:
+                        param_request = f"api.handle_request({modified_command_code})"
+                        lines.append(f"{param_indent}{param_request}")
 
             # Add blank line between nodes
             if i < len(node_commands) - 1:
@@ -3786,17 +3842,19 @@ class WorkflowManager:
 
             lines.append(f"{indent}# Connect {source_var_name} to {target_var_name}")
 
-            # Create connection using CreateConnectionRequest with variable references
-            connection_payload = (
-                f"CreateConnectionRequest(\n"
-                f"{indent}    source_node_name={source_var_name},\n"
-                f'{indent}    source_parameter_name="{connection.source_parameter_name}",\n'
-                f"{indent}    target_node_name={target_var_name},\n"
-                f'{indent}    target_parameter_name="{connection.target_parameter_name}"\n'
-                f"{indent})"
-            )
-
-            lines.append(f"{indent}api.handle_request({connection_payload})")
+            # Create connection using CreateConnectionRequest with variable references and proper formatting
+            # Add all connection lines at once using extend
+            connection_lines = [
+                f"{indent}api.handle_request(",
+                f"{indent}    CreateConnectionRequest(",
+                f"{indent}        source_node_name={source_var_name},",
+                f'{indent}        source_parameter_name="{connection.source_parameter_name}",',
+                f"{indent}        target_node_name={target_var_name},",
+                f'{indent}        target_parameter_name="{connection.target_parameter_name}"',
+                f"{indent}    )",
+                f"{indent})",
+            ]
+            lines.extend(connection_lines)
 
         return "\n".join(lines)
 
@@ -3911,16 +3969,37 @@ class WorkflowManager:
         field_values = []
         for field in fields(command):
             value = getattr(command, field.name)
-            field_values.append(f"{field.name}={WorkflowManager._serialize_value(value)}")
+            serialized_value = WorkflowManager._serialize_value(value)
+            field_values.append(f"{field.name}={serialized_value}")
 
-        # Generate the code
-        code = f"{class_name}({', '.join(field_values)})"
+        # Generate the code with one parameter per line
+        if (
+            len(field_values) > 3  # noqa: PLR2004 (I'm OK with this)
+        ):  # Only format multi-line if there are several parameters
+            params = ",\n    ".join(field_values)
+            code = f"{class_name}(\n    {params}\n)"
+        else:
+            params = ", ".join(field_values)
+            code = f"{class_name}({params})"
+
         return code
 
     @staticmethod
     def _generate_griptape_command(command: Any) -> str:
         """Generate a command for a given command object."""
         command_code = WorkflowManager._generate_command_code(command)
+
+        # For multi-line commands, format the api.handle_request call with proper indentation
+        if "\n" in command_code:
+            lines = command_code.split("\n")
+            # Create indented lines in one go using a list comprehension
+            indented_lines = [
+                lines[0],  # First line stays as is
+                *["    " + line for line in lines[1:-1]],  # Middle lines get indented
+                lines[-1],  # Last line stays as is
+            ]
+            return f"api.handle_request(\n{indented_lines[0]}\n{''.join(indented_lines[1:])}\n)"
+
         return f"api.handle_request({command_code})"
 
     @staticmethod
