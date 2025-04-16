@@ -64,8 +64,8 @@
       "drivers/web_search": {
         "color": "border-gray-500",
         "icon": "Folder",
-        "description": "Drivers related nodes.",
-        "title": "Drivers"
+        "description": " related nodes.",
+        "title": ""
       }
     },
     {
@@ -344,21 +344,21 @@
       }
     },
     {
-      "class_name": "Float",
+      "class_name": "FloatInput",
       "file_path": "griptape_nodes_library/number/create_float.py",
       "metadata": {
         "category": "number",
-        "description": "Float node.",
-        "display_name": "Float"
+        "description": "FloatInput node.",
+        "display_name": "Float Input"
       }
     },
     {
-      "class_name": "Integer",
+      "class_name": "IntegerInput",
       "file_path": "griptape_nodes_library/number/create_int.py",
       "metadata": {
         "category": "number",
-        "description": "Integer node.",
-        "display_name": "Integer"
+        "description": "IntegerInput node.",
+        "display_name": "Integer Input"
       }
     },
     {

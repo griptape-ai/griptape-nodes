@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class Float(DataNode):
+class FloatInput(DataNode):
     def __init__(
         self,
         name: str,
