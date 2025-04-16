@@ -1276,7 +1276,7 @@ class FlowManager:
                 cancel_request = CancelFlowRequest(flow_name=flow_name)
                 GriptapeNodes.handle_request(cancel_request)
 
-            return StartFlowResultFailure(validation_exceptions=[])
+            return StartFlowResultFailure(validation_exceptions=[e])
 
         details = f"Successfully kicked off flow with name {flow_name}"
         logger.debug(details)
