@@ -3578,7 +3578,6 @@ class WorkflowManager:
             "from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest",
             "from griptape_nodes.retained_mode.events.parameter_events import AlterParameterDetailsRequest",
             "from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest",
-            "from griptape_nodes.retained_mode.events.workflow_events import SerializedFlowCommands, SerializedNodeCommands",
             "from griptape_nodes.retained_mode.griptape_nodes import ContextManager",
             "from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes as api",
         ]
