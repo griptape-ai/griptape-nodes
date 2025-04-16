@@ -3541,7 +3541,12 @@ class WorkflowManager:
             details = f"Attempted to save workflow '{relative_file_path}'. Failed attempting to serialize the workflow."
             logger.error(details)
             return SaveWorkflowResultFailure()
+
         serialized_flow = serialize_flow_commands_result.serialized_flow_commands
+
+        # TODO(griptape): Right now the editor expects a loaded workflow to create the flow, and then expects file name to match
+        # the canvas flow. Remove this next line after we address this in GUI task #384.
+        serialized_flow.create_flow_command.flow_name = canvas_flow_name
 
         # Now that we have the info about what's actually being used, save out the workflow metadata.
         workflow_metadata = WorkflowMetadata(
