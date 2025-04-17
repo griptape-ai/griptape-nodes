@@ -67,6 +67,29 @@ class ListNodesInFlowResultFailure(ResultPayloadFailure):
     pass
 
 
+# We have two different ways to list flows:
+# 1. ListFlowsInFlowRequest - List flows in a specific flow, or if parent_flow_name=None, list canvas/top-level flows
+# 2. ListFlowsInCurrentContext - List flows in whatever flow is at the top of the Current Context
+# These are separate classes to avoid ambiguity and to catch incorrect usage at compile time.
+# It was implemented this way to maintain backwards compatibility with the editor.
+@dataclass
+@PayloadRegistry.register
+class ListFlowsInCurrentContextRequest(RequestPayload):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class ListFlowsInCurrentContextResultSuccess(ResultPayloadSuccess):
+    flow_names: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class ListFlowsInCurrentContextResultFailure(ResultPayloadFailure):
+    pass
+
+
 # Gives a list of the flows directly parented by the node specified.
 @dataclass
 @PayloadRegistry.register

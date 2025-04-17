@@ -100,6 +100,9 @@ from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowResultSuccess,
     GetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess,
+    ListFlowsInCurrentContextRequest,
+    ListFlowsInCurrentContextResultFailure,
+    ListFlowsInCurrentContextResultSuccess,
     ListFlowsInFlowRequest,
     ListFlowsInFlowResultFailure,
     ListFlowsInFlowResultSuccess,
@@ -631,6 +634,9 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(DeleteFlowRequest, self.on_delete_flow_request)
         event_manager.assign_manager_to_request_type(ListNodesInFlowRequest, self.on_list_nodes_in_flow_request)
         event_manager.assign_manager_to_request_type(ListFlowsInFlowRequest, self.on_list_flows_in_flow_request)
+        event_manager.assign_manager_to_request_type(
+            ListFlowsInCurrentContextRequest, self.on_list_flows_in_current_context_request
+        )
         event_manager.assign_manager_to_request_type(CreateConnectionRequest, self.on_create_connection_request)
         event_manager.assign_manager_to_request_type(DeleteConnectionRequest, self.on_delete_connection_request)
         event_manager.assign_manager_to_request_type(StartFlowRequest, self.on_start_flow_request)
@@ -768,11 +774,12 @@ class FlowManager:
                     return result
 
             # Delete all child Flows of this Flow.
-            # TODO(griptape): this one we will need to figure out. We can't just pass None, as that is the canvas. Find out where that
-            # logic is being exercised and find a fix for it.
-            list_flows_request = ListFlowsInFlowRequest(parent_flow_name=flow_name)
+            # Note: We use ListFlowsInCurrentContextRequest here instead of ListFlowsInFlowRequest(parent_flow_name=None)
+            # because None in ListFlowsInFlowRequest means "get canvas/top-level flows". We want the flows in the
+            # current context, which is the flow we're deleting.
+            list_flows_request = ListFlowsInCurrentContextRequest()
             list_flows_result = GriptapeNodes().handle_request(list_flows_request)
-            if isinstance(list_flows_result, ListFlowsInFlowResultFailure):
+            if isinstance(list_flows_result, ListFlowsInCurrentContextResultFailure):
                 details = f"Attempted to delete Flow '{flow_name}', but failed while attempting to get the list of Flows owned by this Flow."
                 logger.error(details)
                 result = DeleteFlowResultFailure()
@@ -1525,6 +1532,25 @@ class FlowManager:
         return ValidateFlowDependenciesResultSuccess(
             validation_succeeded=len(all_exceptions) == 0, exceptions=all_exceptions
         )
+
+    def on_list_flows_in_current_context_request(self, request: ListFlowsInCurrentContextRequest) -> ResultPayload:  # noqa: ARG002 (request isn't actually used)
+        if not GriptapeNodes.ContextManager().has_current_flow():
+            details = "Attempted to list Flows in the Current Context. Failed because the Current Context was empty."
+            logger.error(details)
+            return ListFlowsInCurrentContextResultFailure()
+
+        parent_flow_name = GriptapeNodes.ContextManager().get_current_flow_name()
+
+        # Create a list of all child flow names that point DIRECTLY to us.
+        ret_list = []
+        for flow_name, parent_name in self._name_to_parent_name.items():
+            if parent_name == parent_flow_name:
+                ret_list.append(flow_name)
+
+        details = f"Successfully got the list of Flows in the Current Context (Flow '{parent_flow_name}')."
+        logger.debug(details)
+
+        return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list)
 
 
 class NodeManager:
