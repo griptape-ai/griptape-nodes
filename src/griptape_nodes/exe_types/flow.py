@@ -122,7 +122,7 @@ class ControlFlow:
         if resolution_machine.is_complete():
             self.single_node_resolution = False
 
-    def single_execution_step(self) -> None:
+    def single_execution_step(self, change_debug_mode:bool) -> None:
         # do a granular step
         if not self.check_for_existing_running_flow():
             if self.flow_queue.empty():
@@ -132,7 +132,7 @@ class ControlFlow:
             self.control_flow_machine.start_flow(start_node, debug_mode=True)
             start_node = self.flow_queue.task_done()
             return
-        self.control_flow_machine.granular_step()
+        self.control_flow_machine.granular_step(change_debug_mode)
         resolution_machine = self.control_flow_machine._context.resolution_machine
         if self.single_node_resolution:
             resolution_machine = self.control_flow_machine._context.resolution_machine
@@ -140,6 +140,7 @@ class ControlFlow:
                 self.single_node_resolution = False
 
     def single_node_step(self) -> None:
+        # It won't call single_node_step without an existing flow running from US.
         if not self.check_for_existing_running_flow():
             if self.flow_queue.empty():
                 errormsg = "Flow has not yet been started. Cannot step while no flow has begun."
@@ -153,6 +154,11 @@ class ControlFlow:
             msg = "Cannot step through the Control Flow in Single Node Execution"
             raise Exception(msg)
         self.control_flow_machine.node_step()
+        # Start the next resolution step now please.
+        if not self.check_for_existing_running_flow() and not self.flow_queue.empty():
+            start_node = self.flow_queue.get()
+            self.flow_queue.task_done()
+            self.control_flow_machine.start_flow(start_node, debug_mode=True)
 
     def continue_executing(self) -> None:
         if not self.check_for_existing_running_flow():
