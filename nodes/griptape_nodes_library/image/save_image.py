@@ -58,6 +58,11 @@ class SaveImage(ControlNode):
         workspace_path = Path(config_manager.workspace_path)
 
         image = self.parameter_values.get("image")
+
+        if not image:
+            logger.info("No image provided to save")
+            return
+
         output_file = self.parameter_values.get("output_path", DEFAULT_FILENAME)
 
         # Set output values BEFORE transforming to workspace-relative
@@ -66,10 +71,6 @@ class SaveImage(ControlNode):
         full_output_file = str(workspace_path / output_file)
         output_folder = os.path.split(full_output_file)[0]
         os.makedirs(output_folder, exist_ok=True)  # noqa: PTH103
-
-        if not image:
-            logger.info("No image provided to save")
-            return
 
         try:
             image_artifact = to_image_artifact(image)
