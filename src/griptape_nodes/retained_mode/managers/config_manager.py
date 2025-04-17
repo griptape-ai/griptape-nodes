@@ -283,7 +283,13 @@ class ConfigManager:
             return SetConfigValueResultFailure()
 
         self.set_config_value(key=request.category_and_key, value=request.value)
-        details = f"Successfully assigned the config value for '{request.category_and_key}'."
+
+        # For container types, just indicate a change happened
+        if isinstance(request.value, (dict, list)):
+            details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'"
+        else:
+            details = f"Successfully assigned the config value for '{request.category_and_key}' to: {request.value}"
+
         logger.info(details)
         return SetConfigValueResultSuccess()
 
