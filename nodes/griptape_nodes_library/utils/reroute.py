@@ -1,7 +1,6 @@
-import contextlib
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 
 
@@ -16,7 +15,7 @@ class Reroute(DataNode):
         self.passthru = Parameter(
             name="passThru",
             input_types=["Any"],
-            output_type="all",
+            output_type=ParameterTypeBuiltin.ALL.value,
             default_value=None,
             tooltip="",
             allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
@@ -41,9 +40,9 @@ class Reroute(DataNode):
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         # Stop tracking it.
-        self.passthru.output_type = "all"
+        self.passthru.output_type = ParameterTypeBuiltin.ALL.value
         # We just want to get rid of it if it exists. If it doesn't exist, that's fine.
-        with contextlib.suppress(KeyError):
+        if "passThru" in self.parameter_values:
             self.remove_parameter_value("passThru")
 
     def after_outgoing_connection(
