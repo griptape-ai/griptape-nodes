@@ -206,8 +206,8 @@ class BaseNodeElement:
         }
 
     def add_child(self, child: BaseNodeElement) -> None:
-        if child._parent is not None and self.__class__ == child._parent.__class__:
-            msg = f"Child {child.element_id} cannot have more than one parent of the same type."
+        if child._parent is not None:
+            msg = f"Child {child.element_id} cannot have more than one parent."
             raise ValueError(msg)
         child._parent = self
         self._children.append(child)

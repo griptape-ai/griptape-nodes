@@ -2115,21 +2115,30 @@ class NodeManager:
         return result
 
     def _set_param_to_value(self, node: BaseNode, element: BaseNodeElement, param_to_value: dict) -> None:
+        """This method builds our element_id_to_value mapping to eventually return in the Element Details Request."""
+        # Get all parameters
         for parameter in element.find_elements_by_type(Parameter):
+            # Check if they have an output value, that takes priority
             if parameter.name in node.parameter_output_values:
                 value = node.parameter_output_values[parameter.name]
             else:
+                # Otherwise grab the set value or default value
                 value = node.get_parameter_value(parameter.name)
             if value is not None:
                 element_id = parameter.element_id
+                # Check if the value is in builtins. If it isn't we need to handle it specially.
                 if value.__class__.__module__ != "builtins":
+                    # Check if it has a to_dict method. Use that, if it's been implemented.
                     if hasattr(value, "to_dict"):
                         # If the object has a __dict__, use that
                         param_to_value[element_id] = value.to_dict()
-                    elif hasattr(value, "__dict__"):
+                        return
+                    # Otherwise use __dict__.
+                    if hasattr(value, "__dict__"):
                         param_to_value[element_id] = value.__dict__
-                else:
-                    param_to_value[element_id] = value
+                        return
+                # Otherwise, just set it here. It'll be handled in .json() when we send it over.
+                param_to_value[element_id] = value
 
     def modify_alterable_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
         if request.tooltip is not None:
@@ -2356,13 +2365,18 @@ class NodeManager:
         return result
 
     def _set_and_pass_through_values(self, request: SetParameterValueRequest, node: BaseNode) -> Any:
+        """Set the parameter value on the node according to the specifications."""
         object_created = request.value
+        # If the value should be set on the output dictionary:
         if request.is_output:
             # set it to output values
             node.parameter_output_values[request.parameter_name] = object_created
             return object_created
+        # Otherwise use set_parameter_value. This calls our converters and validators.
         modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
+        # Get the "converted" value here.
         finalized_value = node.get_parameter_value(request.parameter_name)
+        # If any parameters were dependent on that value, we're calling this details request to emit the result to the editor.
         if modified_parameters:
             for modified_parameter_name in modified_parameters:
                 modified_request = GetParameterDetailsRequest(
