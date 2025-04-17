@@ -13,6 +13,8 @@ dependencies = [
   "cohere>=5.14.0",
   "websockets>=15.0.1,<16.0.0",
   "tomlkit>=0.13.2",
+  # TODO(collin): Remove pin once `griptape` is fixed.
+  "marshmallow>=3.26.1,<4.0.0",
 ]
 
 [dependency-groups]
