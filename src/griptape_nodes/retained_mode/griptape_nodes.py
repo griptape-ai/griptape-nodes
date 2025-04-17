@@ -3048,6 +3048,8 @@ class WorkflowManager:
         if file_name not in registered_workflows:
             config_manager.save_user_workflow_json(relative_file_path)
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
+        details = f"Successfully saved workflow to: {file_path}"
+        logger.info(details)
         return SaveWorkflowResultSuccess(file_path=str(file_path))
 
 
