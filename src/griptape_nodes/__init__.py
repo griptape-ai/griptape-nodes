@@ -126,7 +126,6 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
     set_key(ENV_FILE, "GT_CLOUD_API_KEY", current_key)
     config_manager.set_config_value("nodes.Griptape.GT_CLOUD_API_KEY", "$GT_CLOUD_API_KEY")
     secrets_manager.set_secret("GT_CLOUD_API_KEY", current_key)
-    console.print(f"[bold green]API Key set to: {current_key}[/bold green]")
 
 
 def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
