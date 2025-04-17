@@ -50,6 +50,6 @@ Follow these steps to get the Griptape Nodes engine running on your system:
 
     *(or the shorter alias `gtn`)*
 
-1. **Connect IDE:** Refresh the Griptape Nodes IDE page in your browser. It should now connect to your running engine.
+1. **Connect Workflow Editor:** Refresh the Griptape Nodes Workflow Editor page in your browser. It should now connect to your running engine.
 
 You're now ready to start building flows! For more detailed setup options and troubleshooting, see the full [Setup Guide](https://docs.griptapenodes.com/setup/).
