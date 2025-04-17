@@ -19,7 +19,7 @@ class ToolList(DataNode):
                 name="tool_1",
                 input_types=["Tool"],
                 allowed_modes={ParameterMode.INPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Tool to add to the list",
             )
         )
@@ -28,7 +28,7 @@ class ToolList(DataNode):
                 name="tool_2",
                 input_types=["Tool"],
                 allowed_modes={ParameterMode.INPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Tool to add to the list",
             )
         )
@@ -37,7 +37,7 @@ class ToolList(DataNode):
                 name="tool_3",
                 input_types=["Tool"],
                 allowed_modes={ParameterMode.INPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Tool to add to the list",
             )
         )
@@ -46,7 +46,7 @@ class ToolList(DataNode):
                 name="tool_4",
                 input_types=["Tool"],
                 allowed_modes={ParameterMode.INPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Tool to add to the list",
             )
         )
@@ -54,10 +54,10 @@ class ToolList(DataNode):
         # Add output parameter for the combined tool list
         self.add_parameter(
             Parameter(
-                name="tools",
+                name="tool_list",
                 output_type="list[Tool]",
                 allowed_modes={ParameterMode.OUTPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Combined list of tools",
             )
         )
@@ -74,4 +74,4 @@ class ToolList(DataNode):
         tools = [tool for tool in [tool_1, tool_2, tool_3, tool_4] if tool is not None]
 
         # Set output values
-        self.parameter_output_values["tools"] = tools
+        self.parameter_output_values["tool_list"] = tools

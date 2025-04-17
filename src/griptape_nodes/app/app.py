@@ -167,7 +167,6 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
     else:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."
         raise TypeError(msg) from None
-
     event_json = result_event.json()
     socket.emit(dest_socket, event_json)
 
