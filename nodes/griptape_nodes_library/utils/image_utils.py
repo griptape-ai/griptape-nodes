@@ -20,8 +20,6 @@ def dict_to_image_artifact(image_dict, image_format=None) -> ImageArtifact:
         # Extract format from MIME type (e.g., 'image/png' -> 'png')
         mime_format = image_dict["type"].split("/")[1] if "/" in image_dict["type"] else None
         image_format = mime_format
-
-    # Method 1: Use ImageLoader to parse and get all metadata
     loader = ImageLoader(format=image_format)
     image_artifact = loader.try_parse(image_bytes)
 

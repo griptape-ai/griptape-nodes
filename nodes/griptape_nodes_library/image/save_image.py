@@ -1,4 +1,6 @@
-from typing import Any, TypeVar
+import os
+from pathlib import Path
+from typing import Any
 
 from griptape.artifacts import ImageArtifact
 from griptape.loaders import ImageLoader
@@ -8,20 +10,17 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.button import Button
 from nodes.griptape_nodes_library.utils.image_utils import dict_to_image_artifact
 
-T = TypeVar("T")
+DEFAULT_FILENAME = "griptape_nodes.png"
 
 
-def _ensure_type(obj: Any, expected_type: type[T]) -> T:
-    """Ensure object is of expected type, raising TypeError if not."""
-    if not isinstance(obj, expected_type):
-        actual_type = type(obj).__name__
-        error_msg = f"Expected {expected_type.__name__} but got {actual_type}"
-        raise TypeError(error_msg)
-    return obj
+def to_image_artifact(image: ImageArtifact | dict) -> ImageArtifact:
+    if isinstance(image, dict):
+        return dict_to_image_artifact(image)
+    return image
 
 
 class SaveImage(ControlNode):
@@ -36,7 +35,7 @@ class SaveImage(ControlNode):
                 name="image",
                 input_types=["ImageArtifact", "dict"],
                 type="ImageArtifact",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                allowed_modes={ParameterMode.INPUT},
                 tooltip="The image to save to file",
             )
         )
@@ -48,29 +47,32 @@ class SaveImage(ControlNode):
                 input_types=["str"],
                 type="str",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                default_value="griptape_nodes.png",
+                default_value=DEFAULT_FILENAME,
                 tooltip="The output filename with extension (.png, .jpg, etc.)",
                 traits={Button(button_type="save")},
             )
         )
 
     def process(self) -> None:
+        config_manager = GriptapeNodes.ConfigManager()
+        workspace_path = Path(config_manager.workspace_path)
+
         image = self.parameter_values.get("image")
-        full_output_file = self.parameter_values.get("output_path", "griptape_output.png")
+        output_file = self.parameter_values.get("output_path", DEFAULT_FILENAME)
+
+        # Set output values BEFORE transforming to workspace-relative
+        self.parameter_output_values["output_path"] = output_file
+
+        full_output_file = str(workspace_path / output_file)
+        output_folder = os.path.split(full_output_file)[0]
+        os.makedirs(output_folder, exist_ok=True)  # noqa: PTH103
 
         if not image:
             logger.info("No image provided to save")
             return
 
         try:
-            if isinstance(image, dict):
-                image_artifact = dict_to_image_artifact(image)
-            else:
-                # Already an ImageArtifact
-                image_artifact = image
-
-            # Type check to ensure image_artifact is an ImageArtifact
-            image_artifact = _ensure_type(image_artifact, ImageArtifact)
+            image_artifact = to_image_artifact(image)
 
             # Use ImageLoader to save the image
             loader = ImageLoader()
@@ -78,9 +80,6 @@ class SaveImage(ControlNode):
 
             success_msg = f"Saved image: {full_output_file}"
             logger.info(success_msg)
-
-            # Set output values
-            self.parameter_output_values["output_path"] = full_output_file
 
         except Exception as e:
             error_message = str(e)
