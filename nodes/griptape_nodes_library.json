@@ -382,6 +382,15 @@
       }
     },
     {
+      "class_name": "SaveImage",
+      "file_path": "griptape_nodes_library/image/save_image.py",
+      "metadata": {
+        "category": "Image",
+        "description": "Save an image to a file.",
+        "display_name": "Save Image"
+      }
+    },
+    {
       "class_name": "KeyValuePair",
       "file_path": "griptape_nodes_library/dict/key_value_pair.py",
       "metadata": {
