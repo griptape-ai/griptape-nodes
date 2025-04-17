@@ -231,6 +231,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+from griptape_nodes.retained_mode.managers.context_manager import ContextManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
@@ -268,6 +269,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._object_manager = ObjectManager(self._event_manager)
             self._node_manager = NodeManager(self._event_manager)
             self._flow_manager = FlowManager(self._event_manager)
+            self._context_manager = ContextManager(self._event_manager)
             self._library_manager = LibraryManager(self._event_manager)
             self._workflow_manager = WorkflowManager(self._event_manager)
             self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
@@ -321,6 +323,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def NodeManager(cls) -> NodeManager:
         return GriptapeNodes.get_instance()._node_manager
+
+    @classmethod
+    def ContextManager(cls) -> ContextManager:
+        return GriptapeNodes.get_instance()._context_manager
 
     @classmethod
     def WorkflowManager(cls) -> WorkflowManager:
