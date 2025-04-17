@@ -1021,6 +1021,7 @@ class FlowManager:
                     source_parameter_name=old_source_param_name,
                     target_node_name=old_target_node_name,
                     target_parameter_name=old_target_param_name,
+                    initial_setup=request.initial_setup,
                 )
                 create_old_connection_result = GriptapeNodes.handle_request(create_old_connection_request)
                 if create_old_connection_result.failed():
@@ -1060,7 +1061,7 @@ class FlowManager:
             if isinstance(target_param, ParameterContainer):
                 target_node.kill_parameter_children(target_param)
         # if it existed somewhere and actually has a value - Set the parameter!
-        if value:
+        if value and request.initial_setup is False:
             GriptapeNodes.handle_request(
                 SetParameterValueRequest(
                     parameter_name=target_param.name,
@@ -1578,6 +1579,8 @@ class NodeManager:
         obj_mgr.add_object_by_name(node.name, node)
         self._name_to_parent_flow_name[node.name] = parent_flow_name
 
+        node.state = NodeResolutionState(request.resolution)
+
         # Phew.
         details = f"Successfully created Node '{final_node_name}' of type '{request.node_type}'."
         log_level = logging.DEBUG
@@ -1830,7 +1833,7 @@ class NodeManager:
             result = AddParameterToNodeResultFailure()
             return result
 
-        if request.parent_container_name:
+        if request.parent_container_name and not request.initial_setup:
             parameter = node.get_parameter_by_name(request.parent_container_name)
             if parameter is None:
                 details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{request.node_name}'. Failed because parameter didn't exist."
@@ -1852,7 +1855,7 @@ class NodeManager:
             return AddParameterToNodeResultSuccess(
                 parameter_name=new_param.name, type=new_param.type, node_name=request.node_name
             )
-        if request.parameter_name is None or request.default_value is None or request.tooltip is None:
+        if request.parameter_name is None or request.tooltip is None:
             details = f"Attempted to add Parameter to node '{request.node_name}'. Failed because default_value, tooltip, or parameter_name was not defined."
             logger.error(details)
             result = AddParameterToNodeResultFailure()
@@ -1916,9 +1919,16 @@ class NodeManager:
             tooltip_as_output=request.tooltip_as_output,
             allowed_modes=allowed_modes,
             ui_options=request.ui_options,
+            parent_container_name=request.parent_container_name,
         )
         try:
-            node.add_parameter(new_param)
+            if request.parent_container_name and request.initial_setup:
+                parameter_parent = node.get_parameter_by_name(request.parent_container_name)
+                if parameter_parent is not None:
+                    parameter_parent.add_child(new_param)
+            else:
+                logger.info(new_param.name)
+                node.add_parameter(new_param)
         except Exception as e:
             details = f"Couldn't add parameter with name {request.parameter_name} to node. Error: {e}"
             logger.error(details)
@@ -2096,18 +2106,39 @@ class NodeManager:
         element_details = element.to_dict()
         # We need to get parameter values from here
         param_to_value = {}
-        for parameter in element.find_elements_by_type(Parameter):
-            # How to do for grouping?
-            value = node.get_parameter_value(parameter.name)
-            if value:
-                element_id = parameter.element_id
-                param_to_value[element_id] = value
+        self._set_param_to_value(node, element, param_to_value)
         if param_to_value:
             element_details["element_id_to_value"] = param_to_value
         details = f"Successfully got element details for Node '{request.node_name}'."
         logger.debug(details)
         result = GetNodeElementDetailsResultSuccess(element_details=element_details)
         return result
+
+    def _set_param_to_value(self, node: BaseNode, element: BaseNodeElement, param_to_value: dict) -> None:
+        """This method builds our element_id_to_value mapping to eventually return in the Element Details Request."""
+        # Get all parameters
+        for parameter in element.find_elements_by_type(Parameter):
+            # Check if they have an output value, that takes priority
+            if parameter.name in node.parameter_output_values:
+                value = node.parameter_output_values[parameter.name]
+            else:
+                # Otherwise grab the set value or default value
+                value = node.get_parameter_value(parameter.name)
+            if value is not None:
+                element_id = parameter.element_id
+                # Check if the value is in builtins. If it isn't we need to handle it specially.
+                if value.__class__.__module__ != "builtins":
+                    # Check if it has a to_dict method. Use that, if it's been implemented.
+                    if hasattr(value, "to_dict"):
+                        # If the object has a __dict__, use that
+                        param_to_value[element_id] = value.to_dict()
+                        return
+                    # Otherwise use __dict__.
+                    if hasattr(value, "__dict__"):
+                        param_to_value[element_id] = value.__dict__
+                        return
+                # Otherwise, just set it here. It'll be handled in .json() when we send it over.
+                param_to_value[element_id] = value
 
     def modify_alterable_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
         if request.tooltip is not None:
@@ -2244,7 +2275,7 @@ class NodeManager:
         return result
 
     # added ignoring C901 since this method is overly long because of granular error checking, not actual complexity.
-    def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: PLR0911 C901 TODO(griptape): resolve
+    def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -2274,7 +2305,6 @@ class NodeManager:
             result = SetParameterValueResultFailure()
             return result
 
-        object_created = request.value
         # Well this seems kind of stupid
         object_type = request.data_type if request.data_type else parameter.type
         # Is this value kosher for the types allowed?
@@ -2305,34 +2335,27 @@ class NodeManager:
 
         # Values are actually stored on the NODE.
         try:
-            modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
-            finalized_value = node.get_parameter_value(request.parameter_name)
+            finalized_value = self._set_and_pass_through_values(request, node)
         except Exception as err:
             details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because Exception: {err}"
             logger.error(details)
             return SetParameterValueResultFailure()
-
-        if modified_parameters:
-            for modified_parameter_name in modified_parameters:
-                modified_request = GetParameterDetailsRequest(
-                    parameter_name=modified_parameter_name, node_name=node.name
-                )
-                GriptapeNodes.handle_request(modified_request)
         # Mark node as unresolved
-        node.state = NodeResolutionState.UNRESOLVED
-        # Get the flow
-        # Pass the value through!
-        # Optional data_type parameter for internal handling!
-        conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
-        for target_node, target_parameter in conn_output_nodes:
-            GriptapeNodes.get_instance().handle_request(
-                SetParameterValueRequest(
-                    parameter_name=target_parameter.name,
-                    node_name=target_node.name,
-                    value=finalized_value,
-                    data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
+        if request.initial_setup is False and not request.is_output:
+            node.state = NodeResolutionState.UNRESOLVED
+            # Get the flow
+            # Pass the value through!
+            # Optional data_type parameter for internal handling!
+            conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
+            for target_node, target_parameter in conn_output_nodes:
+                GriptapeNodes.get_instance().handle_request(
+                    SetParameterValueRequest(
+                        parameter_name=target_parameter.name,
+                        node_name=target_node.name,
+                        value=finalized_value,
+                        data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
+                    )
                 )
-            )
 
         # Cool.
         details = f"Successfully set value on Node '{request.node_name}' Parameter '{request.parameter_name}'."
@@ -2340,6 +2363,27 @@ class NodeManager:
 
         result = SetParameterValueResultSuccess(finalized_value=finalized_value, data_type=parameter.type)
         return result
+
+    def _set_and_pass_through_values(self, request: SetParameterValueRequest, node: BaseNode) -> Any:
+        """Set the parameter value on the node according to the specifications."""
+        object_created = request.value
+        # If the value should be set on the output dictionary:
+        if request.is_output:
+            # set it to output values
+            node.parameter_output_values[request.parameter_name] = object_created
+            return object_created
+        # Otherwise use set_parameter_value. This calls our converters and validators.
+        modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
+        # Get the "converted" value here.
+        finalized_value = node.get_parameter_value(request.parameter_name)
+        # If any parameters were dependent on that value, we're calling this details request to emit the result to the editor.
+        if modified_parameters:
+            for modified_parameter_name in modified_parameters:
+                modified_request = GetParameterDetailsRequest(
+                    parameter_name=modified_parameter_name, node_name=node.name
+                )
+                GriptapeNodes.handle_request(modified_request)
+        return finalized_value
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     # For PLR0911 (too many return statements): don't want to do a ton of nested chains of success,
@@ -2958,23 +3002,32 @@ class WorkflowManager:
                 # Write all flows to a file, get back the strings for connections
                 connection_request_workflows = handle_flow_saving(file, obj_manager, created_flows)
                 # Now all of the flows have been created.
+                values_created = {}
                 for node in obj_manager.get_filtered_subset(type=BaseNode).values():
                     flow_name = node_manager.get_node_parent_flow_by_name(node.name)
+                    # Save the parameters
+                    try:
+                        parameter_string, saved_properly = handle_parameter_creation_saving(node, values_created)
+                    except Exception as e:
+                        details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
+                        logger.error(details)
+                        return SaveWorkflowResultFailure()
+                    if saved_properly:
+                        resolution = node.state.value
+                    else:
+                        resolution = NodeResolutionState.UNRESOLVED.value
                     creation_request = CreateNodeRequest(
                         node_type=node.__class__.__name__,
                         node_name=node.name,
                         metadata=node.metadata,
                         override_parent_flow_name=flow_name,
+                        resolution=resolution,  # Unresolved if something failed to save or create
+                        initial_setup=True,
                     )
                     code_string = f"GriptapeNodes().handle_request({creation_request})"
                     file.write(code_string + "\n")
-                    # Save the parameters
-                    try:
-                        handle_parameter_creation_saving(file, node, flow_name)
-                    except Exception as e:
-                        details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
-                        logger.error(details)
-                        return SaveWorkflowResultFailure()
+                    # Add all parameter deetails now
+                    file.write(parameter_string)
 
                     # See if this node uses a library we need to know about.
                     library_used = node.metadata["library"]
@@ -3088,21 +3141,25 @@ def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: 
                 source_parameter_name=connection.source_parameter.name,
                 target_node_name=connection.target_node.name,
                 target_parameter_name=connection.target_parameter.name,
+                initial_setup=True,
             )
             code_string = f"GriptapeNodes().handle_request({creation_request})"
             connection_request_workflows += code_string + "\n"
     return connection_request_workflows
 
 
-def handle_parameter_creation_saving(file: TextIO, node: BaseNode, flow_name: str) -> None:
+def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tuple[str, bool]:
+    parameter_details = ""
+    saved_properly = True
     for parameter in node.parameters:
-        param_dict = vars(parameter)
+        param_dict = parameter.to_dict()
         # Create the parameter, or alter it on the existing node
         if parameter.user_defined:
             param_dict["node_name"] = node.name
+            param_dict["initial_setup"] = True
             creation_request = AddParameterToNodeRequest.create(**param_dict)
-            code_string = f"GriptapeNodes().handle_request({creation_request})"
-            file.write(code_string + "\n")
+            code_string = f"GriptapeNodes().handle_request({creation_request})\n"
+            parameter_details += code_string
         else:
             base_node_obj = type(node)(name="test")
             diff = manage_alter_details(parameter, base_node_obj)
@@ -3114,40 +3171,195 @@ def handle_parameter_creation_saving(file: TextIO, node: BaseNode, flow_name: st
             if relevant:
                 diff["node_name"] = node.name
                 diff["parameter_name"] = parameter.name
+                diff["initial_setup"] = True
                 creation_request = AlterParameterDetailsRequest.create(**diff)
-                code_string = f"GriptapeNodes().handle_request({creation_request})"
-                file.write(code_string + "\n")
-        if parameter.name in node.parameter_values and parameter.name not in node.parameter_output_values:
+                code_string = f"GriptapeNodes().handle_request({creation_request})\n"
+                parameter_details += code_string
+        if parameter.name in node.parameter_values or parameter.name in node.parameter_output_values:
             # SetParameterValueRequest event
-            code_string = handle_parameter_value_saving(parameter, node, flow_name)
+            code_string = handle_parameter_value_saving(parameter, node, values_created)
             if code_string:
-                file.write(code_string + "\n")
+                code_string = code_string + "\n"
+                parameter_details += code_string
+            else:
+                saved_properly = False
+    return parameter_details, saved_properly
 
 
-def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, flow_name: str) -> str | None:
-    flow_manager = GriptapeNodes()._flow_manager
-    parent_flow = flow_manager.get_flow_by_name(flow_name)
-    if not (
-        node.name in parent_flow.connections.incoming_index
-        and parameter.name in parent_flow.connections.incoming_index[node.name]
-    ):
+def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_created: dict) -> str | None:
+    """Generates code to save a parameter value for a node in a Griptape workflow.
+
+    This function handles the process of creating code that will reconstruct and set
+    parameter values for nodes. It performs the following steps:
+    1. Retrieves the parameter value from the node's parameter values or output values
+    2. Checks if the value has already been created in the generated code
+    3. If not, generates code to reconstruct the value
+    4. Creates a SetParameterValueRequest to apply the value to the node
+
+    Args:
+        parameter (Parameter): The parameter object containing metadata
+        node (BaseNode): The node object that contains the parameter
+        values_created (dict): Dictionary mapping value identifiers to variable names
+                              that have already been created in the code
+
+    Returns:
+        str | None: Python code as a string that will reconstruct and set the parameter
+                   value when executed. Returns None if the parameter has no value or
+                   if the value cannot be properly represented.
+
+    Notes:
+        - Parameter output values take precedence over regular parameter values
+        - For values that can be hashed, the value itself is used as the key in values_created
+        - For unhashable values, the object's id is used as the key
+        - The function will reuse already created values to avoid duplication
+    """
+    value = None
+    is_output = False
+    if parameter.name in node.parameter_values:
         value = node.get_parameter_value(parameter.name)
-        safe_conversion = False
-        if hasattr(value, "__str__") and value.__class__.__str__ is not object.__str__:
-            value = str(value)
-            safe_conversion = True
+    # Output values are more important
+    if parameter.name in node.parameter_output_values:
+        value = node.parameter_output_values[parameter.name]
+        is_output = True
+    if value is not None:
+        try:
+            hash(value)
+            value_id = value
+        except TypeError:
+            value_id = id(value)
+        if value_id in values_created:
+            var_name = values_created[value_id]
+            # We've already created this object. we're all good.
+            return f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True, is_output={is_output}))"
+        # Set it up as a object in the code
+        imports = []
+        var_name = f"{node.name}_{parameter.name}_value"
+        values_created[value_id] = var_name
+        reconstruction_code = _convert_value_to_str_representation(var_name, value, imports)
         # If it doesn't have a custom __str__, convert to dict if possible
-        elif hasattr(value, "__dict__"):
-            value = str(value.__dict__)
-            safe_conversion = True
-        if safe_conversion:
-            creation_request = SetParameterValueRequest(
-                parameter_name=parameter.name,
-                node_name=node.name,
-                value=value,
+        if reconstruction_code != "":
+            # Add the request handling code
+            final_code = (
+                reconstruction_code
+                + f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True, is_output={is_output}))"
             )
-            return f"GriptapeNodes().handle_request({creation_request})"
+            # Combine imports and code
+            import_statements = ""
+            if imports:
+                import_statements = "\n".join(list(set(imports))) + "\n\n"  # Remove duplicates with set()
+            return import_statements + final_code
     return None
+
+
+def _convert_value_to_str_representation(var_name: str, value: Any, imports: list) -> str:
+    """Converts a Python value to its string representation as executable code.
+
+    This function generates Python code that can recreate the given value
+    when executed. It handles different types of values with specific strategies:
+    - Objects with a 'to_dict' method: Uses _create_object_in_file for reconstruction
+    - Basic Python types: Uses their repr representation
+    - If not representable: Returns empty string
+
+    Args:
+        var_name (str): The variable name to assign the value to in the generated code
+        value (Any): The Python value to convert to code
+        imports (list): List to which any required import statements will be appended
+
+    Returns:
+        str: Python code as a string that will reconstruct the value when executed.
+             Returns empty string if the value cannot be properly represented.
+    """
+    reconstruction_code = ""
+    # If it doesn't have a custom __str__, convert to dict if possible
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        # For objects with to_dict method
+        reconstruction_code = _create_object_in_file(value, var_name, imports)
+        return reconstruction_code
+    if isinstance(value, (int, float, str, bool)) or value is None:
+        # For basic types, use repr to create a literal
+        return f"{var_name} = {value!r}\n"
+    if isinstance(value, (list, dict, tuple, set)):
+        reconstruction_code = _convert_container_to_str_representation(var_name, value, imports, type(value))
+        return reconstruction_code
+    return ""
+
+
+def _convert_container_to_str_representation(var_name: str, value: Any, imports: list, value_type: type) -> str:
+    """Creates code to reconstruct a container type (list, dict, tuple, set) with its elements.
+
+    Args:
+        var_name (str): The variable name to assign the container to
+        value (Any): The container value to convert to code
+        imports (list): List to which any required import statements will be appended
+        value_type (type): The type of container (list, dict, tuple, or set)
+
+    Returns:
+        str: Python code as a string that will reconstruct the container
+    """
+    # Get the initialization brackets from an empty container
+    empty_container = value_type()
+    init_brackets = repr(empty_container)
+    # Initialize the container
+    code = f"{var_name} = {init_brackets}\n"
+    temp_var_base = f"{var_name}_item"
+    if value_type is dict:
+        # Process dictionary items
+        for i, (k, v) in enumerate(value.items()):
+            temp_var = f"{temp_var_base}_{i}"
+            # Convert the value to code
+            value_code = _convert_value_to_str_representation(temp_var, v, imports)
+            if value_code:
+                code += value_code
+                code += f"{var_name}[{k!r}] = {temp_var}\n"
+            else:
+                code += f"{var_name}[{k!r}] = {v!r}\n"
+    else:
+        # Process sequence items (list, tuple, set)
+        # For immutable types like tuple and set, we need to build a list first
+        for i, item in enumerate(value):
+            temp_var = f"{temp_var_base}_{i}"
+            # Convert the item to code
+            item_code = _convert_value_to_str_representation(temp_var, item, imports)
+            if item_code != "":
+                code += item_code
+                code += f"{var_name}.append({temp_var})\n"
+            else:
+                code += f"{var_name}.append({item!r})\n"
+        # Convert the list to the final type if needed
+        if value_type in (tuple, set):
+            code += f"{var_name} = {value_type.__name__}({var_name})\n"
+    return code
+
+
+def _create_object_in_file(value: Any, var_name: str, imports: list) -> str:
+    """Creates Python code to reconstruct an object from its dictionary representation and adds necessary import statements.
+
+    Args:
+        value (Any): The object to be serialized into Python code
+        var_name (str): The name of the variable to assign the object to in the generated code
+        imports (list): List to which import statements will be appended
+
+    Returns:
+        str: Python code string that reconstructs the object when executed
+             Returns empty string if object cannot be properly reconstructed
+
+    Notes:
+        - The function assumes the object has a 'to_dict()' method to serialize it. It is only called if the object does have that method.
+        - For class instances, it will add appropriate import statements to 'imports'
+        - The generated code will create a dictionary representation first, then
+          reconstruct the object using a 'from_dict' class method
+    """
+    obj_dict = value.to_dict()
+    reconstruction_code = f"{var_name} = {obj_dict!r}\n"
+    # If we know the class, we can reconstruct it and add import
+    if hasattr(value, "__class__"):
+        class_name = value.__class__.__name__
+        module_name = value.__class__.__module__
+        if module_name != "builtins":
+            imports.append(f"from {module_name} import {class_name}")
+        reconstruction_code += f"{var_name} = {class_name}.from_dict({var_name})\n"
+        return reconstruction_code
+    return ""
 
 
 def manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
