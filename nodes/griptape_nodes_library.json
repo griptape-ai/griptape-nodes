@@ -328,6 +328,15 @@
       }
     },
     {
+      "class_name": "ListTexts",
+      "file_path": "griptape_nodes_library/text/list_texts.py",
+      "metadata": {
+        "category": "Text",
+        "description": "Create a list of texts from multiple input values, and immediately forwards to output.",
+        "display_name": "List Texts"
+      }
+    },
+    {
       "class_name": "LoadText",
       "file_path": "griptape_nodes_library/text/load_text.py",
       "metadata": {
@@ -482,3 +491,4 @@
     }
   ]
 }
+
