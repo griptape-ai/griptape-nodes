@@ -15,105 +15,105 @@
     {
       "agents": {
         "color": "border-red-500",
-        "icon": "UserCircle",
+        "title": "Agent",
         "description": "Nodes related to Agents.",
-        "title": "Agent"
+        "icon": "UserCircle"
       }
     },
     {
       "convert": {
         "color": "border-cyan-500",
-        "icon": "Shuffle",
+        "title": "Convert",
         "description": "Convert nodes.",
-        "title": "Convert"
+        "icon": "Shuffle"
       }
     },
     {
       "dict": {
         "color": "border-green-500",
-        "icon": "Braces",
+        "title": "Dictionary",
         "description": "Dictionary Nodes.",
-        "title": "Dictionary"
+        "icon": "Braces"
       }
     },
     {
       "drivers": {
         "color": "border-lime-500",
-        "icon": "Truck",
+        "title": "Drivers",
         "description": "Drivers for Griptape Agents.",
-        "title": "Drivers"
+        "icon": "Truck"
       }
     },
     {
       "drivers/image": {
-        "color": "border-gray-500",
-        "icon": "Folder",
+        "color": "border-lime-500",
+        "title": "Image",
         "description": "Image Drivers for Griptape Agents.",
-        "title": "Image"
+        "icon": "Truck"
       }
     },
     {
       "drivers/prompt": {
-        "color": "border-gray-500",
-        "icon": "Folder",
+        "color": "border-lime-500",
+        "title": "Prompt",
         "description": "Prompt Drivers for Griptape Agents.",
-        "title": "Prompt"
+        "icon": "Truck"
       }
     },
     {
       "drivers/web_search": {
-        "color": "border-gray-500",
-        "icon": "Folder",
-        "description": " related nodes.",
-        "title": ""
+        "color": "border-lime-500",
+        "title": "Drivers",
+        "description": "Drivers for Griptape Agents.",
+        "icon": "Truck"
       }
     },
     {
       "image": {
         "color": "border-purple-500",
-        "icon": "Image",
+        "title": "Image",
         "description": "Basic nodes.",
-        "title": "Image"
+        "icon": "Image"
       }
     },
     {
       "number": {
         "color": "border-blue-500",
-        "icon": "Hash",
+        "title": "Number",
         "description": "Number Nodes.",
-        "title": "Number"
+        "icon": "Hash"
       }
     },
     {
       "rules": {
         "color": "border-amber-500",
-        "icon": "Scale",
+        "title": "Rules",
         "description": "Basic nodes.",
-        "title": "Rules"
+        "icon": "Scale"
       }
     },
     {
       "text": {
         "color": "border-blue-500",
-        "icon": "DocumentText",
+        "title": "Text",
         "description": "Text Nodes.",
-        "title": "Text"
+        "icon": "DocumentText"
       }
     },
     {
       "tools": {
         "color": "border-cyan-500",
-        "icon": "Wrench",
+        "title": "Tools",
         "description": "Tools an agent can use.",
-        "title": "Tools"
+        "icon": "Wrench"
       }
     },
     {
       "utils": {
         "color": "border-gray-500",
-        "icon": "Cog",
+        "title": "Utility",
         "description": "Utility nodes like save, etc., etc.",
-        "title": "Utility"
+        "icon": "Cog"
       }
     }
   ],
