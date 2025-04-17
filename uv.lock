@@ -259,8 +259,8 @@ wheels = [
 
 [[package]]
 name = "griptape"
-version = "1.5.0"
-source = { git = "https://github.com/griptape-ai/griptape.git?branch=main#c43134d6c91f1e7ec10887635f05bcb1753c2b10" }
+version = "1.6.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
     { name = "filetype" },
@@ -279,6 +279,10 @@ dependencies = [
     { name = "tiktoken" },
     { name = "urllib3" },
     { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d1/ee/2ea7b93629774514700ceb3fd2235cca7d38ca13bf6849f75e9938be63cf/griptape-1.6.1.tar.gz", hash = "sha256:6367efd034f9f49f353a7d527df13e139f6c722e5569af783f85edb91d87a212", size = 180562 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ce/c3/d4ae35b366c6f868caa3e4b7d51c3a707a2de369902c54d138cd1bf53cb0/griptape-1.6.1-py3-none-any.whl", hash = "sha256:361d63138821fa419e7c41dd574f490d76b468bec7d018c0fb896cc47260b20b", size = 410010 },
 ]
 
 [package.optional-dependencies]
@@ -335,7 +339,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "cohere", specifier = ">=5.14.0" },
-    { name = "griptape", extras = ["drivers-prompt-anthropic", "drivers-prompt-ollama", "loaders-image", "drivers-web-scraper-trafilatura"], git = "https://github.com/griptape-ai/griptape.git?branch=main" },
+    { name = "griptape", extras = ["drivers-prompt-anthropic", "drivers-prompt-ollama", "loaders-image", "drivers-web-scraper-trafilatura"], specifier = ">=1.6.1" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
