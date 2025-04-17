@@ -602,6 +602,9 @@ class Parameter(BaseNodeElement):
         if incoming_type is None:
             return False
 
+        if incoming_type.lower() == "all":
+            return True
+
         ret_val = False
 
         if self.input_types:

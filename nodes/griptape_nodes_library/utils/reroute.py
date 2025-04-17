@@ -1,31 +1,27 @@
+import contextlib
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 
 
 class Reroute(DataNode):
     # Track the incoming and outgoing connections to choose our allowed types.
     # I'd use sets for faster removal but I don't know if I want to hash Parameter objects
-    incoming_connection_params: list[Parameter]
-    outgoing_connection_params: list[Parameter]
     passthru: Parameter
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
 
-        self.outgoing_connection_params = []
-
         self.passthru = Parameter(
             name="passThru",
             input_types=["Any"],
-            output_type="Any",
+            output_type="all",
             default_value=None,
             tooltip="",
             allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
         )
         self.add_parameter(self.passthru)
-
 
     def after_incoming_connection(
         self,
@@ -40,12 +36,15 @@ class Reroute(DataNode):
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,  # noqa: ARG002
-        source_parameter: Parameter,
+        source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         # Stop tracking it.
-        self.passthru.output_type = "Any"
+        self.passthru.output_type = "all"
+        # We just want to get rid of it if it exists. If it doesn't exist, that's fine.
+        with contextlib.suppress(KeyError):
+            self.remove_parameter_value("passThru")
 
     def after_outgoing_connection(
         self,
@@ -60,11 +59,10 @@ class Reroute(DataNode):
         self,
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
-        target_parameter: Parameter,
+        target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
         self.passthru.input_types = ["Any"]
-
 
     def process(self) -> None:
         pass
