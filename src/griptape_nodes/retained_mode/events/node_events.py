@@ -20,6 +20,7 @@ class CreateNodeRequest(RequestPayload):
     node_type: str
     specific_library_name: str | None = None
     node_name: str | None = None
+    # If None is passed, assumes we're using the flow in the Current Context
     override_parent_flow_name: str | None = None
     metadata: dict | None = None
 

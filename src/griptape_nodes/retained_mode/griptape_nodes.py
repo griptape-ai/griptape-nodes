@@ -1610,11 +1610,15 @@ class NodeManager:
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
         if parent_flow_name is None:
-            details = f"Could not create Node of type '{request.node_type}'. No value for parent flow was supplied. This will one day come from the Current Context but we are poor and broken people. Please try your call again later."
-            logger.error(details)
+            # Try to get the current context flow
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = (
+                    "Attempted to create Node in the Current Context. Failed because the Current Context was empty."
+                )
+                logger.error(details)
+                return CreateNodeResultFailure()
+            parent_flow_name = GriptapeNodes.ContextManager().get_current_flow_name()
 
-            result = CreateNodeResultFailure()
-            return result
         # Does this flow actually exist?
         flow_mgr = GriptapeNodes.FlowManager()
         try:
@@ -1622,9 +1626,7 @@ class NodeManager:
         except KeyError as err:
             details = f"Could not create Node of type '{request.node_type}'. Error: {err}"
             logger.error(details)
-
-            result = CreateNodeResultFailure()
-            return result
+            return CreateNodeResultFailure()
 
         # Now ensure that we're giving a valid name.
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
@@ -1649,9 +1651,7 @@ class NodeManager:
             traceback.print_exc()
             details = f"Could not create Node '{final_node_name}' of type '{request.node_type}': {err}"
             logger.error(details)
-
-            result = CreateNodeResultFailure()
-            return result
+            return CreateNodeResultFailure()
 
         # Add it to the Flow.
         flow.add_node(node)
@@ -1660,19 +1660,22 @@ class NodeManager:
         obj_mgr.add_object_by_name(node.name, node)
         self._name_to_parent_flow_name[node.name] = parent_flow_name
 
-        # Phew.
-        details = f"Successfully created Node '{final_node_name}' of type '{request.node_type}'."
+        # Success message based on whether we used Current Context or explicit flow
+        if request.override_parent_flow_name is None:
+            details = (
+                f"Successfully created Node '{final_node_name}' in the Current Context (Flow '{parent_flow_name}')"
+            )
+        else:
+            details = f"Successfully created Node '{final_node_name}' in Flow '{parent_flow_name}'"
+
         log_level = logging.DEBUG
         if remapped_requested_node_name:
             log_level = logging.WARNING
-            details = f"{details} WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
+            details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
 
         logger.log(level=log_level, msg=details)
 
-        result = CreateNodeResultSuccess(
-            node_name=node.name,
-        )
-        return result
+        return CreateNodeResultSuccess(node_name=node.name)
 
     def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:
         # Does this node exist?
