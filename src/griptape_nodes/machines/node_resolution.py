@@ -339,7 +339,7 @@ class ExecuteNodeState(State):
                 func = current_node.process_generator.send(context.scheduled_value)
                 # Once we've passed on the scheduled value, we should clear it out just in case
                 context.scheduled_value = None
-                future = ExecuteNodeState.executor.submit(func)
+                future = ExecuteNodeState.executor.submit(with_contextvars(func))
                 future.add_done_callback(with_contextvars(on_future_done))
             except StopIteration:
                 logger.debug("Node %s generator is done.", current_node.name)
