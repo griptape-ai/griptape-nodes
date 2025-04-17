@@ -1,12 +1,9 @@
-from collections.abc import Iterator
-
-from griptape.artifacts import TextArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.structures import Agent, Structure
+from griptape.structures import Agent
 from griptape.tasks import PromptTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 DEFAULT_MODEL = "gpt-4o"
@@ -45,9 +42,9 @@ class BaseAgent(ControlNode):
                 tooltip="",
                 allowed_modes={ParameterMode.INPUT},
             )
-            Parameter(
+            ParameterList(
                 name="rulesets",
-                input_types=["list[Ruleset]", "Ruleset"],
+                input_types=["Ruleset"],
                 tooltip="Rulesets to apply to the agent to control its behavior.",
                 allowed_modes={ParameterMode.INPUT},
             )
@@ -128,8 +125,3 @@ class BaseAgent(ControlNode):
             task = agent.tasks[0]
             task.context = self.get_parameter_value("prompt_context")
         return agent
-
-    def process(
-        self,
-    ) -> AsyncResult[Iterator[TextArtifact] | Structure] | None:
-        pass

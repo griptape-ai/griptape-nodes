@@ -32,14 +32,11 @@ class AddParameterToNodeRequest(RequestPayload):
     mode_allowed_property: bool = Field(default=True)
     mode_allowed_output: bool = Field(default=True)
     parent_container_name: str | None = None
+    # initial_setup prevents unnecessary work when we are loading a workflow from a file.
+    initial_setup: bool = False
 
     @classmethod
     def create(cls, **kwargs) -> AddParameterToNodeRequest:
-        if "allowed_modes" in kwargs:
-            kwargs["mode_allowed_input"] = ParameterMode.INPUT in kwargs["allowed_modes"]
-            kwargs["mode_allowed_output"] = ParameterMode.OUTPUT in kwargs["allowed_modes"]
-            kwargs["mode_allowed_property"] = ParameterMode.PROPERTY in kwargs["allowed_modes"]
-            kwargs.pop("allowed_modes")
         if "name" in kwargs:
             name = kwargs.pop("name")
             kwargs["parameter_name"] = name
@@ -89,6 +86,10 @@ class SetParameterValueRequest(RequestPayload):
     node_name: str
     value: Any
     data_type: str | None = None
+    # initial_setup prevents unnecessary work when we are loading a workflow from a file.
+    initial_setup: bool = False
+    # is_output is true when the value being saved is from an output value. Used when loading a workflow from a file.
+    is_output: bool = False
 
 
 @dataclass
@@ -154,6 +155,8 @@ class AlterParameterDetailsRequest(RequestPayload):
     mode_allowed_output: bool | None = None
     ui_options: dict | None = None
     traits: set[str] | None = None
+    # initial_setup prevents unnecessary work when we are loading a workflow from a file.
+    initial_setup: bool = False
 
     @classmethod
     def create(cls, **kwargs) -> AlterParameterDetailsRequest:

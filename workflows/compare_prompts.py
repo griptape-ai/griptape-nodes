@@ -156,8 +156,10 @@ cmd.connect("assemble_prompt.output", "bespoke_prompt.prompt")
 #
 # [tool.griptape-nodes]
 # name = "compare_prompts"
+# description = "Example workflow demonstrating how to compare outputs against three different prompting approaches."
+# image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/workflows/thumbnail_compare_prompts.webp"
 # schema_version = "0.1.0"
-# engine_version_created_with = "0.13.1"
+# engine_version_created_with = "0.14.1"
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
 #
 # ///

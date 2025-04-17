@@ -126,13 +126,12 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
     set_key(ENV_FILE, "GT_CLOUD_API_KEY", current_key)
     config_manager.set_config_value("nodes.Griptape.GT_CLOUD_API_KEY", "$GT_CLOUD_API_KEY")
     secrets_manager.set_secret("GT_CLOUD_API_KEY", current_key)
-    console.print(f"[bold green]API Key set to: {current_key}[/bold green]")
 
 
 def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
     """Prompts the user for their workspace directory and stores it in config directory."""
     explainer = """[bold cyan]Workspace Directory[/bold cyan]
-    Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows, configuration data, and secrets.
+    Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows.
     You may enter a custom directory or press Return to accept the default workspace directory"""
     console.print(Panel(explainer, expand=False))
 
@@ -306,9 +305,13 @@ def _get_user_config() -> dict:
 
 
 def _list_user_configs() -> None:
-    """Lists the user configuration files."""
-    for config in config_manager.config_files:
-        console.print(f"[bold green]{config}[/bold green]")
+    """Lists user configuration files in ascending precedence."""
+    num_config_files = len(config_manager.config_files)
+    console.print(
+        f"[bold]User Configuration Files (lowest precedence (1.) ⟶ highest precedence ({num_config_files}.)):[/bold]"
+    )
+    for idx, config in enumerate(config_manager.config_files):
+        console.print(f"[green]{idx + 1}. {config}[/green]")
 
 
 def _uninstall_self() -> None:
@@ -377,12 +380,12 @@ def _process_args(args: argparse.Namespace) -> None:
         if not CONFIG_DIR.exists():
             # Default init flow if there is no config directory
             _run_init()
+            webbrowser.open(NODES_APP_URL)
 
         # Confusing double negation -- If `no_update` is set, we want to skip the update
         if not args.no_update:
             _auto_update()
 
-        webbrowser.open(NODES_APP_URL, new=2)  # new=2 opens in a new tab
         start_app()
     elif args.command == "config":
         if args.config_subcommand == "list":

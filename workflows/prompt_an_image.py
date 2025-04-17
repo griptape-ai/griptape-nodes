@@ -48,13 +48,10 @@ cmd.set_value(
 #
 # [tool.griptape-nodes]
 # name = "prompt an image"
+# description = "Example workflow demonstrating simple image generation using Griptape Nodes."
+# image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/workflows/thumbnail_prompt_an_image.webp"
 # schema_version = "0.1.0"
-# engine_version_created_with = "0.3.2"
-# node_libraries_referenced = [
-#     [
-#       "Griptape Nodes Library",
-#       "0.1.0"
-#     ]
-#   ]
+# engine_version_created_with = "0.14.1"
+# node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
 #
 # ///

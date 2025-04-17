@@ -217,6 +217,7 @@ class ExecuteNodeState(State):
         except Exception as e:
             msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
             current_node.state = NodeResolutionState.UNRESOLVED
+            current_node.process_generator = None
             context.flow.cancel_flow_run()
             raise RuntimeError(msg) from e
 
@@ -318,29 +319,39 @@ class ExecuteNodeState(State):
             )
 
         # Only start the processing if we don't already have a generator
+        logger.debug("Node %s process generator: %s", current_node.name, current_node.process_generator)
         if current_node.process_generator is None:
             result = current_node.process()
 
             # If the process returned a generator, we need to store it for later
             if isinstance(result, Generator):
                 current_node.process_generator = result
+                logger.debug("Node %s returned a generator.", current_node.name)
 
         # We now have a generator, so we need to run it
         if current_node.process_generator is not None:
             try:
+                logger.debug(
+                    "Node %s has an active generator, sending scheduled value. Scheduled value is None: %s",
+                    current_node.name,
+                    context.scheduled_value is None,
+                )
                 func = current_node.process_generator.send(context.scheduled_value)
                 # Once we've passed on the scheduled value, we should clear it out just in case
                 context.scheduled_value = None
-                future = ExecuteNodeState.executor.submit(func)
+                future = ExecuteNodeState.executor.submit(with_contextvars(func))
                 future.add_done_callback(with_contextvars(on_future_done))
             except StopIteration:
+                logger.debug("Node %s generator is done.", current_node.name)
                 # If that was the last generator, clear out the generator and indicate that there is no more work scheduled
                 current_node.process_generator = None
                 context.scheduled_value = None
                 return False
             else:
                 # If the generator is not done, indicate that there is work scheduled
+                logger.debug("Node %s generator is not done.", current_node.name)
                 return True
+        logger.debug("Node %s did not return a generator.", current_node.name)
         return False
 
 
