@@ -10,6 +10,11 @@ from griptape_nodes.exe_types.node_types import BaseNode
 logger = logging.getLogger("griptape_nodes")
 
 
+class LibraryNameAndVersion(NamedTuple):
+    library_name: str
+    library_version: str
+
+
 class LibraryNodeIdentifier(NamedTuple):
     """Unique identifier for a node type."""
 
