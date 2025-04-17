@@ -14,7 +14,10 @@ from typing import Any, ClassVar, TextIO, TypeVar, cast
 
 import tomlkit
 from dotenv import load_dotenv
+from rich.align import Align
+from rich.console import Console
 from rich.logging import RichHandler
+from rich.panel import Panel
 from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.core_types import (
@@ -247,6 +250,7 @@ logger = logging.getLogger("griptape_nodes")
 logger.setLevel(logging.INFO)
 
 logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
+console = Console()
 
 
 class SingletonMeta(type):
@@ -391,16 +395,28 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
     def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:
         if BaseEvent._session_id is None:
-            details = f"Session '{request.session_id}' started at {datetime.now(tz=UTC)}."
+            title = "🆕 Session Started"
+            details = f"Session [green]'{request.session_id}'[/green] started at [green]{datetime.now(tz=UTC)}[/green]."
+        elif BaseEvent._session_id == request.session_id:
+            title = None
+            details = f"Session [green]'{request.session_id}'[/green] already in place. No action taken."
         else:
-            if BaseEvent._session_id == request.session_id:
-                details = f"Session '{request.session_id}' already in place. No action taken."
-            else:
-                details = f"Attempted to start a session with ID '{request.session_id}' but this engine instance already had a session ID `{BaseEvent._session_id}' in place. Replacing it."
-
-            logger.info(details)
+            title = "🔄 Session Replaced"
+            details = f"Session [green]'{BaseEvent._session_id}'[/green] was replaced with [green]'{request.session_id}'[/green] at [green]{datetime.now(tz=UTC)}[/green]."
 
         BaseEvent._session_id = request.session_id
+
+        if title is not None:
+            message = Panel(
+                Align.center(details, vertical="middle"),
+                title=title,
+                subtitle=f"[green]{BaseEvent._session_id}[/green]",
+                border_style="green",
+                padding=(1, 4),
+            )
+            console.print(message)
+        else:
+            logger.info(details)
 
         # TODO(griptape): Do we want to broadcast that a session started?
 

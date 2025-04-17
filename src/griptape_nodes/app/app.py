@@ -299,7 +299,7 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
     message = Panel(
         Align.center(
             f"[bold green]Engine is ready to receive events[/bold green]\n"
-            f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link][/bold blue] to access the IDE",
+            f"Return to [bold blue][link={nodes_app_url}]{nodes_app_url}[/link][/bold blue] to access the IDE",
             vertical="middle",
         ),
         title="🚀 Griptape Nodes Engine Started",
