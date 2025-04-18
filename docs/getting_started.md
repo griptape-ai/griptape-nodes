@@ -29,7 +29,7 @@ Once you've logged in, you'll be presented with a setup screen which walks you t
 
 ## 2. Install Your Engine
 
-1. Copy the installation command from the **New Installation** section (it's the bit that starts with `curl`). 
+1. Copy the installation command from the **New Installation** section (it's the bit that starts with `curl`).
 
 1. Open a Terminal on your machine
 
