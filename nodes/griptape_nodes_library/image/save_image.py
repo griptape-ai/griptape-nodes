@@ -69,8 +69,6 @@ class SaveImage(ControlNode):
         self.parameter_output_values["output_path"] = output_file
 
         full_output_file = str(workspace_path / output_file)
-        output_folder = os.path.split(full_output_file)[0]
-        os.makedirs(output_folder, exist_ok=True)  # noqa: PTH103
 
         try:
             image_artifact = to_image_artifact(image)
