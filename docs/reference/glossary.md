@@ -109,7 +109,7 @@ Griptape Nodes is a creative toolkit (built with Python) that helps artists and
 <a id="secret-keys"></a>
 
 - **Secret Keys**: Private credentials such as API tokens, passwords, and access keys that need to be kept secure but are required for certain operations.
-- **SecretsManager**: This is the actual mechanism by which your secret keys are handled so that they *stay* secret.
+- **Secrets Manager**: This is the actual mechanism by which your secret keys are handled so that they *stay* secret.
 
 <a id="configuration-settings"></a>
 

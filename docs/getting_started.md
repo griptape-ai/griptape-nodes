@@ -57,7 +57,7 @@ You'll see this message when installation has completed:
 
 ## 3. Configuration
 
-**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape Nodes engine will save [configuration settings](./reference/glossary.md#configuration-settings), [project files](./reference/glossary.md#project-files), and [generated assets](./reference/glossary.md#generated-assets). It will also contain a [.env](./reference/glossary.md#.env) for your project [secret key](./reference/glossary.md#secret-keys).
+**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape Nodes engine will save [project files](./reference/glossary.md#project-files), and [generated assets](./reference/glossary.md#generated-assets). It will also contain a [.env](./reference/glossary.md#.env) for your Griptape Nodes [secret keys](./reference/glossary.md#secret-keys).
 
 ```
 ╭───────────────────────────────────────────────────────────────────╮
