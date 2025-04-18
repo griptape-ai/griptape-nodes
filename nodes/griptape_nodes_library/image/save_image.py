@@ -11,7 +11,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.button import Button
-from nodes.griptape_nodes_library.utils.image_utils import dict_to_image_artifact
+from griptape_nodes_library.utils.image_utils import dict_to_image_artifact
 
 DEFAULT_FILENAME = "griptape_nodes.png"
 
