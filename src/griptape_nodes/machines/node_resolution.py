@@ -3,12 +3,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Generator
 from concurrent.futures import Future, ThreadPoolExecutor
+from threading import Event
 from typing import TYPE_CHECKING, Any
 
 from griptape.events import EventBus
 from griptape.utils import with_contextvars
 
-from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
@@ -37,15 +38,46 @@ class ResolutionContext:
     focus_stack: list[BaseNode]
     paused: bool
     scheduled_value: Any | None
+    future: Future | None
+    shutdown_event: Event
 
     def __init__(self, flow: ControlFlow) -> None:
         self.flow = flow
         self.focus_stack = []
         self.paused = False
         self.scheduled_value = None
+        self.future = None
+        self.shutdown_event = Event()
 
     def reset(self) -> None:
         # Clear the nodes that is currently being worked on.
+        if self.future:
+            # Will only cancel if it hasn't started yet...
+            if not self.future.cancel():
+                # set the event to shut down the thread.
+                self.shutdown_event.set()
+            # Send an event to stop the GUI from taking threading tasks.
+            EventBus.publish_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=self.focus_stack[-1].name))
+                )
+            )
+            # Clear the parameters? Since it'll be partially stored.
+            for parameter in self.focus_stack[-1].parameters:
+                if parameter.allowed_modes == {ParameterMode.OUTPUT}:
+                    payload = ParameterValueUpdateEvent(
+                        node_name=self.focus_stack[-1].name,
+                        parameter_name=parameter.name,
+                        data_type=parameter.type,
+                        value=None,
+                    )
+                # Wipe current output of the parameter from the node please!
+                    EventBus.publish_event(
+                        ExecutionGriptapeNodeEvent(
+                            wrapped_event=ExecutionEvent(payload=payload)
+                        )
+                    )
+            self.executor = None
         if len(self.focus_stack) > 0:
             node = self.focus_stack[-1]
             node.clear_node()
@@ -58,6 +90,7 @@ class InitializeSpotlightState(State):
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:
         # If the focus stack is empty
+        context.shutdown_event.clear()
         current_node = context.focus_stack[-1]
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
@@ -326,6 +359,8 @@ class ExecuteNodeState(State):
                     wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
                 )
             )
+            # Future no longer needs to be stored.
+            context.future = None
 
         # Only start the processing if we don't already have a generator
         logger.debug("Node %s process generator: %s", current_node.name, current_node.process_generator)
@@ -348,13 +383,15 @@ class ExecuteNodeState(State):
                 func = current_node.process_generator.send(context.scheduled_value)
                 # Once we've passed on the scheduled value, we should clear it out just in case
                 context.scheduled_value = None
-                future = ExecuteNodeState.executor.submit(with_contextvars(func))
+                future = ExecuteNodeState.executor.submit(with_contextvars(func), context.shutdown_event)
                 future.add_done_callback(with_contextvars(on_future_done))
+                context.future = future
             except StopIteration:
                 logger.debug("Node %s generator is done.", current_node.name)
                 # If that was the last generator, clear out the generator and indicate that there is no more work scheduled
                 current_node.process_generator = None
                 context.scheduled_value = None
+                context.future = None
                 return False
             else:
                 # If the generator is not done, indicate that there is work scheduled

@@ -185,7 +185,10 @@ class ControlFlow:
         # There needs to be more that happens here.
         del self.flow_queue
         self.flow_queue = Queue()
-        self.control_flow_machine.reset_machine()
+        if self.control_flow_machine.get_current_state():
+            self.control_flow_machine.reset_machine()
+        else:
+            self.control_flow_machine._context.resolution_machine.reset_machine()
         self.single_node_resolution = False
 
     def unresolve_whole_flow(self) -> None:
