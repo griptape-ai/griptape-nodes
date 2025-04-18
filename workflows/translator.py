@@ -95,7 +95,7 @@ cmd.set_value(
                         "reference": None,
                         "meta": {},
                         "name": "e98fb473558c465b8eaf202db77884bf",
-                        "value": "write me  a 4-line spanish_story",
+                        "value": "write me a 4-line spanish_story",
                     },
                     "output": {
                         "type": "TextArtifact",
@@ -136,7 +136,7 @@ cmd.set_value(
         ],
     },
 )
-cmd.set_value("spanish_story.prompt", "write me  a 4-line spanish_story in to_english")
+cmd.set_value("spanish_story.prompt", "write me a 4-line spanish_story")
 cmd.set_value(
     "spanish_story.output",
     "Bajo la luna, el río cantó,  \nUn secreto antiguo en su agua dejó.  \nLa niña lo escuchó y empezó a soñar,  \nQue el mundo era suyo, listo para amar.\n",
@@ -161,7 +161,7 @@ cmd.set_value(
                         "reference": None,
                         "meta": {},
                         "name": "f31d526077e94062a84ae01655b2b6c9",
-                        "value": 'rewrite this in to_english\n\nBeneath the old oak, a buried key lay,  \nUnlocking a chest from a forgotten day.  \nInside, a note: "The treasure is you,"  \nAnd the seeker smiled, for they knew it was true.',
+                        "value": 'rewrite this in english\n\nBeneath the old oak, a buried key lay,  \nUnlocking a chest from a forgotten day.  \nInside, a note: "The treasure is you,"  \nAnd the seeker smiled, for they knew it was true.',
                     },
                     "output": {
                         "type": "TextArtifact",

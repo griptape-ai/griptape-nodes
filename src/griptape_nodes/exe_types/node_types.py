@@ -348,7 +348,7 @@ class BaseNode(ABC):
     def remove_parameter_value(self, param_name: str) -> None:
         parameter = self.get_parameter_by_name(param_name)
         if parameter is None:
-            err = f"Attempted to remove value for Parameter '{param_name}' but no parameter doesn't exist."
+            err = f"Attempted to remove value for Parameter '{param_name}' but parameter doesn't exist."
             raise KeyError(err)
         if param_name in self.parameter_values:
             del self.parameter_values[param_name]
