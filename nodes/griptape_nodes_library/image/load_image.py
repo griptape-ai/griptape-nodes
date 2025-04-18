@@ -1,6 +1,6 @@
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import DataNode
-from nodes.griptape_nodes_library.utils.image_utils import dict_to_image_artifact
+from griptape_nodes_library.utils.image_utils import dict_to_image_artifact
 
 
 class LoadImage(DataNode):
