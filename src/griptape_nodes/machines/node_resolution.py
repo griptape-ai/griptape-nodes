@@ -46,38 +46,31 @@ class ResolutionContext:
         self.focus_stack = []
         self.paused = False
         self.scheduled_value = None
-        self.future = None
         self.shutdown_event = Event()
+        self.future = None
 
     def reset(self) -> None:
         # Clear the nodes that is currently being worked on.
-        if self.future:
-            # Will only cancel if it hasn't started yet...
-            if not self.future.cancel():
-                # set the event to shut down the thread.
-                self.shutdown_event.set()
-            # Send an event to stop the GUI from taking threading tasks.
-            EventBus.publish_event(
-                ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=self.focus_stack[-1].name))
+        # Will only cancel if it hasn't started yet...
+        if self.future and not self.future.cancel():
+            # set the event to shut down the thread.
+            self.shutdown_event.set()
+        # Send an event to stop the GUI from taking threading tasks.
+        # Clear the parameters? Since it'll be partially stored.
+        for parameter in self.focus_stack[-1].parameters:
+            if parameter.allowed_modes == {ParameterMode.OUTPUT}:
+                payload = ParameterValueUpdateEvent(
+                    node_name=self.focus_stack[-1].name,
+                    parameter_name=parameter.name,
+                    data_type=parameter.type,
+                    value=None,
                 )
-            )
-            # Clear the parameters? Since it'll be partially stored.
-            for parameter in self.focus_stack[-1].parameters:
-                if parameter.allowed_modes == {ParameterMode.OUTPUT}:
-                    payload = ParameterValueUpdateEvent(
-                        node_name=self.focus_stack[-1].name,
-                        parameter_name=parameter.name,
-                        data_type=parameter.type,
-                        value=None,
+            # Wipe current output of the parameter from the node please!
+                EventBus.publish_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(payload=payload)
                     )
-                # Wipe current output of the parameter from the node please!
-                    EventBus.publish_event(
-                        ExecutionGriptapeNodeEvent(
-                            wrapped_event=ExecutionEvent(payload=payload)
-                        )
-                    )
-            self.executor = None
+                )
         if len(self.focus_stack) > 0:
             node = self.focus_stack[-1]
             node.clear_node()
@@ -258,8 +251,6 @@ class ExecuteNodeState(State):
                 return None
         except Exception as e:
             msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
-            current_node.state = NodeResolutionState.UNRESOLVED
-            current_node.process_generator = None
             context.flow.cancel_flow_run()
             raise RuntimeError(msg) from e
 

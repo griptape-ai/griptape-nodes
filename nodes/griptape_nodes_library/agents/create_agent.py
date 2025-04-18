@@ -88,7 +88,7 @@ class CreateAgent(BaseAgent):
         for artifact in stream.run(prompt):
             # Check if shutdown is requested during processing
             if shutdown_event.is_set():
-                return output  # Return what we have so far
+                return ""  # Return nothing
             # SEND AN EVENT HERE
             EventBus.publish_event(
                 ProgressEvent(value = artifact.value, node_name=self.name, parameter_name="output")
