@@ -19,9 +19,9 @@ To get started, visit [https://griptapenodes.com](https://griptapenodes.com) and
 
 ![Landing Page](assets/img/getting_started/getting_started-nodes_landing_page.png)
 
-You'll be presented with a Griptape **Cloud** authorization form.
+You'll be presented with a Griptape Account authorization form.
 
-> If you've already signed up for Griptape **Cloud**, your existing credentials will work here!
+> If you've already signed up for [Griptape Cloud](https://cloud.griptape.ai), your existing credentials will work here!
 
 ![Login](assets/img/getting_started/getting_started-login.png)
 
@@ -29,11 +29,17 @@ Once you've logged in, you'll be presented with a setup screen which walks you t
 
 ## 2. Install Your Engine
 
-Copy the installation command from the **New Installation** section (it's the bit that starts with *curl*) . Open a terminal on your machine and paste and run the command.
+1. Copy the installation command from the **New Installation** section (it's the bit that starts with `curl`). 
 
-> Remember, you can install this on your local machine *or* a cloud-based workstation.
+1. Open a Terminal on your machine
 
-![Installation Page](assets/img/getting_started/getting_started-installation_page.png)
+1. Paste and run the command.
+
+    !!! info
+
+        You can install this on your local machine *or* a cloud-based workstation.
+
+![Installation Page](assets/img/getting_started/getting_started-installation_page.webp)
 
 You'll see this message when installation has completed:
 
