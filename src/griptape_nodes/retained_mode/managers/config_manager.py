@@ -168,14 +168,15 @@ class ConfigManager:
         workspace_path = self.workspace_path
         return workspace_path / relative_path
 
-    def get_config_value(self, key: str) -> Any:
+    def get_config_value(self, key: str, *, should_load_env_var_if_detected: bool = True) -> Any:
         """Get a value from the configuration.
 
-        If the value starts with a $, it will be pulled from the environment variables.
+        If `should_load_env_var_if_detected` is True (default), and the value starts with a $, it will be pulled from the environment variables.
 
         Args:
             key: The configuration key to get. Can use dot notation for nested keys (e.g., 'category.subcategory.key').
                  If the key refers to a category (dictionary), returns the entire category.
+            should_load_env_var_if_detected: If True, and the value starts with a $, it will be pulled from the environment variables.
 
         Returns:
             The value associated with the key, or the entire category if key points to a dict.
@@ -186,7 +187,7 @@ class ConfigManager:
             logger.error(msg)
             return None
 
-        if isinstance(value, str) and value.startswith("$"):
+        if should_load_env_var_if_detected and isinstance(value, str) and value.startswith("$"):
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
             value = GriptapeNodes.SecretsManager().get_secret(value[1:])
@@ -282,16 +283,45 @@ class ConfigManager:
             logger.error(details)
             return SetConfigValueResultFailure()
 
+        # Fetch the existing value (don't go to the env vars directly; we want the key)
+        old_value = self.get_config_value(request.category_and_key, should_load_env_var_if_detected=False)
+
+        # Make a copy of the existing value if it is a dict or list
+        if isinstance(old_value, (dict, list)):
+            import copy
+
+            old_value_copy = copy.deepcopy(old_value)
+        else:
+            old_value_copy = old_value
+
+        # Set the new value
         self.set_config_value(key=request.category_and_key, value=request.value)
 
-        # For container types, just indicate a change happened
+        # For container types, indicate the change with a diff
         if isinstance(request.value, (dict, list)):
-            details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'"
+            if old_value_copy is not None:
+                details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. Changes: {self._get_diff(old_value_copy, request.value)}"
+            else:
+                details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'"
         else:
-            details = f"Successfully assigned the config value for '{request.category_and_key}' to: {request.value}"
+            details = f"Successfully assigned the config value for '{request.category_and_key}':\n\tFROM '{old_value_copy}'\n\tTO: '{request.value}'"
 
         logger.info(details)
         return SetConfigValueResultSuccess()
+
+    def _get_diff(self, old_value: Any, new_value: Any) -> Any:
+        """Generate a diff between the old and new values."""
+        if isinstance(old_value, dict) and isinstance(new_value, dict):
+            diff = {
+                key: (old_value.get(key), new_value.get(key))
+                for key in new_value
+                if old_value.get(key) != new_value.get(key)
+            }
+        elif isinstance(old_value, list) and isinstance(new_value, list):
+            diff = [(i, old, new) for i, (old, new) in enumerate(zip(old_value, new_value, strict=False)) if old != new]
+        else:
+            diff = {"old": old_value, "new": new_value}
+        return diff
 
     def _write_user_config_delta(self, user_config_delta: dict) -> None:
         """Write the user configuration to the config file.
