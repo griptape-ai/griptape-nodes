@@ -1,10 +1,8 @@
 import logging
-from collections.abc import Iterator
-from typing import cast
 
-from griptape.artifacts import TextArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.structures import Agent, Structure
+from griptape.events import TextChunkEvent
+from griptape.structures import Agent
 from griptape.utils import Stream
 
 from griptape_nodes.exe_types.node_types import AsyncResult
@@ -38,7 +36,7 @@ class RunAgent(CreateAgent):
         if param:
             self.remove_parameter(param)
 
-    def process(self) -> AsyncResult[Iterator[TextArtifact] | Structure]:
+    def process(self) -> AsyncResult[str]:
         # Get input values
         params = self.parameter_values
         agent_dict = params.get("agent", None)
@@ -61,13 +59,14 @@ class RunAgent(CreateAgent):
             # Check and see if the prompt driver is a stream driver
             if self.is_stream(agent):
                 # Run the agent
-                agent_stream = cast("Iterator", (yield lambda: Stream(agent).run(prompt)))
-                for artifact in agent_stream:
-                    full_output += artifact.value
+                full_output = yield (
+                    lambda: "".join(
+                        artifact.value for artifact in Stream(agent, event_types=[TextChunkEvent]).run(prompt)
+                    )
+                )
             else:
                 # Run the agent
-                result = cast("Structure", (yield lambda: agent.run(prompt)))
-                full_output = result.output.value
+                full_output = yield lambda: agent.run(prompt).output.value
             self.parameter_output_values["output"] = full_output
         else:
             self.parameter_output_values["output"] = "Agent Created"

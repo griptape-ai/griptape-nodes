@@ -30,6 +30,8 @@ from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import LibraryNameAndVersion, WorkflowMetadata, WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
+    AppGetSessionRequest,
+    AppGetSessionResultSuccess,
     AppInitializationComplete,
     AppStartSessionRequest,
     AppStartSessionResultSuccess,
@@ -98,6 +100,11 @@ from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
     DeleteFlowResultFailure,
     DeleteFlowResultSuccess,
+    GetTopLevelFlowRequest,
+    GetTopLevelFlowResultSuccess,
+    ListFlowsInCurrentContextRequest,
+    ListFlowsInCurrentContextResultFailure,
+    ListFlowsInCurrentContextResultSuccess,
     ListFlowsInFlowRequest,
     ListFlowsInFlowResultFailure,
     ListFlowsInFlowResultSuccess,
@@ -229,6 +236,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+from griptape_nodes.retained_mode.managers.context_manager import ContextManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
@@ -266,6 +274,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._object_manager = ObjectManager(self._event_manager)
             self._node_manager = NodeManager(self._event_manager)
             self._flow_manager = FlowManager(self._event_manager)
+            self._context_manager = ContextManager(self._event_manager)
             self._library_manager = LibraryManager(self._event_manager)
             self._workflow_manager = WorkflowManager(self._event_manager)
             self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
@@ -278,6 +287,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._event_manager.assign_manager_to_request_type(
                 AppStartSessionRequest, self.handle_session_start_request
             )
+            self._event_manager.assign_manager_to_request_type(AppGetSessionRequest, self.handle_get_session_request)
 
     @classmethod
     def get_instance(cls) -> GriptapeNodes:
@@ -319,6 +329,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def NodeManager(cls) -> NodeManager:
         return GriptapeNodes.get_instance()._node_manager
+
+    @classmethod
+    def ContextManager(cls) -> ContextManager:
+        return GriptapeNodes.get_instance()._context_manager
 
     @classmethod
     def WorkflowManager(cls) -> WorkflowManager:
@@ -396,7 +410,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
         # TODO(griptape): Do we want to broadcast that a session started?
 
-        return AppStartSessionResultSuccess()
+        return AppStartSessionResultSuccess(request.session_id)
+
+    def handle_get_session_request(self, _: AppGetSessionRequest) -> ResultPayload:
+        return AppGetSessionResultSuccess(session_id=BaseEvent._session_id)
 
 
 OBJ_TYPE = TypeVar("OBJ_TYPE")
@@ -472,6 +489,12 @@ class ObjectManager:
             )
             return ClearAllObjectStateResultFailure()
         # Let's try and clear it all.
+        context_mgr = GriptapeNodes.ContextManager()
+        while context_mgr.has_current_flow():
+            while context_mgr.has_current_node():
+                context_mgr.pop_node()
+            context_mgr.pop_flow()
+
         try:
             # Clear the existing flows, which will clear all nodes and connections.
             GriptapeNodes.clear_data()
@@ -617,6 +640,9 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(DeleteFlowRequest, self.on_delete_flow_request)
         event_manager.assign_manager_to_request_type(ListNodesInFlowRequest, self.on_list_nodes_in_flow_request)
         event_manager.assign_manager_to_request_type(ListFlowsInFlowRequest, self.on_list_flows_in_flow_request)
+        event_manager.assign_manager_to_request_type(
+            ListFlowsInCurrentContextRequest, self.on_list_flows_in_current_context_request
+        )
         event_manager.assign_manager_to_request_type(CreateConnectionRequest, self.on_create_connection_request)
         event_manager.assign_manager_to_request_type(DeleteConnectionRequest, self.on_delete_connection_request)
         event_manager.assign_manager_to_request_type(StartFlowRequest, self.on_start_flow_request)
@@ -633,6 +659,7 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(
             ValidateFlowDependenciesRequest, self.on_validate_flow_dependencies_request
         )
+        event_manager.assign_manager_to_request_type(GetTopLevelFlowRequest, self.on_get_top_level_flow_request)
 
         self._name_to_parent_name = {}
 
@@ -641,6 +668,14 @@ class FlowManager:
             return self._name_to_parent_name[flow_name]
         msg = f"Flow with name {flow_name} doesn't exist"
         raise ValueError(msg)
+
+    def on_get_top_level_flow_request(self, request: GetTopLevelFlowRequest) -> ResultPayload:  # noqa: ARG002 (the request has to be assigned to the method)
+        for flow_name, parent in self._name_to_parent_name.items():
+            if parent is None:
+                return GetTopLevelFlowResultSuccess(flow_name=flow_name)
+        msg = "Attempted to get top level flow, but no such flow exists"
+        logger.debug(msg)
+        return GetTopLevelFlowResultSuccess(flow_name=None)
 
     def does_canvas_exist(self) -> bool:
         """Determines if there is already an existing flow with no parent flow.Returns True if there is an existing flow with no parent flow.Return False if there is no existing flow with no parent flow."""
@@ -651,6 +686,16 @@ class FlowManager:
 
         # Who is the parent?
         parent_name = request.parent_flow_name
+
+        # This one's tricky. If they said "None" for the parent, they could either be saying:
+        # 1. Use whatever the current context is to be the parent.
+        # 2. Create me as the canvas (i.e., the top-level flow, of which there can be only one)
+
+        # We'll explore #1 first by seeing if the Context Manager already has a current flow,
+        # which would mean the canvas is already established:
+        if (parent_name is None) and (GriptapeNodes.ContextManager().has_current_flow()):
+            # Aha! Just use that.
+            parent_name = GriptapeNodes.ContextManager().get_current_flow_name()
 
         parent = obj_mgr.attempt_get_object_by_name_as_type(parent_name, ControlFlow)
         if parent_name is None:
@@ -675,6 +720,10 @@ class FlowManager:
         obj_mgr.add_object_by_name(name=final_flow_name, obj=flow)
         self._name_to_parent_name[final_flow_name] = parent_name
 
+        # See if we need to push it as the current context.
+        if request.set_as_new_context:
+            GriptapeNodes.ContextManager().push_flow(final_flow_name)
+
         # Success
         details = f"Successfully created Flow '{final_flow_name}'."
         log_level = logging.DEBUG
@@ -686,59 +735,79 @@ class FlowManager:
         result = CreateFlowResultSuccess(flow_name=final_flow_name)
         return result
 
-    def on_delete_flow_request(self, request: DeleteFlowRequest) -> ResultPayload:
+    def on_delete_flow_request(self, request: DeleteFlowRequest) -> ResultPayload:  # noqa: PLR0911 (complex af)
+        flow_name = request.flow_name
+        if flow_name is None:
+            # We want to delete whatever is at the top of the Current Context.
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = (
+                    "Attempted to delete a Flow from the Current Context. Failed because the Current Context was empty."
+                )
+                logger.error(details)
+                result = DeleteFlowResultFailure()
+                return result
+            # We pop it off here, but we'll re-add it using context in a moment.
+            flow_name = GriptapeNodes.ContextManager().pop_flow()
+
         # Does this Flow even exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
-        flow = obj_mgr.attempt_get_object_by_name_as_type(request.flow_name, ControlFlow)
+        flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
         if flow is None:
-            details = f"Attempted to delete Flow '{request.flow_name}', but no Flow with that name could be found."
+            details = f"Attempted to delete Flow '{flow_name}', but no Flow with that name could be found."
             logger.error(details)
             result = DeleteFlowResultFailure()
             return result
 
-        # Delete all child nodes in this Flow.
-        list_nodes_request = ListNodesInFlowRequest(flow_name=request.flow_name)
-        list_nodes_result = GriptapeNodes().handle_request(list_nodes_request)
-        if isinstance(list_nodes_result, ListNodesInFlowResultFailure):
-            details = f"Attempted to delete Flow '{request.flow_name}', but failed while attempting to get the list of Nodes owned by this Flow."
-            logger.error(details)
-            result = DeleteFlowResultFailure()
-            return result
-        node_names = list_nodes_result.node_names
-        for node_name in node_names:
-            delete_node_request = DeleteNodeRequest(node_name=node_name)
-            delete_node_result = GriptapeNodes().handle_request(delete_node_request)
-            if isinstance(delete_node_result, DeleteNodeResultFailure):
-                details = f"Attempted to delete Flow '{request.flow_name}', but failed while attempting to delete child Node '{node_name}'."
+        # Let this Flow assume the Current Context while we delete everything within it.
+        with GriptapeNodes.ContextManager().flow(flow_name=flow_name):
+            # Delete all child nodes in this Flow.
+            list_nodes_request = ListNodesInFlowRequest()
+            list_nodes_result = GriptapeNodes().handle_request(list_nodes_request)
+            if isinstance(list_nodes_result, ListNodesInFlowResultFailure):
+                details = f"Attempted to delete Flow '{flow_name}', but failed while attempting to get the list of Nodes owned by this Flow."
                 logger.error(details)
                 result = DeleteFlowResultFailure()
                 return result
 
-        # Delete all child Flows of this Flow.
-        list_flows_request = ListFlowsInFlowRequest(parent_flow_name=request.flow_name)
-        list_flows_result = GriptapeNodes().handle_request(list_flows_request)
-        if isinstance(list_flows_result, ListFlowsInFlowResultFailure):
-            details = f"Attempted to delete Flow '{request.flow_name}', but failed while attempting to get the list of Flows owned by this Flow."
-            logger.error(details)
-            result = DeleteFlowResultFailure()
-            return result
-        flow_names = list_flows_result.flow_names
-        for flow_name in flow_names:
-            # Delete them.
-            delete_flow_request = DeleteFlowRequest(flow_name=flow_name)
-            delete_flow_result = GriptapeNodes().handle_request(delete_flow_request)
-            if isinstance(delete_flow_result, DeleteFlowResultFailure):
-                details = f"Attempted to delete Flow '{request.flow_name}', but failed while attempting to delete child Flow '{flow_name}'."
+            node_names = list_nodes_result.node_names
+            for node_name in node_names:
+                delete_node_request = DeleteNodeRequest(node_name=node_name)
+                delete_node_result = GriptapeNodes().handle_request(delete_node_request)
+                if isinstance(delete_node_result, DeleteNodeResultFailure):
+                    details = f"Attempted to delete Flow '{flow_name}', but failed while attempting to delete child Node '{node_name}'."
+                    logger.error(details)
+                    result = DeleteFlowResultFailure()
+                    return result
+
+            # Delete all child Flows of this Flow.
+            # Note: We use ListFlowsInCurrentContextRequest here instead of ListFlowsInFlowRequest(parent_flow_name=None)
+            # because None in ListFlowsInFlowRequest means "get canvas/top-level flows". We want the flows in the
+            # current context, which is the flow we're deleting.
+            list_flows_request = ListFlowsInCurrentContextRequest()
+            list_flows_result = GriptapeNodes().handle_request(list_flows_request)
+            if isinstance(list_flows_result, ListFlowsInCurrentContextResultFailure):
+                details = f"Attempted to delete Flow '{flow_name}', but failed while attempting to get the list of Flows owned by this Flow."
                 logger.error(details)
                 result = DeleteFlowResultFailure()
                 return result
+            flow_names = list_flows_result.flow_names
+            for child_flow_name in flow_names:
+                with GriptapeNodes.ContextManager().flow(flow_name=child_flow_name):
+                    # Delete them.
+                    delete_flow_request = DeleteFlowRequest()
+                    delete_flow_result = GriptapeNodes().handle_request(delete_flow_request)
+                    if isinstance(delete_flow_result, DeleteFlowResultFailure):
+                        details = f"Attempted to delete Flow '{flow_name}', but failed while attempting to delete child Flow '{child_flow_name}'."
+                        logger.error(details)
+                        result = DeleteFlowResultFailure()
+                        return result
 
-        # If we've made it this far, we have deleted all the children Flows and their nodes.
-        # Remove the flow from our map.
-        obj_mgr.del_obj_by_name(request.flow_name)
-        del self._name_to_parent_name[request.flow_name]
+            # If we've made it this far, we have deleted all the children Flows and their nodes.
+            # Remove the flow from our map.
+            obj_mgr.del_obj_by_name(flow_name)
+            del self._name_to_parent_name[flow_name]
 
-        details = f"Successfully deleted Flow '{request.flow_name}'."
+        details = f"Successfully deleted Flow '{flow_name}'."
         logger.debug(details)
         result = DeleteFlowResultSuccess()
         return result
@@ -761,19 +830,30 @@ class FlowManager:
         return GetIsFlowRunningResultSuccess(is_running=is_running)
 
     def on_list_nodes_in_flow_request(self, request: ListNodesInFlowRequest) -> ResultPayload:
+        flow_name = request.flow_name
+        if flow_name is None:
+            # First check if we have a current flow
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = "Attempted to list Nodes in a Flow in the Current Context. Failed because the Current Context was empty."
+                logger.error(details)
+                result = ListNodesInFlowResultFailure()
+                return result
+            # Get the current flow from context
+            flow_name = GriptapeNodes.ContextManager().get_current_flow_name()
+
         # Does this Flow even exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
-        flow = obj_mgr.attempt_get_object_by_name_as_type(request.flow_name, ControlFlow)
+        flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
         if flow is None:
             details = (
-                f"Attempted to list Nodes in Flow '{request.flow_name}', but no Flow with that name could be found."
+                f"Attempted to list Nodes in Flow '{flow_name}'. Failed because no Flow with that name could be found."
             )
             logger.error(details)
             result = ListNodesInFlowResultFailure()
             return result
 
         ret_list = list(flow.nodes.keys())
-        details = f"Successfully got the list of Nodes within Flow '{request.flow_name}'."
+        details = f"Successfully got the list of Nodes within Flow '{flow_name}'."
         logger.debug(details)
 
         result = ListNodesInFlowResultSuccess(node_names=ret_list)
@@ -1010,6 +1090,7 @@ class FlowManager:
                     source_parameter_name=old_source_param_name,
                     target_node_name=old_target_node_name,
                     target_parameter_name=old_target_param_name,
+                    initial_setup=request.initial_setup,
                 )
                 create_old_connection_result = GriptapeNodes.handle_request(create_old_connection_request)
                 if create_old_connection_result.failed():
@@ -1049,7 +1130,7 @@ class FlowManager:
             if isinstance(target_param, ParameterContainer):
                 target_node.kill_parameter_children(target_param)
         # if it existed somewhere and actually has a value - Set the parameter!
-        if value:
+        if value and request.initial_setup is False:
             GriptapeNodes.handle_request(
                 SetParameterValueRequest(
                     parameter_name=target_param.name,
@@ -1265,7 +1346,7 @@ class FlowManager:
                 cancel_request = CancelFlowRequest(flow_name=flow_name)
                 GriptapeNodes.handle_request(cancel_request)
 
-            return StartFlowResultFailure(validation_exceptions=[])
+            return StartFlowResultFailure(validation_exceptions=[e])
 
         details = f"Successfully kicked off flow with name {flow_name}"
         logger.debug(details)
@@ -1459,6 +1540,25 @@ class FlowManager:
             validation_succeeded=len(all_exceptions) == 0, exceptions=all_exceptions
         )
 
+    def on_list_flows_in_current_context_request(self, request: ListFlowsInCurrentContextRequest) -> ResultPayload:  # noqa: ARG002 (request isn't actually used)
+        if not GriptapeNodes.ContextManager().has_current_flow():
+            details = "Attempted to list Flows in the Current Context. Failed because the Current Context was empty."
+            logger.error(details)
+            return ListFlowsInCurrentContextResultFailure()
+
+        parent_flow_name = GriptapeNodes.ContextManager().get_current_flow_name()
+
+        # Create a list of all child flow names that point DIRECTLY to us.
+        ret_list = []
+        for flow_name, parent_name in self._name_to_parent_name.items():
+            if parent_name == parent_flow_name:
+                ret_list.append(flow_name)
+
+        details = f"Successfully got the list of Flows in the Current Context (Flow '{parent_flow_name}')."
+        logger.debug(details)
+
+        return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list)
+
 
 class NodeManager:
     _name_to_parent_flow_name: dict[str, str]
@@ -1517,11 +1617,15 @@ class NodeManager:
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
         if parent_flow_name is None:
-            details = f"Could not create Node of type '{request.node_type}'. No value for parent flow was supplied. This will one day come from the Current Context but we are poor and broken people. Please try your call again later."
-            logger.error(details)
+            # Try to get the current context flow
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = (
+                    "Attempted to create Node in the Current Context. Failed because the Current Context was empty."
+                )
+                logger.error(details)
+                return CreateNodeResultFailure()
+            parent_flow_name = GriptapeNodes.ContextManager().get_current_flow_name()
 
-            result = CreateNodeResultFailure()
-            return result
         # Does this flow actually exist?
         flow_mgr = GriptapeNodes.FlowManager()
         try:
@@ -1529,9 +1633,7 @@ class NodeManager:
         except KeyError as err:
             details = f"Could not create Node of type '{request.node_type}'. Error: {err}"
             logger.error(details)
-
-            result = CreateNodeResultFailure()
-            return result
+            return CreateNodeResultFailure()
 
         # Now ensure that we're giving a valid name.
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
@@ -1556,9 +1658,7 @@ class NodeManager:
             traceback.print_exc()
             details = f"Could not create Node '{final_node_name}' of type '{request.node_type}': {err}"
             logger.error(details)
-
-            result = CreateNodeResultFailure()
-            return result
+            return CreateNodeResultFailure()
 
         # Add it to the Flow.
         flow.add_node(node)
@@ -1567,19 +1667,24 @@ class NodeManager:
         obj_mgr.add_object_by_name(node.name, node)
         self._name_to_parent_flow_name[node.name] = parent_flow_name
 
-        # Phew.
-        details = f"Successfully created Node '{final_node_name}' of type '{request.node_type}'."
+        node.state = NodeResolutionState(request.resolution)
+
+        # Success message based on whether we used Current Context or explicit flow
+        if request.override_parent_flow_name is None:
+            details = (
+                f"Successfully created Node '{final_node_name}' in the Current Context (Flow '{parent_flow_name}')"
+            )
+        else:
+            details = f"Successfully created Node '{final_node_name}' in Flow '{parent_flow_name}'"
+
         log_level = logging.DEBUG
         if remapped_requested_node_name:
             log_level = logging.WARNING
-            details = f"{details} WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
+            details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
 
         logger.log(level=log_level, msg=details)
 
-        result = CreateNodeResultSuccess(
-            node_name=node.name,
-        )
-        return result
+        return CreateNodeResultSuccess(node_name=node.name)
 
     def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:
         # Does this node exist?
@@ -1819,7 +1924,7 @@ class NodeManager:
             result = AddParameterToNodeResultFailure()
             return result
 
-        if request.parent_container_name:
+        if request.parent_container_name and not request.initial_setup:
             parameter = node.get_parameter_by_name(request.parent_container_name)
             if parameter is None:
                 details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{request.node_name}'. Failed because parameter didn't exist."
@@ -1841,7 +1946,7 @@ class NodeManager:
             return AddParameterToNodeResultSuccess(
                 parameter_name=new_param.name, type=new_param.type, node_name=request.node_name
             )
-        if request.parameter_name is None or request.default_value is None or request.tooltip is None:
+        if request.parameter_name is None or request.tooltip is None:
             details = f"Attempted to add Parameter to node '{request.node_name}'. Failed because default_value, tooltip, or parameter_name was not defined."
             logger.error(details)
             result = AddParameterToNodeResultFailure()
@@ -1905,9 +2010,16 @@ class NodeManager:
             tooltip_as_output=request.tooltip_as_output,
             allowed_modes=allowed_modes,
             ui_options=request.ui_options,
+            parent_container_name=request.parent_container_name,
         )
         try:
-            node.add_parameter(new_param)
+            if request.parent_container_name and request.initial_setup:
+                parameter_parent = node.get_parameter_by_name(request.parent_container_name)
+                if parameter_parent is not None:
+                    parameter_parent.add_child(new_param)
+            else:
+                logger.info(new_param.name)
+                node.add_parameter(new_param)
         except Exception as e:
             details = f"Couldn't add parameter with name {request.parameter_name} to node. Error: {e}"
             logger.error(details)
@@ -2085,18 +2197,39 @@ class NodeManager:
         element_details = element.to_dict()
         # We need to get parameter values from here
         param_to_value = {}
-        for parameter in element.find_elements_by_type(Parameter):
-            # How to do for grouping?
-            value = node.get_parameter_value(parameter.name)
-            if value:
-                element_id = parameter.element_id
-                param_to_value[element_id] = value
+        self._set_param_to_value(node, element, param_to_value)
         if param_to_value:
             element_details["element_id_to_value"] = param_to_value
         details = f"Successfully got element details for Node '{request.node_name}'."
         logger.debug(details)
         result = GetNodeElementDetailsResultSuccess(element_details=element_details)
         return result
+
+    def _set_param_to_value(self, node: BaseNode, element: BaseNodeElement, param_to_value: dict) -> None:
+        """This method builds our element_id_to_value mapping to eventually return in the Element Details Request."""
+        # Get all parameters
+        for parameter in element.find_elements_by_type(Parameter):
+            # Check if they have an output value, that takes priority
+            if parameter.name in node.parameter_output_values:
+                value = node.parameter_output_values[parameter.name]
+            else:
+                # Otherwise grab the set value or default value
+                value = node.get_parameter_value(parameter.name)
+            if value is not None:
+                element_id = parameter.element_id
+                # Check if the value is in builtins. If it isn't we need to handle it specially.
+                if value.__class__.__module__ != "builtins":
+                    # Check if it has a to_dict method. Use that, if it's been implemented.
+                    if hasattr(value, "to_dict"):
+                        # If the object has a __dict__, use that
+                        param_to_value[element_id] = value.to_dict()
+                        return
+                    # Otherwise use __dict__.
+                    if hasattr(value, "__dict__"):
+                        param_to_value[element_id] = value.__dict__
+                        return
+                # Otherwise, just set it here. It'll be handled in .json() when we send it over.
+                param_to_value[element_id] = value
 
     def modify_alterable_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
         if request.tooltip is not None:
@@ -2233,7 +2366,7 @@ class NodeManager:
         return result
 
     # added ignoring C901 since this method is overly long because of granular error checking, not actual complexity.
-    def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: PLR0911 C901 TODO(griptape): resolve
+    def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -2263,7 +2396,6 @@ class NodeManager:
             result = SetParameterValueResultFailure()
             return result
 
-        object_created = request.value
         # Well this seems kind of stupid
         object_type = request.data_type if request.data_type else parameter.type
         # Is this value kosher for the types allowed?
@@ -2294,34 +2426,27 @@ class NodeManager:
 
         # Values are actually stored on the NODE.
         try:
-            modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
-            finalized_value = node.get_parameter_value(request.parameter_name)
+            finalized_value = self._set_and_pass_through_values(request, node)
         except Exception as err:
             details = f"Attempted to set parameter value for '{request.node_name}.{request.parameter_name}'. Failed because Exception: {err}"
             logger.error(details)
             return SetParameterValueResultFailure()
-
-        if modified_parameters:
-            for modified_parameter_name in modified_parameters:
-                modified_request = GetParameterDetailsRequest(
-                    parameter_name=modified_parameter_name, node_name=node.name
-                )
-                GriptapeNodes.handle_request(modified_request)
         # Mark node as unresolved
-        node.state = NodeResolutionState.UNRESOLVED
-        # Get the flow
-        # Pass the value through!
-        # Optional data_type parameter for internal handling!
-        conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
-        for target_node, target_parameter in conn_output_nodes:
-            GriptapeNodes.get_instance().handle_request(
-                SetParameterValueRequest(
-                    parameter_name=target_parameter.name,
-                    node_name=target_node.name,
-                    value=finalized_value,
-                    data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
+        if request.initial_setup is False and not request.is_output:
+            node.state = NodeResolutionState.UNRESOLVED
+            # Get the flow
+            # Pass the value through!
+            # Optional data_type parameter for internal handling!
+            conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
+            for target_node, target_parameter in conn_output_nodes:
+                GriptapeNodes.get_instance().handle_request(
+                    SetParameterValueRequest(
+                        parameter_name=target_parameter.name,
+                        node_name=target_node.name,
+                        value=finalized_value,
+                        data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
+                    )
                 )
-            )
 
         # Cool.
         details = f"Successfully set value on Node '{request.node_name}' Parameter '{request.parameter_name}'."
@@ -2329,6 +2454,27 @@ class NodeManager:
 
         result = SetParameterValueResultSuccess(finalized_value=finalized_value, data_type=parameter.type)
         return result
+
+    def _set_and_pass_through_values(self, request: SetParameterValueRequest, node: BaseNode) -> Any:
+        """Set the parameter value on the node according to the specifications."""
+        object_created = request.value
+        # If the value should be set on the output dictionary:
+        if request.is_output:
+            # set it to output values
+            node.parameter_output_values[request.parameter_name] = object_created
+            return object_created
+        # Otherwise use set_parameter_value. This calls our converters and validators.
+        modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
+        # Get the "converted" value here.
+        finalized_value = node.get_parameter_value(request.parameter_name)
+        # If any parameters were dependent on that value, we're calling this details request to emit the result to the editor.
+        if modified_parameters:
+            for modified_parameter_name in modified_parameters:
+                modified_request = GetParameterDetailsRequest(
+                    parameter_name=modified_parameter_name, node_name=node.name
+                )
+                GriptapeNodes.handle_request(modified_request)
+        return finalized_value
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     # For PLR0911 (too many return statements): don't want to do a ton of nested chains of success,
@@ -2947,23 +3093,32 @@ class WorkflowManager:
                 # Write all flows to a file, get back the strings for connections
                 connection_request_workflows = handle_flow_saving(file, obj_manager, created_flows)
                 # Now all of the flows have been created.
+                values_created = {}
                 for node in obj_manager.get_filtered_subset(type=BaseNode).values():
                     flow_name = node_manager.get_node_parent_flow_by_name(node.name)
+                    # Save the parameters
+                    try:
+                        parameter_string, saved_properly = handle_parameter_creation_saving(node, values_created)
+                    except Exception as e:
+                        details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
+                        logger.error(details)
+                        return SaveWorkflowResultFailure()
+                    if saved_properly:
+                        resolution = node.state.value
+                    else:
+                        resolution = NodeResolutionState.UNRESOLVED.value
                     creation_request = CreateNodeRequest(
                         node_type=node.__class__.__name__,
                         node_name=node.name,
                         metadata=node.metadata,
                         override_parent_flow_name=flow_name,
+                        resolution=resolution,  # Unresolved if something failed to save or create
+                        initial_setup=True,
                     )
                     code_string = f"GriptapeNodes().handle_request({creation_request})"
                     file.write(code_string + "\n")
-                    # Save the parameters
-                    try:
-                        handle_parameter_creation_saving(file, node, flow_name)
-                    except Exception as e:
-                        details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
-                        logger.error(details)
-                        return SaveWorkflowResultFailure()
+                    # Add all parameter deetails now
+                    file.write(parameter_string)
 
                     # See if this node uses a library we need to know about.
                     library_used = node.metadata["library"]
@@ -3037,6 +3192,8 @@ class WorkflowManager:
         if file_name not in registered_workflows:
             config_manager.save_user_workflow_json(relative_file_path)
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
+        details = f"Successfully saved workflow to: {file_path}"
+        logger.info(details)
         return SaveWorkflowResultSuccess(file_path=str(file_path))
 
 
@@ -3075,21 +3232,25 @@ def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: 
                 source_parameter_name=connection.source_parameter.name,
                 target_node_name=connection.target_node.name,
                 target_parameter_name=connection.target_parameter.name,
+                initial_setup=True,
             )
             code_string = f"GriptapeNodes().handle_request({creation_request})"
             connection_request_workflows += code_string + "\n"
     return connection_request_workflows
 
 
-def handle_parameter_creation_saving(file: TextIO, node: BaseNode, flow_name: str) -> None:
+def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tuple[str, bool]:
+    parameter_details = ""
+    saved_properly = True
     for parameter in node.parameters:
-        param_dict = vars(parameter)
+        param_dict = parameter.to_dict()
         # Create the parameter, or alter it on the existing node
         if parameter.user_defined:
             param_dict["node_name"] = node.name
+            param_dict["initial_setup"] = True
             creation_request = AddParameterToNodeRequest.create(**param_dict)
-            code_string = f"GriptapeNodes().handle_request({creation_request})"
-            file.write(code_string + "\n")
+            code_string = f"GriptapeNodes().handle_request({creation_request})\n"
+            parameter_details += code_string
         else:
             base_node_obj = type(node)(name="test")
             diff = manage_alter_details(parameter, base_node_obj)
@@ -3101,40 +3262,195 @@ def handle_parameter_creation_saving(file: TextIO, node: BaseNode, flow_name: st
             if relevant:
                 diff["node_name"] = node.name
                 diff["parameter_name"] = parameter.name
+                diff["initial_setup"] = True
                 creation_request = AlterParameterDetailsRequest.create(**diff)
-                code_string = f"GriptapeNodes().handle_request({creation_request})"
-                file.write(code_string + "\n")
-        if parameter.name in node.parameter_values and parameter.name not in node.parameter_output_values:
+                code_string = f"GriptapeNodes().handle_request({creation_request})\n"
+                parameter_details += code_string
+        if parameter.name in node.parameter_values or parameter.name in node.parameter_output_values:
             # SetParameterValueRequest event
-            code_string = handle_parameter_value_saving(parameter, node, flow_name)
+            code_string = handle_parameter_value_saving(parameter, node, values_created)
             if code_string:
-                file.write(code_string + "\n")
+                code_string = code_string + "\n"
+                parameter_details += code_string
+            else:
+                saved_properly = False
+    return parameter_details, saved_properly
 
 
-def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, flow_name: str) -> str | None:
-    flow_manager = GriptapeNodes()._flow_manager
-    parent_flow = flow_manager.get_flow_by_name(flow_name)
-    if not (
-        node.name in parent_flow.connections.incoming_index
-        and parameter.name in parent_flow.connections.incoming_index[node.name]
-    ):
+def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_created: dict) -> str | None:
+    """Generates code to save a parameter value for a node in a Griptape workflow.
+
+    This function handles the process of creating code that will reconstruct and set
+    parameter values for nodes. It performs the following steps:
+    1. Retrieves the parameter value from the node's parameter values or output values
+    2. Checks if the value has already been created in the generated code
+    3. If not, generates code to reconstruct the value
+    4. Creates a SetParameterValueRequest to apply the value to the node
+
+    Args:
+        parameter (Parameter): The parameter object containing metadata
+        node (BaseNode): The node object that contains the parameter
+        values_created (dict): Dictionary mapping value identifiers to variable names
+                              that have already been created in the code
+
+    Returns:
+        str | None: Python code as a string that will reconstruct and set the parameter
+                   value when executed. Returns None if the parameter has no value or
+                   if the value cannot be properly represented.
+
+    Notes:
+        - Parameter output values take precedence over regular parameter values
+        - For values that can be hashed, the value itself is used as the key in values_created
+        - For unhashable values, the object's id is used as the key
+        - The function will reuse already created values to avoid duplication
+    """
+    value = None
+    is_output = False
+    if parameter.name in node.parameter_values:
         value = node.get_parameter_value(parameter.name)
-        safe_conversion = False
-        if hasattr(value, "__str__") and value.__class__.__str__ is not object.__str__:
-            value = str(value)
-            safe_conversion = True
+    # Output values are more important
+    if parameter.name in node.parameter_output_values:
+        value = node.parameter_output_values[parameter.name]
+        is_output = True
+    if value is not None:
+        try:
+            hash(value)
+            value_id = value
+        except TypeError:
+            value_id = id(value)
+        if value_id in values_created:
+            var_name = values_created[value_id]
+            # We've already created this object. we're all good.
+            return f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True, is_output={is_output}))"
+        # Set it up as a object in the code
+        imports = []
+        var_name = f"{node.name}_{parameter.name}_value"
+        values_created[value_id] = var_name
+        reconstruction_code = _convert_value_to_str_representation(var_name, value, imports)
         # If it doesn't have a custom __str__, convert to dict if possible
-        elif hasattr(value, "__dict__"):
-            value = str(value.__dict__)
-            safe_conversion = True
-        if safe_conversion:
-            creation_request = SetParameterValueRequest(
-                parameter_name=parameter.name,
-                node_name=node.name,
-                value=value,
+        if reconstruction_code != "":
+            # Add the request handling code
+            final_code = (
+                reconstruction_code
+                + f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True, is_output={is_output}))"
             )
-            return f"GriptapeNodes().handle_request({creation_request})"
+            # Combine imports and code
+            import_statements = ""
+            if imports:
+                import_statements = "\n".join(list(set(imports))) + "\n\n"  # Remove duplicates with set()
+            return import_statements + final_code
     return None
+
+
+def _convert_value_to_str_representation(var_name: str, value: Any, imports: list) -> str:
+    """Converts a Python value to its string representation as executable code.
+
+    This function generates Python code that can recreate the given value
+    when executed. It handles different types of values with specific strategies:
+    - Objects with a 'to_dict' method: Uses _create_object_in_file for reconstruction
+    - Basic Python types: Uses their repr representation
+    - If not representable: Returns empty string
+
+    Args:
+        var_name (str): The variable name to assign the value to in the generated code
+        value (Any): The Python value to convert to code
+        imports (list): List to which any required import statements will be appended
+
+    Returns:
+        str: Python code as a string that will reconstruct the value when executed.
+             Returns empty string if the value cannot be properly represented.
+    """
+    reconstruction_code = ""
+    # If it doesn't have a custom __str__, convert to dict if possible
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        # For objects with to_dict method
+        reconstruction_code = _create_object_in_file(value, var_name, imports)
+        return reconstruction_code
+    if isinstance(value, (int, float, str, bool)) or value is None:
+        # For basic types, use repr to create a literal
+        return f"{var_name} = {value!r}\n"
+    if isinstance(value, (list, dict, tuple, set)):
+        reconstruction_code = _convert_container_to_str_representation(var_name, value, imports, type(value))
+        return reconstruction_code
+    return ""
+
+
+def _convert_container_to_str_representation(var_name: str, value: Any, imports: list, value_type: type) -> str:
+    """Creates code to reconstruct a container type (list, dict, tuple, set) with its elements.
+
+    Args:
+        var_name (str): The variable name to assign the container to
+        value (Any): The container value to convert to code
+        imports (list): List to which any required import statements will be appended
+        value_type (type): The type of container (list, dict, tuple, or set)
+
+    Returns:
+        str: Python code as a string that will reconstruct the container
+    """
+    # Get the initialization brackets from an empty container
+    empty_container = value_type()
+    init_brackets = repr(empty_container)
+    # Initialize the container
+    code = f"{var_name} = {init_brackets}\n"
+    temp_var_base = f"{var_name}_item"
+    if value_type is dict:
+        # Process dictionary items
+        for i, (k, v) in enumerate(value.items()):
+            temp_var = f"{temp_var_base}_{i}"
+            # Convert the value to code
+            value_code = _convert_value_to_str_representation(temp_var, v, imports)
+            if value_code:
+                code += value_code
+                code += f"{var_name}[{k!r}] = {temp_var}\n"
+            else:
+                code += f"{var_name}[{k!r}] = {v!r}\n"
+    else:
+        # Process sequence items (list, tuple, set)
+        # For immutable types like tuple and set, we need to build a list first
+        for i, item in enumerate(value):
+            temp_var = f"{temp_var_base}_{i}"
+            # Convert the item to code
+            item_code = _convert_value_to_str_representation(temp_var, item, imports)
+            if item_code != "":
+                code += item_code
+                code += f"{var_name}.append({temp_var})\n"
+            else:
+                code += f"{var_name}.append({item!r})\n"
+        # Convert the list to the final type if needed
+        if value_type in (tuple, set):
+            code += f"{var_name} = {value_type.__name__}({var_name})\n"
+    return code
+
+
+def _create_object_in_file(value: Any, var_name: str, imports: list) -> str:
+    """Creates Python code to reconstruct an object from its dictionary representation and adds necessary import statements.
+
+    Args:
+        value (Any): The object to be serialized into Python code
+        var_name (str): The name of the variable to assign the object to in the generated code
+        imports (list): List to which import statements will be appended
+
+    Returns:
+        str: Python code string that reconstructs the object when executed
+             Returns empty string if object cannot be properly reconstructed
+
+    Notes:
+        - The function assumes the object has a 'to_dict()' method to serialize it. It is only called if the object does have that method.
+        - For class instances, it will add appropriate import statements to 'imports'
+        - The generated code will create a dictionary representation first, then
+          reconstruct the object using a 'from_dict' class method
+    """
+    obj_dict = value.to_dict()
+    reconstruction_code = f"{var_name} = {obj_dict!r}\n"
+    # If we know the class, we can reconstruct it and add import
+    if hasattr(value, "__class__"):
+        class_name = value.__class__.__name__
+        module_name = value.__class__.__module__
+        if module_name != "builtins":
+            imports.append(f"from {module_name} import {class_name}")
+        reconstruction_code += f"{var_name} = {class_name}.from_dict({var_name})\n"
+        return reconstruction_code
+    return ""
 
 
 def manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
@@ -3302,7 +3618,7 @@ class LibraryManager:
         result = ListCategoriesInLibraryResultSuccess(categories=categories)
         return result
 
-    def register_library_from_file_request(self, request: RegisterLibraryFromFileRequest) -> ResultPayload:
+    def register_library_from_file_request(self, request: RegisterLibraryFromFileRequest) -> ResultPayload:  # noqa: PLR0911 (complex logic needs branches)
         file_path = request.file_path
 
         # Convert to Path object if it's a string
@@ -3319,16 +3635,27 @@ class LibraryManager:
             with json_path.open("r") as f:
                 library_data = json.load(f)
         except json.JSONDecodeError:
-            details = f"Attempted to load Library JSON file. Failed because the file at path {json_path} was improperly formatted."
+            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' was improperly formatted."
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
+        except Exception as err:
+            details = f"Attempted to load Library JSON file from location '{json_path}'. Failed because an exception occurred: {err}"
+            logger.error(details)
+            return RegisterLibraryFromFileResultFailure()
+
         # Extract library information
         try:
             library_name = library_data["name"]
             library_metadata = library_data.get("metadata", {})
             nodes_metadata = library_data.get("nodes", [])
         except KeyError as e:
-            details = f"Attempted to load Library JSON file from '{file_path}'. Failed because it was missing required field in library metadata: {e}"
+            details = f"Attempted to load Library JSON file from '{json_path}'. Failed because it was missing required field in library metadata: {e}"
+            logger.error(details)
+            return RegisterLibraryFromFileResultFailure()
+        except Exception as err:
+            details = (
+                f"Attempted to load Library JSON file from '{json_path}'. Failed because an exception occurred: {err}"
+            )
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
@@ -3349,7 +3676,7 @@ class LibraryManager:
             )
         except KeyError as err:
             # Library already exists
-            details = f"Attempted to load Library JSON file from '{file_path}'. Failed because a Library '{library_name}' already exists. Error: {err}."
+            details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_name}' already exists. Error: {err}."
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
@@ -3375,12 +3702,12 @@ class LibraryManager:
                 library.register_new_node_type(node_class, metadata=node_metadata)
 
             except (KeyError, ImportError, AttributeError) as e:
-                details = f"Attempted to load Library JSON file from '{file_path}'. Failed due to an error loading node {node_meta.get('class_name', 'unknown')}: {e}"
+                details = f"Attempted to load Library JSON file from '{json_path}'. Failed due to an error loading node '{node_meta.get('class_name', 'unknown')}': {e}"
                 logger.error(details)
                 return RegisterLibraryFromFileResultFailure()
 
         # Success!
-        details = f"Successfully loaded Library '{library_name}' from JSON file at {file_path}"
+        details = f"Successfully loaded Library '{library_name}' from JSON file at {json_path}"
         logger.info(details)
         return RegisterLibraryFromFileResultSuccess(library_name=library_name)
 
@@ -3523,6 +3850,7 @@ class LibraryManager:
         Raises:
             ImportError: If the module cannot be imported
             AttributeError: If the class doesn't exist in the module
+            TypeError: If the loaded class isn't a BaseNode-derived class
         """
         # Ensure file_path is a Path object
         file_path = Path(file_path)
@@ -3573,18 +3901,22 @@ class LibraryManager:
             sys.modules[module_name] = module
 
             # Execute the module
-            spec.loader.exec_module(module)
+            try:
+                spec.loader.exec_module(module)
+            except Exception as err:
+                msg = f"Class '{class_name}' from module '{file_path}' failed to load with error: {err}"
+                raise ImportError(msg) from err
 
         # Get the class
         try:
             node_class = getattr(module, class_name)
-        except AttributeError as e:
-            msg = f"Class '{class_name}' not found in module {file_path}"
-            raise AttributeError(msg) from e
+        except AttributeError as err:
+            msg = f"Class '{class_name}' not found in module '{file_path}'"
+            raise AttributeError(msg) from err
 
         # Verify it's a BaseNode subclass
         if not issubclass(node_class, BaseNode):
-            msg = f"{class_name} must inherit from BaseNode"
+            msg = f"'{class_name}' must inherit from BaseNode"
             raise TypeError(msg)
 
         return node_class
@@ -3614,7 +3946,7 @@ class LibraryManager:
                 GriptapeNodes().handle_request(library_load_request)
 
     # TODO(griptape): Move to WorkflowManager
-    def _register_workflows_from_config(self, config_section: str) -> None:  # noqa: C901, PLR0912 (need lots of branches for error checking)
+    def _register_workflows_from_config(self, config_section: str) -> None:  # noqa: C901, PLR0912, PLR0915 (need lots of branches for error checking)
         config_mgr = GriptapeNodes().ConfigManager()
         workflows_to_register = config_mgr.get_config_value(config_section)
         successful_registrations = []
@@ -3657,6 +3989,13 @@ class LibraryManager:
                     continue
 
                 workflow_metadata = successful_metadata_result.metadata
+
+                # Prepend the image paths appropriately.
+                if workflow_metadata.image is not None:
+                    if workflow_detail.is_griptape_provided:
+                        workflow_metadata.image = workflow_metadata.image
+                    else:
+                        workflow_metadata.image = config_mgr.workspace_path.joinpath(workflow_metadata.image)
 
                 # Register it as a success.
                 workflow_register_request = RegisterWorkflowRequest(

@@ -19,7 +19,7 @@ class RulesetList(DataNode):
                 name="ruleset_1",
                 input_types=["Ruleset"],
                 allowed_modes={ParameterMode.INPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Ruleset to add to the list",
             )
         )
@@ -28,7 +28,7 @@ class RulesetList(DataNode):
                 name="ruleset_2",
                 input_types=["Ruleset"],
                 allowed_modes={ParameterMode.INPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Ruleset to add to the list",
             )
         )
@@ -37,7 +37,7 @@ class RulesetList(DataNode):
                 name="ruleset_3",
                 input_types=["Ruleset"],
                 allowed_modes={ParameterMode.INPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Ruleset to add to the list",
             )
         )
@@ -46,7 +46,7 @@ class RulesetList(DataNode):
                 name="ruleset_4",
                 input_types=["Ruleset"],
                 allowed_modes={ParameterMode.INPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Ruleset to add to the list",
             )
         )
@@ -57,7 +57,7 @@ class RulesetList(DataNode):
                 name="rulesets",
                 output_type="list[Ruleset]",
                 allowed_modes={ParameterMode.OUTPUT},
-                default_value=[],
+                default_value=None,
                 tooltip="Combined list of Rulesets",
             )
         )

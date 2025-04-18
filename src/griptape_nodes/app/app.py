@@ -144,14 +144,15 @@ def _listen_for_api_events() -> None:
                                 # but we don't have a proper EventRequest for it yet.
                                 if event.get("request_type") == "Heartbeat":
                                     session_id = GriptapeNodes.get_session_id()
-                                    socket.heartbeat(session_id=session_id, request=event)
+                                    socket.heartbeat(session_id=session_id, request=event["request"])
                                 else:
                                     __process_api_event(event)
                             except Exception:
                                 logger.exception("Error processing event, skipping.")
 
-        except Exception:
-            logger.error("Error while listening for events. Retrying in 2 seconds.")
+        except Exception as e:
+            details = f"Error while listening for events. Retrying in 2 seconds.: {e}"
+            logger.error(details)
             sleep(2)
             init = False
 
@@ -167,7 +168,6 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
     else:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."
         raise TypeError(msg) from None
-
     event_json = result_event.json()
     socket.emit(dest_socket, event_json)
 
@@ -300,7 +300,7 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
     message = Panel(
         Align.center(
             f"[bold green]Engine is ready to receive events[/bold green]\n"
-            f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link][/bold blue] to access the IDE",
+            f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link] to access the Workflow Editor[/bold blue]",
             vertical="middle",
         ),
         title="🚀 Griptape Nodes Engine Started",

@@ -31,6 +31,7 @@ cmd.create_node(
         "library_node_metadata": {
             "category": "Text",
             "description": "Creates and outputs a multiline text string value",
+            "display_name": "Create Multiline Text",
         },
         "library": "Griptape Nodes Library",
         "node_type": "CreateMultilineText",
@@ -81,6 +82,7 @@ cmd.create_node(
         "library_node_metadata": {
             "category": "Text",
             "description": "Joins multiple text inputs with a configurable separator",
+            "display_name": "Merge Texts",
         },
         "library": "Griptape Nodes Library",
         "node_type": "MergeTexts",
@@ -139,6 +141,13 @@ cmd.set_value(
         "height": 1024,
     },
 )
+cmd.set_value("detail_prompt.text", "In an anime style\n")
+cmd.set_value("enhanced_prompt_image.prompt", "A capybara eating with utensils")
+cmd.set_value("enhanced_prompt_image.enhance_prompt", True)
+cmd.set_value("assemble_prompt.input_1", "In an anime style\n")
+cmd.set_value("assemble_prompt.input_2", "A capybara eating with utensils")
+cmd.set_value("assemble_prompt.merge_string", "\\n\\n")
+cmd.set_value("bespoke_prompt_image.enhance_prompt", False)
 cmd.set_value("basic_prompt.text", "A capybara eating with utensils")
 
 # Create connections
@@ -147,17 +156,19 @@ cmd.connect("detail_prompt.text", "assemble_prompt.input_1")
 cmd.connect("enhanced_prompt_image.exec_out", "bespoke_prompt.exec_in")
 cmd.connect("bespoke_prompt.exec_out", "bespoke_prompt_image.exec_in")
 cmd.connect("bespoke_prompt.output", "bespoke_prompt_image.prompt")
+cmd.connect("assemble_prompt.output", "bespoke_prompt.prompt")
 cmd.connect("basic_prompt.text", "assemble_prompt.input_2")
 cmd.connect("basic_prompt.text", "enhanced_prompt_image.prompt")
 cmd.connect("basic_prompt.text", "basic_image.prompt")
-cmd.connect("assemble_prompt.output", "bespoke_prompt.prompt")
 # /// script
 # dependencies = []
 #
 # [tool.griptape-nodes]
 # name = "compare_prompts"
+# description = "Example workflow demonstrating how to compare outputs against three different prompting approaches."
+# image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/workflows/templates/thumbnail_compare_prompts.webp"
 # schema_version = "0.1.0"
-# engine_version_created_with = "0.13.1"
+# engine_version_created_with = "0.14.1"
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
 #
 # ///

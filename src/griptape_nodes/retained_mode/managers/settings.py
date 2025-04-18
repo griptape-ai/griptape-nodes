@@ -2,15 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
-from pydantic_settings import (
-    BaseSettings,
-    JsonConfigSettingsSource,
-    PydanticBaseSettingsSource,
-    SettingsConfigDict,
-    TomlConfigSettingsSource,
-    YamlConfigSettingsSource,
-)
+from pydantic import BaseModel, ConfigDict, Field
 from xdg_base_dirs import xdg_data_home
 
 
@@ -27,7 +19,20 @@ class AppInitializationComplete(BaseModel):
         default_factory=lambda: [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")]
     )
     workflows_to_register: list[WorkflowSettingsDetail] = Field(
-        default_factory=lambda: []  # noqa: PIE807 (leaving as a lambda for list for when we are ready to re-populate)
+        default_factory=lambda: [
+            WorkflowSettingsDetail(
+                file_name=str(xdg_data_home() / "griptape_nodes/workflows/templates/translator.py"),
+                is_griptape_provided=True,
+            ),
+            WorkflowSettingsDetail(
+                file_name=str(xdg_data_home() / "griptape_nodes/workflows/templates/compare_prompts.py"),
+                is_griptape_provided=True,
+            ),
+            WorkflowSettingsDetail(
+                file_name=str(xdg_data_home() / "griptape_nodes/workflows/templates/prompt_an_image.py"),
+                is_griptape_provided=True,
+            ),
+        ]
     )
 
 
@@ -59,8 +64,8 @@ class AppEvents(BaseModel):
     )
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(extra="allow")
+class Settings(BaseModel):
+    model_config = ConfigDict(extra="allow")
 
     workspace_directory: str = Field(default=str(Path().cwd() / "GriptapeNodes"))
     app_events: AppEvents = Field(default_factory=AppEvents)
@@ -101,18 +106,3 @@ class Settings(BaseSettings):
         }
     )
     log_level: str = Field(default="INFO")
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,  # noqa: ARG003
-        env_settings: PydanticBaseSettingsSource,  # noqa: ARG003
-        dotenv_settings: PydanticBaseSettingsSource,  # noqa: ARG003
-        file_secret_settings: PydanticBaseSettingsSource,  # noqa: ARG003
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        return (
-            JsonConfigSettingsSource(settings_cls),
-            YamlConfigSettingsSource(settings_cls),
-            TomlConfigSettingsSource(settings_cls),
-        )
