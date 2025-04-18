@@ -277,6 +277,42 @@ class ConfigManager:
         logger.info(details)
         return GetConfigValueResultSuccess(value=find_results)
 
+    def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
+        """Generate a diff between the old and new values."""
+        if isinstance(old_value, dict) and isinstance(new_value, dict):
+            diff = {
+                key: (old_value.get(key), new_value.get(key))
+                for key in new_value
+                if old_value.get(key) != new_value.get(key)
+            }
+        elif isinstance(old_value, list) and isinstance(new_value, list):
+            diff = {
+                str(i): (old, new) for i, (old, new) in enumerate(zip(old_value, new_value, strict=False)) if old != new
+            }
+
+            # Handle added or removed elements
+            if len(old_value) > len(new_value):
+                for i in range(len(new_value), len(old_value)):
+                    diff[str(i)] = (old_value[i], None)
+            elif len(new_value) > len(old_value):
+                for i in range(len(old_value), len(new_value)):
+                    diff[str(i)] = (None, new_value[i])
+        else:
+            diff = {"old": old_value, "new": new_value}
+        return diff
+
+    def _format_diff(self, diff: dict[Any, Any]) -> str:
+        """Format the diff dictionary into a readable string."""
+        formatted_lines = []
+        for key, (old, new) in diff.items():
+            if old is None:
+                formatted_lines.append(f"[{key}]: ADDED: '{new}'")
+            elif new is None:
+                formatted_lines.append(f"[{key}]: REMOVED: '{old}'")
+            else:
+                formatted_lines.append(f"[{key}]:\n\tFROM: '{old}'\n\tTO: '{new}'")
+        return "\n".join(formatted_lines)
+
     def on_handle_set_config_value_request(self, request: SetConfigValueRequest) -> ResultPayload:
         if request.category_and_key == "":
             details = "Attempted to set config value but no category or key was specified."
@@ -300,7 +336,9 @@ class ConfigManager:
         # For container types, indicate the change with a diff
         if isinstance(request.value, (dict, list)):
             if old_value_copy is not None:
-                details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. Changes: {self._get_diff(old_value_copy, request.value)}"
+                diff = self._get_diff(old_value_copy, request.value)
+                formatted_diff = self._format_diff(diff)
+                details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. Changes:\n{formatted_diff}"
             else:
                 details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'"
         else:
@@ -308,20 +346,6 @@ class ConfigManager:
 
         logger.info(details)
         return SetConfigValueResultSuccess()
-
-    def _get_diff(self, old_value: Any, new_value: Any) -> Any:
-        """Generate a diff between the old and new values."""
-        if isinstance(old_value, dict) and isinstance(new_value, dict):
-            diff = {
-                key: (old_value.get(key), new_value.get(key))
-                for key in new_value
-                if old_value.get(key) != new_value.get(key)
-            }
-        elif isinstance(old_value, list) and isinstance(new_value, list):
-            diff = [(i, old, new) for i, (old, new) in enumerate(zip(old_value, new_value, strict=False)) if old != new]
-        else:
-            diff = {"old": old_value, "new": new_value}
-        return diff
 
     def _write_user_config_delta(self, user_config_delta: dict) -> None:
         """Write the user configuration to the config file.
