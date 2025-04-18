@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+from griptape_nodes.exe_types.node_types import NodeResolutionState
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -20,8 +21,12 @@ class CreateNodeRequest(RequestPayload):
     node_type: str
     specific_library_name: str | None = None
     node_name: str | None = None
+    # If None is passed, assumes we're using the flow in the Current Context
     override_parent_flow_name: str | None = None
     metadata: dict | None = None
+    resolution: str = NodeResolutionState.UNRESOLVED.value
+    # initial_setup prevents unnecessary work when we are loading a workflow from a file.
+    initial_setup: bool = False
 
 
 @dataclass

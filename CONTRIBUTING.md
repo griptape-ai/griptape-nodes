@@ -80,7 +80,7 @@ GRIPTAPE_NODES_API_BASE_URL=http://localhost:8001 uv run gtn
 
 Griptape Nodes uses a configuration loading system. For full details, see the [Configuration Documentation](docs/configuration.md). Here's what's crucial for development:
 
-1. **`.env` File:** The engine still needs your `GT_CLOUD_API_KEY` to communicate with the cloud IDE. Ensure this is set in the system-wide environment file located via `gtn init` (typically `~/.config/griptape_nodes/.env`). Running `uv run gtn init` will guide you through creating this if needed.
+1. **`.env` File:** The engine still needs your `GT_CLOUD_API_KEY` to communicate with the Workflow Editor. Ensure this is set in the system-wide environment file located via `gtn init` (typically `~/.config/griptape_nodes/.env`). Running `uv run gtn init` will guide you through creating this if needed.
 
 1. **Using the Local Nodes Library:** By default, a regularly installed engine looks for node definitions (the `griptape_nodes_library.json`) in a system data directory. For development, you **must** tell the engine (run via `uv run gtn`) to use the library file directly from your cloned repository (`./nodes/griptape_nodes_library.json`).
 

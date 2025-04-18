@@ -24,7 +24,7 @@ class CreateAgent(BaseAgent):
         return []
 
     def get_rulesets(self) -> list:
-        rulesets = self.parameter_values.get("rulesets", None)
+        rulesets = self.get_parameter_value("rulesets")
         if rulesets:
             if not isinstance(rulesets, list):
                 rulesets = [rulesets]
