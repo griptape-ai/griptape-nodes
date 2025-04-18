@@ -144,7 +144,7 @@ def _listen_for_api_events() -> None:
                                 # but we don't have a proper EventRequest for it yet.
                                 if event.get("request_type") == "Heartbeat":
                                     session_id = GriptapeNodes.get_session_id()
-                                    socket.heartbeat(session_id=session_id, request=event)
+                                    socket.heartbeat(session_id=session_id, request=event["request"])
                                 else:
                                     __process_api_event(event)
                             except Exception:
