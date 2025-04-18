@@ -3618,7 +3618,7 @@ class LibraryManager:
         result = ListCategoriesInLibraryResultSuccess(categories=categories)
         return result
 
-    def register_library_from_file_request(self, request: RegisterLibraryFromFileRequest) -> ResultPayload:
+    def register_library_from_file_request(self, request: RegisterLibraryFromFileRequest) -> ResultPayload:  # noqa: PLR0911 (complex logic needs branches)
         file_path = request.file_path
 
         # Convert to Path object if it's a string
@@ -3635,16 +3635,27 @@ class LibraryManager:
             with json_path.open("r") as f:
                 library_data = json.load(f)
         except json.JSONDecodeError:
-            details = f"Attempted to load Library JSON file. Failed because the file at path {json_path} was improperly formatted."
+            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' was improperly formatted."
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
+        except Exception as err:
+            details = f"Attempted to load Library JSON file from location '{json_path}'. Failed because an exception occurred: {err}"
+            logger.error(details)
+            return RegisterLibraryFromFileResultFailure()
+
         # Extract library information
         try:
             library_name = library_data["name"]
             library_metadata = library_data.get("metadata", {})
             nodes_metadata = library_data.get("nodes", [])
         except KeyError as e:
-            details = f"Attempted to load Library JSON file from '{file_path}'. Failed because it was missing required field in library metadata: {e}"
+            details = f"Attempted to load Library JSON file from '{json_path}'. Failed because it was missing required field in library metadata: {e}"
+            logger.error(details)
+            return RegisterLibraryFromFileResultFailure()
+        except Exception as err:
+            details = (
+                f"Attempted to load Library JSON file from '{json_path}'. Failed because an exception occurred: {err}"
+            )
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
@@ -3665,7 +3676,7 @@ class LibraryManager:
             )
         except KeyError as err:
             # Library already exists
-            details = f"Attempted to load Library JSON file from '{file_path}'. Failed because a Library '{library_name}' already exists. Error: {err}."
+            details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_name}' already exists. Error: {err}."
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
@@ -3691,12 +3702,12 @@ class LibraryManager:
                 library.register_new_node_type(node_class, metadata=node_metadata)
 
             except (KeyError, ImportError, AttributeError) as e:
-                details = f"Attempted to load Library JSON file from '{file_path}'. Failed due to an error loading node '{node_meta.get('class_name', 'unknown')}': {e}"
+                details = f"Attempted to load Library JSON file from '{json_path}'. Failed due to an error loading node '{node_meta.get('class_name', 'unknown')}': {e}"
                 logger.error(details)
                 return RegisterLibraryFromFileResultFailure()
 
         # Success!
-        details = f"Successfully loaded Library '{library_name}' from JSON file at {file_path}"
+        details = f"Successfully loaded Library '{library_name}' from JSON file at {json_path}"
         logger.info(details)
         return RegisterLibraryFromFileResultSuccess(library_name=library_name)
 
