@@ -44,6 +44,15 @@ class ResolutionContext:
         self.paused = False
         self.scheduled_value = None
 
+    def reset(self) -> None:
+        # Clear the nodes that is currently being worked on.
+        if len(self.focus_stack) > 0:
+            node = self.focus_stack[-1]
+            node.clear_node()
+        self.focus_stack = []
+        self.paused = False
+        self.scheduled_value = None
+
 
 class InitializeSpotlightState(State):
     @staticmethod
@@ -368,9 +377,11 @@ class CompleteState(State):
 class NodeResolutionMachine(FSM[ResolutionContext]):
     """State machine for resolving node dependencies."""
 
+    _context: ResolutionContext
+
     def __init__(self, flow: ControlFlow) -> None:
-        resolution_context = ResolutionContext(flow)  # Gets the flow
-        super().__init__(resolution_context)
+        self._context = ResolutionContext(flow)  # Gets the flow
+        super().__init__(self._context)
 
     def resolve_node(self, node: BaseNode) -> None:
         self._context.focus_stack.append(node)
@@ -384,3 +395,7 @@ class NodeResolutionMachine(FSM[ResolutionContext]):
 
     def is_started(self) -> bool:
         return self._current_state is not None
+
+    def reset_machine(self) -> None:
+        self._current_state = CompleteState
+        self._context.reset()

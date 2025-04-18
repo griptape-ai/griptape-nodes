@@ -436,7 +436,6 @@ class BaseNode(ABC):
             self.current_spotlight_parameter = temp
 
 
-
 class ControlNode(BaseNode):
     # Control Nodes may have one Control Input Port and at least one Control Output Port
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:

@@ -27,7 +27,7 @@ logger = logging.getLogger("griptape_nodes")
 # This is the control flow context. Owns the Resolution Machine
 class ControlFlowContext:
     flow: ControlFlow
-    current_node: BaseNode
+    current_node: BaseNode | None
     resolution_machine: NodeResolutionMachine
     selected_output: Parameter | None
     paused: bool = False
@@ -37,16 +37,29 @@ class ControlFlowContext:
         self.flow = flow
 
     def get_next_node(self, output_parameter: Parameter) -> BaseNode | None:
-        node = self.flow.connections.get_connected_node(self.current_node, output_parameter)
-        if node:
-            node, _ = node
-        return node
+        if self.current_node:
+            node = self.flow.connections.get_connected_node(self.current_node, output_parameter)
+            if node:
+                node, _ = node
+            return node
+        return None
+
+    def reset(self) -> None:
+        if self.current_node:
+            # Clear all information on the current node.
+            self.current_node.clear_node()
+        self.current_node = None
+        self.resolution_machine.reset_machine()
+        self.selected_output = None
+        self.paused = False
 
 
 # GOOD!
 class ResolveNodeState(State):
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
+        if context.current_node is None:
+            return CompleteState
         # The state machine has started, but it hasn't began to execute yet.
         context.current_node.state = NodeResolutionState.UNRESOLVED
         EventBus.publish_event(
@@ -63,6 +76,8 @@ class ResolveNodeState(State):
     # This is necessary to transition to the next step.
     @staticmethod
     def on_update(context: ControlFlowContext) -> type[State] | None:
+        if context.current_node is None:
+            return CompleteState
         # If node has not already been resolved!
         if context.current_node.state != NodeResolutionState.RESOLVED:
             context.resolution_machine.resolve_node(context.current_node)
@@ -75,6 +90,9 @@ class ResolveNodeState(State):
 class NextNodeState(State):
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
+        if context.current_node is None:
+            # Get out of here.
+            return CompleteState
         # I did define this on the ControlNode.
         if context.current_node.stop_flow:
             # We're done here.
@@ -113,6 +131,8 @@ class NextNodeState(State):
 class CompleteState(State):
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
+        if context.current_node is None:
+            return None
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(
@@ -143,7 +163,8 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         self._context.current_node = start_node
         # Set up to debug
         self._context.paused = debug_mode
-        self.start(ResolveNodeState)  # Begins the flow
+        if self._context.current_node is not None:
+            self.start(ResolveNodeState)  # Begins the flow
 
     def update(self) -> None:
         if self._current_state is None:
@@ -170,3 +191,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
         if resolution_machine.is_complete() or (not resolution_machine.is_started()):
             self.update()
+
+    def reset_machine(self) -> None:
+        self._context.reset()
+        self._current_state = CompleteState

@@ -183,28 +183,9 @@ class ControlFlow:
             errormsg = "Flow has not yet been started. Cannot cancel flow that hasn't begun."
             raise Exception(errormsg)
         # There needs to be more that happens here.
-        try:
-            current_node = self.control_flow_machine._context.current_node
-        except Exception:
-            current_node = None
-        try:
-            current_data_node = self.control_flow_machine._context.resolution_machine._context.focus_stack[-1]
-        except KeyError:
-            current_data_node = None
-        # Clear the nodes currently being worked on
-        if current_node:
-            current_node.clear_node()
-        # Clear the nodes currently being worked on
-        if current_data_node:
-            current_data_node.clear_node()
-        # Reset the machine instead of deleting it.
-        del self.control_flow_machine
-        # Create a new control flow machine
-        # Cancel all future runs
         del self.flow_queue
         self.flow_queue = Queue()
-        # Reset control flow machine
-        self.control_flow_machine = ControlFlowMachine(self)
+        self.control_flow_machine.reset_machine()
         self.single_node_resolution = False
 
     def unresolve_whole_flow(self) -> None:
@@ -215,6 +196,8 @@ class ControlFlow:
         if not self.check_for_existing_running_flow():
             msg = "Flow hasn't started."
             raise Exception(msg)
+        if not self.control_flow_machine._context.current_node:
+            return None, None
         current_control_node = self.control_flow_machine._context.current_node.name
         focus_stack_for_node = self.control_flow_machine._context.resolution_machine._context.focus_stack
         if len(focus_stack_for_node):
