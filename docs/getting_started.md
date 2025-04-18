@@ -1,6 +1,6 @@
-# Getting Started with Griptape [nodes]
+# Getting Started with Griptape Nodes
 
-An important bit of overview before we begin: Griptape [nodes] is actually two things that work together - an Engine and an Editor. The Engine will install and run on your computer, while the Editor is served from the web, and you'll interact with your Engine through a web browser.
+An important bit of overview before we begin: Griptape Nodes is actually two things that work together - an Engine and an Editor. The Engine will install and run on your computer, while the Editor is served from the web, and you'll interact with your Engine through a web browser.
 
 > - If you'd rather not install the Engine locally, it is also easy to run it in a hosted environment. The instructions that follow will work the same for either approach.
 
@@ -51,7 +51,7 @@ You'll see this message when installation has completed:
 
 ## 3. Configuration
 
-**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape [nodes] engine will save [configuration settings](./reference/glossary.md#configuration-settings), [project files](./reference/glossary.md#project-files), and [generated assets](./reference/glossary.md#generated-assets). It will also contain a [.env](./reference/glossary.md#.env) for your project [secret key](./reference/glossary.md#secret-keys).
+**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape Nodes engine will save [configuration settings](./reference/glossary.md#configuration-settings), [project files](./reference/glossary.md#project-files), and [generated assets](./reference/glossary.md#generated-assets). It will also contain a [.env](./reference/glossary.md#.env) for your project [secret key](./reference/glossary.md#secret-keys).
 
 ```
 ╭───────────────────────────────────────────────────────────────────╮
@@ -92,6 +92,6 @@ Griptape API Key (YOUR-KEY-HERE):
 
 ## 4. Start Your Engine
 
-You're ready to proceed. Run `griptape-nodes` or `gtn` and return to your browser. Your browser tab at https://nodes.griptape.ai will be updated to an untitled workflow in Griptape [nodes]!
+You're ready to proceed. Run `griptape-nodes` or `gtn` and return to your browser. Your browser tab at https://nodes.griptape.ai will be updated to an untitled workflow in Griptape Nodes!
 
 ![A Blank Griptape_nodes_ editor](assets/img/getting_started/getting_started-blank_editor.png)
