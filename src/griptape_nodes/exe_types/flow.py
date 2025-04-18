@@ -182,6 +182,22 @@ class ControlFlow:
         if not self.check_for_existing_running_flow():
             errormsg = "Flow has not yet been started. Cannot cancel flow that hasn't begun."
             raise Exception(errormsg)
+        # There needs to be more that happens here.
+        try:
+            current_node = self.control_flow_machine._context.current_node
+        except Exception:
+            current_node = None
+        try:
+            current_data_node = self.control_flow_machine._context.resolution_machine._context.focus_stack[-1]
+        except KeyError:
+            current_data_node = None
+        # Clear the nodes currently being worked on
+        if current_node:
+            current_node.clear_node()
+        # Clear the nodes currently being worked on
+        if current_data_node:
+            current_data_node.clear_node()
+        # Reset the machine instead of deleting it.
         del self.control_flow_machine
         # Create a new control flow machine
         # Cancel all future runs

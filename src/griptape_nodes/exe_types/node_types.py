@@ -419,6 +419,23 @@ class BaseNode(ABC):
     def set_config_value(self, service: str, value: str, new_value: str) -> None:
         self.config_manager.set_config_value(f"nodes.{service}.{value}", new_value)
 
+    def clear_node(self) -> None:
+        # delete the process generator
+        if self.process_generator:
+            del self.process_generator
+            self.process_generator = None
+        # set state to unresolved
+        self.state = NodeResolutionState.UNRESOLVED
+        # delete all output values potentially generated
+        for value in self.parameter_output_values:
+            del self.parameter_output_values[value]
+        # Remove the current spotlight
+        while self.current_spotlight_parameter is not None:
+            temp = self.current_spotlight_parameter.next
+            del self.current_spotlight_parameter
+            self.current_spotlight_parameter = temp
+
+
 
 class ControlNode(BaseNode):
     # Control Nodes may have one Control Input Port and at least one Control Output Port
