@@ -1,10 +1,10 @@
-# Griptape [nodes] Glossary for Artists
+# Griptape Nodes Glossary for Artists
 
-## What is Griptape [nodes]?
+## What is Griptape Nodes?
 
-Griptape [nodes] is a creative toolkit (built with Python) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create art, generate images, process text, or even build other workhorse applications.
+Griptape Nodes is a creative toolkit (built with Python) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create art, generate images, process text, or even build other workhorse applications.
 
-### The Big Ones in the Griptape [nodes] world
+### The Big Ones in the Griptape Nodes world
 
 - **Workflow**: A document containing nodes, connections, and values. While technically a Workflow is also a Script, avoid calling them Scripts, so that the term Script can communicate a clearly different thing than the term Workflow. This is also what we call the saved file.
 
@@ -109,11 +109,11 @@ Griptape [nodes] is a creative toolkit (built with Python) that helps artists a
 <a id="secret-keys"></a>
 
 - **Secret Keys**: Private credentials such as API tokens, passwords, and access keys that need to be kept secure but are required for certain operations.
-- **SecretsManager**: This is the actual mechanism by which your secret keys are handled so that they *stay* secret.
+- **Secrets Manager**: This is the actual mechanism by which your secret keys are handled so that they *stay* secret.
 
 <a id="configuration-settings"></a>
 
-- **Configuration Settings**: Parameters and options that control how the Griptape [nodes] engine and its components operate.
+- **Configuration Settings**: Parameters and options that control how the Griptape Nodes engine and its components operate.
 
 <a id="project-files"></a>
 
@@ -121,7 +121,7 @@ Griptape [nodes] is a creative toolkit (built with Python) that helps artists a
 
 <a id="generated-assets"></a>
 
-- **Generated Assets**: Files and data produced by the Griptape [nodes] engine during execution, such as outputs, reports, or visualizations.
+- **Generated Assets**: Files and data produced by the Griptape Nodes engine during execution, such as outputs, reports, or visualizations.
 
 <a id=".env"></a>
 
@@ -236,6 +236,6 @@ Griptape [nodes] is a creative toolkit (built with Python) that helps artists a
 
 - **CSV (Comma-Separated Values)**: A simple file format used to store tabular data, such as spreadsheet data. Each line represents a row, and commas separate the values in each column.
 
-- **UI (User Interface)**: The visual elements and controls that allow users to interact with software. This includes buttons, sliders, text fields, and other interactive elements. In Griptape [nodes], we call our UI the "Editor"
+- **UI (User Interface)**: The visual elements and controls that allow users to interact with software. This includes buttons, sliders, text fields, and other interactive elements. In Griptape Nodes, we call our UI the "Editor"
 
 - **Framework**: A pre-built set of code that provides structure and functionality to build applications more easily. Frameworks are like art supply kits that come with the basic materials and tools you need.
