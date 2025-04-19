@@ -18,12 +18,30 @@ class AppStartSessionRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class AppStartSessionResultSuccess(ResultPayloadSuccess):
-    pass
+    session_id: str
 
 
 @dataclass
 @PayloadRegistry.register
 class AppStartSessionResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class AppGetSessionRequest(RequestPayload):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class AppGetSessionResultSuccess(ResultPayloadSuccess):
+    session_id: str | None
+
+
+@dataclass
+@PayloadRegistry.register
+class AppGetSessionResultFailure(ResultPayloadFailure):
     pass
 
 

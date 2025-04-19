@@ -1,1 +1,1 @@
-"""Scripts package."""
+"""Workflows package."""

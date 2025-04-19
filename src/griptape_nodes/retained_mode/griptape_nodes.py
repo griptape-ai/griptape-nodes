@@ -30,6 +30,8 @@ from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import LibraryNameAndVersion, WorkflowMetadata, WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
+    AppGetSessionRequest,
+    AppGetSessionResultSuccess,
     AppInitializationComplete,
     AppStartSessionRequest,
     AppStartSessionResultSuccess,
@@ -285,6 +287,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._event_manager.assign_manager_to_request_type(
                 AppStartSessionRequest, self.handle_session_start_request
             )
+            self._event_manager.assign_manager_to_request_type(AppGetSessionRequest, self.handle_get_session_request)
 
     @classmethod
     def get_instance(cls) -> GriptapeNodes:
@@ -407,7 +410,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
         # TODO(griptape): Do we want to broadcast that a session started?
 
-        return AppStartSessionResultSuccess()
+        return AppStartSessionResultSuccess(request.session_id)
+
+    def handle_get_session_request(self, _: AppGetSessionRequest) -> ResultPayload:
+        return AppGetSessionResultSuccess(session_id=BaseEvent._session_id)
 
 
 OBJ_TYPE = TypeVar("OBJ_TYPE")
