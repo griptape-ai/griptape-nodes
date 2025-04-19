@@ -19,7 +19,7 @@ To get started, visit [https://griptapenodes.com](https://griptapenodes.com) and
 
 ![Landing Page](assets/img/getting_started/getting_started-nodes_landing_page.png)
 
-You'll be presented with a Griptape Account authorization form.
+You'll be presented with a Griptape account authorization form.
 
 > If you've already signed up for [Griptape Cloud](https://cloud.griptape.ai), your existing credentials will work here!
 
