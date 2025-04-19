@@ -4,10 +4,10 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
 )
-from griptape_nodes.exe_types.node_types import NoteNode
+from griptape_nodes.exe_types.node_types import BaseNode
 
 
-class Note(NoteNode):
+class Note(BaseNode):
     def __init__(
         self,
         name: str,
@@ -25,7 +25,7 @@ class Note(NoteNode):
                 ui_options={
                     "multiline": True,
                     "placeholder_text": "Enter your note here...",
-                    "is_note": True,
+                    "is_full_width": True,
                 },
                 tooltip="A helpful note",
             )
