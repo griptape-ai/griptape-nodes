@@ -445,11 +445,6 @@ class DataNode(BaseNode):
         super().__init__(name, metadata=metadata)
 
 
-class NoteNode(BaseNode):
-    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
-        super().__init__(name, metadata=metadata)
-
-
 class StartNode(BaseNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
