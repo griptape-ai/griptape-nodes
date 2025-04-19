@@ -301,6 +301,15 @@
       }
     },
     {
+      "class_name": "Text",
+      "file_path": "griptape_nodes_library/text/text_artifact.py",
+      "metadata": {
+        "category": "Text",
+        "description": "Creates and outputs a simple string value",
+        "display_name": "Text"
+      }
+    },
+    {
       "class_name": "CreateText",
       "file_path": "griptape_nodes_library/text/create_text.py",
       "metadata": {
@@ -370,6 +379,15 @@
         "category": "Utility",
         "description": "Termination point for control flow graphs",
         "display_name": "End Flow"
+      }
+    },
+    {
+      "class_name": "Image",
+      "file_path": "griptape_nodes_library/image/image_artifact.py",
+      "metadata": {
+        "category": "Image",
+        "description": "Loads and displays an image file or artifact",
+        "display_name": "Image"
       }
     },
     {
