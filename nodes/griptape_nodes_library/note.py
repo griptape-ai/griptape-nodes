@@ -26,6 +26,7 @@ class Note(BaseNode):
                     "multiline": True,
                     "placeholder_text": "Enter your note here...",
                     "is_full_width": True,
+                    "className": "text-xl",
                 },
                 tooltip="A helpful note",
             )
