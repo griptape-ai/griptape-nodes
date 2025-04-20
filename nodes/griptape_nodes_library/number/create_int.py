@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class CreateInteger(DataNode):
+class IntegerInput(DataNode):
     def __init__(
         self,
         name: str,

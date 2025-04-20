@@ -3,7 +3,7 @@ from griptape.tools import CalculatorTool as GtCalculatorTool
 from griptape_nodes_library.tools.base_tool import BaseTool
 
 
-class CalculatorTool(BaseTool):
+class Calculator(BaseTool):
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", True)
 

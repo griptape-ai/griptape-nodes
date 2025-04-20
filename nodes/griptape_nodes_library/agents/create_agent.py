@@ -1,5 +1,5 @@
 from griptape.events import TextChunkEvent
-from griptape.structures import Agent
+from griptape.structures import Agent as gtAgent
 from griptape.utils import Stream
 
 from griptape_nodes.exe_types.node_types import AsyncResult
@@ -11,7 +11,7 @@ API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 
 
-class CreateAgent(BaseAgent):
+class Agent(BaseAgent):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -55,9 +55,9 @@ class CreateAgent(BaseAgent):
         if not agent_dict:
             logger.debug("No agent input, creating one")
             # Create the Agent
-            agent = Agent(**kwargs)
+            agent = gtAgent(**kwargs)
         else:
-            agent = Agent.from_dict(agent_dict)
+            agent = gtAgent.from_dict(agent_dict)
         # Otherwise, append rules and tools to the existing agent
 
         prompt = params.get("prompt", None)

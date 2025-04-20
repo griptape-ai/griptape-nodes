@@ -10,7 +10,7 @@ from griptape_nodes_library.tools.base_tool import BaseTool
 logger = logging.getLogger(__name__)
 
 
-class VectorStoreTool(BaseTool):
+class VectorStore(BaseTool):
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", False)
         query_params = self.parameter_values.get("optional_query_params", "{}")
