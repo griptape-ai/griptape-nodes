@@ -29,6 +29,7 @@ class ParameterTypeBuiltin(Enum):
     ANY = "any"
     NONE = "none"
     CONTROL_TYPE = "parametercontroltype"
+    ALL = "all"
 
 
 class ParameterType:
@@ -46,6 +47,7 @@ class ParameterType:
         "any": ParameterTypeBuiltin.ANY,
         "none": ParameterTypeBuiltin.NONE,
         "parametercontroltype": ParameterTypeBuiltin.CONTROL_TYPE,
+        "all": ParameterTypeBuiltin.ALL,
     }
 
     @staticmethod
@@ -601,6 +603,9 @@ class Parameter(BaseNodeElement):
     def is_incoming_type_allowed(self, incoming_type: str | None) -> bool:
         if incoming_type is None:
             return False
+
+        if incoming_type.lower() == ParameterTypeBuiltin.ALL.value:
+            return True
 
         ret_val = False
 

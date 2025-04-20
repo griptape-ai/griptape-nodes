@@ -30,6 +30,8 @@ from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import LibraryNameAndVersion, WorkflowMetadata, WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
+    AppGetSessionRequest,
+    AppGetSessionResultSuccess,
     AppInitializationComplete,
     AppStartSessionRequest,
     AppStartSessionResultSuccess,
@@ -100,6 +102,9 @@ from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowResultSuccess,
     GetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess,
+    ListFlowsInCurrentContextRequest,
+    ListFlowsInCurrentContextResultFailure,
+    ListFlowsInCurrentContextResultSuccess,
     ListFlowsInFlowRequest,
     ListFlowsInFlowResultFailure,
     ListFlowsInFlowResultSuccess,
@@ -282,6 +287,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._event_manager.assign_manager_to_request_type(
                 AppStartSessionRequest, self.handle_session_start_request
             )
+            self._event_manager.assign_manager_to_request_type(AppGetSessionRequest, self.handle_get_session_request)
 
     @classmethod
     def get_instance(cls) -> GriptapeNodes:
@@ -404,7 +410,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
         # TODO(griptape): Do we want to broadcast that a session started?
 
-        return AppStartSessionResultSuccess()
+        return AppStartSessionResultSuccess(request.session_id)
+
+    def handle_get_session_request(self, _: AppGetSessionRequest) -> ResultPayload:
+        return AppGetSessionResultSuccess(session_id=BaseEvent._session_id)
 
 
 OBJ_TYPE = TypeVar("OBJ_TYPE")
@@ -631,6 +640,9 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(DeleteFlowRequest, self.on_delete_flow_request)
         event_manager.assign_manager_to_request_type(ListNodesInFlowRequest, self.on_list_nodes_in_flow_request)
         event_manager.assign_manager_to_request_type(ListFlowsInFlowRequest, self.on_list_flows_in_flow_request)
+        event_manager.assign_manager_to_request_type(
+            ListFlowsInCurrentContextRequest, self.on_list_flows_in_current_context_request
+        )
         event_manager.assign_manager_to_request_type(CreateConnectionRequest, self.on_create_connection_request)
         event_manager.assign_manager_to_request_type(DeleteConnectionRequest, self.on_delete_connection_request)
         event_manager.assign_manager_to_request_type(StartFlowRequest, self.on_start_flow_request)
@@ -675,6 +687,16 @@ class FlowManager:
         # Who is the parent?
         parent_name = request.parent_flow_name
 
+        # This one's tricky. If they said "None" for the parent, they could either be saying:
+        # 1. Use whatever the current context is to be the parent.
+        # 2. Create me as the canvas (i.e., the top-level flow, of which there can be only one)
+
+        # We'll explore #1 first by seeing if the Context Manager already has a current flow,
+        # which would mean the canvas is already established:
+        if (parent_name is None) and (GriptapeNodes.ContextManager().has_current_flow()):
+            # Aha! Just use that.
+            parent_name = GriptapeNodes.ContextManager().get_current_flow_name()
+
         parent = obj_mgr.attempt_get_object_by_name_as_type(parent_name, ControlFlow)
         if parent_name is None:
             # We're trying to create the canvas. Ensure that parent does NOT already exist.
@@ -698,6 +720,10 @@ class FlowManager:
         obj_mgr.add_object_by_name(name=final_flow_name, obj=flow)
         self._name_to_parent_name[final_flow_name] = parent_name
 
+        # See if we need to push it as the current context.
+        if request.set_as_new_context:
+            GriptapeNodes.ContextManager().push_flow(final_flow_name)
+
         # Success
         details = f"Successfully created Flow '{final_flow_name}'."
         log_level = logging.DEBUG
@@ -709,59 +735,79 @@ class FlowManager:
         result = CreateFlowResultSuccess(flow_name=final_flow_name)
         return result
 
-    def on_delete_flow_request(self, request: DeleteFlowRequest) -> ResultPayload:
+    def on_delete_flow_request(self, request: DeleteFlowRequest) -> ResultPayload:  # noqa: PLR0911 (complex af)
+        flow_name = request.flow_name
+        if flow_name is None:
+            # We want to delete whatever is at the top of the Current Context.
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = (
+                    "Attempted to delete a Flow from the Current Context. Failed because the Current Context was empty."
+                )
+                logger.error(details)
+                result = DeleteFlowResultFailure()
+                return result
+            # We pop it off here, but we'll re-add it using context in a moment.
+            flow_name = GriptapeNodes.ContextManager().pop_flow()
+
         # Does this Flow even exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
-        flow = obj_mgr.attempt_get_object_by_name_as_type(request.flow_name, ControlFlow)
+        flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
         if flow is None:
-            details = f"Attempted to delete Flow '{request.flow_name}', but no Flow with that name could be found."
+            details = f"Attempted to delete Flow '{flow_name}', but no Flow with that name could be found."
             logger.error(details)
             result = DeleteFlowResultFailure()
             return result
 
-        # Delete all child nodes in this Flow.
-        list_nodes_request = ListNodesInFlowRequest(flow_name=request.flow_name)
-        list_nodes_result = GriptapeNodes().handle_request(list_nodes_request)
-        if isinstance(list_nodes_result, ListNodesInFlowResultFailure):
-            details = f"Attempted to delete Flow '{request.flow_name}', but failed while attempting to get the list of Nodes owned by this Flow."
-            logger.error(details)
-            result = DeleteFlowResultFailure()
-            return result
-        node_names = list_nodes_result.node_names
-        for node_name in node_names:
-            delete_node_request = DeleteNodeRequest(node_name=node_name)
-            delete_node_result = GriptapeNodes().handle_request(delete_node_request)
-            if isinstance(delete_node_result, DeleteNodeResultFailure):
-                details = f"Attempted to delete Flow '{request.flow_name}', but failed while attempting to delete child Node '{node_name}'."
+        # Let this Flow assume the Current Context while we delete everything within it.
+        with GriptapeNodes.ContextManager().flow(flow_name=flow_name):
+            # Delete all child nodes in this Flow.
+            list_nodes_request = ListNodesInFlowRequest()
+            list_nodes_result = GriptapeNodes().handle_request(list_nodes_request)
+            if isinstance(list_nodes_result, ListNodesInFlowResultFailure):
+                details = f"Attempted to delete Flow '{flow_name}', but failed while attempting to get the list of Nodes owned by this Flow."
                 logger.error(details)
                 result = DeleteFlowResultFailure()
                 return result
 
-        # Delete all child Flows of this Flow.
-        list_flows_request = ListFlowsInFlowRequest(parent_flow_name=request.flow_name)
-        list_flows_result = GriptapeNodes().handle_request(list_flows_request)
-        if isinstance(list_flows_result, ListFlowsInFlowResultFailure):
-            details = f"Attempted to delete Flow '{request.flow_name}', but failed while attempting to get the list of Flows owned by this Flow."
-            logger.error(details)
-            result = DeleteFlowResultFailure()
-            return result
-        flow_names = list_flows_result.flow_names
-        for flow_name in flow_names:
-            # Delete them.
-            delete_flow_request = DeleteFlowRequest(flow_name=flow_name)
-            delete_flow_result = GriptapeNodes().handle_request(delete_flow_request)
-            if isinstance(delete_flow_result, DeleteFlowResultFailure):
-                details = f"Attempted to delete Flow '{request.flow_name}', but failed while attempting to delete child Flow '{flow_name}'."
+            node_names = list_nodes_result.node_names
+            for node_name in node_names:
+                delete_node_request = DeleteNodeRequest(node_name=node_name)
+                delete_node_result = GriptapeNodes().handle_request(delete_node_request)
+                if isinstance(delete_node_result, DeleteNodeResultFailure):
+                    details = f"Attempted to delete Flow '{flow_name}', but failed while attempting to delete child Node '{node_name}'."
+                    logger.error(details)
+                    result = DeleteFlowResultFailure()
+                    return result
+
+            # Delete all child Flows of this Flow.
+            # Note: We use ListFlowsInCurrentContextRequest here instead of ListFlowsInFlowRequest(parent_flow_name=None)
+            # because None in ListFlowsInFlowRequest means "get canvas/top-level flows". We want the flows in the
+            # current context, which is the flow we're deleting.
+            list_flows_request = ListFlowsInCurrentContextRequest()
+            list_flows_result = GriptapeNodes().handle_request(list_flows_request)
+            if isinstance(list_flows_result, ListFlowsInCurrentContextResultFailure):
+                details = f"Attempted to delete Flow '{flow_name}', but failed while attempting to get the list of Flows owned by this Flow."
                 logger.error(details)
                 result = DeleteFlowResultFailure()
                 return result
+            flow_names = list_flows_result.flow_names
+            for child_flow_name in flow_names:
+                with GriptapeNodes.ContextManager().flow(flow_name=child_flow_name):
+                    # Delete them.
+                    delete_flow_request = DeleteFlowRequest()
+                    delete_flow_result = GriptapeNodes().handle_request(delete_flow_request)
+                    if isinstance(delete_flow_result, DeleteFlowResultFailure):
+                        details = f"Attempted to delete Flow '{flow_name}', but failed while attempting to delete child Flow '{child_flow_name}'."
+                        logger.error(details)
+                        result = DeleteFlowResultFailure()
+                        return result
 
-        # If we've made it this far, we have deleted all the children Flows and their nodes.
-        # Remove the flow from our map.
-        obj_mgr.del_obj_by_name(request.flow_name)
-        del self._name_to_parent_name[request.flow_name]
+            # If we've made it this far, we have deleted all the children Flows and their nodes.
+            # Remove the flow from our map.
+            obj_mgr.del_obj_by_name(flow_name)
+            del self._name_to_parent_name[flow_name]
 
-        details = f"Successfully deleted Flow '{request.flow_name}'."
+        details = f"Successfully deleted Flow '{flow_name}'."
         logger.debug(details)
         result = DeleteFlowResultSuccess()
         return result
@@ -784,19 +830,30 @@ class FlowManager:
         return GetIsFlowRunningResultSuccess(is_running=is_running)
 
     def on_list_nodes_in_flow_request(self, request: ListNodesInFlowRequest) -> ResultPayload:
+        flow_name = request.flow_name
+        if flow_name is None:
+            # First check if we have a current flow
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = "Attempted to list Nodes in a Flow in the Current Context. Failed because the Current Context was empty."
+                logger.error(details)
+                result = ListNodesInFlowResultFailure()
+                return result
+            # Get the current flow from context
+            flow_name = GriptapeNodes.ContextManager().get_current_flow_name()
+
         # Does this Flow even exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
-        flow = obj_mgr.attempt_get_object_by_name_as_type(request.flow_name, ControlFlow)
+        flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
         if flow is None:
             details = (
-                f"Attempted to list Nodes in Flow '{request.flow_name}', but no Flow with that name could be found."
+                f"Attempted to list Nodes in Flow '{flow_name}'. Failed because no Flow with that name could be found."
             )
             logger.error(details)
             result = ListNodesInFlowResultFailure()
             return result
 
         ret_list = list(flow.nodes.keys())
-        details = f"Successfully got the list of Nodes within Flow '{request.flow_name}'."
+        details = f"Successfully got the list of Nodes within Flow '{flow_name}'."
         logger.debug(details)
 
         result = ListNodesInFlowResultSuccess(node_names=ret_list)
@@ -1483,6 +1540,25 @@ class FlowManager:
             validation_succeeded=len(all_exceptions) == 0, exceptions=all_exceptions
         )
 
+    def on_list_flows_in_current_context_request(self, request: ListFlowsInCurrentContextRequest) -> ResultPayload:  # noqa: ARG002 (request isn't actually used)
+        if not GriptapeNodes.ContextManager().has_current_flow():
+            details = "Attempted to list Flows in the Current Context. Failed because the Current Context was empty."
+            logger.error(details)
+            return ListFlowsInCurrentContextResultFailure()
+
+        parent_flow_name = GriptapeNodes.ContextManager().get_current_flow_name()
+
+        # Create a list of all child flow names that point DIRECTLY to us.
+        ret_list = []
+        for flow_name, parent_name in self._name_to_parent_name.items():
+            if parent_name == parent_flow_name:
+                ret_list.append(flow_name)
+
+        details = f"Successfully got the list of Flows in the Current Context (Flow '{parent_flow_name}')."
+        logger.debug(details)
+
+        return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list)
+
 
 class NodeManager:
     _name_to_parent_flow_name: dict[str, str]
@@ -1541,11 +1617,15 @@ class NodeManager:
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
         if parent_flow_name is None:
-            details = f"Could not create Node of type '{request.node_type}'. No value for parent flow was supplied. This will one day come from the Current Context but we are poor and broken people. Please try your call again later."
-            logger.error(details)
+            # Try to get the current context flow
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = (
+                    "Attempted to create Node in the Current Context. Failed because the Current Context was empty."
+                )
+                logger.error(details)
+                return CreateNodeResultFailure()
+            parent_flow_name = GriptapeNodes.ContextManager().get_current_flow_name()
 
-            result = CreateNodeResultFailure()
-            return result
         # Does this flow actually exist?
         flow_mgr = GriptapeNodes.FlowManager()
         try:
@@ -1553,9 +1633,7 @@ class NodeManager:
         except KeyError as err:
             details = f"Could not create Node of type '{request.node_type}'. Error: {err}"
             logger.error(details)
-
-            result = CreateNodeResultFailure()
-            return result
+            return CreateNodeResultFailure()
 
         # Now ensure that we're giving a valid name.
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
@@ -1580,9 +1658,7 @@ class NodeManager:
             traceback.print_exc()
             details = f"Could not create Node '{final_node_name}' of type '{request.node_type}': {err}"
             logger.error(details)
-
-            result = CreateNodeResultFailure()
-            return result
+            return CreateNodeResultFailure()
 
         # Add it to the Flow.
         flow.add_node(node)
@@ -1593,19 +1669,22 @@ class NodeManager:
 
         node.state = NodeResolutionState(request.resolution)
 
-        # Phew.
-        details = f"Successfully created Node '{final_node_name}' of type '{request.node_type}'."
+        # Success message based on whether we used Current Context or explicit flow
+        if request.override_parent_flow_name is None:
+            details = (
+                f"Successfully created Node '{final_node_name}' in the Current Context (Flow '{parent_flow_name}')"
+            )
+        else:
+            details = f"Successfully created Node '{final_node_name}' in Flow '{parent_flow_name}'"
+
         log_level = logging.DEBUG
         if remapped_requested_node_name:
             log_level = logging.WARNING
-            details = f"{details} WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
+            details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
 
         logger.log(level=log_level, msg=details)
 
-        result = CreateNodeResultSuccess(
-            node_name=node.name,
-        )
-        return result
+        return CreateNodeResultSuccess(node_name=node.name)
 
     def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:
         # Does this node exist?
@@ -3539,7 +3618,7 @@ class LibraryManager:
         result = ListCategoriesInLibraryResultSuccess(categories=categories)
         return result
 
-    def register_library_from_file_request(self, request: RegisterLibraryFromFileRequest) -> ResultPayload:
+    def register_library_from_file_request(self, request: RegisterLibraryFromFileRequest) -> ResultPayload:  # noqa: PLR0911 (complex logic needs branches)
         file_path = request.file_path
 
         # Convert to Path object if it's a string
@@ -3556,16 +3635,27 @@ class LibraryManager:
             with json_path.open("r") as f:
                 library_data = json.load(f)
         except json.JSONDecodeError:
-            details = f"Attempted to load Library JSON file. Failed because the file at path {json_path} was improperly formatted."
+            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' was improperly formatted."
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
+        except Exception as err:
+            details = f"Attempted to load Library JSON file from location '{json_path}'. Failed because an exception occurred: {err}"
+            logger.error(details)
+            return RegisterLibraryFromFileResultFailure()
+
         # Extract library information
         try:
             library_name = library_data["name"]
             library_metadata = library_data.get("metadata", {})
             nodes_metadata = library_data.get("nodes", [])
         except KeyError as e:
-            details = f"Attempted to load Library JSON file from '{file_path}'. Failed because it was missing required field in library metadata: {e}"
+            details = f"Attempted to load Library JSON file from '{json_path}'. Failed because it was missing required field in library metadata: {e}"
+            logger.error(details)
+            return RegisterLibraryFromFileResultFailure()
+        except Exception as err:
+            details = (
+                f"Attempted to load Library JSON file from '{json_path}'. Failed because an exception occurred: {err}"
+            )
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
@@ -3586,7 +3676,7 @@ class LibraryManager:
             )
         except KeyError as err:
             # Library already exists
-            details = f"Attempted to load Library JSON file from '{file_path}'. Failed because a Library '{library_name}' already exists. Error: {err}."
+            details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_name}' already exists. Error: {err}."
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
@@ -3612,12 +3702,12 @@ class LibraryManager:
                 library.register_new_node_type(node_class, metadata=node_metadata)
 
             except (KeyError, ImportError, AttributeError) as e:
-                details = f"Attempted to load Library JSON file from '{file_path}'. Failed due to an error loading node '{node_meta.get('class_name', 'unknown')}': {e}"
+                details = f"Attempted to load Library JSON file from '{json_path}'. Failed due to an error loading node '{node_meta.get('class_name', 'unknown')}': {e}"
                 logger.error(details)
                 return RegisterLibraryFromFileResultFailure()
 
         # Success!
-        details = f"Successfully loaded Library '{library_name}' from JSON file at {file_path}"
+        details = f"Successfully loaded Library '{library_name}' from JSON file at {json_path}"
         logger.info(details)
         return RegisterLibraryFromFileResultSuccess(library_name=library_name)
 

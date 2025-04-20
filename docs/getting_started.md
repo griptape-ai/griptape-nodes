@@ -1,6 +1,6 @@
-# Getting Started with Griptape [nodes]
+# Getting Started with Griptape Nodes
 
-An important bit of overview before we begin: Griptape [nodes] is actually two things that work together - an Engine and an Editor. The Engine will install and run on your computer, while the Editor is served from the web, and you'll interact with your Engine through a web browser.
+An important bit of overview before we begin: Griptape Nodes is actually two things that work together - an Engine and an Editor. The Engine will install and run on your computer, while the Editor is served from the web, and you'll interact with your Engine through a web browser.
 
 > - If you'd rather not install the Engine locally, it is also easy to run it in a hosted environment. The instructions that follow will work the same for either approach.
 
@@ -19,9 +19,9 @@ To get started, visit [https://griptapenodes.com](https://griptapenodes.com) and
 
 ![Landing Page](assets/img/getting_started/getting_started-nodes_landing_page.png)
 
-You'll be presented with a Griptape **Cloud** authorization form.
+You'll be presented with a Griptape account authorization form.
 
-> If you've already signed up for Griptape **Cloud**, your existing credentials will work here!
+> If you've already signed up for [Griptape Cloud](https://cloud.griptape.ai), your existing credentials will work here!
 
 ![Login](assets/img/getting_started/getting_started-login.png)
 
@@ -29,11 +29,17 @@ Once you've logged in, you'll be presented with a setup screen which walks you t
 
 ## 2. Install Your Engine
 
-Copy the installation command from the **New Installation** section (it's the bit that starts with *curl*) . Open a terminal on your machine and paste and run the command.
+1. Copy the installation command from the **New Installation** section (it's the bit that starts with `curl`).
 
-> Remember, you can install this on your local machine *or* a cloud-based workstation.
+1. Open a Terminal on your machine
 
-![Installation Page](assets/img/getting_started/getting_started-installation_page.png)
+1. Paste and run the command.
+
+    !!! info
+
+        You can install this on your local machine *or* a cloud-based workstation.
+
+![Installation Page](assets/img/getting_started/getting_started-installation_page.webp)
 
 You'll see this message when installation has completed:
 
@@ -51,7 +57,7 @@ You'll see this message when installation has completed:
 
 ## 3. Configuration
 
-**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape [nodes] engine will save [configuration settings](./reference/glossary.md#configuration-settings), [project files](./reference/glossary.md#project-files), and [generated assets](./reference/glossary.md#generated-assets). It will also contain a [.env](./reference/glossary.md#.env) for your project [secret key](./reference/glossary.md#secret-keys).
+**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape Nodes engine will save [project files](./reference/glossary.md#project-files), and [generated assets](./reference/glossary.md#generated-assets). It will also contain a [.env](./reference/glossary.md#.env) for your Griptape Nodes [secret keys](./reference/glossary.md#secret-keys).
 
 ```
 ╭───────────────────────────────────────────────────────────────────╮
@@ -92,6 +98,6 @@ Griptape API Key (YOUR-KEY-HERE):
 
 ## 4. Start Your Engine
 
-You're ready to proceed. Run `griptape-nodes` or `gtn` and return to your browser. Your browser tab at https://nodes.griptape.ai will be updated to an untitled workflow in Griptape [nodes]!
+You're ready to proceed. Run `griptape-nodes` or `gtn` and return to your browser. Your browser tab at https://nodes.griptape.ai will be updated to an untitled workflow in Griptape Nodes!
 
 ![A Blank Griptape_nodes_ editor](assets/img/getting_started/getting_started-blank_editor.png)
