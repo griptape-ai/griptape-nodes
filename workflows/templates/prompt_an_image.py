@@ -5,8 +5,8 @@ cmd.create_flow(flow_name="prompt_an_image")
 
 # Create nodes
 cmd.create_node(
-    node_type="CreateImage",
-    node_name="CreateImage_1",
+    node_type="GenerateImage",
+    node_name="GenerateImage_1",
     parent_flow_name="prompt_an_image",
     specific_library_name="Griptape Nodes Library",
     metadata={
@@ -16,16 +16,16 @@ cmd.create_node(
             "description": "Generates images using configurable image drivers",
         },
         "library": "Griptape Nodes Library",
-        "node_type": "CreateImage",
+        "node_type": "GenerateImage",
         "category": "Image",
     },
 )
 
 # Set parameter values
-cmd.set_value("CreateImage_1.prompt", "A potato making an oil painting\n\n")
-cmd.set_value("CreateImage_1.enhance_prompt", True)
+cmd.set_value("GenerateImage_1.prompt", "A potato making an oil painting\n\n")
+cmd.set_value("GenerateImage_1.enhance_prompt", True)
 cmd.set_value(
-    "CreateImage_1.output",
+    "GenerateImage_1.output",
     {
         "type": "ImageArtifact",
         "id": "89a02c8165d449b1898c1b3abf3e4262",

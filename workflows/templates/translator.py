@@ -5,7 +5,7 @@ cmd.create_flow(flow_name="translator")
 
 # Create nodes
 cmd.create_node(
-    node_type="RunAgent",
+    node_type="Agent",
     node_name="spanish_story",
     parent_flow_name="translator",
     specific_library_name="Griptape Nodes Library",
@@ -16,13 +16,13 @@ cmd.create_node(
             "display_name": "Run Agent",
         },
         "library": "Griptape Nodes Library",
-        "node_type": "RunAgent",
+        "node_type": "Agent",
         "category": "Agent",
         "position": {"x": -535.7908683713299, "y": -7.476151651692973},
     },
 )
 cmd.create_node(
-    node_type="RunAgent",
+    node_type="Agent",
     node_name="to_english",
     parent_flow_name="translator",
     specific_library_name="Griptape Nodes Library",
@@ -33,7 +33,7 @@ cmd.create_node(
             "display_name": "Run Agent",
         },
         "library": "Griptape Nodes Library",
-        "node_type": "RunAgent",
+        "node_type": "Agent",
         "category": "Agent",
         "position": {"x": 638.5560890213236, "y": -9.073446632293525},
     },
@@ -95,7 +95,7 @@ cmd.set_value(
                         "reference": None,
                         "meta": {},
                         "name": "e98fb473558c465b8eaf202db77884bf",
-                        "value": "write me a 4-line spanish_story",
+                        "value": "Write me a 4-line story in Spanish",
                     },
                     "output": {
                         "type": "TextArtifact",
@@ -136,7 +136,7 @@ cmd.set_value(
         ],
     },
 )
-cmd.set_value("spanish_story.prompt", "write me a 4-line spanish_story")
+cmd.set_value("spanish_story.prompt", "Write me a 4-line story in Spanish")
 cmd.set_value(
     "spanish_story.output",
     "Bajo la luna, el río cantó,  \nUn secreto antiguo en su agua dejó.  \nLa niña lo escuchó y empezó a soñar,  \nQue el mundo era suyo, listo para amar.\n",
