@@ -1,11 +1,11 @@
 import pytest
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
-from griptape_nodes_library.drivers.image.griptape_cloud_image_driver import GriptapeCloudImageDriver
+from griptape_nodes_library.drivers.image.griptape_cloud_image_driver import GriptapeCloudImage
 
 
 class TestGriptapeCloudImageGenerationNode:
     def test___init__(self) -> None:
-        griptape_cloud_image_generation_node = GriptapeCloudImageDriver(name="Griptape Cloud Image Generation")
+        griptape_cloud_image_generation_node = GriptapeCloudImage(name="Griptape Cloud Image Generation")
 
         parameters = [
             {

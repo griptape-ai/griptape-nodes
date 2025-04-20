@@ -1,6 +1,5 @@
 from griptape.events import TextChunkEvent
 from griptape.structures import Agent as gtAgent
-from griptape.structures import Structure
 from griptape.utils import Stream
 
 from griptape_nodes.exe_types.node_types import AsyncResult
