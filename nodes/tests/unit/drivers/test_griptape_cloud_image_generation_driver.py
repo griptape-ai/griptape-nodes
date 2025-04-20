@@ -80,14 +80,14 @@ class TestGriptapeCloudImageGenerationNode:
         ],
     )
     def test_adjust_size_based_on_model(self, model, size, expected_size) -> None:
-        griptape_cloud_image_generation_node = GriptapeCloudImageDriver(name="Griptape Cloud Image Generation")
+        griptape_cloud_image_generation_node = GriptapeCloudImage(name="Griptape Cloud Image Generation")
 
         adjusted_size = griptape_cloud_image_generation_node.adjust_size_based_on_model(model, size)
 
         assert adjusted_size == expected_size
 
     def test_process(self) -> None:
-        griptape_cloud_image_generation_node = GriptapeCloudImageDriver(name="Griptape Cloud Image Generation")
+        griptape_cloud_image_generation_node = GriptapeCloudImage(name="Griptape Cloud Image Generation")
 
         griptape_cloud_image_generation_node.process()
 
