@@ -61,6 +61,14 @@ class SecretsManager:
         secret_name = request.key
         secret_value = request.value
 
+        # We don't want to echo the secret value back to the user, but we can at least tell them it changed.
+        old_value = self.get_secret(secret_name)
+        if old_value:
+            if old_value != secret_value:
+                logger.info("Secret '%s' changed.", secret_name)
+            else:
+                logger.info("Attempted to update secret '%s' but no change detected.", secret_name)
+
         self.set_secret(secret_name, secret_value)
 
         return SetSecretValueResultSuccess()
