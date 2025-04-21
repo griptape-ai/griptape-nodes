@@ -1,6 +1,6 @@
 from griptape.tools import BaseTool as GtBaseTool
 
-from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 
 
@@ -34,6 +34,7 @@ class BaseTool(DataNode):
                 type="Tool",
                 output_type="Tool",
                 default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
                 tooltip="",
             )
         )
