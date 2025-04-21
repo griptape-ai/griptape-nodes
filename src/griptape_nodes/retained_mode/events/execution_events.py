@@ -264,3 +264,9 @@ class GriptapeEvent(ExecutionPayload):
     parameter_name:str
     type: str
     value: Any
+
+
+@dataclass
+@PayloadRegistry.register
+class RestartFlowRequest(ExecutionPayload):
+    request:RequestPayload

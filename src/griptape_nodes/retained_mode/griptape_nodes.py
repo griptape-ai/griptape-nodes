@@ -14,6 +14,7 @@ from typing import Any, ClassVar, TextIO, TypeVar, cast
 
 import tomlkit
 from dotenv import load_dotenv
+from griptape.events import EventBus
 from rich.logging import RichHandler
 from xdg_base_dirs import xdg_data_home
 
@@ -47,6 +48,8 @@ from griptape_nodes.retained_mode.events.arbitrary_python_events import (
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     BaseEvent,
+    ExecutionEvent,
+    ExecutionGriptapeNodeEvent,
     RequestPayload,
     ResultPayload,
     ResultPayloadFailure,
@@ -80,6 +83,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ResolveNodeRequest,
     ResolveNodeResultFailure,
     ResolveNodeResultSuccess,
+    RestartFlowRequest,
     SingleExecutionStepRequest,
     SingleExecutionStepResultFailure,
     SingleExecutionStepResultSuccess,
@@ -490,7 +494,12 @@ class ObjectManager:
             return ClearAllObjectStateResultFailure()
         # Let's try and clear it all.
         context_mgr = GriptapeNodes.ContextManager()
-        flow_name = context_mgr.pop_flow()
+        try:
+            flow_name = context_mgr.pop_flow()
+        except ContextManager.EmptyStackError as e:
+            msg = f"Stack is already empty: {e}"
+            logger.warning(msg)
+            return ClearAllObjectStateResultSuccess()
         # Cancel Flow first
         if flow_name:
             flow = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(flow_name,ControlFlow)
@@ -1488,7 +1497,7 @@ class FlowManager:
             flow.continue_executing()
         except Exception as e:
             details = f"Failed to continue execution step. An exception occurred: {e}."
-            logger.error(details)
+            logger.exception(details)
             if flow.check_for_existing_running_flow():
                 cancel_request = CancelFlowRequest(flow_name=flow_name)
                 GriptapeNodes.handle_request(cancel_request)
@@ -2769,11 +2778,16 @@ class NodeManager:
                 msg = f"Could not re-resolve node '{node_name}'."
                 logger.error(msg)
                 return ResolveNodeResultFailure(validation_exceptions=[])
+            new_request = RestartFlowRequest(request=request)
+            EventBus.publish_event(
+                event=ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=new_request))
+            )
+            return result
         try:
             flow.resolve_singular_node(node, debug_mode)
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
-            logger.error(details)
+            logger.exception(details)
             return ResolveNodeResultFailure(validation_exceptions=[e])
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         logger.debug(details)

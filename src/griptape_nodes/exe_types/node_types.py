@@ -427,8 +427,7 @@ class BaseNode(ABC):
         # set state to unresolved
         self.state = NodeResolutionState.UNRESOLVED
         # delete all output values potentially generated
-        for value in self.parameter_output_values:
-            del self.parameter_output_values[value]
+        self.parameter_output_values.clear()
         # Remove the current spotlight
         while self.current_spotlight_parameter is not None:
             temp = self.current_spotlight_parameter.next

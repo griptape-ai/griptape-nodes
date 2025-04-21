@@ -37,6 +37,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionGriptapeNodeEvent,
     ProgressEvent,
     GriptapeNodeEvent,
+    RequestPayload,
     deserialize_event,
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
@@ -191,6 +192,13 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
             msg = "Node start and finish do not match."
             raise KeyError(msg) from None
         GriptapeNodes.get_instance().EventManager().current_active_node = None
+
+    if type(result_event.payload).__name__ == "RestartFlowRequest":
+        # If there needs to be something done during execution
+        # Only expecting this to be StartFlow or ResolveFlow right now.
+        payload = result_event.payload
+        event_queue.put(EventRequest(request=payload.request))
+        return
     # Set the node name here so I am not double importing
     socket.emit("execution_event", event_json)
 

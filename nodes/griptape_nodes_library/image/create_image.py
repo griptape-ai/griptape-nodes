@@ -1,5 +1,7 @@
+import threading
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
+from griptape.artifacts import BaseArtifact
 from griptape.structures import Structure
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
@@ -107,30 +109,26 @@ class CreateImage(ControlNode):
             agent = Agent.from_dict(agent)
         prompt = params.get("prompt", "")
         enhance_prompt = params.get("enhance_prompt", True)
-
         if enhance_prompt:
-            logger.info("Enhancing prompt...")
-            # agent.run is a blocking operation that will hold up the rest of the engine.
-            # By using `yield lambda`, the engine can run this in the background and resume when it's done.
-            result = yield lambda: agent.run(
-                [
-                    """
+            context = """
 Enhance the following prompt for an image generation engine. Return only the image generation prompt.
 Include unique details that make the subject stand out.
 Specify a specific depth of field, and time of day.
 Use dust in the air to create a sense of depth.
 Use a slight vignetting on the edges of the image.
 Use a color palette that is complementary to the subject.
-Focus on qualities that will make this the most professional looking photo in the world.""",
-                    prompt,
-                ]
-            )
+Focus on qualities that will make this the most professional looking photo in the world."""
+            logger.info("Enhancing prompt...")
+            # agent.run is a blocking operation that will hold up the rest of the engine.
+            # By using `yield lambda`, the engine can run this in the background and resume when it's done.
+            result = yield lambda shutdown_event: self._process(agent, prompt, context, shutdown_event)
             prompt = result.output
         else:
             logger.info("Prompt enhancement disabled.")
         # Initialize driver kwargs with required parameters
         kwargs = {}
-
+        if not prompt:
+            return
         # Driver
         driver_val = params.get("driver", None)
         if driver_val:
@@ -146,9 +144,20 @@ Focus on qualities that will make this the most professional looking photo in th
         agent.add_task(PromptImageGenerationTask(**kwargs))
 
         # Run the agent asynchronously
-        result = yield lambda: agent.run(prompt)
-
+        result = yield lambda shutdown_event: self._process(agent, prompt, "", shutdown_event)
+        if result is None:
+            return
         self.parameter_output_values["output"] = result.output
         try_throw_error(agent.output)
         # Reset the agent
         agent._tasks = []
+
+
+    def _process(self, agent:Agent, prompt:BaseArtifact, context:str, shutdown_event:threading.Event) -> Structure:
+        if shutdown_event.is_set():
+            return None
+        if context != "":
+            result = agent.run([context,prompt])
+        else:
+            result = agent.run(prompt)
+        return result if not shutdown_event.is_set() else None

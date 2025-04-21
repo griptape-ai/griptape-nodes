@@ -56,7 +56,7 @@ class ResolutionContext:
             # set the event to shut down the thread.
             self.shutdown_event.set()
         # Send an event to stop the GUI from taking threading tasks.
-        # Clear the parameters? Since it'll be partially stored.
+        # # Clear the parameters? Since it'll be partially stored.
         for parameter in self.focus_stack[-1].parameters:
             if parameter.allowed_modes == {ParameterMode.OUTPUT}:
                 payload = ParameterValueUpdateEvent(
@@ -76,14 +76,12 @@ class ResolutionContext:
             node.clear_node()
         self.focus_stack = []
         self.paused = False
-        self.scheduled_value = None
 
 
 class InitializeSpotlightState(State):
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:
         # If the focus stack is empty
-        context.shutdown_event.clear()
         current_node = context.focus_stack[-1]
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
@@ -224,6 +222,10 @@ class ExecuteNodeState(State):
                 )
 
         if not context.paused:
+            # Make sure these things are set correctly right before we begin our Execution.
+            context.shutdown_event.clear()
+            context.scheduled_value = None
+            context.future = None
             return ExecuteNodeState
         return None
 
@@ -345,11 +347,13 @@ class ExecuteNodeState(State):
             Stores the result of the future in the node's context, and publishes an event to resume the flow.
             """
             context.scheduled_value = future.result()
-            EventBus.publish_event(
-                ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
+            # Why am i sometimes hitting this and sometimes not?
+            if context.scheduled_value is not None:
+                EventBus.publish_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
+                    )
                 )
-            )
             # Future no longer needs to be stored.
             context.future = None
 
