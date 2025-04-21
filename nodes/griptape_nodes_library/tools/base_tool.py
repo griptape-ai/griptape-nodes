@@ -34,7 +34,7 @@ class BaseTool(DataNode):
                 type="Tool",
                 output_type="Tool",
                 default_value=None,
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+                allowed_modes={ParameterMode.OUTPUT},
                 tooltip="",
             )
         )
