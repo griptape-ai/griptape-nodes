@@ -194,11 +194,6 @@ class OpenAi(DataNode):
             logger.info(f"image_size_param: {image_size_param}")
             logger.info(f"style_param: {style_param}")
             logger.info(f"quality_param: {quality_param}")
-            # Update the display after mode change
-            # self._update_display()
-
-        # if parameter.name == "save":
-        #     self._update_display()
 
     def process(self) -> None:
         # Grab the API key
