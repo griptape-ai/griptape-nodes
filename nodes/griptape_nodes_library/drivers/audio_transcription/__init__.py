@@ -1,1 +1,0 @@
-"""Audio Transcription nodes package."""

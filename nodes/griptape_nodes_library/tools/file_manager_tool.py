@@ -3,7 +3,7 @@ from griptape.tools import FileManagerTool as GtFileManagerTool
 from griptape_nodes_library.tools.base_tool import BaseTool
 
 
-class FileManagerTool(BaseTool):
+class FileManager(BaseTool):
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", True)
 

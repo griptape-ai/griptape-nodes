@@ -21,14 +21,15 @@ class AppInitializationComplete(BaseModel):
     workflows_to_register: list[WorkflowSettingsDetail] = Field(
         default_factory=lambda: [
             WorkflowSettingsDetail(
-                file_name=str(xdg_data_home() / "griptape_nodes/workflows/translator.py"), is_griptape_provided=True
-            ),
-            WorkflowSettingsDetail(
-                file_name=str(xdg_data_home() / "griptape_nodes/workflows/compare_prompts.py"),
+                file_name=str(xdg_data_home() / "griptape_nodes/workflows/templates/translator.py"),
                 is_griptape_provided=True,
             ),
             WorkflowSettingsDetail(
-                file_name=str(xdg_data_home() / "griptape_nodes/workflows/prompt_an_image.py"),
+                file_name=str(xdg_data_home() / "griptape_nodes/workflows/templates/compare_prompts.py"),
+                is_griptape_provided=True,
+            ),
+            WorkflowSettingsDetail(
+                file_name=str(xdg_data_home() / "griptape_nodes/workflows/templates/prompt_an_image.py"),
                 is_griptape_provided=True,
             ),
         ]
