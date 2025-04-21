@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 from pathlib import Path
@@ -324,8 +325,6 @@ class ConfigManager:
 
         # Make a copy of the existing value if it is a dict or list
         if isinstance(old_value, (dict, list)):
-            import copy
-
             old_value_copy = copy.deepcopy(old_value)
         else:
             old_value_copy = old_value
@@ -338,10 +337,10 @@ class ConfigManager:
             if old_value_copy is not None:
                 diff = self._get_diff(old_value_copy, request.value)
                 formatted_diff = self._format_diff(diff)
-                if not formatted_diff:
-                    details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. No changes detected."
-                else:
+                if formatted_diff:
                     details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. Changes:\n{formatted_diff}"
+                else:
+                    details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. No changes detected."
             else:
                 details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'"
         else:
