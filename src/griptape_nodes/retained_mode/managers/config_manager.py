@@ -338,7 +338,10 @@ class ConfigManager:
             if old_value_copy is not None:
                 diff = self._get_diff(old_value_copy, request.value)
                 formatted_diff = self._format_diff(diff)
-                details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. Changes:\n{formatted_diff}"
+                if not formatted_diff:
+                    details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. No changes detected."
+                else:
+                    details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. Changes:\n{formatted_diff}"
             else:
                 details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'"
         else:
