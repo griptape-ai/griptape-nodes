@@ -100,7 +100,6 @@ class GenerateImage(ControlNode):
             prompt_driver = GriptapeCloudPromptDriver(
                 model="gpt-4o",
                 api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
-                stream=True,
             )
             agent = Agent(prompt_driver=prompt_driver)
         else:
