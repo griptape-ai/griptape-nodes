@@ -104,7 +104,8 @@ class ListParametersOnNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetNodeMetadataRequest(RequestPayload):
-    node_name: str
+    # If None is passed, assumes we're using the Node in the Current Context
+    node_name: str | None = None
 
 
 @dataclass
@@ -122,8 +123,9 @@ class GetNodeMetadataResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class SetNodeMetadataRequest(RequestPayload):
-    node_name: str
     metadata: dict
+    # If None is passed, assumes we're using the Node in the Current Context
+    node_name: str | None = None
 
 
 @dataclass
@@ -143,7 +145,8 @@ class SetNodeMetadataResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetAllNodeInfoRequest(RequestPayload):
-    node_name: str
+    # If None is passed, assumes we're using the Node in the Current Context
+    node_name: str | None = None
 
 
 @dataclass

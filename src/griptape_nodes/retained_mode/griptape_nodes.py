@@ -1805,19 +1805,29 @@ class NodeManager:
         return result
 
     def on_get_node_metadata_request(self, request: GetNodeMetadataRequest) -> ResultPayload:
+        node_name = request.node_name
+        if node_name is None:
+            # Get from the current context.
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to get metadata for a Node from the Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return GetNodeMetadataResultFailure()
+
+            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to get metadata for a Node '{request.node_name}', but no such Node was found."
+            details = f"Attempted to get metadata for a Node '{node_name}', but no such Node was found."
             logger.error(details)
 
             result = GetNodeMetadataResultFailure()
             return result
 
         metadata = node.metadata
-        details = f"Successfully retrieved metadata for a Node '{request.node_name}'."
+        details = f"Successfully retrieved metadata for a Node '{node_name}'."
         logger.debug(details)
 
         result = GetNodeMetadataResultSuccess(
@@ -1826,12 +1836,22 @@ class NodeManager:
         return result
 
     def on_set_node_metadata_request(self, request: SetNodeMetadataRequest) -> ResultPayload:
+        node_name = request.node_name
+        if node_name is None:
+            # Get from the current context.
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to set metadata for a Node from the Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return SetNodeMetadataResultFailure()
+
+            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to set metadata for a Node '{request.node_name}', but no such Node was found."
+            details = f"Attempted to set metadata for a Node '{node_name}', but no such Node was found."
             logger.error(details)
 
             result = SetNodeMetadataResultFailure()
@@ -1839,7 +1859,7 @@ class NodeManager:
         # We can't completely overwrite metadata.
         for key, value in request.metadata.items():
             node.metadata[key] = value
-        details = f"Successfully set metadata for a Node '{request.node_name}'."
+        details = f"Successfully set metadata for a Node '{node_name}'."
         logger.debug(details)
 
         result = SetNodeMetadataResultSuccess()
@@ -2509,77 +2529,86 @@ class NodeManager:
     # want to give clear reasoning for each failure.
     # For PLR0915 (too many statements): very little reusable code here, want to be explicit and
     # make debugger use friendly.
-    def on_get_all_node_info_request(self, request: GetAllNodeInfoRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915
+    def on_get_all_node_info_request(self, request: GetAllNodeInfoRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
+        node_name = request.node_name
+        # Get from the current context.
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to get all info for a Node from the Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return GetAllNodeInfoResultFailure()
+
+            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to get all info for Node named '{request.node_name}', but no such Node was found."
+            details = f"Attempted to get all info for Node named '{node_name}', but no such Node was found."
             logger.error(details)
 
             result = GetAllNodeInfoResultFailure()
             return result
 
-        get_metadata_request = GetNodeMetadataRequest(node_name=request.node_name)
+        get_metadata_request = GetNodeMetadataRequest(node_name=node_name)
         get_metadata_result = GriptapeNodes.NodeManager().on_get_node_metadata_request(get_metadata_request)
         if not get_metadata_result.succeeded():
-            details = (
-                f"Attempted to get all info for Node named '{request.node_name}', but failed getting the metadata."
-            )
+            details = f"Attempted to get all info for Node named '{node_name}', but failed getting the metadata."
             logger.error(details)
 
             result = GetAllNodeInfoResultFailure()
-            return result
+            return GetAllNodeInfoResultFailure()
 
-        get_resolution_state_request = GetNodeResolutionStateRequest(node_name=request.node_name)
+        get_resolution_state_request = GetNodeResolutionStateRequest(node_name=node_name)
         get_resolution_state_result = GriptapeNodes.NodeManager().on_get_node_resolution_state_request(
             get_resolution_state_request
         )
         if not get_resolution_state_result.succeeded():
-            details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting the resolution state."
+            details = (
+                f"Attempted to get all info for Node named '{node_name}', but failed getting the resolution state."
+            )
             logger.error(details)
 
-            result = GetAllNodeInfoResultFailure()
-            return result
+            return GetAllNodeInfoResultFailure()
 
-        list_connections_request = ListConnectionsForNodeRequest(node_name=request.node_name)
+        list_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
         list_connections_result = GriptapeNodes.NodeManager().on_list_connections_for_node_request(
             list_connections_request
         )
         if not list_connections_result.succeeded():
-            details = f"Attempted to get all info for Node named '{request.node_name}', but failed listing all connections for it."
+            details = (
+                f"Attempted to get all info for Node named '{node_name}', but failed listing all connections for it."
+            )
             logger.error(details)
 
-            result = GetAllNodeInfoResultFailure()
-            return result
+            return GetAllNodeInfoResultFailure()
         # Cast everything to get the linter off our back.
         try:
             get_metadata_success = cast("GetNodeMetadataResultSuccess", get_metadata_result)
             get_resolution_state_success = cast("GetNodeResolutionStateResultSuccess", get_resolution_state_result)
             list_connections_success = cast("ListConnectionsForNodeResultSuccess", list_connections_result)
         except Exception as err:
-            details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
+            details = f"Attempted to get all info for Node named '{node_name}'. Failed due to error: {err}."
             logger.error(details)
 
-            result = GetAllNodeInfoResultFailure()
-            return result
-        get_node_elements_request = GetNodeElementDetailsRequest(node_name=request.node_name)
+            return GetAllNodeInfoResultFailure()
+        get_node_elements_request = GetNodeElementDetailsRequest(node_name=node_name)
         get_node_elements_result = GriptapeNodes.NodeManager().on_get_node_element_details_request(
             get_node_elements_request
         )
         if not get_node_elements_result.succeeded():
-            details = f"Attempted to get all info for Node named '{request.node_name}', but failed getting details for elements."
+            details = (
+                f"Attempted to get all info for Node named '{node_name}', but failed getting details for elements."
+            )
             logger.error(details)
-            result = GetAllNodeInfoResultFailure()
-            return result
+            return GetAllNodeInfoResultFailure()
         try:
             get_element_details_success = cast("GetNodeElementDetailsResultSuccess", get_node_elements_result)
         except Exception as err:
-            details = f"Attempted to get all info for Node named '{request.node_name}'. Failed due to error: {err}."
+            details = f"Attempted to get all info for Node named '{node_name}'. Failed due to error: {err}."
             logger.exception(details)
-            result = GetAllNodeInfoResultFailure()
-            return result
+            return GetAllNodeInfoResultFailure()
 
         # this will return the node element and the value
         element_details = get_element_details_success.element_details
@@ -2588,7 +2617,7 @@ class NodeManager:
             del element_details["element_id_to_value"]
         else:
             element_id_to_value = {}
-        details = f"Successfully got all node info for node '{request.node_name}'."
+        details = f"Successfully got all node info for node '{node_name}'."
         logger.debug(details)
         result = GetAllNodeInfoResultSuccess(
             metadata=get_metadata_success.metadata,
