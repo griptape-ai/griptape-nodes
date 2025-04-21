@@ -219,11 +219,16 @@ class ExecuteNodeState(State):
             current_node.state = NodeResolutionState.UNRESOLVED
             current_node.process_generator = None
             context.flow.cancel_flow_run()
+
+            EventBus.publish_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
+                )
+            )
             raise RuntimeError(msg) from e
 
         logger.info("Node %s finished processing.", current_node.name)
 
-        # To set the event manager without circular import errors
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
