@@ -190,6 +190,7 @@ class OpenAi(DataNode):
                 image_size_param.remove_trait(image_size_param.children[0])
                 image_size_param.add_trait(Options(choices=sizes))
                 image_size_param.ui_options = {"options": sizes}
+                image_size_param.set_default_value(sizes[0])
 
             logger.info(f"image_size_param: {image_size_param}")
             logger.info(f"style_param: {style_param}")
