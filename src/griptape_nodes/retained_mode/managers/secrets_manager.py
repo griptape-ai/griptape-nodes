@@ -95,7 +95,7 @@ class SecretsManager:
 
         return DeleteSecretValueResultSuccess()
 
-    def get_secret(self, secret_name: str) -> str | None:
+    def get_secret(self, secret_name: str, *, should_error_on_not_found: bool = True) -> str | None:
         """Return the secret value, searching workspace env, global env, then OS env."""
         search_order = [
             (str(self.workspace_env_path), lambda: DotEnv(self.workspace_env_path).get(secret_name)),
@@ -107,11 +107,12 @@ class SecretsManager:
         for source, fetch in search_order:
             value = fetch()
             if value is not None:
-                logger.debug("Secret %s found in %s", secret_name, source)
+                logger.debug("Secret '%s' found in '%s'", secret_name, source)
                 return value
-            logger.debug("Secret %s not found in %s", secret_name, source)
+            logger.debug("Secret '%s' not found in '%s'", secret_name, source)
 
-        logger.error("Secret %s not found")
+        if should_error_on_not_found:
+            logger.error("Secret '%s' not found")
         return value
 
     def set_secret(self, secret_name: str, secret_value: str) -> None:

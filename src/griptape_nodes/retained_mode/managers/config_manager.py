@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import ValidationError
 from xdg_base_dirs import xdg_config_home
 
+from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
@@ -62,6 +63,11 @@ class ConfigManager:
             )
             event_manager.assign_manager_to_request_type(GetConfigValueRequest, self.on_handle_get_config_value_request)
             event_manager.assign_manager_to_request_type(SetConfigValueRequest, self.on_handle_set_config_value_request)
+
+            event_manager.add_listener_to_app_event(
+                AppInitializationComplete,
+                self.on_app_initialization_complete,
+            )
 
     @property
     def workspace_path(self) -> Path:
@@ -137,6 +143,31 @@ class ConfigManager:
         except ValidationError as e:
             logger.error("Error validating config file: %s", e)
             self.user_config = Settings().model_dump()
+
+    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+        # We want to ensure that all environment variables from here are pre-filled in the secrets manager.
+        env_var_names = self.gather_env_var_names()
+        for env_var_name in env_var_names:
+            # Lazy load to avoid circular import
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            if GriptapeNodes.SecretsManager().get_secret(env_var_name, should_error_on_not_found=False) is None:
+                # Set a blank one.
+                GriptapeNodes.SecretsManager().set_secret(env_var_name, "")
+
+    def gather_env_var_names(self) -> list[str]:
+        """Gather all environment variable names within the config."""
+        return self._gather_env_var_names_in_dict(self.user_config)
+
+    def _gather_env_var_names_in_dict(self, config: dict) -> list[str]:
+        """Gather all environment variable names from a given config dictionary."""
+        env_var_names = []
+        for value in config.values():
+            if isinstance(value, dict):
+                env_var_names.extend(self._gather_env_var_names_in_dict(value))
+            elif isinstance(value, str) and value.startswith("$"):
+                env_var_names.append(value)
+        return env_var_names
 
     def save_user_workflow_json(self, workflow_file_name: str) -> None:
         workflow_details = WorkflowSettingsDetail(file_name=workflow_file_name, is_griptape_provided=False)
