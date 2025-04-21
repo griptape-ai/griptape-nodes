@@ -132,7 +132,7 @@ Focus on qualities that will make this the most professional looking photo in th
         kwargs = {}
 
         # Driver
-        driver_val = params.get("driver", None)
+        driver_val = params.get("image_generation_driver", None)
         if driver_val:
             driver = driver_val
         else:

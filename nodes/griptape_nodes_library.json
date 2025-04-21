@@ -29,6 +29,30 @@
       }
     },
     {
+      "integrations": {
+        "color": "border-orange-500",
+        "title": "Integrations",
+        "description": "Integrations with other services.",
+        "icon": "Puzzle"
+      }
+    },
+    {
+      "image": {
+        "color": "border-purple-500",
+        "title": "Image",
+        "description": "Image related nodes.",
+        "icon": "Photograph"
+      }
+    },
+    {
+      "convert": {
+        "color": "border-cyan-500",
+        "title": "Convert",
+        "description": "Convert nodes.",
+        "icon": "Shuffle"
+      }
+    },
+    {
       "convert": {
         "color": "border-cyan-500",
         "title": "Convert",
@@ -178,6 +202,15 @@
         "category": "convert",
         "description": "ToText node.",
         "display_name": "To Text"
+      }
+    },
+    {
+      "class_name": "OpenAi",
+      "file_path": "griptape_nodes_library/integrations/openai_integration.py",
+      "metadata": {
+        "category": "integrations",
+        "description": "OpenAi Drivers.",
+        "display_name": "OpenAi"
       }
     },
     {
