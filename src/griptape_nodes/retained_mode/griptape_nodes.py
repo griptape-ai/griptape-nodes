@@ -48,6 +48,7 @@ from griptape_nodes.retained_mode.events.arbitrary_python_events import (
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     BaseEvent,
+    EventRequest,
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     RequestPayload,

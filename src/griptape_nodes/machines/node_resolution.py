@@ -223,8 +223,8 @@ class ExecuteNodeState(State):
 
         if not context.paused:
             # Make sure these things are set correctly right before we begin our Execution.
-            context.shutdown_event.clear()
             context.scheduled_value = None
+            context.shutdown_event.clear()
             context.future = None
             return ExecuteNodeState
         return None
@@ -257,6 +257,9 @@ class ExecuteNodeState(State):
             raise RuntimeError(msg) from e
 
         logger.info("Node %s finished processing.", current_node.name)
+        if len(context.focus_stack) == 0:
+            # We have reset this one already.
+            return CompleteState
 
         # To set the event manager without circular import errors
         EventBus.publish_event(
@@ -348,14 +351,15 @@ class ExecuteNodeState(State):
             """
             context.scheduled_value = future.result()
             # Why am i sometimes hitting this and sometimes not?
-            if context.scheduled_value is not None:
-                EventBus.publish_event(
-                    ExecutionGriptapeNodeEvent(
-                        wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
-                    )
+            EventBus.publish_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
                 )
+            )
             # Future no longer needs to be stored.
+            context.shutdown_event.clear()
             context.future = None
+            context.scheduled_value = None
 
         # Only start the processing if we don't already have a generator
         logger.debug("Node %s process generator: %s", current_node.name, current_node.process_generator)
