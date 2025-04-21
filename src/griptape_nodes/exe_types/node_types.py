@@ -24,7 +24,7 @@ logger = logging.getLogger("griptape_nodes")
 
 T = TypeVar("T")
 
-AsyncResult = Generator[Callable[[], T], T]
+AsyncResult = Generator[Callable[..., T], T]
 
 
 class NodeResolutionState(StrEnum):

@@ -82,12 +82,14 @@ class CreateAgent(BaseAgent):
     def _process(self, agent: Agent, prompt: str, shutdown_event: threading.Event) -> str:
         # Check if the event is already set before starting
         if shutdown_event.is_set():
+            output = ""
             return ""
         stream = Stream(agent)
         output = ""
         for artifact in stream.run(prompt):
             # Check if shutdown is requested during processing
             if shutdown_event.is_set():
+                output = ""
                 return ""  # Return nothing
             # SEND AN EVENT HERE
             EventBus.publish_event(

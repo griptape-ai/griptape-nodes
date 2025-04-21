@@ -490,6 +490,12 @@ class ObjectManager:
             return ClearAllObjectStateResultFailure()
         # Let's try and clear it all.
         context_mgr = GriptapeNodes.ContextManager()
+        flow_name = context_mgr.pop_flow()
+        # Cancel Flow first
+        if flow_name:
+            flow = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(flow_name,ControlFlow)
+            if flow and flow.check_for_existing_running_flow():
+                GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow_name))
         while context_mgr.has_current_flow():
             while context_mgr.has_current_node():
                 context_mgr.pop_node()
