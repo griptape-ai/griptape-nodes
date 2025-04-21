@@ -907,98 +907,103 @@ class FlowManager:
 
     def on_create_connection_request(self, request: CreateConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901 TODO(griptape): resolve
         # Vet the two nodes first.
-        source_node = None
+        source_node_name = request.source_node_name
+        if source_node_name is None:
+            # First check if we have a current node
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to create a Connection with a source node from the Current Context. Failed because the Current Context was empty."
+                logger.error(details)
+                return CreateConnectionResultFailure()
+
+            # Get the current node from context
+            source_node_name = GriptapeNodes.ContextManager().get_current_node_name()
+
         try:
-            source_node = GriptapeNodes.NodeManager().get_node_by_name(request.source_node_name)
+            source_node = GriptapeNodes.NodeManager().get_node_by_name(source_node_name)
         except ValueError as err:
-            details = f'Connection failed: "{request.source_node_name}" does not exist. Error: {err}.'
+            details = f'Connection failed: "{source_node_name}" does not exist. Error: {err}.'
             logger.error(details)
 
-            result = CreateConnectionResultFailure()
-            return result
+            return CreateConnectionResultFailure()
 
-        target_node = None
+        target_node_name = request.target_node_name
+        if target_node_name is None:
+            # First check if we have a current node
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to create a Connection with the target node from the Current Context. Failed because the Current Context was empty."
+                logger.error(details)
+                return CreateConnectionResultFailure()
+
+            # Get the current node from context
+            target_node_name = GriptapeNodes.ContextManager().get_current_node_name()
+
         try:
-            target_node = GriptapeNodes.NodeManager().get_node_by_name(request.target_node_name)
+            target_node = GriptapeNodes.NodeManager().get_node_by_name(target_node_name)
         except ValueError as err:
-            details = f'Connection failed: "{request.target_node_name}" does not exist. Error: {err}.'
+            details = f'Connection failed: "{target_node_name}" does not exist. Error: {err}.'
             logger.error(details)
-            result = CreateConnectionResultFailure()
-            return result
+            return CreateConnectionResultFailure()
 
         # The two nodes exist.
         # Get the parent flows.
         source_flow_name = None
         source_flow = None
         try:
-            source_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(request.source_node_name)
+            source_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(source_node_name)
             source_flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name=source_flow_name)
         except KeyError as err:
-            details = f'Connection "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}" failed: {err}.'
+            details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" failed: {err}.'
             logger.error(details)
-
-            result = CreateConnectionResultFailure()
-            return result
+            return CreateConnectionResultFailure()
 
         target_flow_name = None
         try:
-            target_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(request.target_node_name)
+            target_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(target_node_name)
             GriptapeNodes.FlowManager().get_flow_by_name(flow_name=target_flow_name)
         except KeyError as err:
-            details = f'Connection "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}" failed: {err}.'
+            details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" failed: {err}.'
             logger.error(details)
-
-            result = CreateConnectionResultFailure()
-            return result
+            return CreateConnectionResultFailure()
 
         # CURRENT RESTRICTION: Now vet the parents are in the same Flow (yes this sucks)
         if target_flow_name != source_flow_name:
-            details = f'Connection "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}" failed: Different flows.'
+            details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" failed: Different flows.'
             logger.error(details)
-
-            result = CreateConnectionResultFailure()
-            return result
+            return CreateConnectionResultFailure()
 
         # Now validate the parameters.
         source_param = source_node.get_parameter_by_name(request.source_parameter_name)
         if source_param is None:
-            details = f'Connection failed: "{request.source_node_name}.{request.source_parameter_name}" not found'
+            details = f'Connection failed: "{source_node_name}.{request.source_parameter_name}" not found'
             logger.error(details)
-
-            result = CreateConnectionResultFailure()
-            return result
+            return CreateConnectionResultFailure()
 
         target_param = target_node.get_parameter_by_name(request.target_parameter_name)
         if target_param is None:
             # TODO(griptape): We may make this a special type of failure, or attempt to handle it gracefully.
-            details = f'Connection failed: "{request.target_node_name}.{request.target_parameter_name}" not found'
+            details = f'Connection failed: "{target_node_name}.{request.target_parameter_name}" not found'
             logger.error(details)
-
-            result = CreateConnectionResultFailure()
-            return result
+            return CreateConnectionResultFailure()
         # Validate parameter modes accept this type of connection.
         source_modes_allowed = source_param.allowed_modes
         if ParameterMode.OUTPUT not in source_modes_allowed:
-            details = f'Connection failed: "{request.source_node_name}.{request.source_parameter_name}" is not an allowed OUTPUT'
+            details = (
+                f'Connection failed: "{source_node_name}.{request.source_parameter_name}" is not an allowed OUTPUT'
+            )
             logger.error(details)
-            result = CreateConnectionResultFailure()
-            return result
+            return CreateConnectionResultFailure()
 
         target_modes_allowed = target_param.allowed_modes
         if ParameterMode.INPUT not in target_modes_allowed:
-            details = f'Connection failed: "{request.target_node_name}.{request.target_parameter_name}" is not an allowed INPUT'
+            details = f'Connection failed: "{target_node_name}.{request.target_parameter_name}" is not an allowed INPUT'
             logger.error(details)
-
-            result = CreateConnectionResultFailure()
-            return result
+            return CreateConnectionResultFailure()
 
         # Validate that the data type from the source is allowed by the target.
         if not target_param.is_incoming_type_allowed(source_param.output_type):
-            details = f'Connection failed on type mismatch "{request.source_node_name}.{request.source_parameter_name}" type({source_param.output_type}) to "{request.target_node_name}.{request.target_parameter_name}" types({target_param.input_types}) '
+            details = f'Connection failed on type mismatch "{source_node_name}.{request.source_parameter_name}" type({source_param.output_type}) to "{target_node_name}.{request.target_parameter_name}" types({target_param.input_types}) '
             logger.error(details)
-
-            result = CreateConnectionResultFailure()
-            return result
+            return CreateConnectionResultFailure()
 
         # Ask each node involved to bless this union.
         if not source_node.allow_outgoing_connection(
@@ -1006,22 +1011,22 @@ class FlowManager:
             target_node=target_node,
             target_parameter=target_param,
         ):
-            details = f'Connection failed : "{request.source_node_name}.{request.source_parameter_name}" rejected the connection '
+            details = (
+                f'Connection failed : "{source_node_name}.{request.source_parameter_name}" rejected the connection '
+            )
             logger.error(details)
-
-            result = CreateConnectionResultFailure()
-            return result
+            return CreateConnectionResultFailure()
 
         if not target_node.allow_incoming_connection(
             source_node=source_node,
             source_parameter=source_param,
             target_parameter=target_param,
         ):
-            details = f'Connection failed : "{request.target_node_name}.{request.target_parameter_name}" rejected the connection '
+            details = (
+                f'Connection failed : "{target_node_name}.{request.target_parameter_name}" rejected the connection '
+            )
             logger.error(details)
-
-            result = CreateConnectionResultFailure()
-            return result
+            return CreateConnectionResultFailure()
 
         # Based on user feedback, if a connection already exists in a scenario where only ONE such connection can exist
         # (e.g., connecting to a data input that already has a connection, or from a control output that is already wired up),
@@ -1059,10 +1064,9 @@ class FlowManager:
             )
             delete_old_result = GriptapeNodes.handle_request(delete_old_request)
             if delete_old_result.failed():
-                details = f"Attempted to connect '{request.source_node_name}.{request.source_parameter_name}'. Failed because there was a previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}' that could not be deleted."
+                details = f"Attempted to connect '{source_node_name}.{request.source_parameter_name}'. Failed because there was a previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}' that could not be deleted."
                 logger.error(details)
-                result = CreateConnectionResultFailure()
-                return result
+                return CreateConnectionResultFailure()
 
             details = f"Deleted the previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}' to make room for the new connection."
             logger.debug(details)
@@ -1112,7 +1116,7 @@ class FlowManager:
             target_parameter=target_param,
         )
 
-        details = f'Connected "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}"'
+        details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
         logger.debug(details)
 
         # Now update the parameter values if it exists.
@@ -1144,77 +1148,91 @@ class FlowManager:
 
         return result
 
-    def on_delete_connection_request(self, request: DeleteConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915, C901 TODO(griptape): resolve
+    def on_delete_connection_request(self, request: DeleteConnectionRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (complex logic, multiple edge cases)
         # Vet the two nodes first.
-        source_node = None
+        source_node_name = request.source_node_name
+        target_node_name = request.target_node_name
+
+        if source_node_name is None:
+            # First check if we have a current node
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to delete a Connection with a source node from the Current Context. Failed because the Current Context was empty."
+                logger.error(details)
+                return DeleteConnectionResultFailure()
+
+            # Get the current node from context
+            source_node_name = GriptapeNodes.ContextManager().get_current_node_name()
+
         try:
-            source_node = GriptapeNodes.NodeManager().get_node_by_name(request.source_node_name)
+            source_node = GriptapeNodes.NodeManager().get_node_by_name(source_node_name)
         except ValueError as err:
-            details = f'Connection not deleted "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}". Error: {err}'
+            details = f'Connection not deleted "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}". Error: {err}'
             logger.error(details)
 
-            result = DeleteConnectionResultFailure()
-            return result
+            return DeleteConnectionResultFailure()
 
-        target_node = None
+        target_node_name = request.target_node_name
+        if target_node_name is None:
+            # First check if we have a current node
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to delete a Connection with a target node from the Current Context. Failed because the Current Context was empty."
+                logger.error(details)
+                return DeleteConnectionResultFailure()
+
+            # Get the current node from context
+            target_node_name = GriptapeNodes.ContextManager().get_current_node_name()
         try:
-            target_node = GriptapeNodes.NodeManager().get_node_by_name(request.target_node_name)
+            target_node = GriptapeNodes.NodeManager().get_node_by_name(target_node_name)
         except ValueError as err:
-            details = f'Connection not deleted "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}". Error: {err}'
+            details = f'Connection not deleted "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}". Error: {err}'
             logger.error(details)
 
-            result = DeleteConnectionResultFailure()
-            return result
+            return DeleteConnectionResultFailure()
 
         # The two nodes exist.
         # Get the parent flows.
         source_flow_name = None
         source_flow = None
         try:
-            source_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(request.source_node_name)
+            source_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(source_node_name)
             source_flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name=source_flow_name)
         except KeyError as err:
-            details = f'Connection not deleted "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}". Error: {err}'
+            details = f'Connection not deleted "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}". Error: {err}'
             logger.error(details)
 
-            result = DeleteConnectionResultFailure()
-            return result
+            return DeleteConnectionResultFailure()
 
         target_flow_name = None
         try:
-            target_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(request.target_node_name)
+            target_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(target_node_name)
             GriptapeNodes.FlowManager().get_flow_by_name(flow_name=target_flow_name)
         except KeyError as err:
-            details = f'Connection not deleted "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}". Error: {err}'
+            details = f'Connection not deleted "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}". Error: {err}'
             logger.error(details)
 
-            result = DeleteConnectionResultFailure()
-            return result
+            return DeleteConnectionResultFailure()
 
         # CURRENT RESTRICTION: Now vet the parents are in the same Flow (yes this sucks)
         if target_flow_name != source_flow_name:
-            details = f'Connection not deleted "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}". They are in different Flows (TEMPORARY RESTRICTION).'
+            details = f'Connection not deleted "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}". They are in different Flows (TEMPORARY RESTRICTION).'
             logger.error(details)
 
-            result = DeleteConnectionResultFailure()
-            return result
+            return DeleteConnectionResultFailure()
 
         # Now validate the parameters.
         source_param = source_node.get_parameter_by_name(request.source_parameter_name)
         if source_param is None:
-            details = f'Connection not deleted "{request.source_node_name}.{request.source_parameter_name}" Not found.'
+            details = f'Connection not deleted "{source_node_name}.{request.source_parameter_name}" Not found.'
             logger.error(details)
 
-            result = DeleteConnectionResultFailure()
-            return result
+            return DeleteConnectionResultFailure()
 
         target_param = target_node.get_parameter_by_name(request.target_parameter_name)
         if target_param is None:
-            details = f'Connection not deleted "{request.target_node_name}.{request.target_parameter_name}" Not found.'
+            details = f'Connection not deleted "{target_node_name}.{request.target_parameter_name}" Not found.'
             logger.error(details)
 
-            result = DeleteConnectionResultFailure()
-            return result
+            return DeleteConnectionResultFailure()
 
         # Vet that a Connection actually exists between them already.
         if not source_flow.has_connection(
@@ -1223,11 +1241,10 @@ class FlowManager:
             target_node=target_node,
             target_parameter=target_param,
         ):
-            details = f'Connection does not exist: "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}"'
+            details = f'Connection does not exist: "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
             logger.error(details)
 
-            result = DeleteConnectionResultFailure()
-            return result
+            return DeleteConnectionResultFailure()
 
         # Remove the connection.
         if not source_flow.remove_connection(
@@ -1236,11 +1253,10 @@ class FlowManager:
             target_node=target_node,
             target_parameter=target_param,
         ):
-            details = f'Connection not deleted "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}". Unknown failure.'
+            details = f'Connection not deleted "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}". Unknown failure.'
             logger.error(details)
 
-            result = DeleteConnectionResultFailure()
-            return result
+            return DeleteConnectionResultFailure()
 
         # After the connection has been removed, if it doesn't have PROPERTY as a type, wipe the set parameter value and unresolve future nodes
         if ParameterMode.PROPERTY not in target_param.allowed_modes:
@@ -1267,7 +1283,7 @@ class FlowManager:
             target_parameter=target_param,
         )
 
-        details = f'Connection "{request.source_node_name}.{request.source_parameter_name}" to "{request.target_node_name}.{request.target_parameter_name}" deleted.'
+        details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" deleted.'
         logger.debug(details)
 
         result = DeleteConnectionResultSuccess()
