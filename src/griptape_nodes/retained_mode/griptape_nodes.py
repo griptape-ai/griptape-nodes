@@ -1882,22 +1882,32 @@ class NodeManager:
         return result
 
     def on_list_connections_for_node_request(self, request: ListConnectionsForNodeRequest) -> ResultPayload:
+        node_name = request.node_name
+        if node_name is None:
+            # Get from the current context.
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to list Connections for a Node from the Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return ListConnectionsForNodeResultFailure()
+
+            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to list Connections for a Node '{request.node_name}', but no such Node was found."
+            details = f"Attempted to list Connections for a Node '{node_name}', but no such Node was found."
             logger.error(details)
 
             result = ListConnectionsForNodeResultFailure()
             return result
 
-        parent_flow_name = self._name_to_parent_flow_name[request.node_name]
+        parent_flow_name = self._name_to_parent_flow_name[node_name]
         try:
             parent_flow = GriptapeNodes().FlowManager().get_flow_by_name(parent_flow_name)
         except KeyError as err:
-            details = f"Attempted to list Connections for a Node '{request.node_name}'. Error: {err}"
+            details = f"Attempted to list Connections for a Node '{node_name}'. Error: {err}"
             logger.error(details)
 
             result = ListConnectionsForNodeResultFailure()
@@ -1907,34 +1917,34 @@ class NodeManager:
         connection_mgr = parent_flow.connections
         # get outgoing connections
         outgoing_connections_list = []
-        if request.node_name in connection_mgr.outgoing_index:
+        if node_name in connection_mgr.outgoing_index:
             outgoing_connections_list = [
                 OutgoingConnection(
                     source_parameter_name=connection.source_parameter.name,
                     target_node_name=connection.target_node.name,
                     target_parameter_name=connection.target_parameter.name,
                 )
-                for connection_lists in connection_mgr.outgoing_index[request.node_name].values()
+                for connection_lists in connection_mgr.outgoing_index[node_name].values()
                 for connection_id in connection_lists
                 for connection in [connection_mgr.connections[connection_id]]
             ]
         # get incoming connections
         incoming_connections_list = []
-        if request.node_name in connection_mgr.incoming_index:
+        if node_name in connection_mgr.incoming_index:
             incoming_connections_list = [
                 IncomingConnection(
                     source_node_name=connection.source_node.name,
                     source_parameter_name=connection.source_parameter.name,
                     target_parameter_name=connection.target_parameter.name,
                 )
-                for connection_lists in connection_mgr.incoming_index[request.node_name].values()
+                for connection_lists in connection_mgr.incoming_index[node_name].values()
                 for connection_id in connection_lists
                 for connection in [
                     connection_mgr.connections[connection_id]
                 ]  # This creates a temporary one-item list with the connection
             ]
 
-        details = f"Successfully listed all Connections to and from Node '{node.name}'."
+        details = f"Successfully listed all Connections to and from Node '{node_name}'."
         logger.debug(details)
 
         result = ListConnectionsForNodeResultSuccess(

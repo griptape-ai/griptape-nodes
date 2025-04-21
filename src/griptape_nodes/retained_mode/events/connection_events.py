@@ -57,7 +57,8 @@ class DeleteConnectionResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class ListConnectionsForNodeRequest(RequestPayload):
-    node_name: str
+    # If node name is None, use the Current Context
+    node_name: str | None = None
 
 
 @dataclass
