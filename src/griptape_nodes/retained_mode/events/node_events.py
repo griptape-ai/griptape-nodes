@@ -27,6 +27,9 @@ class CreateNodeRequest(RequestPayload):
     resolution: str = NodeResolutionState.UNRESOLVED.value
     # initial_setup prevents unnecessary work when we are loading a workflow from a file.
     initial_setup: bool = False
+    # When True, this Flow will be pushed as the current Node within the Current Context.
+    # TODO(griptape): Remove the None once the lynchpin commit on editor side is in place (issue #454 in editor repo): https://github.com/griptape-ai/griptape-nodes/issues/530
+    set_as_new_context: bool | None = None
 
 
 @dataclass
@@ -44,7 +47,8 @@ class CreateNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class DeleteNodeRequest(RequestPayload):
-    node_name: str
+    # If None is passed, assumes we're using the Node in the Current Context.
+    node_name: str | None = None
 
 
 @dataclass

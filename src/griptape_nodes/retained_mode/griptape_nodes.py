@@ -1669,6 +1669,10 @@ class NodeManager:
 
         node.state = NodeResolutionState(request.resolution)
 
+        # See if we want to push this into the context of the current flow.
+        if request.set_as_new_context:
+            GriptapeNodes.ContextManager().push_node(final_node_name)
+
         # Success message based on whether we used Current Context or explicit flow
         if request.override_parent_flow_name is None:
             details = (
@@ -1686,85 +1690,88 @@ class NodeManager:
 
         return CreateNodeResultSuccess(node_name=node.name)
 
-    def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:
-        # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
-        if node is None:
-            details = f"Attempted to delete a Node '{request.node_name}', but no such Node was found."
-            logger.error(details)
-
-            result = DeleteNodeResultFailure()
-            return result
-
-        parent_flow_name = self._name_to_parent_flow_name[request.node_name]
-        try:
-            parent_flow = GriptapeNodes().FlowManager().get_flow_by_name(parent_flow_name)
-        except KeyError as err:
-            details = f"Attempted to delete a Node '{request.node_name}'. Error: {err}"
-            logger.error(details)
-
-            result = DeleteNodeResultFailure()
-            return result
-
-        # Remove all connections from this Node.
-        list_node_connections_request = ListConnectionsForNodeRequest(node_name=request.node_name)
-        list_connections_result = GriptapeNodes().handle_request(request=list_node_connections_request)
-        if isinstance(list_connections_result, ResultPayloadFailure):
-            details = f"Attempted to delete a Node '{request.node_name}'. Failed because it could not gather Connections to the Node."
-            logger.error(details)
-
-            result = DeleteNodeResultFailure()
-            return result
-        # Destroy all the incoming Connections
-        for incoming_connection in list_connections_result.incoming_connections:
-            delete_request = DeleteConnectionRequest(
-                source_node_name=incoming_connection.source_node_name,
-                source_parameter_name=incoming_connection.source_parameter_name,
-                target_node_name=request.node_name,
-                target_parameter_name=incoming_connection.target_parameter_name,
-            )
-            delete_result = GriptapeNodes.handle_request(delete_request)
-            if isinstance(delete_result, ResultPayloadFailure):
+    def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911 (complex logic, lots of edge cases)
+        node_name = request.node_name
+        if node_name is None:
+            # Get from the current context.
+            if not GriptapeNodes.ContextManager().has_current_node():
                 details = (
-                    f"Attempted to delete a Node '{request.node_name}'. Failed when attempting to delete Connection."
+                    "Attempted to delete a Node from the Current Context. Failed because the Current Context is empty."
                 )
                 logger.error(details)
+                return DeleteNodeResultFailure()
 
-                result = DeleteNodeResultFailure()
-                return result
+            node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
-        # Destroy all the outgoing Connections
-        for outgoing_connection in list_connections_result.outgoing_connections:
-            delete_request = DeleteConnectionRequest(
-                source_node_name=request.node_name,
-                source_parameter_name=outgoing_connection.source_parameter_name,
-                target_node_name=outgoing_connection.target_node_name,
-                target_parameter_name=outgoing_connection.target_parameter_name,
-            )
-            delete_result = GriptapeNodes.handle_request(delete_request)
-            if isinstance(delete_result, ResultPayloadFailure):
-                details = (
-                    f"Attempted to delete a Node '{request.node_name}'. Failed when attempting to delete Connection."
-                )
+        with GriptapeNodes.ContextManager().node(node_name=node_name):
+            # Does this node exist?
+            obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to delete a Node '{node_name}', but no such Node was found."
                 logger.error(details)
+                return DeleteNodeResultFailure()
 
-                result = DeleteNodeResultFailure()
-                return result
+            parent_flow_name = self._name_to_parent_flow_name[node_name]
+            try:
+                parent_flow = GriptapeNodes().FlowManager().get_flow_by_name(parent_flow_name)
+            except KeyError as err:
+                details = f"Attempted to delete a Node '{node_name}'. Error: {err}"
+                logger.error(details)
+                return DeleteNodeResultFailure()
+
+            # Remove all connections from this Node.
+            list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
+            list_connections_result = GriptapeNodes().handle_request(request=list_node_connections_request)
+            if isinstance(list_connections_result, ResultPayloadFailure):
+                details = f"Attempted to delete a Node '{node_name}'. Failed because it could not gather Connections to the Node."
+                logger.error(details)
+                return DeleteNodeResultFailure()
+
+            # Destroy all the incoming Connections
+            for incoming_connection in list_connections_result.incoming_connections:
+                delete_request = DeleteConnectionRequest(
+                    source_node_name=incoming_connection.source_node_name,
+                    source_parameter_name=incoming_connection.source_parameter_name,
+                    target_node_name=node_name,
+                    target_parameter_name=incoming_connection.target_parameter_name,
+                )
+                delete_result = GriptapeNodes.handle_request(delete_request)
+                if isinstance(delete_result, ResultPayloadFailure):
+                    details = f"Attempted to delete a Node '{node_name}'. Failed when attempting to delete Connection."
+                    logger.error(details)
+                    return DeleteNodeResultFailure()
+
+            # Destroy all the outgoing Connections
+            for outgoing_connection in list_connections_result.outgoing_connections:
+                delete_request = DeleteConnectionRequest(
+                    source_node_name=node_name,
+                    source_parameter_name=outgoing_connection.source_parameter_name,
+                    target_node_name=outgoing_connection.target_node_name,
+                    target_parameter_name=outgoing_connection.target_parameter_name,
+                )
+                delete_result = GriptapeNodes.handle_request(delete_request)
+                if isinstance(delete_result, ResultPayloadFailure):
+                    details = f"Attempted to delete a Node '{node_name}'. Failed when attempting to delete Connection."
+                    logger.error(details)
+                    return DeleteNodeResultFailure()
 
         # Remove from the owning Flow
         parent_flow.remove_node(node.name)
 
         # Now remove the record keeping
-        obj_mgr.del_obj_by_name(request.node_name)
-        del self._name_to_parent_flow_name[request.node_name]
+        obj_mgr.del_obj_by_name(node_name)
+        del self._name_to_parent_flow_name[node_name]
 
-        details = f"Successfully deleted Node '{request.node_name}'."
+        # If we were part of the Current Context, pop it.
+        if request.node_name is None:
+            GriptapeNodes.ContextManager().pop_node()
+
+        details = f"Successfully deleted Node '{node_name}'."
         logger.debug(details)
 
-        result = DeleteNodeResultSuccess()
-        return result
+        return DeleteNodeResultSuccess()
 
     def on_get_node_resolution_state_request(self, event: GetNodeResolutionStateRequest) -> ResultPayload:
         # Does this node exist?
