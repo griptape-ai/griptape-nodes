@@ -45,6 +45,11 @@ class GenerateImage(ControlNode):
             )
         )
 
+        def validate_prompt(_param: Parameter, value: str) -> None:
+            if not value:
+                msg = "Prompt is required for image generation."
+                raise ValueError(msg)
+
         self.add_parameter(
             Parameter(
                 name="prompt",
@@ -55,6 +60,7 @@ class GenerateImage(ControlNode):
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"multiline": True, "placeholder_text": "Enter your image generation prompt here."},
+                validators=[validate_prompt],
             )
         )
         self.add_parameter(
