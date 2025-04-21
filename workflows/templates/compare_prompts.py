@@ -165,7 +165,7 @@ cmd.connect("basic_prompt.text", "basic_image.prompt")
 #
 # [tool.griptape-nodes]
 # name = "compare_prompts"
-# description = "Example workflow demonstrating how to compare outputs against three different prompting approaches."
+# description = "See how 3 different approaches to prompts affect image generation."
 # image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/workflows/templates/thumbnail_compare_prompts.webp"
 # schema_version = "0.1.0"
 # engine_version_created_with = "0.14.1"
