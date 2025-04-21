@@ -66,7 +66,8 @@ class DeleteNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetNodeResolutionStateRequest(RequestPayload):
-    node_name: str
+    # If None is passed, assumes we're using the Node in the Current Context
+    node_name: str | None = None
 
 
 @dataclass
@@ -84,7 +85,8 @@ class GetNodeResolutionStateResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class ListParametersOnNodeRequest(RequestPayload):
-    node_name: str
+    # If None is passed, assumes we're using the Node in the Current Context
+    node_name: str | None = None
 
 
 @dataclass

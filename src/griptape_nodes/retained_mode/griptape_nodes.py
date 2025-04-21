@@ -1773,20 +1773,30 @@ class NodeManager:
 
         return DeleteNodeResultSuccess()
 
-    def on_get_node_resolution_state_request(self, event: GetNodeResolutionStateRequest) -> ResultPayload:
+    def on_get_node_resolution_state_request(self, request: GetNodeResolutionStateRequest) -> ResultPayload:
+        node_name = request.node_name
+        if node_name is None:
+            # Get from the current context.
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to get resolution state for a Node from the Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return GetNodeResolutionStateResultFailure()
+
+            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(event.node_name, BaseNode)
+        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to get resolution state for a Node '{event.node_name}', but no such Node was found."
+            details = f"Attempted to get resolution state for a Node '{node_name}', but no such Node was found."
             logger.error(details)
             result = GetNodeResolutionStateResultFailure()
             return result
 
         node_state = node.state
 
-        details = f"Successfully got resolution state for Node '{event.node_name}'."
+        details = f"Successfully got resolution state for Node '{node_name}'."
         logger.debug(details)
 
         result = GetNodeResolutionStateResultSuccess(
@@ -1898,12 +1908,23 @@ class NodeManager:
         return result
 
     def on_list_parameters_on_node_request(self, request: ListParametersOnNodeRequest) -> ResultPayload:
+        node_name = request.node_name
+
+        if request.node_name is None:
+            # Get from the current context.
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to list Parameters for a Node from the Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return ListParametersOnNodeResultFailure()
+
+            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to list Parameters for a Node '{request.node_name}', but no such Node was found."
+            details = f"Attempted to list Parameters for a Node '{node_name}', but no such Node was found."
             logger.error(details)
 
             result = ListParametersOnNodeResultFailure()
@@ -1911,7 +1932,7 @@ class NodeManager:
 
         ret_list = [param.name for param in node.parameters]
 
-        details = f"Successfully listed Parameters for Node '{request.node_name}'."
+        details = f"Successfully listed Parameters for Node '{node_name}'."
         logger.debug(details)
 
         result = ListParametersOnNodeResultSuccess(
