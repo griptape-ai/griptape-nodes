@@ -155,7 +155,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         self._context.paused = debug_mode
         self._context.resolution_machine.change_debug_mode(debug_mode)
 
-    def granular_step(self, change_debug_mode:bool) -> None:
+    def granular_step(self, change_debug_mode: bool) -> None:  # noqa: FBT001
         resolution_machine = self._context.resolution_machine
         if change_debug_mode:
             resolution_machine.change_debug_mode(True)

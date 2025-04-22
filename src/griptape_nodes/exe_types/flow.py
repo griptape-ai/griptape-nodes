@@ -125,7 +125,7 @@ class ControlFlow:
         if resolution_machine.is_complete():
             self.single_node_resolution = False
 
-    def single_execution_step(self, change_debug_mode:bool) -> None:
+    def single_execution_step(self, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
         if not self.check_for_existing_running_flow():
             if self.flow_queue.empty():
