@@ -70,7 +70,7 @@ class GenerateImage(ControlNode):
                 input_types=["bool"],
                 type="bool",
                 tooltip="None",
-                default_value=True,
+                default_value=False,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
@@ -121,8 +121,19 @@ class GenerateImage(ControlNode):
             agent = Agent(prompt_driver=prompt_driver)
         else:
             agent = Agent.from_dict(agent)
+
         prompt = params.get("prompt", "")
-        enhance_prompt = params.get("enhance_prompt", True)
+
+        # Check if prompt is empty and bail out early after setting up the agent
+        if not prompt.strip():
+            logger.info("No prompt provided. Image generator configured but not executed.")
+            self.parameter_output_values["output"] = "Image Generator Configured"
+            self.parameter_output_values["agent"] = agent.to_dict()
+            # Reset the agent tasks before returning
+            agent._tasks = []
+            return
+
+        enhance_prompt = params.get("enhance_prompt", False)
 
         if enhance_prompt:
             logger.info("Enhancing prompt...")
