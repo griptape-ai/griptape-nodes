@@ -47,7 +47,7 @@ cmd.set_value(
 # dependencies = []
 #
 # [tool.griptape-nodes]
-# name = "prompt an image"
+# name = "prompt_an_image"
 # description = "The simplest image generation workflow."
 # image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/workflows/templates/thumbnail_prompt_an_image.webp"
 # schema_version = "0.1.0"

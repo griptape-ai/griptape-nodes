@@ -168,6 +168,10 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
     else:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."
         raise TypeError(msg) from None
+
+    # Don't send events over the wire that don't have a request_id set (e.g. engine-internal events)
+    if result_event.request.request_id is None:
+        return
     event_json = result_event.json()
     socket.emit(dest_socket, event_json)
 
@@ -184,7 +188,8 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
         logger.info("Resuming Node %s", node_name)
         flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
         # TODO(collin, kate): https://github.com/griptape-ai/griptape-nodes/issues/391
-        event_queue.put(EventRequest(request=execution_events.ContinueExecutionStepRequest(flow_name=flow_name)))
+        request = EventRequest(request=execution_events.ContinueExecutionStepRequest(flow_name=flow_name))
+        event_queue.put(request)
 
     if type(result_event.payload).__name__ == "NodeFinishProcessEvent":
         if result_event.payload.node_name != GriptapeNodes.get_instance().EventManager().current_active_node:
