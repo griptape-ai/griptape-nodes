@@ -2908,12 +2908,13 @@ class NodeManager:
         try:
             flow.resolve_singular_node(node, debug_mode)
         except Exception as e:
-            details = f'Failed to resolve "{node_name}".  Error: {e}'
-            logger.error(details)
             if flow.check_for_existing_running_flow():
                 cancel_request = CancelFlowRequest(flow_name=flow_name)
                 GriptapeNodes.handle_request(cancel_request)
-            return ResolveNodeResultFailure(validation_exceptions=[e])
+            else:
+                details = f'Failed to resolve "{node_name}".  Error: {e}'
+                logger.error(details)
+                return ResolveNodeResultFailure(validation_exceptions=[e])
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         logger.debug(details)
         return ResolveNodeResultSuccess()

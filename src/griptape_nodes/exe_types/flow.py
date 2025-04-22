@@ -4,11 +4,14 @@ import logging
 from queue import Queue
 from typing import TYPE_CHECKING
 
+from griptape.events import EventBus
+
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState, StartNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
-from griptape_nodes.retained_mode.events.execution_events import StartFlowRequest
+from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+from griptape_nodes.retained_mode.events.execution_events import ControlFlowCancelledEvent, StartFlowRequest
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
@@ -190,6 +193,11 @@ class ControlFlow:
         # Reset control flow machine
         self.control_flow_machine = ControlFlowMachine(self)
         self.single_node_resolution = False
+        logger.debug("Cancelling flow run")
+
+        EventBus.publish_event(
+            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent()))
+        )
 
     def unresolve_whole_flow(self) -> None:
         for node in self.nodes.values():

@@ -219,6 +219,12 @@ class ControlFlowResolvedEvent(ExecutionPayload):
 
 @dataclass
 @PayloadRegistry.register
+class ControlFlowCancelledEvent(ExecutionPayload):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
 class NodeResolvedEvent(ExecutionPayload):
     node_name: str
     parameter_output_values: dict
