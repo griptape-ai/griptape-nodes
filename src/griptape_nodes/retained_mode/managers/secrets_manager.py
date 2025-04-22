@@ -62,7 +62,7 @@ class SecretsManager:
         secret_value = request.value
 
         # We don't want to echo the secret value back to the user, but we can at least tell them it changed.
-        old_value = self.get_secret(secret_name)
+        old_value = self.get_secret(secret_name, should_error_on_not_found=False)
         if old_value:
             if old_value != secret_value:
                 logger.info("Secret '%s' changed.", secret_name)
@@ -112,7 +112,7 @@ class SecretsManager:
             logger.debug("Secret '%s' not found in '%s'", secret_name, source)
 
         if should_error_on_not_found:
-            logger.error("Secret '%s' not found")
+            logger.error("Secret '%s' not found", secret_name)
         return value
 
     def set_secret(self, secret_name: str, secret_value: str) -> None:
