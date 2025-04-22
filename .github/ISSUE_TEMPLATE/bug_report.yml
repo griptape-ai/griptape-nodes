@@ -1,7 +1,7 @@
 name: Bug Report
 description: Report a bug to help us improve the product
-title: "[BUG]: "
-labels: ["bug"]
+title: ""
+labels: ["type: bug"]
 body:
   - type: markdown
     attributes:
@@ -14,7 +14,7 @@ body:
     id: engine-version
     attributes:
       label: Engine Version
-      description: What version of the Engine are you using? (major.minor.patch or dev branch name)
+      description: What version of the Engine are you using? (version shown when starting the engine or branch name for dev builds)
       placeholder: e.g., 2.3.1 or dev-feature-x
       value: "N/A"
     validations:
@@ -24,7 +24,7 @@ body:
     id: node-libraries
     attributes:
       label: Node Libraries Version
-      description: What version of Node Libraries are you using? (major.minor.patch or dev branch name)
+      description: What version of Node Libraries are you using? (version shown in the application or branch name for dev builds)
       placeholder: e.g., 1.4.2 or dev-libraries-2023
       value: "N/A"
     validations:
@@ -39,6 +39,28 @@ body:
       value: "N/A"
     validations:
       required: true
+
+  - type: dropdown
+    id: issue-labels
+    attributes:
+      label: Additional Labels
+      description: Select any additional labels that apply to this issue
+      multiple: true
+      options:
+        - "config"
+        - "editor"
+        - "engine"
+        - "ftue"
+        - "installer"
+        - "node libraries"
+        - "nodes"
+        - "parameters"
+        - "retained mode"
+        - "save/load"
+        - "secrets"
+        - "settings"
+    validations:
+      required: false
 
   - type: dropdown
     id: severity
