@@ -80,7 +80,7 @@ class ControlFlow:
 
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
-            errormsg = "Flow already has been started. Cannot start flow when it has already been started."
+            errormsg = "This workflow is already in progress. Please wait for the current process to finish before starting again."
             raise Exception(errormsg)
 
         if start_node is None:
@@ -108,7 +108,7 @@ class ControlFlow:
         # Set that we are only working on one node right now! no other stepping allowed
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
-            errormsg = f"Flow already has been started. Cannot resolve node {node.name} while existing flow has begun."
+            errormsg = f"This workflow is already in progress. Please wait for the current process to finish before starting {node.name} again."
             raise Exception(errormsg)
         self.single_node_resolution = True
         # Get the node resolution machine for the current flow!
