@@ -1,11 +1,13 @@
+from collections.abc import Generator
+from typing import Any
+
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.structures import Structure
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
@@ -92,7 +94,7 @@ class GenerateImage(ControlNode):
             return exceptions
         return exceptions if exceptions else None
 
-    def process(self) -> AsyncResult[Structure]:
+    def process(self) -> Generator[Any, Any, Any]:
         # Get the parameters from the node
         params = self.parameter_values
         agent = params.get("agent", None)
@@ -105,29 +107,7 @@ class GenerateImage(ControlNode):
             agent = Agent(prompt_driver=prompt_driver)
         else:
             agent = Agent.from_dict(agent)
-        prompt = params.get("prompt", "")
-        enhance_prompt = params.get("enhance_prompt", True)
 
-        if enhance_prompt:
-            logger.info("Enhancing prompt...")
-            # agent.run is a blocking operation that will hold up the rest of the engine.
-            # By using `yield lambda`, the engine can run this in the background and resume when it's done.
-            result = yield lambda: agent.run(
-                [
-                    """
-Enhance the following prompt for an image generation engine. Return only the image generation prompt.
-Include unique details that make the subject stand out.
-Specify a specific depth of field, and time of day.
-Use dust in the air to create a sense of depth.
-Use a slight vignetting on the edges of the image.
-Use a color palette that is complementary to the subject.
-Focus on qualities that will make this the most professional looking photo in the world.""",
-                    prompt,
-                ]
-            )
-            prompt = result.output
-        else:
-            logger.info("Prompt enhancement disabled.")
         # Initialize driver kwargs with required parameters
         kwargs = {}
 
@@ -144,13 +124,48 @@ Focus on qualities that will make this the most professional looking photo in th
 
         kwargs["image_generation_driver"] = driver
 
-        # Add the actual image gen *task
+        # Add the actual image gen task
         agent.add_task(PromptImageGenerationTask(**kwargs))
+
+        prompt = params.get("prompt", "")
+
+        # Check if prompt is empty and bail out early after setting up the agent
+        if not prompt.strip():
+            logger.info("No prompt provided. Image generator configured but not executed.")
+            self.parameter_output_values["output"] = "Image Generator Configured"
+            self.parameter_output_values["agent"] = agent.to_dict()
+            # Reset the agent tasks before returning
+            agent._tasks = []
+            return
+
+        enhance_prompt = params.get("enhance_prompt", True)
+
+        if enhance_prompt:
+            logger.info("Enhancing prompt...")
+            # agent.run is a blocking operation that will hold up the rest of the engine.
+            # By using `yield lambda`, the engine can run this in the background and resume when it's done.
+            result = yield lambda: agent.run(
+                [
+                    """
+    Enhance the following prompt for an image generation engine. Return only the image generation prompt.
+    Include unique details that make the subject stand out.
+    Specify a specific depth of field, and time of day.
+    Use dust in the air to create a sense of depth.
+    Use a slight vignetting on the edges of the image.
+    Use a color palette that is complementary to the subject.
+    Focus on qualities that will make this the most professional looking photo in the world.""",
+                    prompt,
+                ]
+            )
+            prompt = result.output
+        else:
+            logger.info("Prompt enhancement disabled.")
 
         # Run the agent asynchronously
         result = yield lambda: agent.run(prompt)
 
         self.parameter_output_values["output"] = result.output
+        self.parameter_output_values["agent"] = agent.to_dict()
         try_throw_error(agent.output)
         # Reset the agent
         agent._tasks = []

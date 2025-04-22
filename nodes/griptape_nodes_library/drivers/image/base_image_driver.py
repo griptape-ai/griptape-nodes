@@ -1,3 +1,5 @@
+from typing import Any
+
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
@@ -37,12 +39,15 @@ class BaseImageDriver(BaseDriver):
 
     def __init__(self, driver_dict=None, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.driver_dict = DRIVER_DICT | (driver_dict or {})
+        self.driver_dict = DRIVER_DICT | (driver_dict or {})  # dict-merge, rightmost "wins" in conflict
         self.setup()
 
     def setup(self) -> None:
         # Extract configuration values
         self.config = self.driver_dict.get("config", {})
+        if self.config == {}:
+            logger.error(f"{self.name}: Got an empty config")
+
         self.service_key_mappings = self.config.get("service_key_field", [])
         self.driver = self.config.get("driver")
 
@@ -108,14 +113,27 @@ class BaseImageDriver(BaseDriver):
         # Apply initial model configuration
         self.update_parameters_from_model(self.model_default)
 
-    def update_parameters_from_model(self, model: str) -> None:
+    def update_parameters_from_model(self, model: str) -> set[str]:
         """Update all parameters based on the model configuration dictionary.
 
         Args:
             model: The model name to use for configuration
         """
-        model_config = self.driver_dict["models"].get(model, {}).get("params", {})
+        if "models" not in self.driver_dict:
+            msg = "Missing 'models' key in driver_dict"
+            raise KeyError(msg)
 
+        models_dict = self.driver_dict["models"]
+        if model not in models_dict:
+            logger.warning(f"Model '{model}' not found in configuration.")
+            model_config = {}
+        elif "params" not in models_dict[model]:
+            logger.warning(f"No parameters to modify for for model '{model}'.")
+            model_config = {}
+        else:
+            model_config = models_dict[model]["params"]
+
+        modified_params = set()
         # Update each parameter based on the configuration
         for param_name, config in model_config.items():
             param = self.get_parameter_by_name(param_name)
@@ -129,23 +147,30 @@ class BaseImageDriver(BaseDriver):
                 param.remove_trait(param.children[0])
                 param.add_trait(Options(choices=config["options"]))
                 ui_options["options"] = config["options"]
+                modified_params.add(param_name)
 
             if "hide" in config:
                 ui_options["hide"] = config["hide"]
+                modified_params.add(param_name)
 
             # Apply all UI options at once
             param.ui_options = ui_options
 
             if "default" in config:
                 param.default_value = config["default"]
+                modified_params.add(param_name)
 
             if "tooltip" in config:
                 param.tooltip = config["tooltip"]
+                modified_params.add(param_name)
 
-    def after_value_set(self, parameter: Parameter, value=None, modified_parameters_set=None) -> None:  # noqa: ARG002
+        return modified_params
+
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         """Update dependent parameters when a parameter value changes."""
         if parameter.name == "model":
-            self.update_parameters_from_model(value)
+            affected = self.update_parameters_from_model(value)
+            modified_parameters_set.update(affected)
 
     def process(self) -> None:
         """Process the driver configuration and create the driver instance."""
@@ -172,5 +197,6 @@ class BaseImageDriver(BaseDriver):
             if not param_config.get("hide", False):
                 kwargs[param_name] = params.get(param_name, param_config.get("default"))
 
-        logger.info(f"ImageDriver final kwargs = {kwargs}")
+        logger.info(f"SENDING KWARGS:{kwargs=}")  # REMOVE BEFORE MERGING
+        logger.info(f"{self.driver_dict=}")  # REMOVE BEFORE MERGING
         self.parameter_output_values["image_generation_driver"] = self.driver(**kwargs)
