@@ -13,11 +13,8 @@ from urllib.parse import urljoin
 import httpx
 from dotenv import get_key
 from griptape.events import (
-    BaseEvent,
     EventBus,
     EventListener,
-    FinishStructureRunEvent,
-    TextChunkEvent,
 )
 from rich.align import Align
 from rich.console import Console
@@ -35,9 +32,8 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventResultSuccess,
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
-    ProgressEvent,
     GriptapeNodeEvent,
-    RequestPayload,
+    ProgressEvent,
     deserialize_event,
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
@@ -209,7 +205,9 @@ def __process_griptape_event(gt_event: ProgressEvent) -> None:
     if node_name:
         value = gt_event.value
         # If there isn't a currently active node.
-        payload = execution_events.GriptapeEvent(node_name=node_name, parameter_name=gt_event.parameter_name, value=value, type=gt_event.__class__.__name__)
+        payload = execution_events.GriptapeEvent(
+            node_name=node_name, parameter_name=gt_event.parameter_name, value=value, type=gt_event.__class__.__name__
+        )
         event_to_emit = ExecutionEvent(payload=payload)
         socket.emit("execution_event", event_to_emit.json())
 

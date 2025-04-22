@@ -1,7 +1,8 @@
 import threading
+
+from griptape.artifacts import BaseArtifact
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.artifacts import BaseArtifact
 from griptape.structures import Structure
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
@@ -145,17 +146,18 @@ Focus on qualities that will make this the most professional looking photo in th
 
         # Run the agent asynchronously
         result = yield lambda shutdown_event: self._process(agent, prompt, "", shutdown_event)
-        if result is None:
+        if result.output is None:
             return
         self.parameter_output_values["output"] = result.output
         try_throw_error(result.output)
         # Reset the agent
         agent._tasks = []
 
-
-    def _process(self, agent:Agent, prompt:BaseArtifact, context:str, shutdown_event:threading.Event) -> Structure:
+    def _process(self, agent: Agent, prompt: BaseArtifact, context: str, shutdown_event: threading.Event) -> Structure:
+        if shutdown_event.is_set():
+            return Agent()
         if context != "":
-            result = agent.run([context,prompt])
+            result = agent.run([context, prompt])
         else:
             result = agent.run(prompt)
         return result

@@ -48,7 +48,6 @@ from griptape_nodes.retained_mode.events.arbitrary_python_events import (
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     BaseEvent,
-    EventRequest,
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     RequestPayload,
@@ -503,7 +502,9 @@ class ObjectManager:
             return ClearAllObjectStateResultSuccess()
         # Cancel Flow first
         if flow_name:
-            flow = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(flow_name,ControlFlow)
+            flow = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(
+                flow_name, ControlFlow
+            )
             if flow and flow.check_for_existing_running_flow():
                 GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow_name))
         while context_mgr.has_current_flow():
@@ -1289,7 +1290,8 @@ class FlowManager:
         result = DeleteConnectionResultSuccess()
         return result
 
-    def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    # Needs to have more statements since we're handling cancelling.
+    def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # which flow
         flow_name = request.flow_name
         debug_mode = request.debug_mode
@@ -1362,6 +1364,9 @@ class FlowManager:
                 msg = f"Could not restart flow '{flow_name}'."
                 logger.error(msg)
                 return StartFlowResultFailure(validation_exceptions=[])
+            new_request = RestartFlowRequest(request=request)
+            EventBus.publish_event(event=ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=new_request)))
+            return result
         try:
             flow.start_flow(flow_name, start_node, debug_mode)
         except Exception as e:
@@ -2780,9 +2785,7 @@ class NodeManager:
                 logger.error(msg)
                 return ResolveNodeResultFailure(validation_exceptions=[])
             new_request = RestartFlowRequest(request=request)
-            EventBus.publish_event(
-                event=ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=new_request))
-            )
+            EventBus.publish_event(event=ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=new_request)))
             return result
         try:
             flow.resolve_singular_node(node, debug_mode)

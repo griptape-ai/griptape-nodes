@@ -261,7 +261,7 @@ class NodeFinishProcessEvent(ExecutionPayload):
 @PayloadRegistry.register
 class GriptapeEvent(ExecutionPayload):
     node_name: str
-    parameter_name:str
+    parameter_name: str
     type: str
     value: Any
 
@@ -269,4 +269,4 @@ class GriptapeEvent(ExecutionPayload):
 @dataclass
 @PayloadRegistry.register
 class RestartFlowRequest(ExecutionPayload):
-    request:RequestPayload
+    request: RequestPayload

@@ -1,11 +1,13 @@
 import logging
+import threading
 
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.events import TextChunkEvent
+from griptape.events import EventBus
 from griptape.structures import Agent
 from griptape.utils import Stream
 
 from griptape_nodes.exe_types.node_types import AsyncResult
+from griptape_nodes.retained_mode.events.base_events import ProgressEvent
 from griptape_nodes_library.agents.create_agent import CreateAgent
 
 logger = logging.getLogger("griptape_nodes")
@@ -59,16 +61,31 @@ class RunAgent(CreateAgent):
             # Check and see if the prompt driver is a stream driver
             if self.is_stream(agent):
                 # Run the agent
-                full_output = yield (
-                    lambda: "".join(
-                        artifact.value for artifact in Stream(agent, event_types=[TextChunkEvent]).run(prompt)
-                    )
-                )
+                full_output = yield (lambda shutdown_event: self._process(agent, prompt, shutdown_event))
             else:
                 # Run the agent
-                full_output = yield lambda: agent.run(prompt).output.value
+                full_output = (
+                    yield lambda shutdown_event: agent.run(prompt).output.value if not shutdown_event.is_set() else ""
+                )
             self.parameter_output_values["output"] = full_output
         else:
             self.parameter_output_values["output"] = "Agent Created"
 
         self.parameter_output_values["agent"] = agent.to_dict()
+
+    def _process(self, agent: Agent, prompt: str, shutdown_event: threading.Event) -> str:
+        # Check if the event is already set before starting
+        if shutdown_event.is_set():
+            output = ""
+            return ""
+        stream = Stream(agent)
+        output = ""
+        for artifact in stream.run(prompt):
+            # Check if shutdown is requested during processing
+            if shutdown_event.is_set():
+                output = ""
+                return ""  # Return nothing
+            # SEND AN EVENT HERE
+            EventBus.publish_event(ProgressEvent(value=artifact.value, node_name=self.name, parameter_name="output"))
+            output += artifact.value
+        return output

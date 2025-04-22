@@ -50,8 +50,8 @@ class LoadImage(DataNode):
         # Add input parameter for model selection
 
     def process(self) -> None:
-        image = self.parameter_values["image"]
+        image = self.get_parameter_value("image")
         # Convert to ImageArtifact
-        image_artifact = dict_to_image_artifact(image)
-
-        self.parameter_output_values["image"] = image_artifact
+        if image:
+            image_artifact = dict_to_image_artifact(image)
+            self.parameter_output_values["image"] = image_artifact

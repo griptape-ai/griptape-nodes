@@ -65,12 +65,8 @@ class ResolutionContext:
                     data_type=parameter.type,
                     value=None,
                 )
-            # Wipe current output of the parameter from the node please!
-                EventBus.publish_event(
-                    ExecutionGriptapeNodeEvent(
-                        wrapped_event=ExecutionEvent(payload=payload)
-                    )
-                )
+                # Wipe current output of the parameter from the node please!
+                EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
         if len(self.focus_stack) > 0:
             node = self.focus_stack[-1]
             node.clear_node()

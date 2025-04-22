@@ -1,4 +1,5 @@
 import threading
+
 from griptape.events import EventBus
 from griptape.structures import Agent
 from griptape.utils import Stream
@@ -33,9 +34,7 @@ class CreateAgent(BaseAgent):
             return rulesets
         return []
 
-    def process(
-        self
-    ) -> AsyncResult[str]:
+    def process(self) -> AsyncResult[str]:
         # Get input values
         params = self.parameter_values
         prompt_driver = params.get("prompt_driver", self.get_default_prompt_driver())
@@ -67,12 +66,12 @@ class CreateAgent(BaseAgent):
         if prompt:
             # Check and see if the prompt driver is a stream driver
             if self.is_stream(agent):
-                full_output = yield(
-                    lambda shutdown_event: self._process(agent, prompt, shutdown_event)
-                )
+                full_output = yield (lambda shutdown_event: self._process(agent, prompt, shutdown_event))
             else:
                 # Run the agent
-                full_output = yield lambda shutdown_event: agent.run(prompt).output.value if not shutdown_event.is_set() else ""
+                full_output = (
+                    yield lambda shutdown_event: agent.run(prompt).output.value if not shutdown_event.is_set() else ""
+                )
             self.parameter_output_values["output"] = full_output
         else:
             self.parameter_output_values["output"] = "Agent Created"
@@ -92,8 +91,6 @@ class CreateAgent(BaseAgent):
                 output = ""
                 return ""  # Return nothing
             # SEND AN EVENT HERE
-            EventBus.publish_event(
-                ProgressEvent(value = artifact.value, node_name=self.name, parameter_name="output")
-            )
+            EventBus.publish_event(ProgressEvent(value=artifact.value, node_name=self.name, parameter_name="output"))
             output += artifact.value
         return output
