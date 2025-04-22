@@ -215,6 +215,7 @@ class ExecuteNodeState(State):
                 logger.info("Pausing Node %s to run background work", current_node.name)
                 return None
         except Exception as e:
+            logger.error("Error processing node '%s': %s", current_node.name, e)
             msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
             current_node.state = NodeResolutionState.UNRESOLVED
             current_node.process_generator = None
@@ -318,12 +319,17 @@ class ExecuteNodeState(State):
 
             Stores the result of the future in the node's context, and publishes an event to resume the flow.
             """
-            context.scheduled_value = future.result()
-            EventBus.publish_event(
-                ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
+            try:
+                context.scheduled_value = future.result()
+            except Exception as e:
+                logger.debug("Error in future: %s", e)
+                context.scheduled_value = e
+            finally:
+                EventBus.publish_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
+                    )
                 )
-            )
 
         # Only start the processing if we don't already have a generator
         logger.debug("Node %s process generator: %s", current_node.name, current_node.process_generator)
@@ -339,11 +345,15 @@ class ExecuteNodeState(State):
         if current_node.process_generator is not None:
             try:
                 logger.debug(
-                    "Node %s has an active generator, sending scheduled value. Scheduled value is None: %s",
+                    "Node %s has an active generator, sending scheduled value of type: %s",
                     current_node.name,
-                    context.scheduled_value is None,
+                    type(context.scheduled_value),
                 )
-                func = current_node.process_generator.send(context.scheduled_value)
+                if isinstance(context.scheduled_value, Exception):
+                    func = current_node.process_generator.throw(context.scheduled_value)
+                else:
+                    func = current_node.process_generator.send(context.scheduled_value)
+
                 # Once we've passed on the scheduled value, we should clear it out just in case
                 context.scheduled_value = None
                 future = ExecuteNodeState.executor.submit(with_contextvars(func))
