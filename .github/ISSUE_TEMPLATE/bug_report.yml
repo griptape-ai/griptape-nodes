@@ -1,7 +1,8 @@
 name: Bug Report
 description: Report a bug to help us improve the product
 title: ""
-labels: ["type: bug"]
+type: "Bug"
+projects: ["griptape-ai/2"]
 body:
   - type: markdown
     attributes:
