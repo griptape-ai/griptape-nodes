@@ -2,6 +2,7 @@ name: Bug Report
 description: Report a bug to help us improve the product
 type: "Bug"
 projects: ["griptape-ai/2"]
+labels: []
 body:
   - type: markdown
     attributes:
@@ -41,11 +42,10 @@ body:
       required: true
 
   - type: dropdown
-    id: issue-labels
+    id: issue-component
     attributes:
-      label: Additional Labels
-      description: Select any additional labels that apply to this issue
-      multiple: true
+      label: Component
+      description: Which component is this issue related to?
       options:
         - "config"
         - "editor"
@@ -60,7 +60,7 @@ body:
         - "secrets"
         - "settings"
     validations:
-      required: false
+      required: true
 
   - type: dropdown
     id: severity
