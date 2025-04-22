@@ -219,11 +219,16 @@ class ExecuteNodeState(State):
             current_node.state = NodeResolutionState.UNRESOLVED
             current_node.process_generator = None
             context.flow.cancel_flow_run()
+
+            EventBus.publish_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
+                )
+            )
             raise RuntimeError(msg) from e
 
         logger.info("Node %s finished processing.", current_node.name)
 
-        # To set the event manager without circular import errors
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
@@ -242,17 +247,6 @@ class ExecuteNodeState(State):
                 TypeValidator.safe_serialize(current_node.parameter_output_values),
             )
 
-        # Output values should already be saved!
-        EventBus.publish_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(
-                    payload=NodeResolvedEvent(
-                        node_name=current_node.name,
-                        parameter_output_values=TypeValidator.safe_serialize(current_node.parameter_output_values),
-                    )
-                )
-            )
-        )
         for parameter_name, value in current_node.parameter_output_values.items():
             parameter = current_node.get_parameter_by_name(parameter_name)
             if parameter is None:
@@ -284,9 +278,22 @@ class ExecuteNodeState(State):
                         data_type=parameter.output_type,
                     )
                 )
+
+        # Output values should already be saved!
+        EventBus.publish_event(
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(
+                    payload=NodeResolvedEvent(
+                        node_name=current_node.name,
+                        parameter_output_values=TypeValidator.safe_serialize(current_node.parameter_output_values),
+                    )
+                )
+            )
+        )
         context.focus_stack.pop()
         if len(context.focus_stack):
             return EvaluateParameterState
+
         return CompleteState
 
     @staticmethod

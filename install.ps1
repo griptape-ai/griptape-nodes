@@ -2,17 +2,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# 1. Check if griptape-nodes or gtn is running
-if (Get-Process griptape-nodes -ErrorAction SilentlyContinue) {
-    Write-Host "Error: an instance of 'griptape-nodes' is currently running. Please close it before continuing."
-    exit
-}
-
-if (Get-Process gtn -ErrorAction SilentlyContinue) {
-    Write-Host "Error: an instance of 'gtn' is currently running. Please close it before continuing."
-    exit
-}
-
 # 2. Install uv if needed
 Write-Host "`nInstalling uv...`n"
 try {
