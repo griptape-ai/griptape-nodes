@@ -166,7 +166,7 @@ class ConfigManager:
             if isinstance(value, dict):
                 env_var_names.extend(self._gather_env_var_names_in_dict(value))
             elif isinstance(value, str) and value.startswith("$"):
-                env_var_names.append(value)
+                env_var_names.append(value[1:])
         return env_var_names
 
     def save_user_workflow_json(self, workflow_file_name: str) -> None:
