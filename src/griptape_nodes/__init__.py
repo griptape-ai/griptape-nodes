@@ -1,13 +1,15 @@
 """Griptape Nodes package."""
 
 # ruff: noqa: S603, S607
-
 import argparse
 import importlib.metadata
 import json
+import os
 import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 import webbrowser
 from pathlib import Path
 
@@ -16,24 +18,21 @@ from dotenv import load_dotenv, set_key
 from dotenv.main import DotEnv
 from rich.console import Console
 from rich.panel import Panel
+from rich.progress import Progress
 from rich.prompt import Confirm, Prompt
 from xdg_base_dirs import xdg_config_home, xdg_data_home
 
 from griptape_nodes.app import start_app
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
-from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
-GH_INSTALL_SCRIPT_SH = "/repos/griptape-ai/griptape-nodes/contents/install.sh?ref=main"
-GH_INSTALL_SCRIPT_PS = "/repos/griptape-ai/griptape-nodes/contents/install.ps1?ref=main"
-INSTALL_SCRIPT_SH = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.sh"
-INSTALL_SCRIPT_PS = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.ps1"
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 DATA_DIR = xdg_data_home() / "griptape_nodes"
 ENV_FILE = CONFIG_DIR / ".env"
 CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
 REPO_NAME = "griptape-ai/griptape-nodes"
 NODES_APP_URL = "https://nodes.griptape.ai"
+NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/tags/{tag}.tar.gz"
 
 
 console = Console()
@@ -185,13 +184,12 @@ def _auto_update() -> None:
         )
 
         if update:
-            _install_latest_release()
+            _install_latest_release(run_after_install=True)
 
 
-def _install_latest_release() -> None:
-    """Installs the latest release of the script. Prefers GitHub CLI if available."""
-    console.print("[bold green]Starting update...[/bold green]")
-    console.print("[bold yellow]Checking for GitHub CLI...[/bold yellow]")
+def _install_latest_release(*, run_after_install: bool = False) -> None:
+    """Installs the latest release of the CLI *and* refreshes bundled assets."""
+    console.print("[bold green]Starting update…[/bold green]")
 
     try:
         __download_and_run_installer()
@@ -199,91 +197,57 @@ def _install_latest_release() -> None:
         console.print(f"[bold red]Error during update: {e}[/bold red]")
         sys.exit(1)
 
-    console.print(
-        "[bold green]Update complete! Restart the engine by running 'griptape-nodes' (or just 'gtn').[/bold green]"
-    )
+    latest_tag = _get_latest_version(REPO_NAME)
+    _install_nodes_assets(tag=latest_tag)
+
+    console.print("[bold green]Update complete![/bold green]")
+
+    if run_after_install:
+        os.execv(sys.argv[0], sys.argv)  # noqa: S606
+
     sys.exit(0)
+
+
+def _install_nodes_assets(tag: str = "latest") -> None:
+    """Download the release tarball identified."""
+    console.print(f"[bold cyan]Fetching Griptape Nodes assets ({tag})…[/bold cyan]")
+    tar_url = NODES_TARBALL_URL.format(tag=tag)
+    dest_nodes = DATA_DIR / "nodes"
+    dest_workflows = DATA_DIR / "workflows"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tar_path = Path(tmp) / "nodes.tar.gz"
+
+        # Streaming download with a tiny progress bar
+        with httpx.stream("GET", tar_url, follow_redirects=True) as r, Progress() as progress:
+            r.raise_for_status()
+            task = progress.add_task("[green]downloading…", total=int(r.headers.get("Content-Length", 0)))
+            with tar_path.open("wb") as f:
+                for chunk in r.iter_bytes():
+                    f.write(chunk)
+                    progress.update(task, advance=len(chunk))
+
+        # Extract and copy
+        with tarfile.open(tar_path) as tar:
+            tar.extractall(tmp, filter="data")
+
+        extracted_root = next(Path(tmp).glob("griptape-nodes-*"))
+
+        console.print("[yellow]Copying nodes directory…[/yellow]")
+        shutil.copytree(extracted_root / "nodes", dest_nodes, dirs_exist_ok=True)
+        console.print("[yellow]Copying workflows directory…[/yellow]")
+        shutil.copytree(extracted_root / "workflows", dest_workflows, dirs_exist_ok=True)
+
+    console.print("[bold green]Nodes + Workflows updated.[/bold green]")
 
 
 def __download_and_run_installer() -> None:
     """Runs the update commands for the engine."""
-    gh_cli = shutil.which("gh")
-    if gh_cli:
-        console.print("[bold green]Found GitHub CLI. Using gh to fetch install script...[/bold green]")
-
-        if OSManager.is_windows():
-            # Fetch install.ps1 contents using gh
-            ps_content = subprocess.check_output(
-                [
-                    gh_cli,
-                    "api",
-                    "-H",
-                    "Accept: application/vnd.github.v3.raw",
-                    GH_INSTALL_SCRIPT_PS,
-                ],
-                text=True,
-            )
-            # Run the PowerShell script from stdin
-            subprocess.run(
-                ["powershell", "-ExecutionPolicy", "ByPass", "-Command", "-"],
-                input=ps_content,
-                text=True,
-                check=True,
-            )
-        else:
-            # macOS or Linux
-            bash_content = subprocess.check_output(
-                [
-                    gh_cli,
-                    "api",
-                    "-H",
-                    "Accept: application/vnd.github.v3.raw",
-                    GH_INSTALL_SCRIPT_SH,
-                ],
-                text=True,
-            )
-            # Run the Bash script from stdin
-            subprocess.run(
-                ["bash"],
-                input=bash_content,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-    else:
-        console.print("[bold yellow]GitHub CLI not found. Falling back to direct download...[/bold yellow]")
-
-        if OSManager.is_windows():
-            subprocess.run(
-                [
-                    "powershell",
-                    "-ExecutionPolicy",
-                    "ByPass",
-                    "-c",
-                    f"irm {INSTALL_SCRIPT_PS} | iex",
-                ],
-                check=True,
-                text=True,
-            )
-        else:
-            curl_process = subprocess.run(
-                [
-                    "curl",
-                    "-LsSf",
-                    INSTALL_SCRIPT_SH,
-                ],
-                capture_output=True,
-                check=False,
-                text=True,
-            )
-            curl_process.check_returncode()
-            subprocess.run(
-                ["bash"],
-                input=curl_process.stdout,
-                capture_output=True,
-                check=True,
-                text=True,
-            )
+    subprocess.run(
+        ["uv", "tool", "upgrade", "griptape-nodes"],
+        text=True,
+        check=True,
+    )
 
 
 def _get_current_version() -> str:
