@@ -2340,11 +2340,11 @@ class NodeManager:
                     if hasattr(value, "to_dict"):
                         # If the object has a __dict__, use that
                         param_to_value[element_id] = value.to_dict()
-                        return
+                        continue
                     # Otherwise use __dict__.
                     if hasattr(value, "__dict__"):
                         param_to_value[element_id] = value.__dict__
-                        return
+                        continue
                 # Otherwise, just set it here. It'll be handled in .json() when we send it over.
                 param_to_value[element_id] = value
 

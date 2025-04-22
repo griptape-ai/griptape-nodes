@@ -444,7 +444,10 @@ class BaseNode(ABC):
             data_type = parameter.type
             self.parameter_output_values[parameter_name] = value
             payload = ParameterValueUpdateEvent(
-                node_name=self.name, parameter_name=parameter_name, data_type=data_type, value=TypeValidator.safe_serialize(value)
+                node_name=self.name,
+                parameter_name=parameter_name,
+                data_type=data_type,
+                value=TypeValidator.safe_serialize(value),
             )
             EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
         else:
