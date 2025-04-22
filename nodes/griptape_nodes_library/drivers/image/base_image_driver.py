@@ -175,11 +175,9 @@ class BaseImageDriver(BaseDriver):
         model_params = self.driver_dict["models"][current_model]["params"]
 
         # Start with all config entries as kwargs
-        kwargs = {key: value for key, value in self.config.items() if key != "driver"}
+        kwargs = {key: value for key, value in self.config.items() if key not in ["driver", "service", "api_key"]}
 
-        if "api_key" in kwargs:
-            api_key_var = kwargs.pop("api_key")
-            kwargs["api_key"] = self.get_config_value(service=self.service, value=api_key_var)
+        kwargs["api_key"] = self.get_config_value(service=self.service, value=self.api_key)
 
         kwargs["model"] = current_model
         kwargs["image_size"] = params.get("size", model_params["size"]["default"])
