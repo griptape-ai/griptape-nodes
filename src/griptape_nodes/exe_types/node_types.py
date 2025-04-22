@@ -50,7 +50,6 @@ class BaseNode(ABC):
     parameter_output_values: dict[str, Any]
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
-    process_generator: Generator | None
 
     @property
     def parameters(self) -> list[Parameter]:
