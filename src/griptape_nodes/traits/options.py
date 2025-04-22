@@ -10,11 +10,6 @@ class Options(Trait):
     choices: list[str] = field(default_factory=lambda: ["choice 1", "choice 2", "choice 3"])
     element_id: str = field(default_factory=lambda: "Options")
 
-    def __init__(self, choices: list[str] | None = None) -> None:
-        super().__init__(element_id="Options")
-        if choices:
-            self.choices = choices
-
     @classmethod
     def get_trait_keys(cls) -> list[str]:
         return ["options", "models"]

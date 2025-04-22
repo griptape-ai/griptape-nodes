@@ -24,7 +24,7 @@ class OllamaPrompt(BasePromptDriver):
         if model_parameter is not None:
             model_parameter.default_value = self.models[0]
             model_parameter.input_types = ["str"]
-            model_parameter.add_trait(Options(self.models))
+            model_parameter.add_trait(Options(choices=self.models))
 
         self.add_parameter(Parameter(name="base_url", default_value=DEFAULT_BASE_URL, type="str", tooltip=""))
         self.add_parameter(Parameter(name="port", default_value=DEFAULT_PORT, type="str", tooltip=""))
