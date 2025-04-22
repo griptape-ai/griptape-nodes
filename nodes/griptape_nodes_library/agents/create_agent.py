@@ -1,4 +1,3 @@
-from griptape.events import TextChunkEvent
 from griptape.structures import Agent as gtAgent
 from griptape.utils import Stream
 
@@ -65,9 +64,7 @@ class Agent(BaseAgent):
         if prompt:
             # Check and see if the prompt driver is a stream driver
             if self.is_stream(agent):
-                yield (
-                    lambda: self._process(agent,prompt)
-                )
+                yield (lambda: self._process(agent, prompt))
             else:
                 # Run the agent
                 full_output = yield lambda: agent.run(prompt).output.value
@@ -77,8 +74,7 @@ class Agent(BaseAgent):
 
         self.parameter_output_values["agent"] = agent.to_dict()
 
-
-    def _process(self, agent:gtAgent, prompt:str) -> None:
+    def _process(self, agent: gtAgent, prompt: str) -> None:
         stream = Stream(agent)
         for artifact in stream.run(prompt):
             self.append_value_to_parameter(parameter_name="output", value=artifact.value)

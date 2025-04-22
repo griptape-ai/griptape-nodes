@@ -13,10 +13,8 @@ from urllib.parse import urljoin
 import httpx
 from dotenv import get_key
 from griptape.events import (
-    BaseEvent,
     EventBus,
     EventListener,
-    FinishStructureRunEvent,
 )
 from rich.align import Align
 from rich.console import Console
@@ -205,7 +203,9 @@ def __process_progress_event(gt_event: ProgressEvent) -> None:
     node_name = gt_event.node_name
     if node_name:
         value = gt_event.value
-        payload = execution_events.GriptapeEvent(node_name=node_name, parameter_name=gt_event.parameter_name, type=type(gt_event).__name__, value=value)
+        payload = execution_events.GriptapeEvent(
+            node_name=node_name, parameter_name=gt_event.parameter_name, type=type(gt_event).__name__, value=value
+        )
         event_to_emit = ExecutionEvent(payload=payload)
         socket.emit("execution_event", event_to_emit.json())
 
