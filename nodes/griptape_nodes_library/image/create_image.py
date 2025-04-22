@@ -1,3 +1,4 @@
+from griptape.artifacts import BaseArtifact
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Structure
@@ -84,6 +85,16 @@ class GenerateImage(ControlNode):
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
+        self.add_parameter(
+            Parameter(
+                name="logs",
+                type="str",
+                tooltip="None",
+                default_value="Node hasn't begun yet",
+                ui_options={"multiline": True},
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+        )
 
     def validate_node(self) -> list[Exception] | None:
         # TODO(kate): Figure out how to wrap this so it's easily repeatable
@@ -115,6 +126,7 @@ class GenerateImage(ControlNode):
 
         if enhance_prompt:
             logger.info("Enhancing prompt...")
+            self.append_value_to_parameter("logs", "Enhancing prompt...\n")
             # agent.run is a blocking operation that will hold up the rest of the engine.
             # By using `yield lambda`, the engine can run this in the background and resume when it's done.
             result = yield lambda: agent.run(
@@ -130,9 +142,11 @@ Focus on qualities that will make this the most professional looking photo in th
                     prompt,
                 ]
             )
+            self.append_value_to_parameter("logs", "Finished enhancing prompt...\n")
             prompt = result.output
         else:
             logger.info("Prompt enhancement disabled.")
+            self.append_value_to_parameter("logs", "Prompt enhancement disabled.\n")
         # Initialize driver kwargs with required parameters
         kwargs = {}
 
@@ -151,9 +165,16 @@ Focus on qualities that will make this the most professional looking photo in th
         agent.add_task(PromptImageGenerationTask(**kwargs))
 
         # Run the agent asynchronously
-        result = yield lambda: agent.run(prompt)
+        self.append_value_to_parameter("logs", "Starting processing image..\n")
+        yield lambda: self._process(agent, prompt)
+        self.append_value_to_parameter("logs", "Finished processing image.\n")
+        # Run it again.
 
-        self.parameter_output_values["output"] = result.output
         try_throw_error(agent.output)
         # Reset the agent
         agent._tasks = []
+
+    def _process(self, agent: Agent, prompt: BaseArtifact | str) -> Structure:
+        result = agent.run(prompt)
+        self.publish_update_to_parameter("output", result.output)
+        return result

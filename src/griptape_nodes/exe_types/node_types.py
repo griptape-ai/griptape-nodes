@@ -4,7 +4,7 @@ from collections.abc import Callable, Generator
 from enum import StrEnum, auto
 from typing import Any, Self, TypeVar
 
-from griptape.events import BaseEvent
+from griptape.events import BaseEvent, EventBus
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
@@ -18,6 +18,9 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
+from griptape_nodes.exe_types.type_validator import TypeValidator
+from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ProgressEvent
+from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
 from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
 
 logger = logging.getLogger("griptape_nodes")
@@ -418,6 +421,38 @@ class BaseNode(ABC):
 
     def set_config_value(self, service: str, value: str, new_value: str) -> None:
         self.config_manager.set_config_value(f"nodes.{service}.{value}", new_value)
+
+    def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
+        # Add the value to the node
+        if parameter_name in self.parameter_output_values:
+            try:
+                self.parameter_output_values[parameter_name] = self.parameter_output_values[parameter_name] + value
+            except TypeError:
+                try:
+                    self.parameter_output_values[parameter_name].append(value)
+                except Exception as e:
+                    msg = f"Value is not appendable to parameter '{parameter_name}' on {self.name}"
+                    raise RuntimeError(msg) from e
+        else:
+            self.parameter_output_values[parameter_name] = value
+        # Publish the event up!
+        EventBus.publish_event(ProgressEvent(value=value, node_name=self.name, parameter_name=parameter_name))
+
+    def publish_update_to_parameter(self, parameter_name: str, value: Any) -> None:
+        parameter = self.get_parameter_by_name(parameter_name)
+        if parameter:
+            data_type = parameter.type
+            self.parameter_output_values[parameter_name] = value
+            payload = ParameterValueUpdateEvent(
+                node_name=self.name,
+                parameter_name=parameter_name,
+                data_type=data_type,
+                value=TypeValidator.safe_serialize(value),
+            )
+            EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
+        else:
+            msg = f"Parameter '{parameter_name} doesn't exist on {self.name}'"
+            raise RuntimeError(msg)
 
 
 class ControlNode(BaseNode):

@@ -275,7 +275,7 @@ class ExecuteNodeState(State):
                     SetParameterValueRequest(
                         parameter_name=target_parameter.name,
                         node_name=target_node.name,
-                        value=value,
+                        value=TypeValidator.safe_serialize(value),
                         data_type=parameter.output_type,
                     )
                 )
