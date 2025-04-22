@@ -17,7 +17,8 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @dataclass
 @PayloadRegistry.register
 class AddParameterToNodeRequest(RequestPayload):
-    node_name: str
+    # If node name is None, use the Current Context
+    node_name: str | None = None
     parameter_name: str | None = None
     default_value: Any | None = None
     tooltip: str | list[dict] | None = None
@@ -64,7 +65,8 @@ class AddParameterToNodeResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class RemoveParameterFromNodeRequest(RequestPayload):
     parameter_name: str
-    node_name: str
+    # If node name is None, use the Current Context
+    node_name: str | None = None
 
 
 @dataclass
@@ -83,8 +85,9 @@ class RemoveParameterFromNodeResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class SetParameterValueRequest(RequestPayload):
     parameter_name: str
-    node_name: str
     value: Any
+    # If node name is None, use the Current Context
+    node_name: str | None = None
     data_type: str | None = None
     # initial_setup prevents unnecessary work when we are loading a workflow from a file.
     initial_setup: bool = False
@@ -109,7 +112,8 @@ class SetParameterValueResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class GetParameterDetailsRequest(RequestPayload):
     parameter_name: str
-    node_name: str
+    # If node name is None, use the Current Context
+    node_name: str | None = None
 
 
 @dataclass
@@ -141,7 +145,8 @@ class GetParameterDetailsResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class AlterParameterDetailsRequest(RequestPayload):
     parameter_name: str
-    node_name: str
+    # If node name is None, use the Current Context
+    node_name: str | None = None
     type: str | None = None
     input_types: list[str] | None = None
     output_type: str | None = None
@@ -211,7 +216,8 @@ class AlterParameterDetailsResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class GetParameterValueRequest(RequestPayload):
     parameter_name: str
-    node_name: str
+    # If node name is None, use the Current Context
+    node_name: str | None = None
 
 
 @dataclass
@@ -241,9 +247,10 @@ class OnParameterValueChanged(ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class GetCompatibleParametersRequest(RequestPayload):
-    node_name: str
     parameter_name: str
     is_output: bool
+    # If node name is None, use the Current Context
+    node_name: str | None = None
 
 
 class ParameterAndMode(NamedTuple):
@@ -266,7 +273,8 @@ class GetCompatibleParametersResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetNodeElementDetailsRequest(RequestPayload):
-    node_name: str
+    # If node name is None, use the Current Context
+    node_name: str | None = None
     specific_element_id: str | None = None  # Pass None to use the root
 
 
