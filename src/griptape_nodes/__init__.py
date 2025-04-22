@@ -1,13 +1,13 @@
 """Griptape Nodes package."""
 
 # ruff: noqa: S603, S607
-
 import argparse
 import importlib.metadata
 import json
 import shutil
 import subprocess
 import sys
+import textwrap  # ← add this
 import webbrowser
 from pathlib import Path
 
@@ -189,19 +189,45 @@ def _auto_update() -> None:
 
 
 def _install_latest_release() -> None:
-    """Installs the latest release of the script. Prefers GitHub CLI if available."""
-    console.print("[bold green]Starting update...[/bold green]")
-    console.print("[bold yellow]Checking for GitHub CLI...[/bold yellow]")
+    """Spawn a helper shell on Windows so the update can run after gtn.exe exits."""
+    console.print("[bold green]Starting update…[/bold green]")
 
+    if OSManager.is_windows():
+        # PowerShell block: wait until no gtn.exe is running, then run install.ps1
+        ps_script = textwrap.dedent(f"""
+            $ErrorActionPreference = 'Stop'
+            while (Get-Process gtn -ErrorAction SilentlyContinue) {{
+                Start-Sleep -Seconds 1
+            }}
+            Invoke-RestMethod -Uri '{INSTALL_SCRIPT_PS}' | Invoke-Expression
+        """).strip()
+
+        subprocess.Popen(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "ByPass",
+                "-Command",
+                ps_script,
+            ],
+            creationflags=(subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP),  # pyright: ignore[reportAttributeAccessIssue] Windows only
+        )
+        console.print(
+            "[yellow]Updater spawned in the background – "
+            "current instance will now exit so the executable can be replaced.[/yellow]"
+        )
+        sys.exit(0)
+
+    # macOS / Linux: keep the original path
+    console.print("[bold yellow]Checking for GitHub CLI…[/bold yellow]")
     try:
         __download_and_run_installer()
-    except subprocess.CalledProcessError as e:
-        console.print(f"[bold red]Error during update: {e}[/bold red]")
+    except subprocess.CalledProcessError as exc:
+        console.print(f"[bold red]Error during update: {exc}[/bold red]")
         sys.exit(1)
 
-    console.print(
-        "[bold green]Update complete! Restart the engine by running 'griptape-nodes' (or just 'gtn').[/bold green]"
-    )
+    console.print("[bold green]Update complete! Restart the engine with `griptape-nodes` (or `gtn`).[/bold green]")
     sys.exit(0)
 
 
