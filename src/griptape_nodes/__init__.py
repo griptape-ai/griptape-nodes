@@ -243,11 +243,14 @@ def _install_nodes_assets(tag: str = "latest") -> None:
 
 def __download_and_run_installer() -> None:
     """Runs the update commands for the engine."""
-    subprocess.run(
-        ["uv", "tool", "upgrade", "griptape-nodes"],
-        text=True,
-        check=True,
-    )
+    try:
+        subprocess.run(
+            ["uv", "tool", "upgrade", "griptape-nodes"],
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        console.print(f"[bold red]Error during update: {e}[/bold red]")
 
 
 def _get_current_version() -> str:
