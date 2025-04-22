@@ -215,7 +215,7 @@ class ExecuteNodeState(State):
                 logger.info("Pausing Node %s to run background work", current_node.name)
                 return None
         except Exception as e:
-            logger.error("Error processing node %s: %s", current_node.name, e)
+            logger.error("Error processing node '%s': %s", current_node.name, e)
             msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
             current_node.state = NodeResolutionState.UNRESOLVED
             current_node.process_generator = None
