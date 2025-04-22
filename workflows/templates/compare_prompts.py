@@ -5,7 +5,7 @@ cmd.create_flow(flow_name="compare_prompts")
 
 # Create nodes
 cmd.create_node(
-    node_type="CreateImage",
+    node_type="GenerateImage",
     node_name="basic_image",
     parent_flow_name="compare_prompts",
     specific_library_name="Griptape Nodes Library",
@@ -17,12 +17,12 @@ cmd.create_node(
             "display_name": "Create Image",
         },
         "library": "Griptape Nodes Library",
-        "node_type": "CreateImage",
+        "node_type": "GenerateImage",
         "category": "Image",
     },
 )
 cmd.create_node(
-    node_type="CreateMultilineText",
+    node_type="TextInput",
     node_name="detail_prompt",
     parent_flow_name="compare_prompts",
     specific_library_name="Griptape Nodes Library",
@@ -34,12 +34,12 @@ cmd.create_node(
             "display_name": "Create Multiline Text",
         },
         "library": "Griptape Nodes Library",
-        "node_type": "CreateMultilineText",
+        "node_type": "TextInput",
         "category": "Text",
     },
 )
 cmd.create_node(
-    node_type="CreateImage",
+    node_type="GenerateImage",
     node_name="enhanced_prompt_image",
     parent_flow_name="compare_prompts",
     specific_library_name="Griptape Nodes Library",
@@ -51,12 +51,12 @@ cmd.create_node(
             "display_name": "Create Image",
         },
         "library": "Griptape Nodes Library",
-        "node_type": "CreateImage",
+        "node_type": "GenerateImage",
         "category": "Image",
     },
 )
 cmd.create_node(
-    node_type="RunAgent",
+    node_type="Agent",
     node_name="bespoke_prompt",
     parent_flow_name="compare_prompts",
     specific_library_name="Griptape Nodes Library",
@@ -68,7 +68,7 @@ cmd.create_node(
             "display_name": "Run Agent",
         },
         "library": "Griptape Nodes Library",
-        "node_type": "RunAgent",
+        "node_type": "Agent",
         "category": "Agent",
     },
 )
@@ -90,7 +90,7 @@ cmd.create_node(
     },
 )
 cmd.create_node(
-    node_type="CreateImage",
+    node_type="GenerateImage",
     node_name="bespoke_prompt_image",
     parent_flow_name="compare_prompts",
     specific_library_name="Griptape Nodes Library",
@@ -102,12 +102,12 @@ cmd.create_node(
             "display_name": "Create Image",
         },
         "library": "Griptape Nodes Library",
-        "node_type": "CreateImage",
+        "node_type": "GenerateImage",
         "category": "Image",
     },
 )
 cmd.create_node(
-    node_type="CreateText",
+    node_type="TextInput",
     node_name="basic_prompt",
     parent_flow_name="compare_prompts",
     specific_library_name="Griptape Nodes Library",
@@ -119,7 +119,7 @@ cmd.create_node(
             "display_name": "Create Text",
         },
         "library": "Griptape Nodes Library",
-        "node_type": "CreateText",
+        "node_type": "TextInput",
         "category": "Text",
     },
 )
@@ -165,8 +165,8 @@ cmd.connect("basic_prompt.text", "basic_image.prompt")
 #
 # [tool.griptape-nodes]
 # name = "compare_prompts"
-# description = "Example workflow demonstrating how to compare outputs against three different prompting approaches."
-# image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/workflows/thumbnail_compare_prompts.webp"
+# description = "See how 3 different approaches to prompts affect image generation."
+# image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/workflows/templates/thumbnail_compare_prompts.webp"
 # schema_version = "0.1.0"
 # engine_version_created_with = "0.14.1"
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]

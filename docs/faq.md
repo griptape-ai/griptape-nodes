@@ -8,9 +8,9 @@ Run this command and it will report back your workspace location:
 gtn config | grep workspace
 ```
 
-## Where is Griptape [nodes] installed?
+## Where is Griptape Nodes installed?
 
-Looking for the exact installation location of your Griptape [nodes]? This command will show you precisely where it's installed:
+Looking for the exact installation location of your Griptape Nodes? This command will show you precisely where it's installed:
 
 For Mac/Linux:
 
@@ -26,7 +26,7 @@ $(Split-Path -Parent (Split-Path -Parent (Get-Command griptape-nodes | Select-Ob
 
 ## How do I uninstall?
 
-Need to part ways with Griptape [nodes]? It's a simple goodbye with a single command:
+Need to part ways with Griptape Nodes? It's a simple goodbye with a single command:
 
 ```bash
 griptape-nodes uninstall

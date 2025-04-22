@@ -1,6 +1,6 @@
 [project]
 name = "griptape_nodes"
-version = "0.18.1"
+version = "0.19.3"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -77,6 +77,9 @@ ignore = [
   "FBT003", # Intentional
   "RET504", # Intentional
 ]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"nodes.griptape_nodes_library".msg = "Import from griptape_nodes_library instead of nodes.griptape_nodes_library"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "D104"]

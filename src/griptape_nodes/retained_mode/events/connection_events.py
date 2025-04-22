@@ -11,10 +11,11 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @dataclass
 @PayloadRegistry.register
 class CreateConnectionRequest(RequestPayload):
-    source_node_name: str
     source_parameter_name: str
-    target_node_name: str
     target_parameter_name: str
+    # If node name is None, use the Current Context
+    source_node_name: str | None = None
+    target_node_name: str | None = None
     # initial_setup prevents unnecessary work when we are loading a workflow from a file.
     initial_setup: bool = False
 
@@ -34,10 +35,11 @@ class CreateConnectionResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class DeleteConnectionRequest(RequestPayload):
-    source_node_name: str
     source_parameter_name: str
-    target_node_name: str
     target_parameter_name: str
+    # If node name is None, use the Current Context
+    source_node_name: str | None = None
+    target_node_name: str | None = None
 
 
 @dataclass
@@ -55,7 +57,8 @@ class DeleteConnectionResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class ListConnectionsForNodeRequest(RequestPayload):
-    node_name: str
+    # If node name is None, use the Current Context
+    node_name: str | None = None
 
 
 @dataclass

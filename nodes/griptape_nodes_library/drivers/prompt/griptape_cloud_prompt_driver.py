@@ -10,7 +10,7 @@ SERVICE = "Griptape"
 SUCCESS = 200
 
 
-class GriptapeCloudPromptDriver(BasePromptDriver):
+class GriptapeCloudPrompt(BasePromptDriver):
     """Node for Griptape Cloud Prompt Driver.
 
     This node creates a Griptape Cloud prompt driver and outputs its configuration.

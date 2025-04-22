@@ -9,7 +9,7 @@ API_KEY_ENV_VAR = "OPENAI_API_KEY"
 SERVICE = "OpenAI"
 
 
-class OpenAiPromptDriver(BasePromptDriver):
+class OpenAiPrompt(BasePromptDriver):
     """Node for OpenAi Prompt Driver.
 
     This node creates an OpenAi prompt driver and outputs its configuration.
