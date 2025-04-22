@@ -18,7 +18,8 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
-from griptape_nodes.retained_mode.events.base_events import ProgressEvent
+from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ProgressEvent
+from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
 from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
 
 logger = logging.getLogger("griptape_nodes")
@@ -438,7 +439,9 @@ class BaseNode(ABC):
 
     def publish_update_to_parameter(self, parameter_name:str, value:Any) -> None:
         self.parameter_output_values[parameter_name] = value
-        EventBus.publish_event(ProgressEvent(value=value, node_name=self.name, parameter_name=parameter_name))
+        payload = ParameterValueUpdateEvent(node_name=self.name, parameter_name=parameter_name, data_type="ImageArtifact", value=value)
+        EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
+        #EventBus.publish_event(ProgressEvent(value=value, node_name=self.name, parameter_name=parameter_name))
 
 
 class ControlNode(BaseNode):

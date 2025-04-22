@@ -1,3 +1,4 @@
+from griptape.artifacts import BaseArtifact
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Structure
@@ -151,9 +152,14 @@ Focus on qualities that will make this the most professional looking photo in th
         agent.add_task(PromptImageGenerationTask(**kwargs))
 
         # Run the agent asynchronously
-        result = yield lambda: agent.run(prompt)
+        yield lambda: self._process(agent,prompt)
+        yield lambda: self._process(agent, "Give me a cat sunning itself on the beach")
 
-        self.parameter_output_values["output"] = result.output
         try_throw_error(agent.output)
         # Reset the agent
         agent._tasks = []
+
+    def _process(self, agent:Agent, prompt:BaseArtifact|str) -> Structure:
+        result = agent.run(prompt)
+        self.publish_update_to_parameter("output",result.output)
+        return result
