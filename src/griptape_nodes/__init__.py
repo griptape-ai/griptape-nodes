@@ -200,8 +200,12 @@ def _install_latest_release(*, run_after_install: bool = False) -> None:
     console.print("[bold green]Update complete![/bold green]")
 
     if run_after_install:
-        os.execv(sys.argv[0], sys.argv)  # noqa: S606
+        argv: list[str] = [sys.executable, *sys.argv]
 
+        sys.stdout.flush()
+        sys.stderr.flush()
+
+        os.execv(sys.executable, argv)  # noqa: S606
     sys.exit(0)
 
 
