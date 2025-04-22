@@ -2278,16 +2278,24 @@ class NodeManager:
         return result
 
     def on_get_node_element_details_request(self, request: GetNodeElementDetailsRequest) -> ResultPayload:
+        node_name = request.node_name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = f"Attempted to get element details for element '{request.specific_element_id}` from a Node, but no Current Context was found."
+                logger.error(details)
+
+                return GetNodeElementDetailsResultFailure()
+            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to get element details for Node '{request.node_name}', but no such Node was found."
+            details = f"Attempted to get element details for Node '{node_name}', but no such Node was found."
             logger.error(details)
 
-            result = GetNodeElementDetailsResultFailure()
-            return result
+            return GetNodeElementDetailsResultFailure()
 
         # Did they ask for a specific element ID?
         if request.specific_element_id is None:
@@ -2296,11 +2304,10 @@ class NodeManager:
         else:
             element = node.findroot_ui_element.find_element_by_id(request.specific_element_id)
             if element is None:
-                details = f"Attempted to get element details for element '{request.specific_element_id}' from Node '{request.node_name}'. Failed because it didn't have an element with that ID on it."
+                details = f"Attempted to get element details for element '{request.specific_element_id}' from Node '{node_name}'. Failed because it didn't have an element with that ID on it."
                 logger.error(details)
 
-                result = GetNodeElementDetailsResultFailure()
-                return result
+                return GetNodeElementDetailsResultFailure()
 
         element_details = element.to_dict()
         # We need to get parameter values from here
@@ -2308,7 +2315,7 @@ class NodeManager:
         self._set_param_to_value(node, element, param_to_value)
         if param_to_value:
             element_details["element_id_to_value"] = param_to_value
-        details = f"Successfully got element details for Node '{request.node_name}'."
+        details = f"Successfully got element details for Node '{node_name}'."
         logger.debug(details)
         result = GetNodeElementDetailsResultSuccess(element_details=element_details)
         return result
@@ -2378,16 +2385,25 @@ class NodeManager:
                 parameter.allowed_modes.discard(ParameterMode.OUTPUT)
 
     def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:
+        node_name = request.node_name
+
+        if request.node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from node in the Current Context. Failed because there was no such Node."
+                logger.error(details)
+
+                return AlterParameterDetailsResultFailure()
+            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}', but no such Node was found."
+            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}', but no such Node was found."
             logger.error(details)
 
-            result = AlterParameterDetailsResultFailure()
-            return result
+            return AlterParameterDetailsResultFailure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(request.parameter_name)
@@ -2395,11 +2411,10 @@ class NodeManager:
         if parameter is None:
             parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
             if parameter_group is None:
-                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Failed because it didn't have a Parameter with that name on it."
+                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
                 logger.error(details)
 
-                result = AlterParameterDetailsResultFailure()
-                return result
+                return AlterParameterDetailsResultFailure()
             if request.ui_options is not None:
                 parameter_group.ui_options = request.ui_options
             return AlterParameterDetailsResultSuccess()
@@ -2410,19 +2425,16 @@ class NodeManager:
         # The rest of these are not alterable
         if parameter.user_defined is False and request.request_id:
             # TODO(griptape): there may be SOME properties on a non-user-defined Parameter that can be changed
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{request.node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
+            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
             logger.warning(details)
-            result = AlterParameterDetailsResultSuccess()
-            return result
+            return AlterParameterDetailsResultSuccess()
         self.modify_key_parameter_fields(request, parameter)
         # This field requires the node as well
         if request.default_value is not None:
             # TODO(griptape): vet that default value matches types allowed
             node.parameter_values[request.parameter_name] = request.default_value
 
-        details = (
-            f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{request.node_name}'."
-        )
+        details = f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{node_name}'."
         logger.debug(details)
 
         result = AlterParameterDetailsResultSuccess()
@@ -2430,6 +2442,16 @@ class NodeManager:
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:
+        node_name = request.node_name
+
+        if request.node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = f"Attempted to get value for Parameter '{request.parameter_name}' from node in the Current Context. Failed because there was no such Node."
+                logger.error(details)
+
+                return GetParameterValueResultFailure()
+            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+
         # Does this node exist?
         obj_mgr = GriptapeNodes().get_instance().ObjectManager()
 
@@ -2437,16 +2459,16 @@ class NodeManager:
         param_name = request.parameter_name
 
         # Get the node
-        node = obj_mgr.attempt_get_object_by_name_as_type(request.node_name, BaseNode)
+        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f'"{request.node_name}" not found'
+            details = f'"{node_name}" not found'
             logger.error(details)
             return GetParameterValueResultFailure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
         if parameter is None:
-            details = f'"{request.node_name}.{param_name}" not found'
+            details = f'"{node_name}.{param_name}" not found'
             logger.error(details)
             return GetParameterValueResultFailure()
 
@@ -2462,7 +2484,7 @@ class NodeManager:
             data_value = node.parameter_values[param_name]
 
         # Cool.
-        details = f"{request.node_name}.{request.parameter_name} = {data_value}"
+        details = f"{node_name}.{request.parameter_name} = {data_value}"
         logger.debug(details)
 
         result = GetParameterValueResultSuccess(
