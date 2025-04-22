@@ -46,7 +46,7 @@ class BaseImageDriver(BaseDriver):
         self.service_key_mappings = self.config.get("service_key_field", [])
         self.driver = self.config.get("driver")
 
-        # Hard assumtion that first entry is default (yes, this is reliably ordered since 3.7)
+        # Hard assumtion that first entry is default (dict keys are supposed to be reliably ordered since 3.7)
         self.model_options = list(self.driver_dict.get("models", {}).keys())
         self.model_default = self.model_options[0]
 
@@ -114,7 +114,6 @@ class BaseImageDriver(BaseDriver):
         Args:
             model: The model name to use for configuration
         """
-        # Get model configuration
         model_config = self.driver_dict["models"].get(model, {}).get("params", {})
 
         # Update each parameter based on the configuration
@@ -123,36 +122,29 @@ class BaseImageDriver(BaseDriver):
             if not param:
                 continue
 
-            # Process options first, collecting all UI options to apply at once
             ui_options = {}
 
             # Handle options/choices for traits
             if "options" in config and param.children:
-                # Remove existing Options trait
                 param.remove_trait(param.children[0])
-                # Add new Options trait with updated choices
                 param.add_trait(Options(choices=config["options"]))
                 ui_options["options"] = config["options"]
 
-            # Add hide setting to ui_options
             if "hide" in config:
                 ui_options["hide"] = config["hide"]
 
             # Apply all UI options at once
             param.ui_options = ui_options
 
-            # Update default value if specified
             if "default" in config:
                 param.default_value = config["default"]
 
-            # Update tooltip if specified
             if "tooltip" in config:
                 param.tooltip = config["tooltip"]
 
     def after_value_set(self, parameter: Parameter, value=None, modified_parameters_set=None) -> None:  # noqa: ARG002
         """Update dependent parameters when a parameter value changes."""
         if parameter.name == "model":
-            # Update all parameters based on the selected model
             self.update_parameters_from_model(value)
 
     def process(self) -> None:
@@ -164,7 +156,7 @@ class BaseImageDriver(BaseDriver):
         # Start with config entries as kwargs (excluding special keys)
         kwargs = {key: value for key, value in self.config.items() if key not in ["driver", "service_key_field"]}
 
-        # Add credentials from the service_key_field mappings
+        # Add service_key_field stuff
         for service, config_key, param_name in self.service_key_mappings:
             kwargs[param_name] = self.get_config_value(service=service, value=config_key)
 
@@ -172,12 +164,13 @@ class BaseImageDriver(BaseDriver):
         kwargs["model"] = current_model
         kwargs["image_size"] = params.get("size", model_params["size"]["default"])
 
-        # Add optional parameters if not hidden by the model
-        if not model_params.get("style", {}).get("hide", False):
-            kwargs["style"] = params.get("style", model_params["style"]["default"])
+        # Exclude params/fields based on their "hide" default in the model definition
+        for param_name, param_config in model_params.items():
+            if param_name == "size":
+                continue
 
-        if not model_params.get("quality", {}).get("hide", False):
-            kwargs["quality"] = params.get("quality", model_params["quality"]["default"])
+            if not param_config.get("hide", False):
+                kwargs[param_name] = params.get(param_name, param_config.get("default"))
 
         logger.info(f"ImageDriver final kwargs = {kwargs}")
         self.parameter_output_values["image_generation_driver"] = self.driver(**kwargs)

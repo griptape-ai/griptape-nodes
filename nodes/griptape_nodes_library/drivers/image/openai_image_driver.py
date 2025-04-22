@@ -4,8 +4,7 @@ from nodes.griptape_nodes_library.drivers.image.base_image_driver import BaseIma
 
 DRIVER_DICT = {
     "config": {
-        "service": "OpenAI",
-        "api_key": "OPENAI_API_KEY",
+        "service_key_field": [("OpenAI", "OPENAI_API_KEY", "api_key")],
         "driver": OpenAiImageGenerationDriver,
     }
     # Note: We're only overriding the config section, keeping models from parent class

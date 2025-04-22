@@ -21,46 +21,28 @@ class TestGriptapeCloudImageGenerationNode:
 
         assert parameters == [
             {
-                "input_types": [
-                    "Image Generation Driver",
-                ],
-                "output_type": "Image Generation Driver",
-                "type": "Image Generation Driver",
-                "default_value": None,
-                "name": "driver",
-                "tooltip": "",
-            },
-            {
+                "name": "model",
                 "input_types": ["str"],
                 "output_type": "str",
                 "type": "str",
-                "default_value": "",
+                "default_value": "dall-e-3",
+                "tooltip": "Choose a model",
+            },
+            {
                 "name": "quality",
-                "tooltip": "",
-            },
-            {
                 "input_types": ["str"],
                 "output_type": "str",
                 "type": "str",
-                "default_value": "",
+                "default_value": "standard",
+                "tooltip": "Image Quality",
+            },
+            {
                 "name": "style",
-                "tooltip": "",
-            },
-            {
-                "name": "image_generation_model",
                 "input_types": ["str"],
                 "output_type": "str",
                 "type": "str",
-                "default_value": "dall-e-3",
-                "tooltip": "Select the model for image generation.",
-            },
-            {
-                "name": "image_deployment_name",
-                "input_types": ["str"],
-                "output_type": "str",
-                "type": "str",
-                "default_value": "dall-e-3",
-                "tooltip": "Enter the deployment name for the image generation model.",
+                "default_value": "natural",
+                "tooltip": "Image Style",
             },
             {
                 "name": "size",
@@ -68,30 +50,54 @@ class TestGriptapeCloudImageGenerationNode:
                 "output_type": "str",
                 "type": "str",
                 "default_value": "1024x1024",
-                "tooltip": "Select the size of the generated image.",
+                "tooltip": "Image Size",
+            },
+            {
+                "input_types": [
+                    "Image Generation Driver",
+                ],
+                "output_type": "Image Generation Driver",
+                "type": "Image Generation Driver",
+                "default_value": None,
+                "name": "image_generation_driver",
+                "tooltip": "",
             },
         ]
 
     @pytest.mark.parametrize(
-        ("model", "size", "expected_size"),
+        ("model", "size"),
         [
-            ("dall-e-3", "256x256", "1024x1024"),
-            ("dall-e-3", "1024x1024", "1024x1024"),
+            ("dall-e-3", "1024x1024"),
+            ("dall-e-3", "1792x1024"),
+            ("dall-e-2", "512x512"),
         ],
     )
-    def test_adjust_size_based_on_model(self, model, size, expected_size) -> None:
+    def test_model_size_configuration(self, model, size) -> None:
+        """Test that the size parameter respects model constraints."""
         griptape_cloud_image_generation_node = GriptapeCloudImage(name="Griptape Cloud Image Generation")
 
-        adjusted_size = griptape_cloud_image_generation_node.adjust_size_based_on_model(model, size)
+        # Set model and size parameters
+        griptape_cloud_image_generation_node.set_parameter_value("model", model)
+        griptape_cloud_image_generation_node.set_parameter_value("size", size)
 
-        assert adjusted_size == expected_size
+        # Process to create the driver
+        griptape_cloud_image_generation_node.process()
+
+        # Get the created driver
+        driver = griptape_cloud_image_generation_node.parameter_output_values["image_generation_driver"]
+
+        # Verify the driver has the correct size parameter
+        assert driver.image_size == size
+
+        # Verify model is set correctly
+        assert driver.model == model
 
     def test_process(self) -> None:
         griptape_cloud_image_generation_node = GriptapeCloudImage(name="Griptape Cloud Image Generation")
 
         griptape_cloud_image_generation_node.process()
 
-        driver = griptape_cloud_image_generation_node.parameter_output_values["driver"]
+        driver = griptape_cloud_image_generation_node.parameter_output_values["image_generation_driver"]
 
         assert isinstance(driver, GriptapeCloudImageGenerationDriver)
         assert driver.model == "dall-e-3"

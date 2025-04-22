@@ -141,7 +141,6 @@ Focus on qualities that will make this the most professional looking photo in th
                 model=params.get("model", DEFAULT_MODEL),
                 api_key=api_key,
             )
-            print(f"DEFAULT CONFIG: {api_key}")
 
         kwargs["image_generation_driver"] = driver
 
