@@ -14,8 +14,7 @@ import webbrowser
 from pathlib import Path
 
 import httpx
-from dotenv import load_dotenv, set_key
-from dotenv.main import DotEnv
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress
@@ -76,7 +75,7 @@ def _get_args() -> argparse.Namespace:
         "config_subcommand",
         help="Subcommand for 'config'",
         nargs="?",
-        choices=["list"],
+        choices=["list", "reset"],
         default=None,
     )
 
@@ -112,7 +111,7 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
         Once the key is generated, copy and paste its value here to proceed."""
         console.print(Panel(explainer, expand=False))
 
-    default_key = api_key or DotEnv(ENV_FILE, verbose=False).get("GT_CLOUD_API_KEY")
+    default_key = api_key or secrets_manager.get_secret("GT_CLOUD_API_KEY", should_error_on_not_found=False)
     # If api_key is provided via --api-key, we don't want to prompt for it
     current_key = api_key
     while current_key is None:
@@ -122,8 +121,6 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
             show_default=True,
         )
 
-    set_key(ENV_FILE, "GT_CLOUD_API_KEY", current_key)
-    config_manager.set_config_value("nodes.Griptape.GT_CLOUD_API_KEY", "$GT_CLOUD_API_KEY")
     secrets_manager.set_secret("GT_CLOUD_API_KEY", current_key)
 
 
@@ -281,6 +278,13 @@ def _list_user_configs() -> None:
         console.print(f"[green]{idx + 1}. {config}[/green]")
 
 
+def _reset_user_config() -> None:
+    """Resets the user configuration to the default values."""
+    console.print("[bold]Resetting user configuration to default values...[/bold]")
+    config_manager.reset_user_config()
+    console.print("[bold green]User configuration reset complete![/bold green]")
+
+
 def _uninstall_self() -> None:
     """Uninstalls itself by removing config/data directories and the executable."""
     console.print("[bold]Uninstalling Griptape Nodes...[/bold]")
@@ -339,7 +343,7 @@ def _uninstall_self() -> None:
     sys.exit(0)
 
 
-def _process_args(args: argparse.Namespace) -> None:
+def _process_args(args: argparse.Namespace) -> None:  # noqa: C901
     if args.command == "init":
         _run_init(api_key=args.api_key, workspace_directory=args.workspace_directory)
         console.print("Initialization complete! You can now run the engine with 'griptape-nodes' (or just 'gtn').")
@@ -357,6 +361,8 @@ def _process_args(args: argparse.Namespace) -> None:
     elif args.command == "config":
         if args.config_subcommand == "list":
             _list_user_configs()
+        if args.config_subcommand == "reset":
+            _reset_user_config()
         else:
             sys.stdout.write(json.dumps(_get_user_config(), indent=2))
     elif args.command == "update":
