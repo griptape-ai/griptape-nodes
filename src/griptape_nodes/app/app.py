@@ -185,8 +185,7 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
         node_name = result_event.payload.node_name
         logger.info("Resuming Node %s", node_name)
         flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
-        # TODO(collin, kate): https://github.com/griptape-ai/griptape-nodes/issues/391
-        request = EventRequest(request=execution_events.ContinueExecutionStepRequest(flow_name=flow_name))
+        request = EventRequest(request=execution_events.SingleExecutionStepRequest(flow_name=flow_name))
         event_queue.put(request)
 
     if type(result_event.payload).__name__ == "NodeFinishProcessEvent":

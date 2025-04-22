@@ -1463,8 +1463,9 @@ class FlowManager:
             logger.error(details)
 
             return SingleExecutionStepResultFailure()
+        change_debug_mode = request.request_id is not None
         try:
-            flow.single_execution_step()
+            flow.single_execution_step(change_debug_mode)
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
             logger.error(details)
