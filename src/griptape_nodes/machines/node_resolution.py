@@ -37,12 +37,14 @@ class ResolutionContext:
     focus_stack: list[BaseNode]
     paused: bool
     scheduled_value: Any | None
+    process_generator: Generator | None
 
     def __init__(self, flow: ControlFlow) -> None:
         self.flow = flow
         self.focus_stack = []
         self.paused = False
         self.scheduled_value = None
+        self.process_generator = None
 
 
 class InitializeSpotlightState(State):
@@ -218,7 +220,7 @@ class ExecuteNodeState(State):
             logger.error("Error processing node '%s': %s", current_node.name, e)
             msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
             current_node.state = NodeResolutionState.UNRESOLVED
-            current_node.process_generator = None
+            context.process_generator = None
             context.flow.cancel_flow_run()
 
             EventBus.publish_event(
@@ -332,17 +334,17 @@ class ExecuteNodeState(State):
                 )
 
         # Only start the processing if we don't already have a generator
-        logger.debug("Node %s process generator: %s", current_node.name, current_node.process_generator)
-        if current_node.process_generator is None:
+        logger.debug("Node %s process generator: %s", current_node.name, context.process_generator)
+        if context.process_generator is None:
             result = current_node.process()
 
             # If the process returned a generator, we need to store it for later
             if isinstance(result, Generator):
-                current_node.process_generator = result
+                context.process_generator = result
                 logger.debug("Node %s returned a generator.", current_node.name)
 
         # We now have a generator, so we need to run it
-        if current_node.process_generator is not None:
+        if context.process_generator is not None:
             try:
                 logger.debug(
                     "Node %s has an active generator, sending scheduled value of type: %s",
@@ -350,9 +352,9 @@ class ExecuteNodeState(State):
                     type(context.scheduled_value),
                 )
                 if isinstance(context.scheduled_value, Exception):
-                    func = current_node.process_generator.throw(context.scheduled_value)
+                    func = context.process_generator.throw(context.scheduled_value)
                 else:
-                    func = current_node.process_generator.send(context.scheduled_value)
+                    func = context.process_generator.send(context.scheduled_value)
 
                 # Once we've passed on the scheduled value, we should clear it out just in case
                 context.scheduled_value = None
@@ -361,7 +363,7 @@ class ExecuteNodeState(State):
             except StopIteration:
                 logger.debug("Node %s generator is done.", current_node.name)
                 # If that was the last generator, clear out the generator and indicate that there is no more work scheduled
-                current_node.process_generator = None
+                context.process_generator = None
                 context.scheduled_value = None
                 return False
             else:
