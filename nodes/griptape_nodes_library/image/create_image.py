@@ -146,10 +146,9 @@ Focus on qualities that will make this the most professional looking photo in th
 
         # Run the agent asynchronously
         result = yield lambda shutdown_event: self._process(agent, prompt, "", shutdown_event)
-        if result.output is None:
-            return
-        self.parameter_output_values["output"] = result.output
-        try_throw_error(result.output)
+        if hasattr(result, "output"):
+            self.parameter_output_values["output"] = result.output
+            try_throw_error(result.output)
         # Reset the agent
         agent._tasks = []
 
