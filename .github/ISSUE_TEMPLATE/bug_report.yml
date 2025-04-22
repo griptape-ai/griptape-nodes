@@ -16,6 +16,7 @@ body:
       label: Engine Version
       description: What version of the Engine are you using? (major.minor.patch or dev branch name)
       placeholder: e.g., 2.3.1 or dev-feature-x
+      value: "N/A"
     validations:
       required: true
 
@@ -25,6 +26,7 @@ body:
       label: Node Libraries Version
       description: What version of Node Libraries are you using? (major.minor.patch or dev branch name)
       placeholder: e.g., 1.4.2 or dev-libraries-2023
+      value: "N/A"
     validations:
       required: true
 
@@ -34,6 +36,7 @@ body:
       label: Editor Version
       description: What version of the Editor are you using? (typically a date)
       placeholder: e.g., 2023-05-15
+      value: "N/A"
     validations:
       required: true
 
