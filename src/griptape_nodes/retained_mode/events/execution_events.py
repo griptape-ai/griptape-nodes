@@ -261,5 +261,6 @@ class NodeFinishProcessEvent(ExecutionPayload):
 @PayloadRegistry.register
 class GriptapeEvent(ExecutionPayload):
     node_name: str
+    parameter_name:str
     type: str
     value: Any

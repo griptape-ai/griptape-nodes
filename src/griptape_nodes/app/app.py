@@ -17,7 +17,6 @@ from griptape.events import (
     EventBus,
     EventListener,
     FinishStructureRunEvent,
-    TextChunkEvent,
 )
 from rich.align import Align
 from rich.console import Console
@@ -36,6 +35,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     GriptapeNodeEvent,
+    ProgressEvent,
     deserialize_event,
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
@@ -101,8 +101,8 @@ def _init_event_listeners() -> None:
 
     EventBus.add_event_listener(
         event_listener=EventListener(
-            on_event=__process_griptape_event,
-            event_types=[FinishStructureRunEvent, TextChunkEvent],
+            on_event=__process_progress_event,
+            event_types=[ProgressEvent],
         )
     )
 
@@ -200,17 +200,12 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
     socket.emit("execution_event", event_json)
 
 
-def __process_griptape_event(gt_event: BaseEvent) -> None:
+def __process_progress_event(gt_event: ProgressEvent) -> None:
     """Process Griptape framework events and send them to the API."""
-    node_name = GriptapeNodes.get_instance().EventManager().current_active_node
+    node_name = gt_event.node_name
     if node_name:
-        if isinstance(gt_event, FinishStructureRunEvent):
-            value = gt_event.to_dict()["output_task_output"]["value"]
-        elif isinstance(gt_event, TextChunkEvent):
-            value = gt_event.to_dict()["token"]
-        else:
-            value = gt_event.to_dict()
-        payload = execution_events.GriptapeEvent(node_name=node_name, type=type(gt_event).__name__, value=value)
+        value = gt_event.value
+        payload = execution_events.GriptapeEvent(node_name=node_name, parameter_name=gt_event.parameter_name, type=type(gt_event).__name__, value=value)
         event_to_emit = ExecutionEvent(payload=payload)
         socket.emit("execution_event", event_to_emit.json())
 

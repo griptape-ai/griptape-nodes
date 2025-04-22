@@ -504,3 +504,10 @@ class GriptapeNodeEvent(GtBaseEvent):
 @dataclass
 class ExecutionGriptapeNodeEvent(GtBaseEvent):
     wrapped_event: ExecutionEvent = field()
+
+
+@dataclass
+class ProgressEvent(GtBaseEvent):
+    value: Any = field()
+    node_name: str = field()
+    parameter_name: str = field()

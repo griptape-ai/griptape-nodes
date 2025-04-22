@@ -4,7 +4,7 @@ from collections.abc import Callable, Generator
 from enum import StrEnum, auto
 from typing import Any, Self, TypeVar
 
-from griptape.events import BaseEvent
+from griptape.events import BaseEvent, EventBus
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
@@ -18,6 +18,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
+from griptape_nodes.retained_mode.events.base_events import ProgressEvent
 from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
 
 logger = logging.getLogger("griptape_nodes")
@@ -418,6 +419,26 @@ class BaseNode(ABC):
 
     def set_config_value(self, service: str, value: str, new_value: str) -> None:
         self.config_manager.set_config_value(f"nodes.{service}.{value}", new_value)
+
+    def append_value_to_parameter(self, parameter_name:str, value:Any) -> None:
+        # Add the value to the node
+        if parameter_name in self.parameter_output_values:
+            try:
+                self.parameter_output_values[parameter_name] = self.parameter_output_values[parameter_name] + value
+            except TypeError:
+                try:
+                    self.parameter_output_values[parameter_name].append(value)
+                except Exception as e:
+                    msg = f"Value is not appendable to parameter '{parameter_name}'"
+                    raise ValueError(msg) from e
+        else:
+            self.parameter_output_values[parameter_name] = value
+        # Publish the event up!
+        EventBus.publish_event(ProgressEvent(value=value, node_name=self.name, parameter_name=parameter_name))
+
+    def publish_update_to_parameter(self, parameter_name:str, value:Any) -> None:
+        self.parameter_output_values[parameter_name] = value
+        EventBus.publish_event(ProgressEvent(value=value, node_name=self.name, parameter_name=parameter_name))
 
 
 class ControlNode(BaseNode):
