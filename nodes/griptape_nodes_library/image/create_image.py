@@ -165,13 +165,10 @@ Focus on qualities that will make this the most professional looking photo in th
         agent.add_task(PromptImageGenerationTask(**kwargs))
 
         # Run the agent asynchronously
-        self.append_value_to_parameter("logs", "Starting processing first image..\n")
+        self.append_value_to_parameter("logs", "Starting processing image..\n")
         yield lambda: self._process(agent, prompt)
-        self.append_value_to_parameter("logs", "Finished processing first image.\n")
+        self.append_value_to_parameter("logs", "Finished processing image.\n")
         # Run it again.
-        self.append_value_to_parameter("logs", "Starting processing second image.\n")
-        yield lambda: self._process(agent, prompt)
-        self.append_value_to_parameter("logs", "Finished processing second image.\n")
 
         try_throw_error(agent.output)
         # Reset the agent
