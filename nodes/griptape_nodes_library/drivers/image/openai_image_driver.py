@@ -1,6 +1,6 @@
 from griptape.drivers.image_generation.openai import OpenAiImageGenerationDriver
 
-from nodes.griptape_nodes_library.drivers.image.base_image_driver import BaseImageDriver
+from griptape_nodes_library.drivers.image.base_image_driver import BaseImageDriver
 
 DRIVER_DICT = {
     "config": {
