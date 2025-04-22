@@ -21,6 +21,16 @@ class TestGriptapeCloudImageGenerationNode:
 
         assert parameters == [
             {
+                "input_types": [
+                    "Image Generation Driver",
+                ],
+                "output_type": "Image Generation Driver",
+                "type": "Image Generation Driver",
+                "default_value": None,
+                "name": "image_generation_driver",
+                "tooltip": "",
+            },
+            {
                 "name": "model",
                 "input_types": ["str"],
                 "output_type": "str",
@@ -51,16 +61,6 @@ class TestGriptapeCloudImageGenerationNode:
                 "type": "str",
                 "default_value": "1024x1024",
                 "tooltip": "Image Size",
-            },
-            {
-                "input_types": [
-                    "Image Generation Driver",
-                ],
-                "output_type": "Image Generation Driver",
-                "type": "Image Generation Driver",
-                "default_value": None,
-                "name": "image_generation_driver",
-                "tooltip": "",
             },
         ]
 
