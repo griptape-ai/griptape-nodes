@@ -492,6 +492,8 @@ class ObjectManager:
         context_mgr = GriptapeNodes.ContextManager()
         while context_mgr.has_current_flow():
             while context_mgr.has_current_node():
+                while context_mgr.has_current_element():
+                    context_mgr.pop_element()
                 context_mgr.pop_node()
             context_mgr.pop_flow()
 
