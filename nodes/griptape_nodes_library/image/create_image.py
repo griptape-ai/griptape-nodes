@@ -63,7 +63,7 @@ class GenerateImage(ControlNode):
                 input_types=["bool"],
                 type="bool",
                 tooltip="None",
-                default_value=True,
+                default_value=False,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
