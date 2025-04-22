@@ -219,6 +219,12 @@ class ControlFlowResolvedEvent(ExecutionPayload):
 
 @dataclass
 @PayloadRegistry.register
+class ControlFlowCancelledEvent(ExecutionPayload):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
 class NodeResolvedEvent(ExecutionPayload):
     node_name: str
     parameter_output_values: dict
@@ -261,5 +267,6 @@ class NodeFinishProcessEvent(ExecutionPayload):
 @PayloadRegistry.register
 class GriptapeEvent(ExecutionPayload):
     node_name: str
+    parameter_name: str
     type: str
     value: Any

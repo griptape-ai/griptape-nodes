@@ -27,6 +27,9 @@ class CreateNodeRequest(RequestPayload):
     resolution: str = NodeResolutionState.UNRESOLVED.value
     # initial_setup prevents unnecessary work when we are loading a workflow from a file.
     initial_setup: bool = False
+    # When True, this Flow will be pushed as the current Node within the Current Context.
+    # TODO(griptape): Remove the None once the lynchpin commit on editor side is in place (issue #454 in editor repo): https://github.com/griptape-ai/griptape-nodes/issues/530
+    set_as_new_context: bool | None = None
 
 
 @dataclass
@@ -44,7 +47,8 @@ class CreateNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class DeleteNodeRequest(RequestPayload):
-    node_name: str
+    # If None is passed, assumes we're using the Node in the Current Context.
+    node_name: str | None = None
 
 
 @dataclass
@@ -62,7 +66,8 @@ class DeleteNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetNodeResolutionStateRequest(RequestPayload):
-    node_name: str
+    # If None is passed, assumes we're using the Node in the Current Context
+    node_name: str | None = None
 
 
 @dataclass
@@ -80,7 +85,8 @@ class GetNodeResolutionStateResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class ListParametersOnNodeRequest(RequestPayload):
-    node_name: str
+    # If None is passed, assumes we're using the Node in the Current Context
+    node_name: str | None = None
 
 
 @dataclass
@@ -98,7 +104,8 @@ class ListParametersOnNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetNodeMetadataRequest(RequestPayload):
-    node_name: str
+    # If None is passed, assumes we're using the Node in the Current Context
+    node_name: str | None = None
 
 
 @dataclass
@@ -116,8 +123,9 @@ class GetNodeMetadataResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class SetNodeMetadataRequest(RequestPayload):
-    node_name: str
     metadata: dict
+    # If None is passed, assumes we're using the Node in the Current Context
+    node_name: str | None = None
 
 
 @dataclass
@@ -137,7 +145,8 @@ class SetNodeMetadataResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetAllNodeInfoRequest(RequestPayload):
-    node_name: str
+    # If None is passed, assumes we're using the Node in the Current Context
+    node_name: str | None = None
 
 
 @dataclass

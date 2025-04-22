@@ -1,3 +1,4 @@
+from griptape.artifacts import BaseArtifact
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Structure
@@ -16,7 +17,7 @@ DEFAULT_QUALITY = "hd"
 DEFAULT_STYLE = "natural"
 
 
-class CreateImage(ControlNode):
+class GenerateImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -45,6 +46,11 @@ class CreateImage(ControlNode):
             )
         )
 
+        def validate_prompt(_param: Parameter, value: str) -> None:
+            if not value:
+                msg = "Prompt is required for image generation."
+                raise ValueError(msg)
+
         self.add_parameter(
             Parameter(
                 name="prompt",
@@ -55,6 +61,7 @@ class CreateImage(ControlNode):
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"multiline": True, "placeholder_text": "Enter your image generation prompt here."},
+                validators=[validate_prompt],
             )
         )
         self.add_parameter(
@@ -75,6 +82,16 @@ class CreateImage(ControlNode):
                 type="ImageArtifact",
                 tooltip="None",
                 default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="logs",
+                type="str",
+                tooltip="None",
+                default_value="Node hasn't begun yet",
+                ui_options={"multiline": True},
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
@@ -100,7 +117,6 @@ class CreateImage(ControlNode):
             prompt_driver = GriptapeCloudPromptDriver(
                 model="gpt-4o",
                 api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
-                stream=True,
             )
             agent = Agent(prompt_driver=prompt_driver)
         else:
@@ -110,6 +126,7 @@ class CreateImage(ControlNode):
 
         if enhance_prompt:
             logger.info("Enhancing prompt...")
+            self.append_value_to_parameter("logs", "Enhancing prompt...\n")
             # agent.run is a blocking operation that will hold up the rest of the engine.
             # By using `yield lambda`, the engine can run this in the background and resume when it's done.
             result = yield lambda: agent.run(
@@ -125,9 +142,11 @@ Focus on qualities that will make this the most professional looking photo in th
                     prompt,
                 ]
             )
+            self.append_value_to_parameter("logs", "Finished enhancing prompt...\n")
             prompt = result.output
         else:
             logger.info("Prompt enhancement disabled.")
+            self.append_value_to_parameter("logs", "Prompt enhancement disabled.\n")
         # Initialize driver kwargs with required parameters
         kwargs = {}
 
@@ -146,9 +165,16 @@ Focus on qualities that will make this the most professional looking photo in th
         agent.add_task(PromptImageGenerationTask(**kwargs))
 
         # Run the agent asynchronously
-        result = yield lambda: agent.run(prompt)
+        self.append_value_to_parameter("logs", "Starting processing image..\n")
+        yield lambda: self._process(agent, prompt)
+        self.append_value_to_parameter("logs", "Finished processing image.\n")
+        # Run it again.
 
-        self.parameter_output_values["output"] = result.output
         try_throw_error(agent.output)
         # Reset the agent
         agent._tasks = []
+
+    def _process(self, agent: Agent, prompt: BaseArtifact | str) -> Structure:
+        result = agent.run(prompt)
+        self.publish_update_to_parameter("output", result.output)
+        return result

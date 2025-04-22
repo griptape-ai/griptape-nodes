@@ -28,7 +28,7 @@ class BaseWebSearchDriver(DataNode):
         )
 
 
-class DuckDuckGoWebSearchDriver(BaseWebSearchDriver):
+class DuckDuckGo(BaseWebSearchDriver):
     def process(self) -> None:
         # Create the tool
         driver = GtDuckDuckGoWebSearchDriver()

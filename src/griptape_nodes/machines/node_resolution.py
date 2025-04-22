@@ -37,12 +37,14 @@ class ResolutionContext:
     focus_stack: list[BaseNode]
     paused: bool
     scheduled_value: Any | None
+    process_generator: Generator | None
 
     def __init__(self, flow: ControlFlow) -> None:
         self.flow = flow
         self.focus_stack = []
         self.paused = False
         self.scheduled_value = None
+        self.process_generator = None
 
 
 class InitializeSpotlightState(State):
@@ -215,15 +217,21 @@ class ExecuteNodeState(State):
                 logger.info("Pausing Node %s to run background work", current_node.name)
                 return None
         except Exception as e:
+            logger.error("Error processing node '%s': %s", current_node.name, e)
             msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
             current_node.state = NodeResolutionState.UNRESOLVED
-            current_node.process_generator = None
+            context.process_generator = None
             context.flow.cancel_flow_run()
+
+            EventBus.publish_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
+                )
+            )
             raise RuntimeError(msg) from e
 
         logger.info("Node %s finished processing.", current_node.name)
 
-        # To set the event manager without circular import errors
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
@@ -242,17 +250,6 @@ class ExecuteNodeState(State):
                 TypeValidator.safe_serialize(current_node.parameter_output_values),
             )
 
-        # Output values should already be saved!
-        EventBus.publish_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(
-                    payload=NodeResolvedEvent(
-                        node_name=current_node.name,
-                        parameter_output_values=TypeValidator.safe_serialize(current_node.parameter_output_values),
-                    )
-                )
-            )
-        )
         for parameter_name, value in current_node.parameter_output_values.items():
             parameter = current_node.get_parameter_by_name(parameter_name)
             if parameter is None:
@@ -280,13 +277,26 @@ class ExecuteNodeState(State):
                     SetParameterValueRequest(
                         parameter_name=target_parameter.name,
                         node_name=target_node.name,
-                        value=value,
+                        value=TypeValidator.safe_serialize(value),
                         data_type=parameter.output_type,
                     )
                 )
+
+        # Output values should already be saved!
+        EventBus.publish_event(
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(
+                    payload=NodeResolvedEvent(
+                        node_name=current_node.name,
+                        parameter_output_values=TypeValidator.safe_serialize(current_node.parameter_output_values),
+                    )
+                )
+            )
+        )
         context.focus_stack.pop()
         if len(context.focus_stack):
             return EvaluateParameterState
+
         return CompleteState
 
     @staticmethod
@@ -311,32 +321,41 @@ class ExecuteNodeState(State):
 
             Stores the result of the future in the node's context, and publishes an event to resume the flow.
             """
-            context.scheduled_value = future.result()
-            EventBus.publish_event(
-                ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
+            try:
+                context.scheduled_value = future.result()
+            except Exception as e:
+                logger.debug("Error in future: %s", e)
+                context.scheduled_value = e
+            finally:
+                EventBus.publish_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
+                    )
                 )
-            )
 
         # Only start the processing if we don't already have a generator
-        logger.debug("Node %s process generator: %s", current_node.name, current_node.process_generator)
-        if current_node.process_generator is None:
+        logger.debug("Node %s process generator: %s", current_node.name, context.process_generator)
+        if context.process_generator is None:
             result = current_node.process()
 
             # If the process returned a generator, we need to store it for later
             if isinstance(result, Generator):
-                current_node.process_generator = result
+                context.process_generator = result
                 logger.debug("Node %s returned a generator.", current_node.name)
 
         # We now have a generator, so we need to run it
-        if current_node.process_generator is not None:
+        if context.process_generator is not None:
             try:
                 logger.debug(
-                    "Node %s has an active generator, sending scheduled value. Scheduled value is None: %s",
+                    "Node %s has an active generator, sending scheduled value of type: %s",
                     current_node.name,
-                    context.scheduled_value is None,
+                    type(context.scheduled_value),
                 )
-                func = current_node.process_generator.send(context.scheduled_value)
+                if isinstance(context.scheduled_value, Exception):
+                    func = context.process_generator.throw(context.scheduled_value)
+                else:
+                    func = context.process_generator.send(context.scheduled_value)
+
                 # Once we've passed on the scheduled value, we should clear it out just in case
                 context.scheduled_value = None
                 future = ExecuteNodeState.executor.submit(with_contextvars(func))
@@ -344,7 +363,7 @@ class ExecuteNodeState(State):
             except StopIteration:
                 logger.debug("Node %s generator is done.", current_node.name)
                 # If that was the last generator, clear out the generator and indicate that there is no more work scheduled
-                current_node.process_generator = None
+                context.process_generator = None
                 context.scheduled_value = None
                 return False
             else:

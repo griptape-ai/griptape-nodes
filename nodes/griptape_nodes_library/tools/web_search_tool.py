@@ -5,7 +5,7 @@ from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes_library.tools.base_tool import BaseTool
 
 
-class WebSearchTool(BaseTool):
+class WebSearch(BaseTool):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.add_parameter(

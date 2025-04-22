@@ -1,0 +1,153 @@
+name: Bug Report
+description: Report a bug to help us improve the product
+type: "Bug"
+projects: ["griptape-ai/2"]
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # Bug Report
+        Thank you for taking the time to fill out this bug report.
+        Please provide as much information as possible to help us resolve the issue quickly.
+
+  - type: input
+    id: engine-version
+    attributes:
+      label: Engine Version
+      description: What version of the Engine are you using? (version shown when starting the engine or branch name for dev builds)
+      placeholder: e.g., 2.3.1 or dev-feature-x
+      value: "N/A"
+    validations:
+      required: true
+
+  - type: input
+    id: node-libraries
+    attributes:
+      label: Node Libraries Version
+      description: What version of Node Libraries are you using? (version shown in the application or branch name for dev builds)
+      placeholder: e.g., 1.4.2 or dev-libraries-2023
+      value: "N/A"
+    validations:
+      required: true
+
+  - type: input
+    id: editor-version
+    attributes:
+      label: Editor Version
+      description: What version of the Editor are you using? (typically a date)
+      placeholder: e.g., 2023-05-15
+      value: "N/A"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue-component
+    attributes:
+      label: Component
+      description: Which component is this issue related to?
+      options:
+        - "config"
+        - "editor"
+        - "engine"
+        - "ftue"
+        - "installer"
+        - "node libraries"
+        - "nodes"
+        - "parameters"
+        - "retained mode"
+        - "save/load"
+        - "secrets"
+        - "settings"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Bug Severity
+      description: How severe is this bug?
+      options:
+        - "I don't know (needs triage)"
+        - "NEEDS MORE INFO"
+        - "Must Fix: Blocking issue that prevents product shipping"
+        - "Prioritized: Important issue that should be fixed before release"
+        - "Has Workaround: Issue can be worked around but should be fixed"
+        - "Not Prioritized: Minor issue that can be addressed later"
+      default: 0
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description and Reproduction Steps
+      description: Please describe the bug and provide step-by-step instructions to reproduce it
+      placeholder: |
+        What happened? What did you expect to happen?
+
+        Steps to reproduce:
+        1. Go to '...'
+        2. Click on '...'
+        3. Scroll down to '...'
+        4. See the error
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround
+      description: If applicable, provide detailed steps a user would need to follow to work around this issue
+      placeholder: |
+        Detailed steps to work around the issue:
+        1. Instead of clicking X, navigate to menu Y
+        2. Use alternative function Z
+        3. etc.
+    validations:
+      required: false
+
+  - type: textarea
+    id: reproduction-script
+    attributes:
+      label: Reproduction Script
+      description: If applicable, provide any scripts that can reproduce the issue
+      placeholder: Paste your script here or describe how to create a reproduction
+    validations:
+      required: false
+      
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Log Output
+      description: Please copy and paste any relevant log output. This will be automatically formatted into code.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots to help explain your problem
+      placeholder: Drag and drop images here
+    validations:
+      required: false
+
+  - type: input
+    id: video
+    attributes:
+      label: Video Link
+      description: If applicable, provide a link to a video demonstrating the issue
+      placeholder: e.g., https://www.loom.com/share/your-video-id
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here
+      placeholder: Any additional information that might be helpful
+    validations:
+      required: false

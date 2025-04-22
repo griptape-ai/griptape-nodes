@@ -1,9 +1,10 @@
 from griptape.drivers.prompt.griptape_cloud_prompt_driver import GriptapeCloudPromptDriver
+from griptape.structures import Structure
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -77,7 +78,7 @@ class DescribeImage(ControlNode):
             return exceptions
         return exceptions if exceptions else None
 
-    def process(self) -> None:
+    def process(self) -> AsyncResult[Structure]:
         # Get the parameters from the node
         params = self.parameter_values
         agent = params.get("agent", None)
@@ -102,6 +103,6 @@ class DescribeImage(ControlNode):
             return
 
         # Run the agent
-        result = agent.run([prompt, image_artifact])
-        self.parameter_output_values["output"] = result.output.value
+        yield lambda: agent.run([prompt, image_artifact])
+        self.parameter_output_values["output"] = agent.output.value
         try_throw_error(agent.output)

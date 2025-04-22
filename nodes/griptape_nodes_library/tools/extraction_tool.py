@@ -9,7 +9,7 @@ API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 
 
-class ExtractionTool(BaseTool):
+class StructuredDataExtractor(BaseTool):
     def process(self) -> None:
         prompt_driver = self.parameter_values.get("prompt_driver", None)
         extraction_type = self.parameter_values.get("extraction_type", "json")

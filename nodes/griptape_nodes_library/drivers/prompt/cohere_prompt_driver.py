@@ -8,7 +8,7 @@ API_KEY_ENV_VAR = "COHERE_API_KEY"
 SERVICE = "Cohere"
 
 
-class CoherePromptDriver(BasePromptDriver):
+class CoherePrompt(BasePromptDriver):
     """Node for Cohere Prompt Driver.
 
     This node creates a Cohere prompt driver and outputs its configuration.

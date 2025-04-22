@@ -5,7 +5,7 @@ from griptape.tools import WebScraperTool as GtWebScraperTool
 from griptape_nodes_library.tools.base_tool import BaseTool
 
 
-class WebScraperTool(BaseTool):
+class WebScraper(BaseTool):
     def __init__(
         self,
         name: str,

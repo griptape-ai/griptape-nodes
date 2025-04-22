@@ -4,7 +4,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class CreateMultilineText(DataNode):
+class TextInput(DataNode):
     def __init__(
         self,
         name: str,

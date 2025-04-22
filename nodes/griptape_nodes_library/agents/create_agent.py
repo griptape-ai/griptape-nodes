@@ -1,5 +1,4 @@
-from griptape.events import TextChunkEvent
-from griptape.structures import Agent
+from griptape.structures import Agent as gtAgent
 from griptape.utils import Stream
 
 from griptape_nodes.exe_types.node_types import AsyncResult
@@ -11,7 +10,7 @@ API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 
 
-class CreateAgent(BaseAgent):
+class Agent(BaseAgent):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -33,7 +32,7 @@ class CreateAgent(BaseAgent):
 
     def process(
         self,
-    ) -> AsyncResult[str]:
+    ) -> AsyncResult[None]:
         # Get input values
         params = self.parameter_values
         prompt_driver = params.get("prompt_driver", self.get_default_prompt_driver())
@@ -55,9 +54,9 @@ class CreateAgent(BaseAgent):
         if not agent_dict:
             logger.debug("No agent input, creating one")
             # Create the Agent
-            agent = Agent(**kwargs)
+            agent = gtAgent(**kwargs)
         else:
-            agent = Agent.from_dict(agent_dict)
+            agent = gtAgent.from_dict(agent_dict)
         # Otherwise, append rules and tools to the existing agent
 
         prompt = params.get("prompt", None)
@@ -65,16 +64,17 @@ class CreateAgent(BaseAgent):
         if prompt:
             # Check and see if the prompt driver is a stream driver
             if self.is_stream(agent):
-                full_output = yield (
-                    lambda: "".join(
-                        artifact.value for artifact in Stream(agent, event_types=[TextChunkEvent]).run(prompt)
-                    )
-                )
+                yield (lambda: self._process(agent, prompt))
             else:
                 # Run the agent
                 full_output = yield lambda: agent.run(prompt).output.value
-            self.parameter_output_values["output"] = full_output
+                self.parameter_output_values["output"] = full_output
         else:
             self.parameter_output_values["output"] = "Agent Created"
 
         self.parameter_output_values["agent"] = agent.to_dict()
+
+    def _process(self, agent: gtAgent, prompt: str) -> None:
+        stream = Stream(agent)
+        for artifact in stream.run(prompt):
+            self.append_value_to_parameter(parameter_name="output", value=artifact.value)

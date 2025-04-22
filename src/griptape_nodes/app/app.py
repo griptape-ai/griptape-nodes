@@ -13,11 +13,8 @@ from urllib.parse import urljoin
 import httpx
 from dotenv import get_key
 from griptape.events import (
-    BaseEvent,
     EventBus,
     EventListener,
-    FinishStructureRunEvent,
-    TextChunkEvent,
 )
 from rich.align import Align
 from rich.console import Console
@@ -36,6 +33,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     GriptapeNodeEvent,
+    ProgressEvent,
     deserialize_event,
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
@@ -101,8 +99,8 @@ def _init_event_listeners() -> None:
 
     EventBus.add_event_listener(
         event_listener=EventListener(
-            on_event=__process_griptape_event,
-            event_types=[FinishStructureRunEvent, TextChunkEvent],
+            on_event=__process_progress_event,
+            event_types=[ProgressEvent],
         )
     )
 
@@ -144,14 +142,15 @@ def _listen_for_api_events() -> None:
                                 # but we don't have a proper EventRequest for it yet.
                                 if event.get("request_type") == "Heartbeat":
                                     session_id = GriptapeNodes.get_session_id()
-                                    socket.heartbeat(session_id=session_id, request=event)
+                                    socket.heartbeat(session_id=session_id, request=event["request"])
                                 else:
                                     __process_api_event(event)
                             except Exception:
                                 logger.exception("Error processing event, skipping.")
 
-        except Exception:
-            logger.error("Error while listening for events. Retrying in 2 seconds.")
+        except Exception as e:
+            details = f"Error while listening for events. Retrying in 2 seconds.: {e}"
+            logger.error(details)
             sleep(2)
             init = False
 
@@ -167,6 +166,10 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
     else:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."
         raise TypeError(msg) from None
+
+    # Don't send events over the wire that don't have a request_id set (e.g. engine-internal events)
+    if result_event.request.request_id is None:
+        return
     event_json = result_event.json()
     socket.emit(dest_socket, event_json)
 
@@ -182,7 +185,8 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
         node_name = result_event.payload.node_name
         logger.info("Resuming Node %s", node_name)
         flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
-        event_queue.put(EventRequest(request=execution_events.SingleExecutionStepRequest(flow_name=flow_name)))
+        request = EventRequest(request=execution_events.SingleExecutionStepRequest(flow_name=flow_name))
+        event_queue.put(request)
 
     if type(result_event.payload).__name__ == "NodeFinishProcessEvent":
         if result_event.payload.node_name != GriptapeNodes.get_instance().EventManager().current_active_node:
@@ -193,17 +197,14 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
     socket.emit("execution_event", event_json)
 
 
-def __process_griptape_event(gt_event: BaseEvent) -> None:
+def __process_progress_event(gt_event: ProgressEvent) -> None:
     """Process Griptape framework events and send them to the API."""
-    node_name = GriptapeNodes.get_instance().EventManager().current_active_node
+    node_name = gt_event.node_name
     if node_name:
-        if isinstance(gt_event, FinishStructureRunEvent):
-            value = gt_event.to_dict()["output_task_output"]["value"]
-        elif isinstance(gt_event, TextChunkEvent):
-            value = gt_event.to_dict()["token"]
-        else:
-            value = gt_event.to_dict()
-        payload = execution_events.GriptapeEvent(node_name=node_name, type=type(gt_event).__name__, value=value)
+        value = gt_event.value
+        payload = execution_events.GriptapeEvent(
+            node_name=node_name, parameter_name=gt_event.parameter_name, type=type(gt_event).__name__, value=value
+        )
         event_to_emit = ExecutionEvent(payload=payload)
         socket.emit("execution_event", event_to_emit.json())
 
@@ -298,7 +299,7 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
     message = Panel(
         Align.center(
             f"[bold green]Engine is ready to receive events[/bold green]\n"
-            f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link][/bold blue] to access the IDE",
+            f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link] to access the Workflow Editor[/bold blue]",
             vertical="middle",
         ),
         title="🚀 Griptape Nodes Engine Started",

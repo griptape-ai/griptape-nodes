@@ -4,11 +4,14 @@ import logging
 from queue import Queue
 from typing import TYPE_CHECKING
 
+from griptape.events import EventBus
+
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState, StartNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
-from griptape_nodes.retained_mode.events.execution_events import StartFlowRequest
+from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+from griptape_nodes.retained_mode.events.execution_events import ControlFlowCancelledEvent, StartFlowRequest
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
@@ -80,7 +83,7 @@ class ControlFlow:
 
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
-            errormsg = "Flow already has been started. Cannot start flow when it has already been started."
+            errormsg = "This workflow is already in progress. Please wait for the current process to finish before starting again."
             raise Exception(errormsg)
 
         if start_node is None:
@@ -108,7 +111,7 @@ class ControlFlow:
         # Set that we are only working on one node right now! no other stepping allowed
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
-            errormsg = f"Flow already has been started. Cannot resolve node {node.name} while existing flow has begun."
+            errormsg = f"This workflow is already in progress. Please wait for the current process to finish before starting {node.name} again."
             raise Exception(errormsg)
         self.single_node_resolution = True
         # Get the node resolution machine for the current flow!
@@ -196,6 +199,11 @@ class ControlFlow:
         # Reset control flow machine
         self.control_flow_machine = ControlFlowMachine(self)
         self.single_node_resolution = False
+        logger.debug("Cancelling flow run")
+
+        EventBus.publish_event(
+            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent()))
+        )
 
     def unresolve_whole_flow(self) -> None:
         for node in self.nodes.values():
