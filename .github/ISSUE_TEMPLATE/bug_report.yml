@@ -1,6 +1,6 @@
 name: Bug Report
 description: Report a bug to help us improve the product
-title: ""
+title: "[REPORT]"
 type: "Bug"
 projects: ["griptape-ai/2"]
 body:
