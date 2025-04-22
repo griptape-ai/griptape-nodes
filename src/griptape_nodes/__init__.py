@@ -5,6 +5,7 @@ import argparse
 import importlib.metadata
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -200,12 +201,7 @@ def _install_latest_release(*, run_after_install: bool = False) -> None:
     console.print("[bold green]Update complete![/bold green]")
 
     if run_after_install:
-        argv: list[str] = [sys.executable, *sys.argv]
-
-        sys.stdout.flush()
-        sys.stderr.flush()
-
-        os.execv(sys.executable, argv)  # noqa: S606
+        __restart()
     sys.exit(0)
 
 
@@ -379,6 +375,23 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)
+
+
+def __restart() -> None:
+    """Atomically replace the current process with a fresh copy of itself."""
+    exe: str = sys.executable
+
+    if platform.system() == "Windows":
+        argv0 = "py" if Path(exe).name.startswith("python") else "python"
+    else:
+        argv0 = exe
+
+    argv = [argv0, *sys.argv[1:]]
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    os.execv(exe, argv)  # noqa: S606
 
 
 def __init_system_config() -> None:
