@@ -136,10 +136,13 @@ Focus on qualities that will make this the most professional looking photo in th
         if driver_val:
             driver = driver_val
         else:
+            api_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
             driver = GriptapeCloudImageGenerationDriver(
                 model=params.get("model", DEFAULT_MODEL),
-                api_key=self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
+                api_key=api_key,
             )
+            print(f"DEFAULT CONFIG: {api_key}")
+
         kwargs["image_generation_driver"] = driver
 
         # Add the actual image gen *task

@@ -1,13 +1,13 @@
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.drivers.base_driver import BaseDriver
 
 DRIVER_DICT = {
     "config": {
-        "service": "Griptape",
-        "api_key": "GT_CLOUD_API_KEY",
+        "service_key_field": [("Griptape", "GT_CLOUD_API_KEY", "api_key")],
         "driver": GriptapeCloudImageGenerationDriver,
     },
     "models": {
@@ -43,16 +43,13 @@ class BaseImageDriver(BaseDriver):
     def setup(self) -> None:
         # Extract configuration values
         self.config = self.driver_dict.get("config", {})
-        self.service = self.config.get("service", "")
-        self.api_key = self.config.get("api_key", "")
+        self.service_key_mappings = self.config.get("service_key_field", [])
         self.driver = self.config.get("driver")
 
-        # Convert dict_keys object to a list to make it indexable
+        # Hard assumtion that first entry is default (yes, this is reliably ordered since 3.7)
         self.model_options = list(self.driver_dict.get("models", {}).keys())
-
         self.model_default = self.model_options[0]
 
-        # Access param config correctly
         model_params = self.driver_dict["models"][self.model_default]["params"]
         self.style_options = model_params["style"]["options"]
         self.style_default = model_params["style"]["default"]
@@ -61,12 +58,6 @@ class BaseImageDriver(BaseDriver):
         self.size_options = model_params["size"]["options"]
         self.size_default = model_params["size"]["default"]
 
-        # Options
-        image_model_options = Options(choices=self.model_options)
-        image_style_options = Options(choices=self.style_options)
-        image_quality_options = Options(choices=self.quality_options)
-        image_size_options = Options(choices=self.size_options)
-
         self.add_parameter(
             Parameter(
                 name="model",
@@ -74,7 +65,7 @@ class BaseImageDriver(BaseDriver):
                 default_value=self.model_default,
                 tooltip="Choose a model",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={image_model_options},
+                traits={Options(choices=self.model_options)},
             )
         )
 
@@ -84,7 +75,7 @@ class BaseImageDriver(BaseDriver):
                 type="str",
                 default_value=self.quality_default,
                 tooltip="Image Quality",
-                traits={image_quality_options},
+                traits={Options(choices=self.quality_options)},
             )
         )
 
@@ -94,7 +85,7 @@ class BaseImageDriver(BaseDriver):
                 type="str",
                 default_value=self.style_default,
                 tooltip="Image Style",
-                traits={image_style_options},
+                traits={Options(choices=self.style_options)},
             )
         )
 
@@ -104,7 +95,7 @@ class BaseImageDriver(BaseDriver):
                 type="str",
                 default_value=self.size_default,
                 tooltip="Image Size",
-                traits={image_size_options},
+                traits={Options(choices=self.size_options)},
             )
         )
 
@@ -165,20 +156,19 @@ class BaseImageDriver(BaseDriver):
             self.update_parameters_from_model(value)
 
     def process(self) -> None:
-        """Process the driver configuration and create the driver instance.
-
-        This method will collect all the necessary parameters and create
-        the appropriate driver instance based on the configuration.
-        """
+        """Process the driver configuration and create the driver instance."""
         params = self.parameter_values
         current_model = params.get("model", self.model_default)
         model_params = self.driver_dict["models"][current_model]["params"]
 
-        # Start with all config entries as kwargs
-        kwargs = {key: value for key, value in self.config.items() if key not in ["driver", "service", "api_key"]}
+        # Start with config entries as kwargs (excluding special keys)
+        kwargs = {key: value for key, value in self.config.items() if key not in ["driver", "service_key_field"]}
 
-        kwargs["api_key"] = self.get_config_value(service=self.service, value=self.api_key)
+        # Add credentials from the service_key_field mappings
+        for service, config_key, param_name in self.service_key_mappings:
+            kwargs[param_name] = self.get_config_value(service=service, value=config_key)
 
+        # Add model-specific parameters
         kwargs["model"] = current_model
         kwargs["image_size"] = params.get("size", model_params["size"]["default"])
 
@@ -189,4 +179,5 @@ class BaseImageDriver(BaseDriver):
         if not model_params.get("quality", {}).get("hide", False):
             kwargs["quality"] = params.get("quality", model_params["quality"]["default"])
 
+        logger.info(f"ImageDriver final kwargs = {kwargs}")
         self.parameter_output_values["image_generation_driver"] = self.driver(**kwargs)

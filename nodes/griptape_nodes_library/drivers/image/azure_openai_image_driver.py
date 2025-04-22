@@ -1,26 +1,29 @@
-from griptape.drivers.image_generation.azure_openai_image_generation_driver import (
-    AzureOpenAiImageGenerationDriver as GtAzureOpenAiImageGenerationDriver,
-)
+from griptape.drivers.image_generation.azure_openai_image_generation_driver import AzureOpenAiImageGenerationDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes_library.drivers.image.base_image_driver import BaseImageDriver
+from griptape_nodes_library.drivers.image.base_image_driver import DRIVER_DICT, BaseImageDriver
 
-# Define the driver dictionary with Azure-specific configuration
-DRIVER_DICT = {
-    "config": {
-        "service": "Microsoft Azure",
-        "api_key": "AZURE_OPENAI_DALL_E_3_API_KEY",
-        "azure_endpoint": "AZURE_OPENAI_DALL_E_3_ENDPOINT",
-        "driver": GtAzureOpenAiImageGenerationDriver,
-    }
+# AZURE DICT OVERRIDES
+AZURE_DICT = DRIVER_DICT.copy()
+AZURE_DICT["config"] = {
+    "service_key_field": [
+        ("Microsoft Azure", "AZURE_OPENAI_DALL_E_3_API_KEY", "api_key"),
+        ("Microsoft Azure", "AZURE_OPENAI_DALL_E_3_DEPLOYMENT_ID", "azure_deployment"),
+        ("Microsoft Azure", "AZURE_OPENAI_DALL_E_3_ENDPOINT", "azure_endpoint"),
+    ],
+    "driver": AzureOpenAiImageGenerationDriver,
 }
+
+# AZURE DICT APPENDS - this is why we imported DRIVER_DICT, to allow appends instead of only overrides
+AZURE_DICT["models"]["dall-e-3"]["params"]["azure_deployment"] = {"default": "dall-e-3"}
+AZURE_DICT["models"]["dall-e-2"]["params"]["azure_deployment"] = {"default": "dall-e-2"}
 
 
 class AzureOpenAiImage(BaseImageDriver):
     """Node for Azure OpenAI Image Generation Driver."""
 
     def __init__(self, **kwargs) -> None:
-        super().__init__(driver_dict=DRIVER_DICT, **kwargs)
+        super().__init__(driver_dict=AZURE_DICT, **kwargs)
         self.add_parameter(
             Parameter(
                 name="azure_deployment",
