@@ -144,6 +144,11 @@ class ConfigManager:
             logger.error("Error validating config file: %s", e)
             self.user_config = Settings().model_dump()
 
+    def reset_user_config(self) -> None:
+        """Reset the user configuration to the default values."""
+        USER_CONFIG_PATH.write_text(json.dumps({}, indent=2))
+        self.load_user_config()
+
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # We want to ensure that all environment variables from here are pre-filled in the secrets manager.
         env_var_names = self.gather_env_var_names()
