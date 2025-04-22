@@ -92,7 +92,7 @@ class GenerateImage(ControlNode):
                 tooltip="None",
                 default_value="Node hasn't begun yet",
                 ui_options={"multiline": True},
-                allowed_modes={ParameterMode.PROPERTY},
+                allowed_modes={ParameterMode.OUTPUT},
             )
         )
 
