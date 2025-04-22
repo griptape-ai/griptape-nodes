@@ -78,7 +78,7 @@ class Agent(BaseAgent):
 
         self.parameter_output_values["agent"] = agent.to_dict()
 
-    def _process(self, agent: Agent, prompt: str, shutdown_event: threading.Event) -> str:
+    def _process(self, agent: gtAgent, prompt: str, shutdown_event: threading.Event) -> str:
         # Check if the event is already set before starting
         if shutdown_event.is_set():
             output = ""

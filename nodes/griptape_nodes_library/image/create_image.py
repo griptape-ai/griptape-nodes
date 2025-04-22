@@ -101,7 +101,7 @@ class GenerateImage(ControlNode):
             return exceptions
         return exceptions if exceptions else None
 
-    def process(self) -> AsyncResult[Structure]:
+    def process(self) -> AsyncResult[BaseArtifact]:
         # Get the parameters from the node
         params = self.parameter_values
         agent = params.get("agent", None)
@@ -127,8 +127,9 @@ Focus on qualities that will make this the most professional looking photo in th
             logger.info("Enhancing prompt...")
             # agent.run is a blocking operation that will hold up the rest of the engine.
             # By using `yield lambda`, the engine can run this in the background and resume when it's done.
-            result = yield lambda shutdown_event: self._process(agent, prompt, context, shutdown_event)
-            prompt = result.output
+            prompt = yield (lambda shutdown_event: self._process(agent, prompt, context, shutdown_event))
+            if prompt is None:
+                return
         else:
             logger.info("Prompt enhancement disabled.")
         # Initialize driver kwargs with required parameters
@@ -150,18 +151,21 @@ Focus on qualities that will make this the most professional looking photo in th
         agent.add_task(PromptImageGenerationTask(**kwargs))
 
         # Run the agent asynchronously
-        result = yield lambda shutdown_event: self._process(agent, prompt, "", shutdown_event)
-        if hasattr(result, "output"):
-            self.parameter_output_values["output"] = result.output
-            try_throw_error(result.output)
+        result = yield (lambda shutdown_event: self._process(agent, prompt, "", shutdown_event))
+        if result is None:
+            return
+        self.parameter_output_values["output"] = result
+        try_throw_error(result)
         # Reset the agent
         agent._tasks = []
 
-    def _process(self, agent: Agent, prompt: BaseArtifact, context: str, shutdown_event: threading.Event) -> Structure:
+    def _process(self, agent: Agent, prompt: BaseArtifact, context: str, shutdown_event: threading.Event) -> BaseArtifact:
         if shutdown_event.is_set():
-            return Agent()
+            return None
         if context != "":
             result = agent.run([context, prompt])
         else:
             result = agent.run(prompt)
-        return result
+        if hasattr(result, "output"):
+            return result.output
+        return None
