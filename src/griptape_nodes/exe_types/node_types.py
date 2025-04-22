@@ -18,6 +18,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
+from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ProgressEvent
 from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
 from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
@@ -443,7 +444,7 @@ class BaseNode(ABC):
             data_type = parameter.type
             self.parameter_output_values[parameter_name] = value
             payload = ParameterValueUpdateEvent(
-                node_name=self.name, parameter_name=parameter_name, data_type=data_type, value=value
+                node_name=self.name, parameter_name=parameter_name, data_type=data_type, value=TypeValidator.safe_serialize(value)
             )
             EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
         else:
