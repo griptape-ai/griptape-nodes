@@ -127,6 +127,15 @@
   ],
   "nodes": [
     {
+      "class_name": "OpenAi_EG",
+      "file_path": "griptape_nodes_library/integrations/openai_integration_justImage.py",
+      "metadata": {
+        "category": "agents",
+        "description": "OpenAi_EG",
+        "display_name": "OpenAi_EG"
+      }
+    },
+    {
       "class_name": "Agent",
       "file_path": "griptape_nodes_library/agents/create_agent.py",
       "metadata": {

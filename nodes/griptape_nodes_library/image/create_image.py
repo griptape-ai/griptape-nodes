@@ -84,7 +84,7 @@ class GenerateImage(ControlNode):
         exceptions = []
         api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         # No need for the api key. These exceptions caught on other nodes.
-        if self.parameter_values.get("agent", None) and self.parameter_values.get("driver", None):
+        if self.parameter_values.get("agent", None) and self.parameter_values.get("image_generation_driver", None):
             return None
         if not api_key:
             msg = f"{API_KEY_ENV_VAR} is not defined"
@@ -132,7 +132,7 @@ Focus on qualities that will make this the most professional looking photo in th
         kwargs = {}
 
         # Driver
-        driver_val = params.get("driver", None)
+        driver_val = params.get("image_generation_driver", None)
         if driver_val:
             driver = driver_val
         else:
