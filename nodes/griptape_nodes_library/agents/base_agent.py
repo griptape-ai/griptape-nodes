@@ -2,7 +2,7 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures import Agent
 from griptape.tasks import PromptTask
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -26,15 +26,16 @@ class BaseAgent(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
-        with ParameterGroup(group_name="Agent Configuration") as agent_configuration:
+        self.add_parameter(
             Parameter(
-                name="prompt_driver",
-                type="PromptDriver",
-                input_types=["PromptDriver"],
+                name="configuration",
+                type="configuration",
                 default_value=None,
-                tooltip="Connect a prompt driver to use. If not specified, will use the default OpenAI gpt-4o.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                tooltip="The API configuration associated with the agent. Default is Griptape.",
+                allowed_modes={ParameterMode.INPUT},
             )
+        )
+        self.add_parameter(
             ParameterList(
                 name="tools",
                 input_types=["Tool"],
@@ -42,14 +43,24 @@ class BaseAgent(ControlNode):
                 tooltip="",
                 allowed_modes={ParameterMode.INPUT},
             )
+        )
+        self.add_parameter(
             ParameterList(
                 name="rulesets",
                 input_types=["Ruleset"],
                 tooltip="Rulesets to apply to the agent to control its behavior.",
                 allowed_modes={ParameterMode.INPUT},
             )
-
-        self.add_node_element(agent_configuration)
+        )
+        self.add_parameter(
+            Parameter(
+                name="prompt_context",
+                type="dict",
+                default_value={},
+                tooltip="The context to pass to the agent. Use a key/value pair, or a dictionary of key/value pairs.",
+                allowed_modes={ParameterMode.INPUT},
+            )
+        )
         self.add_parameter(
             Parameter(
                 name="prompt",
@@ -62,15 +73,6 @@ class BaseAgent(ControlNode):
         )
         self.add_parameter(
             Parameter(
-                name="prompt_context",
-                type="dict",
-                default_value={},
-                tooltip="The context to pass to the agent. Use a key/value pair, or a dictionary of key/value pairs.",
-                allowed_modes={ParameterMode.INPUT},
-            )
-        )
-        with ParameterGroup(group_name="Agent Response") as output_group:
-            Parameter(
                 name="output",
                 type="str",
                 default_value="",
@@ -78,11 +80,10 @@ class BaseAgent(ControlNode):
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"multiline": True, "placeholder_text": "Agent response"},
             )
-        self.add_node_element(output_group)
+        )
 
         # Store parameter groups for later use
-        self.agent_configuration_group = agent_configuration
-        self.agent_response_group = output_group
+        # self.agent_configuration_group = agent_configuration
 
     def validate_node(self) -> list[Exception] | None:
         # All env values are stored in the SecretsManager. Check if they exist using this method.

@@ -29,10 +29,10 @@
       }
     },
     {
-      "integrations": {
+      "configurations": {
         "color": "border-orange-500",
-        "title": "Integrations",
-        "description": "Integrations with other services.",
+        "title": "Configurations",
+        "description": "Configurations with other services.",
         "icon": "Puzzle"
       }
     },
@@ -208,7 +208,7 @@
       "class_name": "OpenAi",
       "file_path": "griptape_nodes_library/integrations/openai_integration.py",
       "metadata": {
-        "category": "integrations",
+        "category": "configurations",
         "description": "OpenAi Drivers.",
         "display_name": "OpenAi"
       }

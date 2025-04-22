@@ -1,3 +1,7 @@
+from griptape.configs.drivers import OpenAiDriversConfig
+from griptape.drivers.audio_transcription.openai import (
+    OpenAiAudioTranscriptionDriver as GtOpenAiAudioTranscriptionDriver,
+)
 from griptape.drivers.image_generation.openai import OpenAiImageGenerationDriver as GtOpenAiImageGenerationDriver
 from griptape.drivers.prompt.openai import OpenAiChatPromptDriver as GtOpenAiChatPromptDriver
 
@@ -33,23 +37,13 @@ class OpenAi(DataNode):
         super().__init__(**kwargs)
         self.add_parameter(
             Parameter(
-                name="prompt_driver",
-                output_type="PromptDriver",
-                default_value=None,
-                tooltip="",
+                name="configuration",
+                output_type="configuration",
+                default_value=OpenAiDriversConfig(),
+                tooltip="Default integration for OpenAi",
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
-        self.add_parameter(
-            Parameter(
-                name="image_generation_driver",
-                output_type="Image Generation Driver",
-                default_value=None,
-                tooltip="",
-                allowed_modes={ParameterMode.OUTPUT},
-            )
-        )
-
         # Options
         prompt_model_options = Options(choices=PROMPT_MODELS)
         image_model_options = Options(choices=IMAGE_GENERATION_MODELS)
@@ -57,6 +51,21 @@ class OpenAi(DataNode):
         image_quality_options = Options(choices=IMAGE_QUALITY_OPTIONS)
         image_size_options = Options(choices=IMAGE_SIZE_OPTIONS)
         slider_options = Slider(min_val=1, max_val=100)
+
+        with ParameterGroup(group_name="Audio Transcription", ui_options={"hide": True}) as audio_transcription_group:
+            Parameter(
+                name="audio_model",
+                type="str",
+                default_value="whisper-1",
+                tooltip="Choose a model",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+            Parameter(
+                name="language",
+                type="str",
+                default_value="en",
+                tooltip="Language of the audio file.",
+            )
 
         with ParameterGroup(group_name="Prompt Generation", ui_options={"hide": True}) as prompt_driver_group:
             Parameter(
@@ -156,7 +165,7 @@ class OpenAi(DataNode):
                 tooltip="Image Size",
                 traits={image_size_options},
             )
-
+        self.add_node_element(audio_transcription_group)
         self.add_node_element(prompt_driver_group)
         self.add_node_element(image_generation_group)
 
@@ -196,16 +205,21 @@ class OpenAi(DataNode):
             logger.info(f"style_param: {style_param}")
             logger.info(f"quality_param: {quality_param}")
 
-    def process(self) -> None:
-        # Grab the API key
+    def get_audio_transcription_driver(self, params, api_key) -> GtOpenAiAudioTranscriptionDriver:
+        kwargs = {}
+        kwargs["model"] = params.get("audio_model", "whisper-1")
+        language = params.get("language", None)
 
-        # Get the parameters from the node
-        params = self.parameter_values
-        api_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
+        if language:
+            kwargs["language"] = language
 
-        # Prompt driver parameters
-        prompt_kwargs = {}
-        prompt_kwargs["model"] = params.get("prompt_model", DEFAULT_PROMPT_MODEL)
+        # Create the audio transcription driver
+        audio_transcription_driver = GtOpenAiAudioTranscriptionDriver(api_key=api_key, **kwargs)
+        return audio_transcription_driver
+
+    def get_prompt_driver(self, params, api_key) -> GtOpenAiChatPromptDriver:
+        kwargs = {}
+        kwargs["model"] = params.get("prompt_model", DEFAULT_PROMPT_MODEL)
         response_format = params.get("response_format", None)
         seed = params.get("seed", None)
         stream = params.get("stream", False)
@@ -217,38 +231,63 @@ class OpenAi(DataNode):
 
         if response_format == "json_object":
             response_format = {"type": "json_object"}
-            prompt_kwargs["response_format"] = response_format
+            kwargs["response_format"] = response_format
         if seed:
-            prompt_kwargs["seed"] = seed
+            kwargs["seed"] = seed
         if stream:
-            prompt_kwargs["stream"] = stream
+            kwargs["stream"] = stream
         if temperature:
-            prompt_kwargs["temperature"] = temperature
+            kwargs["temperature"] = temperature
         if max_attempts:
-            prompt_kwargs["max_attempts"] = max_attempts
+            kwargs["max_attempts"] = max_attempts
         if use_native_tools:
-            prompt_kwargs["use_native_tools"] = use_native_tools
+            kwargs["use_native_tools"] = use_native_tools
         if max_tokens > 0:
-            prompt_kwargs["max_tokens"] = max_tokens
+            kwargs["max_tokens"] = max_tokens
 
-        prompt_kwargs["extra_params"] = {}
+        kwargs["extra_params"] = {}
         if top_p:
-            prompt_kwargs["extra_params"]["top_p"] = top_p
+            kwargs["extra_params"]["top_p"] = top_p
 
         # Create the prompt driver
-        prompt_driver = GtOpenAiChatPromptDriver(api_key=api_key, **prompt_kwargs)
+        prompt_driver = GtOpenAiChatPromptDriver(api_key=api_key, **kwargs)
+        return prompt_driver
 
-        image_generation_kwargs = {}
+    def get_image_generation_driver(self, params, api_key) -> GtOpenAiImageGenerationDriver:
+        kwargs = {}
+        kwargs["model"] = params.get("image_model", DEFAULT_IMAGE_MODEL)
+        quality = params.get("quality", IMAGE_QUALITY_DEFAULT)
+        style = params.get("style", IMAGE_STYLE_DEFULT)
+        image_size = params.get("size", IMAGE_SIZE_DEFAULT)
 
-        image_generation_kwargs["model"] = params.get("image_model", DEFAULT_IMAGE_MODEL)
-        image_generation_kwargs["quality"] = params.get("quality", IMAGE_QUALITY_DEFAULT)
-        image_generation_kwargs["style"] = params.get("style", IMAGE_STYLE_DEFULT)
-        image_generation_kwargs["quality"] = params.get("quality", IMAGE_QUALITY_DEFAULT)
-        image_generation_kwargs["image_size"] = params.get("size", IMAGE_SIZE_DEFAULT)
+        if quality:
+            kwargs["quality"] = quality
+        if style:
+            kwargs["style"] = style
+        if image_size:
+            kwargs["image_size"] = image_size
 
         # Create the image generation driver
-        image_generation_driver = GtOpenAiImageGenerationDriver(api_key=api_key, **image_generation_kwargs)
+        image_generation_driver = GtOpenAiImageGenerationDriver(api_key=api_key, **kwargs)
+        return image_generation_driver
+
+    def process(self) -> None:
+        # Grab the API key
+
+        # Get the parameters from the node
+        params = self.parameter_values
+        api_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
+
+        # Create the drivers
+        prompt_driver = self.get_prompt_driver(params, api_key)
+        image_generation_driver = self.get_image_generation_driver(params, api_key)
+        audio_transcription_driver = self.get_audio_transcription_driver(params, api_key)
+
+        integration = OpenAiDriversConfig(
+            prompt_driver=prompt_driver,
+            image_generation_driver=image_generation_driver,
+            audio_transcription_driver=audio_transcription_driver,
+        )
 
         # Set the output
-        self.parameter_output_values["prompt_driver"] = prompt_driver
-        self.parameter_output_values["image_generation_driver"] = image_generation_driver
+        self.parameter_output_values["integration"] = integration
