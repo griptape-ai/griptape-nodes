@@ -46,7 +46,7 @@ class BaseImageDriver(BaseDriver):
         self.service_key_mappings = self.config.get("service_key_field", [])
         self.driver = self.config.get("driver")
 
-        # Hard assumtion that first entry is default (dict keys are supposed to be reliably ordered since 3.7)
+        # Hard assumption that first entry is default (dict keys are supposed to be reliably ordered since 3.7)
         self.model_options = list(self.driver_dict.get("models", {}).keys())
         self.model_default = self.model_options[0]
 
