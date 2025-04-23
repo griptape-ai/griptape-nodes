@@ -2,11 +2,12 @@ from typing import Any, Self
 
 from griptape.artifacts import BaseArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
+from griptape.events import ActionChunkEvent, TextChunkEvent
 from griptape.structures import Structure
 from griptape.structures.agent import Agent as GtAgent
 from griptape.utils import Stream
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.error_utils import try_throw_error
@@ -14,21 +15,23 @@ from griptape_nodes_library.utils.error_utils import try_throw_error
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 DEFAULT_MODEL = "gpt-4o"
-MODELS = ["gpt-4o", "other"]  # currently only gpt-4o is supported
+MODELS = ["gpt-4o", "gpt-35-turbo-16k", "other"]  # currently only gpt-4o is supported
 
 
 class ExampleAgent(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        # Converters should take one positional argument of any type, and can return anything!
+        # -- Converters --
+        # Converts should take one positional argument of any type, and can return anything!
         def strip_whitespace(value: str) -> str:
             # This is a simple converter that strips whitespace from the input string.
             if not value:
                 return value
             return value.strip()
 
-        # Create the Prompt parameter first - This is the most important one for the agent.
+        # -- Parameters --
+        # Parameters are the inputs and outputs of the node. They can be used to connect to other nodes.
         self.add_parameter(
             Parameter(
                 name="prompt",
@@ -46,8 +49,8 @@ class ExampleAgent(ControlNode):
         self.add_parameter(
             Parameter(
                 name="model",
-                input_types=["str"],
                 type="str",
+                input_types=["str"],
                 tooltip="Models to choose from.",
                 default_value=DEFAULT_MODEL,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -66,7 +69,23 @@ class ExampleAgent(ControlNode):
                 ui_options={"hide": True},
             )
         )
-
+        self.add_parameter(
+            ParameterList(
+                name="tools",
+                input_types=["Tool"],
+                default_value=None,
+                tooltip="",
+                allowed_modes={ParameterMode.INPUT},
+            )
+        )
+        self.add_parameter(
+            ParameterList(
+                name="rulesets",
+                input_types=["Ruleset", "List[Ruleset]"],
+                tooltip="Rulesets to apply to the agent to control its behavior.",
+                allowed_modes={ParameterMode.INPUT},
+            )
+        )
         self.add_parameter(
             Parameter(
                 name="agent",
@@ -109,6 +128,7 @@ class ExampleAgent(ControlNode):
     # This is called after a parameter is set. We can use this to show/hide parameters
     # based on the value of other parameters.
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        # Model
         # If user sets the model to "other", we want to show the prompt_driver parameter.
         model_value = self.parameter_values.get("model")
         prompt_driver_param = self.get_parameter_by_name("prompt_driver")
@@ -119,15 +139,21 @@ class ExampleAgent(ControlNode):
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
+    # -- After Connections --
+    # These are called after a connection is made to or disconnected from this node.
+    # We can use this to show/hide parameters
     def after_incoming_connection(
         self, source_node: Self, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
+        # Prompt Driver
         # If the user connects to the prompt_driver, we want to hide the model parameter.
         if target_parameter.name == "prompt_driver":
             # Find the model parameter and hide it
             model_param = self.get_parameter_by_name("model")
             if model_param:
                 model_param._ui_options["hide"] = True
+
+        # Default return
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def after_incoming_connection_removed(
@@ -140,37 +166,41 @@ class ExampleAgent(ControlNode):
             if model_param:
                 model_param._ui_options["hide"] = False
 
+        # Default return
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
+    # -- Validation --
+    # This is called before the node is run. We can use this to validate the parameters.
     def validate_node(self) -> list[Exception] | None:
-        # TODO(kate): Figure out how to wrap this so it's easily repeatable
         exceptions = []
+
+        # Check to see if the API key is set.
         api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
-        # No need for the api key. These exceptions caught on other nodes.
-        if self.parameter_values.get("agent", None) and self.parameter_values.get("driver", None):
-            return None
+
         if not api_key:
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))
             return exceptions
+
+        # Return any exceptions
         return exceptions if exceptions else None
 
+    # -- Processing --
+    # This is called when the node is run. We can use this to process the node.
     def process(self) -> AsyncResult[Structure]:
         # Get the parameters from the node
         params = self.parameter_values
 
-        # For this node, we'll going use the GriptapeCloudPromptDriver if no driver is provided.
-        # If a driver is provided, we'll use that.
-
         # Send the logs to the logs parameter.
         self.append_value_to_parameter("logs", "Checking for prompt driver..\n")
+
+        # For this node, we'll going use the GriptapeCloudPromptDriver if no driver is provided.
+        # If a driver is provided, we'll use that.
 
         prompt_driver = params.get("prompt_driver", None)
 
         if not prompt_driver:
-            self.append_value_to_parameter(
-                "logs", "Using GriptapeCloudPromptDriver as no prompt driver was provided.\n"
-            )
+            self.append_value_to_parameter("logs", "Using GriptapeCloudPromptDriver.\n")
 
             # Grab the appropriate parameters
             model = params.get("model", DEFAULT_MODEL)
@@ -184,12 +214,12 @@ class ExampleAgent(ControlNode):
         else:
             self.append_value_to_parameter("logs", "Using provided prompt driver.\n")
 
-        self.append_value_to_parameter("logs", "Creating agent..\n")
+        self.append_value_to_parameter("logs", "\nCreating agent..\n")
+
+        # Create the agent
         agent = GtAgent(prompt_driver=prompt_driver)
 
-        self.append_value_to_parameter("logs", "Agent created.\n")
-        self.append_value_to_parameter("logs", "Getting prompt..\n")
-
+        # Get the prompt
         prompt = params.get("prompt", "")
 
         # Run the agent asynchronously
@@ -200,7 +230,11 @@ class ExampleAgent(ControlNode):
         try_throw_error(agent.output)
 
     def _process(self, agent: GtAgent, prompt: BaseArtifact | str) -> Structure:
-        stream = Stream(agent)
+        stream = Stream(agent, event_types=[TextChunkEvent, ActionChunkEvent])
         for artifact in stream.run(prompt):
-            self.append_value_to_parameter(parameter_name="output", value=artifact.value)
+            # If the artifact is a TextChunkEvent, append it to the output parameter.
+            self.append_value_to_parameter("output", value=artifact.value)
+
+            # If the artifact is an ActionChunkEvent, append it to the logs parameter.
+            self.append_value_to_parameter("logs", f"{artifact=}\n")
         return agent
