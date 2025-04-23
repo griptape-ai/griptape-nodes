@@ -10,10 +10,9 @@ class WebSearch(BaseTool):
         super().__init__(**kwargs)
         self.add_parameter(
             Parameter(
-                name="driver",
-                input_types=["dict"],
-                type="dict",
-                output_type="dict",
+                name="web_search_driver",
+                input_types=["Web Search Driver"],
+                type="Web Search Driver",
                 default_value={},
                 tooltip="",
             )
@@ -21,11 +20,8 @@ class WebSearch(BaseTool):
 
     def process(self) -> None:
         off_prompt = self.parameter_values.get("off_prompt", False)
-        driver_dict = self.parameter_values.get("driver", {})
-        if driver_dict:
-            driver = BaseWebSearchDriver.from_dict(driver_dict)  # pyright: ignore[reportAttributeAccessIssue] TODO(collin): Make Web Search Drivers serializable
-        else:
-            driver = DuckDuckGoWebSearchDriver()
+
+        driver = self.parameter_values.get("web_search_driver", DuckDuckGoWebSearchDriver())
 
         # Create the tool
         tool = GtWebSearchTool(off_prompt=off_prompt, web_search_driver=driver)

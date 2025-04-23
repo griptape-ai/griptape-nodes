@@ -18,7 +18,7 @@ class BaseWebSearchDriver(DataNode):
 
         self.add_parameter(
             Parameter(
-                name="driver",
+                name="web_search_driver",
                 input_types=["Web Search Driver"],
                 type="Web Search Driver",
                 output_type="Web Search Driver",
@@ -34,4 +34,6 @@ class DuckDuckGo(BaseWebSearchDriver):
         driver = GtDuckDuckGoWebSearchDriver()
 
         # Set the output
-        self.parameter_output_values["driver"] = driver.to_dict()  # pyright: ignore[reportAttributeAccessIssue] TODO(collin): Make Web Search Drivers serializable
+        self.parameter_output_values["web_search_driver"] = (
+            driver  # TODO(osipa): Replace this when drivers are serializable
+        )
