@@ -216,7 +216,7 @@ class ControlFlow:
         current_control_node = self.control_flow_machine._context.current_node.name
         focus_stack_for_node = self.control_flow_machine._context.resolution_machine._context.focus_stack
         if len(focus_stack_for_node):
-            current_resolving_node = focus_stack_for_node[-1].name
+            current_resolving_node = focus_stack_for_node[-1].node.name
         else:
             current_resolving_node = None
         return current_control_node, current_resolving_node
