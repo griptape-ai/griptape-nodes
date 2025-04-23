@@ -2961,6 +2961,21 @@ class NodeManager:
 class WorkflowManager:
     WORKFLOW_METADATA_HEADER: ClassVar[str] = "script"
 
+    class WorkflowStatus(StrEnum):
+        GOOD = "GOOD"  # No errors detected during loading. Registered.
+        FLAWED = "FLAWED"  # Some errors detected, but recoverable. Registered.
+        UNUSABLE = "UNUSABLE"  # Errors detected and not recoverable. Not registered.
+        MISSING = "MISSING"  # File not found. Not registered.
+
+    @dataclass
+    class WorkflowInfo:
+        status: WorkflowManager.WorkflowStatus
+        workflow_path: str
+        workflow_name: str | None = None
+        problems: list[str] = field(default_factory=list)
+
+    _workflow_file_path_to_info: dict[str, WorkflowInfo]
+
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(
             RunWorkflowFromScratchRequest, self.on_run_workflow_from_scratch_request
