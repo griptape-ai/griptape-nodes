@@ -50,6 +50,14 @@ class ResolutionContext:
         self.focus_stack = []
         self.paused = False
 
+    def reset(self) -> None:
+        if len(self.focus_stack) > 0:
+            node = self.focus_stack[-1].node
+            # clear the data node being resolved.
+            node.clear_node()
+        self.focus_stack.clear()
+        self.paused = False
+
 
 class InitializeSpotlightState(State):
     @staticmethod
@@ -406,3 +414,7 @@ class NodeResolutionMachine(FSM[ResolutionContext]):
 
     def is_started(self) -> bool:
         return self._current_state is not None
+
+    def reset_machine(self) -> None:
+        self._current_state = None
+        self._context.reset()

@@ -191,13 +191,13 @@ class ControlFlow:
         if not self.check_for_existing_running_flow():
             errormsg = "Flow has not yet been started. Cannot cancel flow that hasn't begun."
             raise Exception(errormsg)
-        del self.control_flow_machine
-        # Create a new control flow machine
-        # Cancel all future runs
         del self.flow_queue
         self.flow_queue = Queue()
+        if self.control_flow_machine.get_current_state():
+            self.control_flow_machine.reset_machine()
+        else:
+            self.control_flow_machine._context.resolution_machine.reset_machine()
         # Reset control flow machine
-        self.control_flow_machine = ControlFlowMachine(self)
         self.single_node_resolution = False
         logger.debug("Cancelling flow run")
 
