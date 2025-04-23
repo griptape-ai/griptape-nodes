@@ -314,6 +314,9 @@ def _uninstall_self() -> None:
             )
             executable_removed = True
         except subprocess.CalledProcessError:
+            console.print(
+                "[red]Failed to remove Griptape Nodes executable. Please see caveats for manual removal instructions.[/red]"
+            )
             executable_removed = False
     else:
         console.print("[yellow]Griptape Nodes executable not found; skipping removal.[/yellow]")
