@@ -78,7 +78,7 @@ class ExampleAgent(ControlNode):
                 ui_options={"hide": True},
             )
         )
-        self.add_parameter(
+        with ParameterGroup(group_name="Advanced options") as advanced_group:
             ParameterList(
                 name="tools",
                 input_types=["Tool"],
@@ -86,15 +86,13 @@ class ExampleAgent(ControlNode):
                 tooltip="",
                 allowed_modes={ParameterMode.INPUT},
             )
-        )
-        self.add_parameter(
             ParameterList(
                 name="rulesets",
                 input_types=["Ruleset", "List[Ruleset]"],
                 tooltip="Rulesets to apply to the agent to control its behavior.",
                 allowed_modes={ParameterMode.INPUT},
             )
-        )
+        self.add_node_element(advanced_group)
         self.add_parameter(
             Parameter(
                 name="agent",
@@ -139,12 +137,16 @@ class ExampleAgent(ControlNode):
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         # Model
         # If user sets the model to "other", we want to show the prompt_driver parameter.
-        model_value = self.parameter_values.get("model")
-        prompt_driver_param = self.get_parameter_by_name("prompt_driver")
-        if model_value == "other" and prompt_driver_param:
-            prompt_driver_param._ui_options["hide"] = False
-        elif model_value != "other" and prompt_driver_param:
-            prompt_driver_param._ui_options["hide"] = True
+        if parameter.name == "model":
+            # Find the prompt_driver parameter and hide it
+            prompt_driver_param = self.get_parameter_by_name("prompt_driver")
+            if value == "other" and prompt_driver_param:
+                prompt_driver_param._ui_options["hide"] = False
+            elif value != "other" and prompt_driver_param:
+                prompt_driver_param._ui_options["hide"] = True
+
+            # Add this to the modified parameters set so we can cascade the change.
+            modified_parameters_set.add("prompt_driver")
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
@@ -201,19 +203,11 @@ class ExampleAgent(ControlNode):
         # Get the parameters from the node
         params = self.parameter_values
 
-        # Since we're going to append to the parameters to make
-        # it look like a stream, we need to clear the values first.
-
-        # # Clear the current parameter values
-        # self.set_parameter_value("logs", "")
-        # self.set_parameter_value("output", "")
-
         # Send the logs to the logs parameter.
         self.append_value_to_parameter("logs", "Checking for prompt driver..\n")
 
         # For this node, we'll going use the GriptapeCloudPromptDriver if no driver is provided.
         # If a driver is provided, we'll use that.
-
         prompt_driver = params.get("prompt_driver", None)
 
         if not prompt_driver:
