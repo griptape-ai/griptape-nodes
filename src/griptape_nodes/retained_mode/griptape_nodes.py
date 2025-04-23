@@ -1756,7 +1756,7 @@ class NodeManager:
             # Remove all connections from this Node.
             list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
             list_connections_result = GriptapeNodes.handle_request(request=list_node_connections_request)
-            if isinstance(list_connections_result, ResultPayloadFailure):
+            if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
                 details = f"Attempted to delete a Node '{node_name}'. Failed because it could not gather Connections to the Node."
                 logger.error(details)
                 return DeleteNodeResultFailure()
@@ -4365,7 +4365,7 @@ class LibraryManager:
                     if workflow_detail.is_griptape_provided:
                         workflow_metadata.image = workflow_metadata.image
                     else:
-                        workflow_metadata.image = config_mgr.workspace_path.joinpath(workflow_metadata.image)
+                        workflow_metadata.image = str(config_mgr.workspace_path.joinpath(workflow_metadata.image))
 
                 # Register it as a success.
                 workflow_register_request = RegisterWorkflowRequest(
