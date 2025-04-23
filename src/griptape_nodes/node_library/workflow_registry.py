@@ -13,7 +13,7 @@ class LibraryNameAndVersion(NamedTuple):
 
 
 class WorkflowMetadata(BaseModel):
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.1.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.2.0"
 
     name: str
     schema_version: str
@@ -21,6 +21,8 @@ class WorkflowMetadata(BaseModel):
     node_libraries_referenced: list[LibraryNameAndVersion]
     description: str | None = None
     image: str | None = None
+    is_griptape_provided: bool | None = False
+    is_template: bool | None = False
 
 
 class WorkflowRegistry(SingletonMixin):
@@ -93,12 +95,10 @@ class Workflow:
             raise ValueError(msg)
 
     def get_workflow_metadata(self) -> dict:
-        # TODO(griptape): either convert the Pydantic schema to a dict or use it directly.
-        return {
-            "name": self.metadata.name,
-            "file_path": self.file_path,
-            "description": self.metadata.description,
-            "image": self.metadata.image,
-            "engine_version_created_with": self.metadata.engine_version_created_with,
-            "node_libraries_referenced": self.metadata.node_libraries_referenced,
-        }
+        # Convert from the Pydantic schema.
+        ret_val = {**self.metadata.model_dump()}
+
+        # The schema doesn't have the file path in it, because it is baked into the file itself.
+        # Customers of this function need that, so let's stuff it in.
+        ret_val["file_path"] = self.file_path
+        return ret_val
