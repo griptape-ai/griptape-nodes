@@ -174,9 +174,8 @@ class ExecuteNodeState(State):
                 data_type=parameter_type,
                 value=None,
             )
-            if parameter_name in current_node.parameter_output_values:
-                del current_node.parameter_output_values[parameter_name]
             EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
+        current_node.parameter_output_values.clear()
 
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:
