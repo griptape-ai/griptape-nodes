@@ -51,7 +51,7 @@ class ResolutionContext:
         self.paused = False
 
     def reset(self) -> None:
-        if len(self.focus_stack) > 0:
+        if self.focus_stack:
             node = self.focus_stack[-1].node
             # clear the data node being resolved.
             node.clear_node()

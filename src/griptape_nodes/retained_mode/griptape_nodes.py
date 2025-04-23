@@ -699,7 +699,7 @@ class FlowManager:
         return any([parent is None for parent in self._name_to_parent_name.values()])  # noqa: C419
 
     def on_create_flow_request(self, request: CreateFlowRequest) -> ResultPayload:
-        obj_mgr = GriptapeNodes().get_instance()._object_manager
+        obj_mgr = GriptapeNodes.ObjectManager()
 
         # Who is the parent?
         parent_name = request.parent_flow_name
@@ -713,7 +713,13 @@ class FlowManager:
         if (parent_name is None) and (GriptapeNodes.ContextManager().has_current_flow()):
             # Aha! Just use that.
             parent_name = GriptapeNodes.ContextManager().get_current_flow_name()
+        if parent_name is None:
+            details = "Attempted to create a Flow with a parent but no parent name was provided."
+            logger.error(details)
 
+            result = CreateFlowResultFailure()
+
+            return result
         parent = obj_mgr.attempt_get_object_by_name_as_type(parent_name, ControlFlow)
         if parent_name is None:
             # We're trying to create the canvas. Ensure that parent does NOT already exist.
@@ -1978,7 +1984,7 @@ class NodeManager:
 
         # Does this node exist?
         obj_mgr = GriptapeNodes.ObjectManager()
-        if not node_name:
+        if node_name is None:
             details = "Attempted to list Parameters for a Node. Failed because no node name was provided."
             logger.error(details)
             return ListParametersOnNodeResultFailure()
@@ -2173,7 +2179,7 @@ class NodeManager:
             return RemoveParameterFromNodeResultSuccess()
 
         # No tricky stuff, users!
-        if parameter and parameter.user_defined is False:
+        if parameter is not None and parameter.user_defined is False:
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be removed from a Node."
             logger.error(details)
 
@@ -2182,8 +2188,10 @@ class NodeManager:
 
         # Get all the connections to/from this Parameter.
         list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
-        list_connections_result = GriptapeNodes().handle_request(request=list_node_connections_request)
-        if isinstance(list_connections_result, ListConnectionsForNodeResultFailure):
+        list_connections_result = GriptapeNodes.handle_request(request=list_node_connections_request)
+        try:
+            list_connections_result = cast("ListConnectionsForNodeResultSuccess", list_connections_result)
+        except Exception:
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because we were unable to get a list of Connections for the Parameter's Node."
             logger.error(details)
 
@@ -2225,7 +2233,7 @@ class NodeManager:
                     result = RemoveParameterFromNodeResultFailure()
 
         # Delete the Parameter itself.
-        if parameter:
+        if parameter is not None:
             node.remove_parameter(parameter)
         else:
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because parameter didn't exist."
@@ -2417,7 +2425,7 @@ class NodeManager:
 
         # Does this node exist?
         obj_mgr = GriptapeNodes.ObjectManager()
-        if not node_name:
+        if node_name is None:
             details = f"Attempted to alter details for Parameter '{request.parameter_name}' from node in the Current Context. Failed because no node name was provided."
             logger.error(details)
 
@@ -2483,7 +2491,7 @@ class NodeManager:
         param_name = request.parameter_name
 
         # Get the node
-        if not node_name:
+        if node_name is None:
             details = f"Attempted to get value for Parameter '{request.parameter_name}' from node in the Current Context. Failed because no node name was provided."
             logger.error(details)
 
@@ -2873,7 +2881,7 @@ class NodeManager:
         node_name = request.node_name
         debug_mode = request.debug_mode
 
-        if not node_name:
+        if node_name is None:
             details = "No Node name was provided. Failed to resolve node."
             logger.error(details)
 
@@ -2950,7 +2958,7 @@ class NodeManager:
         node_name = request.node_name
         obj_manager = GriptapeNodes.ObjectManager()
         node = obj_manager.attempt_get_object_by_name_as_type(node_name, BaseNode)
-        if not node:
+        if node is None:
             details = f'Failed to validate node dependencies. Node with "{node_name}" does not exist.'
             logger.error(details)
             return ValidateNodeDependenciesResultFailure()
