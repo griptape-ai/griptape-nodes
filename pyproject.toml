@@ -1,12 +1,11 @@
 [project]
 name = "griptape_nodes"
-version = "0.20.10"
+version = "0.21.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-  "griptape[drivers-prompt-anthropic,drivers-prompt-ollama,loaders-image,drivers-web-scraper-trafilatura]>=1.6.2",
-  "pydantic>=2.10.6",
+  "griptape[drivers-prompt-anthropic,drivers-prompt-ollama,loaders-image,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo]>=1.6.2",  "pydantic>=2.10.6",
   "python-dotenv>=1.0.1",
   "xdg-base-dirs>=6.0.2",
   "httpx>=0.28.0,<1.0.0",
