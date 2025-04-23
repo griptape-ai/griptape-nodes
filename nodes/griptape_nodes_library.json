@@ -144,6 +144,24 @@
       }
     },
     {
+      "class_name": "GriptapeCloudPromptModelSettings",
+      "file_path": "griptape_nodes_library/misc/griptape_cloud_prompt_settings.py",
+      "metadata": {
+        "category": "misc",
+        "description": "Griptape Cloud Prompt Model Settings.",
+        "display_name": "Griptape Cloud Prompt Model Settings"
+      }
+    },
+    {
+      "class_name": "AnthropicPromptModelSettings",
+      "file_path": "griptape_nodes_library/misc/anthropic_prompt_settings.py",
+      "metadata": {
+        "category": "misc",
+        "description": "Griptape Cloud Prompt Model Settings.",
+        "display_name": "Griptape Cloud Prompt Model Settings"
+      }
+    },
+    {
       "class_name": "Agent",
       "file_path": "griptape_nodes_library/agents/create_agent.py",
       "metadata": {

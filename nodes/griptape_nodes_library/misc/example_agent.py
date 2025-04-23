@@ -69,10 +69,10 @@ class ExampleAgent(ControlNode):
 
         self.add_parameter(
             Parameter(
-                name="prompt_driver",
-                input_types=["PromptDriver"],
-                type="PromptDriver",
-                tooltip="This is a prompt driver. If not supplied, we will use the Griptape Cloud Prompt Driver.",
+                name="prompt model settings",
+                input_types=["Prompt Model Settings"],
+                type="Prompt Model Settings",
+                tooltip="Connect prompt model settings. If not supplied, we will use the Griptape Cloud Prompt Model.",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
                 ui_options={"hide": True},
@@ -92,6 +92,7 @@ class ExampleAgent(ControlNode):
                 tooltip="Rulesets to apply to the agent to control its behavior.",
                 allowed_modes={ParameterMode.INPUT},
             )
+        advanced_group.ui_options = {"hide": True}  # Hide the advanced group by default.
         self.add_node_element(advanced_group)
         self.add_parameter(
             Parameter(
@@ -136,17 +137,17 @@ class ExampleAgent(ControlNode):
     # based on the value of other parameters.
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         # Model
-        # If user sets the model to "other", we want to show the prompt_driver parameter.
+        # If user sets the model to "other", we want to show the prompt_model_settings parameter.
         if parameter.name == "model":
-            # Find the prompt_driver parameter and hide it
-            prompt_driver_param = self.get_parameter_by_name("prompt_driver")
-            if value == "other" and prompt_driver_param:
-                prompt_driver_param._ui_options["hide"] = False
-            elif value != "other" and prompt_driver_param:
-                prompt_driver_param._ui_options["hide"] = True
+            # Find the prompt_model_settings parameter and hide it
+            prompt_model_settings_param = self.get_parameter_by_name("prompt model settings")
+            if value == "other" and prompt_model_settings_param:
+                prompt_model_settings_param._ui_options["hide"] = False
+            elif value != "other" and prompt_model_settings_param:
+                prompt_model_settings_param._ui_options["hide"] = True
 
             # Add this to the modified parameters set so we can cascade the change.
-            modified_parameters_set.add("prompt_driver")
+            modified_parameters_set.add("prompt model settings")
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
@@ -158,8 +159,8 @@ class ExampleAgent(ControlNode):
         self, source_node: Self, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
         # Prompt Driver
-        # If the user connects to the prompt_driver, we want to hide the model parameter.
-        if target_parameter.name == "prompt_driver":
+        # If the user connects to the prompt_model_settings, we want to hide the model parameter.
+        if target_parameter.name == "prompt model settings":
             # Find the model parameter and hide it
             model_param = self.get_parameter_by_name("model")
             if model_param:
@@ -171,8 +172,8 @@ class ExampleAgent(ControlNode):
     def after_incoming_connection_removed(
         self, source_node: Self, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
-        # If the user connects to the prompt_driver, we want to hide the model parameter.
-        if target_parameter.name == "prompt_driver":
+        # If the user connects to the prompt_model_settings, we want to hide the model parameter.
+        if target_parameter.name == "prompt model settings":
             # Find the model parameter and hide it
             model_param = self.get_parameter_by_name("model")
             if model_param:
@@ -208,16 +209,16 @@ class ExampleAgent(ControlNode):
 
         # For this node, we'll going use the GriptapeCloudPromptDriver if no driver is provided.
         # If a driver is provided, we'll use that.
-        prompt_driver = params.get("prompt_driver", None)
+        prompt_model_settings = params.get("prompt model settings", None)
 
-        if not prompt_driver:
+        if not prompt_model_settings:
             self.append_value_to_parameter("logs", "Using GriptapeCloudPromptDriver.\n")
 
             # Grab the appropriate parameters
             model = params.get("model", DEFAULT_MODEL)
             self.append_value_to_parameter("logs", f"Using model: {model}\n")
 
-            prompt_driver = GriptapeCloudPromptDriver(
+            prompt_model_settings = GriptapeCloudPromptDriver(
                 model=model,
                 api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
                 stream=True,
@@ -228,7 +229,7 @@ class ExampleAgent(ControlNode):
         self.append_value_to_parameter("logs", "\nCreating agent..\n")
 
         # Create the agent
-        agent = GtAgent(prompt_driver=prompt_driver)
+        agent = GtAgent(prompt_driver=prompt_model_settings)
 
         # Get the prompt
         prompt = params.get("prompt", "")
