@@ -5,6 +5,7 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import ActionChunkEvent, TextChunkEvent
 from griptape.structures import Structure
 from griptape.structures.agent import Agent as GtAgent
+from griptape.utils import Stream
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -247,19 +248,19 @@ class ExampleAgent(ControlNode):
 
     def _process(self, agent: GtAgent, prompt: BaseArtifact | str) -> Structure:
         # try a different pattern
-        for event in agent.run_stream(prompt, event_types=[TextChunkEvent, ActionChunkEvent]):
-            # If the artifact is a TextChunkEvent, append it to the output parameter.
-            if isinstance(event, TextChunkEvent):
-                self.append_value_to_parameter("output", value=event.token)
-
-            # If the artifact is an ActionChunkEvent, append it to the logs parameter.
-            elif isinstance(event, ActionChunkEvent):
-                self.append_value_to_parameter("logs", f"{event.name}.{event.tag} ({event.path})\n")
-        # stream = Stream(agent, event_types=[TextChunkEvent, ActionChunkEvent])
-        # for artifact in stream.run(prompt):
+        # for event in agent.run_stream(prompt, event_types=[TextChunkEvent, ActionChunkEvent]):
         #     # If the artifact is a TextChunkEvent, append it to the output parameter.
-        #     self.append_value_to_parameter("output", value=artifact.value)
+        #     if isinstance(event, TextChunkEvent):
+        #         self.append_value_to_parameter("output", value=event.token)  # noqa: ERA001
 
         #     # If the artifact is an ActionChunkEvent, append it to the logs parameter.
-        #     self.append_value_to_parameter("logs", f"{artifact=}\n")
+        #     elif isinstance(event, ActionChunkEvent):  # noqa: ERA001
+        #         self.append_value_to_parameter("logs", f"{event.name}.{event.tag} ({event.path})\n")  # noqa: ERA001
+        stream = Stream(agent, event_types=[TextChunkEvent, ActionChunkEvent])
+        for artifact in stream.run(prompt):
+            # If the artifact is a TextChunkEvent, append it to the output parameter.
+            self.append_value_to_parameter("output", value=artifact.value)
+
+            # If the artifact is an ActionChunkEvent, append it to the logs parameter.
+            # self.append_value_to_parameter("logs", f"{artifact=}\n")  # noqa: ERA001
         return agent
