@@ -123,6 +123,14 @@
         "description": "Utility nodes like save, etc., etc.",
         "icon": "Cog"
       }
+    },
+    {
+      "misc": {
+        "color": "border-gray-500",
+        "title": "Misc",
+        "description": "Miscellaneous Example nodes.",
+        "icon": "Cog"
+      }
     }
   ],
   "nodes": [
