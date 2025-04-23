@@ -70,7 +70,7 @@ class GenerateImage(ControlNode):
                 input_types=["bool"],
                 type="bool",
                 tooltip="None",
-                default_value=True,
+                default_value=False,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
@@ -122,7 +122,7 @@ class GenerateImage(ControlNode):
         else:
             agent = Agent.from_dict(agent)
         prompt = params.get("prompt", "")
-        enhance_prompt = params.get("enhance_prompt", True)
+        enhance_prompt = params.get("enhance_prompt", False)
 
         if enhance_prompt:
             logger.info("Enhancing prompt...")

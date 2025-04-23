@@ -1358,7 +1358,7 @@ class FlowManager:
             flow.start_flow(flow_name, start_node, debug_mode)
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
-            logger.error(details)
+            logger.exception(details)
             if flow.check_for_existing_running_flow():
                 # Cancel the flow run.
                 cancel_request = CancelFlowRequest(flow_name=flow_name)
@@ -1387,7 +1387,7 @@ class FlowManager:
             control_node, resolving_node = flow.flow_state()
         except Exception as e:
             details = f"Failed to get flow state of flow with name {flow_name}. Exception occurred: {e} "
-            logger.error(details)
+            logger.exception(details)
             return GetFlowStateResultFailure()
         details = f"Successfully got flow state for flow with name {flow_name}."
         logger.debug(details)
