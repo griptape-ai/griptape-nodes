@@ -204,9 +204,9 @@ class ExampleAgent(ControlNode):
         # Since we're going to append to the parameters to make
         # it look like a stream, we need to clear the values first.
 
-        # Clear the current parameter values
-        self.set_parameter_value("logs", "")
-        self.set_parameter_value("output", "")
+        # # Clear the current parameter values
+        # self.set_parameter_value("logs", "")
+        # self.set_parameter_value("output", "")
 
         # Send the logs to the logs parameter.
         self.append_value_to_parameter("logs", "Checking for prompt driver..\n")
