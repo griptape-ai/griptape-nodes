@@ -5,7 +5,6 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import ActionChunkEvent, TextChunkEvent
 from griptape.structures import Structure
 from griptape.structures.agent import Agent as GtAgent
-from griptape.utils import Stream
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -14,8 +13,17 @@ from griptape_nodes_library.utils.error_utils import try_throw_error
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
-DEFAULT_MODEL = "gpt-4o"
-MODELS = ["gpt-4o", "gpt-35-turbo-16k", "other"]  # currently only gpt-4o is supported
+DEFAULT_MODEL = "gpt-4.1-mini"
+MODELS = [
+    "gpt-4.1",
+    "gpt-4.1-mini",
+    "gpt-4.1-nano",
+    "gpt-4.5-preview",
+    "o1",
+    "o1-mini",
+    "o3-mini",
+    "other",
+]  # currently only gpt-4o is supported
 
 
 class ExampleAgent(ControlNode):
@@ -142,6 +150,7 @@ class ExampleAgent(ControlNode):
     # -- After Connections --
     # These are called after a connection is made to or disconnected from this node.
     # We can use this to show/hide parameters
+
     def after_incoming_connection(
         self, source_node: Self, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
@@ -191,6 +200,13 @@ class ExampleAgent(ControlNode):
         # Get the parameters from the node
         params = self.parameter_values
 
+        # Since we're going to append to the parameters to make
+        # it look like a stream, we need to clear the values first.
+
+        # Clear the current parameter values
+        self.set_parameter_value("logs", "")
+        self.set_parameter_value("output", "")
+
         # Send the logs to the logs parameter.
         self.append_value_to_parameter("logs", "Checking for prompt driver..\n")
 
@@ -230,11 +246,20 @@ class ExampleAgent(ControlNode):
         try_throw_error(agent.output)
 
     def _process(self, agent: GtAgent, prompt: BaseArtifact | str) -> Structure:
-        stream = Stream(agent, event_types=[TextChunkEvent, ActionChunkEvent])
-        for artifact in stream.run(prompt):
+        # try a different pattern
+        for event in agent.run_stream(prompt, event_types=[TextChunkEvent, ActionChunkEvent]):
             # If the artifact is a TextChunkEvent, append it to the output parameter.
-            self.append_value_to_parameter("output", value=artifact.value)
+            if isinstance(event, TextChunkEvent):
+                self.append_value_to_parameter("output", value=event.token)
 
             # If the artifact is an ActionChunkEvent, append it to the logs parameter.
-            self.append_value_to_parameter("logs", f"{artifact=}\n")
+            elif isinstance(event, ActionChunkEvent):
+                self.append_value_to_parameter("logs", f"{event.name}.{event.tag} ({event.path})\n")
+        # stream = Stream(agent, event_types=[TextChunkEvent, ActionChunkEvent])
+        # for artifact in stream.run(prompt):
+        #     # If the artifact is a TextChunkEvent, append it to the output parameter.
+        #     self.append_value_to_parameter("output", value=artifact.value)
+
+        #     # If the artifact is an ActionChunkEvent, append it to the logs parameter.
+        #     self.append_value_to_parameter("logs", f"{artifact=}\n")
         return agent
