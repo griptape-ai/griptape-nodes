@@ -1,4 +1,4 @@
-from griptape.drivers import BaseWebSearchDriver, DuckDuckGoWebSearchDriver
+from griptape.drivers import DuckDuckGoWebSearchDriver
 from griptape.tools import WebSearchTool as GtWebSearchTool
 
 from griptape_nodes.exe_types.core_types import Parameter
