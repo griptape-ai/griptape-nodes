@@ -193,10 +193,7 @@ class ControlFlow:
             raise Exception(errormsg)
         del self.flow_queue
         self.flow_queue = Queue()
-        if self.control_flow_machine.get_current_state():
-            self.control_flow_machine.reset_machine()
-        else:
-            self.control_flow_machine._context.resolution_machine.reset_machine()
+        self.control_flow_machine.reset_machine()
         # Reset control flow machine
         self.single_node_resolution = False
         logger.debug("Cancelling flow run")

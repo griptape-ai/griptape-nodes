@@ -497,18 +497,15 @@ class ObjectManager:
             return ClearAllObjectStateResultFailure()
         # Let's try and clear it all.
         context_mgr = GriptapeNodes.ContextManager()
-        if context_mgr.has_current_flow():
-            flow_name = context_mgr.pop_flow()
-            if flow_name:
-                flow = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(
-                    flow_name, ControlFlow
-                )
-                if flow and flow.check_for_existing_running_flow():
-                    result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow_name))
-                    if not result.succeeded():
-                        details = "Attempted to clear all object state and delete everything. Failed because running flow could not cancel."
-                        logger.error(details)
-                        return ClearAllObjectStateResultFailure()
+        obj_mgr = GriptapeNodes.get_instance()._object_manager
+        flows = obj_mgr.get_filtered_subset(type=ControlFlow)
+        for flow_name, flow in flows.items():
+            if flow.check_for_existing_running_flow():
+                result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow_name))
+                if not result.succeeded():
+                    details = "Attempted to clear all object state and delete everything. Failed because running flow could not cancel."
+                    logger.error(details)
+                    return ClearAllObjectStateResultFailure()
         while context_mgr.has_current_flow():
             while context_mgr.has_current_node():
                 while context_mgr.has_current_element():
