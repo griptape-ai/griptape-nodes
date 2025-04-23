@@ -495,7 +495,11 @@ class ObjectManager:
             if flow_name:
                 flow = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
                 if flow and flow.check_for_existing_running_flow():
-                    GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow_name))
+                    result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow_name))
+                    if not result.succeeded():
+                        details = "Attempted to clear all object state and delete everything. Failed because running flow could not cancel."
+                        logger.error(details)
+                        return ClearAllObjectStateResultFailure()
         while context_mgr.has_current_flow():
             while context_mgr.has_current_node():
                 while context_mgr.has_current_element():
@@ -1313,6 +1317,11 @@ class FlowManager:
             details = f"Cannot start flow. Error: {err}"
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[err])
+        # Check to see if the flow is already running.
+        if flow.check_for_existing_running_flow():
+            details = "Cannot start flow. Flow is already running."
+            logger.error(details)
+            return StartFlowResultFailure(validation_exceptions=[])
         # A node has been provided to either start or to run up to.
         if request.flow_node_name:
             flow_node_name = request.flow_node_name
@@ -1365,11 +1374,6 @@ class FlowManager:
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             logger.exception(details)
-            if flow.check_for_existing_running_flow():
-                # Cancel the flow run.
-                cancel_request = CancelFlowRequest(flow_name=flow_name)
-                GriptapeNodes.handle_request(cancel_request)
-
             return StartFlowResultFailure(validation_exceptions=[e])
 
         details = f"Successfully kicked off flow with name {flow_name}"
@@ -1444,9 +1448,6 @@ class FlowManager:
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
             logger.error(details)
-            if flow.check_for_existing_running_flow():
-                cancel_request = CancelFlowRequest(flow_name=flow_name)
-                GriptapeNodes.handle_request(cancel_request)
             return SingleNodeStepResultFailure(validation_exceptions=[])
 
         # All completed happily
@@ -1475,9 +1476,6 @@ class FlowManager:
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
             logger.error(details)
-            if flow.check_for_existing_running_flow():
-                cancel_request = CancelFlowRequest(flow_name=flow_name)
-                GriptapeNodes.handle_request(cancel_request)
             return SingleNodeStepResultFailure(validation_exceptions=[])
         details = f"Successfully granularly stepped flow with name {flow_name}"
         logger.debug(details)
@@ -1503,9 +1501,6 @@ class FlowManager:
         except Exception as e:
             details = f"Failed to continue execution step. An exception occurred: {e}."
             logger.error(details)
-            if flow.check_for_existing_running_flow():
-                cancel_request = CancelFlowRequest(flow_name=flow_name)
-                GriptapeNodes.handle_request(cancel_request)
             return ContinueExecutionStepResultFailure()
         details = f"Successfully continued flow with name {flow_name}"
         logger.debug(details)
@@ -2886,6 +2881,10 @@ class NodeManager:
             details = f'Failed to fetch parent flow for "{node_name}"'
             logger.error(details)
             return ResolveNodeResultFailure(validation_exceptions=[])
+        if flow.check_for_existing_running_flow():
+            details = f"Failed to resolve from node '{node_name}'. Flow is already running."
+            logger.error(details)
+            return ResolveNodeResultFailure(validation_exceptions=[])
         try:
             flow.connections.unresolve_future_nodes(node)
         except Exception as e:
@@ -2915,13 +2914,9 @@ class NodeManager:
         try:
             flow.resolve_singular_node(node, debug_mode)
         except Exception as e:
-            if flow.check_for_existing_running_flow():
-                cancel_request = CancelFlowRequest(flow_name=flow_name)
-                GriptapeNodes.handle_request(cancel_request)
-            else:
-                details = f'Failed to resolve "{node_name}".  Error: {e}'
-                logger.error(details)
-                return ResolveNodeResultFailure(validation_exceptions=[e])
+            details = f'Failed to resolve "{node_name}".  Error: {e}'
+            logger.error(details)
+            return ResolveNodeResultFailure(validation_exceptions=[e])
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         logger.debug(details)
         return ResolveNodeResultSuccess()
