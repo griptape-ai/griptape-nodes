@@ -3703,6 +3703,66 @@ class LibraryManager:
             self.on_app_initialization_complete,
         )
 
+    def print_library_load_status(self) -> None:
+        library_file_paths = GriptapeNodes.LibraryManager().get_libraries_attempted_to_load()
+        library_infos = []
+        for library_file_path in library_file_paths:
+            library_info = GriptapeNodes.LibraryManager().get_library_info_for_attempted_load(library_file_path)
+            library_infos.append(library_info)
+
+        console = Console()
+
+        # Check if the list is empty
+        if not library_infos:
+            # Display a message indicating no libraries are available
+            empty_message = Text("No library information available", style="italic")
+            panel = Panel(empty_message, title="Library Information", border_style="blue")
+            console.print(panel)
+            return
+
+        # Create a table with three columns and row dividers
+        # Using SQUARE box style which includes row dividers
+        table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True)
+        table.add_column("File Path", style="cyan")
+        table.add_column("Library Name", style="green")
+        table.add_column("Problems", style="yellow")
+
+        # Status emojis mapping
+        status_emoji = {
+            LibraryManager.LibraryStatus.GOOD: "✅",
+            LibraryManager.LibraryStatus.FLAWED: "🚨",
+            LibraryManager.LibraryStatus.UNUSABLE: "❌",
+            LibraryManager.LibraryStatus.MISSING: "❓",
+        }
+
+        # Add rows for each library info
+        for lib_info in library_infos:
+            # File path column
+            file_path = lib_info.library_path
+
+            # Library name column with emoji based on status
+            emoji = status_emoji.get(lib_info.status, "ERR: Unknown/Unexpected Library Status")
+            name = lib_info.library_name if lib_info.library_name else "*UNKNOWN*"
+            library_name = f"{emoji} {name}"
+
+            # Problems column - format with numbers if there's more than one
+            if not lib_info.problems:
+                problems = "<none>"
+            elif len(lib_info.problems) == 1:
+                problems = lib_info.problems[0]
+            else:
+                # Number the problems when there's more than one
+                problems = "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(lib_info.problems)])
+
+            # Add the row to the table
+            table.add_row(file_path, library_name, problems)
+
+        # Create a panel containing the table
+        panel = Panel(table, title="Library Information", border_style="blue")
+
+        # Display the panel
+        console.print(panel)
+
     def get_libraries_attempted_to_load(self) -> list[str]:
         return list(self._library_file_path_to_info.keys())
 
@@ -3973,7 +4033,7 @@ class LibraryManager:
             return RegisterLibraryFromFileResultFailure()
 
         # Successes, but errors.
-        if len(problems) > 0:
+        if problems:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=library_name,
@@ -4229,64 +4289,7 @@ class LibraryManager:
                 GriptapeNodes().handle_request(library_load_request)
 
         # Print 'em all pretty
-        library_file_paths = GriptapeNodes.LibraryManager().get_libraries_attempted_to_load()
-        library_infos = []
-        for library_file_path in library_file_paths:
-            library_info = GriptapeNodes.LibraryManager().get_library_info_for_attempted_load(library_file_path)
-            library_infos.append(library_info)
-
-        console = Console()
-
-        # Check if the list is empty
-        if not library_infos:
-            # Display a message indicating no libraries are available
-            empty_message = Text("No library information available", style="italic")
-            panel = Panel(empty_message, title="Library Information", border_style="blue")
-            console.print(panel)
-            return
-
-        # Create a table with three columns and row dividers
-        # Using SQUARE box style which includes row dividers
-        table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True)
-        table.add_column("File Path", style="cyan")
-        table.add_column("Library Name", style="green")
-        table.add_column("Problems", style="yellow")
-
-        # Status emojis mapping
-        status_emoji = {
-            LibraryManager.LibraryStatus.GOOD: "✅",
-            LibraryManager.LibraryStatus.FLAWED: "🚨",
-            LibraryManager.LibraryStatus.UNUSABLE: "❌",
-            LibraryManager.LibraryStatus.MISSING: "❓",
-        }
-
-        # Add rows for each library info
-        for lib_info in library_infos:
-            # File path column
-            file_path = lib_info.library_path
-
-            # Library name column with emoji based on status
-            emoji = status_emoji.get(lib_info.status, "")
-            name = lib_info.library_name if lib_info.library_name else "*UNKNOWN*"
-            library_name = f"{emoji} {name}"
-
-            # Problems column - format with numbers if there's more than one
-            if not lib_info.problems:
-                problems = "<none>"
-            elif len(lib_info.problems) == 1:
-                problems = lib_info.problems[0]
-            else:
-                # Number the problems when there's more than one
-                problems = "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(lib_info.problems)])
-
-            # Add the row to the table
-            table.add_row(file_path, library_name, problems)
-
-        # Create a panel containing the table
-        panel = Panel(table, title="Library Information", border_style="blue")
-
-        # Display the panel
-        console.print(panel)
+        self.print_library_load_status()
 
     # TODO(griptape): Move to WorkflowManager
     def _register_workflows_from_config(self, config_section: str) -> None:  # noqa: C901, PLR0912, PLR0915 (need lots of branches for error checking)

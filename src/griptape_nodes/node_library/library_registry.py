@@ -76,7 +76,7 @@ class LibraryRegistry(SingletonMixin):
         """Register a node type from a library. Returns an error string for forensics."""
         # Does a node class of this name already exist?
         library_collisions = LibraryRegistry.get_libraries_with_node_type(node_class_name)
-        if len(library_collisions) > 0:
+        if library_collisions:
             if library.name in library_collisions:
                 details = f"Attempted to register Node class '{node_class_name}' from Library '{library.name}', but a Node with that name from that Library was already registered. Check to ensure you aren't re-adding the same libraries multiple times."
                 logger.error(details)
