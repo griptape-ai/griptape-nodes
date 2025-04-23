@@ -139,11 +139,27 @@ class ExecuteNodeState(State):
 
     # TODO(kate): Can we refactor this method to make it a lot cleaner? might involve changing how parameter values are retrieved/stored.
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+    def clear_parameter_output_values(context: ResolutionContext) -> None:
+        """Clears all parameter output values for the currently focused node in the resolution context.
 
+        This method iterates through each parameter output value stored in the current node,
+        removes it from the node's parameter_output_values dictionary, and publishes an event
+        to notify the system about the parameter value being set to None.
+
+        Args:
+            context (ResolutionContext): The resolution context containing the focus stack
+                with the current node being processed.
+
+        Raises:
+            ValueError: If a parameter name in parameter_output_values doesn't correspond
+                to an actual parameter in the node.
+
+        Note:
+            - Uses a copy of parameter_output_values to safely modify the dictionary during iteration
+            - For each parameter, publishes a ParameterValueUpdateEvent with value=None
+            - Events are wrapped in ExecutionGriptapeNodeEvent before publishing
+        """
         current_node = context.focus_stack[-1].node
-        # Get the parameters that have input values
         for parameter_name in current_node.parameter_output_values.copy():
             parameter = current_node.get_parameter_by_name(parameter_name)
             if parameter is None:
@@ -159,6 +175,15 @@ class ExecuteNodeState(State):
                 value=None,
             )
             EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
+        current_node.parameter_output_values.clear()
+
+    @staticmethod
+    def on_enter(context: ResolutionContext) -> type[State] | None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        current_node = context.focus_stack[-1].node
+        # Clear all of the current output values
+        ExecuteNodeState.clear_parameter_output_values(context)
         for parameter in current_node.parameters:
             if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
                 continue
