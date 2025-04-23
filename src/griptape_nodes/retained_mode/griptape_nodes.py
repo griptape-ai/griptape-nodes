@@ -501,7 +501,7 @@ class ObjectManager:
             if flow.check_for_existing_running_flow():
                 result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow_name))
                 if not result.succeeded():
-                    details = "Attempted to clear all object state and delete everything. Failed because running flow could not cancel."
+                    details = f"Attempted to clear all object state and delete everything. Failed because running flow '{flow_name}' could not cancel."
                     logger.error(details)
                     return ClearAllObjectStateResultFailure()
         context_mgr = GriptapeNodes.ContextManager()
@@ -2894,7 +2894,7 @@ class NodeManager:
 
             return ResolveNodeResultFailure(validation_exceptions=[e])
         try:
-            obj_mgr = GriptapeNodes()._object_manager
+            obj_mgr = GriptapeNodes.ObjectManager()
             flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
         except KeyError as e:
             details = f'Failed to fetch parent flow for "{node_name}": {e}'
