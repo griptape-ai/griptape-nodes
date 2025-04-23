@@ -3150,18 +3150,38 @@ class WorkflowManager:
         return DeleteWorkflowResultSuccess()
 
     def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
-        save_workflow_request = GriptapeNodes.handle_request(SaveWorkflowRequest(file_name=request.requested_name))
+        try:
+            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+        except Exception:
+            logger.error("Attempted to rename workflow, but '%s' was not found.", request.workflow_name)
+            return RenameWorkflowResultFailure()
 
+        save_workflow_request = GriptapeNodes.handle_request(SaveWorkflowRequest(file_name=request.requested_name))
         if isinstance(save_workflow_request, SaveWorkflowResultFailure):
             details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to save."
             logger.error(details)
             return RenameWorkflowResultFailure()
 
-        delete_workflow_result = GriptapeNodes.handle_request(DeleteWorkflowRequest(name=request.workflow_name))
-        if isinstance(delete_workflow_result, DeleteWorkflowResultFailure):
-            details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to remove the original file name from the registry."
-            logger.error(details)
-            return RenameWorkflowResultFailure()
+        config_manager = GriptapeNodes.get_instance()._config_manager
+        workflows_to_register = config_manager.get_config_value(
+            "app_events.on_app_initialization_complete.workflows_to_register"
+        )
+        # We only want to delete workflows that are not provided by griptape.
+        workflow_to_delete = next(
+            (
+                workflow_to_register
+                for workflow_to_register in workflows_to_register
+                if workflow_to_register["file_name"] == workflow.file_path
+                and not workflow_to_register["is_griptape_provided"]
+            ),
+            None,
+        )
+        if workflow_to_delete is not None:
+            delete_workflow_result = GriptapeNodes.handle_request(DeleteWorkflowRequest(name=request.workflow_name))
+            if isinstance(delete_workflow_result, DeleteWorkflowResultFailure):
+                details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to remove the original file name from the registry."
+                logger.error(details)
+                return RenameWorkflowResultFailure()
 
         return RenameWorkflowResultSuccess()
 

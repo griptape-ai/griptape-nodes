@@ -183,13 +183,14 @@ class ConfigManager:
         existing_workflows.append(workflow_details.__dict__)
         self.set_config_value(config_loc, existing_workflows)
 
+
     def delete_user_workflow(self, workflow: dict) -> None:
         default_workflows = self.get_config_value("app_events.on_app_initialization_complete.workflows_to_register")
         if default_workflows:
             default_workflows = [
                 saved_workflow
                 for saved_workflow in default_workflows
-                if saved_workflow["file_name"] != workflow["file_path"]
+                if saved_workflow["is_griptape_provided"] or saved_workflow["file_name"] != workflow["file_path"]
             ]
             self.set_config_value("app_events.on_app_initialization_complete.workflows_to_register", default_workflows)
 
