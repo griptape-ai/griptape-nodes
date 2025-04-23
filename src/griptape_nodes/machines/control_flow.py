@@ -45,7 +45,7 @@ class ControlFlowContext:
     def reset(self) -> None:
         if self.current_node:
             self.current_node.clear_node()
-        self.current_node = None
+        del self.current_node
         self.resolution_machine.reset_machine()
         self.selected_output = None
         self.paused = False

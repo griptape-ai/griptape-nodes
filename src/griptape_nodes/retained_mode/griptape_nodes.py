@@ -500,7 +500,9 @@ class ObjectManager:
         if context_mgr.has_current_flow():
             flow_name = context_mgr.pop_flow()
             if flow_name:
-                flow = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+                flow = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(
+                    flow_name, ControlFlow
+                )
                 if flow and flow.check_for_existing_running_flow():
                     result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow_name))
                     if not result.succeeded():
