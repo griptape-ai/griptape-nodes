@@ -135,6 +135,15 @@
   ],
   "nodes": [
     {
+      "class_name": "ExampleAgent",
+      "file_path": "griptape_nodes_library/misc/example_agent.py",
+      "metadata": {
+        "category": "misc",
+        "description": "Example Agent node.",
+        "display_name": "Example Agent"
+      }
+    },
+    {
       "class_name": "Agent",
       "file_path": "griptape_nodes_library/agents/create_agent.py",
       "metadata": {
