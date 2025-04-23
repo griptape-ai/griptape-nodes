@@ -55,6 +55,13 @@ class ResolutionContext:
             node = self.focus_stack[-1].node
             # clear the data node being resolved.
             node.clear_node()
+            self.focus_stack[-1].process_generator = None
+            self.focus_stack[-1].scheduled_value = None
+            EventBus.publish_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=node.name))
+                )
+            )
         self.focus_stack.clear()
         self.paused = False
 
@@ -362,11 +369,13 @@ class ExecuteNodeState(State):
                 logger.debug("Error in future: %s", e)
                 current_focus.scheduled_value = e
             finally:
-                EventBus.publish_event(
-                    ExecutionGriptapeNodeEvent(
-                        wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
+                # If it hasn't been cancelled.
+                if current_focus.process_generator:
+                    EventBus.publish_event(
+                        ExecutionGriptapeNodeEvent(
+                            wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
+                        )
                     )
-                )
 
         current_node = current_focus.node
         # Only start the processing if we don't already have a generator
@@ -441,5 +450,5 @@ class NodeResolutionMachine(FSM[ResolutionContext]):
         return self._current_state is not None
 
     def reset_machine(self) -> None:
-        self._current_state = None
         self._context.reset()
+        self._current_state = None
