@@ -253,7 +253,7 @@ class BaseNode(ABC):
 
     # Advance the current index to the next index
     def advance_parameter(self) -> bool:
-        if self.current_spotlight_parameter and self.current_spotlight_parameter.next is not None:
+        if self.current_spotlight_parameter is not None and self.current_spotlight_parameter.next is not None:
             self.current_spotlight_parameter = self.current_spotlight_parameter.next
             return True
         self.current_spotlight_parameter = None
