@@ -4287,7 +4287,7 @@ class LibraryManager:
 
         # Make sure the version string is copacetic.
         library_version = library_metadata[library_version_key]
-        if not library_version:
+        if library_version is None:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=library_name,
