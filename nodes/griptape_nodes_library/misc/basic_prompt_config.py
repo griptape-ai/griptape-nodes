@@ -36,7 +36,7 @@ class BasePromptSettings(BaseDriver):
                 type="float",
                 output_type="float",
                 default_value=0.1,
-                tooltip="Temperature for sampling",
+                tooltip="Temperature for creativity. Higher values will be more creative.",
                 ui_options={"slider": {"min_val": 0.0, "max_val": 1.0}, "step": 0.01},
             )
         )

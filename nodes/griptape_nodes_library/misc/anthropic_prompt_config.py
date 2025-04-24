@@ -1,7 +1,7 @@
 from griptape.drivers.prompt.anthropic import AnthropicPromptDriver as GtAnthropicPromptDriver
 
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.misc.base_prompt_settings import BasePromptSettings
+from griptape_nodes_library.misc.basic_prompt_config import BasePromptSettings
 
 DEFAULT_MODEL = "claude-3-7-sonnet-latest"
 MODELS = ["claude-3-7-sonnet-latest", "claude-3-5-sonnet-latest", "claude-3-5-opus-latest", "claude-3-5-haiku-latest"]

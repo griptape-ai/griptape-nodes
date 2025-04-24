@@ -1,7 +1,7 @@
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver as GtGriptapeCloudPromptDriver
 
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.misc.base_prompt_settings import BasePromptSettings
+from griptape_nodes_library.misc.basic_prompt_config import BasePromptSettings
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
@@ -19,7 +19,7 @@ MODELS = [
 SUCCESS = 200
 
 
-class GriptapeCloudPromptModelConfig(BasePromptSettings):
+class GriptapePromptModelConfig(BasePromptSettings):
     """Node for Griptape Cloud Prompt Driver.
 
     This node creates a Griptape Cloud prompt driver and outputs its configuration.

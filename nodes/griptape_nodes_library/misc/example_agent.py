@@ -6,6 +6,7 @@ from griptape.events import ActionChunkEvent, TextChunkEvent
 from griptape.structures import Structure
 from griptape.structures.agent import Agent as GtAgent
 from griptape.utils import Stream
+from jinja2 import Template
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -40,6 +41,16 @@ class ExampleAgent(ControlNode):
                 return value
             return value.strip()
 
+        self.add_parameter(
+            Parameter(
+                name="agent",
+                type="Agent",
+                input_types=["Agent", "dict"],
+                output_type="Agent",
+                tooltip="Create a new agent, or continue a chat with an existing agent.",
+                default_value=None,
+            )
+        )
         # -- Parameters --
         # Parameters are the inputs and outputs of the node. They can be used to connect to other nodes.
         self.add_parameter(
@@ -53,6 +64,17 @@ class ExampleAgent(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"multiline": True, "placeholder_text": "Talk with the Agent."},
                 converters=[strip_whitespace],
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                "additional context",
+                input_types=["str", "int", "float", "dict"],
+                type="str",
+                tooltip="Additional context to provide to the agent.\nEither a string, or dictionary of key-value pairs.",
+                default_value="",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"placeholder_text": "Any additional context for the Agent."},
             )
         )
 
@@ -95,17 +117,6 @@ class ExampleAgent(ControlNode):
             )
         advanced_group.ui_options = {"hide": True}  # Hide the advanced group by default.
         self.add_node_element(advanced_group)
-        self.add_parameter(
-            Parameter(
-                name="agent",
-                type="Agent",
-                input_types=["Agent", "dict"],
-                output_type="Agent",
-                tooltip="None",
-                default_value=None,
-                allowed_modes={ParameterMode.OUTPUT},
-            )
-        )
 
         self.add_parameter(
             Parameter(
@@ -167,6 +178,11 @@ class ExampleAgent(ControlNode):
             if model_param:
                 model_param._ui_options["hide"] = True
 
+        # Additional Context
+        # If the user connects to the additional context, make it not editable.
+        if target_parameter.name == "additional context":
+            target_parameter.allowed_modes = {ParameterMode.INPUT}
+
         # Default return
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
@@ -179,6 +195,11 @@ class ExampleAgent(ControlNode):
             model_param = self.get_parameter_by_name("model")
             if model_param:
                 model_param._ui_options["hide"] = False
+
+        # Additional Context
+        # If the user connects to the additional context, make it  editable.
+        if target_parameter.name == "additional context":
+            target_parameter.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY}
 
         # Default return
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
@@ -198,6 +219,17 @@ class ExampleAgent(ControlNode):
 
         # Return any exceptions
         return exceptions if exceptions else None
+
+    def _handle_additonal_context(self, prompt, additional_context: str | int | float | dict[str, Any]) -> str:  # noqa: PYI041
+        context = additional_context
+        if isinstance(context, (int, float)):
+            # If the additional context is a number, we want to convert it to a string.
+            context = str(context)
+        if isinstance(context, str):
+            prompt += f"\n{context!s}"
+        elif isinstance(context, dict):
+            prompt = Template(prompt).render(context)
+        return prompt
 
     # -- Processing --
     # This is called when the node is run. We can use this to process the node.
@@ -235,6 +267,15 @@ class ExampleAgent(ControlNode):
         # Get the prompt
         prompt = params.get("prompt", "")
 
+        # Use any addional context provided by the user.
+        additional_context = params.get("additional context", None)
+
+        self.append_value_to_parameter("logs", "Checking for additional context..\n")
+
+        if additional_context:
+            prompt = self._handle_additonal_context(prompt, additional_context)
+
+        self.append_value_to_parameter("logs", f"Sending prompt:\n{prompt}\n")
         # Run the agent asynchronously
         self.append_value_to_parameter("logs", "Started processing agent..\n")
         yield lambda: self._process(agent, prompt)

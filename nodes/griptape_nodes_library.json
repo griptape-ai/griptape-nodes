@@ -144,21 +144,21 @@
       }
     },
     {
-      "class_name": "GriptapeCloudPromptModelConfig",
-      "file_path": "griptape_nodes_library/misc/griptape_cloud_prompt_settings.py",
+      "class_name": "GriptapePromptModelConfig",
+      "file_path": "griptape_nodes_library/misc/griptape_prompt_config.py",
       "metadata": {
         "category": "misc",
-        "description": "Griptape Cloud Prompt Model Config.",
-        "display_name": "Griptape Cloud Prompt Model Config"
+        "description": "Griptape Prompt Model Config.",
+        "display_name": "Griptape Prompt Model Config"
       }
     },
     {
       "class_name": "AnthropicPromptModelConfig",
-      "file_path": "griptape_nodes_library/misc/anthropic_prompt_settings.py",
+      "file_path": "griptape_nodes_library/misc/anthropic_prompt_config.py",
       "metadata": {
         "category": "misc",
-        "description": "Griptape Cloud Prompt Model Config.",
-        "display_name": "Griptape Cloud Prompt Model Config"
+        "description": "Anthropic Prompt Model Config.",
+        "display_name": "Anthropic Prompt Model Config"
       }
     },
     {
