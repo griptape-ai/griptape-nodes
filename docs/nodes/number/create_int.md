@@ -4,7 +4,6 @@
 
 The IntegerInput node is a simple way to input integer (whole) number values.
 
-
 ## When would I use it?
 
 Use this node when you want to:

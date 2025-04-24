@@ -2,7 +2,7 @@
 
 ## What is it?
 
-The WebScraper tool aguments an agent, allowing that agent to extract and process information from websites.
+The WebScraper tool arguments an agent, allowing that agent to extract and process information from websites.
 
 ## When would I use it?
 
@@ -22,6 +22,7 @@ Use this node when you want to:
 1. Connect the "tool" output to an agent or other node that can utilize tools
 
 ### Parameters
+
 - **off_prompt**: Whether to run web scraping operations outside the main prompt (default is False)
 
 ### Outputs

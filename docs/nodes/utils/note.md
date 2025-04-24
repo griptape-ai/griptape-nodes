@@ -2,7 +2,7 @@
 
 ## What is it?
 
-The Note node allows you to create descriptive notes throughout your workflow.  They are not really operative, but more meant for display and documentation within a flow.
+The Note node allows you to create descriptive notes throughout your workflow. They are not really operative, but more meant for display and documentation within a flow.
 
 ## When would I use it?
 

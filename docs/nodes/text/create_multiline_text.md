@@ -4,7 +4,6 @@
 
 The TextInput node is a simple way to input text for use in workflows.
 
-
 ## When would I use it?
 
 Use the TextInput node when:

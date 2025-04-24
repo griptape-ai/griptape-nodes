@@ -2,7 +2,7 @@
 
 ## What is it?
 
-The Calculator tool is a calculator.  A calculator you give an agent.  So the agent can do math.
+The Calculator tool is a calculator. A calculator you give an agent. So the agent can do math.
 
 ## When would I use it?
 

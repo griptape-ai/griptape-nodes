@@ -2,7 +2,7 @@
 
 ## What is it?
 
-The DateTime tool provides date and time capabilities to your workflows.  It can figure out and write dates and times in all kinds of formats, calculate dates by adding and subtracting stretches of time, and even provide countdowns and days-since type things.
+The DateTime tool provides date and time capabilities to your workflows. It can figure out and write dates and times in all kinds of formats, calculate dates by adding and subtracting stretches of time, and even provide countdowns and days-since type things.
 
 ## When would I use it?
 

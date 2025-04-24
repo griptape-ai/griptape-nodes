@@ -18,7 +18,7 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the Agent to your workflow
-2. Configure the agent's capabilities (tools and rulesets)
+1. Configure the agent's capabilities (tools and rulesets)
 
 ### Parameters
 
@@ -39,12 +39,12 @@ Use this node when you want to:
 Imagine you want to create an Agent that can write haikus based on prompt_context:
 
 1. Add a KeyValuePair
-2. Set the "key" to "topic" and "value" to "swimming"
-3. Add an Agent
-4. Set the Agent "prompt" to "Write me a haiku about {{topic}}"
-5. Connect the KeyValuePair dictionary output to the Agent "prompt_context" input
-6. Run the workflow
-7. The Agent "output" will contain a haiku about swimming!
+1. Set the "key" to "topic" and "value" to "swimming"
+1. Add an Agent
+1. Set the Agent "prompt" to "Write me a haiku about {{topic}}"
+1. Connect the KeyValuePair dictionary output to the Agent "prompt_context" input
+1. Run the workflow
+1. The Agent "output" will contain a haiku about swimming!
 
 ## Important Notes
 

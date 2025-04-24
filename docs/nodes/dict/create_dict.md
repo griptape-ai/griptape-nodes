@@ -19,8 +19,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the Dictionary node to your workflow
-2. Set up your lists of keys and values
-3. Connect the dictionary output to other nodes that need structured data
+1. Set up your lists of keys and values
+1. Connect the dictionary output to other nodes that need structured data
 
 ### Parameters
 
@@ -36,7 +36,7 @@ Use this node when you want to:
 Imagine you want to create a configuration dictionary for a user profile:
 
 1. Add a Dictionary node to your workflow
-2. Set the "keys" parameter to:
+1. Set the "keys" parameter to:
     ```
     ["name", "age", "premium_member", "interests"]
     ```

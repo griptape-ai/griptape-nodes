@@ -48,7 +48,6 @@ Try these things:
 1. Set "temperature" to 0.7 (for more creative responses)
 1. Set "stream" to true or false (to see responses as they're generated, or just at once when done)
 
-
 ## Important Notes
 
 - You need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY`
