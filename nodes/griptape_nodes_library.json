@@ -125,38 +125,46 @@
       }
     },
     {
-      "misc": {
+      "_Agent": {
         "color": "border-gray-500",
-        "title": "Misc",
-        "description": "Miscellaneous Example nodes.",
+        "title": "_Agent",
+        "description": "Example Agent Nodes.",
+        "icon": "Cog"
+      }
+    },
+    {
+      "_Config": {
+        "color": "border-gray-500",
+        "title": "_Config",
+        "description": "Example Configuration Nodes",
         "icon": "Cog"
       }
     }
   ],
   "nodes": [
     {
-      "class_name": "ExampleAgent",
+      "class_name": "ExAgent",
       "file_path": "griptape_nodes_library/misc/example_agent.py",
       "metadata": {
-        "category": "misc",
+        "category": "_Agent",
         "description": "Example Agent node.",
         "display_name": "Example Agent"
       }
     },
     {
-      "class_name": "GriptapePromptModelConfig",
-      "file_path": "griptape_nodes_library/misc/griptape_prompt_config.py",
+      "class_name": "ExGriptapeCloudPrompt",
+      "file_path": "griptape_nodes_library/misc/griptape_prompt.py",
       "metadata": {
-        "category": "misc",
-        "description": "Griptape Prompt Model Config.",
-        "display_name": "Griptape Prompt Model Config"
+        "category": "_Config",
+        "description": "Griptape Prompt Configuration Settings.",
+        "display_name": "Griptape Prompt"
       }
     },
     {
-      "class_name": "AnthropicPromptModelConfig",
-      "file_path": "griptape_nodes_library/misc/anthropic_prompt_config.py",
+      "class_name": "ExAnthropicPrompt",
+      "file_path": "griptape_nodes_library/misc/anthropic_prompt.py",
       "metadata": {
-        "category": "misc",
+        "category": "_Config",
         "description": "Anthropic Prompt Model Config.",
         "display_name": "Anthropic Prompt Model Config"
       }

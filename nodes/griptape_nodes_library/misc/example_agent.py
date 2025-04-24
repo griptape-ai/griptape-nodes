@@ -37,7 +37,7 @@ MODELS = [
 ]
 
 
-class ExampleAgent(ControlNode):
+class ExAgent(ControlNode):
     """A Griptape Node that provides an interface to interact with a Griptape Agent.
 
     This node facilitates communication with a Griptape Agent, allowing for

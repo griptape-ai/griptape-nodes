@@ -1,28 +1,20 @@
-from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver as GtGriptapeCloudPromptDriver
+from griptape.drivers.prompt.anthropic import AnthropicPromptDriver as GtAnthropicPromptDriver
 
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.misc.basic_prompt_config import BasePromptSettings
+from griptape_nodes_library.misc.base_prompt import BasePrompt
 
-API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
-SERVICE = "Griptape"
-DEFAULT_MODEL = "gpt-4.1-mini"
-MODELS = [
-    "gpt-4.1",
-    "gpt-4.1-mini",
-    "gpt-4.1-nano",
-    "gpt-4.5-preview",
-    "o1",
-    "o1-mini",
-    "o3-mini",
-    "other",
-]  # currently only gpt-4o is supported
+DEFAULT_MODEL = "claude-3-7-sonnet-latest"
+MODELS = ["claude-3-7-sonnet-latest", "claude-3-5-sonnet-latest", "claude-3-5-opus-latest", "claude-3-5-haiku-latest"]
+API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
+SERVICE = "Anthropic"
+
 SUCCESS = 200
 
 
-class GriptapePromptModelConfig(BasePromptSettings):
-    """Node for Griptape Cloud Prompt Driver.
+class ExAnthropicPrompt(BasePrompt):
+    """Node for Anthropic Prompt Driver.
 
-    This node creates a Griptape Cloud prompt driver and outputs its configuration.
+    This node creates an Anthropic prompt driver and outputs its configuration.
     """
 
     def __init__(self, **kwargs) -> None:
@@ -39,10 +31,6 @@ class GriptapePromptModelConfig(BasePromptSettings):
                 # Update the choices in the trait
                 trait.choices = MODELS
             model_parameter.default_value = DEFAULT_MODEL
-
-        seed_parameter = self.get_parameter_by_name("seed")
-        if seed_parameter is not None:
-            self.remove_parameter(seed_parameter)
 
     def process(self) -> None:
         # Get the parameters from the node
@@ -61,6 +49,8 @@ class GriptapePromptModelConfig(BasePromptSettings):
         use_native_tools = params.get("use_native_tools", False)
         max_tokens = params.get("max_tokens", None)
         top_p = None if params.get("min_p", None) is None else 1 - float(params["min_p"])
+        min_p = params.get("min_p", None)
+        top_k = params.get("top_k", None)
 
         if response_format == "json_object":
             response_format = {"type": "json_object"}
@@ -77,11 +67,13 @@ class GriptapePromptModelConfig(BasePromptSettings):
             kwargs["max_tokens"] = max_tokens
 
         kwargs["extra_params"] = {}
-        if top_p:
-            kwargs["extra_params"]["top_p"] = top_p
+        if min_p:
+            kwargs["top_p"] = 1 - min_p  # min_p -> top_p
+        if top_k:
+            kwargs["top_k"] = top_k
 
         # Create the driver
-        driver = GtGriptapeCloudPromptDriver(**kwargs)
+        driver = GtAnthropicPromptDriver(**kwargs)
 
         # Set the output
         self.parameter_output_values["prompt model config"] = driver

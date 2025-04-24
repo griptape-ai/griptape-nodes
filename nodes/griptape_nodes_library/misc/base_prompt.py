@@ -5,7 +5,7 @@ from griptape_nodes.traits.options import Options
 from griptape_nodes_library.drivers.base_driver import BaseDriver
 
 
-class BasePromptSettings(BaseDriver):
+class BasePrompt(BaseDriver):
     """Node for Base Prompt Driver.
 
     This node creates a base prompt driver and outputs its configuration.
