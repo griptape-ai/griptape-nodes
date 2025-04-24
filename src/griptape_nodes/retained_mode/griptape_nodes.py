@@ -3049,6 +3049,82 @@ class WorkflowManager:
         )
         event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
 
+    def print_workflow_load_status(self) -> None:
+        workflow_file_paths = self.get_workflows_attempted_to_load()
+        workflow_infos = []
+        for workflow_file_path in workflow_file_paths:
+            workflow_info = self.get_workflow_info_for_attempted_load(workflow_file_path)
+            workflow_infos.append(workflow_info)
+
+        console = Console()
+
+        # Check if the list is empty
+        if not workflow_infos:
+            # Display a message indicating no workflows are available
+            empty_message = Text("No workflow information available", style="italic")
+            panel = Panel(empty_message, title="Workflow Information", border_style="blue")
+            console.print(panel)
+            return
+
+        # Create a table with five columns and row dividers
+        table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True)
+        table.add_column("Workflow Name", style="green")
+        table.add_column("Status", style="green")
+        table.add_column("File Path", style="cyan", no_wrap=False)  # Allow wrapping for file paths
+        table.add_column("Problems", style="yellow")
+        table.add_column("Dependencies", style="magenta")
+
+        # Status emojis mapping
+        status_emoji = {
+            self.WorkflowStatus.GOOD: "✅",
+            self.WorkflowStatus.FLAWED: "🚨",
+            self.WorkflowStatus.UNUSABLE: "❌",
+            self.WorkflowStatus.MISSING: "❓",
+        }
+
+        dependency_status_emoji = {
+            self.WorkflowDependencyStatus.PERFECT: "✅",
+            self.WorkflowDependencyStatus.GOOD: "👌",
+            self.WorkflowDependencyStatus.CAUTION: "⚡",
+            self.WorkflowDependencyStatus.BAD: "❌",
+            self.WorkflowDependencyStatus.MISSING: "❓",
+            self.WorkflowDependencyStatus.UNKNOWN: "❓",
+        }
+
+        # Add rows for each workflow info
+        for wf_info in workflow_infos:
+            # File path column
+            file_path = wf_info.workflow_path
+
+            # Workflow name column with emoji based on status
+            emoji = status_emoji.get(wf_info.status, "ERR: Unknown/Unexpected Workflow Status")
+            name = wf_info.workflow_name if wf_info.workflow_name else "*UNKNOWN*"
+            workflow_name = f"{emoji} {name}"
+
+            # Problems column - format with numbers if there's more than one
+            problems = "\n".join(wf_info.problems) if wf_info.problems else "None"
+
+            # Dependencies column
+            if wf_info.status == self.WorkflowStatus.MISSING or (
+                wf_info.status == self.WorkflowStatus.UNUSABLE and not wf_info.workflow_dependencies
+            ):
+                dependencies = "UNKNOWN"
+            else:
+                dependencies = (
+                    "\n".join(
+                        f"{dep.library_name} ({dep.version_requested}): {dependency_status_emoji.get(dep.status, '?')}"
+                        for dep in wf_info.workflow_dependencies
+                    )
+                    if wf_info.workflow_dependencies
+                    else "None"
+                )
+
+            table.add_row(workflow_name, wf_info.status.value, file_path, problems, dependencies)
+
+        # Wrap the table in a panel
+        panel = Panel(table, title="Workflow Information", border_style="blue")
+        console.print(panel)
+
     def get_workflows_attempted_to_load(self) -> list[str]:
         return list(self._workflow_file_path_to_info.keys())
 
@@ -4574,11 +4650,9 @@ class LibraryManager:
         self.print_library_load_status()
 
     # TODO(griptape): Move to WorkflowManager
-    def _register_workflows_from_config(self, config_section: str) -> None:  # noqa: C901, PLR0912, PLR0915 (need lots of branches for error checking)
+    def _register_workflows_from_config(self, config_section: str) -> None:
         config_mgr = GriptapeNodes().ConfigManager()
         workflows_to_register = config_mgr.get_config_value(config_section)
-        successful_registrations = []
-        failed_registrations = []
         if workflows_to_register is not None:
             for workflow_to_register in workflows_to_register:
                 try:
@@ -4588,7 +4662,6 @@ class LibraryManager:
                     )
                 except Exception as err:
                     err_str = f"Error attempting to get info about workflow to register '{workflow_to_register}': {err}. SKIPPING IT."
-                    failed_registrations.append(workflow_to_register)
                     logger.error(err_str)
                     continue
 
@@ -4604,7 +4677,6 @@ class LibraryManager:
                     load_metadata_request
                 )
                 if not load_metadata_result.succeeded():
-                    failed_registrations.append(final_file_path)
                     # SKIP IT
                     continue
 
@@ -4612,7 +4684,6 @@ class LibraryManager:
                     successful_metadata_result = cast("LoadWorkflowMetadataResultSuccess", load_metadata_result)
                 except Exception as err:
                     err_str = f"Error attempting to get info about workflow to register '{final_file_path}': {err}. SKIPPING IT."
-                    failed_registrations.append(final_file_path)
                     logger.error(err_str)
                     continue
 
@@ -4629,29 +4700,10 @@ class LibraryManager:
                 workflow_register_request = RegisterWorkflowRequest(
                     metadata=workflow_metadata, file_name=str(final_file_path)
                 )
-                register_result = GriptapeNodes().handle_request(workflow_register_request)
+                GriptapeNodes().handle_request(workflow_register_request)
 
-                details = f"'{workflow_metadata.name}' ({final_file_path!s})"
-
-                if register_result.succeeded():
-                    # put this in the good pile
-                    successful_registrations.append(details)
-                else:
-                    # not-so-good pile
-                    failed_registrations.append(details)
-
-        if len(successful_registrations) == 0 and len(failed_registrations) == 0:
-            logger.info("No workflows were registered.")
-        if len(successful_registrations) > 0:
-            details = "Workflows successfully registered:"
-            for successful_registration in successful_registrations:
-                details = f"{details}\n\t{successful_registration}"
-            logger.info(details)
-        if len(failed_registrations) > 0:
-            details = "Workflows that FAILED to register:"
-            for failed_registration in failed_registrations:
-                details = f"{details}\n\t{failed_registration}"
-            logger.error(details)
+        # Print it all out nicely.
+        GriptapeNodes.WorkflowManager().print_workflow_load_status()
 
 
 def __getattr__(name) -> logging.Logger:
