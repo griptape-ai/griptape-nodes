@@ -241,7 +241,7 @@ class ExecuteNodeState(State):
         try:
             work_is_scheduled = ExecuteNodeState._process_node(current_focus)
             if work_is_scheduled:
-                logger.info("Pausing Node %s to run background work", current_node.name)
+                logger.debug("Pausing Node %s to run background work", current_node.name)
                 return None
         except Exception as e:
             logger.error("Error processing node '%s': %s", current_node.name, e)
