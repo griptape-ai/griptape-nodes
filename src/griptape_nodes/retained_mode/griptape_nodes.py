@@ -1972,7 +1972,7 @@ class NodeManager:
     def on_list_parameters_on_node_request(self, request: ListParametersOnNodeRequest) -> ResultPayload:
         node_name = request.node_name
 
-        if request.node_name is None:
+        if node_name is None:
             # Get from the current context.
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to list Parameters for a Node from the Current Context. Failed because the Current Context is empty."
@@ -1983,10 +1983,6 @@ class NodeManager:
 
         # Does this node exist?
         obj_mgr = GriptapeNodes.ObjectManager()
-        if node_name is None:
-            details = "Attempted to list Parameters for a Node. Failed because no node name was provided."
-            logger.error(details)
-            return ListParametersOnNodeResultFailure()
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
             details = f"Attempted to list Parameters for a Node '{node_name}', but no such Node was found."
@@ -2409,10 +2405,10 @@ class NodeManager:
             else:
                 parameter.allowed_modes.discard(ParameterMode.OUTPUT)
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: PLR0911
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:
         node_name = request.node_name
 
-        if request.node_name is None:
+        if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = f"Attempted to alter details for Parameter '{request.parameter_name}' from node in the Current Context. Failed because there was no such Node."
                 logger.error(details)
@@ -2422,11 +2418,6 @@ class NodeManager:
 
         # Does this node exist?
         obj_mgr = GriptapeNodes.ObjectManager()
-        if node_name is None:
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from node in the Current Context. Failed because no node name was provided."
-            logger.error(details)
-
-            return AlterParameterDetailsResultFailure()
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
             details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}', but no such Node was found."
@@ -2473,7 +2464,7 @@ class NodeManager:
     def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:
         node_name = request.node_name
 
-        if request.node_name is None:
+        if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = f"Attempted to get value for Parameter '{request.parameter_name}' from node in the Current Context. Failed because there was no such Node."
                 logger.error(details)
@@ -2488,11 +2479,6 @@ class NodeManager:
         param_name = request.parameter_name
 
         # Get the node
-        if node_name is None:
-            details = f"Attempted to get value for Parameter '{request.parameter_name}' from node in the Current Context. Failed because no node name was provided."
-            logger.error(details)
-
-            return GetParameterValueResultFailure()
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
             details = f'"{node_name}" not found'
