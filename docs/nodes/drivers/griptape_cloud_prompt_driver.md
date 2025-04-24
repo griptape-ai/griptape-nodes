@@ -1,24 +1,22 @@
-# GriptapeCloudPromptDriver
+# GriptapeCloudPrompt
 
 ## What is it?
 
-The GriptapeCloudPromptDriver is a building block that sets up a connection to Griptape Cloud's AI services. Think of it as configuring a special channel that your workflow can use to talk to AI models through Griptape's cloud platform.
+The GriptapeCloudPrompt node sets up a connection to Griptape Cloud's AI services.
 
 ## When would I use it?
 
 Use this node when you want to:
 
-- Use various AI models through the Griptape Cloud service
-- Simplify model access with your Griptape API key
-- Customize how your agents interact with AI models
+- Use various AI models through the Griptape Cloud service (you won't have to go register with OpenAI and get an api key)
+- Customize which AI model for anything that takes a prompt driver
 
 ## How to use it
 
 ### Basic Setup
 
-1. Add the GriptapeCloudPromptDriver to your workspace
-1. Connect it to your flow
-1. Connect its output to nodes that need to use AI models (like RunAgent)
+1. Add a GriptapeCloudPrompt node to your workflow
+1. Connect its driver output to nodes that need to use AI models (like an Agent)
 
 ### Parameters
 
@@ -40,12 +38,15 @@ Use this node when you want to:
 
 Imagine you want to create an agent that uses GPT-4o through Griptape Cloud:
 
-1. Add a GriptapeCloudPromptDriver to your workflow
+1. Add a GriptapeCloudPrompt to your workflow
 1. Set "model" to "gpt-4o"
-1. Set "temperature" to 0.7 (for more creative responses)
-1. Set "stream" to true (to see responses as they're generated)
-1. Connect the "driver" output to a RunAgent's "prompt_driver" input
+1. Connect the "driver" output to an Agent's "prompt_driver" input
 1. Now that agent will use Griptape Cloud with your custom settings
+
+Try these things:
+
+1. Set "temperature" to 0.7 (for more creative responses)
+1. Set "stream" to true or false (to see responses as they're generated, or just at once when done)
 
 ## Important Notes
 
@@ -57,4 +58,3 @@ Imagine you want to create an agent that uses GPT-4o through Griptape Cloud:
 
 - **Missing API Key**: Make sure your Griptape API key is properly set up
 - **Connection Errors**: Check your internet connection and API key validity
-- **Invalid Model**: Make sure you're using a model name that Griptape Cloud supports
