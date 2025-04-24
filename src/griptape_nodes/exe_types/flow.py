@@ -11,7 +11,7 @@ from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState, StartNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
-from griptape_nodes.retained_mode.events.execution_events import ControlFlowCancelledEvent, StartFlowRequest
+from griptape_nodes.retained_mode.events.execution_events import ControlFlowCancelledEvent
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
@@ -78,9 +78,7 @@ class ControlFlow:
                         return True
         return False
 
-    def start_flow(self, flow_name: str, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
+    def start_flow(self, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
             errormsg = "This workflow is already in progress. Please wait for the current process to finish before starting again."
@@ -94,9 +92,6 @@ class ControlFlow:
 
         self.control_flow_machine.start_flow(start_node, debug_mode)
         self.flow_queue.task_done()
-        if not debug_mode and not self.flow_queue.empty() and not self.check_for_existing_running_flow():
-            next_node = self.flow_queue.get()
-            GriptapeNodes().handle_request(StartFlowRequest(flow_name=flow_name, flow_node_name=next_node.name))
 
     def check_for_existing_running_flow(self) -> bool:
         if self.control_flow_machine._current_state is not CompleteState and self.control_flow_machine._current_state:
@@ -290,19 +285,27 @@ class ControlFlow:
                 continue
             cn_mgr = self.connections
             # check if it has an incoming connection. If it does, it's not a start node
+            has_control_connection = False
             if node.name in cn_mgr.incoming_index:
-                has_control_connection = False
                 for param_name in cn_mgr.incoming_index[node.name]:
                     param = node.get_parameter_by_name(param_name)
                     if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
                         # there is a control connection coming in
                         has_control_connection = True
                         break
-                # if there is a connection coming in, isn't a start.
-                if has_control_connection:
-                    # let's look at the next node.
-                    continue
-            control_nodes.append(node)
+            # if there is a connection coming in, isn't a start.
+            if has_control_connection:
+                continue
+            # Does it have an outgoing connection?
+            if node.name in cn_mgr.outgoing_index:
+                # If one of the outgoing connections is control, add it. otherwise don't.
+                for param_name in cn_mgr.outgoing_index[node.name]:
+                    param = node.get_parameter_by_name(param_name)
+                    if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
+                        control_nodes.append(node)
+                        break
+            else:
+                control_nodes.append(node)
 
         # If we've gotten to this point, there are no control parameters
         # Let's return a data node that has no OUTGOING data connections!
