@@ -3393,7 +3393,7 @@ class WorkflowManager:
             return LoadWorkflowMetadataResultFailure()
 
         # We have valid dependencies, etc.
-        # TODO(griptape): validate schema versions, engine versions.
+        # TODO(griptape): validate schema versions, engine versions: https://github.com/griptape-ai/griptape-nodes/issues/617
         problems = []
         dependency_infos = []
         had_critical_error = False
@@ -3401,7 +3401,7 @@ class WorkflowManager:
             library_name = node_library_referenced.library_name
             desired_version_str = node_library_referenced.library_version
             desired_version = Version.from_string(desired_version_str)
-            if not desired_version:
+            if desired_version is None:
                 had_critical_error = True
                 problems.append(
                     f"Workflow cited an invalid version string '{desired_version_str}' for library '{library_name}'. Must be specified in major.minor.patch format."
@@ -3459,7 +3459,7 @@ class WorkflowManager:
             # Attempt to parse out the version string.
             library_version_str = library_metadata[version_key]
             library_version = Version.from_string(version_string=library_version_str)
-            if not library_version:
+            if library_version is None:
                 had_critical_error = True
                 problems.append(
                     f"Library an invalid version string '{library_version_str}' for library '{library_name}'. Must be specified in major.minor.patch format."
