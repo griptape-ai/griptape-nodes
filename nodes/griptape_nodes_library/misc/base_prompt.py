@@ -1,3 +1,13 @@
+"""Defines the BasePrompt node, an abstract base class for prompt driver configuration nodes.
+
+This module provides the `BasePrompt` class, which serves as a foundation
+for creating specific prompt driver configuration nodes within the Griptape
+Nodes framework. It inherits from `BaseDriver` and defines common parameters
+used by most prompt drivers (like temperature, model, etc.). Subclasses
+should inherit from `BasePrompt` and override the `process` method to instantiate
+and configure a specific Griptape prompt driver.
+"""
+
 from griptape.drivers.prompt.dummy import DummyPromptDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
@@ -6,9 +16,27 @@ from griptape_nodes_library.drivers.base_driver import BaseDriver
 
 
 class BasePrompt(BaseDriver):
-    """Node for Base Prompt Driver.
+    """Abstract base node for configuring Griptape Prompt Drivers.
 
-    This node creates a base prompt driver and outputs its configuration.
+    Inherits from `BaseDriver` and provides a standard set of parameters common
+    to many Large Language Model (LLM) prompt drivers, such as temperature,
+    model selection, and token limits.
+
+    It renames the inherited 'driver' output parameter to 'prompt model config'
+    to clearly indicate its purpose in the context of prompt configuration.
+
+    Subclasses should:
+    1. Inherit from this class.
+    2. Potentially override or modify the `model` parameter's `Options` trait
+       to list specific models supported by their driver.
+    3. Override the `process` method to instantiate the specific Griptape
+       prompt driver (e.g., `OpenAiChatPromptDriver`, `AnthropicPromptDriver`)
+       using the parameter values defined here.
+
+    Note: The `process` method in this base class creates a `DummyPromptDriver`
+    primarily to establish the output socket type. It does not utilize the
+    configuration parameters defined herein. Direct use of `BasePrompt` is
+    generally not intended.
     """
 
     def __init__(self, **kwargs) -> None:
