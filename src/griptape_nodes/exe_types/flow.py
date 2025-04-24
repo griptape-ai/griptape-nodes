@@ -293,19 +293,27 @@ class ControlFlow:
                 continue
             cn_mgr = self.connections
             # check if it has an incoming connection. If it does, it's not a start node
+            has_control_connection = False
             if node.name in cn_mgr.incoming_index:
-                has_control_connection = False
                 for param_name in cn_mgr.incoming_index[node.name]:
                     param = node.get_parameter_by_name(param_name)
                     if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
                         # there is a control connection coming in
                         has_control_connection = True
                         break
-                # if there is a connection coming in, isn't a start.
-                if has_control_connection:
-                    # let's look at the next node.
-                    continue
-            control_nodes.append(node)
+            # if there is a connection coming in, isn't a start.
+            if has_control_connection:
+                continue
+            # Does it have an outgoing connection?
+            if node.name in cn_mgr.outgoing_index:
+                # If one of the outgoing connections is control, add it. otherwise don't.
+                for param_name in cn_mgr.outgoing_index[node.name]:
+                    param = node.get_parameter_by_name(param_name)
+                    if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
+                        control_nodes.append(node)
+                        break
+            else:
+                control_nodes.append(node)
 
         # If we've gotten to this point, there are no control parameters
         # Let's return a data node that has no OUTGOING data connections!
