@@ -11,7 +11,7 @@ SERVICE = "Anthropic"
 SUCCESS = 200
 
 
-class AnthropicPromptModelSettings(BasePromptSettings):
+class AnthropicPromptModelConfig(BasePromptSettings):
     """Node for Anthropic Prompt Driver.
 
     This node creates an Anthropic prompt driver and outputs its configuration.
@@ -76,7 +76,7 @@ class AnthropicPromptModelSettings(BasePromptSettings):
         driver = GtAnthropicPromptDriver(**kwargs)
 
         # Set the output
-        self.parameter_output_values["prompt model settings"] = driver
+        self.parameter_output_values["prompt model config"] = driver
 
     def validate_node(self) -> list[Exception] | None:
         # Items here are openai api key

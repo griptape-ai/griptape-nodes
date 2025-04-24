@@ -15,6 +15,7 @@ from griptape_nodes_library.utils.error_utils import try_throw_error
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 DEFAULT_MODEL = "gpt-4.1-mini"
+CONNECTED_CHOICE = "use incoming config"
 MODELS = [
     "gpt-4.1",
     "gpt-4.1-mini",
@@ -23,8 +24,8 @@ MODELS = [
     "o1",
     "o1-mini",
     "o3-mini",
-    "other",
-]  # currently only gpt-4o is supported
+    CONNECTED_CHOICE,
+]
 
 
 class ExampleAgent(ControlNode):
@@ -69,10 +70,10 @@ class ExampleAgent(ControlNode):
 
         self.add_parameter(
             Parameter(
-                name="prompt model settings",
-                input_types=["Prompt Model Settings"],
-                type="Prompt Model Settings",
-                tooltip="Connect prompt model settings. If not supplied, we will use the Griptape Cloud Prompt Model.",
+                name="prompt model config",
+                input_types=["Prompt Model Config"],
+                type="Prompt Model Config",
+                tooltip="Connect prompt model config. If not supplied, we will use the Griptape Cloud Prompt Model.",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
                 ui_options={"hide": True},
@@ -137,17 +138,17 @@ class ExampleAgent(ControlNode):
     # based on the value of other parameters.
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         # Model
-        # If user sets the model to "other", we want to show the prompt_model_settings parameter.
+        # If user sets the model to CONNECTED_CHOICE, we want to show the prompt_model_settings parameter.
         if parameter.name == "model":
             # Find the prompt_model_settings parameter and hide it
-            prompt_model_settings_param = self.get_parameter_by_name("prompt model settings")
-            if value == "other" and prompt_model_settings_param:
+            prompt_model_settings_param = self.get_parameter_by_name("prompt model config")
+            if value == CONNECTED_CHOICE and prompt_model_settings_param:
                 prompt_model_settings_param._ui_options["hide"] = False
-            elif value != "other" and prompt_model_settings_param:
+            elif value != CONNECTED_CHOICE and prompt_model_settings_param:
                 prompt_model_settings_param._ui_options["hide"] = True
 
             # Add this to the modified parameters set so we can cascade the change.
-            modified_parameters_set.add("prompt model settings")
+            modified_parameters_set.add("prompt model config")
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
@@ -160,7 +161,7 @@ class ExampleAgent(ControlNode):
     ) -> None:
         # Prompt Driver
         # If the user connects to the prompt_model_settings, we want to hide the model parameter.
-        if target_parameter.name == "prompt model settings":
+        if target_parameter.name == "prompt model config":
             # Find the model parameter and hide it
             model_param = self.get_parameter_by_name("model")
             if model_param:
@@ -173,7 +174,7 @@ class ExampleAgent(ControlNode):
         self, source_node: Self, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
         # If the user connects to the prompt_model_settings, we want to hide the model parameter.
-        if target_parameter.name == "prompt model settings":
+        if target_parameter.name == "prompt model config":
             # Find the model parameter and hide it
             model_param = self.get_parameter_by_name("model")
             if model_param:
@@ -209,7 +210,7 @@ class ExampleAgent(ControlNode):
 
         # For this node, we'll going use the GriptapeCloudPromptDriver if no driver is provided.
         # If a driver is provided, we'll use that.
-        prompt_model_settings = params.get("prompt model settings", None)
+        prompt_model_settings = params.get("prompt model config", None)
 
         if not prompt_model_settings:
             self.append_value_to_parameter("logs", "Using GriptapeCloudPromptDriver.\n")

@@ -15,8 +15,8 @@ class BasePromptSettings(BaseDriver):
         super().__init__(**kwargs)
         driver_parameter = self.get_parameter_by_name("driver")
         if driver_parameter is not None:
-            driver_parameter.name = "prompt model settings"
-            driver_parameter.output_type = "Prompt Model Settings"
+            driver_parameter.name = "prompt model config"
+            driver_parameter.output_type = "Prompt Model Config"
 
         self.add_parameter(
             Parameter(
@@ -118,4 +118,4 @@ class BasePromptSettings(BaseDriver):
         driver = DummyPromptDriver()
 
         # Set the output
-        self.parameter_output_values["prompt model settings"] = driver
+        self.parameter_output_values["prompt model config"] = driver

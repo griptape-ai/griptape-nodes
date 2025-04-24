@@ -19,7 +19,7 @@ MODELS = [
 SUCCESS = 200
 
 
-class GriptapeCloudPromptModelSettings(BasePromptSettings):
+class GriptapeCloudPromptModelConfig(BasePromptSettings):
     """Node for Griptape Cloud Prompt Driver.
 
     This node creates a Griptape Cloud prompt driver and outputs its configuration.
@@ -84,7 +84,7 @@ class GriptapeCloudPromptModelSettings(BasePromptSettings):
         driver = GtGriptapeCloudPromptDriver(**kwargs)
 
         # Set the output
-        self.parameter_output_values["prompt model settings"] = driver
+        self.parameter_output_values["prompt model config"] = driver
 
     def validate_node(self) -> list[Exception] | None:
         # Items here are openai api key
