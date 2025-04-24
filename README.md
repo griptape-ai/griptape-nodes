@@ -16,9 +16,8 @@ Griptape Nodes provides a powerful, visual, node-based interface for building an
 **Learn More:**
 
 - **Full Documentation:** [docs.griptapenodes.com](https://docs.griptapenodes.com)
-- **Setup Guide:** [docs.griptapenodes.com/setup/](https://docs.griptapenodes.com/setup/)
-- **Configuration:** [docs.griptapenodes.com/configuration/](https://docs.griptapenodes.com/configuration/)
-- **Tutorials:** [docs.griptapenodes.com/tutorials/](https://docs.griptapenodes.com/tutorials/)
+- **Getting Started:** [docs.griptapenodes.com/setup/](https://docs.griptapenodes.com/en/latest/getting_started/)
+- **Engine Configuration:** [docs.griptapenodes.com/configuration/](https://docs.griptapenodes.com/en/latest/configuration/)
 
 ______________________________________________________________________
 
