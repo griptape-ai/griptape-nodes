@@ -5,7 +5,9 @@ import io
 import json
 import logging
 import re
+import subprocess
 import sys
+import sysconfig
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -4315,6 +4317,7 @@ class LibraryManager:
                 mark_as_default_library=request.load_as_default_library,
                 categories=categories,
             )
+
         except KeyError as err:
             # Library already exists
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
@@ -4328,6 +4331,54 @@ class LibraryManager:
             )
 
             details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_name}' already exists. Error: {err}."
+            logger.error(details)
+            return RegisterLibraryFromFileResultFailure()
+
+        # Install node library dependencies
+        try:
+            dependencies = library_metadata.get("dependencies", [])
+            site_packages = None
+            if dependencies:
+                pip_install_flags = library_metadata.get("pip_install_flags", [])
+                # Create a virtual environment for the library
+                venv_path = xdg_data_home() / "griptape_nodes" / "venvs" / library_name
+                if not venv_path.exists():
+                    subprocess.run(["uv", "venv", venv_path], check=True, text=True)  # noqa: S603, S607
+                subprocess.run(  # noqa: S603
+                    [  # noqa: S607
+                        "uv",
+                        "pip",
+                        "install",
+                        *dependencies,
+                        *pip_install_flags,
+                        "--python",
+                        venv_path / ("Scripts" if OSManager.is_windows() else "bin") / "python",
+                    ],
+                    check=True,
+                    text=True,
+                )
+                # Need to insert into the path so that the library picks up on the venv
+                site_packages = str(
+                    Path(
+                        sysconfig.get_path(
+                            "purelib",
+                            vars={"base": str(venv_path), "platbase": str(venv_path)},
+                        )
+                    )
+                )
+                sys.path.insert(0, site_packages)
+        except subprocess.CalledProcessError as e:
+            # Failed to create the library
+            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                library_path=file_path,
+                library_name=library_name,
+                library_version=library_version,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=[f"Failed to create the library: {e}"],
+            )
+            details = (
+                f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {e}."
+            )
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
@@ -4418,6 +4469,11 @@ class LibraryManager:
             )
             details = f"Successfully loaded Library '{library_name}' from JSON file at {json_path}"
             logger.info(details)
+
+        # We don't need to keep site_packages on the path since the node
+        # has already been executed and therefore its imports resolved.
+        if site_packages is not None:
+            sys.path.remove(site_packages)
         return RegisterLibraryFromFileResultSuccess(library_name=library_name)
 
     def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
