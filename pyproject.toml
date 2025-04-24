@@ -15,6 +15,7 @@ dependencies = [
   "tomlkit>=0.13.2",
   # TODO(collin): Remove once https://github.com/astral-sh/uv/issues/1632 is resolved
   "uv>=0.6.16",
+  "fastapi[standard]>=0.115.12",
 ]
 
 [dependency-groups]
@@ -42,6 +43,9 @@ gtn = "griptape_nodes:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.uv.sources]
+griptape = { git = "git+https://github.com/griptape-ai/griptape.git", branch = "main" }
 
 [tool.ruff]
 line-length = 120

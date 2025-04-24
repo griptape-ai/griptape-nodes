@@ -4,6 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
 from enum import StrEnum, auto
+from pathlib import Path
 from typing import Any, TypeVar
 
 from griptape.events import BaseEvent, EventBus
@@ -489,6 +490,15 @@ class BaseNode(ABC):
         else:
             msg = f"Parameter '{parameter_name} doesn't exist on {self.name}'"
             raise RuntimeError(msg)
+
+    def save_static_file(self, data: bytes, file_name: str) -> str:
+        from griptape_nodes.app.app import STATIC_SERVER_HOST, STATIC_SERVER_PORT, STATIC_SERVER_URL
+
+        Path(self.config_manager.workspace_path / file_name).write_bytes(data)
+
+        static_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}/{file_name}"
+
+        return static_url
 
 
 class ControlNode(BaseNode):

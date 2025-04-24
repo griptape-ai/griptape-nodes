@@ -1,7 +1,8 @@
-from griptape.artifacts import BaseArtifact
+import uuid
+
+from griptape.artifacts import BaseArtifact, ImageUrlArtifact
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.structures import Structure
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
 
@@ -109,7 +110,7 @@ class GenerateImage(ControlNode):
             return exceptions
         return exceptions if exceptions else None
 
-    def process(self) -> AsyncResult[Structure]:
+    def process(self) -> AsyncResult:
         # Get the parameters from the node
         params = self.parameter_values
         agent = params.get("agent", None)
@@ -166,15 +167,15 @@ Focus on qualities that will make this the most professional looking photo in th
 
         # Run the agent asynchronously
         self.append_value_to_parameter("logs", "Starting processing image..\n")
-        yield lambda: self._process(agent, prompt)
+        yield lambda: self._create_image(agent, prompt)
         self.append_value_to_parameter("logs", "Finished processing image.\n")
-        # Run it again.
 
-        try_throw_error(agent.output)
         # Reset the agent
         agent._tasks = []
 
-    def _process(self, agent: Agent, prompt: BaseArtifact | str) -> Structure:
-        result = agent.run(prompt)
-        self.publish_update_to_parameter("output", result.output)
-        return result
+    def _create_image(self, agent: Agent, prompt: BaseArtifact | str) -> None:
+        agent.run(prompt)
+        static_url = self.save_static_file(agent.output.to_bytes(), f"{uuid.uuid4()}.png")
+        url_artifact = ImageUrlArtifact(value=static_url)
+        self.publish_update_to_parameter("output", url_artifact)
+        try_throw_error(agent.output)
