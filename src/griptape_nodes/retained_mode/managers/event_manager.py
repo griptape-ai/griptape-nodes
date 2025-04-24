@@ -17,8 +17,8 @@ from griptape_nodes.retained_mode.events.base_events import (
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
 
-RP = TypeVar("RP", bound=RequestPayload, default=RequestPayload)
-AP = TypeVar("AP", bound=AppPayload, default=AppPayload)
+RP = TypeVar("RP", bound=RequestPayload)
+AP = TypeVar("AP", bound=AppPayload)
 
 
 class EventManager:

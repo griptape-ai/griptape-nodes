@@ -4,7 +4,7 @@ from griptape.mixins.singleton_mixin import SingletonMixin
 
 from griptape_nodes.retained_mode.events.base_events import Payload
 
-T = TypeVar("T", bound=Payload, default=Payload)
+T = TypeVar("T", bound=Payload)
 
 
 class PayloadRegistry(SingletonMixin):
