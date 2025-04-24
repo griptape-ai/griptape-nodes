@@ -334,6 +334,15 @@
       }
     },
     {
+      "class_name": "CompareImages",
+      "file_path": "griptape_nodes_library/image/compare_images.py",
+      "metadata": {
+        "category": "image",
+        "description": "CompareImages node.",
+        "display_name": "Compare Images"
+      }
+    },
+    {
       "class_name": "DescribeImage",
       "file_path": "griptape_nodes_library/image/describe_image.py",
       "metadata": {
