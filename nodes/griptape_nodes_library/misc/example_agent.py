@@ -5,7 +5,6 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import ActionChunkEvent, TextChunkEvent
 from griptape.structures import Structure
 from griptape.structures.agent import Agent as GtAgent
-from griptape.utils import Stream
 from jinja2 import Template
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
@@ -237,67 +236,58 @@ class ExampleAgent(ControlNode):
         # Get the parameters from the node
         params = self.parameter_values
 
-        # Send the logs to the logs parameter.
-        self.append_value_to_parameter("logs", "Checking for prompt driver..\n")
-
         # For this node, we'll going use the GriptapeCloudPromptDriver if no driver is provided.
         # If a driver is provided, we'll use that.
         prompt_model_settings = params.get("prompt model config", None)
 
         if not prompt_model_settings:
-            self.append_value_to_parameter("logs", "Using GriptapeCloudPromptDriver.\n")
-
             # Grab the appropriate parameters
             model = params.get("model", DEFAULT_MODEL)
-            self.append_value_to_parameter("logs", f"Using model: {model}\n")
 
             prompt_model_settings = GriptapeCloudPromptDriver(
                 model=model,
                 api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
                 stream=True,
             )
-        else:
-            self.append_value_to_parameter("logs", "Using provided prompt driver.\n")
 
-        self.append_value_to_parameter("logs", "\nCreating agent..\n")
+        # Get any tools
+        tools = params.get("tools", [])
 
-        # Create the agent
-        agent = GtAgent(prompt_driver=prompt_model_settings)
+        # Get any rulesets
+        rulesets = params.get("rulesets", [])
 
         # Get the prompt
         prompt = params.get("prompt", "")
 
         # Use any addional context provided by the user.
         additional_context = params.get("additional context", None)
-
-        self.append_value_to_parameter("logs", "Checking for additional context..\n")
-
         if additional_context:
             prompt = self._handle_additonal_context(prompt, additional_context)
 
-        self.append_value_to_parameter("logs", f"Sending prompt:\n{prompt}\n")
+        # Create the agent
+        agent = GtAgent(prompt_driver=prompt_model_settings, tools=tools, rulesets=rulesets)
+
         # Run the agent asynchronously
-        self.append_value_to_parameter("logs", "Started processing agent..\n")
+        self.append_value_to_parameter("logs", "[Started processing agent..]\n")
         yield lambda: self._process(agent, prompt)
-        self.append_value_to_parameter("logs", "Finished processing agent.\n")
+        self.append_value_to_parameter("logs", "\n[Finished processing agent.]\n")
 
         try_throw_error(agent.output)
 
     def _process(self, agent: GtAgent, prompt: BaseArtifact | str) -> Structure:
-        # try a different pattern
-        # for event in agent.run_stream(prompt, event_types=[TextChunkEvent, ActionChunkEvent]):
-        #     # If the artifact is a TextChunkEvent, append it to the output parameter.
-        #     if isinstance(event, TextChunkEvent):
-        #         self.append_value_to_parameter("output", value=event.token)  # noqa: ERA001
+        # Normally we would use the pattern:
+        # for artifact in Stream(agent).run(prompt):
+        # But for this example, we'll use the run_stream method to get the events so we can
+        # show the user when the Agent is using a tool.
 
-        #     # If the artifact is an ActionChunkEvent, append it to the logs parameter.
-        #     elif isinstance(event, ActionChunkEvent):  # noqa: ERA001
-        #         self.append_value_to_parameter("logs", f"{event.name}.{event.tag} ({event.path})\n")  # noqa: ERA001
-        stream = Stream(agent, event_types=[TextChunkEvent, ActionChunkEvent])
-        for artifact in stream.run(prompt):
+        for event in agent.run_stream(prompt, event_types=[TextChunkEvent, ActionChunkEvent]):
             # If the artifact is a TextChunkEvent, append it to the output parameter.
-            self.append_value_to_parameter("output", value=artifact.value)
+            if isinstance(event, TextChunkEvent):
+                self.append_value_to_parameter("output", value=event.token)
+                self.append_value_to_parameter("logs", value=event.token)
 
             # If the artifact is an ActionChunkEvent, append it to the logs parameter.
-            # self.append_value_to_parameter("logs", f"{artifact=}\n")  # noqa: ERA001
+            elif isinstance(event, ActionChunkEvent) and event.name:
+                self.append_value_to_parameter("logs", f"\n> Using tool {event.name}: ({event.path})\n")
+
         return agent
