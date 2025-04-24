@@ -3075,10 +3075,10 @@ class WorkflowManager:
             return
 
         # Create a table with five columns and row dividers
-        table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True)
+        table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True, expand=True)
         table.add_column("Workflow Name", style="green")
         table.add_column("Status", style="green")
-        table.add_column("File Path", style="cyan", no_wrap=False)  # Allow wrapping for file paths
+        table.add_column("File Path", style="cyan")
         table.add_column("Problems", style="yellow")
         table.add_column("Dependencies", style="magenta")
 
@@ -3103,6 +3103,8 @@ class WorkflowManager:
         for wf_info in workflow_infos:
             # File path column
             file_path = wf_info.workflow_path
+            file_path_text = Text(file_path, style="cyan")
+            file_path_text.overflow = "fold"  # Force wrapping
 
             # Workflow name column with emoji based on status
             emoji = status_emoji.get(wf_info.status, "ERR: Unknown/Unexpected Workflow Status")
@@ -3127,7 +3129,7 @@ class WorkflowManager:
                     else "None"
                 )
 
-            table.add_row(workflow_name, wf_info.status.value, file_path, problems, dependencies)
+            table.add_row(workflow_name, wf_info.status.value, file_path_text, problems, dependencies)
 
         # Wrap the table in a panel
         panel = Panel(table, title="Workflow Information", border_style="blue")
@@ -4049,7 +4051,7 @@ class LibraryManager:
 
         # Create a table with three columns and row dividers
         # Using SQUARE box style which includes row dividers
-        table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True)
+        table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True, expand=True)
         table.add_column("Library Name", style="green")
         table.add_column("Version", style="green")
         table.add_column("File Path", style="cyan")
@@ -4067,6 +4069,8 @@ class LibraryManager:
         for lib_info in library_infos:
             # File path column
             file_path = lib_info.library_path
+            file_path_text = Text(file_path, style="cyan")
+            file_path_text.overflow = "fold"  # Force wrapping
 
             # Library name column with emoji based on status
             emoji = status_emoji.get(lib_info.status, "ERR: Unknown/Unexpected Library Status")
@@ -4089,7 +4093,7 @@ class LibraryManager:
                 problems = "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(lib_info.problems)])
 
             # Add the row to the table
-            table.add_row(library_name, version_str, file_path, problems)
+            table.add_row(library_name, version_str, file_path_text, problems)
 
         # Create a panel containing the table
         panel = Panel(table, title="Library Information", border_style="blue")
