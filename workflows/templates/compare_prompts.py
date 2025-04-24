@@ -172,5 +172,5 @@ cmd.connect("basic_prompt.text", "basic_image.prompt")
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
 # is_griptape_provided = true
 # is_template = true
-# 
+#
 # ///
