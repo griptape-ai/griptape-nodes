@@ -85,7 +85,7 @@ class ExAnthropicPrompt(BasePrompt):
         specific_args["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
 
         # Get the selected model.
-        specific_args["model"] = params.get("model", DEFAULT_MODEL)
+        specific_args["model"] = self.get_parameter_value("model")
 
         # Handle specific parameter conversions/logic for Anthropic driver
         # Anthropic uses 'top_p' and 'top_k' directly as kwargs.
@@ -98,7 +98,7 @@ class ExAnthropicPrompt(BasePrompt):
             # Remove the original 'min_p' as Anthropic driver uses 'top_p'.
             del common_args["min_p"]
 
-        response_format = params.get("response_format", None)
+        response_format = self.get_parameter_value("response_format")
         if response_format == "json_object":
             response_format = {"type": "json_object"}
             specific_args["response_format"] = response_format

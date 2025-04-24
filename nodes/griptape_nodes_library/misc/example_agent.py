@@ -384,12 +384,12 @@ class ExAgent(ControlNode):
 
         # For this node, we'll going use the GriptapeCloudPromptDriver if no driver is provided.
         # If a driver is provided, we'll use that.
-        prompt_model_settings = params.get("prompt model config", None)
+        prompt_model_settings = self.get_parameter_value("prompt model config")
         if not prompt_model_settings:
             # Grab the appropriate parameters
-            model = params.get("model", DEFAULT_MODEL)
+            model = self.get_parameter_value("model")
             if include_details:
-                self.append_value_to_parameter("logs", f"[Model]: {params.get('model')}\n")
+                self.append_value_to_parameter("logs", f"[Model]: {model}\n")
 
             prompt_model_settings = GriptapeCloudPromptDriver(
                 model=model,
@@ -401,22 +401,22 @@ class ExAgent(ControlNode):
             self.append_value_to_parameter("logs", f"[Model config]: {prompt_model_settings}\n")
 
         # Get any tools
-        tools = params.get("tools", [])
+        tools = self.get_parameter_value("tools")
         if include_details and tools:
             self.append_value_to_parameter("logs", f"[Tools]: {', '.join([tool.name for tool in tools])}\n")
 
         # Get any rulesets
-        rulesets = params.get("rulesets", [])
+        rulesets = self.get_parameter_value("rulesets")
         if include_details and rulesets:
             self.append_value_to_parameter(
                 "logs", f"\n[Rulesets]: {', '.join([ruleset.name for ruleset in rulesets])}\n"
             )
 
         # Get the prompt
-        prompt = params.get("prompt", "")
+        prompt = self.get_parameter_value("prompt")
 
         # Use any additional context provided by the user.
-        additional_context = params.get("additional context", None)
+        additional_context = self.get_parameter_value("additional context")
         if additional_context:
             prompt = self._handle_additonal_context(prompt, additional_context)
 
@@ -426,7 +426,7 @@ class ExAgent(ControlNode):
 
         # Create the agent
         agent = None
-        agent_dict = params.get("agent", None)
+        agent_dict = self.get_parameter_value("agent")
         if not agent_dict:
             agent = GtAgent(prompt_driver=prompt_model_settings, tools=tools, rulesets=rulesets)
         else:
