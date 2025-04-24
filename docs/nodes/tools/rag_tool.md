@@ -17,7 +17,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the InfoRetriever to your workspace
+1. Add the InfoRetriever to your workflow
 1. Connect its output to nodes that need RAG capabilities (like an Agent)
 
 ### Parameters

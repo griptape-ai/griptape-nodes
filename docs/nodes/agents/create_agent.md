@@ -10,16 +10,15 @@ Use this node when you want to:
 
 - Create a configurable AI Agent from scratch
 - Set up an Agent with specific tools and rulesets
-- Prepare an Agent that can be reused across your workspace
+- Prepare an Agent that can be reused across your workflow
 - Get immediate responses from your agent using a custom prompt
 
 ## How to use it
 
 ### Basic Setup
 
-1. Add the Agent to your workspace
+1. Add the Agent to your workflow
 2. Configure the agent's capabilities (tools and rulesets)
-3. Connect it to your flow
 
 ### Parameters
 

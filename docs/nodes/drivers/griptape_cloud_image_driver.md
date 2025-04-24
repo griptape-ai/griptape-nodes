@@ -16,7 +16,6 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add a GriptapeCloudImage node to your workflow
-1. Connect it to your flow
 1. Connect its driver output to nodes that need to generate images (like GenerateImage)
 
 ### Parameters

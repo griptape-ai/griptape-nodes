@@ -17,9 +17,8 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add a FloatInput node to your workspace
+1. Add a FloatInput node to your workflow
 1. Set your desired float value
-1. Connect it to your flow
 
 ### Parameters
 

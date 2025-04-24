@@ -18,7 +18,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the DescribeImage node to your workspace
+1. Add the DescribeImage node to your workflow
 1. Connect an image source to the "image" input
 1. Optionally provide specific instructions in the "prompt" field
 1. Run the node to generate a description of the image

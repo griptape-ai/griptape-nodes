@@ -16,8 +16,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add an AnthropicPrompt node to your workspace
-1. Connect it to your flow
+1. Add an AnthropicPrompt node to your workflow
 1. Connect its output to nodes that can use Anthopic prompt models like Claude (lfor instance, an Agent!)
 
 ### Parameters

@@ -15,7 +15,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add a GriptapeCloudPrompt node to your workspace
+1. Add a GriptapeCloudPrompt node to your workflow
 1. Connect its driver output to nodes that need to use AI models (like an Agent)
 
 ### Parameters

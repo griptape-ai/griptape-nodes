@@ -18,9 +18,8 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add an IntegerInput node to your workspace
+1. Add an IntegerInput node to your workflow
 1. Set your desired integer value
-1. Connect it to your flow
 
 ### Parameters
 

@@ -16,7 +16,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the ToolList to your workspace
+1. Add the ToolList to your workflow
 1. Connect it to other nodes that provide necessary input parameters (e.g., tools)
 1. Run the flow to see the combined list of tools
 
