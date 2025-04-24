@@ -1,3 +1,11 @@
+"""Defines the ExampleAgent node, providing an interface to interact with a Griptape Agent.
+
+This node allows users to create a new Griptape Agent or continue interaction
+with an existing one. It defaults to using the Griptape Cloud prompt driver
+but supports connecting custom prompt model configurations. It handles parameters
+for tools, rulesets, prompts, and streams output back to the user interface.
+"""
+
 from typing import Any, Self
 
 from griptape.artifacts import BaseArtifact
@@ -12,6 +20,7 @@ from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
+# --- Constants ---
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 DEFAULT_MODEL = "gpt-4.1-mini"
@@ -29,17 +38,44 @@ MODELS = [
 
 
 class ExampleAgent(ControlNode):
+    """A Griptape Node that provides an interface to interact with a Griptape Agent.
+
+    This node facilitates communication with a Griptape Agent, allowing for
+    sending prompts and receiving streamed responses. It can initialize a new
+    agent or operate on an existing agent representation passed as input.
+
+    Attributes:
+        Inherits parameters and methods from ControlNode.
+        Defines specific parameters for agent configuration (model, tools, rulesets),
+        prompting, context, and output handling.
+    """
+
     def __init__(self, **kwargs) -> None:
+        """Initializes the ExampleAgent node, setting up its parameters and UI elements.
+
+        This involves defining input/output parameters, grouping related settings,
+        and establishing default values and behaviors.
+        """
         super().__init__(**kwargs)
 
         # -- Converters --
-        # Converts should take one positional argument of any type, and can return anything!
+        # Converters modify parameter values before they are used by the node's logic.
         def strip_whitespace(value: str) -> str:
-            # This is a simple converter that strips whitespace from the input string.
+            """Removes leading and trailing whitespace from a string value.
+
+            Args:
+                value: The input string.
+
+            Returns:
+                The string with whitespace stripped, or the original value if empty/None.
+            """
             if not value:
                 return value
             return value.strip()
 
+        # --- Parameter Definitions ---
+
+        # Parameter to input an existing agent's state or output the final state.
         self.add_parameter(
             Parameter(
                 name="agent",
@@ -50,33 +86,36 @@ class ExampleAgent(ControlNode):
                 default_value=None,
             )
         )
-        # -- Parameters --
-        # Parameters are the inputs and outputs of the node. They can be used to connect to other nodes.
+        # Main prompt input for the agent.
         self.add_parameter(
             Parameter(
                 name="prompt",
                 input_types=["str"],
-                output_type="str",
                 type="str",
-                tooltip="None",
+                tooltip="The main text prompt to send to the agent.",
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"multiline": True, "placeholder_text": "Talk with the Agent."},
                 converters=[strip_whitespace],
             )
         )
+
+        # Optional additional context for the prompt.
         self.add_parameter(
             Parameter(
                 "additional context",
                 input_types=["str", "int", "float", "dict"],
                 type="str",
-                tooltip="Additional context to provide to the agent.\nEither a string, or dictionary of key-value pairs.",
+                tooltip=(
+                    "Additional context to provide to the agent.\nEither a string, or dictionary of key-value pairs."
+                ),
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"placeholder_text": "Any additional context for the Agent."},
             )
         )
 
+        # Selection for the Griptape Cloud model.
         self.add_parameter(
             Parameter(
                 name="model",
@@ -89,6 +128,7 @@ class ExampleAgent(ControlNode):
             )
         )
 
+        # Input for a pre-configured prompt model driver/config.
         self.add_parameter(
             Parameter(
                 name="prompt model config",
@@ -97,15 +137,17 @@ class ExampleAgent(ControlNode):
                 tooltip="Connect prompt model config. If not supplied, we will use the Griptape Cloud Prompt Model.",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
-                ui_options={"hide": True},
+                ui_options={"hide": True},  # Hide by default
             )
         )
+
+        # Group for less commonly used configuration options.
         with ParameterGroup(group_name="Advanced options") as advanced_group:
             ParameterList(
                 name="tools",
                 input_types=["Tool"],
                 default_value=None,
-                tooltip="",
+                tooltip="Connect Griptape Tools for the agent to use.\nOr connect individual tools.",
                 allowed_modes={ParameterMode.INPUT},
             )
             ParameterList(
@@ -114,29 +156,30 @@ class ExampleAgent(ControlNode):
                 tooltip="Rulesets to apply to the agent to control its behavior.",
                 allowed_modes={ParameterMode.INPUT},
             )
+
         advanced_group.ui_options = {"hide": True}  # Hide the advanced group by default.
         self.add_node_element(advanced_group)
 
+        # Parameter for the agent's final text output.
         self.add_parameter(
             Parameter(
                 name="output",
                 type="str",
                 default_value="",
-                tooltip="What the agent said.",
+                tooltip="The final text response from the agent.",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"multiline": True, "placeholder_text": "Agent response"},
             )
         )
 
-        # Group the logs into a separate group the user can open and close.
-        # This is a good way to keep the UI clean and organized.
+        # Group for logging information.
         with ParameterGroup(group_name="Logs") as logs_group:
             Parameter(name="include details", type="bool", default_value=False, tooltip="Include extra details.")
 
             Parameter(
                 name="logs",
                 type="str",
-                tooltip="None",
+                tooltip="Displays processing logs and detailed events if enabled.",
                 default_value="Node hasn't begun yet",
                 ui_options={"multiline": True},
                 allowed_modes={ParameterMode.OUTPUT},
@@ -145,12 +188,22 @@ class ExampleAgent(ControlNode):
 
         self.add_node_element(logs_group)
 
-    # -- After Changing a Parameter --
-    # This is called after a parameter is set. We can use this to show/hide parameters
-    # based on the value of other parameters.
+    # --- UI Interaction Hooks ---
+
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        # Model
-        # If user sets the model to CONNECTED_CHOICE, we want to show the prompt_model_settings parameter.
+        """Handles UI updates after a parameter's value is changed via the property panel.
+
+        Specifically, it shows/hides the 'prompt model config' input based on
+        whether the 'model' dropdown is set to use an incoming configuration.
+
+        Args:
+            parameter: The Parameter whose value was changed.
+            value: The new value assigned to the parameter.
+            modified_parameters_set: A set to which names of parameters whose UI state
+                                     might have changed should be added. This helps the
+                                     UI framework know what needs updating.
+        """
+        # Show 'prompt model config' input only if 'model' is set to CONNECTED_CHOICE.
         if parameter.name == "model":
             # Find the prompt_model_settings parameter and hide it
             prompt_model_settings_param = self.get_parameter_by_name("prompt model config")
@@ -164,48 +217,65 @@ class ExampleAgent(ControlNode):
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
-    # -- After Connections --
-    # These are called after a connection is made to or disconnected from this node.
-    # We can use this to show/hide parameters
-
     def after_incoming_connection(
         self, source_node: Self, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
-        # Agent
-        # If the user connects to the agent, we want to hide some parameters.
+        """Handles UI updates after an incoming connection is made to this node.
+
+        - Hides agent creation parameters (model, tools, rulesets, advanced group)
+          if an existing agent is connected.
+        - Hides the 'model' dropdown if a 'prompt model config' is connected.
+        - Makes 'additional context' read-only if connected (value comes from input).
+
+        Args:
+            source_node: The node connecting to this node.
+            source_parameter: The parameter on the source node providing the connection.
+            target_parameter: The parameter on this node receiving the connection.
+        """
+        # If an existing agent is connected, hide parameters related to creating a new one.
         if target_parameter.name == "agent":
-            params_to_toggle = ["model", "tools", "rulesets", "prompt model config"]
             groups_to_toggle = ["Advanced options"]
             for group_name in groups_to_toggle:
                 group = self.get_group_by_name_or_element_id(group_name)
                 if group:
                     group.ui_options["hide"] = True
+
+            params_to_toggle = ["model", "tools", "rulesets", "prompt model config"]
             for param_name in params_to_toggle:
                 param = self.get_parameter_by_name(param_name)
                 if param:
                     param._ui_options["hide"] = True
 
-        # Prompt Driver
-        # If the user connects to the prompt_model_settings, we want to hide the model parameter.
+        # If a prompt model config is connected, hide the manual model selector.
         if target_parameter.name == "prompt model config":
-            # Find the model parameter and hide it
             model_param = self.get_parameter_by_name("model")
             if model_param:
                 model_param._ui_options["hide"] = True
 
-        # Additional Context
-        # If the user connects to the additional context, make it not editable.
+        # If additional context is connected, prevent editing via property panel.
+        # NOTE: This is a workaround. Ideally this is done automatically.
         if target_parameter.name == "additional context":
             target_parameter.allowed_modes = {ParameterMode.INPUT}
 
-        # Default return
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def after_incoming_connection_removed(
         self, source_node: Self, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
-        # Agent
-        # If the user connects to the agent, we want to show some parameters.
+        """Handles UI updates after an incoming connection to this node is removed.
+
+        Reverses the logic of `after_incoming_connection`:
+        - Shows agent creation parameters if the agent connection is removed.
+        - Shows the 'model' dropdown if the 'prompt model config' connection is removed
+          (unless an agent is still connected).
+        - Makes 'additional context' editable again if its connection is removed.
+
+        Args:
+            source_node: The node that was connected.
+            source_parameter: The parameter on the source node that was connected.
+            target_parameter: The parameter on this node that was disconnected.
+        """
+        # If the agent connection is removed, show agent creation parameters.
         if target_parameter.name == "agent":
             groups_to_toggle = ["Advanced options"]
             for group_name in groups_to_toggle:
@@ -217,25 +287,39 @@ class ExampleAgent(ControlNode):
             for param_name in params_to_toggle:
                 param = self.get_parameter_by_name(param_name)
                 if param:
+                    # Special case: Don't unhide 'prompt model config' if model is not CONNECTED_CHOICE
+                    if param_name == "prompt model config":
+                        model_value = self.get_parameter_value("model")
+                        if model_value != CONNECTED_CHOICE:
+                            continue  # Keep it hidden if model isn't set to use connection
+
                     param._ui_options["hide"] = False
-        # If the user connects to the prompt_model_settings, we want to hide the model parameter.
+
+        # If the prompt model config connection is removed, show the model dropdown,
         if target_parameter.name == "prompt model config":
             # Find the model parameter and hide it
             model_param = self.get_parameter_by_name("model")
             if model_param:
                 model_param._ui_options["hide"] = False
 
-        # Additional Context
-        # If the user connects to the additional context, make it  editable.
+        # If the additional context connection is removed, make it editable again.
+        # NOTE: This is a workaround. Ideally this is done automatically.
         if target_parameter.name == "additional context":
             target_parameter.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY}
 
-        # Default return
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
-    # -- Validation --
-    # This is called before the node is run. We can use this to validate the parameters.
+    # --- Validation ---
+
     def validate_node(self) -> list[Exception] | None:
+        """Performs pre-run validation checks for the node.
+
+        Currently checks if the Griptape Cloud API key is configured if the default
+        prompt driver is likely to be used.
+
+        Returns:
+            A list of Exception objects if validation fails, otherwise None.
+        """
         exceptions = []
 
         # Check to see if the API key is set.
@@ -250,6 +334,20 @@ class ExampleAgent(ControlNode):
         return exceptions if exceptions else None
 
     def _handle_additonal_context(self, prompt, additional_context: str | int | float | dict[str, Any]) -> str:  # noqa: PYI041
+        """Integrates additional context into the main prompt string.
+
+        - If context is numeric, it's converted to a string and appended.
+        - If context is a string, it's appended on a new line.
+        - If context is a dictionary, the prompt is treated as a Jinja2 template
+          and rendered with the dictionary as variables.
+
+        Args:
+            prompt: The base prompt string.
+            additional_context: The context to integrate (str, int, float, dict).
+
+        Returns:
+            The potentially modified prompt string.
+        """
         context = additional_context
         if isinstance(context, (int, float)):
             # If the additional context is a number, we want to convert it to a string.
@@ -260,15 +358,29 @@ class ExampleAgent(ControlNode):
             prompt = Template(prompt).render(context)
         return prompt
 
-    # -- Processing --
-    # This is called when the node is run. We can use this to process the node.
+    # --- Processing ---
+
     def process(self) -> AsyncResult[Structure]:
+        """Executes the main logic of the node asynchronously.
+
+        Sets up the Griptape Agent (either new or from input), configures the
+        prompt driver, prepares the prompt with context, and then yields
+        a lambda function to perform the actual agent interaction via `_process`.
+        Handles setting output parameters after execution.
+
+        Yields:
+            A lambda function wrapping the call to `_process` for asynchronous execution.
+
+        Returns:
+            An AsyncResult indicating the structure being processed (the agent).
+        """
         # Get the parameters from the node
         params = self.parameter_values
-        self.append_value_to_parameter("logs", "[Processing..]\n")
-
         # Grab toggles for logging events
         include_details = self.get_parameter_value("include details")
+
+        # Initialize the logs parameter
+        self.append_value_to_parameter("logs", "[Processing..]\n")
 
         # For this node, we'll going use the GriptapeCloudPromptDriver if no driver is provided.
         # If a driver is provided, we'll use that.
@@ -331,12 +443,24 @@ class ExampleAgent(ControlNode):
         try_throw_error(agent.output)
 
     def _process(self, agent: GtAgent, prompt: BaseArtifact | str) -> Structure:
-        # Normally we would use the pattern:
-        # for artifact in Stream(agent).run(prompt):
-        # But for this example, we'll use the run_stream method to get the events so we can
-        # show the user when the Agent is using a tool.
+        """Performs the synchronous, streaming interaction with the Griptape Agent.
 
-        # Grab toggles for logging events
+        Iterates through events generated by `agent.run_stream`, updating the
+        'output' parameter with text chunks and the 'logs' parameter with
+        action details (if enabled).
+
+        Normally we would use the pattern:
+        for artifact in Stream(agent).run(prompt):
+        But for this example, we'll use the run_stream method to get the events so we can
+        show the user when the Agent is using a tool.
+
+        Args:
+            agent: The configured Griptape Agent instance.
+            prompt: The final prompt string or BaseArtifact to send to the agent.
+
+        Returns:
+            The agent structure after processing.
+        """
         include_details = self.get_parameter_value("include details")
 
         for event in agent.run_stream(prompt, event_types=[TextChunkEvent, ActionChunkEvent]):
