@@ -259,7 +259,7 @@ class ExAgent(ControlNode):
 
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
-    def after_incoming_connection_removed(
+    def after_incoming_connection_removed(  # noqa: C901
         self, source_node: Self, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
         """Handles UI updates after an incoming connection to this node is removed.
