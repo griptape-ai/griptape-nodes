@@ -496,6 +496,14 @@ class ObjectManager:
             )
             return ClearAllObjectStateResultFailure()
         # Let's try and clear it all.
+        flows = self.get_filtered_subset(type=ControlFlow)
+        for flow_name, flow in flows.items():
+            if flow.check_for_existing_running_flow():
+                result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow_name))
+                if not result.succeeded():
+                    details = f"Attempted to clear all object state and delete everything. Failed because running flow '{flow_name}' could not cancel."
+                    logger.error(details)
+                    return ClearAllObjectStateResultFailure()
         context_mgr = GriptapeNodes.ContextManager()
         while context_mgr.has_current_flow():
             while context_mgr.has_current_node():
@@ -691,7 +699,7 @@ class FlowManager:
         return any([parent is None for parent in self._name_to_parent_name.values()])  # noqa: C419
 
     def on_create_flow_request(self, request: CreateFlowRequest) -> ResultPayload:
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
 
         # Who is the parent?
         parent_name = request.parent_flow_name
@@ -705,7 +713,13 @@ class FlowManager:
         if (parent_name is None) and (GriptapeNodes.ContextManager().has_current_flow()):
             # Aha! Just use that.
             parent_name = GriptapeNodes.ContextManager().get_current_flow_name()
+        if parent_name is None:
+            details = "Attempted to create a Flow with a parent but no parent name was provided."
+            logger.error(details)
 
+            result = CreateFlowResultFailure()
+
+            return result
         parent = obj_mgr.attempt_get_object_by_name_as_type(parent_name, ControlFlow)
         if parent_name is None:
             # We're trying to create the canvas. Ensure that parent does NOT already exist.
@@ -744,7 +758,7 @@ class FlowManager:
         result = CreateFlowResultSuccess(flow_name=final_flow_name)
         return result
 
-    def on_delete_flow_request(self, request: DeleteFlowRequest) -> ResultPayload:  # noqa: PLR0911 (complex af)
+    def on_delete_flow_request(self, request: DeleteFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
         flow_name = request.flow_name
         if flow_name is None:
             # We want to delete whatever is at the top of the Current Context.
@@ -759,29 +773,34 @@ class FlowManager:
             flow_name = GriptapeNodes.ContextManager().pop_flow()
 
         # Does this Flow even exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
         flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
         if flow is None:
             details = f"Attempted to delete Flow '{flow_name}', but no Flow with that name could be found."
             logger.error(details)
             result = DeleteFlowResultFailure()
             return result
+        if flow.check_for_existing_running_flow():
+            result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow_name))
+            if not result.succeeded():
+                details = f"Attempted to delete flow '{flow_name}'. Failed because running flow could not cancel."
+                logger.error(details)
+                return DeleteFlowResultFailure()
 
         # Let this Flow assume the Current Context while we delete everything within it.
         with GriptapeNodes.ContextManager().flow(flow_name=flow_name):
             # Delete all child nodes in this Flow.
             list_nodes_request = ListNodesInFlowRequest()
-            list_nodes_result = GriptapeNodes().handle_request(list_nodes_request)
-            if isinstance(list_nodes_result, ListNodesInFlowResultFailure):
+            list_nodes_result = GriptapeNodes.handle_request(list_nodes_request)
+            if not isinstance(list_nodes_result, ListNodesInFlowResultSuccess):
                 details = f"Attempted to delete Flow '{flow_name}', but failed while attempting to get the list of Nodes owned by this Flow."
                 logger.error(details)
                 result = DeleteFlowResultFailure()
                 return result
-
             node_names = list_nodes_result.node_names
             for node_name in node_names:
                 delete_node_request = DeleteNodeRequest(node_name=node_name)
-                delete_node_result = GriptapeNodes().handle_request(delete_node_request)
+                delete_node_result = GriptapeNodes.handle_request(delete_node_request)
                 if isinstance(delete_node_result, DeleteNodeResultFailure):
                     details = f"Attempted to delete Flow '{flow_name}', but failed while attempting to delete child Node '{node_name}'."
                     logger.error(details)
@@ -793,8 +812,8 @@ class FlowManager:
             # because None in ListFlowsInFlowRequest means "get canvas/top-level flows". We want the flows in the
             # current context, which is the flow we're deleting.
             list_flows_request = ListFlowsInCurrentContextRequest()
-            list_flows_result = GriptapeNodes().handle_request(list_flows_request)
-            if isinstance(list_flows_result, ListFlowsInCurrentContextResultFailure):
+            list_flows_result = GriptapeNodes.handle_request(list_flows_request)
+            if not isinstance(list_flows_result, ListFlowsInCurrentContextResultSuccess):
                 details = f"Attempted to delete Flow '{flow_name}', but failed while attempting to get the list of Flows owned by this Flow."
                 logger.error(details)
                 result = DeleteFlowResultFailure()
@@ -804,7 +823,7 @@ class FlowManager:
                 with GriptapeNodes.ContextManager().flow(flow_name=child_flow_name):
                     # Delete them.
                     delete_flow_request = DeleteFlowRequest()
-                    delete_flow_result = GriptapeNodes().handle_request(delete_flow_request)
+                    delete_flow_result = GriptapeNodes.handle_request(delete_flow_request)
                     if isinstance(delete_flow_result, DeleteFlowResultFailure):
                         details = f"Attempted to delete Flow '{flow_name}', but failed while attempting to delete child Flow '{child_flow_name}'."
                         logger.error(details)
@@ -822,7 +841,7 @@ class FlowManager:
         return result
 
     def on_get_is_flow_running_request(self, request: GetIsFlowRunningRequest) -> ResultPayload:
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
         flow = obj_mgr.attempt_get_object_by_name_as_type(request.flow_name, ControlFlow)
         if flow is None:
             details = f"Attempted to get Flow '{request.flow_name}', but no Flow with that name could be found."
@@ -851,7 +870,7 @@ class FlowManager:
             flow_name = GriptapeNodes.ContextManager().get_current_flow_name()
 
         # Does this Flow even exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
         flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
         if flow is None:
             details = (
@@ -871,7 +890,7 @@ class FlowManager:
     def on_list_flows_in_flow_request(self, request: ListFlowsInFlowRequest) -> ResultPayload:
         if request.parent_flow_name is not None:
             # Does this Flow even exist?
-            obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+            obj_mgr = GriptapeNodes.ObjectManager()
             flow = obj_mgr.attempt_get_object_by_name_as_type(request.parent_flow_name, ControlFlow)
             if flow is None:
                 details = f"Attempted to list Flows that are children of Flow '{request.parent_flow_name}', but no Flow with that name could be found."
@@ -892,7 +911,7 @@ class FlowManager:
         return result
 
     def get_flow_by_name(self, flow_name: str) -> ControlFlow:
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
         flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
         if flow is None:
             msg = f"Flow with name {flow_name} doesn't exist"
@@ -1314,12 +1333,15 @@ class FlowManager:
             details = f"Cannot start flow. Error: {err}"
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[err])
+        # Check to see if the flow is already running.
+        if flow.check_for_existing_running_flow():
+            details = "Cannot start flow. Flow is already running."
+            logger.error(details)
+            return StartFlowResultFailure(validation_exceptions=[])
         # A node has been provided to either start or to run up to.
         if request.flow_node_name:
             flow_node_name = request.flow_node_name
-            flow_node = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(
-                flow_node_name, BaseNode
-            )
+            flow_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(flow_node_name, BaseNode)
             if not flow_node:
                 details = f"Provided node with name {flow_node_name} does not exist"
                 logger.error(details)
@@ -1366,11 +1388,6 @@ class FlowManager:
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             logger.exception(details)
-            if flow.check_for_existing_running_flow():
-                # Cancel the flow run.
-                cancel_request = CancelFlowRequest(flow_name=flow_name)
-                GriptapeNodes.handle_request(cancel_request)
-
             return StartFlowResultFailure(validation_exceptions=[e])
 
         details = f"Successfully kicked off flow with name {flow_name}"
@@ -1445,9 +1462,6 @@ class FlowManager:
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
             logger.error(details)
-            if flow.check_for_existing_running_flow():
-                cancel_request = CancelFlowRequest(flow_name=flow_name)
-                GriptapeNodes.handle_request(cancel_request)
             return SingleNodeStepResultFailure(validation_exceptions=[])
 
         # All completed happily
@@ -1476,9 +1490,6 @@ class FlowManager:
         except Exception as e:
             details = f"Could not step flow. Exception: {e}"
             logger.error(details)
-            if flow.check_for_existing_running_flow():
-                cancel_request = CancelFlowRequest(flow_name=flow_name)
-                GriptapeNodes.handle_request(cancel_request)
             return SingleNodeStepResultFailure(validation_exceptions=[])
         details = f"Successfully granularly stepped flow with name {flow_name}"
         logger.debug(details)
@@ -1504,9 +1515,6 @@ class FlowManager:
         except Exception as e:
             details = f"Failed to continue execution step. An exception occurred: {e}."
             logger.error(details)
-            if flow.check_for_existing_running_flow():
-                cancel_request = CancelFlowRequest(flow_name=flow_name)
-                GriptapeNodes.handle_request(cancel_request)
             return ContinueExecutionStepResultFailure()
         details = f"Successfully continued flow with name {flow_name}"
         logger.debug(details)
@@ -1545,9 +1553,7 @@ class FlowManager:
             return ValidateFlowDependenciesResultFailure()
         if request.flow_node_name:
             flow_node_name = request.flow_node_name
-            flow_node = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(
-                flow_node_name, BaseNode
-            )
+            flow_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(flow_node_name, BaseNode)
             if not flow_node:
                 details = f"Provided node with name {flow_node_name} does not exist"
                 logger.error(details)
@@ -1662,7 +1668,7 @@ class NodeManager:
             return CreateNodeResultFailure()
 
         # Now ensure that we're giving a valid name.
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
         final_node_name = obj_mgr.generate_name_for_object(
             type_name=request.node_type, requested_name=request.node_name
         )
@@ -1731,7 +1737,7 @@ class NodeManager:
 
         with GriptapeNodes.ContextManager().node(node_name=node_name):
             # Does this node exist?
-            obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+            obj_mgr = GriptapeNodes.ObjectManager()
 
             node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
             if node is None:
@@ -1741,7 +1747,7 @@ class NodeManager:
 
             parent_flow_name = self._name_to_parent_flow_name[node_name]
             try:
-                parent_flow = GriptapeNodes().FlowManager().get_flow_by_name(parent_flow_name)
+                parent_flow = GriptapeNodes.FlowManager().get_flow_by_name(parent_flow_name)
             except KeyError as err:
                 details = f"Attempted to delete a Node '{node_name}'. Error: {err}"
                 logger.error(details)
@@ -1749,8 +1755,8 @@ class NodeManager:
 
             # Remove all connections from this Node.
             list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
-            list_connections_result = GriptapeNodes().handle_request(request=list_node_connections_request)
-            if isinstance(list_connections_result, ResultPayloadFailure):
+            list_connections_result = GriptapeNodes.handle_request(request=list_node_connections_request)
+            if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
                 details = f"Attempted to delete a Node '{node_name}'. Failed because it could not gather Connections to the Node."
                 logger.error(details)
                 return DeleteNodeResultFailure()
@@ -1811,7 +1817,7 @@ class NodeManager:
             node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
 
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
@@ -1842,7 +1848,7 @@ class NodeManager:
             node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
 
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
@@ -1873,7 +1879,7 @@ class NodeManager:
             node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
 
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
@@ -1903,7 +1909,7 @@ class NodeManager:
             node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
 
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
@@ -1915,7 +1921,7 @@ class NodeManager:
 
         parent_flow_name = self._name_to_parent_flow_name[node_name]
         try:
-            parent_flow = GriptapeNodes().FlowManager().get_flow_by_name(parent_flow_name)
+            parent_flow = GriptapeNodes.FlowManager().get_flow_by_name(parent_flow_name)
         except KeyError as err:
             details = f"Attempted to list Connections for a Node '{node_name}'. Error: {err}"
             logger.error(details)
@@ -1966,7 +1972,7 @@ class NodeManager:
     def on_list_parameters_on_node_request(self, request: ListParametersOnNodeRequest) -> ResultPayload:
         node_name = request.node_name
 
-        if request.node_name is None:
+        if node_name is None:
             # Get from the current context.
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to list Parameters for a Node from the Current Context. Failed because the Current Context is empty."
@@ -1976,8 +1982,7 @@ class NodeManager:
             node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
-
+        obj_mgr = GriptapeNodes.ObjectManager()
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
             details = f"Attempted to list Parameters for a Node '{node_name}', but no such Node was found."
@@ -2009,7 +2014,7 @@ class NodeManager:
             node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
 
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
@@ -2128,7 +2133,7 @@ class NodeManager:
         )
         return result
 
-    def on_remove_parameter_from_node_request(self, request: RemoveParameterFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    def on_remove_parameter_from_node_request(self, request: RemoveParameterFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
 
         if node_name is None:
@@ -2140,10 +2145,10 @@ class NodeManager:
                 result = RemoveParameterFromNodeResultFailure()
                 return result
 
-            node_name = GriptapeNodes().ContextManager().get_current_node_name()
+            node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
 
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
@@ -2169,7 +2174,7 @@ class NodeManager:
             return RemoveParameterFromNodeResultSuccess()
 
         # No tricky stuff, users!
-        if parameter.user_defined is False:
+        if parameter is not None and parameter.user_defined is False:
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be removed from a Node."
             logger.error(details)
 
@@ -2178,8 +2183,8 @@ class NodeManager:
 
         # Get all the connections to/from this Parameter.
         list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
-        list_connections_result = GriptapeNodes().handle_request(request=list_node_connections_request)
-        if isinstance(list_connections_result, ListConnectionsForNodeResultFailure):
+        list_connections_result = GriptapeNodes.handle_request(request=list_node_connections_request)
+        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because we were unable to get a list of Connections for the Parameter's Node."
             logger.error(details)
 
@@ -2221,7 +2226,13 @@ class NodeManager:
                     result = RemoveParameterFromNodeResultFailure()
 
         # Delete the Parameter itself.
-        node.remove_parameter(parameter)
+        if parameter is not None:
+            node.remove_parameter(parameter)
+        else:
+            details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because parameter didn't exist."
+            logger.error(details)
+
+            result = RemoveParameterFromNodeResultFailure()
 
         details = f"Successfully removed Parameter '{request.parameter_name}' from Node '{node_name}'."
         logger.debug(details)
@@ -2241,7 +2252,7 @@ class NodeManager:
             node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
 
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
@@ -2298,7 +2309,7 @@ class NodeManager:
             node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
 
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
@@ -2312,7 +2323,7 @@ class NodeManager:
             # No? Use the node's root element to search from.
             element = node.root_ui_element
         else:
-            element = node.findroot_ui_element.find_element_by_id(request.specific_element_id)
+            element = node.root_ui_element.find_element_by_id(request.specific_element_id)
             if element is None:
                 details = f"Attempted to get element details for element '{request.specific_element_id}' from Node '{node_name}'. Failed because it didn't have an element with that ID on it."
                 logger.error(details)
@@ -2397,7 +2408,7 @@ class NodeManager:
     def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:
         node_name = request.node_name
 
-        if request.node_name is None:
+        if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = f"Attempted to alter details for Parameter '{request.parameter_name}' from node in the Current Context. Failed because there was no such Node."
                 logger.error(details)
@@ -2406,8 +2417,7 @@ class NodeManager:
             node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
-
+        obj_mgr = GriptapeNodes.ObjectManager()
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
             details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}', but no such Node was found."
@@ -2454,7 +2464,7 @@ class NodeManager:
     def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:
         node_name = request.node_name
 
-        if request.node_name is None:
+        if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = f"Attempted to get value for Parameter '{request.parameter_name}' from node in the Current Context. Failed because there was no such Node."
                 logger.error(details)
@@ -2463,7 +2473,7 @@ class NodeManager:
             node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
 
         # Parse the parameter name to check for list indexing
         param_name = request.parameter_name
@@ -2516,7 +2526,7 @@ class NodeManager:
             node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
 
         # Parse the parameter name to check for list indexing
         param_name = request.parameter_name
@@ -2587,7 +2597,7 @@ class NodeManager:
             # Optional data_type parameter for internal handling!
             conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
             for target_node, target_parameter in conn_output_nodes:
-                GriptapeNodes.get_instance().handle_request(
+                GriptapeNodes.handle_request(
                     SetParameterValueRequest(
                         parameter_name=target_parameter.name,
                         node_name=target_node.name,
@@ -2641,7 +2651,7 @@ class NodeManager:
             node_name = GriptapeNodes.ContextManager().get_current_node_name()
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
 
         node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
@@ -2835,7 +2845,7 @@ class NodeManager:
         return GetCompatibleParametersResultSuccess(valid_parameters_by_node=valid_parameters_by_node)
 
     def get_node_by_name(self, name: str) -> BaseNode:
-        obj_mgr = GriptapeNodes().get_instance().ObjectManager()
+        obj_mgr = GriptapeNodes.ObjectManager()
 
         node = obj_mgr.attempt_get_object_by_name_as_type(name, BaseNode)
         if node is None:
@@ -2854,7 +2864,7 @@ class NodeManager:
         node_name = request.node_name
         debug_mode = request.debug_mode
 
-        if not node_name:
+        if node_name is None:
             details = "No Node name was provided. Failed to resolve node."
             logger.error(details)
 
@@ -2875,7 +2885,7 @@ class NodeManager:
 
             return ResolveNodeResultFailure(validation_exceptions=[e])
         try:
-            obj_mgr = GriptapeNodes()._object_manager
+            obj_mgr = GriptapeNodes.ObjectManager()
             flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
         except KeyError as e:
             details = f'Failed to fetch parent flow for "{node_name}": {e}'
@@ -2885,6 +2895,10 @@ class NodeManager:
 
         if flow is None:
             details = f'Failed to fetch parent flow for "{node_name}"'
+            logger.error(details)
+            return ResolveNodeResultFailure(validation_exceptions=[])
+        if flow.check_for_existing_running_flow():
+            details = f"Failed to resolve from node '{node_name}'. Flow is already running."
             logger.error(details)
             return ResolveNodeResultFailure(validation_exceptions=[])
         try:
@@ -2916,22 +2930,18 @@ class NodeManager:
         try:
             flow.resolve_singular_node(node, debug_mode)
         except Exception as e:
-            if flow.check_for_existing_running_flow():
-                cancel_request = CancelFlowRequest(flow_name=flow_name)
-                GriptapeNodes.handle_request(cancel_request)
-            else:
-                details = f'Failed to resolve "{node_name}".  Error: {e}'
-                logger.error(details)
-                return ResolveNodeResultFailure(validation_exceptions=[e])
+            details = f'Failed to resolve "{node_name}".  Error: {e}'
+            logger.error(details)
+            return ResolveNodeResultFailure(validation_exceptions=[e])
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         logger.debug(details)
         return ResolveNodeResultSuccess()
 
     def on_validate_node_dependencies_request(self, request: ValidateNodeDependenciesRequest) -> ResultPayload:
         node_name = request.node_name
-        obj_manager = GriptapeNodes.get_instance()._object_manager
+        obj_manager = GriptapeNodes.ObjectManager()
         node = obj_manager.attempt_get_object_by_name_as_type(node_name, BaseNode)
-        if not node:
+        if node is None:
             details = f'Failed to validate node dependencies. Node with "{node_name}" does not exist.'
             logger.error(details)
             return ValidateNodeDependenciesResultFailure()
@@ -2941,7 +2951,7 @@ class NodeManager:
             details = f'Failed to validate node dependencies. Node with "{node_name}" has no parent flow. Error: {e}'
             logger.error(details)
             return ValidateNodeDependenciesResultFailure()
-        flow = GriptapeNodes.get_instance()._object_manager.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+        flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(flow_name, ControlFlow)
         if not flow:
             details = f'Failed to validate node dependencies. Flow with "{flow_name}" does not exist.'
             logger.error(details)
@@ -3218,7 +3228,7 @@ class WorkflowManager:
         return LoadWorkflowMetadataResultSuccess(metadata=workflow_metadata)
 
     def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (need lots of branches to cover negative cases)
-        obj_manager = GriptapeNodes.get_instance()._object_manager
+        obj_manager = GriptapeNodes.ObjectManager()
         node_manager = GriptapeNodes.get_instance()._node_manager
         config_manager = GriptapeNodes.get_instance()._config_manager
 
@@ -3281,7 +3291,7 @@ class WorkflowManager:
                         resolution=resolution,  # Unresolved if something failed to save or create
                         initial_setup=True,
                     )
-                    code_string = f"GriptapeNodes().handle_request({creation_request})"
+                    code_string = f"GriptapeNodes.handle_request({creation_request})"
                     file.write(code_string + "\n")
                     # Add all parameter deetails now
                     file.write(parameter_string)
@@ -3379,7 +3389,7 @@ def create_flows_in_order(flow_name, flow_manager, created_flows, file) -> list 
     if flow_name not in created_flows:
         # Here you would actually send the request and handle response
         creation_request = CreateFlowRequest(flow_name=flow_name, parent_flow_name=parent)
-        code_string = f"GriptapeNodes().handle_request({creation_request})"
+        code_string = f"GriptapeNodes.handle_request({creation_request})"
         file.write(code_string + "\n")
         created_flows.append(flow_name)
 
@@ -3400,7 +3410,7 @@ def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: 
                 target_parameter_name=connection.target_parameter.name,
                 initial_setup=True,
             )
-            code_string = f"GriptapeNodes().handle_request({creation_request})"
+            code_string = f"GriptapeNodes.handle_request({creation_request})"
             connection_request_workflows += code_string + "\n"
     return connection_request_workflows
 
@@ -3415,7 +3425,7 @@ def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tu
             param_dict["node_name"] = node.name
             param_dict["initial_setup"] = True
             creation_request = AddParameterToNodeRequest.create(**param_dict)
-            code_string = f"GriptapeNodes().handle_request({creation_request})\n"
+            code_string = f"GriptapeNodes.handle_request({creation_request})\n"
             parameter_details += code_string
         else:
             base_node_obj = type(node)(name="test")
@@ -3430,7 +3440,7 @@ def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tu
                 diff["parameter_name"] = parameter.name
                 diff["initial_setup"] = True
                 creation_request = AlterParameterDetailsRequest.create(**diff)
-                code_string = f"GriptapeNodes().handle_request({creation_request})\n"
+                code_string = f"GriptapeNodes.handle_request({creation_request})\n"
                 parameter_details += code_string
         if parameter.name in node.parameter_values or parameter.name in node.parameter_output_values:
             # SetParameterValueRequest event
@@ -3487,7 +3497,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_c
         if value_id in values_created:
             var_name = values_created[value_id]
             # We've already created this object. we're all good.
-            return f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True, is_output={is_output}))"
+            return f"GriptapeNodes.handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True, is_output={is_output}))"
         # Set it up as a object in the code
         imports = []
         var_name = f"{node.name}_{parameter.name}_value"
@@ -3498,7 +3508,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_c
             # Add the request handling code
             final_code = (
                 reconstruction_code
-                + f"GriptapeNodes().handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True, is_output={is_output}))"
+                + f"GriptapeNodes.handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True, is_output={is_output}))"
             )
             # Combine imports and code
             import_statements = ""
@@ -4286,14 +4296,14 @@ class LibraryManager:
                     file_path=library_to_register,
                     load_as_default_library=load_as_default_library,
                 )
-                GriptapeNodes().handle_request(library_load_request)
+                GriptapeNodes.handle_request(library_load_request)
 
         # Print 'em all pretty
         self.print_library_load_status()
 
     # TODO(griptape): Move to WorkflowManager
     def _register_workflows_from_config(self, config_section: str) -> None:  # noqa: C901, PLR0912, PLR0915 (need lots of branches for error checking)
-        config_mgr = GriptapeNodes().ConfigManager()
+        config_mgr = GriptapeNodes.ConfigManager()
         workflows_to_register = config_mgr.get_config_value(config_section)
         successful_registrations = []
         failed_registrations = []
@@ -4341,13 +4351,13 @@ class LibraryManager:
                     if workflow_detail.is_griptape_provided:
                         workflow_metadata.image = workflow_metadata.image
                     else:
-                        workflow_metadata.image = config_mgr.workspace_path.joinpath(workflow_metadata.image)
+                        workflow_metadata.image = str(config_mgr.workspace_path.joinpath(workflow_metadata.image))
 
                 # Register it as a success.
                 workflow_register_request = RegisterWorkflowRequest(
                     metadata=workflow_metadata, file_name=str(final_file_path)
                 )
-                register_result = GriptapeNodes().handle_request(workflow_register_request)
+                register_result = GriptapeNodes.handle_request(workflow_register_request)
 
                 details = f"'{workflow_metadata.name}' ({final_file_path!s})"
 
