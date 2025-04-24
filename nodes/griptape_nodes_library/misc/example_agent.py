@@ -132,6 +132,22 @@ class ExampleAgent(ControlNode):
         # This is a good way to keep the UI clean and organized.
         with ParameterGroup(group_name="Logs") as logs_group:
             Parameter(
+                name="include prompt", type="bool", default_value=False, tooltip="Include the prompt in the logs."
+            )
+            Parameter(
+                name="include model config",
+                type="bool",
+                default_value=False,
+                tooltip="Include the model config in the logs.",
+            )
+            Parameter(name="include tools", type="bool", default_value=False, tooltip="Include the tools in the logs.")
+            Parameter(
+                name="include rulesets", type="bool", default_value=False, tooltip="Include the rulesets in the logs."
+            )
+            Parameter(
+                name="include output", type="bool", default_value=False, tooltip="Include the output in the logs."
+            )
+            Parameter(
                 name="logs",
                 type="str",
                 tooltip="None",
@@ -263,14 +279,22 @@ class ExampleAgent(ControlNode):
     def process(self) -> AsyncResult[Structure]:
         # Get the parameters from the node
         params = self.parameter_values
+        self.append_value_to_parameter("logs", "[Processing..]\n")
+
+        # Grab toggles for logging events
+        include_rulesets = self.get_parameter_value("include rulesets")
+        include_prompt = self.get_parameter_value("include prompt")
+        include_model_config = self.get_parameter_value("include model config")
+        include_tools = self.get_parameter_value("include tools")
 
         # For this node, we'll going use the GriptapeCloudPromptDriver if no driver is provided.
         # If a driver is provided, we'll use that.
         prompt_model_settings = params.get("prompt model config", None)
-
         if not prompt_model_settings:
             # Grab the appropriate parameters
             model = params.get("model", DEFAULT_MODEL)
+            if include_model_config:
+                self.append_value_to_parameter("logs", f"\n[Model]: {params.get('model')}\n")
 
             prompt_model_settings = GriptapeCloudPromptDriver(
                 model=model,
@@ -278,19 +302,35 @@ class ExampleAgent(ControlNode):
                 stream=True,
             )
 
+        if include_model_config:
+            self.append_value_to_parameter("logs", f"\n[Model config]: {prompt_model_settings}\n")
+
         # Get any tools
         tools = params.get("tools", [])
 
+        # If the user has connected a tool, we want to show it in the logs.
+        if include_tools and tools:
+            self.append_value_to_parameter("logs", f"\n[Tools]: {', '.join([tool.name for tool in tools])}\n")
+
         # Get any rulesets
         rulesets = params.get("rulesets", [])
+        # If the user has connected a ruleset, we want to show it in the logs.
+        if include_rulesets and rulesets:
+            self.append_value_to_parameter(
+                "logs", f"\n[Rulesets]: {', '.join([ruleset.name for ruleset in rulesets])}\n"
+            )
 
         # Get the prompt
         prompt = params.get("prompt", "")
 
-        # Use any addional context provided by the user.
+        # Use any additional context provided by the user.
         additional_context = params.get("additional context", None)
         if additional_context:
             prompt = self._handle_additonal_context(prompt, additional_context)
+
+        # If the user has connected a prompt, we want to show it in the logs.
+        if include_prompt and prompt:
+            self.append_value_to_parameter("logs", f"\n[Prompt]:\n{prompt}]\n")
 
         # Create the agent
         agent = None
@@ -299,10 +339,11 @@ class ExampleAgent(ControlNode):
             agent = GtAgent(prompt_driver=prompt_model_settings, tools=tools, rulesets=rulesets)
         else:
             agent = GtAgent.from_dict(agent_dict)
+
         # Run the agent asynchronously
-        self.append_value_to_parameter("logs", "[Started processing agent..]\n")
+        self.append_value_to_parameter("logs", "\n[Started processing agent..]\n\n")
         yield lambda: self._process(agent, prompt)
-        self.append_value_to_parameter("logs", "\n[Finished processing agent.]\n")
+        self.append_value_to_parameter("logs", "\n\n[Finished processing agent.]")
 
         # Set the agent
         self.parameter_output_values["agent"] = agent.to_dict()
@@ -315,14 +356,19 @@ class ExampleAgent(ControlNode):
         # But for this example, we'll use the run_stream method to get the events so we can
         # show the user when the Agent is using a tool.
 
+        # Grab toggles for logging events
+        include_tools = self.get_parameter_value("include tools")
+        include_output = self.get_parameter_value("include output")
+
         for event in agent.run_stream(prompt, event_types=[TextChunkEvent, ActionChunkEvent]):
             # If the artifact is a TextChunkEvent, append it to the output parameter.
             if isinstance(event, TextChunkEvent):
                 self.append_value_to_parameter("output", value=event.token)
-                self.append_value_to_parameter("logs", value=event.token)
+                if include_output:
+                    self.append_value_to_parameter("logs", value=event.token)
 
             # If the artifact is an ActionChunkEvent, append it to the logs parameter.
-            elif isinstance(event, ActionChunkEvent) and event.name:
-                self.append_value_to_parameter("logs", f"\n> Using tool {event.name}: ({event.path})\n")
+            if include_tools and isinstance(event, ActionChunkEvent) and event.name:
+                self.append_value_to_parameter("logs", f"\n[Using tool {event.name}: ({event.path})]\n")
 
         return agent
