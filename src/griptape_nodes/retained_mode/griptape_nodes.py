@@ -712,18 +712,20 @@ class FlowManager:
             # Aha! Just use that.
             parent_name = GriptapeNodes.ContextManager().get_current_flow_name()
 
+        # TODO(griptape): FIX THIS LOGIC MESS https://github.com/griptape-ai/griptape-nodes/issues/616
+
         parent = None
         if parent_name is not None:
             parent = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(parent_name, ControlFlow)
-        if parent_name is None and self.does_canvas_exist():
-            # We're trying to create the canvas. Ensure that parent does NOT already exist.
-            details = "Attempted to create a Flow as the Canvas (top-level Flow with no parents), but the Canvas already exists."
-            logger.error(details)
-            result = CreateFlowResultFailure()
-            return result
-
+        if parent_name is None:
+            if self.does_canvas_exist():
+                # We're trying to create the canvas. Ensure that parent does NOT already exist.
+                details = "Attempted to create a Flow as the Canvas (top-level Flow with no parents), but the Canvas already exists."
+                logger.error(details)
+                result = CreateFlowResultFailure()
+                return result
         # Now our parent exists, right?
-        if parent is None:
+        elif parent is None:
             details = f"Attempted to create a Flow with a parent '{request.parent_flow_name}', but no parent with that name could be found."
             logger.error(details)
 
