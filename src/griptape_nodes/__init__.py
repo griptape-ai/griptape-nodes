@@ -59,6 +59,9 @@ def _run_init(api_key: str | None = None, workspace_directory: str | None = None
     _prompt_for_workspace(workspace_directory)
     _prompt_for_api_key(api_key)
 
+    latest_tag = _get_latest_version(REPO_NAME)
+    _install_nodes_assets(tag=latest_tag)
+
 
 def _get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="griptape-nodes", description="Griptape Nodes Engine.")
