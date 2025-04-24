@@ -261,6 +261,24 @@ logger.setLevel(logging.INFO)
 logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
 
 
+@dataclass
+class Version:
+    major: int
+    minor: int
+    patch: int
+
+    @classmethod
+    def from_string(cls, version_string: str) -> Version | None:
+        match = re.match(r"(\d+)\.(\d+)\.(\d+)", version_string)
+        if match:
+            major, minor, patch = map(int, match.groups())
+            return cls(major, minor, patch)
+        return None
+
+    def __str__(self) -> str:
+        return f"{self.major}.{self.minor}.{self.patch}"
+
+
 class SingletonMeta(type):
     _instances: ClassVar[dict] = {}
 
@@ -390,10 +408,11 @@ class GriptapeNodes(metaclass=SingletonMeta):
         try:
             engine_version_str = importlib.metadata.version("griptape_nodes")
 
-            match = re.match(r"(\d+)\.(\d+)\.(\d+)", engine_version_str)
-            if match:
-                major, minor, patch = map(int, match.groups())
-                return GetEngineVersionResultSuccess(major=major, minor=minor, patch=patch)
+            engine_ver = Version.from_string(engine_version_str)
+            if engine_ver:
+                return GetEngineVersionResultSuccess(
+                    major=engine_ver.major, minor=engine_ver.minor, patch=engine_ver.patch
+                )
             details = f"Attempted to get engine version. Failed because version string '{engine_version_str}' wasn't in expected major.minor.patch format."
             logger.error(details)
             return GetEngineVersionResultFailure()
@@ -2960,6 +2979,7 @@ class NodeManager:
 
 class WorkflowManager:
     WORKFLOW_METADATA_HEADER: ClassVar[str] = "script"
+    MAX_MINOR_VERSION_DEVIATION: ClassVar[int] = 2
 
     class WorkflowStatus(StrEnum):
         GOOD = "GOOD"  # No errors detected during loading. Registered.
@@ -2967,16 +2987,34 @@ class WorkflowManager:
         UNUSABLE = "UNUSABLE"  # Errors detected and not recoverable. Not registered.
         MISSING = "MISSING"  # File not found. Not registered.
 
+    class WorkflowDependencyStatus(StrEnum):
+        PERFECT = "PERFECT"  # Same major, minor, and patch version
+        GOOD = "GOOD"  # Same major, minor version
+        CAUTION = "CAUTION"  # Dependency is ahead within maximum minor revisions
+        BAD = "BAD"  # Different major, or dependency ahead by more than maximum minor revisions
+        MISSING = "MISSING"  # Not found
+        UNKNOWN = "UNKNOWN"  # May not have been able to evaluate due to other errors.
+
+    @dataclass
+    class WorkflowDependencyInfo:
+        library_name: str
+        version_requested: str
+        version_present: str | None
+        status: WorkflowManager.WorkflowDependencyStatus
+
     @dataclass
     class WorkflowInfo:
         status: WorkflowManager.WorkflowStatus
         workflow_path: str
         workflow_name: str | None = None
+        workflow_dependencies: list[WorkflowManager.WorkflowDependencyInfo] = field(default_factory=list)
         problems: list[str] = field(default_factory=list)
 
     _workflow_file_path_to_info: dict[str, WorkflowInfo]
 
     def __init__(self, event_manager: EventManager) -> None:
+        self._workflow_file_path_to_info = {}
+
         event_manager.assign_manager_to_request_type(
             RunWorkflowFromScratchRequest, self.on_run_workflow_from_scratch_request
         )
@@ -3010,6 +3048,12 @@ class WorkflowManager:
             self.on_save_workflow_request,
         )
         event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
+
+    def get_workflows_attempted_to_load(self) -> list[str]:
+        return list(self._workflow_file_path_to_info.keys())
+
+    def get_workflow_info_for_attempted_load(self, workflow_file_path: str) -> WorkflowInfo:
+        return self._workflow_file_path_to_info[workflow_file_path]
 
     def run_workflow(self, relative_file_path: str) -> tuple[bool, str]:
         relative_file_path_obj = Path(relative_file_path)
@@ -3183,7 +3227,15 @@ class WorkflowManager:
     def on_load_workflow_metadata_request(self, request: LoadWorkflowMetadata) -> ResultPayload:
         # Let us go into the darkness.
         complete_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(request.file_name)
+        str_path = str(complete_file_path)
         if not Path(complete_file_path).is_file():
+            self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
+                status=WorkflowManager.WorkflowStatus.MISSING,
+                workflow_path=str_path,
+                workflow_name=None,
+                workflow_dependencies=[],
+                problems=["Workflow could not be found at the path specified."],
+            )
             details = f"Attempted to load workflow metadata for a file at '{complete_file_path}. Failed because no file could be found at that path."
             logger.error(details)
             return LoadWorkflowMetadataResultFailure()
@@ -3197,6 +3249,15 @@ class WorkflowManager:
         block_name = "script"
         matches = list(filter(lambda m: m.group("type") == block_name, re.finditer(regex, workflow_content)))
         if len(matches) != 1:
+            self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
+                status=WorkflowManager.WorkflowStatus.UNUSABLE,
+                workflow_path=str_path,
+                workflow_name=None,
+                workflow_dependencies=[],
+                problems=[
+                    f"Failed as it had {len(matches)} sections titled '{block_name}', and we expect exactly 1 such section."
+                ],
+            )
             details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed as it had {len(matches)} sections titled '{block_name}', and we expect exactly 1 such section."
             logger.error(details)
             return LoadWorkflowMetadataResultFailure()
@@ -3210,14 +3271,30 @@ class WorkflowManager:
         try:
             toml_doc = tomlkit.parse(metadata_content_toml)
         except Exception as err:
+            self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
+                status=WorkflowManager.WorkflowStatus.UNUSABLE,
+                workflow_path=str_path,
+                workflow_name=None,
+                workflow_dependencies=[],
+                problems=[f"Failed because the metadata was not valid TOML: {err}"],
+            )
             details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed because the metadata was not valid TOML: {err}"
             logger.error(details)
             return LoadWorkflowMetadataResultFailure()
 
+        tool_header = "tool"
+        griptape_nodes_header = "griptape-nodes"
         try:
-            griptape_nodes_tool_section = toml_doc["tool"]["griptape-nodes"]  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
+            griptape_nodes_tool_section = toml_doc[tool_header][griptape_nodes_header]  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
         except Exception as err:
-            details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed because the '[tools.griptape-nodes]' section could not be found: {err}"
+            self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
+                status=WorkflowManager.WorkflowStatus.UNUSABLE,
+                workflow_path=str_path,
+                workflow_name=None,
+                workflow_dependencies=[],
+                problems=[f"Failed because the '[{tool_header}.{griptape_nodes_header}]' section could not be found."],
+            )
+            details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed because the '[{tool_header}.{griptape_nodes_header}]' section could not be found: {err}"
             logger.error(details)
             return LoadWorkflowMetadataResultFailure()
 
@@ -3226,10 +3303,160 @@ class WorkflowManager:
             workflow_metadata = WorkflowMetadata.model_validate(griptape_nodes_tool_section)
         except Exception as err:
             # No, it is haram.
-            details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed because the metadata did not match the requisite schema with error: {err}"
+            self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
+                status=WorkflowManager.WorkflowStatus.UNUSABLE,
+                workflow_path=str_path,
+                workflow_name=None,
+                workflow_dependencies=[],
+                problems=[
+                    f"Failed because the metadata in the '[{tool_header}.{griptape_nodes_header}]' section did not match the requisite schema with error: {err}"
+                ],
+            )
+            details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed because the metadata in the '[{tool_header}.{griptape_nodes_header}]' section did not match the requisite schema with error: {err}"
             logger.error(details)
             return LoadWorkflowMetadataResultFailure()
 
+        # We have valid dependencies, etc.
+        # TODO(griptape): validate schema versions, engine versions.
+        problems = []
+        dependency_infos = []
+        had_critical_error = False
+        for node_library_referenced in workflow_metadata.node_libraries_referenced:
+            library_name = node_library_referenced.library_name
+            desired_version_str = node_library_referenced.library_version
+            desired_version = Version.from_string(desired_version_str)
+            if not desired_version:
+                had_critical_error = True
+                problems.append(
+                    f"Workflow cited an invalid version string '{desired_version_str}' for library '{library_name}'. Must be specified in major.minor.patch format."
+                )
+                dependency_infos.append(
+                    WorkflowManager.WorkflowDependencyInfo(
+                        library_name=library_name,
+                        version_requested=desired_version_str,
+                        version_present=None,
+                        status=WorkflowManager.WorkflowDependencyStatus.UNKNOWN,
+                    )
+                )
+                # SKIP IT.
+                continue
+            # See how our desired version compares against the actual library we (may) have.
+            # See if the library exists.
+            library_metadata_request = GetLibraryMetadataRequest(library=library_name)
+            library_metadata_result = GriptapeNodes.handle_request(library_metadata_request)
+            if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
+                # Metadata failed to be found.
+                had_critical_error = True
+                problems.append(
+                    f"Library '{library_name}' was not successfully registered. It may have other problems that prevented it from loading."
+                )
+                dependency_infos.append(
+                    WorkflowManager.WorkflowDependencyInfo(
+                        library_name=library_name,
+                        version_requested=desired_version_str,
+                        version_present=None,
+                        status=WorkflowManager.WorkflowDependencyStatus.MISSING,
+                    )
+                )
+                # SKIP IT.
+                continue
+
+            # Is there a version string in the metadata?
+            library_metadata = library_metadata_result.metadata
+            version_key = "library_version"
+            if version_key not in library_metadata:
+                had_critical_error = True
+                problems.append(
+                    f"Library '{library_name}' has malformed metadata. Was unable to find required field '{version_key}'."
+                )
+                dependency_infos.append(
+                    WorkflowManager.WorkflowDependencyInfo(
+                        library_name=library_name,
+                        version_requested=desired_version_str,
+                        version_present=None,
+                        status=WorkflowManager.WorkflowDependencyStatus.MISSING,
+                    )
+                )
+                # SKIP IT.
+                continue
+
+            # Attempt to parse out the version string.
+            library_version_str = library_metadata[version_key]
+            library_version = Version.from_string(version_string=library_version_str)
+            if not library_version:
+                had_critical_error = True
+                problems.append(
+                    f"Library an invalid version string '{library_version_str}' for library '{library_name}'. Must be specified in major.minor.patch format."
+                )
+                dependency_infos.append(
+                    WorkflowManager.WorkflowDependencyInfo(
+                        library_name=library_name,
+                        version_requested=desired_version_str,
+                        version_present=None,
+                        status=WorkflowManager.WorkflowDependencyStatus.UNKNOWN,
+                    )
+                )
+                # SKIP IT.
+                continue
+            # How does it compare?
+            major_matches = library_version.major == desired_version.major
+            minor_matches = library_version.minor == desired_version.minor
+            patch_matches = library_version.patch == desired_version.patch
+            if major_matches and minor_matches and patch_matches:
+                status = WorkflowManager.WorkflowDependencyStatus.PERFECT
+            elif major_matches and minor_matches:
+                status = WorkflowManager.WorkflowDependencyStatus.GOOD
+            elif major_matches:
+                # Let's see if the dependency is ahead and within our tolerance.
+                delta = library_version.minor - desired_version.minor
+                if delta < 0:
+                    problems.append(
+                        f"Library '{library_name}' is at version '{library_version}', which is below the desired version."
+                    )
+                    status = WorkflowManager.WorkflowDependencyStatus.BAD
+                    had_critical_error = True
+                elif delta > WorkflowManager.MAX_MINOR_VERSION_DEVIATION:
+                    problems.append(
+                        f"Library '{library_name}' is at version '{library_version}', but this workflow requested '{desired_version}'. This version difference is too far out of tolerance to recommend proceeding."
+                    )
+                    status = WorkflowManager.WorkflowDependencyStatus.BAD
+                    had_critical_error = True
+                else:
+                    problems.append(
+                        f"Library '{library_name}' is at version '{library_version}', but this workflow requested '{desired_version}'. There may be incompatibilities. Proceed at your own risk."
+                    )
+                    status = WorkflowManager.WorkflowDependencyStatus.CAUTION
+            else:
+                problems.append(
+                    f"Library '{library_name}' is at version '{library_version}', but this workflow requested '{desired_version}'. Major version differences have breaking changes that this Workflow may not support."
+                )
+                status = WorkflowManager.WorkflowDependencyStatus.BAD
+                had_critical_error = True
+
+            # Append the latest info for this dependency.
+            dependency_infos.append(
+                WorkflowManager.WorkflowDependencyInfo(
+                    library_name=library_name,
+                    version_requested=str(desired_version),
+                    version_present=str(library_version),
+                    status=status,
+                )
+            )
+        # OK, we have all of our dependencies together. Let's look at the overall scenario.
+        if had_critical_error:
+            overall_status = WorkflowManager.WorkflowStatus.UNUSABLE
+        elif problems:
+            overall_status = WorkflowManager.WorkflowStatus.FLAWED
+        else:
+            overall_status = WorkflowManager.WorkflowStatus.GOOD
+
+        self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
+            status=overall_status,
+            workflow_path=str_path,
+            workflow_name=None,
+            workflow_dependencies=dependency_infos,
+            problems=problems,
+        )
         return LoadWorkflowMetadataResultSuccess(metadata=workflow_metadata)
 
     def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (need lots of branches to cover negative cases)
