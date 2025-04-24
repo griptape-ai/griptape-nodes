@@ -378,6 +378,15 @@
       }
     },
     {
+      "class_name": "DisplayImage",
+      "file_path": "griptape_nodes_library/image/display_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "DisplayImage node.",
+        "display_name": "Display Image"
+      }
+    },
+    {
       "class_name": "LoadImage",
       "file_path": "griptape_nodes_library/image/load_image.py",
       "metadata": {
