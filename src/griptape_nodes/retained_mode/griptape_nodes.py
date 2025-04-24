@@ -1770,6 +1770,13 @@ class NodeManager:
                 logger.error(details)
                 return DeleteNodeResultFailure()
 
+            if parent_flow.check_for_existing_running_flow():
+                result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
+                if not result.succeeded():
+                    details = f"Attempted to delete a Node '{node_name}'. Failed because running flow could not cancel."
+                    logger.error(details)
+                    return DeleteNodeResultFailure()
+
             # Remove all connections from this Node.
             list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
             list_connections_result = GriptapeNodes.handle_request(request=list_node_connections_request)
