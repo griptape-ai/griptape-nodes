@@ -699,8 +699,6 @@ class FlowManager:
         return any([parent is None for parent in self._name_to_parent_name.values()])  # noqa: C419
 
     def on_create_flow_request(self, request: CreateFlowRequest) -> ResultPayload:
-        obj_mgr = GriptapeNodes.ObjectManager()
-
         # Who is the parent?
         parent_name = request.parent_flow_name
 
@@ -713,23 +711,19 @@ class FlowManager:
         if (parent_name is None) and (GriptapeNodes.ContextManager().has_current_flow()):
             # Aha! Just use that.
             parent_name = GriptapeNodes.ContextManager().get_current_flow_name()
-        if parent_name is None:
-            details = "Attempted to create a Flow with a parent but no parent name was provided."
-            logger.error(details)
 
-            result = CreateFlowResultFailure()
-
-            return result
-        parent = obj_mgr.attempt_get_object_by_name_as_type(parent_name, ControlFlow)
-        if parent_name is None:
+        parent = None
+        if parent_name is not None:
+            parent = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(parent_name, ControlFlow)
+        if parent_name is None and self.does_canvas_exist():
             # We're trying to create the canvas. Ensure that parent does NOT already exist.
-            if self.does_canvas_exist():
-                details = "Attempted to create a Flow as the Canvas (top-level Flow with no parents), but the Canvas already exists."
-                logger.error(details)
-                result = CreateFlowResultFailure()
-                return result
-        # That parent exists, right?
-        elif parent is None:
+            details = "Attempted to create a Flow as the Canvas (top-level Flow with no parents), but the Canvas already exists."
+            logger.error(details)
+            result = CreateFlowResultFailure()
+            return result
+
+        # Now our parent exists, right?
+        if parent is None:
             details = f"Attempted to create a Flow with a parent '{request.parent_flow_name}', but no parent with that name could be found."
             logger.error(details)
 
@@ -738,9 +732,11 @@ class FlowManager:
             return result
 
         # Create it.
-        final_flow_name = obj_mgr.generate_name_for_object(type_name="ControlFlow", requested_name=request.flow_name)
+        final_flow_name = GriptapeNodes.ObjectManager().generate_name_for_object(
+            type_name="ControlFlow", requested_name=request.flow_name
+        )
         flow = ControlFlow()
-        obj_mgr.add_object_by_name(name=final_flow_name, obj=flow)
+        GriptapeNodes.ObjectManager().add_object_by_name(name=final_flow_name, obj=flow)
         self._name_to_parent_name[final_flow_name] = parent_name
 
         # See if we need to push it as the current context.
