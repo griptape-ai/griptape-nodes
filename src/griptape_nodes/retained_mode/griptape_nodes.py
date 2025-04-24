@@ -3224,7 +3224,7 @@ class WorkflowManager:
 
         return RenameWorkflowResultSuccess()
 
-    def on_load_workflow_metadata_request(self, request: LoadWorkflowMetadata) -> ResultPayload:
+    def on_load_workflow_metadata_request(self, request: LoadWorkflowMetadata) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         # Let us go into the darkness.
         complete_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(request.file_name)
         str_path = str(complete_file_path)
@@ -3453,7 +3453,7 @@ class WorkflowManager:
         self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
             status=overall_status,
             workflow_path=str_path,
-            workflow_name=None,
+            workflow_name=workflow_metadata.name,
             workflow_dependencies=dependency_infos,
             problems=problems,
         )
@@ -3903,6 +3903,7 @@ class LibraryManager:
         status: LibraryManager.LibraryStatus
         library_path: str
         library_name: str | None = None
+        library_version: str | None = None
         problems: list[str] = field(default_factory=list)
 
     _library_file_path_to_info: dict[str, LibraryInfo]
@@ -3965,8 +3966,9 @@ class LibraryManager:
         # Create a table with three columns and row dividers
         # Using SQUARE box style which includes row dividers
         table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True)
-        table.add_column("File Path", style="cyan")
         table.add_column("Library Name", style="green")
+        table.add_column("Version", style="green")
+        table.add_column("File Path", style="cyan")
         table.add_column("Problems", style="yellow")
 
         # Status emojis mapping
@@ -3987,6 +3989,12 @@ class LibraryManager:
             name = lib_info.library_name if lib_info.library_name else "*UNKNOWN*"
             library_name = f"{emoji} {name}"
 
+            library_version = lib_info.library_version
+            if library_version:
+                version_str = str(library_version)
+            else:
+                version_str = "*UNKNOWN*"
+
             # Problems column - format with numbers if there's more than one
             if not lib_info.problems:
                 problems = "<none>"
@@ -3997,7 +4005,7 @@ class LibraryManager:
                 problems = "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(lib_info.problems)])
 
             # Add the row to the table
-            table.add_row(file_path, library_name, problems)
+            table.add_row(library_name, version_str, file_path, problems)
 
         # Create a panel containing the table
         panel = Panel(table, title="Library Information", border_style="blue")
@@ -4155,7 +4163,7 @@ class LibraryManager:
         # Extract library information
         try:
             library_name = library_data["name"]
-            library_metadata = library_data.get("metadata", {})
+            library_metadata = library_data["metadata"]
             nodes_metadata = library_data.get("nodes", [])
         except KeyError as err:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
@@ -4180,6 +4188,34 @@ class LibraryManager:
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
+        # Get the library version.
+        library_version_key = "library_version"
+        if library_version_key not in library_metadata:
+            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                library_path=file_path,
+                library_name=library_name,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=[f"Library was missing the '{library_version_key}' in its metadata section."],
+            )
+            details = f"Attempted to load Library '{library_name}' JSON file from '{json_path}'. Failed because it was missing the '{library_version_key}' in its metadata section."
+            logger.error(details)
+            return RegisterLibraryFromFileResultFailure()
+
+        # Make sure the version string is copacetic.
+        library_version = library_metadata[library_version_key]
+        if not library_version:
+            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                library_path=file_path,
+                library_name=library_name,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=[
+                    f"Library's version string '{library_metadata[library_version_key]}' wasn't valid. Must be in major.minor.patch format."
+                ],
+            )
+            details = f"Attempted to load Library '{library_name}' JSON file from '{json_path}'. Failed because version string '{library_metadata[library_version_key]}' wasn't valid. Must be in major.minor.patch format."
+            logger.error(details)
+            return RegisterLibraryFromFileResultFailure()
+
         categories = library_data.get("categories", None)
 
         # Get the directory containing the JSON file to resolve relative paths
@@ -4200,6 +4236,7 @@ class LibraryManager:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=library_name,
+                library_version=library_version,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
                 problems=[
                     "Failed because a library with this name was already registered. Check the Settings to ensure duplicate libraries are not being loaded."
@@ -4267,6 +4304,7 @@ class LibraryManager:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=library_name,
+                library_version=library_version,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
                 problems=problems,
             )
@@ -4279,6 +4317,7 @@ class LibraryManager:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=library_name,
+                library_version=library_version,
                 status=LibraryManager.LibraryStatus.FLAWED,
                 problems=problems,
             )
@@ -4289,6 +4328,7 @@ class LibraryManager:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=library_name,
+                library_version=library_version,
                 status=LibraryManager.LibraryStatus.GOOD,
                 problems=problems,
             )
