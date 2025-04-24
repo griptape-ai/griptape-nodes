@@ -11,5 +11,7 @@
 #       "0.1.0"
 #     ]
 #   ]
+# is_griptape_provided = true
+# is_template = true
 #
 # ///

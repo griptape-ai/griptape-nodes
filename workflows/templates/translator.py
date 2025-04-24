@@ -240,5 +240,7 @@ cmd.connect("prompt_header.output", "to_english.prompt")
 # schema_version = "0.1.0"
 # engine_version_created_with = "0.14.1"
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
+# is_griptape_provided = true
+# is_template = true
 #
 # ///
