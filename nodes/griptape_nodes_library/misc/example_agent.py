@@ -146,7 +146,7 @@ class ExAgent(ControlNode):
             ParameterList(
                 name="tools",
                 input_types=["Tool"],
-                default_value=None,
+                default_value=[],
                 tooltip="Connect Griptape Tools for the agent to use.\nOr connect individual tools.",
                 allowed_modes={ParameterMode.INPUT},
             )
@@ -154,6 +154,7 @@ class ExAgent(ControlNode):
                 name="rulesets",
                 input_types=["Ruleset", "List[Ruleset]"],
                 tooltip="Rulesets to apply to the agent to control its behavior.",
+                default_value=[],
                 allowed_modes={ParameterMode.INPUT},
             )
 
@@ -401,12 +402,14 @@ class ExAgent(ControlNode):
             self.append_value_to_parameter("logs", f"[Model config]: {prompt_model_settings}\n")
 
         # Get any tools
-        tools = self.get_parameter_value("tools")
+        # tools = self.get_parameter_value("tools")  # noqa: ERA001
+        tools = params.get("tools", [])
         if include_details and tools:
             self.append_value_to_parameter("logs", f"[Tools]: {', '.join([tool.name for tool in tools])}\n")
 
         # Get any rulesets
-        rulesets = self.get_parameter_value("rulesets")
+        # rulesets = self.get_parameter_value("rulesets")  # noqa: ERA001
+        rulesets = params.get("rulesets", [])
         if include_details and rulesets:
             self.append_value_to_parameter(
                 "logs", f"\n[Rulesets]: {', '.join([ruleset.name for ruleset in rulesets])}\n"
