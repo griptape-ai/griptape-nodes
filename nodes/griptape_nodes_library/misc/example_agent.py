@@ -169,6 +169,20 @@ class ExampleAgent(ControlNode):
     def after_incoming_connection(
         self, source_node: Self, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
+        # Agent
+        # If the user connects to the agent, we want to hide some parameters.
+        if target_parameter.name == "agent":
+            params_to_toggle = ["model", "tools", "rulesets", "prompt model config"]
+            groups_to_toggle = ["Advanced options"]
+            for group_name in groups_to_toggle:
+                group = self.get_group_by_name_or_element_id(group_name)
+                if group:
+                    group.ui_options["hide"] = True
+            for param_name in params_to_toggle:
+                param = self.get_parameter_by_name(param_name)
+                if param:
+                    param._ui_options["hide"] = True
+
         # Prompt Driver
         # If the user connects to the prompt_model_settings, we want to hide the model parameter.
         if target_parameter.name == "prompt model config":
@@ -188,6 +202,20 @@ class ExampleAgent(ControlNode):
     def after_incoming_connection_removed(
         self, source_node: Self, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
+        # Agent
+        # If the user connects to the agent, we want to show some parameters.
+        if target_parameter.name == "agent":
+            groups_to_toggle = ["Advanced options"]
+            for group_name in groups_to_toggle:
+                group = self.get_group_by_name_or_element_id(group_name)
+                if group:
+                    group.ui_options["hide"] = False
+
+            params_to_toggle = ["model", "tools", "rulesets", "prompt model config"]
+            for param_name in params_to_toggle:
+                param = self.get_parameter_by_name(param_name)
+                if param:
+                    param._ui_options["hide"] = False
         # If the user connects to the prompt_model_settings, we want to hide the model parameter.
         if target_parameter.name == "prompt model config":
             # Find the model parameter and hide it
@@ -265,12 +293,19 @@ class ExampleAgent(ControlNode):
             prompt = self._handle_additonal_context(prompt, additional_context)
 
         # Create the agent
-        agent = GtAgent(prompt_driver=prompt_model_settings, tools=tools, rulesets=rulesets)
-
+        agent = None
+        agent_dict = params.get("agent", None)
+        if not agent_dict:
+            agent = GtAgent(prompt_driver=prompt_model_settings, tools=tools, rulesets=rulesets)
+        else:
+            agent = GtAgent.from_dict(agent_dict)
         # Run the agent asynchronously
         self.append_value_to_parameter("logs", "[Started processing agent..]\n")
         yield lambda: self._process(agent, prompt)
         self.append_value_to_parameter("logs", "\n[Finished processing agent.]\n")
+
+        # Set the agent
+        self.parameter_output_values["agent"] = agent.to_dict()
 
         try_throw_error(agent.output)
 
