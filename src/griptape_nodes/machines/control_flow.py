@@ -38,8 +38,12 @@ class ControlFlowContext:
 
     def get_next_node(self, output_parameter: Parameter) -> BaseNode | None:
         node = self.flow.connections.get_connected_node(self.current_node, output_parameter)
-        if node:
+        if node is not None:
             node, _ = node
+        # Continue Execution to the next node that needs to be executed.
+        elif not self.flow.flow_queue.empty():
+            node = self.flow.flow_queue.get()
+            self.flow.flow_queue.task_done()
         return node
 
     def reset(self) -> None:

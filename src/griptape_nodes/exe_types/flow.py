@@ -11,7 +11,7 @@ from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState, StartNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
-from griptape_nodes.retained_mode.events.execution_events import ControlFlowCancelledEvent, StartFlowRequest
+from griptape_nodes.retained_mode.events.execution_events import ControlFlowCancelledEvent
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
@@ -78,9 +78,7 @@ class ControlFlow:
                         return True
         return False
 
-    def start_flow(self, flow_name: str, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
+    def start_flow(self, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
             errormsg = "This workflow is already in progress. Please wait for the current process to finish before starting again."
@@ -94,9 +92,6 @@ class ControlFlow:
 
         self.control_flow_machine.start_flow(start_node, debug_mode)
         self.flow_queue.task_done()
-        if not debug_mode and not self.flow_queue.empty():
-            next_node = self.flow_queue.get()
-            GriptapeNodes.handle_request(StartFlowRequest(flow_name=flow_name, flow_node_name=next_node.name))
 
     def check_for_existing_running_flow(self) -> bool:
         if self.control_flow_machine._current_state is not CompleteState and self.control_flow_machine._current_state:
