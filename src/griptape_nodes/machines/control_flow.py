@@ -42,6 +42,14 @@ class ControlFlowContext:
             node, _ = node
         return node
 
+    def reset(self) -> None:
+        if self.current_node:
+            self.current_node.clear_node()
+        del self.current_node
+        self.resolution_machine.reset_machine()
+        self.selected_output = None
+        self.paused = False
+
 
 # GOOD!
 class ResolveNodeState(State):
@@ -171,3 +179,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
         if resolution_machine.is_complete() or (not resolution_machine.is_started()):
             self.update()
+
+    def reset_machine(self) -> None:
+        self._context.reset()
+        self._current_state = None
