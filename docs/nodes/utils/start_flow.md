@@ -16,34 +16,32 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the StartFlow to your workspace (it may be added automatically when you create a new workflow)
+1. Add the StartFlow to your workflow
 1. Connect it to the first action node in your flow
 
 ### Parameters
 
-- **control**: This is an output connection point for the flow (you connect this to other nodes)
 
 ### Outputs
 
-- None specific - this node just passes control to the next node in the flow
+- **exec_out** - use this pin to pass control to the next node in the flow
 
 ## Example
 
 Imagine you're creating a workflow that generates and saves text:
 
-1. Start with a StartFlow
-1. Connect it to a RunAgent that will generate text
+1. Create a StartFlow node
+1. Connect the top, white "exec chain" pins to an Agent that will generate text
 1. Connect that to a SaveText to save the generated text
 1. Connect that to an EndFlowNode to complete the flow
 
-The StartFlow tells the system "start here and follow the connections."
+The StartFlow tells the system "start here and follow the exec chain in order."
 
 ## Important Notes
 
 - Every workflow needs exactly one StartFlow
 - The StartFlow doesn't take any inputs - it's just a starting point
-- You can only have one StartFlow per workflow
-- The StartFlow is typically added automatically when you create a new workflow
+- You can only have one StartFlow per contiguous workflow
 
 ## Common Issues
 

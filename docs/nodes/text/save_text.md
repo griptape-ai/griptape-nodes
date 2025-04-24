@@ -18,7 +18,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the SaveText node to your workspace
+1. Add the SaveText node to your workflow
 1. Connect a text source to the "text" input or enter text directly
 1. Specify an output path or use the default
 1. Run your workflow to save the text to the specified file
@@ -37,7 +37,7 @@ Use this node when you want to:
 Imagine you want to save the output of an AI agent to a text file:
 
 1. Add an Agent node to your workflow
-1. Set up the agent with a prompt to generate some content
+1. Set up the agent with a prompt to generate some text
 1. Add a SaveText node
 1. Connect the Agent's "output" to the SaveText "text" input
 1. Set the "output_path" to "my_agent_response.txt"

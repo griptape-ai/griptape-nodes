@@ -1,8 +1,8 @@
-# CalculatorTool
+# Calculator
 
 ## What is it?
 
-The CalculatorTool is a building block that provides calculation capabilities to your workflows. Think of it as a powerful calculator that your agents can use to perform mathematical operations and calculations.
+The Calculator tool is a calculator.  A calculator you give an agent.  So the agent can do math.
 
 ## When would I use it?
 
@@ -16,8 +16,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the CalculatorTool to your workspace
-1. Connect it to your flow
+1. Add the Calculator to your workflow
 1. Connect its output to nodes that need calculation capabilities (like an Agent)
 
 ### Parameters
@@ -32,6 +31,6 @@ Use this node when you want to:
 
 Imagine you want to create an agent that can perform calculations:
 
-1. Add a CalculatorTool to your workflow
+1. Add a Calculator to your workflow
 1. Connect the "tool" output to an Agent's "tools" input
 1. Now that agent can perform calculations when needed in conversations
