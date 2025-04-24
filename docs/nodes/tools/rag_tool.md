@@ -1,8 +1,8 @@
-# RagTool
+# InfoRetriever
 
 ## What is it?
 
-The RagTool is a building block that provides Retrieval Augmented Generation capabilities to your workflows. Think of it as a smart researcher that can find and use relevant information to enhance AI responses.
+The InfoRetriever uses Retrieval Augmented Generation or "RAG" capabilities to your workflows. Think of it as a smart researcher that can find and use relevant information to enhance AI responses.
 
 ## When would I use it?
 
@@ -17,8 +17,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the RagTool to your workspace
-1. Connect it to your flow
+1. Add the InfoRetriever to your workflow
 1. Connect its output to nodes that need RAG capabilities (like an Agent)
 
 ### Parameters
@@ -36,7 +35,7 @@ Use this node when you want to:
 
 Imagine you want to create an agent that can answer questions using your company documentation:
 
-1. Add a RagTool to your workflow
+1. Add an InfoRetriever to your workflow
 1. Connect a vector store containing your documentation to the "rag_engine" input
 1. Connect the "tool" output to an Agent's "tools" input
 1. Now that agent can retrieve and reference specific information from your documentation when answering questions

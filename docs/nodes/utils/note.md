@@ -2,7 +2,7 @@
 
 ## What is it?
 
-The Note node is a utility node that allows you to create descriptive notes throughout your workflow.
+The Note node allows you to create descriptive notes throughout your workflow. They are not really operative, but more meant for display and documentation within a flow.
 
 ## When would I use it?
 
@@ -21,7 +21,7 @@ Use the Note node when:
 
 ### Parameters
 
-- **note**: The multiline text content (string, defaults to empty string)
+- **note**: The text content (string, defaults to empty string)
 
 ## Example
 

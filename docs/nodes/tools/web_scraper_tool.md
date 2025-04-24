@@ -1,8 +1,8 @@
-# WebScraperTool
+# WebScraper
 
 ## What is it?
 
-The WebScraperTool is a node that creates a web scraping capability for your workflows. It wraps Griptape's WebScraperTool functionality, allowing your agents to extract and process information from websites.
+The WebScraper tool arguments an agent, allowing that agent to extract and process information from websites.
 
 ## When would I use it?
 
@@ -18,16 +18,12 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the WebScraperTool to your workspace
-1. Configure the "name" parameter if you want to customize the tool's identifier
-1. Set the "off_prompt" parameter based on your preference
+1. Add the WebScraper tool to your worksflow
 1. Connect the "tool" output to an agent or other node that can utilize tools
 
 ### Parameters
 
-- **name**: A custom name for the tool (required)
 - **off_prompt**: Whether to run web scraping operations outside the main prompt (default is False)
-- **metadata**: Optional metadata dictionary for the tool
 
 ### Outputs
 
@@ -37,7 +33,7 @@ Use this node when you want to:
 
 Imagine you want to create an agent that can research information from websites:
 
-1. Add a WebScraperTool to your workflow
+1. Add a WebScraper to your workflow
 1. Set the "name" parameter to "WebResearcher"
 1. Set "off_prompt" to True for more efficient processing
 1. Connect the "tool" output to an Agent's "tools" input

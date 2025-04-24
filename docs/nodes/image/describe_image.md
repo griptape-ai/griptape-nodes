@@ -2,7 +2,7 @@
 
 ## What is it?
 
-The DescribeImage node uses AI to generate textual descriptions of images. It leverages vision-capable models to analyze image content and produce detailed descriptions based on your specific prompting instructions.
+The DescribeImage node uses AI to generate textual descriptions of an image you provide it. It leverages vision-capable models to analyze image content and produce detailed descriptions based on your specific prompting instructions.
 
 ## When would I use it?
 
@@ -18,7 +18,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the DescribeImage node to your workspace
+1. Add the DescribeImage node to your workflow
 1. Connect an image source to the "image" input
 1. Optionally provide specific instructions in the "prompt" field
 1. Run the node to generate a description of the image
