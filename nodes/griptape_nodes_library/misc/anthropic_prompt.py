@@ -19,20 +19,30 @@ MODELS = ["claude-3-7-sonnet-latest", "claude-3-5-sonnet-latest", "claude-3-5-op
 API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 SERVICE = "Anthropic"
 
-SUCCESS = 200
-
 
 class ExAnthropicPrompt(BasePrompt):
-    """Node for Anthropic Prompt Driver.
+    """Node for configuring and providing an Anthropic Prompt Driver.
 
-    This node creates an Anthropic prompt driver and outputs its configuration.
+    Inherits from `BasePrompt` to leverage common LLM parameters. This node
+    customizes the available models to those supported by Anthropic, requires an
+    Anthropic API key set in the node's configuration under the 'Anthropic'
+    service, and potentially handles parameter conversions specific to the
+    Anthropic driver (like min_p to top_p).
+
+    The `process` method uses the `_get_common_driver_args` helper, adds
+    Anthropic-specific configurations, and instantiates the
+    `AnthropicPromptDriver`.
     """
 
     def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
-        # Update the parameters
+        """Initializes the AnthropicPrompt node.
 
-        # Update the list of models
+        Calls the superclass initializer, then modifies the inherited 'model'
+        parameter to use Anthropic specific models and sets a default.
+        """
+        super().__init__(**kwargs)
+
+        # --- Customize Inherited Parameters ---
         model_parameter = self.get_parameter_by_name("model")
 
         # Find the options trait
@@ -43,50 +53,64 @@ class ExAnthropicPrompt(BasePrompt):
                 trait.choices = MODELS
             model_parameter.default_value = DEFAULT_MODEL
 
+        # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.
+        seed_parameter = self.get_parameter_by_name("seed")
+        if seed_parameter:
+            self.remove_parameter(seed_parameter)
+
     def process(self) -> None:
-        # Get the parameters from the node
+        """Processes the node configuration to create an AnthropicPromptDriver.
+
+        Retrieves parameter values, uses the `_get_common_driver_args` helper
+        for common settings, then adds Anthropic-specific arguments like API key
+        and model. Handles the conversion of `min_p` to `top_p` if `min_p` is set.
+        Finally, instantiates the `AnthropicPromptDriver` and assigns it to the
+        'prompt model config' output parameter.
+
+        Raises:
+            KeyError: If the Anthropic API key is not found in the node configuration.
+        """
+        # Retrieve all parameter values set on the node.
         params = self.parameter_values
 
-        # Initialize kwargs with required parameters
-        kwargs = {}
-        kwargs["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
-        kwargs["model"] = params.get("model", DEFAULT_MODEL)
+        # --- Get Common Driver Arguments ---
+        # Use the helper method from BasePrompt. This gets temperature, stream,
+        # max_attempts, max_tokens, use_native_tools, min_p, top_k if they are set.
+        common_args = self._get_common_driver_args(params)
 
-        # Handle optional parameters
+        # --- Prepare Anthropic Specific Arguments ---
+        specific_args = {}
+
+        # Retrieve the mandatory API key.
+        specific_args["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
+
+        # Get the selected model.
+        specific_args["model"] = params.get("model", DEFAULT_MODEL)
+
+        # Handle specific parameter conversions/logic for Anthropic driver
+        # Anthropic uses 'top_p' and 'top_k' directly as kwargs.
+
+        # If 'min_p' was provided via the node parameter, convert it to 'top_p'.
+        if "min_p" in common_args:
+            min_p_value = common_args["min_p"]
+            # Add 'top_p' based on 'min_p'.
+            specific_args["top_p"] = 1.0 - float(min_p_value)
+            # Remove the original 'min_p' as Anthropic driver uses 'top_p'.
+            del common_args["min_p"]
+
         response_format = params.get("response_format", None)
-        stream = params.get("stream", False)
-        temperature = params.get("temperature", None)
-        max_attempts = params.get("max_attempts_on_fail", None)
-        use_native_tools = params.get("use_native_tools", False)
-        max_tokens = params.get("max_tokens", None)
-        top_p = None if params.get("min_p", None) is None else 1 - float(params["min_p"])
-        min_p = params.get("min_p", None)
-        top_k = params.get("top_k", None)
-
         if response_format == "json_object":
             response_format = {"type": "json_object"}
-            kwargs["response_format"] = response_format
-        if stream:
-            kwargs["stream"] = stream
-        if temperature:
-            kwargs["temperature"] = temperature
-        if max_attempts:
-            kwargs["max_attempts"] = max_attempts
-        if use_native_tools:
-            kwargs["use_native_tools"] = use_native_tools
-        if max_tokens is not None and max_tokens > 0:
-            kwargs["max_tokens"] = max_tokens
+            specific_args["response_format"] = response_format
 
-        kwargs["extra_params"] = {}
-        if min_p:
-            kwargs["top_p"] = 1 - min_p  # min_p -> top_p
-        if top_k:
-            kwargs["top_k"] = top_k
+        # --- Combine Arguments and Instantiate Driver ---
+        # Combine common arguments (potentially modified) with Anthropic specific arguments.
+        all_kwargs = {**common_args, **specific_args}
 
-        # Create the driver
-        driver = GtAnthropicPromptDriver(**kwargs)
+        # Create the Anthropic prompt driver instance.
+        driver = GtAnthropicPromptDriver(**all_kwargs)
 
-        # Set the output
+        # Set the output parameter 'prompt model config'.
         self.parameter_output_values["prompt model config"] = driver
 
     def validate_node(self) -> list[Exception] | None:

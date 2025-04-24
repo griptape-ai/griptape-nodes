@@ -8,6 +8,8 @@ should inherit from `BasePrompt` and override the `process` method to instantiat
 and configure a specific Griptape prompt driver.
 """
 
+from typing import Any
+
 from griptape.drivers.prompt.dummy import DummyPromptDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
@@ -31,7 +33,8 @@ class BasePrompt(BaseDriver):
        to list specific models supported by their driver.
     3. Override the `process` method to instantiate the specific Griptape
        prompt driver (e.g., `OpenAiChatPromptDriver`, `AnthropicPromptDriver`)
-       using the parameter values defined here.
+       using the parameter values defined here, potentially utilizing the
+       `_get_common_driver_args` helper method.
 
     Note: The `process` method in this base class creates a `DummyPromptDriver`
     primarily to establish the output socket type. It does not utilize the
@@ -171,6 +174,54 @@ class BasePrompt(BaseDriver):
             )
         )
 
+    def _get_common_driver_args(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Constructs a dictionary of arguments common to most Griptape prompt drivers.
+
+        Retrieves values for parameters defined in `BasePrompt` from the provided
+        `params` dictionary (typically `self.parameter_values`). It includes arguments
+        in the result only if their corresponding parameter value is not `None`.
+        It also handles common transformations like renaming 'max_attempts_on_fail'
+        to 'max_attempts' and only including 'max_tokens' if it's greater than 0.
+
+        Args:
+            params: A dictionary containing the current parameter values for the node.
+
+        Returns:
+            A dictionary containing keyword arguments derived from the common base
+            parameters, suitable for unpacking into a Griptape driver constructor.
+            Arguments corresponding to `None` parameter values are excluded, except
+            for boolean flags where `False` is explicitly included. 'max_tokens'
+            is only included if its value is > 0.
+        """
+        driver_args = {}
+
+        # Define mapping from node parameter name to driver argument name
+        # None value means the name is the same.
+        param_to_driver_arg_map = {
+            "temperature": "temperature",
+            "max_attempts_on_fail": "max_attempts",  # Renamed
+            "seed": "seed",
+            "min_p": "min_p",
+            "top_k": "top_k",
+            "use_native_tools": "use_native_tools",
+            "stream": "stream",
+            # "max_tokens" is handled separately below
+        }
+
+        for node_param, driver_param in param_to_driver_arg_map.items():
+            value = params.get(node_param)
+            # Include if the value is explicitly set (not None).
+            # This correctly includes boolean flags set to False.
+            if value is not None:
+                driver_args[driver_param] = value
+
+        # Special handling for max_tokens: only include if > 0
+        max_tokens_val = params.get("max_tokens")
+        if max_tokens_val is not None and max_tokens_val > 0:
+            driver_args["max_tokens"] = max_tokens_val
+
+        return driver_args
+
     def process(self) -> None:
         """Processes the node to generate the output prompt model configuration.
 
@@ -180,11 +231,14 @@ class BasePrompt(BaseDriver):
         non-functional default if the node is used directly (which is discouraged).
 
         Subclasses MUST override this method to:
-        1. Retrieve parameter values using `self.get_parameter_value(<param_name>)`.
-        2. Instantiate their specific Griptape prompt driver (e.g., `OpenAiChatPromptDriver`)
-           using these retrieved values.
-        3. Assign the created driver instance to the 'prompt model config' output parameter:
-           `self.parameter_output_values["prompt model config"] = specific_driver`
+        1. Retrieve all parameter values: `params = self.parameter_values`.
+        2. Optionally get common arguments: `common_args = self._get_common_driver_args(params)`.
+        3. Retrieve driver-specific arguments (e.g., API key, model from `params`).
+        4. Handle any specific parameter conversions or logic.
+        5. Combine common and specific arguments into a final `kwargs` dictionary.
+        6. Instantiate their specific Griptape prompt driver: `driver = SpecificDriver(**kwargs)`.
+        7. Assign the created driver instance to the output:
+           `self.parameter_output_values["prompt model config"] = driver`
         """
         # Create a placeholder driver for the base class output type definition.
         # This ensures the output socket has the correct type ('Prompt Model Config')

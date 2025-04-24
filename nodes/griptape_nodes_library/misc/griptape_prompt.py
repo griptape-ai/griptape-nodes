@@ -30,13 +30,23 @@ MODELS = [
 
 
 class ExGriptapeCloudPrompt(BasePrompt):
-    """Node for Griptape Cloud Prompt .
+    """Node for configuring and providing a Griptape Cloud Prompt Driver.
 
-    This node creates a Griptape Cloud prompt driver and outputs its configuration.
+    Inherits from `BasePrompt` to leverage common LLM parameters. This node
+    customizes the available models to those supported by Griptape Cloud,
+    removes parameters not applicable to Griptape Cloud (like 'seed'), and
+    requires a Griptape Cloud API key to be set in the node's configuration
+    under the 'Griptape' service.
+
+    The `process` method gathers the configured parameters and the API key,
+    utilizes the `_get_common_driver_args` helper from `BasePrompt`, adds
+    Griptape Cloud specific configurations, then instantiates a
+    `GriptapeCloudPromptDriver` and assigns it to the 'prompt model config'
+    output parameter.
     """
 
     def __init__(self, **kwargs) -> None:
-        """Initializes the ExGriptapeCloudPrompt node.
+        """Initializes the GriptapeCloudPrompt node.
 
         Calls the superclass initializer, then modifies the inherited 'model'
         parameter to use Griptape Cloud specific models and sets a default.
@@ -62,6 +72,11 @@ class ExGriptapeCloudPrompt(BasePrompt):
         if seed_parameter is not None:
             self.remove_parameter(seed_parameter)
 
+        # Remove `top_k` parameter as it's not used by Griptape Cloud.
+        top_k_parameter = self.get_parameter_by_name("top_k")
+        if top_k_parameter is not None:
+            self.remove_parameter(top_k_parameter)
+
     def process(self) -> None:
         """Processes the node configuration to create a GriptapeCloudPromptDriver.
 
@@ -78,65 +93,44 @@ class ExGriptapeCloudPrompt(BasePrompt):
         # Retrieve all parameter values set on the node UI or via input connections.
         params = self.parameter_values
 
-        # --- Prepare Driver Arguments ---
-        # Initialize kwargs dictionary for the driver constructor.
-        kwargs = {}
+        # --- Get Common Driver Arguments ---
+        # Use the helper method from BasePrompt to get args like temperature, stream, max_attempts, etc.
+        common_args = self._get_common_driver_args(params)
 
-        # Retrieve the mandatory API key from the node's configuration.
-        # This raises KeyError if not found, handled by the execution environment or validate_node.
-        kwargs["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
+        # --- Prepare Griptape Cloud Specific Arguments ---
+        specific_args = {}
 
-        # Get the selected model, using the default if not specified.
-        kwargs["model"] = params.get("model", DEFAULT_MODEL)
+        # Retrieve the mandatory API key.
+        specific_args["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
 
-        # --- Handle Optional Driver Parameters ---
-        # Retrieve optional parameters if they have been set (non-default value or connected).
-        response_format = params.get("response_format", None)
-        stream = params.get("stream", False)
-        temperature = params.get("temperature", None)
-        max_attempts = params.get("max_attempts_on_fail", None)
-        use_native_tools = params.get("use_native_tools", False)
-        max_tokens = params.get("max_tokens", None)
-
-        # Convert 'min_p' (from BasePrompt) to 'top_p' if provided, as Griptape Cloud uses top_p.
-        min_p_value = params.get("min_p", None)
-        top_p = None
-        if min_p_value is not None:
-            # Ensure conversion handles potential float precision issues if necessary.
-            # Note: Standard top_p is usually directly set, min_p interpretation might vary.
-            # This assumes 1 - min_p is the intended conversion to top_p.
-            top_p = 1.0 - float(min_p_value)
-
-        # Add optional parameters to kwargs only if they are set.
-        # The driver itself usually handles defaults if a parameter is not provided (is None).
-        if response_format == "json_object":
-            response_format = {"type": "json_object"}
-            kwargs["response_format"] = response_format
-        if stream:
-            kwargs["stream"] = stream
-        if temperature:
-            kwargs["temperature"] = temperature
-        if max_attempts:
-            kwargs["max_attempts"] = max_attempts
-        if use_native_tools:
-            kwargs["use_native_tools"] = use_native_tools
-        if max_tokens is not None and max_tokens > 0:
-            kwargs["max_tokens"] = max_tokens
+        # Get the selected model.
+        specific_args["model"] = params.get("model", DEFAULT_MODEL)
 
         # Handle parameters that go into 'extra_params' for Griptape Cloud.
-        kwargs["extra_params"] = {}
-        if top_p:
-            kwargs["extra_params"]["top_p"] = top_p
+        extra_params = {}
 
-        # Remove extra_params if empty to avoid sending empty dict.
-        if not kwargs["extra_params"]:
-            del kwargs["extra_params"]
+        # Convert 'min_p' (from BasePrompt) to 'top_p' if provided.
+        min_p_value = params.get("min_p", None)  # Get min_p from node params
+        if min_p_value is not None:
+            # Griptape Cloud uses 'top_p' in extra_params.
+            extra_params["top_p"] = 1.0 - float(min_p_value)
+            # We got min_p via the common helper if it was set, but Griptape Cloud doesn't
+            # directly use min_p, so remove it from common_args if it exists.
+            common_args.pop("min_p", None)
 
-        # --- Instantiate and Output Driver ---
-        # Create the Griptape Cloud prompt driver instance with the prepared arguments.
-        driver = GtGriptapeCloudPromptDriver(**kwargs)
+        # Assign extra_params if not empty
+        if extra_params:
+            specific_args["extra_params"] = extra_params
 
-        # Set the output parameter 'prompt model config' with the created driver instance.
+        # --- Combine Arguments and Instantiate Driver ---
+        # Combine common arguments with Griptape Cloud specific arguments.
+        # Specific args take precedence if there's an overlap (though unlikely here).
+        all_kwargs = {**common_args, **specific_args}
+
+        # Create the Griptape Cloud prompt driver instance.
+        driver = GtGriptapeCloudPromptDriver(**all_kwargs)
+
+        # Set the output parameter 'prompt model config'.
         self.parameter_output_values["prompt model config"] = driver
 
     def validate_node(self) -> list[Exception] | None:
