@@ -104,13 +104,13 @@ class ExGriptapeCloudPrompt(BasePrompt):
         specific_args["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
 
         # Get the selected model.
-        specific_args["model"] = params.get("model", DEFAULT_MODEL)
+        specific_args["model"] = self.get_parameter_value("model")
 
         # Handle parameters that go into 'extra_params' for Griptape Cloud.
         extra_params = {}
 
         # Convert 'min_p' (from BasePrompt) to 'top_p' if provided.
-        min_p_value = params.get("min_p", None)  # Get min_p from node params
+        min_p_value = self.get_parameter_value("min_p")  # Get min_p from node params
         if min_p_value is not None:
             # Griptape Cloud uses 'top_p' in extra_params.
             extra_params["top_p"] = 1.0 - float(min_p_value)
