@@ -16,8 +16,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the LoadImage to your workspace
-1. Connect it to your flow
+1. Add the LoadImage to your workflow
 1. Connect it to a source of images (like a CreateImage)
 
 ### Parameters

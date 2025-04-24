@@ -18,7 +18,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the Dictionary node to your workspace
+1. Add the Dictionary node to your workflow
 1. Set up your lists of keys and values
 1. Connect the dictionary output to other nodes that need structured data
 

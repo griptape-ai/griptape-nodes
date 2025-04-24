@@ -253,7 +253,7 @@ class BaseNode(ABC):
 
     # Advance the current index to the next index
     def advance_parameter(self) -> bool:
-        if self.current_spotlight_parameter and self.current_spotlight_parameter.next is not None:
+        if self.current_spotlight_parameter is not None and self.current_spotlight_parameter.next is not None:
             self.current_spotlight_parameter = self.current_spotlight_parameter.next
             return True
         self.current_spotlight_parameter = None
@@ -420,6 +420,17 @@ class BaseNode(ABC):
 
     def set_config_value(self, service: str, value: str, new_value: str) -> None:
         self.config_manager.set_config_value(f"nodes.{service}.{value}", new_value)
+
+    def clear_node(self) -> None:
+        # set state to unresolved
+        self.state = NodeResolutionState.UNRESOLVED
+        # delete all output values potentially generated
+        self.parameter_output_values.clear()
+        # Remove the current spotlight
+        while self.current_spotlight_parameter is not None:
+            temp = self.current_spotlight_parameter.next
+            del self.current_spotlight_parameter
+            self.current_spotlight_parameter = temp
 
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
         # Add the value to the node

@@ -12,7 +12,7 @@ When you want to inspect a floating-point number value in your graph
 
 ### Basic Setup
 
-1. Add the DisplayFloat to your workspace
+1. Add the DisplayFloat to your workflow
 1. Connect any other node's float output to this input
 
 ### Parameters

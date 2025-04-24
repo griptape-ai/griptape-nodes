@@ -14,7 +14,7 @@ Use this node/class when you want to:
 
 ### Basic Setup
 
-1. Add the DisplayInteger to your workspace
+1. Add the DisplayInteger to your workflow
 1. Connect any other node's integer output to this input
 
 ### Parameters
