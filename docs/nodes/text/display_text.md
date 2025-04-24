@@ -2,7 +2,7 @@
 
 ## What is it?
 
-The DisplayText node is a simple data node that allows you to display text content in your workflow. It takes a text string as input and makes it available as output, serving as a way to show information or results within your workflow.
+The DisplayText node simply displays text content in your workflow.
 
 ## When would I use it?
 

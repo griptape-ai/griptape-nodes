@@ -1,8 +1,9 @@
-# CreateInteger
+# IntegerInput
 
 ## What is it?
 
-The CreateInteger is a simple building block that creates a single integer value. Think of it as a way to define and store a whole number that can be used throughout your workflow.
+The IntegerInput node is a simple way to input integer (whole) number values.
+
 
 ## When would I use it?
 
@@ -17,7 +18,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the CreateInteger to your workspace
+1. Add an IntegerInput node to your workspace
 1. Set your desired integer value
 1. Connect it to your flow
 
@@ -33,7 +34,7 @@ Use this node when you want to:
 
 Imagine you want to set a maximum token limit for an AI response:
 
-1. Add a CreateInteger to your workflow
+1. Add an IntegerInput to your workflow
 1. Set the "integer" value to 500
 1. Connect the output to a model's max_tokens parameter
 1. The AI model will now limit its responses to 500 tokens

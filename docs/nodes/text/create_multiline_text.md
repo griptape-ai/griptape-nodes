@@ -1,14 +1,15 @@
-# CreateMultilineText
+# TextInput
 
 ## What is it?
 
-The CreateMultilineText node is a utility node that creates and outputs a multiline text string. It allows you to define text content with multiple lines that can be passed to other nodes in your workflow.
+The TextInput node is a simple way to input text for use in workflows.
+
 
 ## When would I use it?
 
-Use the CreateMultilineText node when:
+Use the TextInput node when:
 
-- You need to create text content with multiple lines of text
+- You need to create text content
 - You want to prepare text input for other nodes in your workflow
 - You need to define prompts, instructions, or other multi-paragraph content
 - You're building workflows that require structured text input
@@ -17,7 +18,7 @@ Use the CreateMultilineText node when:
 
 ### Basic Setup
 
-1. Add a CreateMultilineText node to your workflow
+1. Add a TextInput node to your workflow
 1. Set the "text" parameter with your desired multiline content
 1. Connect the output to nodes that accept text input
 
@@ -33,7 +34,7 @@ Use the CreateMultilineText node when:
 
 A workflow to create a prompt for an AI assistant:
 
-1. Add a CreateMultilineText node to your workflow
+1. Add a TextInput node to your workflow
 
 1. Set the "text" parameter to:
 

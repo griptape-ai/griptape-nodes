@@ -1,8 +1,8 @@
-# CreateRuleset
+# Ruleset
 
 ## What is it?
 
-The CreateRuleset Node allows you to create and output a Ruleset object. Rulesets consist of a name and a list of rules, which can be used with other nodes like agents in your workflow.
+The Ruleset Node allows you to create and output a Ruleset object. Rulesets consist of a name and a list of rules, which can be used with other nodes like agents in your workflow.
 
 ## When would I use it?
 
@@ -14,7 +14,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the CreateRuleset to your workspace
+1. Add the Ruleset to your workspace
 1. Set the "name" parameter to define the name for your ruleset (optional, defaults to "Behavior")
 1. Set the "rules" parameter to define the list of rules for your ruleset (optional, defaults to an empty string, comma separated)
 1. Connect it to your flow (specifically into nodes that have a Ruleset parameter)
@@ -32,7 +32,7 @@ Use this node when you want to:
 
 Imagine you want to create a new ruleset with the following name and rules:
 
-1. Add a CreateRuleset to your workflow
+1. Add a Ruleset to your workflow
 
 1. Set the "name" parameter to:
 
@@ -52,6 +52,6 @@ Imagine you want to create a new ruleset with the following name and rules:
 
 ## Important Notes
 
-- The CreateRuleset Node supports string values only
+- The Ruleset Node supports string values only
 - If no initial value is provided, default values are used for name and rules
 - This node can be used in conjunction with other nodes to create dynamic Ruleset objects based on other parameters or properties
