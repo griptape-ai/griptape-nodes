@@ -94,9 +94,9 @@ class ControlFlow:
 
         self.control_flow_machine.start_flow(start_node, debug_mode)
         self.flow_queue.task_done()
-        if not debug_mode and not self.flow_queue.empty() and not self.check_for_existing_running_flow():
+        if not debug_mode and not self.flow_queue.empty():
             next_node = self.flow_queue.get()
-            GriptapeNodes().handle_request(StartFlowRequest(flow_name=flow_name, flow_node_name=next_node.name))
+            GriptapeNodes.handle_request(StartFlowRequest(flow_name=flow_name, flow_node_name=next_node.name))
 
     def check_for_existing_running_flow(self) -> bool:
         if self.control_flow_machine._current_state is not CompleteState and self.control_flow_machine._current_state:
