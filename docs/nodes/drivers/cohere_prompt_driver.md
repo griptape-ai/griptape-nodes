@@ -1,8 +1,8 @@
-# CoherePromptDriver
+# CoherePrompt
 
 ## What is it?
 
-The CoherePromptDriver is a building block that sets up a connection to Cohere's AI models. Think of it as configuring a special channel that your workflow can use to talk to Cohere's language models.
+The CoherePrompt node sets up a connection to Cohere's AI models.
 
 ## When would I use it?
 
@@ -10,15 +10,13 @@ Use this node when you want to:
 
 - Use Cohere's AI models in your workflow
 - Take advantage of Cohere's specific capabilities
-- Customize how your agents interact with Cohere's models
 
 ## How to use it
 
 ### Basic Setup
 
-1. Add the CoherePromptDriver to your workspace
-1. Connect it to your flow
-1. Connect its output to nodes that need to use Cohere (like RunAgent)
+1. Add the CoherePrompt node to your workflow
+1. Connect its output to nodes that can use prompt drivers (like Agent)
 
 ### Parameters
 
@@ -35,13 +33,15 @@ Use this node when you want to:
 
 ## Example
 
-Imagine you want to create an agent that uses Cohere with specific settings:
+If you want to create an agent that uses Cohere:
 
-1. Add a CoherePromptDriver to your workflow
-1. Set "model" to "command-r-plus"
+1. Add a CoherePrompt node to your workflow
+1. Connect the "driver" output to an Agent's "prompt_driver" input
+
+Try:
+
+1. Set "model" to something besides the default
 1. Set "max_tokens" to 1000 (for moderate length responses)
-1. Connect the "driver" output to a RunAgent's "prompt_driver" input
-1. Now that agent will use Cohere with your custom settings
 
 ## Important Notes
 
@@ -53,4 +53,3 @@ Imagine you want to create an agent that uses Cohere with specific settings:
 
 - **Missing API Key**: Make sure your Cohere API key is properly set up
 - **Connection Errors**: Check your internet connection and API key validity
-- **Invalid Model**: Make sure you're using a model name that Cohere supports

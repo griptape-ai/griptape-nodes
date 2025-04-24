@@ -1,8 +1,8 @@
-# OllamaPromptDriver
+# OllamaPrompt
 
 ## What is it?
 
-The OllamaPromptDriver is a building block that sets up a connection to locally-run AI models through Ollama. Think of it as configuring a channel to talk to AI models that run on your own computer instead of in the cloud.
+The OllamaPrompt node sets up a connection to locally-run AI models through Ollama. These AI models run on your own computer, locally, instead of in the cloud.
 
 ## When would I use it?
 
@@ -16,9 +16,8 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the OllamaPromptDriver to your workspace
-1. Connect it to your flow
-1. Connect its output to nodes that need to use local AI models (like RunAgent)
+1. Add the OllamaPrompt node to your workflow
+1. Connect its driver output to nodes that can use LLMs (like an Agent)
 
 ### Parameters
 
@@ -38,15 +37,17 @@ Use this node when you want to:
 
 Imagine you want to create an agent that uses a local Llama model:
 
-1. Add an OllamaPromptDriver to your workflow
+1. Add an OllamaPrompt node to your workflow
 1. Set "model" to "llama3.2" (or any other model you've pulled into Ollama)
+1. Connect the "driver" output to an Agent's "prompt_driver" input
+
+Try:
+
 1. Set "temperature" to 0.8 (for more creative responses)
-1. Connect the "driver" output to a RunAgent's "prompt_driver" input
-1. Now that agent will use your local Ollama model with your custom settings
 
 ## Important Notes
 
-- You need to have Ollama installed and running on your computer
+- You need to have [Ollama](https://ollama.com/) installed and running on your computer
 - The default connection is to http://127.0.0.1:11434
 - The default model is "llama3.2"
 - Make sure you've pulled the model you want to use in Ollama before using it in your workflow
@@ -55,4 +56,5 @@ Imagine you want to create an agent that uses a local Llama model:
 
 - **Connection Error**: Make sure Ollama is running on your computer
 - **Missing Model**: If the model isn't available in Ollama, you'll need to pull it first
-- **Resource Limitations**: Local models may be slower or less capable than cloud models, depending on your hardware
+- **Resource Limitations**: Local models may be slower or less capable than cloud models, depending on your hardware.
+- **Tool Limitations**: Local models may not be able to use tools the way cloud models do.
