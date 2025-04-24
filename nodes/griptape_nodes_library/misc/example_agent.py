@@ -307,14 +307,11 @@ class ExampleAgent(ControlNode):
 
         # Get any tools
         tools = params.get("tools", [])
-
-        # If the user has connected a tool, we want to show it in the logs.
         if include_tools and tools:
             self.append_value_to_parameter("logs", f"\n[Tools]: {', '.join([tool.name for tool in tools])}\n")
 
         # Get any rulesets
         rulesets = params.get("rulesets", [])
-        # If the user has connected a ruleset, we want to show it in the logs.
         if include_rulesets and rulesets:
             self.append_value_to_parameter(
                 "logs", f"\n[Rulesets]: {', '.join([ruleset.name for ruleset in rulesets])}\n"
