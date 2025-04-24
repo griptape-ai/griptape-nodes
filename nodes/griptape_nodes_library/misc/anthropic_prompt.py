@@ -1,7 +1,18 @@
+"""Defines the AnthropicPrompt node for configuring the Anthropic Prompt Driver.
+
+This module provides the `AnthropicPrompt` class, which allows users
+to configure and utilize the Anthropic prompt service within the Griptape
+Nodes framework. It inherits common prompt parameters from `BasePrompt`, sets
+Anthropic specific model options, requires an Anthropic API key via
+node configuration, and instantiates the `GtAnthropicPromptDriver`.
+"""
+
 from griptape.drivers.prompt.anthropic import AnthropicPromptDriver as GtAnthropicPromptDriver
 
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.misc.base_prompt import BasePrompt
+
+# --- Constants ---
 
 DEFAULT_MODEL = "claude-3-7-sonnet-latest"
 MODELS = ["claude-3-7-sonnet-latest", "claude-3-5-sonnet-latest", "claude-3-5-opus-latest", "claude-3-5-haiku-latest"]

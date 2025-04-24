@@ -26,7 +26,7 @@ MODELS = [
     "o1-mini",
     "o3-mini",
     "other",
-]  # currently only gpt-4o is supported
+]
 
 
 class ExGriptapeCloudPrompt(BasePrompt):
