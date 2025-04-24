@@ -2,7 +2,7 @@
 
 ## What is it?
 
-The DescribeImage node uses AI to generate textual descriptions of images. It leverages vision-capable models to analyze image content and produce detailed descriptions based on your specific prompting instructions.
+The DescribeImage node uses AI to generate textual descriptions of an image you provide it. It leverages vision-capable models to analyze image content and produce detailed descriptions based on your specific prompting instructions.
 
 ## When would I use it?
 
