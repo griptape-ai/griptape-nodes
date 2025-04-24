@@ -40,12 +40,27 @@ class BasePrompt(BaseDriver):
     """
 
     def __init__(self, **kwargs) -> None:
+        """Initializes the BasePrompt node.
+
+        Sets up the node by calling the superclass initializer, renaming the
+        inherited 'driver' output parameter to 'prompt model config', and
+        adding standard parameters common across various prompt drivers.
+        """
         super().__init__(**kwargs)
+
+        # Rename the inherited output parameter for clarity in this context.
+        # The base 'BaseDriver' likely outputs a generic 'driver', but here we
+        # specifically output a 'Prompt Model Config' (which is a driver).
         driver_parameter = self.get_parameter_by_name("driver")
         if driver_parameter is not None:
             driver_parameter.name = "prompt model config"
             driver_parameter.output_type = "Prompt Model Config"
 
+        # --- Common Prompt Driver Parameters ---
+        # These parameters represent settings frequently used by LLM prompt drivers.
+        # Subclasses will typically use these values when instantiating their specific driver.
+
+        # Parameter for model selection. Subclasses should populate the 'choices'.
         self.add_parameter(
             Parameter(
                 name="model",
@@ -57,6 +72,8 @@ class BasePrompt(BaseDriver):
                 traits={Options(choices=[])},
             )
         )
+
+        # Parameter controlling randomness/creativity in generation.
         self.add_parameter(
             Parameter(
                 name="temperature",
@@ -68,6 +85,7 @@ class BasePrompt(BaseDriver):
                 ui_options={"slider": {"min_val": 0.0, "max_val": 1.0}, "step": 0.01},
             )
         )
+        # Parameter for retry logic upon driver failure.
         self.add_parameter(
             Parameter(
                 name="max_attempts_on_fail",
@@ -79,6 +97,8 @@ class BasePrompt(BaseDriver):
                 ui_options={"slider": {"min_val": 1, "max_val": 100}},
             )
         )
+
+        # Parameter for reproducibility (if supported by the driver).
         self.add_parameter(
             Parameter(
                 name="seed",
@@ -89,6 +109,8 @@ class BasePrompt(BaseDriver):
                 tooltip="Seed for random number generation",
             )
         )
+
+        # Parameter for nucleus sampling (alternative/complement to temperature).
         self.add_parameter(
             Parameter(
                 name="min_p",
@@ -100,6 +122,8 @@ class BasePrompt(BaseDriver):
                 ui_options={"slider": {"min_val": 0.0, "max_val": 1.0}, "step": 0.01},
             )
         )
+
+        # Parameter for limiting the sampling pool (top-k sampling).
         self.add_parameter(
             Parameter(
                 name="top_k",
@@ -110,6 +134,8 @@ class BasePrompt(BaseDriver):
                 tooltip="Limits the number of tokens considered for each step of the generation. Prevents the model from focusing too narrowly on the top choices.",
             )
         )
+
+        # Parameter to enable/disable model-specific tool use capabilities.
         self.add_parameter(
             Parameter(
                 name="use_native_tools",
@@ -120,6 +146,8 @@ class BasePrompt(BaseDriver):
                 tooltip="Use native tools for the LLM.",
             )
         )
+
+        # Parameter to limit the length of the generated response.
         self.add_parameter(
             Parameter(
                 name="max_tokens",
@@ -130,6 +158,8 @@ class BasePrompt(BaseDriver):
                 tooltip="Maximum tokens to generate. If <=0, it will use the default based on the tokenizer.",
             )
         )
+
+        # Parameter to enable/disable streaming output from the driver.
         self.add_parameter(
             Parameter(
                 name="stream",
@@ -142,8 +172,24 @@ class BasePrompt(BaseDriver):
         )
 
     def process(self) -> None:
-        # Create the driver
+        """Processes the node to generate the output prompt model configuration.
+
+        In this base class, this method creates a `DummyPromptDriver` instance
+        and assigns it to the 'prompt model config' output parameter. This primarily
+        serves to define the output socket type for the node graph and provide a
+        non-functional default if the node is used directly (which is discouraged).
+
+        Subclasses MUST override this method to:
+        1. Retrieve parameter values using `self.get_parameter_value(<param_name>)`.
+        2. Instantiate their specific Griptape prompt driver (e.g., `OpenAiChatPromptDriver`)
+           using these retrieved values.
+        3. Assign the created driver instance to the 'prompt model config' output parameter:
+           `self.parameter_output_values["prompt model config"] = specific_driver`
+        """
+        # Create a placeholder driver for the base class output type definition.
+        # This ensures the output socket has the correct type ('Prompt Model Config')
+        # even though this base node doesn't configure a real driver.
         driver = DummyPromptDriver()
 
-        # Set the output
+        # Set the output parameter with the placeholder driver.
         self.parameter_output_values["prompt model config"] = driver
