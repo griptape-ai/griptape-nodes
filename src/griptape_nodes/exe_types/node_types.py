@@ -327,7 +327,17 @@ class BaseNode(ABC):
         # If a parameter value has been set at the top level of a container, wipe all children.
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=modified_parameters)
-
+        # handle with container parameters
+        if parameter.parent_container_name is not None:
+            # Does it have a parent container
+            parent_parameter = self.get_parameter_by_name(parameter.parent_container_name)
+            # Does the parent container exist
+            if parent_parameter is not None:
+                # Get it's new value dependent on it's children
+                new_parent_value = handle_container_parameter(self, parent_parameter)
+                if new_parent_value is not None:
+                    # set that new value if it exists.
+                    self.set_parameter_value(parameter.parent_container_name, new_parent_value)
         # Return the complete set of modified parameters.
         return modified_parameters
 
