@@ -17,6 +17,7 @@ from griptape_nodes_library.misc.base_prompt import BasePrompt
 DEFAULT_MODEL = "claude-3-7-sonnet-latest"
 MODELS = ["claude-3-7-sonnet-latest", "claude-3-5-sonnet-latest", "claude-3-5-opus-latest", "claude-3-5-haiku-latest"]
 API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
+API_KEY_URL = "https://console.anthropic.com/settings/keys"
 SERVICE = "Anthropic"
 
 
@@ -118,7 +119,7 @@ class ExAnthropicPrompt(BasePrompt):
         exceptions = []
         api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
-            msg = f"{API_KEY_ENV_VAR} is not defined"
+            msg = f"{API_KEY_ENV_VAR} is not defined. Please visit {API_KEY_URL} to create an API key and then set it in your Griptape Node settings."
             exceptions.append(KeyError(msg))
             return exceptions
 
