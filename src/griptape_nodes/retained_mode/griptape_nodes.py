@@ -4339,7 +4339,7 @@ class LibraryManager:
 
         # Extract library information
         try:
-            library_name = library_data["name"]
+            library_name: str = library_data["name"]
             library_metadata = library_data["metadata"]
             nodes_metadata = library_data.get("nodes", [])
         except KeyError as err:
@@ -4442,7 +4442,7 @@ class LibraryManager:
                 # Grab the python executable from the virtual environment so that we can pip install there
                 library_venv_python_path = (
                     library_venv_path / ("Scripts" if OSManager.is_windows() else "bin") / "python"
-                )
+                ).resolve()
                 subprocess.run(  # noqa: S603
                     [
                         sys.executable,
