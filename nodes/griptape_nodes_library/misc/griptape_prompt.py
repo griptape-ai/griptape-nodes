@@ -60,14 +60,10 @@ class ExGriptapeCloudPrompt(BasePrompt):
             model_parameter.default_value = DEFAULT_MODEL
 
         # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.
-        seed_parameter = self.get_parameter_by_name("seed")
-        if seed_parameter is not None:
-            self.remove_parameter(seed_parameter)
+        self.remove_parameter_by_name("seed")
 
         # Remove `top_k` parameter as it's not used by Griptape Cloud.
-        top_k_parameter = self.get_parameter_by_name("top_k")
-        if top_k_parameter is not None:
-            self.remove_parameter(top_k_parameter)
+        self.remove_parameter_by_name("top_k")
 
     def process(self) -> None:
         """Processes the node configuration to create a GriptapeCloudPromptDriver.

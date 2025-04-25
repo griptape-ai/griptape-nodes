@@ -55,9 +55,7 @@ class ExAnthropicPrompt(BasePrompt):
             model_parameter.default_value = DEFAULT_MODEL
 
         # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.
-        seed_parameter = self.get_parameter_by_name("seed")
-        if seed_parameter:
-            self.remove_parameter(seed_parameter)
+        self.remove_parameter_by_name("seed")
 
     def process(self) -> None:
         """Processes the node configuration to create an AnthropicPromptDriver.
