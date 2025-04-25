@@ -166,7 +166,16 @@
       "metadata": {
         "category": "_Config",
         "description": "Anthropic Prompt Model Config.",
-        "display_name": "Anthropic Prompt Model Config"
+        "display_name": "Anthropic Prompt "
+      }
+    },
+    {
+      "class_name": "ExCoherePrompt",
+      "file_path": "griptape_nodes_library/misc/cohere_prompt.py",
+      "metadata": {
+        "category": "_Config",
+        "description": "Cohere Prompt Model Config.",
+        "display_name": "Cohere Prompt "
       }
     },
     {
