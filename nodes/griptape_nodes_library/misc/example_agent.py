@@ -6,7 +6,7 @@ but supports connecting custom prompt model configurations. It handles parameter
 for tools, rulesets, prompts, and streams output back to the user interface.
 """
 
-from typing import Any, Self
+from typing import Any
 
 from griptape.artifacts import BaseArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
@@ -16,7 +16,7 @@ from griptape.structures.agent import Agent as GtAgent
 from jinja2 import Template
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
@@ -219,7 +219,7 @@ class ExAgent(ControlNode):
         return super().after_value_set(parameter, value, modified_parameters_set)
 
     def after_incoming_connection(
-        self, source_node: Self, source_parameter: Parameter, target_parameter: Parameter
+        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
         """Handles UI updates after an incoming connection is made to this node.
 
@@ -261,7 +261,7 @@ class ExAgent(ControlNode):
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def after_incoming_connection_removed(  # noqa: C901
-        self, source_node: Self, source_parameter: Parameter, target_parameter: Parameter
+        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
         """Handles UI updates after an incoming connection to this node is removed.
 
