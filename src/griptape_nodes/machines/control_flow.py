@@ -93,24 +93,27 @@ class NextNodeState(State):
             context.current_node.stop_flow = False
             return CompleteState
         next_output = context.current_node.get_next_control_output()
-        if next_output is None:
-            return CompleteState
-        # The parameter that will be evaluated next
-        context.selected_output = next_output
-        next_node = context.get_next_node(context.selected_output)
-        if next_node is None:
-            # If no node attached
-            return CompleteState
-        EventBus.publish_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(
-                    payload=SelectedControlOutputEvent(
-                        node_name=context.current_node.name,
-                        selected_output_parameter_name=next_output.name,
+        next_node = None
+        if next_output is not None:
+            context.selected_output = next_output
+            next_node = context.get_next_node(context.selected_output)
+            EventBus.publish_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(
+                        payload=SelectedControlOutputEvent(
+                            node_name=context.current_node.name,
+                            selected_output_parameter_name=next_output.name,
+                        )
                     )
                 )
             )
-        )
+        elif not context.flow.flow_queue.empty():
+            next_node = context.flow.flow_queue.get()
+            context.flow.flow_queue.task_done()
+        # The parameter that will be evaluated next
+        if next_node is None:
+            # If no node attached
+            return CompleteState
         context.current_node = next_node
         context.selected_output = None
         if not context.paused:
