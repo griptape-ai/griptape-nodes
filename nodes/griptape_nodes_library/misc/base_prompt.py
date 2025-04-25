@@ -199,7 +199,7 @@ class BasePrompt(BaseDriver):
         # None value means the name is the same.
         param_to_driver_arg_map = {
             "temperature": "temperature",
-            "max_attempts_on_fail": "max_attempts",  # Renamed
+            "max_attempts_on_fail": "max_attempts",  # Renamed to fit what the driver expects
             "seed": "seed",
             "min_p": "min_p",
             "top_k": "top_k",
@@ -221,6 +221,37 @@ class BasePrompt(BaseDriver):
             driver_args["max_tokens"] = max_tokens_val
 
         return driver_args
+
+    def _validate_api_key(
+        self, service_name: str, api_key_env_var: str, api_key_url: str | None
+    ) -> list[Exception] | None:
+        """Validates the presence and non-emptiness of a specific API key in config.
+
+        Checks the node's configuration for the given key within the specified
+        service. Returns a list containing an error if the key is missing or empty.
+
+        Args:
+            service_name: The name of the service in the node configuration.
+            api_key_env_var: The name of the key variable within the service config.
+            api_key_url: An optional URL for users to visit to obtain the key,
+                     included in the error message if provided.
+
+        Returns:
+            A list of exceptions (KeyError or ValueError) if validation fails,
+            otherwise None.
+        """
+        exceptions = []
+
+        api_key = self.get_config_value(service_name, api_key_env_var)
+        if not api_key:
+            msg = f"API Key ('{api_key_env_var}') for service '{service_name}' is configured but empty."
+            if api_key_url:
+                msg += f" Please visit {api_key_url} to obtain a valid key and update your settings."
+            else:
+                msg += " Please provide a valid API key in your settings."
+            exceptions.append(KeyError(msg))
+
+        return exceptions if exceptions else None
 
     def process(self) -> None:
         """Processes the node to generate the output prompt model configuration.

@@ -14,11 +14,11 @@ from griptape_nodes_library.misc.base_prompt import BasePrompt
 
 # --- Constants ---
 
-DEFAULT_MODEL = "claude-3-7-sonnet-latest"
-MODELS = ["claude-3-7-sonnet-latest", "claude-3-5-sonnet-latest", "claude-3-5-opus-latest", "claude-3-5-haiku-latest"]
-API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
-API_KEY_URL = "https://console.anthropic.com/settings/keys"
 SERVICE = "Anthropic"
+API_KEY_URL = "https://console.anthropic.com/settings/keys"
+API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
+MODELS = ["claude-3-7-sonnet-latest", "claude-3-5-sonnet-latest", "claude-3-5-opus-latest", "claude-3-5-haiku-latest"]
+DEFAULT_MODEL = "claude-3-7-sonnet-latest"
 
 
 class ExAnthropicPrompt(BasePrompt):
@@ -115,12 +115,13 @@ class ExAnthropicPrompt(BasePrompt):
         self.parameter_output_values["prompt model config"] = driver
 
     def validate_node(self) -> list[Exception] | None:
-        # Items here are openai api key
-        exceptions = []
-        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
-        if not api_key:
-            msg = f"{API_KEY_ENV_VAR} is not defined. Please visit {API_KEY_URL} to create an API key and then set it in your Griptape Node settings."
-            exceptions.append(KeyError(msg))
-            return exceptions
+        """Validates that the Anthropic API key is configured correctly.
 
-        return exceptions if exceptions else None
+        Calls the base class helper `_validate_api_key` with Anthropic-specific
+        configuration details.
+        """
+        return self._validate_api_key(
+            service_name=SERVICE,
+            api_key_env_var=API_KEY_ENV_VAR,
+            api_key_url=API_KEY_URL,
+        )

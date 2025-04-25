@@ -14,19 +14,11 @@ from griptape_nodes_library.misc.base_prompt import BasePrompt
 
 # --- Constants ---
 
-API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
+API_KEY_URL = "https://cloud.griptape.ai/configuration/api-keys"
+API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
+MODELS = ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4.5-preview", "o1", "o1-mini", "o3-mini"]
 DEFAULT_MODEL = "gpt-4.1-mini"
-MODELS = [
-    "gpt-4.1",
-    "gpt-4.1-mini",
-    "gpt-4.1-nano",
-    "gpt-4.5-preview",
-    "o1",
-    "o1-mini",
-    "o3-mini",
-    "other",
-]
 
 
 class ExGriptapeCloudPrompt(BasePrompt):
@@ -134,19 +126,13 @@ class ExGriptapeCloudPrompt(BasePrompt):
         self.parameter_output_values["prompt model config"] = driver
 
     def validate_node(self) -> list[Exception] | None:
-        """Performs pre-run validation checks for the node configuration.
+        """Validates that the Griptape Cloud API key is configured correctly.
 
-        Specifically checks if the Griptape Cloud API key (`GT_CLOUD_API_KEY`)
-        is defined within the node's configuration under the 'Griptape' service.
-
-        Returns:
-            A list containing a KeyError if the API key is missing, otherwise None.
+        Calls the base class helper `_validate_api_key` with Griptape-specific
+        configuration details.
         """
-        exceptions = []
-        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
-        if not api_key:
-            msg = f"{API_KEY_ENV_VAR} is not defined"
-            exceptions.append(KeyError(msg))
-            return exceptions
-
-        return exceptions if exceptions else None
+        return self._validate_api_key(
+            service_name=SERVICE,
+            api_key_env_var=API_KEY_ENV_VAR,
+            api_key_url=API_KEY_URL,
+        )
