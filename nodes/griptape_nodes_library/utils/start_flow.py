@@ -1,7 +1,6 @@
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
-    ControlParameterOutput,
     ParameterList,
     ParameterMode,
 )
@@ -15,7 +14,6 @@ class StartFlow(StartNode):
         metadata: dict[Any, Any] | None = None,
     ) -> None:
         super().__init__(name, metadata)
-        self.add_parameter(ControlParameterOutput())
         self.add_parameter(
             ParameterList(
                 name="text",
