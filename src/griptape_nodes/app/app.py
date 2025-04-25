@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import signal
+import socket
 import sys
 import threading
 from queue import Queue
@@ -47,16 +48,22 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 # This is a global event queue that will be used to pass events between threads
 event_queue = Queue()
 
+# Whether to enable the static server
+STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
 # Host of the static server
 STATIC_SERVER_HOST = os.getenv("STATIC_SERVER_HOST", "localhost")
 # Port of the static server
-STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8000"))
+STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "0"))
 # URL path for the static server
 STATIC_SERVER_URL = os.getenv("STATIC_SERVER_URL", "/static")
 # Log level for the static server
 STATIC_SERVER_LOG_LEVEL = os.getenv("STATIC_SERVER_LOG_LEVEL", "info").lower()
-# Whether to enable the static server
-STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
+
+if STATIC_SERVER_ENABLED:
+    # Try binding to a port. If we bind to 0 (the default), the OS will pick an available port.
+    sock = socket.socket()
+    sock.bind(("", STATIC_SERVER_PORT))
+    STATIC_SERVER_PORT = sock.getsockname()[1]
 
 
 class EventLogHandler(logging.Handler):
@@ -85,10 +92,10 @@ def start_app() -> None:
 
     Starts the event loop and listens for events from the Nodes API.
     """
-    global socket  # noqa: PLW0603 # Need to initialize the socket lazily here to avoid auth-ing too early
+    global socket_manager  # noqa: PLW0603 # Need to initialize the socket lazily here to avoid auth-ing too early
 
     # Listen for SSE events from the Nodes API in a separate thread
-    socket = NodesApiSocketManager()
+    socket_manager = NodesApiSocketManager()
 
     _init_event_listeners()
 
@@ -193,7 +200,7 @@ def _listen_for_api_events() -> None:
                                 # but we don't have a proper EventRequest for it yet.
                                 if event.get("request_type") == "Heartbeat":
                                     session_id = GriptapeNodes.get_session_id()
-                                    socket.heartbeat(session_id=session_id, request=event["request"])
+                                    socket_manager.heartbeat(session_id=session_id, request=event["request"])
                                 else:
                                     __process_api_event(event)
                             except Exception:
@@ -220,7 +227,7 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
 
     # Don't send events over the wire that don't have a request_id set (e.g. engine-internal events)
     event_json = result_event.json()
-    socket.emit(dest_socket, event_json)
+    socket_manager.emit(dest_socket, event_json)
 
 
 def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
@@ -243,7 +250,7 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
             raise KeyError(msg) from None
         GriptapeNodes.EventManager().current_active_node = None
     # Set the node name here so I am not double importing
-    socket.emit("execution_event", event_json)
+    socket_manager.emit("execution_event", event_json)
 
 
 def __process_progress_event(gt_event: ProgressEvent) -> None:
@@ -255,7 +262,7 @@ def __process_progress_event(gt_event: ProgressEvent) -> None:
             node_name=node_name, parameter_name=gt_event.parameter_name, type=type(gt_event).__name__, value=value
         )
         event_to_emit = ExecutionEvent(payload=payload)
-        socket.emit("execution_event", event_to_emit.json())
+        socket_manager.emit("execution_event", event_to_emit.json())
 
 
 def __process_app_event(event: AppEvent) -> None:
@@ -263,7 +270,7 @@ def __process_app_event(event: AppEvent) -> None:
     # Let Griptape Nodes broadcast it.
     GriptapeNodes.broadcast_app_event(event.payload)
 
-    socket.emit("app_event", event.json())
+    socket_manager.emit("app_event", event.json())
 
 
 def _process_event_queue() -> None:
