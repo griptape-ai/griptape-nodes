@@ -19,14 +19,13 @@ class MergeKeyValuePairs(DataNode):
         self.add_parameter(
             ParameterList(
                 name="KeyValuePairs",
-                input_types=["dict"],
+                input_types=["dictionary"],
                 default_value=None,
                 tooltip="Key Value Pair",
                 allowed_modes={ParameterMode.INPUT},
             )
         )
 
-        # Add output parameter for the merged key_value_pair
         self.add_parameter(
             Parameter(
                 name="output",
@@ -46,16 +45,11 @@ class MergeKeyValuePairs(DataNode):
         return []
 
     def process(self) -> None:
-        # Create a list of input texts if they aren't none
         input_dicts = self.get_kv_pairs()
 
-        # Filter out None values from the list
-        # input_dicts = [text for text in input_dicts if text is not None]
-
-        # Join all the kvps in to a single dict
         merged_dict = {}
         for input_dict in input_dicts:
             if isinstance(input_dict, dict):
                 merged_dict.update(input_dict)
-        # Set the output
+
         self.parameter_output_values["output"] = merged_dict
