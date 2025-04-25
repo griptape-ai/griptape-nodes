@@ -1,10 +1,9 @@
 from collections import defaultdict
 from collections.abc import Callable
 from typing import TYPE_CHECKING
-from typing_extensions import TypeVar
-
 
 from griptape.events import EventBus
+from typing_extensions import TypeVar
 
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.retained_mode.events.base_events import (
