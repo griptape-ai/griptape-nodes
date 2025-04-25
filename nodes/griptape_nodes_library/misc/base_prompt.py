@@ -27,15 +27,12 @@ class BasePrompt(BaseDriver):
     It renames the inherited 'driver' output parameter to 'prompt model config'
     to clearly indicate its purpose in the context of prompt configuration.
 
-    Subclasses should:
-    1. Inherit from this class.
-    2. Potentially override or modify the `model` parameter's `Options` trait
-       to list specific models supported by their driver.
-    3. Override the `process` method to instantiate the specific Griptape
-       prompt driver (e.g., `OpenAiChatPromptDriver`, `AnthropicPromptDriver`)
-       using the parameter values defined here, potentially utilizing the
-       `_get_common_driver_args` helper method.
-
+    Key Features for Subclasses:
+    - Defines common LLM parameters accessible via `self.parameter_values`.
+    - Provides `_get_common_driver_args` to easily collect arguments for drivers based on base parameters.
+    - Provides `_validate_api_key` to standardize API key validation logic.
+    - Provides `remove_parameter_by_name` to remove unsupported base parameters.
+    - Provides `_update_model_choices` to set driver-specific model lists for the 'model' parameter.
     Note: The `process` method in this base class creates a `DummyPromptDriver`
     primarily to establish the output socket type. It does not utilize the
     configuration parameters defined herein. Direct use of `BasePrompt` is
