@@ -4441,7 +4441,7 @@ class LibraryManager:
 
                 # Grab the python executable from the virtual environment so that we can pip install there
                 library_venv_python_path = (
-                    library_venv_path / ("Scripts" if OSManager.is_windows() else "bin") / "python"
+                    library_venv_path / ("Scripts" if OSManager.is_windows() else "bin") / "python.exe"
                 ).resolve()
                 subprocess.run(  # noqa: S603
                     [
