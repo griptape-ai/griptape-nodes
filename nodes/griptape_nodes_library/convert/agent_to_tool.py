@@ -6,7 +6,6 @@ from griptape.tools import StructureRunTool
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.utilities import to_pascal_case
 
 placeholder_description = "Tool created from an Agent"
