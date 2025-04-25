@@ -64,7 +64,7 @@ class ExCoherePrompt(BasePrompt):
         and model. Handles the conversion of `min_p` to `p` if `p` is set. Handles
         the conversion of `top_k` to `k` if `k` is set.
         Finally, instantiates the `CoherePromptDriver` and assigns it to the
-        'prompt model config' output parameter.
+        'prompt_model_config' output parameter.
 
         Raises:
             KeyError: If the Cohere API key is not found in the node configuration.
@@ -102,8 +102,8 @@ class ExCoherePrompt(BasePrompt):
         # Create the Cohere prompt driver instance.
         driver = GtCoherePromptDriver(**all_kwargs)
 
-        # Set the output parameter 'prompt model config'.
-        self.parameter_output_values["prompt model config"] = driver
+        # Set the output parameter 'prompt_model_config'.
+        self.parameter_output_values["prompt_model_config"] = driver
 
     def validate_node(self) -> list[Exception] | None:
         """Validates that the Cohere API key is configured correctly.

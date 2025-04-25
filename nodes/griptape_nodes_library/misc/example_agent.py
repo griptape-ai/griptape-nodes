@@ -2,7 +2,7 @@
 
 This node allows users to create a new Griptape Agent or continue interaction
 with an existing one. It defaults to using the Griptape Cloud prompt driver
-but supports connecting custom prompt model configurations. It handles parameters
+but supports connecting custom prompt_model_configurations. It handles parameters
 for tools, rulesets, prompts, and streams output back to the user interface.
 """
 
@@ -132,10 +132,10 @@ class ExAgent(ControlNode):
         # Input for a pre-configured prompt model driver/config.
         self.add_parameter(
             Parameter(
-                name="prompt model config",
+                name="prompt_model_config",
                 input_types=["Prompt Model Config"],
                 type="Prompt Model Config",
-                tooltip="Connect prompt model config. If not supplied, we will use the Griptape Cloud Prompt Model.",
+                tooltip="Connect prompt_model_config. If not supplied, we will use the Griptape Cloud Prompt Model.",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
                 ui_options={"hide": True},  # Hide by default
@@ -195,7 +195,7 @@ class ExAgent(ControlNode):
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         """Handles UI updates after a parameter's value is changed via the property panel.
 
-        Specifically, it shows/hides the 'prompt model config' input based on
+        Specifically, it shows/hides the 'prompt_model_config' input based on
         whether the 'model' dropdown is set to use an incoming configuration.
 
         Args:
@@ -205,17 +205,17 @@ class ExAgent(ControlNode):
                                      might have changed should be added. This helps the
                                      UI framework know what needs updating.
         """
-        # Show 'prompt model config' input only if 'model' is set to CONNECTED_CHOICE.
+        # Show 'prompt_model_config' input only if 'model' is set to CONNECTED_CHOICE.
         if parameter.name == "model":
             # Find the prompt_model_settings parameter and hide it
-            prompt_model_settings_param = self.get_parameter_by_name("prompt model config")
+            prompt_model_settings_param = self.get_parameter_by_name("prompt_model_config")
             if value == CONNECTED_CHOICE and prompt_model_settings_param:
                 prompt_model_settings_param._ui_options["hide"] = False
             elif value != CONNECTED_CHOICE and prompt_model_settings_param:
                 prompt_model_settings_param._ui_options["hide"] = True
 
             # Add this to the modified parameters set so we can cascade the change.
-            modified_parameters_set.add("prompt model config")
+            modified_parameters_set.add("prompt_model_config")
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
@@ -226,7 +226,7 @@ class ExAgent(ControlNode):
 
         - Hides agent creation parameters (model, tools, rulesets, advanced group)
           if an existing agent is connected.
-        - Hides the 'model' dropdown if a 'prompt model config' is connected.
+        - Hides the 'model' dropdown if a 'prompt_model_config' is connected.
         - Makes 'additional context' read-only if connected (value comes from input).
 
         Args:
@@ -242,14 +242,14 @@ class ExAgent(ControlNode):
                 if group:
                     group.ui_options["hide"] = True
 
-            params_to_toggle = ["model", "tools", "rulesets", "prompt model config"]
+            params_to_toggle = ["model", "tools", "rulesets", "prompt_model_config"]
             for param_name in params_to_toggle:
                 param = self.get_parameter_by_name(param_name)
                 if param:
                     param._ui_options["hide"] = True
 
-        # If a prompt model config is connected, hide the manual model selector.
-        if target_parameter.name == "prompt model config":
+        # If a prompt_model_config is connected, hide the manual model selector.
+        if target_parameter.name == "prompt_model_config":
             model_param = self.get_parameter_by_name("model")
             if model_param:
                 model_param._ui_options["hide"] = True
@@ -268,7 +268,7 @@ class ExAgent(ControlNode):
 
         Reverses the logic of `after_incoming_connection`:
         - Shows agent creation parameters if the agent connection is removed.
-        - Shows the 'model' dropdown if the 'prompt model config' connection is removed
+        - Shows the 'model' dropdown if the 'prompt_model_config' connection is removed
           (unless an agent is still connected).
         - Makes 'additional context' editable again if its connection is removed.
 
@@ -285,20 +285,20 @@ class ExAgent(ControlNode):
                 if group:
                     group.ui_options["hide"] = False
 
-            params_to_toggle = ["model", "tools", "rulesets", "prompt model config"]
+            params_to_toggle = ["model", "tools", "rulesets", "prompt_model_config"]
             for param_name in params_to_toggle:
                 param = self.get_parameter_by_name(param_name)
                 if param:
-                    # Special case: Don't unhide 'prompt model config' if model is not CONNECTED_CHOICE
-                    if param_name == "prompt model config":
+                    # Special case: Don't unhide 'prompt_model_config' if model is not CONNECTED_CHOICE
+                    if param_name == "prompt_model_config":
                         model_value = self.get_parameter_value("model")
                         if model_value != CONNECTED_CHOICE:
                             continue  # Keep it hidden if model isn't set to use connection
 
                     param._ui_options["hide"] = False
 
-        # If the prompt model config connection is removed, show the model dropdown,
-        if target_parameter.name == "prompt model config":
+        # If the prompt_model_config connection is removed, show the model dropdown,
+        if target_parameter.name == "prompt_model_config":
             # Find the model parameter and hide it
             model_param = self.get_parameter_by_name("model")
             if model_param:
@@ -396,7 +396,7 @@ class ExAgent(ControlNode):
 
         # For this node, we'll going use the GriptapeCloudPromptDriver if no driver is provided.
         # If a driver is provided, we'll use that.
-        prompt_model_settings = self.get_parameter_value("prompt model config")
+        prompt_model_settings = self.get_parameter_value("prompt_model_config")
         if not prompt_model_settings:
             # Grab the appropriate parameters
             model = self.get_parameter_value("model")

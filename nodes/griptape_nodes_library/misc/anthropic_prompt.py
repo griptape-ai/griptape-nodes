@@ -67,7 +67,7 @@ class ExAnthropicPrompt(BasePrompt):
         for common settings, then adds Anthropic-specific arguments like API key
         and model. Handles the conversion of `min_p` to `top_p` if `min_p` is set.
         Finally, instantiates the `AnthropicPromptDriver` and assigns it to the
-        'prompt model config' output parameter.
+        'prompt_model_config' output parameter.
 
         Raises:
             KeyError: If the Anthropic API key is not found in the node configuration.
@@ -105,8 +105,8 @@ class ExAnthropicPrompt(BasePrompt):
         # Create the Anthropic prompt driver instance.
         driver = GtAnthropicPromptDriver(**all_kwargs)
 
-        # Set the output parameter 'prompt model config'.
-        self.parameter_output_values["prompt model config"] = driver
+        # Set the output parameter 'prompt_model_config'.
+        self.parameter_output_values["prompt_model_config"] = driver
 
     def validate_node(self) -> list[Exception] | None:
         """Validates that the Anthropic API key is configured correctly.

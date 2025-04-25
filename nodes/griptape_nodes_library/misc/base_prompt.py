@@ -24,7 +24,7 @@ class BasePrompt(BaseDriver):
     to many Large Language Model (LLM) prompt drivers, such as temperature,
     model selection, and token limits.
 
-    It renames the inherited 'driver' output parameter to 'prompt model config'
+    It renames the inherited 'driver' output parameter to 'prompt_model_config'
     to clearly indicate its purpose in the context of prompt configuration.
 
     Key Features for Subclasses:
@@ -43,7 +43,7 @@ class BasePrompt(BaseDriver):
         """Initializes the BasePrompt node.
 
         Sets up the node by calling the superclass initializer, renaming the
-        inherited 'driver' output parameter to 'prompt model config', and
+        inherited 'driver' output parameter to 'prompt_model_config', and
         adding standard parameters common across various prompt drivers.
         """
         super().__init__(**kwargs)
@@ -53,7 +53,7 @@ class BasePrompt(BaseDriver):
         # specifically output a 'Prompt Model Config' (which is a driver).
         driver_parameter = self.get_parameter_by_name("driver")
         if driver_parameter is not None:
-            driver_parameter.name = "prompt model config"
+            driver_parameter.name = "prompt_model_config"
             driver_parameter.output_type = "Prompt Model Config"
 
         # --- Common Prompt Driver Parameters ---
@@ -344,10 +344,10 @@ class BasePrompt(BaseDriver):
         return exceptions if exceptions else None
 
     def process(self) -> None:
-        """Processes the node to generate the output prompt model configuration.
+        """Processes the node to generate the output prompt_model_configuration.
 
         In this base class, this method creates a `DummyPromptDriver` instance
-        and assigns it to the 'prompt model config' output parameter. This primarily
+        and assigns it to the 'prompt_model_config' output parameter. This primarily
         serves to define the output socket type for the node graph and provide a
         non-functional default if the node is used directly (which is discouraged).
 
@@ -359,7 +359,7 @@ class BasePrompt(BaseDriver):
         5. Combine common and specific arguments into a final `kwargs` dictionary.
         6. Instantiate their specific Griptape prompt driver: `driver = SpecificDriver(**kwargs)`.
         7. Assign the created driver instance to the output:
-           `self.parameter_output_values["prompt model config"] = driver`
+           `self.parameter_output_values["prompt_model_config"] = driver`
         """
         # Create a placeholder driver for the base class output type definition.
         # This ensures the output socket has the correct type ('Prompt Model Config')
@@ -367,4 +367,4 @@ class BasePrompt(BaseDriver):
         driver = DummyPromptDriver()
 
         # Set the output parameter with the placeholder driver.
-        self.parameter_output_values["prompt model config"] = driver
+        self.parameter_output_values["prompt_model_config"] = driver

@@ -32,7 +32,7 @@ class ExGriptapeCloudPrompt(BasePrompt):
     The `process` method gathers the configured parameters and the API key,
     utilizes the `_get_common_driver_args` helper from `BasePrompt`, adds
     Griptape Cloud specific configurations, then instantiates a
-    `GriptapeCloudPromptDriver` and assigns it to the 'prompt model config'
+    `GriptapeCloudPromptDriver` and assigns it to the 'prompt_model_config'
     output parameter.
     """
 
@@ -67,7 +67,7 @@ class ExGriptapeCloudPrompt(BasePrompt):
         the node's configuration system. It constructs the arguments dictionary
         for the `GriptapeCloudPromptDriver`, handles optional parameters and
         any necessary conversions (like 'min_p' to 'top_p'), instantiates the
-        driver, and assigns it to the 'prompt model config' output parameter.
+        driver, and assigns it to the 'prompt_model_config' output parameter.
 
         Raises:
             KeyError: If the Griptape Cloud API key is not found in the node configuration
@@ -106,8 +106,8 @@ class ExGriptapeCloudPrompt(BasePrompt):
         # Create the Griptape Cloud prompt driver instance.
         driver = GtGriptapeCloudPromptDriver(**all_kwargs)
 
-        # Set the output parameter 'prompt model config'.
-        self.parameter_output_values["prompt model config"] = driver
+        # Set the output parameter 'prompt_model_config'.
+        self.parameter_output_values["prompt_model_config"] = driver
 
     def validate_node(self) -> list[Exception] | None:
         """Validates that the Griptape Cloud API key is configured correctly.
