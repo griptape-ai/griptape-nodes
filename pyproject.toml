@@ -15,7 +15,8 @@ dependencies = [
   "tomlkit>=0.13.2",
   # TODO(collin): Remove once https://github.com/astral-sh/uv/issues/1632 is resolved
   "uv>=0.6.16",
-  "fastapi[standard]>=0.115.12",
+  "fastapi>=0.115.12",
+  "uvicorn>=0.34.2",
 ]
 
 [dependency-groups]

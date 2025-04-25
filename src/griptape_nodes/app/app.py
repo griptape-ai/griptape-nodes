@@ -15,6 +15,7 @@ import httpx
 import uvicorn
 from dotenv import get_key
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from griptape.events import (
     EventBus,
@@ -46,10 +47,15 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 # This is a global event queue that will be used to pass events between threads
 event_queue = Queue()
 
+# Host of the static server
 STATIC_SERVER_HOST = os.getenv("STATIC_SERVER_HOST", "localhost")
+# Port of the static server
 STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8000"))
+# URL path for the static server
 STATIC_SERVER_URL = os.getenv("STATIC_SERVER_URL", "/static")
-STATIC_SERVER_LOG_LEVEL = os.getenv("STATIC_SERVER_LOG_LEVEL", "error").lower()
+# Log level for the static server
+STATIC_SERVER_LOG_LEVEL = os.getenv("STATIC_SERVER_LOG_LEVEL", "info").lower()
+# Whether to enable the static server
 STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
 
 
@@ -102,11 +108,31 @@ def start_app() -> None:
 def _serve_static_server() -> None:
     """Run FastAPI with Uvicorn in order to serve static files produced by nodes."""
     config_manager = GriptapeNodes.ConfigManager()
-    api = FastAPI()
+    app = FastAPI()
 
-    api.mount(STATIC_SERVER_URL, StaticFiles(directory=config_manager.workspace_path), name="static")
+    static_dir = config_manager.workspace_path / config_manager.user_config["static_files_directory"]
 
-    uvicorn.run(api, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL)
+    if not static_dir.exists():
+        static_dir.mkdir(parents=True, exist_ok=True)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "https://nodes.griptape.ai",
+            "http://localhost",
+        ],
+        allow_credentials=True,
+        allow_methods=["OPTIONS, GET"],
+        allow_headers=["*"],
+    )
+
+    app.mount(
+        STATIC_SERVER_URL,
+        StaticFiles(directory=static_dir),
+        name="static",
+    )
+
+    uvicorn.run(app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL)
 
 
 def _init_event_listeners() -> None:
