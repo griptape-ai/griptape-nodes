@@ -186,8 +186,7 @@ class ControlFlow:
         if not self.check_for_existing_running_flow():
             errormsg = "Flow has not yet been started. Cannot cancel flow that hasn't begun."
             raise Exception(errormsg)
-        del self.flow_queue
-        self.flow_queue = Queue()
+        self.clear_flow_queue()
         self.control_flow_machine.reset_machine()
         # Reset control flow machine
         self.single_node_resolution = False
@@ -201,17 +200,23 @@ class ControlFlow:
         for node in self.nodes.values():
             node.make_node_unresolved()
 
-    def flow_state(self) -> tuple:
+    def flow_state(self) -> tuple[str | None, str | None]:
         if not self.check_for_existing_running_flow():
             msg = "Flow hasn't started."
             raise Exception(msg)
-        current_control_node = self.control_flow_machine._context.current_node.name
+        current_control_node = None
+        current_resolving_node = None
+        if hasattr(self.control_flow_machine._context, "current_node"):
+            current_control_node = self.control_flow_machine._context.current_node.name
         focus_stack_for_node = self.control_flow_machine._context.resolution_machine._context.focus_stack
         if len(focus_stack_for_node):
             current_resolving_node = focus_stack_for_node[-1].node.name
-        else:
-            current_resolving_node = None
         return current_control_node, current_resolving_node
+
+    def clear_flow_queue(self) -> None:
+        mutex = self.flow_queue.mutex
+        with mutex:
+            self.flow_queue.queue.clear()
 
     def get_connected_output_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
         connections = []
