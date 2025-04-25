@@ -182,6 +182,24 @@ class BasePrompt(BaseDriver):
             )
         )
 
+    def remove_parameter_by_name(self, name: str) -> None:
+        """Removes a parameter by its name from the node.
+
+        This method will hopefully be elevated to the base class in the future.
+
+        Args:
+            name: The name of the parameter to remove.
+
+        """
+        try:
+            param = self.get_parameter_by_name(name)
+            if param is not None:
+                self.remove_parameter(param)
+        except Exception as e:
+            # Handle the case where the parameter is not found or cannot be removed
+            msg = f"Error removing parameter '{name}'."
+            raise ValueError(msg) from e
+
     def _update_option_choices(self, param: str | Parameter, choices: list[str], default: str) -> None:
         """Updates the model selection parameter with a new set of choices.
 
@@ -291,24 +309,6 @@ class BasePrompt(BaseDriver):
             exceptions.append(KeyError(msg))
 
         return exceptions if exceptions else None
-
-    def remove_parameter_by_name(self, name: str) -> None:
-        """Removes a parameter by its name from the node.
-
-        This method will hopefully be elevated to the base class in the future.
-
-        Args:
-            name: The name of the parameter to remove.
-
-        """
-        try:
-            param = self.get_parameter_by_name(name)
-            if param is not None:
-                self.remove_parameter(param)
-        except Exception as e:
-            # Handle the case where the parameter is not found or cannot be removed
-            msg = f"Error removing parameter '{name}'."
-            raise ValueError(msg) from e
 
     def process(self) -> None:
         """Processes the node to generate the output prompt model configuration.
