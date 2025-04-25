@@ -1,21 +1,19 @@
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
-    ControlParameterInput,
     ParameterList,
     ParameterMode,
 )
-from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.node_types import EndNode
 
 
-class EndFlow(BaseNode):
+class EndFlow(EndNode):
     def __init__(
         self,
         name: str,
         metadata: dict[Any, Any] | None = None,
     ) -> None:
         super().__init__(name, metadata)
-        self.add_parameter(ControlParameterInput())
         self.add_parameter(
             ParameterList(
                 name="image",
