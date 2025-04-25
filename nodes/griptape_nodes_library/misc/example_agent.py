@@ -17,6 +17,7 @@ from jinja2 import Template
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
@@ -357,6 +358,16 @@ class ExAgent(ControlNode):
             prompt += f"\n{context!s}"
         elif isinstance(context, dict):
             prompt = Template(prompt).render(context)
+        else:
+            # For any other type, convert to string and append
+            try:
+                context_str = str(context)
+                prompt += f"\n{context_str}"
+            except Exception:
+                # If conversion fails, log warning and continue with original prompt
+                msg = f"[WARNING] Unable to process additional context of type {type(context).__name__}, ignoring."
+                logger.warning(msg)
+                self.append_value_to_parameter("logs", msg)
         return prompt
 
     # --- Processing ---
