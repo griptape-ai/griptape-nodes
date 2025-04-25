@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import sys
 import threading
 from queue import Queue
@@ -11,7 +12,11 @@ from typing import Any, cast
 from urllib.parse import urljoin
 
 import httpx
+import uvicorn
 from dotenv import get_key
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from griptape.events import (
     EventBus,
     EventListener,
@@ -41,6 +46,17 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 # This is a global event queue that will be used to pass events between threads
 event_queue = Queue()
+
+# Host of the static server
+STATIC_SERVER_HOST = os.getenv("STATIC_SERVER_HOST", "localhost")
+# Port of the static server
+STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8000"))
+# URL path for the static server
+STATIC_SERVER_URL = os.getenv("STATIC_SERVER_URL", "/static")
+# Log level for the static server
+STATIC_SERVER_LOG_LEVEL = os.getenv("STATIC_SERVER_LOG_LEVEL", "info").lower()
+# Whether to enable the static server
+STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
 
 
 class EventLogHandler(logging.Handler):
@@ -73,15 +89,50 @@ def start_app() -> None:
 
     # Listen for SSE events from the Nodes API in a separate thread
     socket = NodesApiSocketManager()
-    sse_thread = threading.Thread(target=_listen_for_api_events, daemon=True)
-    sse_thread.start()
 
     _init_event_listeners()
 
-    try:
-        _process_event_queue()
-    except KeyboardInterrupt:
-        sys.exit(0)
+    # Listen for any signals to exit the app
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: sys.exit(0))
+
+    # SSE subscription pushes events into event_queue
+    threading.Thread(target=_listen_for_api_events, daemon=True).start()
+
+    if STATIC_SERVER_ENABLED:
+        threading.Thread(target=_serve_static_server, daemon=True).start()
+
+    _process_event_queue()
+
+
+def _serve_static_server() -> None:
+    """Run FastAPI with Uvicorn in order to serve static files produced by nodes."""
+    config_manager = GriptapeNodes.ConfigManager()
+    app = FastAPI()
+
+    static_dir = config_manager.workspace_path / config_manager.user_config["static_files_directory"]
+
+    if not static_dir.exists():
+        static_dir.mkdir(parents=True, exist_ok=True)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "https://nodes.griptape.ai",
+            "http://localhost",
+        ],
+        allow_credentials=True,
+        allow_methods=["OPTIONS, GET"],
+        allow_headers=["*"],
+    )
+
+    app.mount(
+        STATIC_SERVER_URL,
+        StaticFiles(directory=static_dir),
+        name="static",
+    )
+
+    uvicorn.run(app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL)
 
 
 def _init_event_listeners() -> None:
@@ -176,7 +227,7 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
     """Process ExecutionGriptapeNodeEvents and send them to the API."""
     result_event = event.wrapped_event
     if type(result_event.payload).__name__ == "NodeStartProcessEvent":
-        GriptapeNodes.get_instance().EventManager().current_active_node = result_event.payload.node_name
+        GriptapeNodes.EventManager().current_active_node = result_event.payload.node_name
     event_json = result_event.json()
 
     if type(result_event.payload).__name__ == "ResumeNodeProcessingEvent":
@@ -187,10 +238,10 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
         event_queue.put(request)
 
     if type(result_event.payload).__name__ == "NodeFinishProcessEvent":
-        if result_event.payload.node_name != GriptapeNodes.get_instance().EventManager().current_active_node:
+        if result_event.payload.node_name != GriptapeNodes.EventManager().current_active_node:
             msg = "Node start and finish do not match."
             raise KeyError(msg) from None
-        GriptapeNodes.get_instance().EventManager().current_active_node = None
+        GriptapeNodes.EventManager().current_active_node = None
     # Set the node name here so I am not double importing
     socket.emit("execution_event", event_json)
 
