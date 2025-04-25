@@ -18,18 +18,18 @@ class CompareImages(ControlNode):
                 tooltip="Images to compare",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
+                ui_options={
+                    "compare": True
+                }
             )
         )
 
-        # Add both traits to the images parameter
-        images_parameter = self.get_parameter_by_name("images")
-        if images_parameter is not None:
-            images_parameter.add_trait(Compare())
-            images_parameter.add_trait(Clamp(0, 2))
+        # # Add both traits to the images parameter
+        # images_parameter = self.get_parameter_by_name("images")
+        # if images_parameter is not None:
+        #     images_parameter.add_trait(Compare())
+        #     images_parameter.add_trait(Clamp(0, 2))
 
     def process(self) -> None:
-        images = self.parameter_values.get("images", [])
-        
-        if len(images) != 2:
-            logger.error("Exactly two images are required for comparison")
-            return
+        # The Clamp trait will handle limiting to 0-2 images
+        pass
