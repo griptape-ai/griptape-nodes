@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from queue import Queue
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from griptape.events import EventBus
 
@@ -19,6 +19,13 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class CurrentNodes(NamedTuple):
+    """The two relevant nodes during flow execution."""
+
+    current_control_node: str
+    current_resolving_node: str | None
 
 
 # The flow will own all of the nodes and the connections
@@ -110,6 +117,7 @@ class ControlFlow:
             raise Exception(errormsg)
         self.single_node_resolution = True
         # Get the node resolution machine for the current flow!
+        self.control_flow_machine._context.current_node = node
         resolution_machine = self.control_flow_machine._context.resolution_machine
         # Set debug mode
         resolution_machine.change_debug_mode(debug_mode)
@@ -119,6 +127,7 @@ class ControlFlow:
         # decide if we can change it back to normal flow mode!
         if resolution_machine.is_complete():
             self.single_node_resolution = False
+            del self.control_flow_machine._context.current_node
 
     def single_execution_step(self, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
@@ -200,23 +209,19 @@ class ControlFlow:
         for node in self.nodes.values():
             node.make_node_unresolved()
 
-    def flow_state(self) -> tuple[str | None, str | None]:
+    def flow_state(self) -> CurrentNodes:
         if not self.check_for_existing_running_flow():
             msg = "Flow hasn't started."
             raise Exception(msg)
-        current_control_node = None
         current_resolving_node = None
-        if hasattr(self.control_flow_machine._context, "current_node"):
-            current_control_node = self.control_flow_machine._context.current_node.name
+        current_control_node = self.control_flow_machine._context.current_node.name
         focus_stack_for_node = self.control_flow_machine._context.resolution_machine._context.focus_stack
         if len(focus_stack_for_node):
             current_resolving_node = focus_stack_for_node[-1].node.name
-        return current_control_node, current_resolving_node
+        return CurrentNodes(current_control_node, current_resolving_node)
 
     def clear_flow_queue(self) -> None:
-        mutex = self.flow_queue.mutex
-        with mutex:
-            self.flow_queue.queue.clear()
+        self.flow_queue.queue.clear()
 
     def get_connected_output_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
         connections = []

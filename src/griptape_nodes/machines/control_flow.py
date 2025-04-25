@@ -47,7 +47,7 @@ class ControlFlowContext:
         return node
 
     def reset(self) -> None:
-        if hasattr(self, "current_node"):
+        if self.current_node:
             self.current_node.clear_node()
             del self.current_node
         self.resolution_machine.reset_machine()

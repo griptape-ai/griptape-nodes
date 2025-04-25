@@ -1744,6 +1744,25 @@ class NodeManager:
     def cancel_conditionally(
         self, parent_flow: ControlFlow, parent_flow_name: str, node: BaseNode
     ) -> ResultPayload | None:
+        """Conditionally cancels a parent flow if it's currently executing nodes are connected to the specified node.
+
+        This method checks if the parent flow is running, and if so, determines whether the currently
+        executing or resolving node is connected to the specified node. If a connection exists, the parent
+        flow is cancelled to prevent operations on the deleted node.
+
+        Args:
+            parent_flow: The control flow object that may need to be cancelled.
+            parent_flow_name: The name of the parent flow for use in cancellation requests.
+            node: The base node that is trying to be deleted.
+
+        Returns:
+            ResultPayload: A DeleteNodeResultFailure if cancellation was attempted but failed.
+            None: If no cancellation was needed or cancellation succeeded.
+
+        Note:
+            This method also clears the flow queue regardless of whether cancellation occurred,
+            to ensure the specified node is not processed in the future.
+        """
         if parent_flow.check_for_existing_running_flow():
             # get the current node executing / resolving
             # if it's in connected nodes, cancel flow.
