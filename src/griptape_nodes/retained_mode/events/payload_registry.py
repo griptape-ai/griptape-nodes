@@ -1,10 +1,11 @@
-from typing import ClassVar, TypeVar
+from typing import ClassVar
+from typing_extensions import TypeVar
 
 from griptape.mixins.singleton_mixin import SingletonMixin
 
 from griptape_nodes.retained_mode.events.base_events import Payload
 
-T = TypeVar("T", bound=Payload)
+T = TypeVar("T", bound=Payload, default=Payload)
 
 
 class PayloadRegistry(SingletonMixin):

@@ -1,6 +1,8 @@
 from collections import defaultdict
 from collections.abc import Callable
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
+from typing_extensions import TypeVar
+
 
 from griptape.events import EventBus
 
@@ -17,8 +19,8 @@ from griptape_nodes.retained_mode.events.base_events import (
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
 
-RP = TypeVar("RP", bound=RequestPayload)
-AP = TypeVar("AP", bound=AppPayload)
+RP = TypeVar("RP", bound=RequestPayload, default=RequestPayload)
+AP = TypeVar("AP", bound=AppPayload, default=AppPayload)
 
 
 class EventManager:
