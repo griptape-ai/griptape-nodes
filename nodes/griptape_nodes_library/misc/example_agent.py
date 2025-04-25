@@ -138,7 +138,7 @@ class ExAgent(ControlNode):
                 tooltip="Connect prompt_model_config. If not supplied, we will use the Griptape Cloud Prompt Model.",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
-                ui_options={"hide": False},  # TODO: Hide by default once UI updating works correctly
+                ui_options={"hide": False},  # TODO(jason): Hide by default once UI updating works correctly
             )
         )
 
@@ -208,7 +208,7 @@ class ExAgent(ControlNode):
         # Show 'prompt_model_config' input only if 'model' is set to CONNECTED_CHOICE.
         if parameter.name == "model":
             """
-            TODO: Use this code as soon as the UI updating works correctly.
+            TODO(jason): Use this code as soon as the UI updating works correctly.
 
             # Find the prompt_model_settings parameter and hide it
             prompt_model_settings_param = self.get_parameter_by_name("prompt_model_config")
@@ -254,7 +254,7 @@ class ExAgent(ControlNode):
                 if param:
                     param._ui_options["hide"] = True
 
-        # TODO: Enable this after the UI updating works correctly.
+        # TODO(jason): Enable this after the UI updating works correctly.
         # If a prompt_model_config is connected, hide the manual model selector.
         """
         if target_parameter.name == "prompt_model_config":
@@ -306,7 +306,7 @@ class ExAgent(ControlNode):
 
                     param._ui_options["hide"] = False
 
-        # TODO: Enable this after the UI updating works correctly.
+        # TODO(jason): Enable this after the UI updating works correctly.
         # If the prompt_model_config connection is removed, show the model dropdown,
         """
         if target_parameter.name == "prompt_model_config":
