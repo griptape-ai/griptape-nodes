@@ -12,7 +12,7 @@ from typing import Any
 
 from griptape.drivers.prompt.dummy import DummyPromptDriver
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.drivers.base_driver import BaseDriver
 
@@ -67,8 +67,8 @@ class BasePrompt(BaseDriver):
                 type="str",
                 default_value="⚠️ This node requires an API key to function.",
                 tooltip="",
-                allowed_modes={ParameterMode.INOPUT},  # type: ignore  # noqa: PGH003
-                ui_options={"is_full_width": True, "hide_parameter": True},
+                allowed_modes={},  # type: ignore  # noqa: PGH003
+                ui_options={"is_full_width": True, "hide": True},
             )
         )
         # Parameter for model selection. Subclasses should populate the 'choices'.

@@ -52,6 +52,13 @@ class ExAnthropicPrompt(BasePrompt):
         # Update the 'model' parameter for Anthropic specifics.
         self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
 
+        # Replace `min_p` with `top_p` for Anthropic.
+        param = self.get_parameter_by_name("min_p")
+        if param is not None:
+            param.name = "top_p"
+            param.default_value = 0.9
+            param.tooltip = "The probability of the top tokens to sample from. This is used instead of `min_p`."
+
         # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.
         self.remove_parameter_by_name("seed")
 
@@ -87,13 +94,14 @@ class ExAnthropicPrompt(BasePrompt):
         # Handle specific parameter conversions/logic for Anthropic driver
         # Anthropic uses 'top_p' and 'top_k' directly as kwargs.
 
+        specific_args["top_p"] = self.get_parameter_value("top_p")
         # If 'min_p' was provided via the node parameter, convert it to 'top_p'.
-        if "min_p" in common_args:
-            min_p_value = common_args["min_p"]
-            # Add 'top_p' based on 'min_p'.
-            specific_args["top_p"] = 1.0 - float(min_p_value)
-            # Remove the original 'min_p' as Anthropic driver uses 'top_p'.
-            del common_args["min_p"]
+        # if "min_p" in common_args:
+        #     min_p_value = common_args["min_p"]
+        #     # Add 'top_p' based on 'min_p'.
+        #     specific_args["top_p"] = 1.0 - float(min_p_value)
+        #     # Remove the original 'min_p' as Anthropic driver uses 'top_p'.
+        #     del common_args["min_p"]
 
         response_format = self.get_parameter_value("response_format")
         if response_format == "json_object":
