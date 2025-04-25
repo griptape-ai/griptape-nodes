@@ -179,6 +179,15 @@
       }
     },
     {
+      "class_name": "ExOpenAiPrompt",
+      "file_path": "griptape_nodes_library/misc/openai_prompt.py",
+      "metadata": {
+        "category": "_Config",
+        "description": "OpenAi Prompt Model Config.",
+        "display_name": "OpenAi Prompt "
+      }
+    },
+    {
       "class_name": "Agent",
       "file_path": "griptape_nodes_library/agents/create_agent.py",
       "metadata": {

@@ -68,7 +68,7 @@ class BasePrompt(BaseDriver):
                 default_value="⚠️ This node requires an API key to function.",
                 tooltip="",
                 allowed_modes={},  # type: ignore  # noqa: PGH003
-                ui_options={"is_full_width": True, "hide": True},
+                ui_options={"is_full_width": True, "multiline": True, "hide": True},
             )
         )
         # Parameter for model selection. Subclasses should populate the 'choices'.
@@ -311,6 +311,32 @@ class BasePrompt(BaseDriver):
             driver_args["max_tokens"] = max_tokens_val
 
         return driver_args
+
+    def _display_api_key_message(self, service_name: str, api_key_env_var: str, api_key_url: str | None) -> None:
+        """Checks if the API key exists in the node configuration, displays a message if not.
+
+        This method checks if the API key for a specific service is present
+        in the node's configuration. It returns True if the key exists and
+        is not empty, otherwise returns False.
+
+        Args:
+            service_name: The name of the service in the node configuration.
+            api_key_env_var: The name of the key variable within the service config.
+            api_key_url: An optional URL for users to visit to obtain the key,
+                         included in the error message if provided.
+
+        Returns:
+            bool: True if the API key exists and is not empty, False otherwise.
+        """
+        message_param = self.get_parameter_by_name("message")
+        if message_param is not None:
+            api_key = self.get_config_value(service_name, api_key_env_var)
+            msg = f"⚠️ This node requires an API key from {service_name}\nPlease visit {api_key_url} to obtain a valid key and update your settings."
+            message_param.default_value = msg
+            if not api_key:
+                message_param._ui_options["hide"] = False
+            else:
+                message_param._ui_options["hide"] = True
 
     def _validate_api_key(
         self, service_name: str, api_key_env_var: str, api_key_url: str | None
