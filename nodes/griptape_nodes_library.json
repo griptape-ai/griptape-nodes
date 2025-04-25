@@ -604,6 +604,15 @@
       }
     },
     {
+      "class_name": "AgentToTool",
+      "file_path": "griptape_nodes_library/convert/agent_to_tool.py",
+      "metadata": {
+        "category": "convert",
+        "description": "AgentToTool node.",
+        "display_name": "Agent To Tool"
+      }
+    },
+    {
       "class_name": "StartFlow",
       "file_path": "griptape_nodes_library/utils/start_flow.py",
       "metadata": {
