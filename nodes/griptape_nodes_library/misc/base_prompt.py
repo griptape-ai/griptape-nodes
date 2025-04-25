@@ -194,6 +194,9 @@ class BasePrompt(BaseDriver):
             trait = parameter.find_element_by_id("Options")
             if trait and isinstance(trait, Options):
                 trait.choices = choices
+        else:
+            msg = f"Parameter '{param}' not found for updating model choices."
+            raise ValueError(msg)
 
     def _get_common_driver_args(self, params: dict[str, Any]) -> dict[str, Any]:
         """Constructs a dictionary of arguments common to most Griptape prompt drivers.
