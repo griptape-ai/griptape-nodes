@@ -128,7 +128,7 @@
   "nodes": [
     {
       "class_name": "Agent",
-      "file_path": "griptape_nodes_library/agents/create_agent.py",
+      "file_path": "griptape_nodes_library/agents/agent.py",
       "metadata": {
         "category": "agents",
         "description": "Agent node.",
@@ -272,7 +272,7 @@
     },
     {
       "class_name": "AnthropicPrompt",
-      "file_path": "griptape_nodes_library/drivers/prompt/anthropic_prompt_driver.py",
+      "file_path": "griptape_nodes_library/drivers/prompt/anthropic_prompt.py",
       "metadata": {
         "category": "drivers/prompt",
         "description": "Node for Anthropic Prompt Driver.",
@@ -281,7 +281,7 @@
     },
     {
       "class_name": "CoherePrompt",
-      "file_path": "griptape_nodes_library/drivers/prompt/cohere_prompt_driver.py",
+      "file_path": "griptape_nodes_library/drivers/prompt/cohere_prompt.py",
       "metadata": {
         "category": "drivers/prompt",
         "description": "Node for Cohere Prompt Driver.",
@@ -290,7 +290,7 @@
     },
     {
       "class_name": "GriptapeCloudPrompt",
-      "file_path": "griptape_nodes_library/drivers/prompt/griptape_cloud_prompt_driver.py",
+      "file_path": "griptape_nodes_library/drivers/prompt/griptape_cloud_prompt.py",
       "metadata": {
         "category": "drivers/prompt",
         "description": "Node for Griptape Cloud Prompt Driver.",
@@ -298,17 +298,8 @@
       }
     },
     {
-      "class_name": "OllamaPrompt",
-      "file_path": "griptape_nodes_library/drivers/prompt/ollama_prompt_driver.py",
-      "metadata": {
-        "category": "drivers/prompt",
-        "description": "Node for Ollama Prompt Driver.",
-        "display_name": "Ollama Prompt"
-      }
-    },
-    {
       "class_name": "OpenAiPrompt",
-      "file_path": "griptape_nodes_library/drivers/prompt/openai_prompt_driver.py",
+      "file_path": "griptape_nodes_library/drivers/prompt/openai_prompt.py",
       "metadata": {
         "category": "drivers/prompt",
         "description": "Node for OpenAi Prompt Driver.",
