@@ -4341,18 +4341,28 @@ class LibraryManager:
             if dependencies:
                 pip_install_flags = library_metadata.get("pip_install_flags", [])
                 # Create a virtual environment for the library
-                venv_path = xdg_data_home() / "griptape_nodes" / "venvs" / library_name
-                if not venv_path.exists():
-                    subprocess.run(["uv", "venv", venv_path], check=True, text=True)  # noqa: S603, S607
+                library_venv_path = xdg_data_home() / "griptape_nodes" / "venvs" / library_name
+                if library_venv_path.exists():
+                    logger.debug("Virtual environment already exists at %s", library_venv_path)
+                else:
+                    subprocess.run([sys.executable, "-m", "uv", "venv", library_venv_path], check=True, text=True)  # noqa: S603
+                    logger.debug("Created virtual environment at %s", library_venv_path)
+
+                # Grab the python executable from the virtual environment so that we can pip install there
+                library_venv_python_path = (
+                    library_venv_path / ("Scripts" if OSManager.is_windows() else "bin") / "python"
+                )
                 subprocess.run(  # noqa: S603
-                    [  # noqa: S607
+                    [
+                        sys.executable,
+                        "-m",
                         "uv",
                         "pip",
                         "install",
                         *dependencies,
                         *pip_install_flags,
                         "--python",
-                        venv_path / ("Scripts" if OSManager.is_windows() else "bin") / "python",
+                        str(library_venv_python_path),
                     ],
                     check=True,
                     text=True,
@@ -4362,11 +4372,10 @@ class LibraryManager:
                     Path(
                         sysconfig.get_path(
                             "purelib",
-                            vars={"base": str(venv_path), "platbase": str(venv_path)},
+                            vars={"base": str(library_venv_path), "platbase": str(library_venv_path)},
                         )
                     )
                 )
-                print("HI ZACH HERE ARE THE SITE PACKAGES", site_packages)
                 sys.path.insert(0, site_packages)
         except subprocess.CalledProcessError as e:
             # Failed to create the library
