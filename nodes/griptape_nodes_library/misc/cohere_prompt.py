@@ -48,7 +48,7 @@ class ExCoherePrompt(BasePrompt):
 
         # Replace `min_p` with `top_p` for Cohere.
         self._replace_param_by_name(
-            param_name="min_p", new_param_name="top_p", tooltip=None, default_value=0.9, ui_options=None
+            param_name="min_p", new_param_name="p", tooltip=None, default_value=0.9, ui_options=None
         )
         self._replace_param_by_name(param_name="top_k", new_param_name="k")
 
