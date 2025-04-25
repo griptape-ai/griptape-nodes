@@ -4366,7 +4366,6 @@ class LibraryManager:
                         )
                     )
                 )
-                print("HI ZACH HERE ARE THE SITE PACKAGES", site_packages)
                 sys.path.insert(0, site_packages)
         except subprocess.CalledProcessError as e:
             # Failed to create the library
