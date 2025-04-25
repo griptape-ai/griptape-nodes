@@ -5,7 +5,9 @@ import io
 import json
 import logging
 import re
+import subprocess
 import sys
+import sysconfig
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -3075,10 +3077,10 @@ class WorkflowManager:
             return
 
         # Create a table with five columns and row dividers
-        table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True)
+        table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True, expand=True)
         table.add_column("Workflow Name", style="green")
         table.add_column("Status", style="green")
-        table.add_column("File Path", style="cyan", no_wrap=False)  # Allow wrapping for file paths
+        table.add_column("File Path", style="cyan")
         table.add_column("Problems", style="yellow")
         table.add_column("Dependencies", style="magenta")
 
@@ -3103,6 +3105,8 @@ class WorkflowManager:
         for wf_info in workflow_infos:
             # File path column
             file_path = wf_info.workflow_path
+            file_path_text = Text(file_path, style="cyan")
+            file_path_text.overflow = "fold"  # Force wrapping
 
             # Workflow name column with emoji based on status
             emoji = status_emoji.get(wf_info.status, "ERR: Unknown/Unexpected Workflow Status")
@@ -3127,7 +3131,7 @@ class WorkflowManager:
                     else "None"
                 )
 
-            table.add_row(workflow_name, wf_info.status.value, file_path, problems, dependencies)
+            table.add_row(workflow_name, wf_info.status.value, file_path_text, problems, dependencies)
 
         # Wrap the table in a panel
         panel = Panel(table, title="Workflow Information", border_style="blue")
@@ -4049,7 +4053,7 @@ class LibraryManager:
 
         # Create a table with three columns and row dividers
         # Using SQUARE box style which includes row dividers
-        table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True)
+        table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True, expand=True)
         table.add_column("Library Name", style="green")
         table.add_column("Version", style="green")
         table.add_column("File Path", style="cyan")
@@ -4067,6 +4071,8 @@ class LibraryManager:
         for lib_info in library_infos:
             # File path column
             file_path = lib_info.library_path
+            file_path_text = Text(file_path, style="cyan")
+            file_path_text.overflow = "fold"  # Force wrapping
 
             # Library name column with emoji based on status
             emoji = status_emoji.get(lib_info.status, "ERR: Unknown/Unexpected Library Status")
@@ -4089,7 +4095,7 @@ class LibraryManager:
                 problems = "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(lib_info.problems)])
 
             # Add the row to the table
-            table.add_row(library_name, version_str, file_path, problems)
+            table.add_row(library_name, version_str, file_path_text, problems)
 
         # Create a panel containing the table
         panel = Panel(table, title="Library Information", border_style="blue")
@@ -4315,6 +4321,7 @@ class LibraryManager:
                 mark_as_default_library=request.load_as_default_library,
                 categories=categories,
             )
+
         except KeyError as err:
             # Library already exists
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
@@ -4328,6 +4335,64 @@ class LibraryManager:
             )
 
             details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_name}' already exists. Error: {err}."
+            logger.error(details)
+            return RegisterLibraryFromFileResultFailure()
+
+        # Install node library dependencies
+        try:
+            dependencies = library_metadata.get("dependencies", [])
+            site_packages = None
+            if dependencies:
+                pip_install_flags = library_metadata.get("pip_install_flags", [])
+                # Create a virtual environment for the library
+                library_venv_path = xdg_data_home() / "griptape_nodes" / "venvs" / library_name
+                if library_venv_path.exists():
+                    logger.debug("Virtual environment already exists at %s", library_venv_path)
+                else:
+                    subprocess.run([sys.executable, "-m", "uv", "venv", library_venv_path], check=True, text=True)  # noqa: S603
+                    logger.debug("Created virtual environment at %s", library_venv_path)
+
+                # Grab the python executable from the virtual environment so that we can pip install there
+                library_venv_python_path = (
+                    library_venv_path / ("Scripts" if OSManager.is_windows() else "bin") / "python"
+                )
+                subprocess.run(  # noqa: S603
+                    [
+                        sys.executable,
+                        "-m",
+                        "uv",
+                        "pip",
+                        "install",
+                        *dependencies,
+                        *pip_install_flags,
+                        "--python",
+                        str(library_venv_python_path),
+                    ],
+                    check=True,
+                    text=True,
+                )
+                # Need to insert into the path so that the library picks up on the venv
+                site_packages = str(
+                    Path(
+                        sysconfig.get_path(
+                            "purelib",
+                            vars={"base": str(library_venv_path), "platbase": str(library_venv_path)},
+                        )
+                    )
+                )
+                sys.path.insert(0, site_packages)
+        except subprocess.CalledProcessError as e:
+            # Failed to create the library
+            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                library_path=file_path,
+                library_name=library_name,
+                library_version=library_version,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=[f"Failed to create the library: {e}"],
+            )
+            details = (
+                f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {e}."
+            )
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
@@ -4418,6 +4483,11 @@ class LibraryManager:
             )
             details = f"Successfully loaded Library '{library_name}' from JSON file at {json_path}"
             logger.info(details)
+
+        # We don't need to keep site_packages on the path since the node
+        # has already been executed and therefore its imports resolved.
+        if site_packages is not None:
+            sys.path.remove(site_packages)
         return RegisterLibraryFromFileResultSuccess(library_name=library_name)
 
     def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
