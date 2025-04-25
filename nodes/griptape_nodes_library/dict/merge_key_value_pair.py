@@ -19,7 +19,7 @@ class MergeKeyValuePairs(DataNode):
         self.add_parameter(
             ParameterList(
                 name="KeyValuePairs",
-                input_types=["dictionary"],
+                input_types=["dict"],
                 default_value=None,
                 tooltip="Key Value Pair",
                 allowed_modes={ParameterMode.INPUT},
