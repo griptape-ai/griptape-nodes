@@ -27,7 +27,7 @@ logger = logging.getLogger("griptape_nodes")
 # This is the control flow context. Owns the Resolution Machine
 class ControlFlowContext:
     flow: ControlFlow
-    current_node: BaseNode
+    current_node: BaseNode | None
     resolution_machine: NodeResolutionMachine
     selected_output: Parameter | None
     paused: bool = False
@@ -35,21 +35,24 @@ class ControlFlowContext:
     def __init__(self, flow: ControlFlow) -> None:
         self.resolution_machine = NodeResolutionMachine(flow)
         self.flow = flow
+        self.current_node = None
 
     def get_next_node(self, output_parameter: Parameter) -> BaseNode | None:
-        node = self.flow.connections.get_connected_node(self.current_node, output_parameter)
-        if node is not None:
-            node, _ = node
-        # Continue Execution to the next node that needs to be executed.
-        elif not self.flow.flow_queue.empty():
-            node = self.flow.flow_queue.get()
-            self.flow.flow_queue.task_done()
-        return node
+        if self.current_node is not None:
+            node = self.flow.connections.get_connected_node(self.current_node, output_parameter)
+            if node is not None:
+                node, _ = node
+            # Continue Execution to the next node that needs to be executed.
+            elif not self.flow.flow_queue.empty():
+                node = self.flow.flow_queue.get()
+                self.flow.flow_queue.task_done()
+            return node
+        return None
 
     def reset(self) -> None:
         if self.current_node:
             self.current_node.clear_node()
-            del self.current_node
+        self.current_node = None
         self.resolution_machine.reset_machine()
         self.selected_output = None
         self.paused = False
@@ -60,6 +63,9 @@ class ResolveNodeState(State):
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
         # The state machine has started, but it hasn't began to execute yet.
+        if context.current_node is None:
+            # We don't have anything else to do. Move back to Complete State so it has to restart.
+            return CompleteState
         context.current_node.state = NodeResolutionState.UNRESOLVED
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
@@ -76,6 +82,8 @@ class ResolveNodeState(State):
     @staticmethod
     def on_update(context: ControlFlowContext) -> type[State] | None:
         # If node has not already been resolved!
+        if context.current_node is None:
+            return CompleteState
         if context.current_node.state != NodeResolutionState.RESOLVED:
             context.resolution_machine.resolve_node(context.current_node)
 
@@ -87,6 +95,8 @@ class ResolveNodeState(State):
 class NextNodeState(State):
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
+        if context.current_node is None:
+            return CompleteState
         # I did define this on the ControlNode.
         if context.current_node.stop_flow:
             # We're done here.
@@ -128,18 +138,19 @@ class NextNodeState(State):
 class CompleteState(State):
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
-        EventBus.publish_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(
-                    payload=ControlFlowResolvedEvent(
-                        end_node_name=context.current_node.name,
-                        parameter_output_values=TypeValidator.safe_serialize(
-                            context.current_node.parameter_output_values
-                        ),
+        if context.current_node is not None:
+            EventBus.publish_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(
+                        payload=ControlFlowResolvedEvent(
+                            end_node_name=context.current_node.name,
+                            parameter_output_values=TypeValidator.safe_serialize(
+                                context.current_node.parameter_output_values
+                            ),
+                        )
                     )
                 )
             )
-        )
         logger.info("Flow is complete.")
         return None
 

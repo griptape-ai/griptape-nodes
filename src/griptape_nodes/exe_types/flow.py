@@ -24,7 +24,7 @@ logger = logging.getLogger("griptape_nodes")
 class CurrentNodes(NamedTuple):
     """The two relevant nodes during flow execution."""
 
-    current_control_node: str
+    current_control_node: str | None
     current_resolving_node: str | None
 
 
@@ -127,7 +127,7 @@ class ControlFlow:
         # decide if we can change it back to normal flow mode!
         if resolution_machine.is_complete():
             self.single_node_resolution = False
-            del self.control_flow_machine._context.current_node
+            self.control_flow_machine._context.current_node = None
 
     def single_execution_step(self, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
@@ -213,11 +213,13 @@ class ControlFlow:
         if not self.check_for_existing_running_flow():
             msg = "Flow hasn't started."
             raise Exception(msg)
-        current_resolving_node = None
-        current_control_node = self.control_flow_machine._context.current_node.name
+        current_control_node = (
+            self.control_flow_machine._context.current_node.name
+            if self.control_flow_machine._context.current_node is not None
+            else None
+        )
         focus_stack_for_node = self.control_flow_machine._context.resolution_machine._context.focus_stack
-        if len(focus_stack_for_node):
-            current_resolving_node = focus_stack_for_node[-1].node.name
+        current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
         return CurrentNodes(current_control_node, current_resolving_node)
 
     def clear_flow_queue(self) -> None:

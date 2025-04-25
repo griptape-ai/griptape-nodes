@@ -155,7 +155,7 @@ class GetFlowStateRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetFlowStateResultSuccess(ResultPayloadSuccess):
-    control_node: str
+    control_node: str | None
     resolving_node: str | None
 
 
