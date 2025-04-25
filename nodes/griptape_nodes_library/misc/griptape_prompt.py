@@ -49,7 +49,7 @@ class ExGriptapeCloudPrompt(BasePrompt):
         # --- Customize Inherited Parameters ---
 
         # Update the 'model' parameter for Griptape Cloud specifics.
-        self._update_model_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
+        self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
 
         # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.
         self.remove_parameter_by_name("seed")

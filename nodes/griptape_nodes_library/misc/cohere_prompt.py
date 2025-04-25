@@ -44,7 +44,7 @@ class ExCoherePrompt(BasePrompt):
         # --- Customize Inherited Parameters ---
 
         # Update the 'model' parameter for Anthropic specifics.
-        self._update_model_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
+        self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
 
         # Remove the 'seed' parameter as it's not directly used by Cohere.
         self.remove_parameter_by_name("seed")

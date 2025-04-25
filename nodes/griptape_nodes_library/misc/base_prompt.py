@@ -12,7 +12,7 @@ from typing import Any
 
 from griptape.drivers.prompt.dummy import DummyPromptDriver
 
-from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.drivers.base_driver import BaseDriver
 
@@ -32,7 +32,7 @@ class BasePrompt(BaseDriver):
     - Provides `_get_common_driver_args` to easily collect arguments for drivers based on base parameters.
     - Provides `_validate_api_key` to standardize API key validation logic.
     - Provides `remove_parameter_by_name` to remove unsupported base parameters.
-    - Provides `_update_model_choices` to set driver-specific model lists for the 'model' parameter.
+    - Provides `_update_option_choices` to set driver-specific model lists for the 'model' parameter.
     Note: The `process` method in this base class creates a `DummyPromptDriver`
     primarily to establish the output socket type. It does not utilize the
     configuration parameters defined herein. Direct use of `BasePrompt` is
@@ -60,18 +60,17 @@ class BasePrompt(BaseDriver):
         # These parameters represent settings frequently used by LLM prompt drivers.
         # Subclasses will typically use these values when instantiating their specific driver.
 
-        # # Parameter
-        # # Working on an api validation parameter. Perhaps create a trait for this?
-        # self.add_parameter(
-        #     Parameter(
-        #         name="missing_api_key",
-        #         type="str",
-        #         default_value="This node requires an API key to function.",
-        #         tooltip="",
-        #         allowed_modes={},
-        #         ui_options={"is_full_width": True, "className": "bg-red-500"},
-        #     )
-        # )
+        # Parameter for user messages.
+        self.add_parameter(
+            Parameter(
+                name="message",
+                type="str",
+                default_value="⚠️ This node requires an API key to function.",
+                tooltip="",
+                allowed_modes={ParameterMode.INOPUT},  # type: ignore  # noqa: PGH003
+                ui_options={"is_full_width": True, "hide_parameter": True},
+            )
+        )
         # Parameter for model selection. Subclasses should populate the 'choices'.
         self.add_parameter(
             Parameter(
@@ -183,7 +182,7 @@ class BasePrompt(BaseDriver):
             )
         )
 
-    def _update_model_choices(self, param: str | Parameter, choices: list[str], default: str) -> None:
+    def _update_option_choices(self, param: str | Parameter, choices: list[str], default: str) -> None:
         """Updates the model selection parameter with a new set of choices.
 
         This method is intended to be called by subclasses to set the available
