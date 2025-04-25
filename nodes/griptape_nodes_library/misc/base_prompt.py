@@ -200,6 +200,39 @@ class BasePrompt(BaseDriver):
             msg = f"Error removing parameter '{name}'."
             raise ValueError(msg) from e
 
+    def _replace_param_by_name(
+        self,
+        param_name: str,
+        new_param_name: str,
+        tooltip: str | list[dict] | None = None,
+        default_value: Any = None,
+        ui_options: dict | None = None,
+    ) -> None:
+        """Replaces a parameter in the node configuration.
+
+        This method is used to replace a parameter with a new name and
+        optionally update its tooltip and default value.
+
+        Args:
+            param_name (str): The name of the parameter to replace.
+            new_param_name (str): The new name for the parameter.
+            tooltip (str, list[dict], optional): The new tooltip for the parameter.
+            default_value (Any, optional): The new default value for the parameter.
+            ui_options (dict, optional): UI options for the parameter.
+        """
+        param = self.get_parameter_by_name(param_name)
+        if param is not None:
+            param.name = new_param_name
+            if tooltip is not None:
+                param.tooltip = tooltip
+            if default_value is not None:
+                param.default_value = default_value
+            if ui_options is not None:
+                param.ui_options = ui_options
+        else:
+            msg = f"Parameter '{param_name}' not found in node configuration."
+            raise ValueError(msg)
+
     def _update_option_choices(self, param: str | Parameter, choices: list[str], default: str) -> None:
         """Updates the model selection parameter with a new set of choices.
 
