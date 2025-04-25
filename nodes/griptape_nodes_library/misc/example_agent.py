@@ -334,7 +334,7 @@ class ExAgent(ControlNode):
         # Return any exceptions
         return exceptions if exceptions else None
 
-    def _handle_additonal_context(self, prompt, additional_context: str | int | float | dict[str, Any]) -> str:  # noqa: PYI041
+    def _handle_additional_context(self, prompt, additional_context: str | int | float | dict[str, Any]) -> str:  # noqa: PYI041
         """Integrates additional context into the main prompt string.
 
         - If context is numeric, it's converted to a string and appended.
@@ -421,7 +421,7 @@ class ExAgent(ControlNode):
         # Use any additional context provided by the user.
         additional_context = self.get_parameter_value("additional context")
         if additional_context:
-            prompt = self._handle_additonal_context(prompt, additional_context)
+            prompt = self._handle_additional_context(prompt, additional_context)
 
         # If the user has connected a prompt, we want to show it in the logs.
         if include_details and prompt:

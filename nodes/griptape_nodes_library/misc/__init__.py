@@ -1,1 +1,1 @@
-"""Miscelaneous Example Nodes package."""
+"""Misc Example Nodes package."""
