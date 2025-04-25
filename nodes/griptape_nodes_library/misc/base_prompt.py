@@ -244,7 +244,7 @@ class BasePrompt(BaseDriver):
 
         api_key = self.get_config_value(service_name, api_key_env_var)
         if not api_key:
-            msg = f"API Key ('{api_key_env_var}') for service '{service_name}' is configured but empty."
+            msg = f"API Key ('{api_key_env_var}') for service '{service_name}' is missing."
             if api_key_url:
                 msg += f" Please visit {api_key_url} to obtain a valid key and update your settings."
             else:
