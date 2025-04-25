@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
 from enum import StrEnum, auto
-from typing import Any, Self, TypeVar
+from typing import Any, TypeVar
 
 from griptape.events import BaseEvent, EventBus
 
@@ -19,9 +21,17 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.type_validator import TypeValidator
-from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ProgressEvent
-from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
-from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
+from griptape_nodes.retained_mode.events.base_events import (
+    ExecutionEvent,
+    ExecutionGriptapeNodeEvent,
+    ProgressEvent,
+)
+from griptape_nodes.retained_mode.events.execution_events import (
+    ParameterValueUpdateEvent,
+)
+from griptape_nodes.retained_mode.events.parameter_events import (
+    RemoveParameterFromNodeRequest,
+)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -83,7 +93,7 @@ class BaseNode(ABC):
 
     def allow_incoming_connection(
         self,
-        source_node: Self,  # noqa: ARG002
+        source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> bool:
@@ -93,7 +103,7 @@ class BaseNode(ABC):
     def allow_outgoing_connection(
         self,
         source_parameter: Parameter,  # noqa: ARG002
-        target_node: Self,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> bool:
         """Callback to confirm allowing a Connection going OUT of this Node."""
@@ -101,7 +111,7 @@ class BaseNode(ABC):
 
     def after_incoming_connection(
         self,
-        source_node: Self,  # noqa: ARG002
+        source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
@@ -111,7 +121,7 @@ class BaseNode(ABC):
     def after_outgoing_connection(
         self,
         source_parameter: Parameter,  # noqa: ARG002
-        target_node: Self,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
@@ -119,7 +129,7 @@ class BaseNode(ABC):
 
     def after_incoming_connection_removed(
         self,
-        source_node: Self,  # noqa: ARG002
+        source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
@@ -129,7 +139,7 @@ class BaseNode(ABC):
     def after_outgoing_connection_removed(
         self,
         source_parameter: Parameter,  # noqa: ARG002
-        target_node: Self,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
@@ -320,13 +330,19 @@ class BaseNode(ABC):
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
         final_value = self.before_value_set(
-            parameter=parameter, value=candidate_value, modified_parameters_set=modified_parameters
+            parameter=parameter,
+            value=candidate_value,
+            modified_parameters_set=modified_parameters,
         )
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
         # If a parameter value has been set at the top level of a container, wipe all children.
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
-        self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=modified_parameters)
+        self.after_value_set(
+            parameter=parameter,
+            value=final_value,
+            modified_parameters_set=modified_parameters,
+        )
         # handle with container parameters
         if parameter.parent_container_name is not None:
             # Does it have a parent container
@@ -503,12 +519,14 @@ class DataNode(BaseNode):
 class StartNode(BaseNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
+        self.add_parameter(ControlParameterOutput())
 
 
-class EndNode(ControlNode):
+class EndNode(BaseNode):
     # TODO(griptape): Anything else for an EndNode?
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
+        self.add_parameter(ControlParameterInput())
 
 
 class Connection:
