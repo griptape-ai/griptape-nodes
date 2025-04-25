@@ -181,15 +181,6 @@
       }
     },
     {
-      "class_name": "Dictionary",
-      "file_path": "griptape_nodes_library/dict/create_dict.py",
-      "metadata": {
-        "category": "dict",
-        "description": "Create a dictionary with arbitrary key-value pairs using list parameters.",
-        "display_name": "Dictionary"
-      }
-    },
-    {
       "class_name": "DisplayDictionary",
       "file_path": "griptape_nodes_library/dict/display_dict.py",
       "metadata": {
@@ -214,15 +205,6 @@
         "category": "dict",
         "description": "LoadDictionary node.",
         "display_name": "Load Dictionary"
-      }
-    },
-    {
-      "class_name": "MergeDicts",
-      "file_path": "griptape_nodes_library/dict/merge_dict.py",
-      "metadata": {
-        "category": "dict",
-        "description": "Merge multiple dictionaries, with later dictionaries overwriting values from earlier ones.",
-        "display_name": "Merge Dicts"
       }
     },
     {
@@ -505,39 +487,12 @@
       }
     },
     {
-      "class_name": "StructuredDataExtractor",
-      "file_path": "griptape_nodes_library/tools/extraction_tool.py",
-      "metadata": {
-        "category": "tools",
-        "description": "StructuredDataExtractor node.",
-        "display_name": "Structured Data Extractor"
-      }
-    },
-    {
       "class_name": "FileManager",
       "file_path": "griptape_nodes_library/tools/file_manager_tool.py",
       "metadata": {
         "category": "tools",
         "description": "FileManager node.",
         "display_name": "File Manager"
-      }
-    },
-    {
-      "class_name": "PromptSummary",
-      "file_path": "griptape_nodes_library/tools/prompt_summary_tool.py",
-      "metadata": {
-        "category": "tools",
-        "description": "A tool generator class that creates a configured PromptSummaryTool.",
-        "display_name": "Prompt Summary"
-      }
-    },
-    {
-      "class_name": "InfoRetriever",
-      "file_path": "griptape_nodes_library/tools/rag_tool.py",
-      "metadata": {
-        "category": "tools",
-        "description": "InfoRetriever node.",
-        "display_name": "Info Retriever"
       }
     },
     {
@@ -550,30 +505,12 @@
       }
     },
     {
-      "class_name": "VectorStore",
-      "file_path": "griptape_nodes_library/tools/vector_store_tool.py",
-      "metadata": {
-        "category": "tools",
-        "description": "VectorStore node.",
-        "display_name": "Vector Store"
-      }
-    },
-    {
       "class_name": "WebScraper",
       "file_path": "griptape_nodes_library/tools/web_scraper_tool.py",
       "metadata": {
         "category": "tools",
         "description": "WebScraper node.",
         "display_name": "Web Scraper"
-      }
-    },
-    {
-      "class_name": "WebSearch",
-      "file_path": "griptape_nodes_library/tools/web_search_tool.py",
-      "metadata": {
-        "category": "tools",
-        "description": "WebSearch node.",
-        "display_name": "Web Search"
       }
     },
     {
