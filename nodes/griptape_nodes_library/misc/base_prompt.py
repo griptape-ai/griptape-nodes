@@ -183,7 +183,7 @@ class BasePrompt(BaseDriver):
             )
         )
 
-    def _update_model_choices(self, param: str | Parameter, choices: list[str]) -> None:
+    def _update_model_choices(self, param: str | Parameter, choices: list[str], default: str) -> None:
         """Updates the model selection parameter with a new set of choices.
 
         This method is intended to be called by subclasses to set the available
@@ -203,6 +203,12 @@ class BasePrompt(BaseDriver):
             trait = parameter.find_element_by_id("Options")
             if trait and isinstance(trait, Options):
                 trait.choices = choices
+
+                if default in choices:
+                    parameter.default_value = default
+                else:
+                    msg = f"Default model '{default}' is not in the provided choices."
+                    raise ValueError(msg)
         else:
             msg = f"Parameter '{param}' not found for updating model choices."
             raise ValueError(msg)
