@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
 from enum import StrEnum, auto
-from typing import Any, Self, TypeVar
+from typing import Any, TypeVar
 
 from griptape.events import BaseEvent, EventBus
 
@@ -83,7 +85,7 @@ class BaseNode(ABC):
 
     def allow_incoming_connection(
         self,
-        source_node: Self,  # noqa: ARG002
+        source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> bool:
@@ -93,7 +95,7 @@ class BaseNode(ABC):
     def allow_outgoing_connection(
         self,
         source_parameter: Parameter,  # noqa: ARG002
-        target_node: Self,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> bool:
         """Callback to confirm allowing a Connection going OUT of this Node."""
@@ -101,7 +103,7 @@ class BaseNode(ABC):
 
     def after_incoming_connection(
         self,
-        source_node: Self,  # noqa: ARG002
+        source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
@@ -111,7 +113,7 @@ class BaseNode(ABC):
     def after_outgoing_connection(
         self,
         source_parameter: Parameter,  # noqa: ARG002
-        target_node: Self,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
@@ -119,7 +121,7 @@ class BaseNode(ABC):
 
     def after_incoming_connection_removed(
         self,
-        source_node: Self,  # noqa: ARG002
+        source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
@@ -129,7 +131,7 @@ class BaseNode(ABC):
     def after_outgoing_connection_removed(
         self,
         source_parameter: Parameter,  # noqa: ARG002
-        target_node: Self,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
