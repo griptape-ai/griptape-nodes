@@ -1742,6 +1742,60 @@ class NodeManager:
 
         return CreateNodeResultSuccess(node_name=node.name)
 
+    def cancel_conditionally(
+        self, parent_flow: ControlFlow, parent_flow_name: str, node: BaseNode
+    ) -> ResultPayload | None:
+        """Conditionally cancels a parent flow if it's currently executing nodes are connected to the specified node.
+
+        This method checks if the parent flow is running, and if so, determines whether the currently
+        executing or resolving node is connected to the specified node. If a connection exists, the parent
+        flow is cancelled to prevent operations on the deleted node.
+
+        Args:
+            parent_flow: The control flow object that may need to be cancelled.
+            parent_flow_name: The name of the parent flow for use in cancellation requests.
+            node: The base node that is trying to be deleted.
+
+        Returns:
+            ResultPayload: A DeleteNodeResultFailure if cancellation was attempted but failed.
+            None: If no cancellation was needed or cancellation succeeded.
+
+        Note:
+            This method also clears the flow queue regardless of whether cancellation occurred,
+            to ensure the specified node is not processed in the future.
+        """
+        if parent_flow.check_for_existing_running_flow():
+            # get the current node executing / resolving
+            # if it's in connected nodes, cancel flow.
+            # otherwise, leave it.
+            control_node_name, resolving_node_name = parent_flow.flow_state()
+            connected_nodes = parent_flow.get_all_connected_nodes(node)
+            cancelled = False
+            if control_node_name is not None:
+                control_node = GriptapeNodes.ObjectManager().get_object_by_name(control_node_name)
+                if control_node in connected_nodes:
+                    result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
+                    cancelled = True
+                    if not result.succeeded():
+                        details = (
+                            f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
+                        )
+                        logger.error(details)
+                        return DeleteNodeResultFailure()
+            if resolving_node_name is not None and not cancelled:
+                resolving_node = GriptapeNodes.ObjectManager().get_object_by_name(resolving_node_name)
+                if resolving_node in connected_nodes:
+                    result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
+                    if not result.succeeded():
+                        details = (
+                            f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
+                        )
+                        logger.error(details)
+                        return DeleteNodeResultFailure()
+            # Clear the queue, because we don't want to his this node eventually.
+            parent_flow.clear_flow_queue()
+        return None
+
     def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911 (complex logic, lots of edge cases)
         node_name = request.node_name
         if node_name is None:
@@ -1773,6 +1827,9 @@ class NodeManager:
                 logger.error(details)
                 return DeleteNodeResultFailure()
 
+            cancel_result = self.cancel_conditionally(parent_flow, parent_flow_name, node)
+            if cancel_result is not None:
+                return cancel_result
             # Remove all connections from this Node.
             list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
             list_connections_result = GriptapeNodes.handle_request(request=list_node_connections_request)
@@ -3283,6 +3340,9 @@ class WorkflowManager:
 
     def on_register_workflow_request(self, request: RegisterWorkflowRequest) -> ResultPayload:
         try:
+            if isinstance(request.metadata, dict):
+                request.metadata = WorkflowMetadata(**request.metadata)
+
             workflow = WorkflowRegistry.generate_new_workflow(metadata=request.metadata, file_path=request.file_name)
         except Exception as e:
             details = f"Failed to register workflow with name '{request.metadata.name}'. Error: {e}"
