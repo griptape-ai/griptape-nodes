@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, TypeVar
 
 from griptape.events import EventBus
 
-from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     EventResultFailure,
@@ -68,8 +67,6 @@ class EventManager:
             callback = self._request_type_to_manager.get(request_type)
             if callback:
                 result_payload = callback(request)
-                if hasattr(result_payload, "value"):
-                    result_payload.value = TypeValidator.safe_serialize(result_payload.value)
                 retained_mode_str = None
                 if depth_manager.is_top_level():
                     retained_mode_str = depth_manager.request_retained_mode_translation(request)
