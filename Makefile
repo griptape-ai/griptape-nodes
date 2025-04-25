@@ -60,7 +60,7 @@ check: check/format check/lint check/types check/spell ## Run all checks.
 .PHONY: check/format
 check/format:
 	@uv run ruff format --check
-	@uv run mdformat --check . --exclude .venv/**/*.md
+	@uv run mdformat --check .github docs nodes src tests workflows *.md
 
 .PHONY: check/lint
 check/lint:
