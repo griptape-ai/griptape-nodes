@@ -138,7 +138,7 @@ class ExAgent(ControlNode):
                 tooltip="Connect prompt_model_config. If not supplied, we will use the Griptape Cloud Prompt Model.",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
-                ui_options={"hide": True},  # Hide by default
+                ui_options={"hide": False},  # TODO: Hide by default once UI updating works correctly
             )
         )
 
@@ -207,6 +207,9 @@ class ExAgent(ControlNode):
         """
         # Show 'prompt_model_config' input only if 'model' is set to CONNECTED_CHOICE.
         if parameter.name == "model":
+            """
+            TODO: Use this code as soon as the UI updating works correctly.
+
             # Find the prompt_model_settings parameter and hide it
             prompt_model_settings_param = self.get_parameter_by_name("prompt_model_config")
             if value == CONNECTED_CHOICE and prompt_model_settings_param:
@@ -216,6 +219,9 @@ class ExAgent(ControlNode):
 
             # Add this to the modified parameters set so we can cascade the change.
             modified_parameters_set.add("prompt_model_config")
+
+            """
+            pass  # noqa: PIE790
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
@@ -248,11 +254,14 @@ class ExAgent(ControlNode):
                 if param:
                     param._ui_options["hide"] = True
 
+        # TODO: Enable this after the UI updating works correctly.
         # If a prompt_model_config is connected, hide the manual model selector.
+        """
         if target_parameter.name == "prompt_model_config":
             model_param = self.get_parameter_by_name("model")
             if model_param:
                 model_param._ui_options["hide"] = True
+        """
 
         # If additional context is connected, prevent editing via property panel.
         # NOTE: This is a workaround. Ideally this is done automatically.
@@ -261,7 +270,7 @@ class ExAgent(ControlNode):
 
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
-    def after_incoming_connection_removed(  # noqa: C901
+    def after_incoming_connection_removed(
         self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
         """Handles UI updates after an incoming connection to this node is removed.
@@ -297,12 +306,15 @@ class ExAgent(ControlNode):
 
                     param._ui_options["hide"] = False
 
+        # TODO: Enable this after the UI updating works correctly.
         # If the prompt_model_config connection is removed, show the model dropdown,
+        """
         if target_parameter.name == "prompt_model_config":
             # Find the model parameter and hide it
             model_param = self.get_parameter_by_name("model")
             if model_param:
                 model_param._ui_options["hide"] = False
+        """
 
         # If the additional context connection is removed, make it editable again.
         # NOTE: This is a workaround. Ideally this is done automatically.
