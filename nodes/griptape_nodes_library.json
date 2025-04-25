@@ -123,73 +123,12 @@
         "description": "Utility nodes like save, etc., etc.",
         "icon": "Cog"
       }
-    },
-    {
-      "_Agent": {
-        "color": "border-gray-500",
-        "title": "_Agent",
-        "description": "Example Agent Nodes.",
-        "icon": "Cog"
-      }
-    },
-    {
-      "_Config": {
-        "color": "border-gray-500",
-        "title": "_Config",
-        "description": "Example Configuration Nodes",
-        "icon": "Cog"
-      }
     }
   ],
   "nodes": [
     {
-      "class_name": "ExAgent",
-      "file_path": "griptape_nodes_library/misc/example_agent.py",
-      "metadata": {
-        "category": "_Agent",
-        "description": "Example Agent node.",
-        "display_name": "Example Agent"
-      }
-    },
-    {
-      "class_name": "ExGriptapeCloudPrompt",
-      "file_path": "griptape_nodes_library/misc/griptape_prompt.py",
-      "metadata": {
-        "category": "_Config",
-        "description": "Griptape Prompt Configuration Settings.",
-        "display_name": "Griptape Prompt"
-      }
-    },
-    {
-      "class_name": "ExAnthropicPrompt",
-      "file_path": "griptape_nodes_library/misc/anthropic_prompt.py",
-      "metadata": {
-        "category": "_Config",
-        "description": "Anthropic Prompt Model Config.",
-        "display_name": "Anthropic Prompt "
-      }
-    },
-    {
-      "class_name": "ExCoherePrompt",
-      "file_path": "griptape_nodes_library/misc/cohere_prompt.py",
-      "metadata": {
-        "category": "_Config",
-        "description": "Cohere Prompt Model Config.",
-        "display_name": "Cohere Prompt "
-      }
-    },
-    {
-      "class_name": "ExOpenAiPrompt",
-      "file_path": "griptape_nodes_library/misc/openai_prompt.py",
-      "metadata": {
-        "category": "_Config",
-        "description": "OpenAi Prompt Model Config.",
-        "display_name": "OpenAi Prompt "
-      }
-    },
-    {
       "class_name": "Agent",
-      "file_path": "griptape_nodes_library/agents/create_agent.py",
+      "file_path": "griptape_nodes_library/agents/agent.py",
       "metadata": {
         "category": "agents",
         "description": "Agent node.",
@@ -333,7 +272,7 @@
     },
     {
       "class_name": "AnthropicPrompt",
-      "file_path": "griptape_nodes_library/drivers/prompt/anthropic_prompt_driver.py",
+      "file_path": "griptape_nodes_library/drivers/prompt/anthropic_prompt.py",
       "metadata": {
         "category": "drivers/prompt",
         "description": "Node for Anthropic Prompt Driver.",
@@ -342,7 +281,7 @@
     },
     {
       "class_name": "CoherePrompt",
-      "file_path": "griptape_nodes_library/drivers/prompt/cohere_prompt_driver.py",
+      "file_path": "griptape_nodes_library/drivers/prompt/cohere_prompt.py",
       "metadata": {
         "category": "drivers/prompt",
         "description": "Node for Cohere Prompt Driver.",
@@ -351,7 +290,7 @@
     },
     {
       "class_name": "GriptapeCloudPrompt",
-      "file_path": "griptape_nodes_library/drivers/prompt/griptape_cloud_prompt_driver.py",
+      "file_path": "griptape_nodes_library/drivers/prompt/griptape_cloud_prompt.py",
       "metadata": {
         "category": "drivers/prompt",
         "description": "Node for Griptape Cloud Prompt Driver.",
@@ -359,17 +298,8 @@
       }
     },
     {
-      "class_name": "OllamaPrompt",
-      "file_path": "griptape_nodes_library/drivers/prompt/ollama_prompt_driver.py",
-      "metadata": {
-        "category": "drivers/prompt",
-        "description": "Node for Ollama Prompt Driver.",
-        "display_name": "Ollama Prompt"
-      }
-    },
-    {
       "class_name": "OpenAiPrompt",
-      "file_path": "griptape_nodes_library/drivers/prompt/openai_prompt_driver.py",
+      "file_path": "griptape_nodes_library/drivers/prompt/openai_prompt.py",
       "metadata": {
         "category": "drivers/prompt",
         "description": "Node for OpenAi Prompt Driver.",

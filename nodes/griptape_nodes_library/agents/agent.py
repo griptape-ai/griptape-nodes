@@ -38,7 +38,7 @@ MODEL_CHOICES = [
 DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
-class ExAgent(ControlNode):
+class Agent(ControlNode):
     """A Griptape Node that provides an interface to interact with a Griptape Agent.
 
     This node facilitates communication with a Griptape Agent, allowing for

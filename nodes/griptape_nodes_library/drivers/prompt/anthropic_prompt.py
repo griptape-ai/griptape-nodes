@@ -9,7 +9,7 @@ node configuration, and instantiates the `GtAnthropicPromptDriver`.
 
 from griptape.drivers.prompt.anthropic import AnthropicPromptDriver as GtAnthropicPromptDriver
 
-from griptape_nodes_library.misc.base_prompt import BasePrompt
+from griptape_nodes_library.drivers.prompt.base_prompt import BasePrompt
 
 # --- Constants ---
 
@@ -25,7 +25,7 @@ MODEL_CHOICES = [
 DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
-class ExAnthropicPrompt(BasePrompt):
+class AnthropicPrompt(BasePrompt):
     """Node for configuring and providing an Anthropic Prompt Driver.
 
     Inherits from `BasePrompt` to leverage common LLM parameters. This node

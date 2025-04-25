@@ -9,7 +9,7 @@ node configuration, and instantiates the `GtCoherePromptDriver`.
 
 from griptape.drivers.prompt.cohere import CoherePromptDriver as GtCoherePromptDriver
 
-from griptape_nodes_library.misc.base_prompt import BasePrompt
+from griptape_nodes_library.drivers.prompt.base_prompt import BasePrompt
 
 # --- Constants ---
 
@@ -20,7 +20,7 @@ MODEL_CHOICES = ["command-r-plus"]
 DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
-class ExCoherePrompt(BasePrompt):
+class CoherePrompt(BasePrompt):
     """Node for configuring and providing a Cohere Prompt Driver.
 
     Inherits from `BasePrompt` to leverage common LLM parameters. This node
