@@ -12,7 +12,7 @@ from typing import Any
 
 from griptape.drivers.prompt.dummy import DummyPromptDriver
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.drivers.base_driver import BaseDriver
 
@@ -60,17 +60,18 @@ class BasePrompt(BaseDriver):
         # These parameters represent settings frequently used by LLM prompt drivers.
         # Subclasses will typically use these values when instantiating their specific driver.
 
-        # Parameter
-        self.add_parameter(
-            Parameter(
-                name="missing_api_key",
-                type="str",
-                default_value="Missing an api key",
-                tooltip="",
-                allowed_modes={ParameterMode.PROPERTY},
-                ui_options={"is_full_width": True},
-            )
-        )
+        # # Parameter
+        # # Working on an api validation parameter. Perhaps create a trait for this?
+        # self.add_parameter(
+        #     Parameter(
+        #         name="missing_api_key",
+        #         type="str",
+        #         default_value="This node requires an API key to function.",
+        #         tooltip="",
+        #         allowed_modes={},
+        #         ui_options={"is_full_width": True, "className": "bg-red-500"},
+        #     )
+        # )
         # Parameter for model selection. Subclasses should populate the 'choices'.
         self.add_parameter(
             Parameter(
