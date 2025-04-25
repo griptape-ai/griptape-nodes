@@ -66,7 +66,7 @@ class ResultPayloadSuccessAlteredWorkflow(ResultPayloadSuccess, ABC):
 
 
 class ResultPayloadSuccessUnalteredWorkflow(ResultPayloadSuccess, ABC):
-    """Specialization of ResultPayloadSuccess that gurantees that NO workflow changes occurred."""
+    """Specialization of ResultPayloadSuccess that guarantees that NO workflow changes occurred."""
 
     altered_workflow_state: bool = False
 
