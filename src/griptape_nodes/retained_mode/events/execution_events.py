@@ -6,6 +6,8 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    WorkflowAlteredMixin,
+    WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -21,7 +23,7 @@ class ResolveNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ResolveNodeResultSuccess(ResultPayloadSuccess):
+class ResolveNodeResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     pass
 
 
@@ -41,7 +43,7 @@ class StartFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class StartFlowResultSuccess(ResultPayloadSuccess):
+class StartFlowResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     pass
 
 
@@ -59,7 +61,7 @@ class CancelFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CancelFlowResultSuccess(ResultPayloadSuccess):
+class CancelFlowResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     pass
 
 
@@ -83,7 +85,7 @@ class UnresolveFlowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class UnresolveFlowResultSuccess(ResultPayloadSuccess):
+class UnresolveFlowResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     pass
 
 
@@ -99,7 +101,7 @@ class SingleExecutionStepRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SingleExecutionStepResultSuccess(ResultPayloadSuccess):
+class SingleExecutionStepResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     pass
 
 
@@ -117,7 +119,7 @@ class SingleNodeStepRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SingleNodeStepResultSuccess(ResolveNodeResultSuccess):
+class SingleNodeStepResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     pass
 
 
@@ -136,7 +138,7 @@ class ContinueExecutionStepRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ContinueExecutionStepResultSuccess(ResultPayloadSuccess):
+class ContinueExecutionStepResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     pass
 
 
@@ -154,14 +156,14 @@ class GetFlowStateRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetFlowStateResultSuccess(ResultPayloadSuccess):
+class GetFlowStateResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     control_node: str | None
     resolving_node: str | None
 
 
 @dataclass
 @PayloadRegistry.register
-class GetFlowStateResultFailure(ResultPayloadFailure):
+class GetFlowStateResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass
 
 
@@ -173,13 +175,13 @@ class GetIsFlowRunningRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetIsFlowRunningResultSuccess(ResultPayloadSuccess):
+class GetIsFlowRunningResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     is_running: bool
 
 
 @dataclass
 @PayloadRegistry.register
-class GetIsFlowRunningResultFailure(ResultPayloadFailure):
+class GetIsFlowRunningResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass
 
 

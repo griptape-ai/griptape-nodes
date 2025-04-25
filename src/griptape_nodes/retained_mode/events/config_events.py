@@ -5,6 +5,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -17,13 +18,13 @@ class GetConfigValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigValueResultSuccess(ResultPayloadSuccess):
+class GetConfigValueResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     value: Any
 
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigValueResultFailure(ResultPayloadFailure):
+class GetConfigValueResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass
 
 
@@ -54,13 +55,13 @@ class GetConfigCategoryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigCategoryResultSuccess(ResultPayloadSuccess):
+class GetConfigCategoryResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     contents: dict[str, Any]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigCategoryResultFailure(ResultPayloadFailure):
+class GetConfigCategoryResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass
 
 
