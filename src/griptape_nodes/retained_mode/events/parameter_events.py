@@ -10,6 +10,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    ResultPayloadSuccessAlteredWorkflow,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -49,7 +50,7 @@ class AddParameterToNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AddParameterToNodeResultSuccess(ResultPayloadSuccess):
+class AddParameterToNodeResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     parameter_name: str
     type: str
     node_name: str
@@ -71,7 +72,7 @@ class RemoveParameterFromNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RemoveParameterFromNodeResultSuccess(ResultPayloadSuccess):
+class RemoveParameterFromNodeResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 
@@ -97,7 +98,7 @@ class SetParameterValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SetParameterValueResultSuccess(ResultPayloadSuccess):
+class SetParameterValueResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     finalized_value: Any
     data_type: str
 
@@ -202,7 +203,7 @@ class AlterParameterDetailsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AlterParameterDetailsResultSuccess(ResultPayloadSuccess):
+class AlterParameterDetailsResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 
@@ -237,7 +238,7 @@ class GetParameterValueResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class OnParameterValueChanged(ResultPayloadSuccess):
+class OnParameterValueChanged(ResultPayloadSuccessAlteredWorkflow):
     node_name: str
     parameter_name: str
     data_type: str

@@ -4,6 +4,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    ResultPayloadSuccessAlteredWorkflow,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -72,7 +73,7 @@ class RegisterLibraryFromFileRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RegisterLibraryFromFileResultSuccess(ResultPayloadSuccess):
+class RegisterLibraryFromFileResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     library_name: str
 
 
@@ -166,7 +167,7 @@ class UnloadLibraryFromRegistryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class UnloadLibraryFromRegistryResultSuccess(ResultPayloadSuccess):
+class UnloadLibraryFromRegistryResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 

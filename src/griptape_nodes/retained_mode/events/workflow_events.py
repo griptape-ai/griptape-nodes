@@ -5,6 +5,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    ResultPayloadSuccessAlteredWorkflow,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -17,7 +18,7 @@ class RunWorkflowFromScratchRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RunWorkflowFromScratchResultSuccess(ResultPayloadSuccess):
+class RunWorkflowFromScratchResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 
@@ -35,7 +36,7 @@ class RunWorkflowWithCurrentStateRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RunWorkflowWithCurrentStateResultSuccess(ResultPayloadSuccess):
+class RunWorkflowWithCurrentStateResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 
@@ -54,7 +55,7 @@ class RunWorkflowFromRegistryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RunWorkflowFromRegistryResultSuccess(ResultPayloadSuccess):
+class RunWorkflowFromRegistryResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 
@@ -109,7 +110,7 @@ class DeleteWorkflowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteWorkflowResultSuccess(ResultPayloadSuccess):
+class DeleteWorkflowResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 
@@ -128,7 +129,7 @@ class RenameWorkflowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RenameWorkflowResultSuccess(ResultPayloadSuccess):
+class RenameWorkflowResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 

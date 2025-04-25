@@ -6,6 +6,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    ResultPayloadSuccessAlteredWorkflow,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -21,7 +22,7 @@ class ResolveNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ResolveNodeResultSuccess(ResultPayloadSuccess):
+class ResolveNodeResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 
@@ -41,7 +42,7 @@ class StartFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class StartFlowResultSuccess(ResultPayloadSuccess):
+class StartFlowResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 
@@ -59,7 +60,7 @@ class CancelFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CancelFlowResultSuccess(ResultPayloadSuccess):
+class CancelFlowResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 
@@ -83,7 +84,7 @@ class UnresolveFlowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class UnresolveFlowResultSuccess(ResultPayloadSuccess):
+class UnresolveFlowResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 
@@ -99,7 +100,7 @@ class SingleExecutionStepRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SingleExecutionStepResultSuccess(ResultPayloadSuccess):
+class SingleExecutionStepResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 
@@ -117,7 +118,7 @@ class SingleNodeStepRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SingleNodeStepResultSuccess(ResolveNodeResultSuccess):
+class SingleNodeStepResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 
@@ -136,7 +137,7 @@ class ContinueExecutionStepRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ContinueExecutionStepResultSuccess(ResultPayloadSuccess):
+class ContinueExecutionStepResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 

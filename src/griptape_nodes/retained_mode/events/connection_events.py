@@ -4,6 +4,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    ResultPayloadSuccessAlteredWorkflow,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -22,7 +23,7 @@ class CreateConnectionRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CreateConnectionResultSuccess(ResultPayloadSuccess):
+class CreateConnectionResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 
@@ -44,7 +45,7 @@ class DeleteConnectionRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteConnectionResultSuccess(ResultPayloadSuccess):
+class DeleteConnectionResultSuccess(ResultPayloadSuccessAlteredWorkflow):
     pass
 
 
