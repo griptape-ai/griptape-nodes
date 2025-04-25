@@ -3252,6 +3252,9 @@ class WorkflowManager:
 
     def on_register_workflow_request(self, request: RegisterWorkflowRequest) -> ResultPayload:
         try:
+            if isinstance(request.metadata, dict):
+                request.metadata = WorkflowMetadata(**request.metadata)
+
             workflow = WorkflowRegistry.generate_new_workflow(metadata=request.metadata, file_path=request.file_name)
         except Exception as e:
             details = f"Failed to register workflow with name '{request.metadata.name}'. Error: {e}"
