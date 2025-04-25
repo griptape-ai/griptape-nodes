@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from re import Pattern
-from typing import Any, ClassVar, TextIO, TypeVar, cast
+from typing import Any, ClassVar, NamedTuple, TextIO, TypeVar, cast
 
 import tomlkit
 from dotenv import load_dotenv
@@ -326,7 +326,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
         griptape_nodes_instance = GriptapeNodes.get_instance()
         event_mgr = griptape_nodes_instance._event_manager
         obj_depth_mgr = griptape_nodes_instance._operation_depth_manager
-        return event_mgr.handle_request(request=request, operation_depth_mgr=obj_depth_mgr)
+        workflow_mgr = griptape_nodes_instance._workflow_manager
+        return event_mgr.handle_request(request=request, operation_depth_mgr=obj_depth_mgr, workflow_mgr=workflow_mgr)
 
     @classmethod
     def broadcast_app_event(cls, app_event: AppPayload) -> None:
@@ -3022,8 +3023,26 @@ class WorkflowManager:
 
     _workflow_file_path_to_info: dict[str, WorkflowInfo]
 
+    # Track how many contexts we have that intend to squelch (set to False) altered_workflow_state event values.
+    class WorkflowSquelchContext:
+        def __init__(self, manager: WorkflowManager):
+            self.manager = manager
+
+        def __enter__(self) -> None:
+            self.manager._squelch_workflow_altered_count += 1
+
+        def __exit__(self, exc_type, exc_value, traceback) -> None:
+            self.manager._squelch_workflow_altered_count -= 1
+
+    _squelch_workflow_altered_count: int = 0
+
+    class WorkflowExecutionResult(NamedTuple):
+        execution_successful: bool
+        execution_details: str
+
     def __init__(self, event_manager: EventManager) -> None:
         self._workflow_file_path_to_info = {}
+        self._squelch_workflow_altered_count = 0
 
         event_manager.assign_manager_to_request_type(
             RunWorkflowFromScratchRequest, self.on_run_workflow_from_scratch_request
@@ -3143,7 +3162,10 @@ class WorkflowManager:
     def get_workflow_info_for_attempted_load(self, workflow_file_path: str) -> WorkflowInfo:
         return self._workflow_file_path_to_info[workflow_file_path]
 
-    def run_workflow(self, relative_file_path: str) -> tuple[bool, str]:
+    def should_squelch_workflow_altered(self) -> bool:
+        return self._squelch_workflow_altered_count > 0
+
+    def run_workflow(self, relative_file_path: str) -> WorkflowExecutionResult:
         relative_file_path_obj = Path(relative_file_path)
         if relative_file_path_obj.is_absolute():
             complete_file_path = relative_file_path_obj
@@ -3159,37 +3181,42 @@ class WorkflowManager:
                 workflow_content = file.read()
             exec(workflow_content)  # noqa: S102
         except Exception as e:
-            return (
-                False,
-                f"Failed to run workflow on path '{complete_file_path}'. Exception: {e}",
+            return WorkflowManager.WorkflowExecutionResult(
+                execution_successful=False,
+                execution_details=f"Failed to run workflow on path '{complete_file_path}'. Exception: {e}",
             )
-        return True, f"Succeeded in running workflow on path '{complete_file_path}'."
+        return WorkflowManager.WorkflowExecutionResult(
+            execution_successful=True,
+            execution_details=f"Succeeded in running workflow on path '{complete_file_path}'.",
+        )
 
     def on_run_workflow_from_scratch_request(self, request: RunWorkflowFromScratchRequest) -> ResultPayload:
-        # Check if file path exists
-        relative_file_path = request.file_path
-        complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
-        if not Path(complete_file_path).is_file():
-            details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
-            logger.error(details)
+        # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it into a blank slate.
+        with WorkflowManager.WorkflowSquelchContext(self):
+            # Check if file path exists
+            relative_file_path = request.file_path
+            complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
+            if not Path(complete_file_path).is_file():
+                details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
+                logger.error(details)
+                return RunWorkflowFromScratchResultFailure()
+
+            # Start with a clean slate.
+            clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
+            clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+            if not clear_all_result.succeeded():
+                details = f"Failed to clear the existing object state when trying to run '{complete_file_path}'."
+                logger.error(details)
+                return RunWorkflowFromScratchResultFailure()
+
+            # Run the file, goddamn it
+            execution_result = self.run_workflow(relative_file_path=relative_file_path)
+            if execution_result.execution_successful:
+                logger.debug(execution_result.execution_details)
+                return RunWorkflowFromScratchResultSuccess()
+
+            logger.error(execution_result.execution_details)
             return RunWorkflowFromScratchResultFailure()
-
-        # Start with a clean slate.
-        clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-        clear_all_result = GriptapeNodes.handle_request(clear_all_request)
-        if not clear_all_result.succeeded():
-            details = f"Failed to clear the existing object state when trying to run '{complete_file_path}'."
-            logger.error(details)
-            return RunWorkflowFromScratchResultFailure()
-
-        # Run the file, goddamn it
-        success, details = self.run_workflow(relative_file_path=relative_file_path)
-        if success:
-            logger.debug(details)
-            return RunWorkflowFromScratchResultSuccess()
-
-        logger.error(details)
-        return RunWorkflowFromScratchResultFailure()
 
     def on_run_workflow_with_current_state_request(self, request: RunWorkflowWithCurrentStateRequest) -> ResultPayload:
         relative_file_path = request.file_path
@@ -3198,12 +3225,12 @@ class WorkflowManager:
             details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
             logger.error(details)
             return RunWorkflowWithCurrentStateResultFailure()
-        success, details = self.run_workflow(relative_file_path=relative_file_path)
+        execution_result = self.run_workflow(relative_file_path=relative_file_path)
 
-        if success:
-            logger.debug(details)
+        if execution_result.execution_successful:
+            logger.debug(execution_result.execution_details)
             return RunWorkflowWithCurrentStateResultSuccess()
-        logger.error(details)
+        logger.error(execution_result.execution_details)
         return RunWorkflowWithCurrentStateResultFailure()
 
     def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
@@ -3217,42 +3244,42 @@ class WorkflowManager:
         # get file_path from workflow
         relative_file_path = workflow.file_path
 
-        if request.run_with_clean_slate:
-            # Start with a clean slate.
-            clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-            clear_all_result = GriptapeNodes.handle_request(clear_all_request)
-            if not clear_all_result.succeeded():
-                details = f"Failed to clear the existing object state when preparing to run workflow '{request.workflow_name}'."
-                logger.error(details)
-                return RunWorkflowFromRegistryResultFailure()
-
-            # Unload all libraries now.
-            all_libraries_request = ListRegisteredLibrariesRequest()
-            all_libraries_result = GriptapeNodes.handle_request(all_libraries_request)
-            if not isinstance(all_libraries_result, ListRegisteredLibrariesResultSuccess):
-                details = (
-                    f"When preparing to run a workflow '{request.workflow_name}', failed to get registered libraries."
-                )
-                logger.error(details)
-                return RunWorkflowFromRegistryResultFailure()
-
-            for library_name in all_libraries_result.libraries:
-                unload_library_request = UnloadLibraryFromRegistryRequest(library_name=library_name)
-                unload_library_result = GriptapeNodes.handle_request(unload_library_request)
-                if not unload_library_result.succeeded():
-                    details = f"When preparing to run a workflow '{request.workflow_name}', failed to unload library '{library_name}'."
+        # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it.
+        with WorkflowManager.WorkflowSquelchContext(self):
+            if request.run_with_clean_slate:
+                # Start with a clean slate.
+                clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
+                clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+                if not clear_all_result.succeeded():
+                    details = f"Failed to clear the existing object state when preparing to run workflow '{request.workflow_name}'."
                     logger.error(details)
                     return RunWorkflowFromRegistryResultFailure()
 
-        # run file
-        success, details = self.run_workflow(relative_file_path=relative_file_path)
+                # Unload all libraries now.
+                all_libraries_request = ListRegisteredLibrariesRequest()
+                all_libraries_result = GriptapeNodes.handle_request(all_libraries_request)
+                if not isinstance(all_libraries_result, ListRegisteredLibrariesResultSuccess):
+                    details = f"When preparing to run a workflow '{request.workflow_name}', failed to get registered libraries."
+                    logger.error(details)
+                    return RunWorkflowFromRegistryResultFailure()
 
-        if success:
-            logger.debug(details)
-            return RunWorkflowFromRegistryResultSuccess()
+                for library_name in all_libraries_result.libraries:
+                    unload_library_request = UnloadLibraryFromRegistryRequest(library_name=library_name)
+                    unload_library_result = GriptapeNodes.handle_request(unload_library_request)
+                    if not unload_library_result.succeeded():
+                        details = f"When preparing to run a workflow '{request.workflow_name}', failed to unload library '{library_name}'."
+                        logger.error(details)
+                        return RunWorkflowFromRegistryResultFailure()
 
-        logger.error(details)
-        return RunWorkflowFromRegistryResultFailure()
+            # run file
+            execution_result = self.run_workflow(relative_file_path=relative_file_path)
+
+            if execution_result.execution_successful:
+                logger.debug(execution_result.execution_details)
+                return RunWorkflowFromRegistryResultSuccess()
+
+            logger.error(execution_result.execution_details)
+            return RunWorkflowFromRegistryResultFailure()
 
     def on_register_workflow_request(self, request: RegisterWorkflowRequest) -> ResultPayload:
         try:
