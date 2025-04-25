@@ -46,6 +46,12 @@ class ExCoherePrompt(BasePrompt):
         # Update the 'model' parameter for Anthropic specifics.
         self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
 
+        # Replace `min_p` with `top_p` for Cohere.
+        self._replace_param_by_name(
+            param_name="min_p", new_param_name="top_p", tooltip=None, default_value=0.9, ui_options=None
+        )
+        self._replace_param_by_name(param_name="top_k", new_param_name="k")
+
         # Remove the 'seed' parameter as it's not directly used by Cohere.
         self.remove_parameter_by_name("seed")
         self.remove_parameter_by_name("response_format")
@@ -83,18 +89,8 @@ class ExCoherePrompt(BasePrompt):
         # Handle parameters that go into 'extra_params' for Griptape Cloud.
         extra_params = {}
 
-        # If 'min_p' was provided via the node parameter, convert it to 'p'
-        # and set it in extra_params.
-        if "min_p" in common_args:
-            min_p_value = common_args["min_p"]
-            extra_params["p"] = 1.0 - float(min_p_value)
-            del common_args["min_p"]
-
-        # If 'top_k' was provided via the node parameter, convert it to 'k'
-        # and set it in extra_params.
-        if "top_k" in common_args:
-            extra_params["k"] = common_args["top_k"]
-            del common_args["top_k"]
+        extra_params["p"] = self.get_parameter_value("p")
+        extra_params["k"] = self.get_parameter_value("k")
 
         if extra_params:
             specific_args["extra_params"] = extra_params
