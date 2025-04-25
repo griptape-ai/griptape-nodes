@@ -97,4 +97,4 @@ convention = "google"
 venvPath = "."
 venv = ".venv"
 include = ["."]
-pythonVersion = "3.13"
+pythonVersion = "3.12"
