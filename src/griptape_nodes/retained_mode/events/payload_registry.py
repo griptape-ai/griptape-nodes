@@ -1,6 +1,7 @@
-from typing import ClassVar, TypeVar
+from typing import ClassVar
 
 from griptape.mixins.singleton_mixin import SingletonMixin
+from typing_extensions import TypeVar
 
 from griptape_nodes.retained_mode.events.base_events import Payload
 

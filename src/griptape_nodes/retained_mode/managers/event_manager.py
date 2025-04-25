@@ -1,10 +1,10 @@
 from collections import defaultdict
 from collections.abc import Callable
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 from griptape.events import EventBus
+from typing_extensions import TypeVar
 
-from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     EventResultFailure,
@@ -80,8 +80,6 @@ class EventManager:
                 if workflow_mgr.should_squelch_workflow_altered():
                     result_payload.altered_workflow_state = False
 
-                if hasattr(result_payload, "value"):
-                    result_payload.value = TypeValidator.safe_serialize(result_payload.value)
                 retained_mode_str = None
                 if depth_manager.is_top_level():
                     retained_mode_str = depth_manager.request_retained_mode_translation(request)
