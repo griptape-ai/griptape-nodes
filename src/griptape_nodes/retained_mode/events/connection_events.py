@@ -3,9 +3,9 @@ from dataclasses import dataclass
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
-    ResultPayloadFailureUnalteredWorkflow,
-    ResultPayloadSuccessAlteredWorkflow,
-    ResultPayloadSuccessUnalteredWorkflow,
+    ResultPayloadSuccess,
+    WorkflowAlteredMixin,
+    WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -24,7 +24,7 @@ class CreateConnectionRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CreateConnectionResultSuccess(ResultPayloadSuccessAlteredWorkflow):
+class CreateConnectionResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     pass
 
 
@@ -46,7 +46,7 @@ class DeleteConnectionRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteConnectionResultSuccess(ResultPayloadSuccessAlteredWorkflow):
+class DeleteConnectionResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     pass
 
 
@@ -79,12 +79,12 @@ class OutgoingConnection:
 
 @dataclass
 @PayloadRegistry.register
-class ListConnectionsForNodeResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
+class ListConnectionsForNodeResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     incoming_connections: list[IncomingConnection]
     outgoing_connections: list[OutgoingConnection]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListConnectionsForNodeResultFailure(ResultPayloadFailureUnalteredWorkflow):
+class ListConnectionsForNodeResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass

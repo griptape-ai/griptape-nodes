@@ -9,9 +9,9 @@ from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
-    ResultPayloadFailureUnalteredWorkflow,
-    ResultPayloadSuccessAlteredWorkflow,
-    ResultPayloadSuccessUnalteredWorkflow,
+    ResultPayloadSuccess,
+    WorkflowAlteredMixin,
+    WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -51,7 +51,7 @@ class AddParameterToNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AddParameterToNodeResultSuccess(ResultPayloadSuccessAlteredWorkflow):
+class AddParameterToNodeResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     parameter_name: str
     type: str
     node_name: str
@@ -73,7 +73,7 @@ class RemoveParameterFromNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RemoveParameterFromNodeResultSuccess(ResultPayloadSuccessAlteredWorkflow):
+class RemoveParameterFromNodeResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     pass
 
 
@@ -99,7 +99,7 @@ class SetParameterValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SetParameterValueResultSuccess(ResultPayloadSuccessAlteredWorkflow):
+class SetParameterValueResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     finalized_value: Any
     data_type: str
 
@@ -120,7 +120,7 @@ class GetParameterDetailsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterDetailsResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
+class GetParameterDetailsResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     element_id: str
     type: str
     input_types: list[str]
@@ -139,7 +139,7 @@ class GetParameterDetailsResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterDetailsResultFailure(ResultPayloadFailureUnalteredWorkflow):
+class GetParameterDetailsResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass
 
 
@@ -204,7 +204,7 @@ class AlterParameterDetailsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AlterParameterDetailsResultSuccess(ResultPayloadSuccessAlteredWorkflow):
+class AlterParameterDetailsResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     pass
 
 
@@ -224,7 +224,7 @@ class GetParameterValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterValueResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
+class GetParameterValueResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     input_types: list[str]
     type: str
     output_type: str
@@ -233,13 +233,13 @@ class GetParameterValueResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterValueResultFailure(ResultPayloadFailureUnalteredWorkflow):
+class GetParameterValueResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class OnParameterValueChanged(ResultPayloadSuccessAlteredWorkflow):
+class OnParameterValueChanged(ResultPayloadSuccess, WorkflowAlteredMixin):
     node_name: str
     parameter_name: str
     data_type: str
@@ -262,13 +262,13 @@ class ParameterAndMode(NamedTuple):
 
 @dataclass
 @PayloadRegistry.register
-class GetCompatibleParametersResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
+class GetCompatibleParametersResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     valid_parameters_by_node: dict[str, list[ParameterAndMode]]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetCompatibleParametersResultFailure(ResultPayloadFailureUnalteredWorkflow):
+class GetCompatibleParametersResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass
 
 
@@ -282,11 +282,11 @@ class GetNodeElementDetailsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeElementDetailsResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
+class GetNodeElementDetailsResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     element_details: dict[str, Any]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeElementDetailsResultFailure(ResultPayloadFailureUnalteredWorkflow):
+class GetNodeElementDetailsResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass

@@ -4,9 +4,8 @@ from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     RequestPayload,
     ResultPayloadFailure,
-    ResultPayloadFailureUnalteredWorkflow,
     ResultPayloadSuccess,
-    ResultPayloadSuccessUnalteredWorkflow,
+    WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -37,13 +36,13 @@ class AppGetSessionRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AppGetSessionResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
+class AppGetSessionResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     session_id: str | None
 
 
 @dataclass
 @PayloadRegistry.register
-class AppGetSessionResultFailure(ResultPayloadFailureUnalteredWorkflow):
+class AppGetSessionResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass
 
 
@@ -69,5 +68,5 @@ class GetEngineVersionResultSuccess(ResultPayloadSuccess):
 
 @dataclass
 @PayloadRegistry.register
-class GetEngineVersionResultFailure(ResultPayloadSuccessUnalteredWorkflow):
+class GetEngineVersionResultFailure(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     pass

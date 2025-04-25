@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
-    ResultPayloadSuccessAlteredWorkflow,
+    ResultPayloadSuccess,
+    WorkflowAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -18,7 +19,7 @@ class RenameObjectRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RenameObjectResultSuccess(ResultPayloadSuccessAlteredWorkflow):
+class RenameObjectResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     final_name: str  # May not be the same as what was requested, if that bool was set
 
 
@@ -37,7 +38,7 @@ class ClearAllObjectStateRequest(RequestPayload):
 
 
 @PayloadRegistry.register
-class ClearAllObjectStateResultSuccess(ResultPayloadSuccessAlteredWorkflow):
+class ClearAllObjectStateResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     pass
 
 

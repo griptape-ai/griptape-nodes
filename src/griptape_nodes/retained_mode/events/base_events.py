@@ -46,6 +46,18 @@ class ResultPayload(Payload, ABC):
         return not self.succeeded()
 
 
+class WorkflowAlteredMixin:
+    """Mixin for a ResultPayload that guarantees that a workflow was altered."""
+
+    altered_workflow_state: bool = True
+
+
+class WorkflowNotAlteredMixin:
+    """Mixin for a ResultPayload that guarantees that a workflow was NOT altered."""
+
+    altered_workflow_state: bool = False
+
+
 # Success result payload abstract base class
 class ResultPayloadSuccess(ResultPayload, ABC):
     """Abstract base class for success result payloads."""
@@ -59,18 +71,6 @@ class ResultPayloadSuccess(ResultPayload, ABC):
         return True
 
 
-class ResultPayloadSuccessAlteredWorkflow(ResultPayloadSuccess, ABC):
-    """Specialization of ResultPayloadSuccess that guarantees that a workflow was altered."""
-
-    altered_workflow_state: bool = True
-
-
-class ResultPayloadSuccessUnalteredWorkflow(ResultPayloadSuccess, ABC):
-    """Specialization of ResultPayloadSuccess that guarantees that NO workflow changes occurred."""
-
-    altered_workflow_state: bool = False
-
-
 # Failure result payload abstract base class
 class ResultPayloadFailure(ResultPayload, ABC):
     """Abstract base class for failure result payloads."""
@@ -82,18 +82,6 @@ class ResultPayloadFailure(ResultPayload, ABC):
             bool: Always False
         """
         return False
-
-
-class ResultPayloadFailureAlteredWorkflow(ResultPayloadFailure, ABC):
-    """Specialization of ResultPayloadFailure that that guarantees that a workflow was altered."""
-
-    altered_workflow_state: bool = True
-
-
-class ResultPayloadFailureUnalteredWorkflow(ResultPayloadFailure, ABC):
-    """Specialization of ResultPayloadFailure that guarantees that NO workflow changes occurred."""
-
-    altered_workflow_state: bool = False
 
 
 class ExecutionPayload(Payload):

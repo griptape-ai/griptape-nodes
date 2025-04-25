@@ -3,8 +3,9 @@ from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultPayloadFailureUnalteredWorkflow,
-    ResultPayloadSuccessUnalteredWorkflow,
+    ResultPayloadFailure,
+    ResultPayloadSuccess,
+    WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -19,7 +20,7 @@ class ValidateFlowDependenciesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ValidateFlowDependenciesResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
+class ValidateFlowDependenciesResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     validation_succeeded: bool
     exceptions: list[Exception]
 
@@ -27,7 +28,7 @@ class ValidateFlowDependenciesResultSuccess(ResultPayloadSuccessUnalteredWorkflo
 # if it doesn't have a dependency we want
 @dataclass
 @PayloadRegistry.register
-class ValidateFlowDependenciesResultFailure(ResultPayloadFailureUnalteredWorkflow):
+class ValidateFlowDependenciesResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass
 
 
@@ -40,7 +41,7 @@ class ValidateNodeDependenciesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ValidateNodeDependenciesResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
+class ValidateNodeDependenciesResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     validation_succeeded: bool
     exceptions: list[Exception]
 
@@ -48,5 +49,5 @@ class ValidateNodeDependenciesResultSuccess(ResultPayloadSuccessUnalteredWorkflo
 # if it doesn't have a dependency we want
 @dataclass
 @PayloadRegistry.register
-class ValidateNodeDependenciesResultFailure(ResultPayloadFailureUnalteredWorkflow):
+class ValidateNodeDependenciesResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass
