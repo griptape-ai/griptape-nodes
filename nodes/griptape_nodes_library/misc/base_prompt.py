@@ -174,6 +174,27 @@ class BasePrompt(BaseDriver):
             )
         )
 
+    def _update_model_choices(self, param: str | Parameter, choices: list[str]) -> None:
+        """Updates the model selection parameter with a new set of choices.
+
+        This method is intended to be called by subclasses to set the available
+        models for the driver. It modifies the 'model' parameter's `Options` trait
+        to reflect the provided choices.
+
+        Args:
+            param: The name of the parameter representing the model selection or the Parameter object itself.
+            choices: A list of model names to be set as choices.
+        """
+        parameter = None
+        if isinstance(param, str):
+            parameter = self.get_parameter_by_name(param)
+        else:
+            parameter = param
+        if parameter is not None:
+            trait = parameter.find_element_by_id("Options")
+            if trait and isinstance(trait, Options):
+                trait.choices = choices
+
     def _get_common_driver_args(self, params: dict[str, Any]) -> dict[str, Any]:
         """Constructs a dictionary of arguments common to most Griptape prompt drivers.
 

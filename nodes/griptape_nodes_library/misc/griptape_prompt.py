@@ -9,7 +9,6 @@ node configuration, and instantiates the `GriptapeCloudPromptDriver`.
 
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver as GtGriptapeCloudPromptDriver
 
-from griptape_nodes.traits.options import Options
 from griptape_nodes_library.misc.base_prompt import BasePrompt
 
 # --- Constants ---
@@ -51,12 +50,8 @@ class ExGriptapeCloudPrompt(BasePrompt):
 
         # Update the 'model' parameter for Griptape Cloud specifics.
         model_parameter = self.get_parameter_by_name("model")
-
-        # Find the options trait
         if model_parameter:
-            trait = model_parameter.find_element_by_id("Options")
-            if trait and isinstance(trait, Options):
-                trait.choices = MODELS
+            self._update_model_choices(model_parameter, MODELS)
             model_parameter.default_value = DEFAULT_MODEL
 
         # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.

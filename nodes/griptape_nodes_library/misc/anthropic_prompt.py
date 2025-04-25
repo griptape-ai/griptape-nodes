@@ -9,7 +9,6 @@ node configuration, and instantiates the `GtAnthropicPromptDriver`.
 
 from griptape.drivers.prompt.anthropic import AnthropicPromptDriver as GtAnthropicPromptDriver
 
-from griptape_nodes.traits.options import Options
 from griptape_nodes_library.misc.base_prompt import BasePrompt
 
 # --- Constants ---
@@ -44,14 +43,11 @@ class ExAnthropicPrompt(BasePrompt):
         super().__init__(**kwargs)
 
         # --- Customize Inherited Parameters ---
-        model_parameter = self.get_parameter_by_name("model")
 
-        # Find the options trait
+        # Update the 'model' parameter for Anthropic specifics.
+        model_parameter = self.get_parameter_by_name("model")
         if model_parameter:
-            trait = model_parameter.find_element_by_id("Options")
-            if trait and isinstance(trait, Options):
-                # Update the choices in the trait
-                trait.choices = MODELS
+            self._update_model_choices(model_parameter, MODELS)
             model_parameter.default_value = DEFAULT_MODEL
 
         # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.
