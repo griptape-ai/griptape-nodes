@@ -57,6 +57,9 @@ class ExGriptapeCloudPrompt(BasePrompt):
         # Remove `top_k` parameter as it's not used by Griptape Cloud.
         self.remove_parameter_by_name("top_k")
 
+        # Replace `min_p` with `top_p` for Griptape Cloud.
+        self._replace_param_by_name(param_name="min_p", new_param_name="top_p", default_value=0.9)
+
     def process(self) -> None:
         """Processes the node configuration to create a GriptapeCloudPromptDriver.
 
@@ -89,14 +92,7 @@ class ExGriptapeCloudPrompt(BasePrompt):
         # Handle parameters that go into 'extra_params' for Griptape Cloud.
         extra_params = {}
 
-        # Convert 'min_p' (from BasePrompt) to 'top_p' if provided.
-        min_p_value = self.get_parameter_value("min_p")  # Get min_p from node params
-        if min_p_value is not None:
-            # Griptape Cloud uses 'top_p' in extra_params.
-            extra_params["top_p"] = 1.0 - float(min_p_value)
-            # We got min_p via the common helper if it was set, but Griptape Cloud doesn't
-            # directly use min_p, so remove it from common_args if it exists.
-            common_args.pop("min_p", None)
+        extra_params["top_p"] = self.get_parameter_value("top_p")
 
         # Assign extra_params if not empty
         if extra_params:
