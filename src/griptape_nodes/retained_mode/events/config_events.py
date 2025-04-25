@@ -4,7 +4,9 @@ from typing import Any
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
+    ResultPayloadFailureUnalteredWorkflow,
     ResultPayloadSuccess,
+    ResultPayloadSuccessUnalteredWorkflow,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -17,13 +19,13 @@ class GetConfigValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigValueResultSuccess(ResultPayloadSuccess):
+class GetConfigValueResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     value: Any
 
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigValueResultFailure(ResultPayloadFailure):
+class GetConfigValueResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -54,13 +56,13 @@ class GetConfigCategoryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigCategoryResultSuccess(ResultPayloadSuccess):
+class GetConfigCategoryResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     contents: dict[str, Any]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigCategoryResultFailure(ResultPayloadFailure):
+class GetConfigCategoryResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 

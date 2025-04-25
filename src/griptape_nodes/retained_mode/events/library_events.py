@@ -3,8 +3,9 @@ from dataclasses import dataclass
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
-    ResultPayloadSuccess,
+    ResultPayloadFailureUnalteredWorkflow,
     ResultPayloadSuccessAlteredWorkflow,
+    ResultPayloadSuccessUnalteredWorkflow,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -17,13 +18,13 @@ class ListRegisteredLibrariesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListRegisteredLibrariesResultSuccess(ResultPayloadSuccess):
+class ListRegisteredLibrariesResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     libraries: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListRegisteredLibrariesResultFailure(ResultPayloadFailure):
+class ListRegisteredLibrariesResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -35,13 +36,13 @@ class ListNodeTypesInLibraryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListNodeTypesInLibraryResultSuccess(ResultPayloadSuccess):
+class ListNodeTypesInLibraryResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     node_types: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListNodeTypesInLibraryResultFailure(ResultPayloadFailure):
+class ListNodeTypesInLibraryResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -54,13 +55,13 @@ class GetNodeMetadataFromLibraryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeMetadataFromLibraryResultSuccess(ResultPayloadSuccess):
+class GetNodeMetadataFromLibraryResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     metadata: dict
 
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeMetadataFromLibraryResultFailure(ResultPayloadFailure):
+class GetNodeMetadataFromLibraryResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -91,13 +92,13 @@ class ListCategoriesInLibraryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListCategoriesInLibraryResultSuccess(ResultPayloadSuccess):
+class ListCategoriesInLibraryResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     categories: list[dict]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListCategoriesInLibraryResultFailure(ResultPayloadFailure):
+class ListCategoriesInLibraryResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -109,13 +110,13 @@ class GetLibraryMetadataRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetLibraryMetadataResultSuccess(ResultPayloadSuccess):
+class GetLibraryMetadataResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     metadata: dict
 
 
 @dataclass
 @PayloadRegistry.register
-class GetLibraryMetadataResultFailure(ResultPayloadFailure):
+class GetLibraryMetadataResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -128,7 +129,7 @@ class GetAllInfoForLibraryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetAllInfoForLibraryResultSuccess(ResultPayloadSuccess):
+class GetAllInfoForLibraryResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     library_metadata_details: GetLibraryMetadataResultSuccess
     category_details: ListCategoriesInLibraryResultSuccess
     node_type_name_to_node_metadata_details: dict[str, GetNodeMetadataFromLibraryResultSuccess]
@@ -136,7 +137,7 @@ class GetAllInfoForLibraryResultSuccess(ResultPayloadSuccess):
 
 @dataclass
 @PayloadRegistry.register
-class GetAllInfoForLibraryResultFailure(ResultPayloadFailure):
+class GetAllInfoForLibraryResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -149,13 +150,13 @@ class GetAllInfoForAllLibrariesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetAllInfoForAllLibrariesResultSuccess(ResultPayloadSuccess):
+class GetAllInfoForAllLibrariesResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     library_name_to_library_info: dict[str, GetAllInfoForLibraryResultSuccess]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetAllInfoForAllLibrariesResultFailure(ResultPayloadFailure):
+class GetAllInfoForAllLibrariesResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 

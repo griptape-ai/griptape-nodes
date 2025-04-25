@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultPayloadFailure,
-    ResultPayloadSuccess,
+    ResultPayloadFailureUnalteredWorkflow,
+    ResultPayloadSuccessUnalteredWorkflow,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -16,11 +16,11 @@ class OpenAssociatedFileRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class OpenAssociatedFileResultSuccess(ResultPayloadSuccess):
+class OpenAssociatedFileResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class OpenAssociatedFileResultFailure(ResultPayloadFailure):
+class OpenAssociatedFileResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass

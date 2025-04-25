@@ -3,8 +3,9 @@ from dataclasses import dataclass
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
-    ResultPayloadSuccess,
+    ResultPayloadFailureUnalteredWorkflow,
     ResultPayloadSuccessAlteredWorkflow,
+    ResultPayloadSuccessUnalteredWorkflow,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -58,13 +59,13 @@ class ListNodesInFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListNodesInFlowResultSuccess(ResultPayloadSuccess):
+class ListNodesInFlowResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     node_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListNodesInFlowResultFailure(ResultPayloadFailure):
+class ListNodesInFlowResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -81,13 +82,13 @@ class ListFlowsInCurrentContextRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInCurrentContextResultSuccess(ResultPayloadSuccess):
+class ListFlowsInCurrentContextResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     flow_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInCurrentContextResultFailure(ResultPayloadFailure):
+class ListFlowsInCurrentContextResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -101,13 +102,13 @@ class ListFlowsInFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInFlowResultSuccess(ResultPayloadSuccess):
+class ListFlowsInFlowResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     flow_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInFlowResultFailure(ResultPayloadFailure):
+class ListFlowsInFlowResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -119,5 +120,5 @@ class GetTopLevelFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetTopLevelFlowResultSuccess(ResultPayloadSuccess):
+class GetTopLevelFlowResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     flow_name: str | None

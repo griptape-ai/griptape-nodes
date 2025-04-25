@@ -5,8 +5,9 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     RequestPayload,
     ResultPayloadFailure,
-    ResultPayloadSuccess,
+    ResultPayloadFailureUnalteredWorkflow,
     ResultPayloadSuccessAlteredWorkflow,
+    ResultPayloadSuccessUnalteredWorkflow,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -155,14 +156,14 @@ class GetFlowStateRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetFlowStateResultSuccess(ResultPayloadSuccess):
+class GetFlowStateResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     control_node: str
     resolving_node: str | None
 
 
 @dataclass
 @PayloadRegistry.register
-class GetFlowStateResultFailure(ResultPayloadFailure):
+class GetFlowStateResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -174,13 +175,13 @@ class GetIsFlowRunningRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetIsFlowRunningResultSuccess(ResultPayloadSuccess):
+class GetIsFlowRunningResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     is_running: bool
 
 
 @dataclass
 @PayloadRegistry.register
-class GetIsFlowRunningResultFailure(ResultPayloadFailure):
+class GetIsFlowRunningResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 

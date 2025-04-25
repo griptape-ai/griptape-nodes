@@ -5,8 +5,9 @@ from griptape_nodes.exe_types.node_types import NodeResolutionState
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
-    ResultPayloadSuccess,
+    ResultPayloadFailureUnalteredWorkflow,
     ResultPayloadSuccessAlteredWorkflow,
+    ResultPayloadSuccessUnalteredWorkflow,
 )
 from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeResultSuccess
 from griptape_nodes.retained_mode.events.parameter_events import (
@@ -73,13 +74,13 @@ class GetNodeResolutionStateRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeResolutionStateResultSuccess(ResultPayloadSuccess):
+class GetNodeResolutionStateResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     state: str
 
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeResolutionStateResultFailure(ResultPayloadFailure):
+class GetNodeResolutionStateResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -92,13 +93,13 @@ class ListParametersOnNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListParametersOnNodeResultSuccess(ResultPayloadSuccess):
+class ListParametersOnNodeResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     parameter_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListParametersOnNodeResultFailure(ResultPayloadFailure):
+class ListParametersOnNodeResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -111,13 +112,13 @@ class GetNodeMetadataRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeMetadataResultSuccess(ResultPayloadSuccess):
+class GetNodeMetadataResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     metadata: dict
 
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeMetadataResultFailure(ResultPayloadFailure):
+class GetNodeMetadataResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -158,7 +159,7 @@ class ParameterInfoValue:
 
 @dataclass
 @PayloadRegistry.register
-class GetAllNodeInfoResultSuccess(ResultPayloadSuccess):
+class GetAllNodeInfoResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     metadata: dict
     node_resolution_state: str
     connections: ListConnectionsForNodeResultSuccess
@@ -168,5 +169,5 @@ class GetAllNodeInfoResultSuccess(ResultPayloadSuccess):
 
 @dataclass
 @PayloadRegistry.register
-class GetAllNodeInfoResultFailure(ResultPayloadFailure):
+class GetAllNodeInfoResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass

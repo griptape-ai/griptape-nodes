@@ -60,9 +60,15 @@ class ResultPayloadSuccess(ResultPayload, ABC):
 
 
 class ResultPayloadSuccessAlteredWorkflow(ResultPayloadSuccess, ABC):
-    """Specialization of ResultPayloadSuccess that embeds workflow altering for events guaranteed to affect it."""
+    """Specialization of ResultPayloadSuccess that guarantees that a workflow was altered."""
 
     altered_workflow_state: bool = True
+
+
+class ResultPayloadSuccessUnalteredWorkflow(ResultPayloadSuccess, ABC):
+    """Specialization of ResultPayloadSuccess that gurantees that NO workflow changes occurred."""
+
+    altered_workflow_state: bool = False
 
 
 # Failure result payload abstract base class
@@ -79,9 +85,15 @@ class ResultPayloadFailure(ResultPayload, ABC):
 
 
 class ResultPayloadFailureAlteredWorkflow(ResultPayloadFailure, ABC):
-    """Specialization of ResultPayloadFailure that embeds workflow altering for events guaranteed to affect it."""
+    """Specialization of ResultPayloadFailure that that guarantees that a workflow was altered."""
 
     altered_workflow_state: bool = True
+
+
+class ResultPayloadFailureUnalteredWorkflow(ResultPayloadFailure, ABC):
+    """Specialization of ResultPayloadFailure that guarantees that NO workflow changes occurred."""
+
+    altered_workflow_state: bool = False
 
 
 class ExecutionPayload(Payload):

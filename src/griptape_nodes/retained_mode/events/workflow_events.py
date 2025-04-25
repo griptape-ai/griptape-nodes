@@ -4,8 +4,9 @@ from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
-    ResultPayloadSuccess,
+    ResultPayloadFailureUnalteredWorkflow,
     ResultPayloadSuccessAlteredWorkflow,
+    ResultPayloadSuccessUnalteredWorkflow,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -74,13 +75,13 @@ class RegisterWorkflowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RegisterWorkflowResultSuccess(ResultPayloadSuccess):
+class RegisterWorkflowResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     workflow_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class RegisterWorkflowResultFailure(ResultPayloadFailure):
+class RegisterWorkflowResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -92,13 +93,13 @@ class ListAllWorkflowsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListAllWorkflowsResultSuccess(ResultPayloadSuccess):
+class ListAllWorkflowsResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     workflows: dict
 
 
 @dataclass
 @PayloadRegistry.register
-class ListAllWorkflowsResultFailure(ResultPayloadFailure):
+class ListAllWorkflowsResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -147,13 +148,13 @@ class SaveWorkflowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SaveWorkflowResultSuccess(ResultPayloadSuccess):
+class SaveWorkflowResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     file_path: str
 
 
 @dataclass
 @PayloadRegistry.register
-class SaveWorkflowResultFailure(ResultPayloadFailure):
+class SaveWorkflowResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -165,11 +166,11 @@ class LoadWorkflowMetadata(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class LoadWorkflowMetadataResultSuccess(ResultPayloadSuccess):
+class LoadWorkflowMetadataResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     metadata: WorkflowMetadata
 
 
 @dataclass
 @PayloadRegistry.register
-class LoadWorkflowMetadataResultFailure(ResultPayloadFailure):
+class LoadWorkflowMetadataResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass

@@ -9,8 +9,9 @@ from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
-    ResultPayloadSuccess,
+    ResultPayloadFailureUnalteredWorkflow,
     ResultPayloadSuccessAlteredWorkflow,
+    ResultPayloadSuccessUnalteredWorkflow,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -119,7 +120,7 @@ class GetParameterDetailsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterDetailsResultSuccess(ResultPayloadSuccess):
+class GetParameterDetailsResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     element_id: str
     type: str
     input_types: list[str]
@@ -138,7 +139,7 @@ class GetParameterDetailsResultSuccess(ResultPayloadSuccess):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterDetailsResultFailure(ResultPayloadFailure):
+class GetParameterDetailsResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -223,7 +224,7 @@ class GetParameterValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterValueResultSuccess(ResultPayloadSuccess):
+class GetParameterValueResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     input_types: list[str]
     type: str
     output_type: str
@@ -232,7 +233,7 @@ class GetParameterValueResultSuccess(ResultPayloadSuccess):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterValueResultFailure(ResultPayloadFailure):
+class GetParameterValueResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -261,13 +262,13 @@ class ParameterAndMode(NamedTuple):
 
 @dataclass
 @PayloadRegistry.register
-class GetCompatibleParametersResultSuccess(ResultPayloadSuccess):
+class GetCompatibleParametersResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     valid_parameters_by_node: dict[str, list[ParameterAndMode]]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetCompatibleParametersResultFailure(ResultPayloadFailure):
+class GetCompatibleParametersResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -281,11 +282,11 @@ class GetNodeElementDetailsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeElementDetailsResultSuccess(ResultPayloadSuccess):
+class GetNodeElementDetailsResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     element_details: dict[str, Any]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeElementDetailsResultFailure(ResultPayloadFailure):
+class GetNodeElementDetailsResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass

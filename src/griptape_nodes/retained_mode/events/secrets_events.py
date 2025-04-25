@@ -3,8 +3,8 @@ from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultPayloadFailure,
-    ResultPayloadSuccess,
+    ResultPayloadFailureUnalteredWorkflow,
+    ResultPayloadSuccessUnalteredWorkflow,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -17,13 +17,13 @@ class GetSecretValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetSecretValueResultSuccess(ResultPayloadSuccess):
+class GetSecretValueResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     value: Any
 
 
 @dataclass
 @PayloadRegistry.register
-class GetSecretValueResultFailure(ResultPayloadFailure):
+class GetSecretValueResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -36,13 +36,13 @@ class SetSecretValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SetSecretValueResultSuccess(ResultPayloadSuccess):
+class SetSecretValueResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class SetSecretValueResultFailure(ResultPayloadFailure):
+class SetSecretValueResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -54,13 +54,13 @@ class GetAllSecretValuesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetAllSecretValuesResultSuccess(ResultPayloadSuccess):
+class GetAllSecretValuesResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     values: dict[str, Any]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetAllSecretValuesResultFailure(ResultPayloadFailure):
+class GetAllSecretValuesResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
 
 
@@ -72,11 +72,11 @@ class DeleteSecretValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteSecretValueResultSuccess(ResultPayloadSuccess):
+class DeleteSecretValueResultSuccess(ResultPayloadSuccessUnalteredWorkflow):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class DeleteSecretValueResultFailure(ResultPayloadFailure):
+class DeleteSecretValueResultFailure(ResultPayloadFailureUnalteredWorkflow):
     pass
