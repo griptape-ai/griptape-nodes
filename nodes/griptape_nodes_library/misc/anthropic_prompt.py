@@ -54,7 +54,7 @@ class ExAnthropicPrompt(BasePrompt):
 
         # Replace `min_p` with `top_p` for Anthropic.
         self._replace_param_by_name(
-            param_name="min_p", new_param_name="p", tooltip=None, default_value=0.9, ui_options=None
+            param_name="min_p", new_param_name="top_p", tooltip=None, default_value=0.9, ui_options=None
         )
 
         # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.
