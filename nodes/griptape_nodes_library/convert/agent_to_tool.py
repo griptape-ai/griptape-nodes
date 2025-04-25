@@ -6,7 +6,10 @@ from griptape.tools import StructureRunTool
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.utilities import to_pascal_case
+
+placeholder_description = "Tool created from an Agent"
 
 
 class AgentToTool(DataNode):
@@ -23,7 +26,7 @@ class AgentToTool(DataNode):
             Parameter(
                 name="agent",
                 type="Agent",
-                input_types=["Agent"],  # "dict"],
+                input_types=["Agent"],
                 tooltip="None",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
@@ -42,6 +45,11 @@ class AgentToTool(DataNode):
             )
         )
 
+        def validate_tool_description(_param: Parameter, value: str) -> None:
+            if not value or value == placeholder_description:
+                msg = f"{self.name} : A meaningful description is critical for an Agent to know when to use this tool."
+                raise ValueError(msg)
+
         # Description parameter for the Tool
         self.add_parameter(
             Parameter(
@@ -49,9 +57,10 @@ class AgentToTool(DataNode):
                 input_types=["str"],
                 type="str",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                default_value="Tool created from an Agent",
+                default_value=placeholder_description,
                 ui_options={"multiline": True},
                 tooltip="Description for what the Tool does",
+                validators=[validate_tool_description],
             )
         )
 
@@ -83,15 +92,15 @@ class AgentToTool(DataNode):
         params = self.parameter_values
         agent = params.get("agent")
         name = params.get("name", "Agent Tool")
-        description = params.get("description", "Tool created from an Agent")
+        description = params.get("description", placeholder_description)
         off_prompt = params.get("off_prompt", True)
+
+        if type(agent) is dict:
+            agent = gtAgent.from_dict(agent)
 
         if agent is None:
             self.parameter_output_values["tool"] = None
             return
-
-        if type(agent) is dict:
-            agent = gtAgent.from_dict(agent)
 
         # The lambda ensures a fresh instance of the agent for each run
         driver = LocalStructureRunDriver(create_structure=lambda: agent)
