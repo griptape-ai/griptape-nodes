@@ -17,7 +17,7 @@ fi
 echo ""
 echo "Installing Griptape Nodes Engine..."
 echo ""
-uv tool install --force --python python3.13 git+https://github.com/griptape-ai/griptape-nodes
+uv tool install --force --python python3.12 git+https://github.com/griptape-ai/griptape-nodes
 
 echo "**************************************"
 echo "*      Installation complete!        *"

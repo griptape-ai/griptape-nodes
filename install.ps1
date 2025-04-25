@@ -16,7 +16,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-uv tool install --force --python python3.13 git+https://github.com/griptape-ai/griptape-nodes
+uv tool install --force --python python3.12 git+https://github.com/griptape-ai/griptape-nodes
 
 Write-Host "**************************************"
 Write-Host "*      Installation complete!        *"
