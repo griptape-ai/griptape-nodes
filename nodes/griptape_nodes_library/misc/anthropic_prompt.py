@@ -16,8 +16,13 @@ from griptape_nodes_library.misc.base_prompt import BasePrompt
 SERVICE = "Anthropic"
 API_KEY_URL = "https://console.anthropic.com/settings/keys"
 API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
-MODELS = ["claude-3-7-sonnet-latest", "claude-3-5-sonnet-latest", "claude-3-5-opus-latest", "claude-3-5-haiku-latest"]
-DEFAULT_MODEL = "claude-3-7-sonnet-latest"
+MODEL_CHOICES = [
+    "claude-3-7-sonnet-latest",
+    "claude-3-5-sonnet-latest",
+    "claude-3-5-opus-latest",
+    "claude-3-5-haiku-latest",
+]
+DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
 class ExAnthropicPrompt(BasePrompt):
@@ -45,7 +50,7 @@ class ExAnthropicPrompt(BasePrompt):
         # --- Customize Inherited Parameters ---
 
         # Update the 'model' parameter for Anthropic specifics.
-        self._update_model_choices(param="model", choices=MODELS, default=DEFAULT_MODEL)
+        self._update_model_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
 
         # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.
         self.remove_parameter_by_name("seed")

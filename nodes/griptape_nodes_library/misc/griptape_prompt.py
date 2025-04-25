@@ -16,8 +16,8 @@ from griptape_nodes_library.misc.base_prompt import BasePrompt
 SERVICE = "Griptape"
 API_KEY_URL = "https://cloud.griptape.ai/configuration/api-keys"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
-MODELS = ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4.5-preview", "o1", "o1-mini", "o3-mini"]
-DEFAULT_MODEL = "gpt-4.1-mini"
+MODEL_CHOICES = ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4.5-preview", "o1", "o1-mini", "o3-mini"]
+DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
 class ExGriptapeCloudPrompt(BasePrompt):
@@ -49,7 +49,7 @@ class ExGriptapeCloudPrompt(BasePrompt):
         # --- Customize Inherited Parameters ---
 
         # Update the 'model' parameter for Griptape Cloud specifics.
-        self._update_model_choices(param="model", choices=MODELS, default=DEFAULT_MODEL)
+        self._update_model_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
 
         # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.
         self.remove_parameter_by_name("seed")

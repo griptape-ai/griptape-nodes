@@ -23,9 +23,8 @@ from griptape_nodes_library.utils.error_utils import try_throw_error
 # --- Constants ---
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
-DEFAULT_MODEL = "gpt-4.1-mini"
 CONNECTED_CHOICE = "use incoming config"
-MODELS = [
+MODEL_CHOICES = [
     "gpt-4.1",
     "gpt-4.1-mini",
     "gpt-4.1-nano",
@@ -35,6 +34,7 @@ MODELS = [
     "o3-mini",
     CONNECTED_CHOICE,
 ]
+DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
 class ExAgent(ControlNode):
@@ -124,7 +124,7 @@ class ExAgent(ControlNode):
                 tooltip="Models to choose from.",
                 default_value=DEFAULT_MODEL,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=MODELS)},
+                traits={Options(choices=MODEL_CHOICES)},
             )
         )
 

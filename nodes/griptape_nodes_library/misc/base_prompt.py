@@ -193,6 +193,7 @@ class BasePrompt(BaseDriver):
         Args:
             param: The name of the parameter representing the model selection or the Parameter object itself.
             choices: A list of model names to be set as choices.
+            default: The default model name to be set. It must be one of the provided choices.
         """
         parameter = None
         if isinstance(param, str):

@@ -16,8 +16,8 @@ from griptape_nodes_library.misc.base_prompt import BasePrompt
 SERVICE = "Cohere"
 API_KEY_URL = "https://dashboard.cohere.com/api-keys"
 API_KEY_ENV_VAR = "COHERE_API_KEY"
-MODELS = ["command-r-plus"]
-DEFAULT_MODEL = "command-r-plus"
+MODEL_CHOICES = ["command-r-plus"]
+DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
 class ExCoherePrompt(BasePrompt):
@@ -44,7 +44,7 @@ class ExCoherePrompt(BasePrompt):
         # --- Customize Inherited Parameters ---
 
         # Update the 'model' parameter for Anthropic specifics.
-        self._update_model_choices(param="model", choices=MODELS, default=DEFAULT_MODEL)
+        self._update_model_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
 
         # Remove the 'seed' parameter as it's not directly used by Cohere.
         self.remove_parameter_by_name("seed")
