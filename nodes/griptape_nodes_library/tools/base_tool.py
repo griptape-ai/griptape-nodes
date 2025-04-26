@@ -19,22 +19,22 @@ class BaseTool(DataNode):
 
         self.add_parameter(
             Parameter(
-                name="off_prompt",
-                input_types=["bool"],
-                type="bool",
-                output_type="bool",
-                default_value=False,
-                tooltip="",
-            )
-        )
-        self.add_parameter(
-            Parameter(
                 name="tool",
                 input_types=["Tool"],
                 type="Tool",
                 output_type="Tool",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
+                tooltip="",
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="off_prompt",
+                input_types=["bool"],
+                type="bool",
+                output_type="bool",
+                default_value=False,
                 tooltip="",
             )
         )

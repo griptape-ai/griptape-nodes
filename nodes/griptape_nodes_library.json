@@ -496,6 +496,15 @@
       }
     },
     {
+      "class_name": "WebSearch",
+      "file_path": "griptape_nodes_library/tools/web_search_tool.py",
+      "metadata": {
+        "category": "tools",
+        "description": "WebSearch node.",
+        "display_name": "Web Search"
+      }
+    },
+    {
       "class_name": "WebScraper",
       "file_path": "griptape_nodes_library/tools/web_scraper_tool.py",
       "metadata": {
