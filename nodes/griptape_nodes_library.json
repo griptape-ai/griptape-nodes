@@ -226,15 +226,6 @@
       }
     },
     {
-      "class_name": "AzureOpenAiImage",
-      "file_path": "griptape_nodes_library/drivers/image/azure_openai_image_driver.py",
-      "metadata": {
-        "category": "drivers/image",
-        "description": "Node for Azure OpenAI Image Generation Driver.",
-        "display_name": "Azure Open Ai Image"
-      }
-    },
-    {
       "class_name": "GriptapeCloudImage",
       "file_path": "griptape_nodes_library/drivers/image/griptape_cloud_image_driver.py",
       "metadata": {
