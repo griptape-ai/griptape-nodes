@@ -4583,10 +4583,6 @@ class LibraryManager:
             details = f"Successfully loaded Library '{library_name}' from JSON file at {json_path}"
             logger.info(details)
 
-        # We don't need to keep site_packages on the path since the node
-        # has already been executed and therefore its imports resolved.
-        if site_packages is not None:
-            sys.path.remove(site_packages)
         return RegisterLibraryFromFileResultSuccess(library_name=library_name)
 
     def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
