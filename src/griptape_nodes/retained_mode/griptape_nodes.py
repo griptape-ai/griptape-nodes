@@ -4436,11 +4436,11 @@ class LibraryManager:
                 if library_venv_path.exists():
                     logger.debug("Virtual environment already exists at %s", library_venv_path)
                 else:
-                    subprocess.run(
+                    subprocess.run(  # noqa: S603
                         [sys.executable, "-m", "uv", "venv", library_venv_path, "--python", "3.12"],
                         check=True,
                         text=True,
-                    )  # noqa: S603
+                    )
                     logger.debug("Created virtual environment at %s", library_venv_path)
 
                 # Grab the python executable from the virtual environment so that we can pip install there
