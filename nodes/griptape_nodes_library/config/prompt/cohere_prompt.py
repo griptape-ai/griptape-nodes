@@ -9,7 +9,7 @@ node configuration, and instantiates the `GtCoherePromptDriver`.
 
 from griptape.drivers.prompt.cohere import CoherePromptDriver as GtCoherePromptDriver
 
-from griptape_nodes_library.drivers.prompt.base_prompt import BasePrompt
+from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 
 # --- Constants ---
 

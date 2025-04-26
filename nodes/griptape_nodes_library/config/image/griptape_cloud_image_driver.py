@@ -4,7 +4,7 @@ from griptape.drivers.image_generation.griptape_cloud import (
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.drivers.image.base_image_driver import BaseImageDriver
+from griptape_nodes_library.config.image.base_image_driver import BaseImageDriver
 
 # --- Constants ---
 

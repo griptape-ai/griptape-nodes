@@ -9,7 +9,7 @@ node configuration, and instantiates the `GtAnthropicPromptDriver`.
 
 from griptape.drivers.prompt.anthropic import AnthropicPromptDriver as GtAnthropicPromptDriver
 
-from griptape_nodes_library.drivers.prompt.base_prompt import BasePrompt
+from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 
 # --- Constants ---
 

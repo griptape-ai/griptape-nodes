@@ -3,7 +3,7 @@ from typing import Any
 from griptape.drivers.web_search.duck_duck_go import DuckDuckGoWebSearchDriver as GtDuckDuckGoWebSearchDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes_library.drivers.base_driver import BaseDriver
+from griptape_nodes_library.config.base_driver import BaseDriver
 
 
 class BaseWebSearchDriver(BaseDriver):

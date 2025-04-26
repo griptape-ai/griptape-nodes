@@ -69,18 +69,18 @@ nav:
           - Overview: nodes/overview.md
           - Agents:
               - Agent: nodes/agents/create_agent.md
+          - Configs:
+              - Anthropic Prompt: nodes/config/anthropic_prompt_driver.md
+              - Cohere Prompt: nodes/config/cohere_prompt_driver.md
+              - Griptape Cloud Image: nodes/config/griptape_cloud_image_driver.md
+              - Griptape Cloud Prompt: nodes/config/griptape_cloud_prompt_driver.md
+              - OpenAI Image: nodes/config/openai_image_driver.md
+              - OpenAI Prompt: nodes/config/openai_prompt_driver.md
           - Dict:
               - Dict: nodes/dict/create_dict.md
               - Display Dict: nodes/dict/display_dict.md
               - Key Value Pair: nodes/dict/key_value_pair.md
               - Merge Key Value Pairs: nodes/dict/merge_key_value_pair.md
-          - Drivers:
-              - Anthropic Prompt: nodes/drivers/anthropic_prompt_driver.md
-              - Cohere Prompt: nodes/drivers/cohere_prompt_driver.md
-              - Griptape Cloud Image: nodes/drivers/griptape_cloud_image_driver.md
-              - Griptape Cloud Prompt: nodes/drivers/griptape_cloud_prompt_driver.md
-              - OpenAI Image: nodes/drivers/openai_image_driver.md
-              - OpenAI Prompt: nodes/drivers/openai_prompt_driver.md
           - Image:
               - Load Image: nodes/image/load_image.md
               - Generate Image: nodes/image/create_image.md
