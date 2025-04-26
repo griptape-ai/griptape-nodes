@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import logging
+import platform
 import re
 import subprocess
 import sys
@@ -4432,12 +4433,19 @@ class LibraryManager:
             if dependencies:
                 pip_install_flags = library_metadata.get("pip_install_flags", [])
                 # Create a virtual environment for the library
-                library_venv_path = xdg_data_home() / "griptape_nodes" / "venvs" / library_name
+                python_version = platform.python_version()
+                library_venv_path = (
+                    xdg_data_home()
+                    / "griptape_nodes"
+                    / "venvs"
+                    / python_version
+                    / library_name.replace(" ", "_").strip()
+                )
                 if library_venv_path.exists():
                     logger.debug("Virtual environment already exists at %s", library_venv_path)
                 else:
                     subprocess.run(  # noqa: S603
-                        [sys.executable, "-m", "uv", "venv", library_venv_path, "--python", "3.12"],
+                        [sys.executable, "-m", "uv", "venv", library_venv_path, "--python", python_version],
                         check=True,
                         text=True,
                     )
@@ -4575,10 +4583,6 @@ class LibraryManager:
             details = f"Successfully loaded Library '{library_name}' from JSON file at {json_path}"
             logger.info(details)
 
-        # We don't need to keep site_packages on the path since the node
-        # has already been executed and therefore its imports resolved.
-        if site_packages is not None:
-            sys.path.remove(site_packages)
         return RegisterLibraryFromFileResultSuccess(library_name=library_name)
 
     def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
