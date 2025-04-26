@@ -3,14 +3,18 @@ from griptape.drivers.image_generation.griptape_cloud import (
 )
 
 from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.traits.options import Options
 from griptape_nodes_library.drivers.image.base_image_driver import BaseImageDriver
 
+# --- Constants ---
+
 SERVICE = "Griptape"
+API_KEY_URL = "https://cloud.griptape.ai/configuration/api-keys"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
-DEFAULT_MODEL = "dall-e-3"
-DEFAULT_SIZE = "1024x1024"
-AVAILABLE_MODELS = ["dall-e-3"]
+MODEL_CHOICES = ["dall-e-3"]
+DEFAULT_MODEL = MODEL_CHOICES[0]
 AVAILABLE_SIZES = ["1024x1024", "1024x1792", "1792x1024"]
+DEFAULT_SIZE = AVAILABLE_SIZES[0]
 
 
 class GriptapeCloudImage(BaseImageDriver):
@@ -22,75 +26,64 @@ class GriptapeCloudImage(BaseImageDriver):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        # Add additional parameters specific to Azure OpenAI
+        # --- Customize Inherited Parameters ---
+
+        # Update the 'model' parameter for Griptape Cloud specifics.
+        self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
+
+        # Update the 'size' parameter for Griptape Cloud specifics.
+        self._update_option_choices(param="image_size", choices=AVAILABLE_SIZES, default=DEFAULT_SIZE)
+
+        # Add additional parameters specific to Griptape Cloud
         self.add_parameter(
             Parameter(
-                name="image_generation_model",
+                name="style",
                 type="str",
-                default_value=DEFAULT_MODEL,
-                tooltip="Select the model for image generation.",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="image_deployment_name",
-                type="str",
-                default_value=DEFAULT_MODEL,
-                tooltip="Enter the deployment name for the image generation model.",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="size",
-                type="str",
-                default_value=DEFAULT_SIZE,
-                tooltip="Select the size of the generated image.",
+                default_value="vivid",
+                tooltip="Select the style for image generation.",
+                traits={Options(choices=["vivid", "natural"])},
             )
         )
 
-        kwargs["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
-
-    def adjust_size_based_on_model(self, model, size) -> str:
-        """Adjust the image size based on the selected model's capabilities.
-
-        Args:
-            model (str): The image generation model
-            size (str): The requested image size
-
-        Returns:
-            str: The adjusted image size
-        """
-        # Pick the appropriate size based on the model
-        if model == "dall-e-3" and size in ["256x256", "512x512"]:
-            size = "1024x1024"
-        return size
+        self.add_parameter(
+            Parameter(
+                name="quality",
+                type="str",
+                default_value="hd",
+                tooltip="Select the quality for image generation.",
+                traits={Options(choices=["hd", "standard"])},
+            )
+        )
 
     def process(self) -> None:
         # Get the parameters from the node
         params = self.parameter_values
 
-        # Get model and deployment information
-        model = params.get("image_generation_model", DEFAULT_MODEL)
+        # --- Get Common Driver Arguments ---
+        # Use the helper method from BaseImageDriver to get common driver arguments
+        common_args = self._get_common_driver_args(params)
 
-        # Get and adjust size
-        size = params.get("size", DEFAULT_SIZE)
-        size = self.adjust_size_based_on_model(model, size)
+        # --- Prepare Griptape Cloud Specific Arguments ---
+        specific_args = {}
 
-        # Initialize kwargs with required parameters
-        kwargs = {
-            "model": model,
-            "api_key": self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
-            "image_size": size,
-        }
+        # Retrieve the mandatory API key.
+        specific_args["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
 
-        self.parameter_output_values["driver"] = GtGriptapeCloudImageGenerationDriver(**kwargs)
+        specific_args["style"] = self.get_parameter_value("style")
+        specific_args["quality"] = self.get_parameter_value("quality")
+
+        all_kwargs = {**common_args, **specific_args}
+
+        self.parameter_output_values["image_model_config"] = GtGriptapeCloudImageGenerationDriver(**all_kwargs)
 
     def validate_node(self) -> list[Exception] | None:
-        exceptions = []
-        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
-        if not api_key:
-            msg = f"{API_KEY_ENV_VAR} is not defined"
-            exceptions.append(KeyError(msg))
-            return exceptions
+        """Validates that the Griptape Cloud API key is configured correctly.
 
-        return None
+        Calls the base class helper `_validate_api_key` with Griptape-specific
+        configuration details.
+        """
+        return self._validate_api_key(
+            service_name=SERVICE,
+            api_key_env_var=API_KEY_ENV_VAR,
+            api_key_url=API_KEY_URL,
+        )
