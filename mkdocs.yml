@@ -67,6 +67,12 @@ nav:
       - Scripting: reference/retained_mode.md
       - Nodes:
           - Overview: nodes/overview.md
+          - Base:
+              - Note: nodes/utils/note.md
+          - Execution:
+              - Start Flow: nodes/execution/start_flow.md
+              - End Flow: nodes/execution/end_flow.md
+              - Reroute: nodes/execution/reroute.md
           - Agents:
               - Agent: nodes/agents/create_agent.md
           - Configs:
@@ -105,8 +111,3 @@ nav:
               - Info Retriever: nodes/tools/rag_tool.md
               - Tool List: nodes/tools/tool_list.md
               - Web Scraper: nodes/tools/web_scraper_tool.md
-          - Utils:
-              - Start Flow: nodes/utils/start_flow.md
-              - End Flow: nodes/utils/end_flow.md
-              - Reroute: nodes/utils/reroute.md
-              - Note: nodes/utils/note.md
