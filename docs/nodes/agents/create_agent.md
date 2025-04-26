@@ -27,7 +27,7 @@ Use this node when you want to:
 - **tools**: Capabilities you want to give your Agent
 - **rulesets**: Rules that tell your Agent what it can and cannot do
 - **agent**: An existing Agent configuration (optional)
-- **prompt_context**: Key-value pairs providing additional context to the Agent
+- **additional_context**: Key-value pairs providing additional context to the Agent
 
 ### Outputs
 
@@ -51,7 +51,7 @@ Imagine you want to create an Agent that can write haikus based on prompt_contex
 - If you don't provide a prompt, the node will create the agent without running it and the output will contain exactly "Agent Created"
 - The node supports both streaming and non-streaming prompt drivers
 - Tools and rulesets can be provided as individual items or as lists
-- The prompt_context parameter allows you to provide additional context to the agent as a dictionary
+- The prompt_context parameter allows you to provide additional_context to the agent as a dictionary
 - By default, you need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY` for the node to work. Depending on the models you want to use, the keys you need will be different.
 - When you pass an Agent from one node to another using the agent input/output pins, the conversation memory is maintained, which means:
     - The Agent "remembers" previous interactions in the same flow
