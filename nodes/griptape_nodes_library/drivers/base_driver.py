@@ -145,10 +145,11 @@ class BaseDriver(DataNode):
             msg = f"Parameter '{param}' not found for updating model choices."
             raise ValueError(msg)
 
-    def _replace_param_by_name(
+    def _replace_param_by_name(  # noqa: PLR0913
         self,
         param_name: str,
         new_param_name: str,
+        new_output_type: str | None = None,
         tooltip: str | list[dict] | None = None,
         default_value: Any = None,
         ui_options: dict | None = None,
@@ -161,6 +162,7 @@ class BaseDriver(DataNode):
         Args:
             param_name (str): The name of the parameter to replace.
             new_param_name (str): The new name for the parameter.
+            new_output_type (str, optional): The new output type for the parameter.
             tooltip (str, list[dict], optional): The new tooltip for the parameter.
             default_value (Any, optional): The new default value for the parameter.
             ui_options (dict, optional): UI options for the parameter.
@@ -172,6 +174,8 @@ class BaseDriver(DataNode):
                 param.tooltip = tooltip
             if default_value is not None:
                 param.default_value = default_value
+            if new_output_type is not None:
+                param.output_type = new_output_type
             if ui_options is not None:
                 param.ui_options = ui_options
         else:
