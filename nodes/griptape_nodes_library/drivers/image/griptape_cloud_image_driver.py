@@ -32,7 +32,7 @@ class GriptapeCloudImage(BaseImageDriver):
         self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
 
         # Update the 'size' parameter for Griptape Cloud specifics.
-        self._update_option_choices(param="image_size", choices=AVAILABLE_SIZES, default=DEFAULT_SIZE)
+        self._update_option_choices(param="image_size", choices=AVAILABLE_SIZES, default=str(DEFAULT_SIZE))
 
         # Add additional parameters specific to Griptape Cloud
         self.add_parameter(

@@ -64,7 +64,7 @@ class OpenAiImage(BaseImageDriver):
             # If the model is DALL-E 2, update the size options accordingly
             toggle_params = ["style", "quality"]
             if value == "dall-e-2":
-                self._update_option_choices(param="image_size", choices=DALL_E_2_SIZES, default=DALL_E_2_SIZES[3])
+                self._update_option_choices(param="image_size", choices=DALL_E_2_SIZES, default=DALL_E_2_SIZES[2])
                 # hide style and quality parameters
                 for param in toggle_params:
                     toggle_param = self.get_parameter_by_name(param)
