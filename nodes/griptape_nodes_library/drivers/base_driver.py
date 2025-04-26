@@ -117,7 +117,7 @@ class BaseDriver(DataNode):
     # Internal Helper Methods
     # -----------------------------------------------------------------------------
 
-    def _update_option_choices(self, param: str | Parameter, choices: list[str], default: str) -> None:
+    def _update_option_choices(self, param: str, choices: list[str], default: str) -> None:
         """Updates the model selection parameter with a new set of choices.
 
         This method is intended to be called by subclasses to set the available
@@ -129,11 +129,7 @@ class BaseDriver(DataNode):
             choices: A list of model names to be set as choices.
             default: The default model name to be set. It must be one of the provided choices.
         """
-        parameter = None
-        if isinstance(param, str):
-            parameter = self.get_parameter_by_name(param)
-        else:
-            parameter = param
+        parameter = self.get_parameter_by_name(param)
         if parameter is not None:
             trait = parameter.find_element_by_id("Options")
             if trait and isinstance(trait, Options):
@@ -141,6 +137,7 @@ class BaseDriver(DataNode):
 
                 if default in choices:
                     parameter.default_value = default
+                    self.set_parameter_value(param, default)
                 else:
                     msg = f"Default model '{default}' is not in the provided choices."
                     raise ValueError(msg)
