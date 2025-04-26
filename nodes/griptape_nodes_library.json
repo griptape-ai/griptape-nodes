@@ -21,6 +21,14 @@
       }
     },
     {
+      "execution": {
+        "color": "border-green-500",
+        "title": "Execution",
+        "description": "Execution Nodes.",
+        "icon": "Braces"
+      }
+    },
+    {
       "agents": {
         "color": "border-red-500",
         "title": "Agent",
@@ -29,58 +37,34 @@
       }
     },
     {
-      "convert": {
+      "rules": {
+        "color": "border-amber-500",
+        "title": "Rules",
+        "description": "Basic nodes.",
+        "icon": "Scale"
+      }
+    },
+    {
+      "tools": {
         "color": "border-cyan-500",
-        "title": "Convert",
-        "description": "Convert nodes.",
-        "icon": "Shuffle"
+        "title": "Tools",
+        "description": "Tools an agent can use.",
+        "icon": "Wrench"
       }
     },
     {
-      "dict": {
-        "color": "border-green-500",
-        "title": "Dictionary",
-        "description": "Dictionary Nodes.",
-        "icon": "Braces"
-      }
-    },
-    {
-      "drivers": {
-        "color": "border-lime-500",
-        "title": "Drivers",
-        "description": "Drivers for Griptape Agents.",
-        "icon": "Truck"
-      }
-    },
-    {
-      "drivers/image": {
-        "color": "border-lime-500",
-        "title": "Image",
-        "description": "Image Drivers for Griptape Agents.",
-        "icon": "Truck"
-      }
-    },
-    {
-      "drivers/prompt": {
-        "color": "border-lime-500",
-        "title": "Prompt",
-        "description": "Prompt Drivers for Griptape Agents.",
-        "icon": "Truck"
-      }
-    },
-    {
-      "drivers/web_search": {
-        "color": "border-lime-500",
-        "title": "Drivers",
-        "description": "Drivers for Griptape Agents.",
-        "icon": "Truck"
+      "audio": {
+        "color": "border-purple-500",
+        "title": "Audio",
+        "description": "Audio related nodes.",
+        "icon": "SpeakerWave"
       }
     },
     {
       "image": {
         "color": "border-purple-500",
         "title": "Image",
-        "description": "Basic nodes.",
+        "description": "Image related nodes.",
         "icon": "Image"
       }
     },
@@ -93,27 +77,51 @@
       }
     },
     {
-      "rules": {
-        "color": "border-amber-500",
-        "title": "Rules",
-        "description": "Basic nodes.",
-        "icon": "Scale"
-      }
-    },
-    {
       "text": {
         "color": "border-blue-500",
         "title": "Text",
-        "description": "Text Nodes.",
+        "description": "Text related nodes.",
         "icon": "DocumentText"
       }
     },
     {
-      "tools": {
+      "dict": {
+        "color": "border-green-500",
+        "title": "Dictionary",
+        "description": "Dictionary Nodes.",
+        "icon": "Braces"
+      }
+    },
+    {
+      "convert": {
         "color": "border-cyan-500",
-        "title": "Tools",
-        "description": "Tools an agent can use.",
-        "icon": "Wrench"
+        "title": "Convert",
+        "description": "Convert nodes.",
+        "icon": "Shuffle"
+      }
+    },
+    {
+      "config/image": {
+        "color": "border-lime-500",
+        "title": "Image",
+        "description": "Image Drivers for Griptape Agents.",
+        "icon": "Truck"
+      }
+    },
+    {
+      "config/prompt": {
+        "color": "border-lime-500",
+        "title": "Prompt",
+        "description": "Prompt Drivers for Griptape Agents.",
+        "icon": "Truck"
+      }
+    },
+    {
+      "config/web_search": {
+        "color": "border-lime-500",
+        "title": "Drivers",
+        "description": "Drivers for Griptape Agents.",
+        "icon": "Truck"
       }
     },
     {
@@ -226,73 +234,64 @@
       }
     },
     {
-      "class_name": "AzureOpenAiImage",
-      "file_path": "griptape_nodes_library/drivers/image/azure_openai_image_driver.py",
-      "metadata": {
-        "category": "drivers/image",
-        "description": "Node for Azure OpenAI Image Generation Driver.",
-        "display_name": "Azure Open Ai Image"
-      }
-    },
-    {
       "class_name": "GriptapeCloudImage",
-      "file_path": "griptape_nodes_library/drivers/image/griptape_cloud_image_driver.py",
+      "file_path": "griptape_nodes_library/config/image/griptape_cloud_image_driver.py",
       "metadata": {
-        "category": "drivers/image",
+        "category": "config/image",
         "description": "Node for Griptape Cloud Image Generation Driver.",
         "display_name": "Griptape Cloud Image"
       }
     },
     {
       "class_name": "OpenAiImage",
-      "file_path": "griptape_nodes_library/drivers/image/openai_image_driver.py",
+      "file_path": "griptape_nodes_library/config/image/openai_image_driver.py",
       "metadata": {
-        "category": "drivers/image",
+        "category": "config/image",
         "description": "Node for OpenAI Image Generation Driver.",
         "display_name": "Open Ai Image"
       }
     },
     {
       "class_name": "AnthropicPrompt",
-      "file_path": "griptape_nodes_library/drivers/prompt/anthropic_prompt.py",
+      "file_path": "griptape_nodes_library/config/prompt/anthropic_prompt.py",
       "metadata": {
-        "category": "drivers/prompt",
+        "category": "config/prompt",
         "description": "Node for Anthropic Prompt Driver.",
         "display_name": "Anthropic Prompt"
       }
     },
     {
       "class_name": "CoherePrompt",
-      "file_path": "griptape_nodes_library/drivers/prompt/cohere_prompt.py",
+      "file_path": "griptape_nodes_library/config/prompt/cohere_prompt.py",
       "metadata": {
-        "category": "drivers/prompt",
+        "category": "config/prompt",
         "description": "Node for Cohere Prompt Driver.",
         "display_name": "Cohere Prompt"
       }
     },
     {
       "class_name": "GriptapeCloudPrompt",
-      "file_path": "griptape_nodes_library/drivers/prompt/griptape_cloud_prompt.py",
+      "file_path": "griptape_nodes_library/config/prompt/griptape_cloud_prompt.py",
       "metadata": {
-        "category": "drivers/prompt",
+        "category": "config/prompt",
         "description": "Node for Griptape Cloud Prompt Driver.",
         "display_name": "Griptape Cloud Prompt"
       }
     },
     {
       "class_name": "OpenAiPrompt",
-      "file_path": "griptape_nodes_library/drivers/prompt/openai_prompt.py",
+      "file_path": "griptape_nodes_library/config/prompt/openai_prompt.py",
       "metadata": {
-        "category": "drivers/prompt",
+        "category": "config/prompt",
         "description": "Node for OpenAi Prompt Driver.",
         "display_name": "Open Ai Prompt"
       }
     },
     {
       "class_name": "DuckDuckGo",
-      "file_path": "griptape_nodes_library/drivers/web_search/web_search_drivers.py",
+      "file_path": "griptape_nodes_library/config/web_search/web_search_drivers.py",
       "metadata": {
-        "category": "drivers/web_search",
+        "category": "config/web_search",
         "description": "DuckDuckGo node.",
         "display_name": "Duck Duck Go"
       }
@@ -505,6 +504,15 @@
       }
     },
     {
+      "class_name": "WebSearch",
+      "file_path": "griptape_nodes_library/tools/web_search_tool.py",
+      "metadata": {
+        "category": "tools",
+        "description": "WebSearch node.",
+        "display_name": "Web Search"
+      }
+    },
+    {
       "class_name": "WebScraper",
       "file_path": "griptape_nodes_library/tools/web_scraper_tool.py",
       "metadata": {
@@ -514,19 +522,28 @@
       }
     },
     {
-      "class_name": "EndFlow",
-      "file_path": "griptape_nodes_library/utils/end_flow.py",
+      "class_name": "StartFlow",
+      "file_path": "griptape_nodes_library/execution/start_flow.py",
       "metadata": {
-        "category": "utils",
+        "category": "execution",
+        "description": "StartFlow node.",
+        "display_name": "Start Flow"
+      }
+    },
+    {
+      "class_name": "EndFlow",
+      "file_path": "griptape_nodes_library/execution/end_flow.py",
+      "metadata": {
+        "category": "execution",
         "description": "EndFlow node.",
         "display_name": "End Flow"
       }
     },
     {
       "class_name": "Reroute",
-      "file_path": "griptape_nodes_library/utils/reroute.py",
+      "file_path": "griptape_nodes_library/execution/reroute.py",
       "metadata": {
-        "category": "utils",
+        "category": "execution",
         "description": "Reroute node.",
         "display_name": "Reroute"
       }
@@ -538,15 +555,6 @@
         "category": "convert",
         "description": "AgentToTool node.",
         "display_name": "Agent To Tool"
-      }
-    },
-    {
-      "class_name": "StartFlow",
-      "file_path": "griptape_nodes_library/utils/start_flow.py",
-      "metadata": {
-        "category": "utils",
-        "description": "StartFlow node.",
-        "display_name": "Start Flow"
       }
     }
   ]

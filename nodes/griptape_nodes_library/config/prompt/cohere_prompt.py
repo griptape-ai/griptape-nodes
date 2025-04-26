@@ -9,7 +9,7 @@ node configuration, and instantiates the `GtCoherePromptDriver`.
 
 from griptape.drivers.prompt.cohere import CoherePromptDriver as GtCoherePromptDriver
 
-from griptape_nodes_library.drivers.prompt.base_prompt import BasePrompt
+from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 
 # --- Constants ---
 
@@ -42,8 +42,6 @@ class CoherePrompt(BasePrompt):
         super().__init__(**kwargs)
 
         # --- Customize Inherited Parameters ---
-        # Validate API Key
-        self._display_api_key_message(service_name=SERVICE, api_key_env_var=API_KEY_ENV_VAR, api_key_url=API_KEY_URL)
 
         # Update the 'model' parameter for Anthropic specifics.
         self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)

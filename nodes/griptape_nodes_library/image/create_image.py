@@ -38,7 +38,7 @@ class GenerateImage(ControlNode):
         )
         self.add_parameter(
             Parameter(
-                name="image_generation_driver",
+                name="image_model_config",
                 input_types=["Image Generation Driver"],
                 output_type="Image Generation Driver",
                 type="Image Generation Driver",
@@ -152,7 +152,7 @@ Focus on qualities that will make this the most professional looking photo in th
         kwargs = {}
 
         # Driver
-        driver_val = params.get("driver", None)
+        driver_val = params.get("image_model_config", None)
         if driver_val:
             driver = driver_val
         else:

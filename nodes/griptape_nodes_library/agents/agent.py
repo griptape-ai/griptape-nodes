@@ -104,7 +104,7 @@ class Agent(ControlNode):
         # Optional additional context for the prompt.
         self.add_parameter(
             Parameter(
-                "additional context",
+                "additional_context",
                 input_types=["str", "int", "float", "dict"],
                 type="str",
                 tooltip=(
@@ -265,7 +265,7 @@ class Agent(ControlNode):
 
         # If additional context is connected, prevent editing via property panel.
         # NOTE: This is a workaround. Ideally this is done automatically.
-        if target_parameter.name == "additional context":
+        if target_parameter.name == "additional_context":
             target_parameter.allowed_modes = {ParameterMode.INPUT}
 
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
@@ -318,7 +318,7 @@ class Agent(ControlNode):
 
         # If the additional context connection is removed, make it editable again.
         # NOTE: This is a workaround. Ideally this is done automatically.
-        if target_parameter.name == "additional context":
+        if target_parameter.name == "additional_context":
             target_parameter.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY}
 
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
@@ -377,7 +377,7 @@ class Agent(ControlNode):
                 prompt += f"\n{context_str}"
             except Exception:
                 # If conversion fails, log warning and continue with original prompt
-                msg = f"[WARNING] Unable to process additional context of type {type(context).__name__}, ignoring."
+                msg = f"[WARNING] Unable to process additional_context of type {type(context).__name__}, ignoring."
                 logger.warning(msg)
                 self.append_value_to_parameter("logs", msg)
         return prompt
@@ -442,7 +442,7 @@ class Agent(ControlNode):
         prompt = self.get_parameter_value("prompt")
 
         # Use any additional context provided by the user.
-        additional_context = self.get_parameter_value("additional context")
+        additional_context = self.get_parameter_value("additional_context")
         if additional_context:
             prompt = self._handle_additional_context(prompt, additional_context)
 
