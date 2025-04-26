@@ -79,7 +79,6 @@ nav:
               - Cohere Prompt: nodes/drivers/cohere_prompt_driver.md
               - Griptape Cloud Image: nodes/drivers/griptape_cloud_image_driver.md
               - Griptape Cloud Prompt: nodes/drivers/griptape_cloud_prompt_driver.md
-              - Ollama Prompt: nodes/drivers/ollama_prompt_driver.md
               - OpenAI Image: nodes/drivers/openai_image_driver.md
               - OpenAI Prompt: nodes/drivers/openai_prompt_driver.md
           - Image:
@@ -111,4 +110,3 @@ nav:
               - End Flow: nodes/utils/end_flow.md
               - Reroute: nodes/utils/reroute.md
               - Note: nodes/utils/note.md
-
