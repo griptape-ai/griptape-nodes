@@ -1,9 +1,9 @@
 [project]
 name = "griptape_nodes"
-version = "0.21.7"
+version = "0.21.12"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = "~=3.12"
 dependencies = [
   "griptape[drivers-prompt-anthropic,drivers-prompt-ollama,loaders-image,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo]>=1.6.2",
   "pydantic>=2.10.6",
@@ -15,6 +15,8 @@ dependencies = [
   "tomlkit>=0.13.2",
   # TODO(collin): Remove once https://github.com/astral-sh/uv/issues/1632 is resolved
   "uv>=0.6.16",
+  "fastapi>=0.115.12",
+  "uvicorn>=0.34.2",
 ]
 
 [dependency-groups]
@@ -42,6 +44,9 @@ gtn = "griptape_nodes:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.uv.sources]
+griptape = { git = "git+https://github.com/griptape-ai/griptape.git", branch = "main" }
 
 [tool.ruff]
 line-length = 120
@@ -97,4 +102,4 @@ convention = "google"
 venvPath = "."
 venv = ".venv"
 include = ["."]
-pythonVersion = "3.13"
+pythonVersion = "3.12"

@@ -26,9 +26,13 @@ class RequestPayload(Payload, ABC):
     request_id: int | None = None
 
 
-# Result payload base class with abstract succeeded method
+# Result payload base class with abstract succeeded/failed methods, and indicator whether the current workflow was altered.
 class ResultPayload(Payload, ABC):
     """Base class for all result payloads."""
+
+    """When set to True, alerts clients that this result made changes to the workflow state.
+    Editors can use this to determine if the workflow is dirty and needs to be re-saved, for example."""
+    altered_workflow_state: bool = False
 
     @abstractmethod
     def succeeded(self) -> bool:
@@ -40,6 +44,18 @@ class ResultPayload(Payload, ABC):
 
     def failed(self) -> bool:
         return not self.succeeded()
+
+
+class WorkflowAlteredMixin:
+    """Mixin for a ResultPayload that guarantees that a workflow was altered."""
+
+    altered_workflow_state: bool = True
+
+
+class WorkflowNotAlteredMixin:
+    """Mixin for a ResultPayload that guarantees that a workflow was NOT altered."""
+
+    altered_workflow_state: bool = False
 
 
 # Success result payload abstract base class

@@ -4,6 +4,8 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    WorkflowAlteredMixin,
+    WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -19,7 +21,7 @@ class CreateFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CreateFlowResultSuccess(ResultPayloadSuccess):
+class CreateFlowResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     flow_name: str
 
 
@@ -38,7 +40,7 @@ class DeleteFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteFlowResultSuccess(ResultPayloadSuccess):
+class DeleteFlowResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
     pass
 
 
@@ -57,13 +59,13 @@ class ListNodesInFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListNodesInFlowResultSuccess(ResultPayloadSuccess):
+class ListNodesInFlowResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     node_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListNodesInFlowResultFailure(ResultPayloadFailure):
+class ListNodesInFlowResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass
 
 
@@ -80,13 +82,13 @@ class ListFlowsInCurrentContextRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInCurrentContextResultSuccess(ResultPayloadSuccess):
+class ListFlowsInCurrentContextResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     flow_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInCurrentContextResultFailure(ResultPayloadFailure):
+class ListFlowsInCurrentContextResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass
 
 
@@ -100,13 +102,13 @@ class ListFlowsInFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInFlowResultSuccess(ResultPayloadSuccess):
+class ListFlowsInFlowResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     flow_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInFlowResultFailure(ResultPayloadFailure):
+class ListFlowsInFlowResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass
 
 
@@ -118,5 +120,5 @@ class GetTopLevelFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetTopLevelFlowResultSuccess(ResultPayloadSuccess):
+class GetTopLevelFlowResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     flow_name: str | None

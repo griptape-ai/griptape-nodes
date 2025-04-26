@@ -1,15 +1,24 @@
+"""Defines the Ollama node for configuring the OpenAi Prompt Driver.
+
+TODO(jason): Get this working with the new driver system, then add it to the library.json
+
+This module provides the `OllamaPrompt` class, which allows users
+to configure and utilize the Ollama prompt service within the Griptape
+Nodes framework.
+"""
+
 from griptape.drivers.prompt.ollama import OllamaPromptDriver as GtOllamaPromptDriver
 
 from griptape_nodes.exe_types.node_types import Parameter
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.drivers.prompt.base_prompt_driver import BasePromptDriver
+from griptape_nodes_library.drivers.prompt.base_prompt import BasePrompt
 
 DEFAULT_PORT = "11434"
 DEFAULT_BASE_URL = "http://127.0.0.1"
 DEFAULT_MODEL = "llama3.2"
 
 
-class OllamaPrompt(BasePromptDriver):
+class OllamaPrompt(BasePrompt):
     """Node for Ollama Prompt Driver.
 
     This node creates an Ollama prompt driver and outputs its configuration.

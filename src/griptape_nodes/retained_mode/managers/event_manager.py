@@ -1,10 +1,10 @@
 from collections import defaultdict
 from collections.abc import Callable
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 from griptape.events import EventBus
+from typing_extensions import TypeVar
 
-from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     EventResultFailure,
@@ -15,6 +15,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 
 if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.griptape_nodes import WorkflowManager
     from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
 
 RP = TypeVar("RP", bound=RequestPayload, default=RequestPayload)
@@ -55,21 +56,30 @@ class EventManager:
         if request_type in self._request_type_to_manager:
             del self._request_type_to_manager[request_type]
 
-    def handle_request(self, request: RP, operation_depth_mgr: "OperationDepthManager") -> ResultPayload:
+    def handle_request(
+        self, request: RP, operation_depth_mgr: "OperationDepthManager", workflow_mgr: "WorkflowManager"
+    ) -> ResultPayload:
         """Publish an event to the manager assigned to its type.
 
         Args:
             request: The request to handle
             operation_depth_mgr: The operation depth manager to use
+            workflow_mgr: The workflow manager to use
         """
         # Notify the manager of the event type
         with operation_depth_mgr as depth_manager:
             request_type = type(request)
             callback = self._request_type_to_manager.get(request_type)
             if callback:
+                # Actually make the handler callback:
                 result_payload = callback(request)
-                if hasattr(result_payload, "value"):
-                    result_payload.value = TypeValidator.safe_serialize(result_payload.value)
+
+                # Now see if the WorkflowManager was asking us to squelch altered_workflow_state commands
+                # This prevents situations like loading a workflow (which naturally alters the workflow state)
+                # from coming in and immediately being flagged as being dirty.
+                if workflow_mgr.should_squelch_workflow_altered():
+                    result_payload.altered_workflow_state = False
+
                 retained_mode_str = None
                 if depth_manager.is_top_level():
                     retained_mode_str = depth_manager.request_retained_mode_translation(request)

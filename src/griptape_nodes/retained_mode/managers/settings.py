@@ -68,6 +68,10 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     workspace_directory: str = Field(default=str(Path().cwd() / "GriptapeNodes"))
+    static_files_directory: str = Field(
+        default="staticfiles",
+        description="Path to the static files directory, relative to the workspace directory.",
+    )
     app_events: AppEvents = Field(default_factory=AppEvents)
     nodes: dict[str, Any] = Field(
         default_factory=lambda: {
