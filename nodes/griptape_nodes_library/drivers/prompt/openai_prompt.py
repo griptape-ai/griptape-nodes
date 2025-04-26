@@ -13,7 +13,7 @@ from griptape_nodes_library.drivers.prompt.base_prompt import BasePrompt
 
 # --- Constants ---
 
-SERVICE = "OpenAi"
+SERVICE = "OpenAI"
 API_KEY_URL = "https://platform.openai.com/api-keys"
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
 MODEL_CHOICES = ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4.5-preview", "o1", "o1-mini", "o3-mini"]
@@ -49,7 +49,7 @@ class OpenAiPrompt(BasePrompt):
         # --- Customize Inherited Parameters ---
 
         # Validate API Key
-        self._display_api_key_message(service_name=SERVICE, api_key_env_var=API_KEY_ENV_VAR, api_key_url=API_KEY_URL)
+        # self._display_api_key_message(service_name=SERVICE, api_key_env_var=API_KEY_ENV_VAR, api_key_url=API_KEY_URL)
 
         # Update the 'model' parameter for OpenAi specifics.
         self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
