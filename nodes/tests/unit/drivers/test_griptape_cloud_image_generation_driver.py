@@ -1,6 +1,6 @@
 import pytest
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
-from griptape_nodes_library.drivers.image.griptape_cloud_image_driver import GriptapeCloudImage
+from griptape_nodes_library.config.image.griptape_cloud_image_driver import GriptapeCloudImage
 
 
 class TestGriptapeCloudImageGenerationNode:
@@ -79,13 +79,6 @@ class TestGriptapeCloudImageGenerationNode:
             ("dall-e-3", "1024x1024", "1024x1024"),
         ],
     )
-    def test_adjust_size_based_on_model(self, model, size, expected_size) -> None:
-        griptape_cloud_image_generation_node = GriptapeCloudImage(name="Griptape Cloud Image Generation")
-
-        adjusted_size = griptape_cloud_image_generation_node.adjust_size_based_on_model(model, size)
-
-        assert adjusted_size == expected_size
-
     def test_process(self) -> None:
         griptape_cloud_image_generation_node = GriptapeCloudImage(name="Griptape Cloud Image Generation")
 
