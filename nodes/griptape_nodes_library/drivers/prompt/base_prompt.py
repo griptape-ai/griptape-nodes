@@ -367,6 +367,11 @@ class BasePrompt(BaseDriver):
                 msg += " Please provide a valid API key in your settings."
             exceptions.append(KeyError(msg))
 
+        # Display a message to the user if the API key is missing or empty.
+        self._display_api_key_message(
+            service_name=service_name, api_key_env_var=api_key_env_var, api_key_url=api_key_url
+        )
+
         return exceptions if exceptions else None
 
     def process(self) -> None:
