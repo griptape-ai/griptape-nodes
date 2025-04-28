@@ -82,3 +82,21 @@ class SetConfigCategoryResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class SetConfigCategoryResultFailure(ResultPayloadFailure):
     pass
+
+
+@dataclass
+@PayloadRegistry.register
+class GetConfigPathRequest(RequestPayload):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class GetConfigPathResultSuccess(ResultPayloadSuccess):
+    config_path: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetConfigPathResultFailure(ResultPayloadFailure):
+    pass

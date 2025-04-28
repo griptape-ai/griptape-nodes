@@ -21,7 +21,7 @@ from griptape_nodes.retained_mode.events.config_events import (
     SetConfigCategoryResultSuccess,
     SetConfigValueRequest,
     SetConfigValueResultFailure,
-    SetConfigValueResultSuccess,
+    SetConfigValueResultSuccess, GetConfigPathResultSuccess, GetConfigPathRequest,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import Settings, WorkflowSettingsDetail
@@ -63,6 +63,7 @@ class ConfigManager:
             )
             event_manager.assign_manager_to_request_type(GetConfigValueRequest, self.on_handle_get_config_value_request)
             event_manager.assign_manager_to_request_type(SetConfigValueRequest, self.on_handle_set_config_value_request)
+            event_manager.assign_manager_to_request_type(GetConfigPathRequest, self.on_handle_get_config_path_request)
 
             event_manager.add_listener_to_app_event(
                 AppInitializationComplete,
@@ -313,6 +314,9 @@ class ConfigManager:
         details = f"Successfully returned the config value for section '{request.category_and_key}'."
         logger.info(details)
         return GetConfigValueResultSuccess(value=find_results)
+
+    def on_handle_get_config_path_request(self, request: GetConfigPathRequest) -> ResultPayload:
+        return GetConfigPathResultSuccess(config_path=str(USER_CONFIG_PATH))
 
     def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
         """Generate a diff between the old and new values."""
