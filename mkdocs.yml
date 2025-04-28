@@ -63,7 +63,7 @@ nav:
       - Making Custom Scripts: how_to/making_custom_scripts.md
       - Set Up External Resources:
         - Overview: how_to/setup_external_resources.md
-        - Hugging Face: nodes/hugging_face/hugging_face_install.md
+        - Hugging Face Installation: nodes/hugging_face/hugging_face_install.md
 
   - FAQ: faq.md
   - Reference:
