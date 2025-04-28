@@ -24,6 +24,7 @@ from griptape.events import (
 )
 from rich.align import Align
 from rich.console import Console
+from rich.logging import RichHandler
 from rich.panel import Panel
 from xdg_base_dirs import xdg_config_home
 
@@ -139,7 +140,13 @@ def _serve_static_server() -> None:
         name="static",
     )
 
-    uvicorn.run(app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL)
+    logging.getLogger("uvicorn").addHandler(
+        RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)
+    )
+
+    uvicorn.run(
+        app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL, log_config=None
+    )
 
 
 def _init_event_listeners() -> None:
