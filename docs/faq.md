@@ -10,8 +10,7 @@ gtn config | grep workspace
 
 ## Can I run the Engine on a different machine than the Editor?
 
-You can!  The engine and editor can run in entirely different places!  Keep in mind, however, that files saved and libraries-registered refer to the workspace the engine is running on.  If you find your files are not where you expect at first glance, consider this possibility!
-
+You can! The engine and editor can run in entirely different places! Keep in mind, however, that files saved and libraries-registered refer to the workspace the engine is running on. If you find your files are not where you expect at first glance, consider this possibility!
 
 ## Where is Griptape Nodes installed?
 
