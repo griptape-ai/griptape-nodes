@@ -10,7 +10,7 @@ gtn config | grep workspace
 
 ## Can I run the Engine on a different machine than the Editor?
 
-You can! The engine and editor can run in entirely different places! Keep in mind, however, that files saved and libraries-registered refer to the workspace the engine is running on. If you find your files are not where you expect at first glance, consider this possibility!
+Absolutely! The Engine and Editor can run on completely separate machines. Just remember that any files you save or libraries you register will be stored on the machine where the Engine is running. So if you're looking for your files and can't find them right away, double-check which machine the Engine is running on.
 
 ## Where is Griptape Nodes installed?
 
@@ -30,7 +30,7 @@ $(Split-Path -Parent (Split-Path -Parent (Get-Command griptape-nodes | Select-Ob
 
 <a id="uninstall"></a>
 
-## How do I uninstall?
+## How do I uninstall Griptape Nodes?
 
 Need to part ways with Griptape Nodes? It's a simple goodbye with a single command:
 
@@ -39,6 +39,18 @@ uv tool uninstall griptape-nodes
 ```
 
 When regret inevitably washes over you, have no fear. Open arms await; just revisit [Getting Started](getting_started.md)
+
+## How do I update Griptape Nodes?
+
+Griptape Nodes will automatically check if it needs to update every time it runs. If it does, you will be prompted to answer with a (y/n) response. Respond with a y and it will automatically update to the latest version of the Engine. Once completed, simply type griptape-nodes or gtn to launch again.
+
+If you would like to _manually_ update, you can always use either of these commands:
+
+`griptape-nodes update`
+
+or
+
+`gtn update`
 
 ## I'm seeing "failed to locate pyvenv.cfg: The system cannot find the file specified." - What should I do?
 
