@@ -1467,26 +1467,26 @@ class FlowManager:
     def on_single_node_step_request(self, request: SingleNodeStepRequest) -> ResultPayload:
         flow_name = request.flow_name
         if not flow_name:
-            details = "Could not step flow. No flow name was provided."
+            details = "Could not advance to the next step of a running workflow. No flow name was provided."
             logger.error(details)
 
             return SingleNodeStepResultFailure(validation_exceptions=[])
         try:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
-            details = f"Could not step flow. No flow with name {flow_name} exists. Error: {err}"
+            details = f"Could not advance to the next step of a running workflow. No flow with name {flow_name} exists. Error: {err}"
             logger.error(details)
 
             return SingleNodeStepResultFailure(validation_exceptions=[err])
         try:
             flow.single_node_step()
         except Exception as e:
-            details = f"Could not step flow. Exception: {e}"
+            details = f"Could not advance to the next step of a running workflow. Exception: {e}"
             logger.error(details)
             return SingleNodeStepResultFailure(validation_exceptions=[])
 
         # All completed happily
-        details = f"Successfully stepped flow with name {flow_name}"
+        details = f"Successfully advanced to the next step of a running workflow with name {flow_name}"
         logger.debug(details)
 
         return SingleNodeStepResultSuccess()
@@ -1494,14 +1494,14 @@ class FlowManager:
     def on_single_execution_step_request(self, request: SingleExecutionStepRequest) -> ResultPayload:
         flow_name = request.flow_name
         if not flow_name:
-            details = "Could not single step flow. No flow name was provided."
+            details = "Could not advance to the next step of a running workflow. No flow name was provided."
             logger.error(details)
 
             return SingleExecutionStepResultFailure()
         try:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
-            details = f"Could not single step flow. Error: {err}."
+            details = f"Could not advance to the next step of a running workflow. Error: {err}."
             logger.error(details)
 
             return SingleExecutionStepResultFailure()
@@ -1509,10 +1509,10 @@ class FlowManager:
         try:
             flow.single_execution_step(change_debug_mode)
         except Exception as e:
-            details = f"Could not step flow. Exception: {e}"
+            details = f"Could not advance to the next step of a running workflow. Exception: {e}"
             logger.error(details)
             return SingleNodeStepResultFailure(validation_exceptions=[])
-        details = f"Successfully granularly stepped flow with name {flow_name}"
+        details = f"Successfully advanced to the next step of a running workflow with name {flow_name}"
         logger.debug(details)
 
         return SingleExecutionStepResultSuccess()

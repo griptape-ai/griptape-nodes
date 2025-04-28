@@ -347,7 +347,7 @@ class ConfigManager:
             elif new is None:
                 formatted_lines.append(f"[{key}]: REMOVED: '{old}'")
             else:
-                formatted_lines.append(f"[{key}]:\n\tFROM: '{old}'\n\tTO: '{new}'")
+                formatted_lines.append(f"[{key}]:\n\tFROM: '{old}'\n\t  TO: '{new}'")
         return "\n".join(formatted_lines)
 
     def on_handle_set_config_value_request(self, request: SetConfigValueRequest) -> ResultPayload:
