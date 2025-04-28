@@ -70,6 +70,8 @@ logger = logging.getLogger("griptape_nodes")
 
 class LibraryManager:
     class LibraryStatus(StrEnum):
+        """Status of the library."""
+
         GOOD = "GOOD"  # No errors detected during loading. Registered.
         FLAWED = "FLAWED"  # Some errors detected, but recoverable. Registered.
         UNUSABLE = "UNUSABLE"  # Errors detected and not recoverable. Not registered.
@@ -77,6 +79,8 @@ class LibraryManager:
 
     @dataclass
     class LibraryInfo:
+        """Information about a library."""
+
         status: LibraryManager.LibraryStatus
         library_path: str
         library_name: str | None = None

@@ -1,7 +1,8 @@
 from typing import Any
 
 
-def to_dict(input_value: Any) -> dict:
+def to_dict(input_value) -> dict:
+    """Convert various input types to a dictionary."""
     result = {}  # Default return value
 
     try:

@@ -16,6 +16,7 @@ DEFAULT_FILENAME = "griptape_nodes.png"
 
 
 def to_image_artifact(image: ImageArtifact | dict) -> ImageArtifact:
+    """Convert an image or a dictionary to an ImageArtifact."""
     if isinstance(image, dict):
         return dict_to_image_artifact(image)
     return image

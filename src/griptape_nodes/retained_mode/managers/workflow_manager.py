@@ -90,12 +90,16 @@ class WorkflowManager:
     MAX_MINOR_VERSION_DEVIATION: ClassVar[int] = 2
 
     class WorkflowStatus(StrEnum):
+        """The status of a workflow."""
+
         GOOD = "GOOD"  # No errors detected during loading. Registered.
         FLAWED = "FLAWED"  # Some errors detected, but recoverable. Registered.
         UNUSABLE = "UNUSABLE"  # Errors detected and not recoverable. Not registered.
         MISSING = "MISSING"  # File not found. Not registered.
 
     class WorkflowDependencyStatus(StrEnum):
+        """The status of a workflow dependency."""
+
         PERFECT = "PERFECT"  # Same major, minor, and patch version
         GOOD = "GOOD"  # Same major, minor version
         CAUTION = "CAUTION"  # Dependency is ahead within maximum minor revisions
@@ -105,6 +109,8 @@ class WorkflowManager:
 
     @dataclass
     class WorkflowDependencyInfo:
+        """Information about a workflow dependency."""
+
         library_name: str
         version_requested: str
         version_present: str | None
@@ -112,6 +118,8 @@ class WorkflowManager:
 
     @dataclass
     class WorkflowInfo:
+        """Information about a workflow."""
+
         status: WorkflowManager.WorkflowStatus
         workflow_path: str
         workflow_name: str | None = None
@@ -122,6 +130,8 @@ class WorkflowManager:
 
     # Track how many contexts we have that intend to squelch (set to False) altered_workflow_state event values.
     class WorkflowSquelchContext:
+        """Context manager to squelch workflow altered events."""
+
         def __init__(self, manager: WorkflowManager):
             self.manager = manager
 
@@ -139,6 +149,8 @@ class WorkflowManager:
     _squelch_workflow_altered_count: int = 0
 
     class WorkflowExecutionResult(NamedTuple):
+        """Result of a workflow execution."""
+
         execution_successful: bool
         execution_details: str
 

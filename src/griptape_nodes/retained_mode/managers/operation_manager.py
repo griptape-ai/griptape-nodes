@@ -58,7 +58,8 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 
 
-def handle_parameter_tooltips(payload: Any, params: list) -> list:
+def handle_parameter_tooltips(payload, params) -> list:
+    """Handle tooltips for parameters."""
     tooltip = getattr(payload, "tooltip", "")
     if tooltip is not None:
         params.append(f'tooltip="{tooltip}"')

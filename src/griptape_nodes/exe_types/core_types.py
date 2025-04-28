@@ -35,6 +35,8 @@ class ParameterTypeBuiltin(Enum):
 
 class ParameterType:
     class KeyValueTypePair(NamedTuple):
+        """Key-Value Type Pair."""
+
         key_type: str
         value_type: str
 

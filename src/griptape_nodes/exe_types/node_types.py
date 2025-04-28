@@ -585,6 +585,7 @@ class Connection:
 
 
 def handle_container_parameter(current_node: BaseNode, parameter: Parameter) -> Any:
+    """Handle the container parameter."""
     # if it's a container and it's value isn't already set.
     if isinstance(parameter, ParameterContainer):
         children = parameter.find_elements_by_type(Parameter, find_recursively=False)
