@@ -67,6 +67,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     DeleteNodeResultFailure,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
+    GetParameterDetailsRequest,
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.validation_events import (
@@ -562,11 +563,17 @@ class FlowManager:
                     logger.error(details)
             return CreateConnectionResultFailure()
 
+        # Nodes may have custom logic to change Parameters based on a Connection being made to them.
+        # Record a set of Parameter names that have been modified.
+        modified_source_parameters_set = set()
+        modified_target_parameters_set = set()
+
         # Let the source make any internal handling decisions now that the Connection has been made.
         source_node.after_outgoing_connection(
             source_parameter=source_param,
             target_node=target_node,
             target_parameter=target_param,
+            modified_parameters_set=modified_source_parameters_set,
         )
 
         # And target.
@@ -574,6 +581,7 @@ class FlowManager:
             source_node=source_node,
             source_parameter=source_param,
             target_parameter=target_param,
+            modified_parameters_set=modified_target_parameters_set,
         )
 
         details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
@@ -603,6 +611,23 @@ class FlowManager:
                     data_type=source_param.type,
                 )
             )
+
+        # Update any Parameters that were modified as a result of the Connection.
+        # This will notify the editor with updated details.
+        # Source first.
+        if modified_source_parameters_set:
+            for modified_parameter_name in modified_source_parameters_set:
+                modified_request = GetParameterDetailsRequest(
+                    parameter_name=modified_parameter_name, node_name=source_node.name
+                )
+                GriptapeNodes.handle_request(modified_request)
+        # Target next.
+        if modified_target_parameters_set:
+            for modified_parameter_name in modified_target_parameters_set:
+                modified_request = GetParameterDetailsRequest(
+                    parameter_name=modified_parameter_name, node_name=target_node.name
+                )
+                GriptapeNodes.handle_request(modified_request)
 
         result = CreateConnectionResultSuccess()
 
@@ -729,11 +754,17 @@ class FlowManager:
             except KeyError as e:
                 logger.warning(e)
 
+        # Nodes may have custom logic to change Parameters based on a Connection being made to them.
+        # Record a set of Parameter names that have been modified.
+        modified_source_parameters_set = set()
+        modified_target_parameters_set = set()
+
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
         source_node.after_outgoing_connection_removed(
             source_parameter=source_param,
             target_node=target_node,
             target_parameter=target_param,
+            modified_parameters_set=modified_source_parameters_set,
         )
 
         # And target.
@@ -741,7 +772,25 @@ class FlowManager:
             source_node=source_node,
             source_parameter=source_param,
             target_parameter=target_param,
+            modified_parameters_set=modified_target_parameters_set,
         )
+
+        # Update any Parameters that were modified as a result of removing the Connection.
+        # This will notify the editor with updated details.
+        # Source first.
+        if modified_source_parameters_set:
+            for modified_parameter_name in modified_source_parameters_set:
+                modified_request = GetParameterDetailsRequest(
+                    parameter_name=modified_parameter_name, node_name=source_node.name
+                )
+                GriptapeNodes.handle_request(modified_request)
+        # Target next.
+        if modified_target_parameters_set:
+            for modified_parameter_name in modified_source_parameters_set:
+                modified_request = GetParameterDetailsRequest(
+                    parameter_name=modified_parameter_name, node_name=target_node.name
+                )
+                GriptapeNodes.handle_request(modified_request)
 
         details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" deleted.'
         logger.debug(details)

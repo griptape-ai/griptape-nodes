@@ -115,8 +115,26 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
-        """Callback after a Connection has been established TO this Node."""
+        """Callback after a Connection has been established TO this Node.
+
+        Custom nodes may elect to override the default behavior by implementing this function in their node code.
+
+        This gives the node an opportunity to perform custom logic after a Connection is made to this node's Parameter as an input.
+        This may result in changing other Parameters on the node. If other Parameters are changed, the engine needs a list of which
+        ones have changed to cascade unresolved state.
+
+        Args:
+            souce_node: the Node that is making the Connection *TO* this Node
+            source_parameter: the Parameter on the source Node that is making the Connection *TO* this Node
+            target_parameter: the Parameter on THIS Node that has the Connection assigned as input
+            modified_parameters_set: A set of parameter names within this node that were modified as a result
+                of this call. The Parameter this was called on does NOT need to be part of the return.
+
+        Returns:
+            Nothing
+        """
         return
 
     def after_outgoing_connection(
@@ -124,8 +142,26 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
-        """Callback after a Connection has been established OUT of this Node."""
+        """Callback after a Connection has been established OUT of this Node.
+
+        Custom nodes may elect to override the default behavior by implementing this function in their node code.
+
+        This gives the node an opportunity to perform custom logic after a Connection is made from this node's Parameter as an output.
+        This may result in changing other Parameters on the node. If other Parameters are changed, the engine needs a list of which
+        ones have changed to cascade unresolved state.
+
+        Args:
+            source_parameter: the Parameter on THIS Node that is making the Connection *TO* the other Node
+            target_node: the Node that is accepting Connection *FROM* this Node
+            target_parameter: the Parameter on the target Node that has the Connection assigned as input
+            modified_parameters_set: A set of parameter names within this node that were modified as a result
+                of this call. The Parameter this was called on does NOT need to be part of the return.
+
+        Returns:
+            Nothing
+        """
         return
 
     def after_incoming_connection_removed(
@@ -133,8 +169,26 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
-        """Callback after a Connection TO this Node was REMOVED."""
+        """Callback after a Connection TO this Node was REMOVED.
+
+        Custom nodes may elect to override the default behavior by implementing this function in their node code.
+
+        This gives the node an opportunity to perform custom logic after a Connection is removed from this node's Parameter as an input.
+        This may result in changing other Parameters on the node. If other Parameters are changed, the engine needs a list of which
+        ones have changed to cascade unresolved state.
+
+        Args:
+            souce_node: the Node that was making the Connection *TO* this Node
+            source_parameter: the Parameter on the source Node that was making the Connection *TO* this Node
+            target_parameter: the Parameter on THIS Node that had the Connection assigned as input
+            modified_parameters_set: A set of parameter names within this node that were modified as a result
+                of this call. The Parameter this was called on does NOT need to be part of the return.
+
+        Returns:
+            Nothing
+        """
         return
 
     def after_outgoing_connection_removed(
@@ -142,8 +196,26 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
-        """Callback after a Connection OUT of this Node was REMOVED."""
+        """Callback after a Connection OUT of this Node was REMOVED.
+
+        Custom nodes may elect to override the default behavior by implementing this function in their node code.
+
+        This gives the node an opportunity to perform custom logic after a Connection is removed from this node's Parameter as an output.
+        This may result in changing other Parameters on the node. If other Parameters are changed, the engine needs a list of which
+        ones have changed to cascade unresolved state.
+
+        Args:
+            source_parameter: the Parameter on THIS Node that was making the Connection *TO* the other Node
+            target_node: the Node that was accepting Connection *FROM* this Node
+            target_parameter: the Parameter on the target Node that had the Connection assigned as input
+            modified_parameters_set: A set of parameter names within this node that were modified as a result
+                of this call. The Parameter this was called on does NOT need to be part of the return.
+
+        Returns:
+            Nothing
+        """
         return
 
     def before_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> Any:  # noqa: ARG002

@@ -226,7 +226,11 @@ class Agent(ControlNode):
         return super().after_value_set(parameter, value, modified_parameters_set)
 
     def after_incoming_connection(
-        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+        modified_parameters_set: set[str],
     ) -> None:
         """Handles UI updates after an incoming connection is made to this node.
 
@@ -253,6 +257,8 @@ class Agent(ControlNode):
                 param = self.get_parameter_by_name(param_name)
                 if param:
                     param._ui_options["hide"] = True
+                    # Add this parameter to the set of parameters that were modified.
+                    modified_parameters_set.add(param_name)
 
         # TODO(jason): Enable this after the UI updating works correctly.
         # If a prompt_model_config is connected, hide the manual model selector.
@@ -268,10 +274,16 @@ class Agent(ControlNode):
         if target_parameter.name == "additional_context":
             target_parameter.allowed_modes = {ParameterMode.INPUT}
 
-        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
+        return super().after_incoming_connection(
+            source_node, source_parameter, target_parameter, modified_parameters_set
+        )
 
     def after_incoming_connection_removed(
-        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+        modified_parameters_set: set[str],
     ) -> None:
         """Handles UI updates after an incoming connection to this node is removed.
 
@@ -305,6 +317,8 @@ class Agent(ControlNode):
                             continue  # Keep it hidden if model isn't set to use connection
 
                     param._ui_options["hide"] = False
+                    # Add this parameter to the set of parameters that were modified.
+                    modified_parameters_set.add(param_name)
 
         # TODO(jason): Enable this after the UI updating works correctly.
         # If the prompt_model_config connection is removed, show the model dropdown,
@@ -321,7 +335,9 @@ class Agent(ControlNode):
         if target_parameter.name == "additional_context":
             target_parameter.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY}
 
-        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
+        return super().after_incoming_connection_removed(
+            source_node, source_parameter, target_parameter, modified_parameters_set
+        )
 
     # --- Validation ---
 
