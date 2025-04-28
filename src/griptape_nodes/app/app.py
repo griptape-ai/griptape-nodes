@@ -130,7 +130,7 @@ def _serve_static_server() -> None:
             "http://localhost",
         ],
         allow_credentials=True,
-        allow_methods=["OPTIONS, GET"],
+        allow_methods=["GET"],
         allow_headers=["*"],
     )
 
