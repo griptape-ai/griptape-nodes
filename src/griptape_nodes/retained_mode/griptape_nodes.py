@@ -4452,9 +4452,10 @@ class LibraryManager:
                     logger.debug("Created virtual environment at %s", library_venv_path)
 
                 # Grab the python executable from the virtual environment so that we can pip install there
-                library_venv_python_path = (
-                    library_venv_path / ("Scripts" if OSManager.is_windows() else "bin") / "python.exe"
-                ).resolve()
+                if OSManager.is_windows():
+                    library_venv_python_path = library_venv_path / "Scripts" / "python.exe"
+                else:
+                    library_venv_python_path = library_venv_path / "bin" / "python"
                 subprocess.run(  # noqa: S603
                     [
                         sys.executable,
