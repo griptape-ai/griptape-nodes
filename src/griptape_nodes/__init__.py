@@ -23,6 +23,7 @@ from xdg_base_dirs import xdg_config_home, xdg_data_home
 
 from griptape_nodes.app import start_app
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
@@ -305,23 +306,7 @@ def _uninstall_self() -> None:
             console.print(f"[yellow]{dir_name} '{dir_path}' does not exist; skipping.[/yellow]")
 
     # Remove the executable/tool
-    executable_path = shutil.which("griptape-nodes")
-    executable_removed = False
-    if executable_path:
-        console.print(f"[bold]Removing Griptape Nodes executable ({executable_path})...[/bold]")
-        try:
-            subprocess.run(
-                ["uv", "tool", "uninstall", "griptape-nodes"],
-                check=True,
-                text=True,
-            )
-            executable_removed = True
-        except subprocess.CalledProcessError:
-            executable_removed = False
-    else:
-        console.print("[yellow]Griptape Nodes executable not found; skipping removal.[/yellow]")
-
-    console.print("[bold green]Uninstall complete![/bold green]")
+    executable_removed = __uninstall_executable()
 
     caveats = []
     # Handle any remaining config files not removed by design
@@ -378,6 +363,41 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)
+
+
+def __uninstall_executable() -> bool:
+    """Uninstalls the Griptape Nodes executable.
+
+    This is skipped on Windows due to OS limitations.
+
+    Returns:
+        bool: True if the executable was removed, False otherwise.
+
+    """
+    executable_path = shutil.which("griptape-nodes")
+    executable_removed = False
+    if executable_path:
+        if OSManager.is_windows():
+            console.print(
+                "[bold]Windows does not allow for uninstalling executables while they are running. Please review uninstallation caveats for manual steps.[/bold]"
+            )
+        else:
+            console.print(f"[bold]Removing Griptape Nodes executable ({executable_path})...[/bold]")
+            try:
+                subprocess.run(
+                    ["uv", "tool", "uninstall", "griptape-nodes"],
+                    check=True,
+                    text=True,
+                )
+                executable_removed = True
+            except subprocess.CalledProcessError:
+                executable_removed = False
+    else:
+        console.print("[yellow]Griptape Nodes executable not found; skipping removal.[/yellow]")
+
+    console.print("[bold green]Uninstall complete![/bold green]")
+
+    return executable_removed
 
 
 def __init_system_config() -> None:
