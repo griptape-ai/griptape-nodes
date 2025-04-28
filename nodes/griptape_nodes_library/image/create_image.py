@@ -78,9 +78,9 @@ class GenerateImage(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output",
-                input_types=["ImageArtifact"],
-                output_type="ImageArtifact",
-                type="ImageArtifact",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                output_type="ImageUrlArtifact",
+                type="ImageUrlArtifact",
                 tooltip="None",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
