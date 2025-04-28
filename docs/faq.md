@@ -24,15 +24,24 @@ For Windows PowerShell:
 $(Split-Path -Parent (Split-Path -Parent (Get-Command griptape-nodes | Select-Object -ExpandProperty Source)))
 ```
 
+<a id="uninstall"></a>
 ## How do I uninstall?
 
 Need to part ways with Griptape Nodes? It's a simple goodbye with a single command:
 
 ```bash
-griptape-nodes uninstall
+uv tool uninstall griptape-nodes
 ```
 
 When regret inevitably washes over you, have no fear. Open arms await; just revisit [Getting Started](getting_started.md)
+
+
+## failed to locate pyvenv.cfg: The system cannot find the file specified.
+
+Seeing this message when trying to run or install griptape-nodes?
+
+It is possible, that during a previous uninstall things were not _fully_ uninstalled.  Simply run [uninstall](#uninstall) again, and then [re-install](getting_started.md).
+
 
 ## Where can I provide feedback or ask questions?
 
