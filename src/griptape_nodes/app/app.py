@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import signal
-import socket
 import sys
 import threading
 from queue import Queue
@@ -24,6 +23,7 @@ from griptape.events import (
 )
 from rich.align import Align
 from rich.console import Console
+from rich.logging import RichHandler
 from rich.panel import Panel
 from xdg_base_dirs import xdg_config_home
 
@@ -53,17 +53,11 @@ STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "t
 # Host of the static server
 STATIC_SERVER_HOST = os.getenv("STATIC_SERVER_HOST", "localhost")
 # Port of the static server
-STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "0"))
+STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8124"))
 # URL path for the static server
 STATIC_SERVER_URL = os.getenv("STATIC_SERVER_URL", "/static")
 # Log level for the static server
 STATIC_SERVER_LOG_LEVEL = os.getenv("STATIC_SERVER_LOG_LEVEL", "info").lower()
-
-if STATIC_SERVER_ENABLED:
-    # Try binding to a port. If we bind to 0 (the default), the OS will pick an available port.
-    sock = socket.socket()
-    sock.bind(("", STATIC_SERVER_PORT))
-    STATIC_SERVER_PORT = sock.getsockname()[1]
 
 
 class EventLogHandler(logging.Handler):
@@ -129,7 +123,7 @@ def _serve_static_server() -> None:
             "http://localhost",
         ],
         allow_credentials=True,
-        allow_methods=["OPTIONS, GET"],
+        allow_methods=["GET"],
         allow_headers=["*"],
     )
 
@@ -139,7 +133,13 @@ def _serve_static_server() -> None:
         name="static",
     )
 
-    uvicorn.run(app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL)
+    logging.getLogger("uvicorn").addHandler(
+        RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)
+    )
+
+    uvicorn.run(
+        app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL, log_config=None
+    )
 
 
 def _init_event_listeners() -> None:
