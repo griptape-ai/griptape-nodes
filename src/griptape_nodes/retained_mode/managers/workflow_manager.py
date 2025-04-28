@@ -72,6 +72,8 @@ from griptape_nodes.retained_mode.griptape_nodes import (
 )
 
 if TYPE_CHECKING:
+    from types import TracebackType
+
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -126,7 +128,12 @@ class WorkflowManager:
         def __enter__(self) -> None:
             self.manager._squelch_workflow_altered_count += 1
 
-        def __exit__(self, exc_type, exc_value, traceback) -> None:
+        def __exit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc_value: BaseException | None,
+            exc_traceback: TracebackType | None,
+        ) -> None:
             self.manager._squelch_workflow_altered_count -= 1
 
     _squelch_workflow_altered_count: int = 0

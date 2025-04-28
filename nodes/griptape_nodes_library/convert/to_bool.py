@@ -42,7 +42,7 @@ class ToBool(DataNode):
     ) -> None:
         pass
 
-    def to_bool(self, input_value) -> bool:
+    def to_bool(self, input_value: Any) -> bool:
         result = False  # Default return value
 
         try:

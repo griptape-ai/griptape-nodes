@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from types import TracebackType
+
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 
@@ -112,7 +114,12 @@ class ContextManager:
         def __enter__(self) -> str:
             return self._manager.push_flow(self._flow_name)
 
-        def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        def __exit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc_value: BaseException | None,
+            exc_traceback: TracebackType | None,
+        ) -> None:
             self._manager.pop_flow()
 
     class NodeContext:
@@ -128,7 +135,12 @@ class ContextManager:
         def __enter__(self) -> str:
             return self._manager.push_node(self._node_name)
 
-        def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        def __exit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc_value: BaseException | None,
+            exc_traceback: TracebackType | None,
+        ) -> None:
             self._manager.pop_node()
 
     class ElementContext:
@@ -141,7 +153,12 @@ class ContextManager:
         def __enter__(self) -> str:
             return self._manager.push_element(self._element_name)
 
-        def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        def __exit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc_value: BaseException | None,
+            exc_traceback: TracebackType | None,
+        ) -> None:
             self._manager.pop_element()
 
     def __init__(self, event_manager: EventManager) -> None:  # noqa: ARG002

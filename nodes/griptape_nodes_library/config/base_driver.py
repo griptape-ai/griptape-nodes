@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from collections.abc import Callable
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
@@ -94,7 +95,14 @@ class BaseDriver(DataNode):
             msg = f"Error removing parameter '{name}'."
             raise ValueError(msg) from e
 
-    def params_to_sparse_dict(self, params, kwargs, param_name, target_name=None, transform=None) -> dict:
+    def params_to_sparse_dict(
+        self,
+        params: dict,
+        kwargs: dict,
+        param_name: str,
+        target_name: str | None = None,
+        transform: Callable | None = None,
+    ) -> dict:
         """Add a parameter to kwargs if it exists in params, with optional transformation.
 
         Args:
@@ -107,7 +115,7 @@ class BaseDriver(DataNode):
         Returns:
             dict: The updated kwargs dictionary
         """
-        value = params.get(param_name, None)
+        value = params.get(param_name)
         if value is not None:
             transformed_value = transform(value) if transform else value
             kwargs[target_name or param_name] = transformed_value

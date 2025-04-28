@@ -339,7 +339,7 @@ class EventResultFailure(EventResult[P, R]):
 
 
 # Helper function to deserialize event from JSON
-def deserialize_event(json_data) -> BaseEvent:
+def deserialize_event(json_data: str | dict | Any) -> BaseEvent:
     """Deserialize an event from JSON or dict, using the payload type information embedded in the data.
 
     Args:

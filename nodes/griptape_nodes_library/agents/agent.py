@@ -347,7 +347,7 @@ class Agent(ControlNode):
         # Return any exceptions
         return exceptions if exceptions else None
 
-    def _handle_additional_context(self, prompt, additional_context: str | int | float | dict[str, Any]) -> str:  # noqa: PYI041
+    def _handle_additional_context(self, prompt: str, additional_context: str | int | float | dict[str, Any]) -> str:  # noqa: PYI041
         """Integrates additional context into the main prompt string.
 
         - If context is numeric, it's converted to a string and appended.

@@ -1,7 +1,7 @@
 from typing import Any
 
 
-def to_dict(input_value) -> dict:
+def to_dict(input_value: Any) -> dict:
     result = {}  # Default return value
 
     try:
@@ -25,7 +25,7 @@ def to_dict(input_value) -> dict:
     return result
 
 
-def _convert_string_to_dict(input_str) -> dict:
+def _convert_string_to_dict(input_str: str) -> dict:
     """Convert a string to a dictionary using various parsing strategies."""
     # Import modules at the function start to avoid unbound errors
     import ast
@@ -69,7 +69,7 @@ def _convert_string_to_dict(input_str) -> dict:
     return {"value": input_str}
 
 
-def _process_key_value_string(input_str) -> dict:
+def _process_key_value_string(input_str: str) -> dict:
     """Process string with key:value or key=value patterns."""
     result = {}
 
@@ -98,7 +98,7 @@ def _process_key_value_string(input_str) -> dict:
     return result
 
 
-def _convert_sequence_to_dict(sequence) -> dict:
+def _convert_sequence_to_dict(sequence: list | tuple) -> dict:
     """Convert a list or tuple to dictionary."""
     result = {}
 

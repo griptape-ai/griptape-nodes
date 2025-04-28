@@ -29,7 +29,7 @@ class PayloadRegistry(SingletonMixin):
         return payload_class
 
     @classmethod
-    def get_type(cls, type_name) -> type[Payload] | None:
+    def get_type(cls, type_name: str) -> type[Payload] | None:
         """Get a payload type by name.
 
         Args:
