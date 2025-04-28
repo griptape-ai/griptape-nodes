@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import signal
-import socket
 import sys
 import threading
 from queue import Queue
@@ -54,17 +53,11 @@ STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "t
 # Host of the static server
 STATIC_SERVER_HOST = os.getenv("STATIC_SERVER_HOST", "localhost")
 # Port of the static server
-STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "0"))
+STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8124"))
 # URL path for the static server
 STATIC_SERVER_URL = os.getenv("STATIC_SERVER_URL", "/static")
 # Log level for the static server
 STATIC_SERVER_LOG_LEVEL = os.getenv("STATIC_SERVER_LOG_LEVEL", "info").lower()
-
-if STATIC_SERVER_ENABLED:
-    # Try binding to a port. If we bind to 0 (the default), the OS will pick an available port.
-    sock = socket.socket()
-    sock.bind(("", STATIC_SERVER_PORT))
-    STATIC_SERVER_PORT = sock.getsockname()[1]
 
 
 class EventLogHandler(logging.Handler):
