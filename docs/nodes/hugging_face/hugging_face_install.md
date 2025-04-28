@@ -15,11 +15,11 @@
 1. Complete the email verification process
 
 <p align="center">
-  <img src="../../assets/img/hugging_face/00_HF_MainPage.png" alt="HF Site" width="500"/>
+  <img src="/assets/img/hugging_face/00_HF_MainPage.png" alt="HF Site" width="500"/>
 </p>
 
 <p align="center">
-  <img src="../../assets/img/hugging_face/01_HF_signup.png" alt="Signup" width="300"/>
+  <img src="/assets/img/hugging_face/01_HF_signup.png" alt="Signup" width="300"/>
 </p>
 
 ### 2. Access Your Account Settings
@@ -29,7 +29,7 @@
 1. Select **Settings** from the dropdown menu (or go directly to [Settings](https://huggingface.co/settings/profile/))
 
 <p align="center">
-  <img src="../../assets/img/hugging_face/02_HF_Settings.png" alt="Settings" width="500"/>
+  <img src="/assets/img/hugging_face/02_HF_Settings.png" alt="Settings" width="500"/>
 </p>
 
 ### 3. Create an Access Token
@@ -45,15 +45,15 @@
 1. Copy and securely store your token
 
 <p align="center">
-  <img src="../../assets/img/hugging_face/03_HF_AccessTokens.png" alt="Access Tokens" width="500"/>
+  <img src="/assets/img/hugging_face/03_HF_AccessTokens.png" alt="Access Tokens" width="500"/>
 </p>
 
 <p align="center">
-  <img src="../../assets/img/hugging_face/04_HF_TokenRead.png" alt="Token Read" width="500"/>
+  <img src="/assets/img/hugging_face/04_HF_TokenRead.png" alt="Token Read" width="500"/>
 </p>
 
 <p align="center">
-  <img src="../../assets/img/hugging_face/05_HF_SaveToken.png" alt="Save Token" width="500"/>
+  <img src="/assets/img/hugging_face/05_HF_SaveToken.png" alt="Save Token" width="500"/>
 </p>
 
 !!! danger "Security Notice"
@@ -123,7 +123,7 @@ huggingface-cli download black-forest-labs/FLUX.1-dev
 1. Click on **Settings** to open the configuration options
 
 <p align="center">
-  <img src="../../assets/img/hugging_face/06_GN_Settings.png" alt="Settings Menu" width="500"/>
+  <img src="/assets/img/hugging_face/06_GN_Settings.png" alt="Settings Menu" width="500"/>
 </p>
 
 ### 2. Add your Hugging Face Token in API Keys & Secrets
@@ -135,7 +135,7 @@ huggingface-cli download black-forest-labs/FLUX.1-dev
 1. Close the Configuration Editor to automatically save your settings
 
 <p align="center">
-  <img src="../../assets/img/hugging_face/07_GN_HFToken.png" alt="Token Configuration" width="500"/>
+  <img src="/assets/img/hugging_face/07_GN_HFToken.png" alt="Token Configuration" width="500"/>
 </p>
 
 !!! success "Setup Complete"

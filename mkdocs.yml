@@ -61,6 +61,10 @@ nav:
   - How-To:
       - Making Custom Nodes: how_to/making_custom_nodes.md
       - Making Custom Scripts: how_to/making_custom_scripts.md
+      - Set Up External Resources:
+        - Overview: how_to/setup_external_resources.md
+        - Hugging Face: nodes/hugging_face/hugging_face_install.md
+
   - FAQ: faq.md
   - Reference:
       - Glossary: reference/glossary.md
@@ -88,6 +92,7 @@ nav:
               - Key Value Pair: nodes/dict/key_value_pair.md
               - Merge Key Value Pairs: nodes/dict/merge_key_value_pair.md
           - Hugging Face:
+              - Hugging Face Installation: nodes/hugging_face/hugging_face_install.md
               - Flux Pipeline: nodes/hugging_face/flux_pipeline.md
               - Pillow Resize: nodes/hugging_face/pillow_resize.md
               - Tiling Flux img2img: nodes/hugging_face/tiling_flux_img_2_img_pipeline.md

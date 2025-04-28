@@ -1,8 +1,8 @@
 # FluxPipeline
 
-!!! info "You need to perform setup steps to use Hugging Face nodes"
+!!! warning "You need to perform setup steps to use Hugging Face nodes"
 
-    [This guide](../) will walk you through setting up a Hugging Face account, creating an access token, and installing the required models to make this node fully functional.
+    [This guide](/nodes/hugging_face/hugging_face_install) will walk you through setting up a Hugging Face account, creating an access token, and installing the required models to make this node fully functional.
 
 ## What is it?
 
