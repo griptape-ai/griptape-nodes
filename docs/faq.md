@@ -28,8 +28,6 @@ For Windows PowerShell:
 $(Split-Path -Parent (Split-Path -Parent (Get-Command griptape-nodes | Select-Object -ExpandProperty Source)))
 ```
 
-<a id="uninstall"></a>
-
 ## How do I uninstall Griptape Nodes?
 
 Need to part ways with Griptape Nodes? It's a simple goodbye with a single command:
@@ -43,6 +41,12 @@ griptape-nodes uninstall
 For Windows PowerShell:
 
 ```powershell
+griptape-nodes uninstall
+```
+
+then:
+
+```powershell
 uv tool uninstall griptape-nodes
 ```
 
@@ -50,7 +54,7 @@ When regret inevitably washes over you, have no fear. Open arms await; just revi
 
 ## How do I update Griptape Nodes?
 
-Griptape Nodes will automatically check if it needs to update every time it runs. If it does, you will be prompted to answer with a (y/n) response. Respond with a y and it will automatically update to the latest version of the Engine. Once completed, simply type griptape-nodes or gtn to launch again.
+Griptape Nodes will automatically check if it needs to update every time it runs. If it does, you will be prompted to answer with a (y/n) response. Respond with a y and it will automatically update to the latest version of the Engine.
 
 If you would like to _manually_ update, you can always use either of these commands:
 
@@ -66,7 +70,7 @@ gtn update
 
 ## I'm seeing "failed to locate pyvenv.cfg: The system cannot find the file specified." - What should I do?
 
-It is possible, that during a previous uninstall things were not _fully_ uninstalled. Simply perform an [uninstall](#uninstall) again, and then [re-install](getting_started.md).
+It is possible, that during a previous uninstall things were not _fully_ uninstalled. Simply perform an [uninstall](#how-do-i-uninstall) again, and then [re-install](getting_started.md).
 
 ## I'm seeing "Attempted to create a Flow with a parent 'None', but no parent with that name could be found." - What should I do?
 

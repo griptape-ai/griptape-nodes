@@ -51,7 +51,7 @@ You'll see this message when installation has completed:
 **************************************
 ```
 
-!!! info "Info"
+!!! info
 
     You'll notice this message gives you two options for commands to run. As previously mentioned, there is no difference between running `griptape-nodes` or `gtn`. They both do the exact same thing.
 
@@ -96,7 +96,7 @@ Workspace directory set to: /Users/user/Documents/local-dev/nodes-test-eng/Gript
 Griptape API Key (YOUR-KEY-HERE):
 ```
 
-!!! info "Info"
+!!! info
 
     If you've previously run `gtn init` your key might be presented to you in this dialog. You can accept it by pressing Enter or use a different value as required.
 
