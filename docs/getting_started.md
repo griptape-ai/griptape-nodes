@@ -51,11 +51,9 @@ You'll see this message when installation has completed:
 **************************************
 ```
 
-> You'll notice this message gives you two options for commands to run. As previously mentioned, there is no difference between running `griptape-nodes` or `gtn`. They both do the exact same thing.
+!!! info "Info"
 
-!!! info
-
-If you see this message in the output from that
+    You'll notice this message gives you two options for commands to run. As previously mentioned, there is no difference between running `griptape-nodes` or `gtn`. They both do the exact same thing.
 
 *After* typing and running `griptape-nodes` or `gtn` in the terminal *for the first time*, you will be asked a series of configuration questions.
 
@@ -98,7 +96,9 @@ Workspace directory set to: /Users/user/Documents/local-dev/nodes-test-eng/Gript
 Griptape API Key (YOUR-KEY-HERE):
 ```
 
-> If you've previously run `gtn init` your key might be presented to you in this dialog. You can accept it by pressing Enter or use a different value as required.
+!!! info "Info"
+
+    If you've previously run `gtn init` your key might be presented to you in this dialog. You can accept it by pressing Enter or use a different value as required.
 
 ## 4. Start Your Engine
 
