@@ -9,8 +9,7 @@ gtn config | grep workspace
 ```
 
 - **Keep in mind** that the engine and editor can run in entirely different places, on different computers, even!
-- It is possible, and even likely, that if you do _not_ shut down the engine on one machine, and try to go to [nodes.griptape.ai](nodes.griptape.ai) from another using the same accont, you can easily end up in a situation where files save and load, and the libraries you've registered are not on the machine you are sitting at.
-
+- It is possible, and even likely, that if you do _not_ shut down the engine on one machine, and try to go to [https://nodes.griptape.ai](https://nodes.griptape.ai) from another using the same account, you can easily end up in a situation where files save and load, and the libraries you've registered are not on the machine you are sitting at.
 
 ## Where is Griptape Nodes installed?
 
@@ -29,6 +28,7 @@ $(Split-Path -Parent (Split-Path -Parent (Get-Command griptape-nodes | Select-Ob
 ```
 
 <a id="uninstall"></a>
+
 ## How do I uninstall?
 
 Need to part ways with Griptape Nodes? It's a simple goodbye with a single command:
@@ -39,13 +39,11 @@ uv tool uninstall griptape-nodes
 
 When regret inevitably washes over you, have no fear. Open arms await; just revisit [Getting Started](getting_started.md)
 
-
 ## failed to locate pyvenv.cfg: The system cannot find the file specified.
 
 Seeing this message when trying to run or install griptape-nodes?
 
-It is possible, that during a previous uninstall things were not _fully_ uninstalled.  Simply run [uninstall](#uninstall) again, and then [re-install](getting_started.md).
-
+It is possible, that during a previous uninstall things were not _fully_ uninstalled. Simply run [uninstall](#uninstall) again, and then [re-install](getting_started.md).
 
 ## Where can I provide feedback or ask questions?
 

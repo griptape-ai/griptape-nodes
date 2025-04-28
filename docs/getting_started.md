@@ -51,10 +51,10 @@ You'll see this message when installation has completed:
 **************************************
 ```
 
-
 > You'll notice this message gives you two options for commands to run. As previously mentioned, there is no difference between running `griptape-nodes` or `gtn`. They both do the exact same thing.
 
 !!! info
+
 If you see this message in the output from that
 
 *After* typing and running `griptape-nodes` or `gtn` in the terminal *for the first time*, you will be asked a series of configuration questions.
