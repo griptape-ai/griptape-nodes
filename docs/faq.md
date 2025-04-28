@@ -71,7 +71,7 @@ It is possible, that during a previous uninstall things were not _fully_ uninsta
 ## I'm seeing "Attempted to create a Flow with a parent 'None', but no parent with that name could be found." - What should I do?
 
 The good news is, this is usually harmless, and you can usually disregard it. If you're getting it in a way that stops work, please restart your engine, and that should take care of it.
-The good news is, this is usually harmless, and you can usually disregard it. If you're getting it in a way that stops work, please restart your engine, and that should take care of it.
+
 That said, we apologize for this elusive bug. We're working to catch and fix it as soon as possible. If you are so inclined, we'd be grateful if you wanted to [log a bug](https://github.com/griptape-ai/griptape-nodes/issues/new?template=bug_report.yml&title=Attempted%20to%20create%20flow%20with%20a%20parent%20%27None%27) and provide any context around what may have led to the issue when you see it!
 
 ## Where can I provide feedback or ask questions?
