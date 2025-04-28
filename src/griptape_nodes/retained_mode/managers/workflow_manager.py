@@ -404,7 +404,7 @@ class WorkflowManager:
             details = f"Failed to remove workflow from registry with name '{request.name}'. Exception: {e}"
             logger.error(details)
             return DeleteWorkflowResultFailure()
-        config_manager = GriptapeNodes.get_instance()._config_manager
+        config_manager = GriptapeNodes.ConfigManager()
         try:
             config_manager.delete_user_workflow(workflow.__dict__)
         except Exception as e:
@@ -674,8 +674,8 @@ class WorkflowManager:
 
     def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (need lots of branches to cover negative cases)
         obj_manager = GriptapeNodes.ObjectManager()
-        node_manager = GriptapeNodes.get_instance()._node_manager
-        config_manager = GriptapeNodes.get_instance()._config_manager
+        node_manager = GriptapeNodes.NodeManager()
+        config_manager = GriptapeNodes.ConfigManager()
 
         # open my file
         if request.file_name:

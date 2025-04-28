@@ -4,7 +4,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, ClassVar, TextIO, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, TextIO
 
 from dotenv import load_dotenv
 from rich.logging import RichHandler
@@ -19,45 +19,28 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionResultFailure,
     GetEngineVersionResultSuccess,
 )
-from griptape_nodes.retained_mode.events.base_events import (
-    AppPayload,
-    BaseEvent,
-    RequestPayload,
-    ResultPayload,
-)
-from griptape_nodes.retained_mode.events.connection_events import (
-    CreateConnectionRequest,
-)
-from griptape_nodes.retained_mode.events.flow_events import (
-    CreateFlowRequest,
-    DeleteFlowRequest,
-)
-from griptape_nodes.retained_mode.events.parameter_events import (
-    AddParameterToNodeRequest,
-    AlterParameterDetailsRequest,
-)
-from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import ArbitraryCodeExecManager
-from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
-from griptape_nodes.retained_mode.managers.context_manager import ContextManager
-from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
-from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
-from griptape_nodes.retained_mode.managers.node_manager import NodeManager
-from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
-from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
-from griptape_nodes.retained_mode.managers.os_manager import OSManager
-from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+from griptape_nodes.retained_mode.events.base_events import AppPayload, BaseEvent, RequestPayload, ResultPayload
+from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
+from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, DeleteFlowRequest
+from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeRequest, AlterParameterDetailsRequest
 
 if TYPE_CHECKING:
-    from griptape_nodes.exe_types.core_types import (
-        Parameter,
-    )
+    from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.node_types import BaseNode
+    from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import ArbitraryCodeExecManager
+    from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+    from griptape_nodes.retained_mode.managers.context_manager import ContextManager
+    from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
+    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+    from griptape_nodes.retained_mode.managers.node_manager import NodeManager
+    from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
+    from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
+    from griptape_nodes.retained_mode.managers.os_manager import OSManager
+    from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+    from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 load_dotenv()
-
-T = TypeVar("T")
 
 
 logger = logging.getLogger("griptape_nodes")
@@ -94,7 +77,33 @@ class SingletonMeta(type):
 
 
 class GriptapeNodes(metaclass=SingletonMeta):
+    _event_manager: EventManager
+    _os_manager: OSManager
+    _config_manager: ConfigManager
+    _secrets_manager: SecretsManager
+    _object_manager: ObjectManager
+    _node_manager: NodeManager
+    _flow_manager: FlowManager
+    _context_manager: ContextManager
+    _library_manager: LibraryManager
+    _workflow_manager: WorkflowManager
+    _arbitrary_code_exec_manager: ArbitraryCodeExecManager
+    _operation_depth_manager: OperationDepthManager
+
     def __init__(self) -> None:
+        from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import ArbitraryCodeExecManager
+        from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+        from griptape_nodes.retained_mode.managers.context_manager import ContextManager
+        from griptape_nodes.retained_mode.managers.event_manager import EventManager
+        from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
+        from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+        from griptape_nodes.retained_mode.managers.node_manager import NodeManager
+        from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
+        from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
+        from griptape_nodes.retained_mode.managers.os_manager import OSManager
+        from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+        from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+
         # Initialize only if our managers haven't been created yet
         if not hasattr(self, "_event_manager"):
             self._event_manager = EventManager()
@@ -126,10 +135,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
     @classmethod
     def handle_request(cls, request: RequestPayload) -> ResultPayload:
-        griptape_nodes_instance = GriptapeNodes.get_instance()
-        event_mgr = griptape_nodes_instance._event_manager
-        obj_depth_mgr = griptape_nodes_instance._operation_depth_manager
-        workflow_mgr = griptape_nodes_instance._workflow_manager
+        event_mgr = GriptapeNodes.EventManager()
+        obj_depth_mgr = GriptapeNodes.OperationDepthManager()
+        workflow_mgr = GriptapeNodes.WorkflowManager()
         return event_mgr.handle_request(request=request, operation_depth_mgr=obj_depth_mgr, workflow_mgr=workflow_mgr)
 
     @classmethod
@@ -272,7 +280,7 @@ def create_flows_in_order(flow_name, flow_manager, created_flows, file) -> list 
 
 
 def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: list) -> str:
-    flow_manager = GriptapeNodes.get_instance()._flow_manager
+    flow_manager = GriptapeNodes.FlowManager()
     connection_request_workflows = ""
     for flow_name, flow in obj_manager.get_filtered_subset(type=ControlFlow).items():
         create_flows_in_order(flow_name, flow_manager, created_flows, file)
