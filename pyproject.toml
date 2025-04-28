@@ -64,7 +64,6 @@ ignore = [
   "D103",   # Too hard
   "D106",   # Too hard
   "D107",   # Intentional
-  "A004",   # Intentional
   "ANN001", # TODO(griptape): add type annotations to function arguments
   "ANN002", # Intentional
   "ANN003", # Intentional
