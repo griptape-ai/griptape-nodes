@@ -13,6 +13,8 @@ from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultFailure,
     GetConfigCategoryResultSuccess,
+    GetConfigPathRequest,
+    GetConfigPathResultSuccess,
     GetConfigValueRequest,
     GetConfigValueResultFailure,
     GetConfigValueResultSuccess,
@@ -22,8 +24,6 @@ from griptape_nodes.retained_mode.events.config_events import (
     SetConfigValueRequest,
     SetConfigValueResultFailure,
     SetConfigValueResultSuccess,
-    GetConfigPathResultSuccess,
-    GetConfigPathRequest,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import Settings, WorkflowSettingsDetail
@@ -317,7 +317,7 @@ class ConfigManager:
         logger.info(details)
         return GetConfigValueResultSuccess(value=find_results)
 
-    def on_handle_get_config_path_request(self, request: GetConfigPathRequest) -> ResultPayload:
+    def on_handle_get_config_path_request(self, request: GetConfigPathRequest) -> ResultPayload:  # noqa: ARG002
         return GetConfigPathResultSuccess(config_path=str(USER_CONFIG_PATH))
 
     def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
