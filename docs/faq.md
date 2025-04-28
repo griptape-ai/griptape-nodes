@@ -8,6 +8,10 @@ Run this command and it will report back your workspace location:
 gtn config | grep workspace
 ```
 
+- **Keep in mind** that the engine and editor can run in entirely different places, on different computers, even!
+- It is possible, and even likely, that if you do _not_ shut down the engine on one machine, and try to go to [nodes.griptape.ai](nodes.griptape.ai) from another using the same accont, you can easily end up in a situation where files save and load, and the libraries you've registered are not on the machine you are sitting at.
+
+
 ## Where is Griptape Nodes installed?
 
 Looking for the exact installation location of your Griptape Nodes? This command will show you precisely where it's installed:
