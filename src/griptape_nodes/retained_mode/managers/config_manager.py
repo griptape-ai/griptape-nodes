@@ -21,7 +21,9 @@ from griptape_nodes.retained_mode.events.config_events import (
     SetConfigCategoryResultSuccess,
     SetConfigValueRequest,
     SetConfigValueResultFailure,
-    SetConfigValueResultSuccess, GetConfigPathResultSuccess, GetConfigPathRequest,
+    SetConfigValueResultSuccess,
+    GetConfigPathResultSuccess,
+    GetConfigPathRequest,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import Settings, WorkflowSettingsDetail
