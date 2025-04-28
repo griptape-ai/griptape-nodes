@@ -173,7 +173,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     def update(self) -> None:
         if self._current_state is None:
-            msg = "Cannot step machine that has not started"
+            msg = "Attempted to run the next step of a workflow that was either already complete or has not started."
             raise RuntimeError(msg)
         super().update()
 
@@ -194,9 +194,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         resolution_machine = self._context.resolution_machine
         resolution_machine.change_debug_mode(False)
         resolution_machine.update()
-
-        if resolution_machine.is_complete() or (not resolution_machine.is_started()):
-            self.update()
 
     def reset_machine(self) -> None:
         self._context.reset()
