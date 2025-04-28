@@ -47,11 +47,6 @@ class GenerateImage(ControlNode):
             )
         )
 
-        def validate_prompt(_param: Parameter, value: str) -> None:
-            if not value:
-                msg = "Prompt is required for image generation."
-                raise ValueError(msg)
-
         self.add_parameter(
             Parameter(
                 name="prompt",
@@ -62,7 +57,6 @@ class GenerateImage(ControlNode):
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"multiline": True, "placeholder_text": "Enter your image generation prompt here."},
-                validators=[validate_prompt],
             )
         )
         self.add_parameter(
@@ -101,13 +95,21 @@ class GenerateImage(ControlNode):
         # TODO(kate): Figure out how to wrap this so it's easily repeatable
         exceptions = []
         api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
-        # No need for the api key. These exceptions caught on other nodes.
-        if self.parameter_values.get("agent", None) and self.parameter_values.get("driver", None):
-            return None
         if not api_key:
-            msg = f"{API_KEY_ENV_VAR} is not defined"
-            exceptions.append(KeyError(msg))
-            return exceptions
+            # If we have an agent or a driver, the lack of API key will be surfaced on them, not us.
+            agent_val = self.parameter_values.get("agent", None)
+            driver_val = self.parameter_values.get("driver", None)
+            if agent_val is None and driver_val is None:
+                msg = f"{API_KEY_ENV_VAR} is not defined"
+                exceptions.append(KeyError(msg))
+
+        # Validate that we have a prompt.
+        prompt_value = self.parameter_values.get("prompt", None)
+        # Ensure no empty prompt
+        if not prompt_value or prompt_value.isspace():
+            msg = "No prompt was provided. Cannot generate an image without a valid prompt."
+            exceptions.append(ValueError(msg))
+
         return exceptions if exceptions else None
 
     def process(self) -> AsyncResult:
@@ -123,6 +125,7 @@ class GenerateImage(ControlNode):
         else:
             agent = Agent.from_dict(agent)
         prompt = params.get("prompt", "")
+
         enhance_prompt = params.get("enhance_prompt", False)
 
         if enhance_prompt:
