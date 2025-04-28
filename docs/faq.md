@@ -8,8 +8,10 @@ Run this command and it will report back your workspace location:
 gtn config | grep workspace
 ```
 
-- **Keep in mind** that the engine and editor can run in entirely different places, on different computers, even!
-- It is possible, and even likely, that if you do _not_ shut down the engine on one machine, and try to go to [https://nodes.griptape.ai](https://nodes.griptape.ai) from another using the same account, you can easily end up in a situation where files save and load, and the libraries you've registered are not on the machine you are sitting at.
+## Can I run the Engine on a different machine than the Editor?
+
+You can!  The engine and editor can run in entirely different places!  Keep in mind, however, that files saved and libraries-registered refer to the workspace the engine is running on.  If you find your files are not where you expect at first glance, consider this possibility!
+
 
 ## Where is Griptape Nodes installed?
 
@@ -39,9 +41,7 @@ uv tool uninstall griptape-nodes
 
 When regret inevitably washes over you, have no fear. Open arms await; just revisit [Getting Started](getting_started.md)
 
-## failed to locate pyvenv.cfg: The system cannot find the file specified.
-
-Seeing this message when trying to run or install griptape-nodes?
+## I'm seeing "failed to locate pyvenv.cfg: The system cannot find the file specified." - What should I do?
 
 It is possible, that during a previous uninstall things were not _fully_ uninstalled. Simply run [uninstall](#uninstall) again, and then [re-install](getting_started.md).
 
