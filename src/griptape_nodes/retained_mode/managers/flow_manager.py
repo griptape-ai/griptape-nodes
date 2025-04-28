@@ -77,9 +77,7 @@ from griptape_nodes.retained_mode.events.validation_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
-    from griptape_nodes.retained_mode.events.base_events import (
-        ResultPayload,
-    )
+    from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
