@@ -20,5 +20,3 @@ jobs:
       - uses: readthedocs/actions/preview@v1
         with:
           project-slug: ${{ secrets.READTHEDOCS_PROJECT_SLUG }} 
-          single-version: 'false'
-          project-language: ""
