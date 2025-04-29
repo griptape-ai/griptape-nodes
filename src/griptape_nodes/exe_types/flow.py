@@ -97,8 +97,12 @@ class ControlFlow:
                 raise RuntimeError(errormsg)
             start_node = self.flow_queue.get()
 
-        self.control_flow_machine.start_flow(start_node, debug_mode)
-        self.flow_queue.task_done()
+        try:
+            self.control_flow_machine.start_flow(start_node, debug_mode)
+            self.flow_queue.task_done()
+        except Exception:
+            self.cancel_flow_run()
+            raise
 
     def check_for_existing_running_flow(self) -> bool:
         if self.control_flow_machine._current_state is not CompleteState and self.control_flow_machine._current_state:
