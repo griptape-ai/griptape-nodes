@@ -728,10 +728,32 @@ class WorkflowManager:
         node_manager = GriptapeNodes.NodeManager()
         config_manager = GriptapeNodes.ConfigManager()
 
+        # Start with the file name provided; we may change it.
+        file_name = request.file_name
+
+        # Let's see if this is a template file; if so, re-route it as a copy in the customer's workflow directory.
+        if file_name and WorkflowRegistry.has_workflow_with_name(file_name):
+            # Get the metadata.
+            workflow = WorkflowRegistry.get_workflow_by_name(file_name)
+            if workflow.metadata.is_template:
+                # Aha! User is attempting to save a template. Create a differently-named file in their workspace.
+                # Find the first available file name that doesn't conflict.
+                curr_idx = 1
+                free_file_found = False
+                while not free_file_found:
+                    # Composite a new candidate file name to test.
+                    new_file_name = f"{file_name}_{curr_idx}"
+                    new_file_name_with_extension = f"{new_file_name}.py"
+                    new_file_full_path = config_manager.workspace_path.joinpath(new_file_name_with_extension)
+                    if not new_file_full_path.exists():
+                        free_file_found = True
+                        file_name = new_file_name
+                    else:
+                        # Keep going.
+                        curr_idx += 1
+
         # open my file
-        if request.file_name:
-            file_name = request.file_name
-        else:
+        if not file_name:
             local_tz = datetime.now().astimezone().tzinfo
             file_name = datetime.now(tz=local_tz).strftime("%d.%m_%H.%M")
         relative_file_path = f"{file_name}.py"

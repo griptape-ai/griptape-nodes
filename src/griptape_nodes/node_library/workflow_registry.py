@@ -52,6 +52,11 @@ class WorkflowRegistry(SingletonMixin):
         return instance._workflows[name]
 
     @classmethod
+    def has_workflow_with_name(cls, name: str) -> bool:
+        instance = cls()
+        return name in instance._workflows
+
+    @classmethod
     def list_workflows(cls) -> dict[str, dict]:
         instance = cls()
         return {key: instance._workflows[key].get_workflow_metadata() for key in instance._workflows}
