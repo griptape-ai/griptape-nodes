@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from types import TracebackType
 
 T = TypeVar("T", bound="Parameter")
 N = TypeVar("N", bound="BaseNodeElement")
@@ -173,7 +174,12 @@ class BaseNodeElement:
         BaseNodeElement._stack.append(self)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        exc_traceback: TracebackType | None,
+    ) -> None:
         # Pop this element off the global stack
         popped = BaseNodeElement._stack.pop()
         if popped is not self:
@@ -1073,7 +1079,7 @@ class ParameterKeyValuePair(Parameter):
         )
         self.add_child(value_param)
 
-    def _custom_setter_for_property_type(self, value) -> None:
+    def _custom_setter_for_property_type(self, value: Any) -> None:
         # Set it as normal.
         super()._custom_setter_for_property_type(value)
 
@@ -1173,7 +1179,7 @@ class ParameterDictionary(ParameterContainer):
         result = f"list[{base_type}]"
         return result
 
-    def _custom_setter_for_property_type(self, value) -> None:
+    def _custom_setter_for_property_type(self, value: Any) -> None:
         # Set it as normal.
         super()._custom_setter_for_property_type(value)
 

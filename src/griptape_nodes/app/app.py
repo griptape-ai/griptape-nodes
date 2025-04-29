@@ -66,7 +66,7 @@ class EventLogHandler(logging.Handler):
     This is used to forward log messages to the event queue so they can be sent to the GUI.
     """
 
-    def emit(self, record) -> None:
+    def emit(self, record: logging.LogRecord) -> None:
         event_queue.put(
             AppEvent(
                 payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)

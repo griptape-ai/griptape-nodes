@@ -35,7 +35,7 @@ class VectorStore(BaseTool):
         # Set the output
         self.parameter_output_values["tool"] = tool
 
-    def string_to_dict(self, s) -> dict:
+    def string_to_dict(self, s: str) -> dict:
         s = s.strip()
 
         # Try JSON format first

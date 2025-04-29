@@ -43,7 +43,7 @@ class ToInteger(DataNode):
     ) -> None:
         pass
 
-    def to_int(self, input_value) -> int:
+    def to_int(self, input_value: Any) -> int:
         result = 0  # Default return value
 
         try:

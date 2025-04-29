@@ -4,7 +4,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, ClassVar, TextIO
+from typing import IO, TYPE_CHECKING, Any, ClassVar, TextIO
 
 from dotenv import load_dotenv
 from rich.logging import RichHandler
@@ -256,7 +256,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return AppGetSessionResultSuccess(session_id=BaseEvent._session_id)
 
 
-def create_flows_in_order(flow_name, flow_manager, created_flows, file) -> list | None:
+def create_flows_in_order(flow_name: str, flow_manager: FlowManager, created_flows: list[str], file: IO) -> list | None:
     # If this flow is already created, we can return
     if flow_name in created_flows:
         return None
@@ -521,7 +521,7 @@ def manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
     return diff
 
 
-def __getattr__(name) -> logging.Logger:
+def __getattr__(name: str) -> logging.Logger:
     """Convenience function so that node authors only need to write 'logger.debug()'."""
     if name == "logger":
         return logger

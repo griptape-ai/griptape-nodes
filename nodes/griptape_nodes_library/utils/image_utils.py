@@ -4,7 +4,7 @@ from griptape.artifacts import ImageArtifact
 from griptape.loaders import ImageLoader
 
 
-def dict_to_image_artifact(image_dict, image_format=None) -> ImageArtifact:
+def dict_to_image_artifact(image_dict: dict, image_format: str | None = None) -> ImageArtifact:
     # Get the base64 encoded string
     base64_data = image_dict["value"]
 
