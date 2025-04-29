@@ -92,11 +92,11 @@ class GetConfigPathRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigPathResultSuccess(ResultPayloadSuccess):
+class GetConfigPathResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     config_path: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigPathResultFailure(ResultPayloadFailure):
+class GetConfigPathResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     pass
