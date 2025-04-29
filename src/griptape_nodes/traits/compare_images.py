@@ -2,7 +2,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Trait
+from griptape_nodes.exe_types.core_types import Parameter, Trait
 
 
 @dataclass(eq=False)
@@ -16,11 +16,12 @@ class CompareImagesTrait(Trait):
     def get_trait_keys(cls) -> list[str]:
         return ["compare_images"]
 
-    def converters_for_trait(self) -> list[Callable]:
+    def validators_for_trait(self) -> list[Callable[[Parameter, Any], Any]]:
         invalid_type_msg = "Value must be a dictionary"
         invalid_keys_msg = "Dictionary must contain exactly 'image_1' and 'image_2' keys"
 
-        def validate_image_comparison(value: Any) -> Any:
+        def validate_image_comparison(parameter: Parameter, value: Any) -> Any:
+            _ = parameter  # no-op to satisfy linter
             if not isinstance(value, dict):
                 raise TypeError(invalid_type_msg)
 
