@@ -328,7 +328,9 @@ class ConfigManager:
         try:
             self.reset_user_config()
             return ResetConfigResultSuccess()
-        except Exception:
+        except Exception as e:
+            details = f"Attempted to reset user configuration but failed: {e}."
+            logger.error(details)
             return ResetConfigResultFailure()
 
     def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
