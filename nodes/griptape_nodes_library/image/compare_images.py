@@ -15,7 +15,7 @@ class CompareImages(ControlNode):
         self.add_parameter(
             Parameter(
                 name="Image 1",
-                input_types=["ImageUrlArtifact"],
+                input_types=["ImageUrlArtifact", "ImageArtifact"],
                 tooltip="Image 1",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
@@ -26,7 +26,7 @@ class CompareImages(ControlNode):
         self.add_parameter(
             Parameter(
                 name="Image 2",
-                input_types=["ImageUrlArtifact"],
+                input_types=["ImageUrlArtifact", "ImageArtifact"],
                 tooltip="Image 2",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
