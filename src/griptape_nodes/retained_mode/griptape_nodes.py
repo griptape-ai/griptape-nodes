@@ -204,7 +204,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 try:
                     parent = GriptapeNodes.FlowManager().get_parent_flow(flow_name)
                 except Exception as e:
-                    raise Exception(e) from e
+                    raise RuntimeError(e) from e
                 if not parent:
                     event = DeleteFlowRequest(flow_name=flow_name)
                     GriptapeNodes.handle_request(event)
