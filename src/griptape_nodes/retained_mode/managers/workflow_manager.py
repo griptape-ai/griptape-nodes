@@ -818,7 +818,7 @@ class WorkflowManager:
         # save the created workflow to a personal json file
         registered_workflows = WorkflowRegistry.list_workflows()
         if file_name not in registered_workflows:
-            config_manager.save_user_workflow_json(relative_file_path)
+            config_manager.save_user_workflow_json(str(file_path))
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
         details = f"Successfully saved workflow to: {file_path}"
         logger.info(details)
