@@ -57,11 +57,6 @@ class ResolutionContext:
             node.clear_node()
             self.focus_stack[-1].process_generator = None
             self.focus_stack[-1].scheduled_value = None
-            EventBus.publish_event(
-                ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=node.name))
-                )
-            )
         self.focus_stack.clear()
         self.paused = False
 
