@@ -349,7 +349,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901
     elif args.command == "config":
         if args.config_subcommand == "list":
             _list_user_configs()
-        if args.config_subcommand == "reset":
+        elif args.config_subcommand == "reset":
             _reset_user_config()
         else:
             sys.stdout.write(json.dumps(_get_user_config(), indent=2))
