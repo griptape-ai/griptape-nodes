@@ -1,48 +1,106 @@
-**Tutorial Title: Creating a Translator Workflow with Multiple Agents**
+# Coordinating Agents
 
-**Introduction:**
-In this tutorial, you will learn how to set up a translator workflow using multiple agents, each assigned different tasks. This example will demonstrate the basic concept of using agents to perform sequential tasks, laying the groundwork for more complex workflows.
+Welcome to the third tutorial in our Griptape Nodes series! In this guide, you'll learn how to set up a translator workflow that demonstrates the powerful concept of coordinating multiple agents to perform sequential tasks.
 
-**Prerequisites:**
-- Basic understanding of workflow automation
-- Familiarity with agents and nodes in a workflow system
+## What You'll Learn
 
-**Steps:**
+In this tutorial, you will:
 
-1. **Set Up the Initial Agent:**
-   - Create an agent with a prompt to write a four-line story in Spanish.
-   - Ensure the agent outputs the story in Spanish.
+- Create an agent that writes stories in Spanish
+- Connect nodes to create a translation workflow
+- Configure a second agent to translate to English
+- Understand execution chains for controlling workflow order
+- Test your workflow with different prompts
 
-2. **Integrate the Merge Texts Node:**
-   - Take the Spanish story output and input it into a merge texts node.
-   - Add the line "rewrite this in English" to the input.
+## Navigate to the Landing Page
 
-3. **Configure the Second Agent:**
-   - Set up a second agent to take the merged text and rewrite the story in English.
-   - Ensure the output is displayed in a display node.
+To begin this tutorial, return to the main landing page by clicking on the navigation element at the top of the interface.
 
-4. **Test with Different Prompts:**
-   - Try a different prompt, such as "write me a haiku in Japanese," to see how the workflow adapts.
+![Return to landing page](assets/return_to_landing.png)
 
-5. **Understand the Execution Chain:**
-   - Observe the execution order of agents. The first agent runs, followed by the second, based on input-output dependencies.
-   - Learn to use the execution chain to control the order of operations definitively.
+## Open the Translator Example
 
-6. **Add Additional Agents:**
-   - Experiment by adding another agent with a different task, such as "tell me a bedtime story."
-   - Use the execution chain to ensure the desired order of execution.
+On the landing page, locate and click on the **"Translator"** tile to open this example scene.
 
-**Expected Outcome:**
-By the end of this tutorial, you will have a functional translator workflow that uses multiple agents to perform sequential tasks, translating a story from Spanish to English and adapting to different prompts.
+![Translator example](assets/translator_example.png)
 
-**Troubleshooting:**
-- If the agents do not execute in the correct order, check the execution chain settings.
-- Ensure all inputs and outputs are correctly linked between nodes.
+## Setting Up the Initial Agent
 
-**Additional Resources:**
-- Explore advanced workflow automation techniques to enhance your projects.
-- Consider integrating more complex logic and additional agents for sophisticated tasks.
+The first step is to create an agent that will write a story in Spanish:
 
+1. Locate the first agent node in the workflow
+2. Notice that it's configured with a prompt to write a four-line story in Spanish
+3. This agent will produce Spanish text as its output
+
+![Spanish agent node](assets/spanish_agent_node.png)
+
+## Integrating the Merge Texts Node
+
+Next, we need to prepare the Spanish output for translation:
+
+1. Find the "Merge Texts" node connected to the Spanish agent
+2. This node combines the Spanish story with the instruction "rewrite this in English"
+3. The combined text becomes the input for our next agent
+
+![Merge texts node](assets/merge_texts_node.png)
+
+## Configuring the Second Agent
+
+Now, let's set up the translator agent:
+
+1. Locate the second agent node in the workflow
+2. This agent takes the merged text (Spanish story + translation instruction)
+3. It processes the input and produces an English translation
+4. The output connects to a display node to show the final result
+
+![English agent node](assets/english_agent_node.png)
+
+## Understanding the Execution Chain
+
+A key concept in Griptape Nodes is the execution chain, which controls the order of operations:
+
+1. Notice the lines connecting the nodes - these represent both data flow and execution order
+2. The Spanish agent runs first, producing the original story
+3. The Merge Texts node combines this output with translation instructions
+4. The English agent runs next, producing the translated version
+5. Finally, the display node shows the result
+
+![Execution chain](assets/execution_chain.png)
+
+## Testing with Different Prompts
+
+Let's experiment with different inputs to see how our workflow adapts:
+
+1. Modify the prompt for the first agent to "write me a haiku in Japanese"
+2. Run the workflow again
+3. Observe how the second agent still performs its translation task, now converting from Japanese to English
+
+![Different prompt test](assets/different_prompt.png)
+
+## Adding Additional Agents
+
+To expand your workflow further:
+
+1. Try adding a third agent with a different task, such as "tell me a bedtime story"
+2. Connect it appropriately in the execution chain
+3. Run the workflow and observe how the agents work together sequentially
+
+![Additional agent](assets/additional_agent.png)
+
+## Next Steps
+
+Now that you understand how to coordinate multiple agents in a sequential workflow, you're ready to create more complex automations. In the next tutorial, we'll explore how to combine agents with image generation nodes.
+
+## Summary
+
+In this tutorial, you learned how to:
+- Create an agent that writes stories in Spanish
+- Connect nodes to create a translation workflow
+- Configure a second agent to translate to English
+- Understand execution chains for controlling workflow order
+- Test your workflow with different prompts
+
+These concepts form the foundation for more sophisticated Griptape Nodes workflows where multiple agents collaborate to accomplish complex tasks.
 
 ## Next Up
 
