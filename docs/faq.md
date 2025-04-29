@@ -32,13 +32,13 @@ $(Split-Path -Parent (Split-Path -Parent (Get-Command griptape-nodes | Select-Ob
 
 Need to part ways with Griptape Nodes? It's a simple goodbye with a single command:
 
-For Mac/Linux:
+### For Mac/Linux:
 
 ```bash
 griptape-nodes uninstall
 ```
 
-For Windows PowerShell:
+### For Windows PowerShell:
 
 ```powershell
 griptape-nodes uninstall
