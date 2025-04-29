@@ -23,10 +23,20 @@ class CompareImagesTrait(Trait):
         def validate_image_comparison(parameter: Parameter, value: Any) -> Any:
             _ = parameter  # no-op to satisfy linter
             if not isinstance(value, dict):
-                raise TypeError(invalid_type_msg)
+                raise TypeError(f"Value must be a dictionary, got {type(value).__name__} instead.")
 
-            if set(value.keys()) != {"image_1", "image_2"}:
-                raise ValueError(invalid_keys_msg)
+            expected_keys = {"image_1", "image_2"}
+            actual_keys = set(value.keys())
+            if actual_keys != expected_keys:
+                missing = expected_keys - actual_keys
+                extra = actual_keys - expected_keys
+                details = []
+                if missing:
+                    details.append(f"missing keys: {sorted(missing)}")
+                if extra:
+                    details.append(f"unexpected keys: {sorted(extra)}")
+                detail_msg = "; ".join(details)
+                raise ValueError(f"Dictionary must contain exactly 'image_1' and 'image_2' keys; {detail_msg}")
 
             return value
 
