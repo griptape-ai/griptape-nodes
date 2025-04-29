@@ -745,12 +745,12 @@ class WorkflowManager:
                     new_file_name = f"{file_name}_{curr_idx}"
                     new_file_name_with_extension = f"{new_file_name}.py"
                     new_file_full_path = config_manager.workspace_path.joinpath(new_file_name_with_extension)
-                    if not new_file_full_path.exists():
-                        free_file_found = True
-                        file_name = new_file_name
-                    else:
+                    if new_file_full_path.exists():
                         # Keep going.
                         curr_idx += 1
+                    else:
+                        free_file_found = True
+                        file_name = new_file_name
 
         # open my file
         if not file_name:
