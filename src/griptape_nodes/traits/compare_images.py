@@ -17,13 +17,11 @@ class CompareImagesTrait(Trait):
         return ["compare_images"]
 
     def validators_for_trait(self) -> list[Callable[[Parameter, Any], Any]]:
-        invalid_type_msg = "Value must be a dictionary"
-        invalid_keys_msg = "Dictionary must contain exactly 'image_1' and 'image_2' keys"
-
         def validate_image_comparison(parameter: Parameter, value: Any) -> Any:
             _ = parameter  # no-op to satisfy linter
             if not isinstance(value, dict):
-                raise TypeError(f"Value must be a dictionary, got {type(value).__name__} instead.")
+                msg = f"Value must be a dictionary, got {type(value).__name__} instead."
+                raise TypeError(msg)
 
             expected_keys = {"image_1", "image_2"}
             actual_keys = set(value.keys())
@@ -36,7 +34,8 @@ class CompareImagesTrait(Trait):
                 if extra:
                     details.append(f"unexpected keys: {sorted(extra)}")
                 detail_msg = "; ".join(details)
-                raise ValueError(f"Dictionary must contain exactly 'image_1' and 'image_2' keys; {detail_msg}")
+                msg = f"Dictionary must contain exactly 'image_1' and 'image_2' keys; {detail_msg}"
+                raise ValueError(msg)
 
             return value
 
