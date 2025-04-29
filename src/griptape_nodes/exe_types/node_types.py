@@ -585,7 +585,19 @@ class Connection:
 
 
 def handle_container_parameter(current_node: BaseNode, parameter: Parameter) -> Any:
-    """Handle the container parameter."""
+    """Process container parameters and build appropriate data structures.
+
+    This function handles ParameterContainer objects by collecting values from their child
+    parameters and constructing either a list or dictionary based on the container type.
+
+    Args:
+        current_node: The node containing parameter values
+        parameter: The parameter to process, which may be a container
+
+    Returns:
+        A list of parameter values if parameter is a ParameterContainer,
+        or None if the parameter is not a container
+    """
     # if it's a container and it's value isn't already set.
     if isinstance(parameter, ParameterContainer):
         children = parameter.find_elements_by_type(Parameter, find_recursively=False)

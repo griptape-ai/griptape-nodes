@@ -1,8 +1,17 @@
 import re
 
 
-def to_pascal_case(string) -> str:
-    """Convert a string to PascalCase."""
+def to_pascal_case(string: str) -> str:
+    """Convert a string to PascalCase.
+
+    e.g. "hello_world" -> "HelloWorld"
+
+    Args:
+        string (str): The string to convert.
+
+    Returns:
+        str: The converted string in PascalCase.
+    """
     # First, replace any non-word character with a space
     string = re.sub(r"[^\w\s]", " ", string)
 

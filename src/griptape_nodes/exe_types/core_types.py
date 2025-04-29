@@ -35,7 +35,12 @@ class ParameterTypeBuiltin(Enum):
 
 class ParameterType:
     class KeyValueTypePair(NamedTuple):
-        """Key-Value Type Pair."""
+        """A named tuple for storing a pair of types for key-value parameters.
+
+        Fields:
+            key_type: The type of the key
+            value_type: The type of the value
+        """
 
         key_type: str
         value_type: str

@@ -90,7 +90,7 @@ class WorkflowManager:
     MAX_MINOR_VERSION_DEVIATION: ClassVar[int] = 2
 
     class WorkflowStatus(StrEnum):
-        """The status of a workflow."""
+        """The status of a workflow that was attempted to be loaded."""
 
         GOOD = "GOOD"  # No errors detected during loading. Registered.
         FLAWED = "FLAWED"  # Some errors detected, but recoverable. Registered.
@@ -98,7 +98,7 @@ class WorkflowManager:
         MISSING = "MISSING"  # File not found. Not registered.
 
     class WorkflowDependencyStatus(StrEnum):
-        """The status of a workflow dependency."""
+        """Records the status of each dependency for a workflow that was attempted to be loaded."""
 
         PERFECT = "PERFECT"  # Same major, minor, and patch version
         GOOD = "GOOD"  # Same major, minor version
@@ -109,7 +109,7 @@ class WorkflowManager:
 
     @dataclass
     class WorkflowDependencyInfo:
-        """Information about a workflow dependency."""
+        """Information about each dependency in a workflow that was attempted to be loaded."""
 
         library_name: str
         version_requested: str
@@ -118,7 +118,7 @@ class WorkflowManager:
 
     @dataclass
     class WorkflowInfo:
-        """Information about a workflow."""
+        """Information about a workflow that was attempted to be loaded."""
 
         status: WorkflowManager.WorkflowStatus
         workflow_path: str

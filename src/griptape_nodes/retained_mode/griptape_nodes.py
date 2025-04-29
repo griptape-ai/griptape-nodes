@@ -256,7 +256,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return AppGetSessionResultSuccess(session_id=BaseEvent._session_id)
 
 
-def create_flows_in_order(flow_name, flow_manager, created_flows, file) -> list | None:
+def create_flows_in_order(flow_name: str, flow_manager: FlowManager, created_flows: list, file: IO) -> list | None:
     """Creates flows in the correct order based on their dependencies."""
     # If this flow is already created, we can return
     if flow_name in created_flows:
