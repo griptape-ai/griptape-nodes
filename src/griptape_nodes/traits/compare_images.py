@@ -17,12 +17,15 @@ class CompareImagesTrait(Trait):
         return ["compare_images"]
 
     def converters_for_trait(self) -> list[Callable]:
+        invalid_type_msg = "Value must be a dictionary"
+        invalid_keys_msg = "Dictionary must contain exactly 'image_1' and 'image_2' keys"
+
         def validate_image_comparison(value: Any) -> Any:
             if not isinstance(value, dict):
-                raise ValueError("Value must be a dictionary")
+                raise TypeError(invalid_type_msg)
 
             if set(value.keys()) != {"image_1", "image_2"}:
-                raise ValueError("Dictionary must contain exactly 'image_1' and 'image_2' keys")
+                raise ValueError(invalid_keys_msg)
 
             return value
 

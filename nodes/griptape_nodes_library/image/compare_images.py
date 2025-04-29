@@ -1,4 +1,5 @@
 from typing import Any
+
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.traits.compare_images import CompareImagesTrait
@@ -46,7 +47,7 @@ class CompareImages(ControlNode):
         )
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        if parameter.name == "Image 1" or parameter.name == "Image 2":
+        if parameter.name in {"Image 1", "Image 2"}:
             current_value = self.get_parameter_value("Compare")
             if parameter.name == "Image 1":
                 current_value["image_1"] = value
