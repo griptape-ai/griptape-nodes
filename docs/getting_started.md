@@ -101,3 +101,6 @@ Griptape API Key (YOUR-KEY-HERE):
 You're ready to proceed. Run `griptape-nodes` or `gtn` and return to your browser. Your browser tab at https://nodes.griptape.ai will be updated to an untitled workflow in Griptape Nodes!
 
 ![A Blank Griptape_nodes_ editor](assets/img/getting_started/getting_started-blank_editor.png)
+
+
+Next, on to learning how to actually work inside Griptape Nodes! [Begin](ftue/FTUE.md)

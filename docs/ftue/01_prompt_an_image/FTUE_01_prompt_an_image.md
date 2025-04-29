@@ -1,0 +1,76 @@
+# Exploring Image Generation with Griptape Nodes
+
+Welcome to the second tutorial in our Griptape Nodes series! In this guide, you'll learn how to generate images using AI through the powerful GenerateImage node.
+
+## What You'll Learn
+
+In this tutorial, you will:
+
+- Navigate back to the landing page
+- Open saved scenes
+- Understand the GenerateImage node
+- Generate images using text prompts
+
+## Navigate to the Landing Page
+
+To begin this tutorial, you'll need to return to the main landing page. Click on the navigation element at the top of the interface to go back to where all the example scenes are displayed.
+
+![Return to landing page](assets/return_to_landing.png)
+
+## Open the Image Prompt Example
+
+On the landing page, locate and click on the **"Prompt an Image"** tile to open this example scene.
+
+![Prompt an Image example](assets/prompt_image_example.png)
+
+## Understand the GenerateImage Node
+
+When the example loads, you'll notice it consists of just a single node. Don't be fooled by its simplicity – this node is one of the most powerful tools in Griptape Nodes and will likely feature prominently in your future flows.
+
+![GenerateImage node](assets/generate_image_node.png)
+
+This node has been configured to handle many tasks that would typically require a more complex flow, making it perfect for getting started with AI image generation.
+
+## Generate Images Using Text Prompts
+
+The main feature of this node is the text prompt field where you describe what image you want the AI to create.
+
+To generate your first image:
+
+1. Locate the text prompt field in the node
+2. Type your description of the image you want to create
+3. Run the flow by clicking the run button
+
+![Text prompt field](assets/text_prompt_field.png)
+
+## Experiment with Different Descriptions
+
+Let's try generating some images with different prompts:
+
+1. **First Example**: Type "A potato making an oil painting" in the prompt field and run the flow
+   
+   ![Potato painting result](assets/potato_painting.png)
+
+2. **Second Example**: Change the prompt to "A potato doing aerobics in 70s workout attire" and run the flow again
+   
+   ![Potato aerobics result](assets/potato_aerobics.png)
+
+Notice how dramatically different the results are just by changing a few words in your prompt. This demonstrates the flexibility and power of the GenerateImage node.
+
+## Next Steps
+
+Now that you've learned how to generate images using text prompts, you're ready to incorporate this functionality into more complex flows. In the next tutorial, we'll build on this knowledge to create more sophisticated node connections.
+
+## Summary
+
+In this tutorial, you learned how to:
+- Navigate back to the landing page
+- Open saved scenes
+- Understand the purpose of the GenerateImage node
+- Generate images using text descriptions
+
+The GenerateImage node is a fundamental building block for creative flows in Griptape Nodes. As you progress, you'll discover how to combine it with other nodes to develop even more powerful applications.
+
+## Next Up
+
+In the next section: [Coordinating Agents](../02_translator/FTUE_02_translator.md), we'll learn how to get AIs to bucket-brigade through flows!
