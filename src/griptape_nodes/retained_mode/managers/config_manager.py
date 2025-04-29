@@ -327,8 +327,8 @@ class ConfigManager:
     def on_handle_reset_config_request(self, request: ResetConfigRequest) -> ResultPayload:  # noqa: ARG002
         try:
             self.reset_user_config()
-            self._set_log_level(self.user_config.get("log_level"))
-            self.workspace_path = self.user_config.get("workspace_directory")
+            self._set_log_level(str(self.user_config.get("log_level")))
+            self.workspace_path = Path(self.user_config.get("workspace_directory"))
 
             return ResetConfigResultSuccess()
         except Exception as e:
