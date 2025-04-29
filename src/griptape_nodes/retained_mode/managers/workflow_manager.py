@@ -413,7 +413,7 @@ class WorkflowManager:
             return DeleteWorkflowResultFailure()
         config_manager = GriptapeNodes.ConfigManager()
         try:
-            config_manager.delete_user_workflow(workflow.__dict__)
+            config_manager.delete_user_workflow(workflow.file_path)
         except Exception as e:
             details = f"Failed to remove workflow from user config with name '{request.name}'. Exception: {e}"
             logger.error(details)

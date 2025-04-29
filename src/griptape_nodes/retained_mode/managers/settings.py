@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -6,32 +5,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from xdg_base_dirs import xdg_data_home
 
 
-@dataclass
-class WorkflowSettingsDetail:
-    """Griptape-provided workflows are pathed differently and display in the GUI in a different section."""
-
-    file_name: str
-    is_griptape_provided: bool
-
-
 class AppInitializationComplete(BaseModel):
     libraries_to_register: list[str] = Field(
         default_factory=lambda: [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")]
     )
-    workflows_to_register: list[WorkflowSettingsDetail] = Field(
+    workflows_to_register: list[str] = Field(
         default_factory=lambda: [
-            WorkflowSettingsDetail(
-                file_name=str(xdg_data_home() / "griptape_nodes/workflows/templates/translator.py"),
-                is_griptape_provided=True,
-            ),
-            WorkflowSettingsDetail(
-                file_name=str(xdg_data_home() / "griptape_nodes/workflows/templates/compare_prompts.py"),
-                is_griptape_provided=True,
-            ),
-            WorkflowSettingsDetail(
-                file_name=str(xdg_data_home() / "griptape_nodes/workflows/templates/prompt_an_image.py"),
-                is_griptape_provided=True,
-            ),
+            str(xdg_data_home() / "griptape_nodes/workflows/templates/translator.py"),
+            str(xdg_data_home() / "griptape_nodes/workflows/templates/compare_prompts.py"),
+            str(xdg_data_home() / "griptape_nodes/workflows/templates/prompt_an_image.py"),
         ]
     )
 
