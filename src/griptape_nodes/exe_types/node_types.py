@@ -205,7 +205,7 @@ class BaseNode(ABC):
     def add_parameter(self, param: Parameter) -> None:
         """Adds a Parameter to the Node. Control and Data Parameters are all treated equally."""
         if any(char.isspace() for char in param.name):
-            msg = "Parameter names cannot currently any whitespace characters. Please see https://github.com/griptape-ai/griptape-nodes/issues/714 to check the status on a remedy for this issue."
+            msg = f"Failed to add Parameter `{param.name}`. Parameter names cannot currently any whitespace characters. Please see https://github.com/griptape-ai/griptape-nodes/issues/714 to check the status on a remedy for this issue."
             raise ValueError(msg)
         if self.does_name_exist(param.name):
             msg = "Cannot have duplicate names on parameters."
