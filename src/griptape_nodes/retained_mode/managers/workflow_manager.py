@@ -413,7 +413,7 @@ class WorkflowManager:
             return DeleteWorkflowResultFailure()
         config_manager = GriptapeNodes.ConfigManager()
         try:
-            config_manager.delete_user_workflow(workflow.__dict__)
+            config_manager.delete_user_workflow(workflow.file_path)
         except Exception as e:
             details = f"Failed to remove workflow from user config with name '{request.name}'. Exception: {e}"
             logger.error(details)
@@ -818,7 +818,7 @@ class WorkflowManager:
         # save the created workflow to a personal json file
         registered_workflows = WorkflowRegistry.list_workflows()
         if file_name not in registered_workflows:
-            config_manager.save_user_workflow_json(relative_file_path)
+            config_manager.save_user_workflow_json(str(file_path))
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
         details = f"Successfully saved workflow to: {file_path}"
         logger.info(details)
