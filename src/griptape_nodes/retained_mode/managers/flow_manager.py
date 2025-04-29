@@ -922,7 +922,7 @@ class FlowManager:
         except Exception as e:
             details = f"Could not advance to the next step of a running workflow. Exception: {e}"
             logger.error(details)
-            return SingleNodeStepResultFailure(validation_exceptions=[])
+            return SingleNodeStepResultFailure(validation_exceptions=[e])
         details = f"Successfully advanced to the next step of a running workflow with name {flow_name}"
         logger.debug(details)
 
