@@ -201,7 +201,7 @@ Focus on qualities that will make this the most professional looking photo in th
 
     def _create_image(self, agent: Agent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)
-        static_url = self.save_static_file(agent.output.to_bytes(), f"{uuid.uuid4()}.png")
+        static_url = self.static_files_manager.save_static_file(agent.output.to_bytes(), f"{uuid.uuid4()}.png")
         url_artifact = ImageUrlArtifact(value=static_url)
         self.publish_update_to_parameter("output", url_artifact)
         try_throw_error(agent.output)

@@ -70,7 +70,7 @@ class SaveImage(ControlNode):
         try:
             image_artifact = to_image_artifact(image)
 
-            saved_path = self.save_static_file(image_artifact.to_bytes(), output_file)
+            saved_path = self.static_files_manager.save_static_file(image_artifact.to_bytes(), output_file)
 
             success_msg = f"Saved image: {saved_path}"
             logger.info(success_msg)
