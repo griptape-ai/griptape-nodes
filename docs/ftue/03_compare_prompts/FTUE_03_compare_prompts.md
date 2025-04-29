@@ -123,4 +123,4 @@ These techniques form the foundation for creating sophisticated, high-quality AI
 
 ## Next Up
 
-In the next section: [Build a Whole Photography Team](../04_photography_team/FTUE_04_photography_team.md), we'll learn about a lot: Rulesets, Tools, and Converting Agents INTO tools to get an idea of some of the sophistacated coordination available to you!
+In the next section: [Build a Photography Team](../04_photography_team/FTUE_04_photography_team.md), we'll learn about a lot: Rulesets, Tools, and Converting Agents INTO tools to get an idea of some of the sophistacated coordination available to you!
