@@ -23,7 +23,7 @@ from griptape_nodes.retained_mode.events.config_events import (
     SetConfigCategoryResultSuccess,
     SetConfigValueRequest,
     SetConfigValueResultFailure,
-    SetConfigValueResultSuccess,
+    SetConfigValueResultSuccess, ResetConfigRequest,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import Settings, WorkflowSettingsDetail
@@ -319,6 +319,9 @@ class ConfigManager:
 
     def on_handle_get_config_path_request(self, request: GetConfigPathRequest) -> ResultPayload:  # noqa: ARG002
         return GetConfigPathResultSuccess(config_path=str(USER_CONFIG_PATH))
+
+    def on_handle_reset_config_request(self, request: ResetConfigRequest) -> ResultPayload:  # noqa: ARG002
+        pass
 
     def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
         """Generate a diff between the old and new values."""

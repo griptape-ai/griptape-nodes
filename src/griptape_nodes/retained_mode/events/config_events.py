@@ -100,3 +100,21 @@ class GetConfigPathResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class GetConfigPathResultFailure(ResultPayloadFailure):
     pass
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetConfigRequest(RequestPayload):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetConfigResultSuccess(ResultPayloadSuccess):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetConfigResultFailure(ResultPayloadFailure):
+    pass
