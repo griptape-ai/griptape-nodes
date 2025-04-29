@@ -7,7 +7,7 @@ from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
@@ -22,8 +22,9 @@ class GenerateImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self.category = "Agent"
-        self.description = "Generate an image"
+        # TODO(griptape): Give nodes a way to ask about the current state of their connections instead of forcing them to maintain
+        # state: https://github.com/griptape-ai/griptape-nodes/issues/720
+        self._has_connection_to_prompt = False
 
         self.add_parameter(
             Parameter(
@@ -105,8 +106,8 @@ class GenerateImage(ControlNode):
 
         # Validate that we have a prompt.
         prompt_value = self.parameter_values.get("prompt", None)
-        # Ensure no empty prompt
-        if not prompt_value or prompt_value.isspace():
+        # Ensure no empty prompt; if there's an input connection to this Parameter, that will be OK though.
+        if (not prompt_value or prompt_value.isspace()) and (not self._has_connection_to_prompt):
             msg = "No prompt was provided. Cannot generate an image without a valid prompt."
             exceptions.append(ValueError(msg))
 
@@ -175,6 +176,28 @@ Focus on qualities that will make this the most professional looking photo in th
 
         # Reset the agent
         agent._tasks = []
+
+    def after_incoming_connection(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,
+    ) -> None:
+        """Callback after a Connection has been established TO this Node."""
+        # Record a connection to the prompt Parameter so that node validation doesn't get aggro
+        if target_parameter.name == "prompt":
+            self._has_connection_to_prompt = True
+
+    def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,
+    ) -> None:
+        """Callback after a Connection TO this Node was REMOVED."""
+        # Remove the state maintenance of the connection to the prompt Parameter
+        if target_parameter.name == "prompt":
+            self._has_connection_to_prompt = False
 
     def _create_image(self, agent: Agent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)
