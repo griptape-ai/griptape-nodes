@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import importlib
+import inspect
 import logging
+import pkgutil
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -17,11 +20,16 @@ from rich.table import Table
 from rich.text import Text
 
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
-from griptape_nodes.node_library.workflow_registry import LibraryNameAndVersion, WorkflowMetadata, WorkflowRegistry
+from griptape_nodes.node_library.workflow_registry import (
+    LibraryNameAndVersion,
+    WorkflowMetadata,
+    WorkflowRegistry,
+)
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
+from griptape_nodes.retained_mode.events.base_events import RequestPayload
 from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
     GetLibraryMetadataResultSuccess,
@@ -252,7 +260,13 @@ class WorkflowManager:
                     else "None"
                 )
 
-            table.add_row(workflow_name, wf_info.status.value, file_path_text, problems, dependencies)
+            table.add_row(
+                workflow_name,
+                wf_info.status.value,
+                file_path_text,
+                problems,
+                dependencies,
+            )
 
         # Wrap the table in a panel
         panel = Panel(table, title="Workflow Information", border_style="blue")
@@ -444,7 +458,9 @@ class WorkflowManager:
 
         return RenameWorkflowResultSuccess()
 
-    def on_load_workflow_metadata_request(self, request: LoadWorkflowMetadata) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
+    def on_load_workflow_metadata_request(  # noqa: C901, PLR0912, PLR0915
+        self, request: LoadWorkflowMetadata
+    ) -> ResultPayload:
         # Let us go into the darkness.
         complete_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(request.file_name)
         str_path = str(complete_file_path)
@@ -467,7 +483,12 @@ class WorkflowManager:
         # Find the metadata block.
         regex = r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
         block_name = "script"
-        matches = list(filter(lambda m: m.group("type") == block_name, re.finditer(regex, workflow_content)))
+        matches = list(
+            filter(
+                lambda m: m.group("type") == block_name,
+                re.finditer(regex, workflow_content),
+            )
+        )
         if len(matches) != 1:
             self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
                 status=WorkflowManager.WorkflowStatus.UNUSABLE,
@@ -679,7 +700,30 @@ class WorkflowManager:
         )
         return LoadWorkflowMetadataResultSuccess(metadata=workflow_metadata)
 
-    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (need lots of branches to cover negative cases)
+    def _gather_workflow_imports(self) -> list[str]:
+        """Gathers all the imports for the saved workflow file, specifically for the events."""
+        import_template = "from {} import {}"
+        import_statements = []
+
+        from griptape_nodes.retained_mode import events as events_pkg
+
+        # Iterate over all modules in the events package
+        for _finder, module_name, _is_pkg in pkgutil.iter_modules(events_pkg.__path__, events_pkg.__name__ + "."):
+            if module_name.endswith("generate_request_payload_schemas"):
+                continue
+            module = importlib.import_module(module_name)
+
+            # Inspect all class members in the module
+            for _, obj in inspect.getmembers(module, inspect.isclass):
+                # Filter down to subclasses of RequestPayload (but not the base class itself)
+                if issubclass(obj, RequestPayload) and obj is not RequestPayload:
+                    import_statements.append(import_template.format(module_name, obj.__name__))
+
+        return import_statements
+
+    def on_save_workflow_request(  # noqa: C901, PLR0911, PLR0912, PLR0915
+        self, request: SaveWorkflowRequest
+    ) -> ResultPayload:
         obj_manager = GriptapeNodes.ObjectManager()
         node_manager = GriptapeNodes.NodeManager()
         config_manager = GriptapeNodes.ConfigManager()
@@ -718,6 +762,9 @@ class WorkflowManager:
             with file_path.open("w") as file:
                 # Now the critical import.
                 file.write("from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes\n")
+                # Now the event imports.
+                for import_statement in self._gather_workflow_imports():
+                    file.write(import_statement + "\n")
                 # Write all flows to a file, get back the strings for connections
                 connection_request_workflows = handle_flow_saving(file, obj_manager, created_flows)
                 # Now all of the flows have been created.
