@@ -20,10 +20,10 @@ class CompareImagesTrait(Trait):
         def validate_image_comparison(value: Any) -> Any:
             if not isinstance(value, dict):
                 raise ValueError("Value must be a dictionary")
-            
+
             if set(value.keys()) != {"image_1", "image_2"}:
                 raise ValueError("Dictionary must contain exactly 'image_1' and 'image_2' keys")
-            
+
             return value
 
         return [validate_image_comparison]
