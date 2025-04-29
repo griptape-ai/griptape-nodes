@@ -176,7 +176,7 @@ class Agent(ControlNode):
 
         # Group for logging information.
         with ParameterGroup(group_name="Logs") as logs_group:
-            Parameter(name="include details", type="bool", default_value=False, tooltip="Include extra details.")
+            Parameter(name="include_details", type="bool", default_value=False, tooltip="Include extra details.")
 
             Parameter(
                 name="logs",
@@ -401,7 +401,7 @@ class Agent(ControlNode):
         # Get the parameters from the node
         params = self.parameter_values
         # Grab toggles for logging events
-        include_details = self.get_parameter_value("include details")
+        include_details = self.get_parameter_value("include_details")
 
         # Initialize the logs parameter
         self.append_value_to_parameter("logs", "[Processing..]\n")
@@ -487,7 +487,7 @@ class Agent(ControlNode):
         Returns:
             The agent structure after processing.
         """
-        include_details = self.get_parameter_value("include details")
+        include_details = self.get_parameter_value("include_details")
 
         for event in agent.run_stream(prompt, event_types=[TextChunkEvent, ActionChunkEvent]):
             # If the artifact is a TextChunkEvent, append it to the output parameter.
