@@ -458,11 +458,14 @@ class Agent(ControlNode):
         else:
             agent = GtAgent.from_dict(agent_dict)
 
-        # Run the agent asynchronously
-        self.append_value_to_parameter("logs", "[Started processing agent..]\n")
-        yield lambda: self._process(agent, prompt)
-        self.append_value_to_parameter("logs", "\n[Finished processing agent.]\n")
-
+        if prompt and not prompt.isspace():
+            # Run the agent asynchronously
+            self.append_value_to_parameter("logs", "[Started processing agent..]\n")
+            yield lambda: self._process(agent, prompt)
+            self.append_value_to_parameter("logs", "\n[Finished processing agent.]\n")
+        else:
+            self.append_value_to_parameter("logs", "[No prompt provided, creating Agent.]\n")
+            self.set_parameter_value("output", "Agent created.")
         # Set the agent
         self.parameter_output_values["agent"] = agent.to_dict()
 
