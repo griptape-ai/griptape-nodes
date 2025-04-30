@@ -1,13 +1,12 @@
 from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd  # noqa: N813
 
 # Create flows
-cmd.create_flow(flow_name="compare_prompts")
+cmd.create_flow(set_as_new_context=True)
 
 # Create nodes
 cmd.create_node(
     node_type="GenerateImage",
     node_name="basic_image",
-    parent_flow_name="compare_prompts",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "position": {"x": 107.96492202742763, "y": -55.43579888547769},
@@ -24,7 +23,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="TextInput",
     node_name="detail_prompt",
-    parent_flow_name="compare_prompts",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "position": {"x": -463.93417356294435, "y": 692.2979917734917},
@@ -41,7 +39,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="GenerateImage",
     node_name="enhanced_prompt_image",
-    parent_flow_name="compare_prompts",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "position": {"x": 684.9258723363861, "y": 188.19610223068509},
@@ -58,7 +55,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="Agent",
     node_name="bespoke_prompt",
-    parent_flow_name="compare_prompts",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "position": {"x": 1409.8628765607764, "y": 190.4887558380392},
@@ -75,7 +71,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="MergeTexts",
     node_name="assemble_prompt",
-    parent_flow_name="compare_prompts",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "position": {"x": 103.72844864946936, "y": 690.5315465254349},
@@ -92,7 +87,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="GenerateImage",
     node_name="bespoke_prompt_image",
-    parent_flow_name="compare_prompts",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "position": {"x": 1972.8647080296168, "y": 189.61388211035484},
@@ -109,7 +103,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="TextInput",
     node_name="basic_prompt",
-    parent_flow_name="compare_prompts",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "position": {"x": -502.9081437015589, "y": 307.89197790332713},

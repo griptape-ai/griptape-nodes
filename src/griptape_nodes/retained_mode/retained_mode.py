@@ -138,8 +138,11 @@ class RetainedMode:
         cls,
         flow_name: str | None = None,
         parent_flow_name: str | None = None,
+        set_as_new_context: bool = False,  # noqa: FBT001, FBT002
     ) -> ResultPayload:
-        request = CreateFlowRequest(parent_flow_name=parent_flow_name, flow_name=flow_name)
+        request = CreateFlowRequest(
+            parent_flow_name=parent_flow_name, flow_name=flow_name, set_as_new_context=set_as_new_context
+        )
         result = GriptapeNodes().handle_request(request)
         return result
 
