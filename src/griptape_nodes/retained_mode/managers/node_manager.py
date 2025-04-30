@@ -1581,18 +1581,22 @@ class NodeManager:
             # We're going to compare this node instance vs. a canonical one. Rez that one up.
             reference_node = type(node)(name="REFERENCE NODE")
 
+            # Track all of the values that need to be created.
+            values_created = {}
+
             # Now all of the parameters.
             parameter_commands = []
             for parameter in node.parameters:
-                param_dict = vars(parameter)
+                param_dict = parameter.to_dict()
                 # Create the parameter, or alter it on the existing node
                 if parameter.user_defined:
                     param_dict["node_name"] = node.name
+                    param_dict["initial_setup"] = True
                     add_param_request = AddParameterToNodeRequest.create(**param_dict)
                     parameter_commands.append(add_param_request)
                 else:
                     # Not user defined. Get any deltas from a canonical one.
-                    diff = WorkflowManager._manage_alter_details(parameter, reference_node)
+                    diff = NodeManager._manage_alter_details(parameter, reference_node)
                     relevant = False
                     for key in diff:
                         if key in AlterParameterDetailsRequest.relevant_parameters():
@@ -1601,12 +1605,15 @@ class NodeManager:
                     if relevant:
                         diff["node_name"] = node.name
                         diff["parameter_name"] = parameter.name
+                        diff["initial_setup"] = True
                         alter_param_request = AlterParameterDetailsRequest.create(**diff)
                         parameter_commands.append(alter_param_request)
                 if parameter.name in node.parameter_values and parameter.name not in node.parameter_output_values:
                     try:
                         # SetParameterValueRequest event
-                        set_param_value_request = WorkflowManager._handle_parameter_value_saving(parameter, node)
+                        set_param_value_request = NodeManager._handle_parameter_value_saving(
+                            parameter, node, values_created
+                        )
                         parameter_commands.append(set_param_value_request)
                     except Exception as e:
                         details = f"Failed to serialize Node because failed to save parameter creation for node '{node.name}'. Error: {e}"
@@ -1646,3 +1653,188 @@ class NodeManager:
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         logger.debug(details)
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)
+
+    @staticmethod
+    def _manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
+        base_param = base_node_obj.get_parameter_by_name(parameter.name)
+        if base_param:
+            diff = base_param.equals(parameter)
+        else:
+            return vars(parameter)
+        return diff
+
+    @staticmethod
+    def _handle_parameter_value_saving(
+        parameter: Parameter,
+        node: BaseNode,
+        value_hash_to_unique_serialized_value_index: dict[Any, int],
+        unique_serialized_values: list[Any],
+    ) -> SetParameterValueRequest | None:
+        """Generates code to save a parameter value for a node in a Griptape workflow.
+
+        This function handles the process of creating commands that will reconstruct and set
+        parameter values for nodes. It performs the following steps:
+        1. Retrieves the parameter value from the node's parameter values or output values
+        2. Checks if the value has already been created in our list of unique serialized values
+        3. If so, it records the index for later correlation.
+        4. If not, it adds the serialized value to the uniques list and records the new index.
+        5. Creates a SetParameterValueRequest to reconstruct this for the node
+
+        Args:
+            parameter (Parameter): The parameter object containing metadata
+            node (BaseNode): The node object that contains the parameter
+            value_hash_to_unique_serialized_value_index (dict[Any, int]): Dictionary mapping value hashes to indices in unique_serialized_values list
+            unique_serialized_values (list[Any]): List of unique serialized values
+
+        Returns:
+            TODO
+
+        Raises:
+            Throws a ValueError if the value cannot be serialized.
+
+        Notes:
+            - Parameter output values take precedence over regular parameter values
+            - For values that can be hashed, the value itself is used as the key in values_created
+            - For unhashable values, the object's id is used as the key
+            - The function will reuse already created values to avoid duplication
+        """
+        value = None
+        is_output = False
+        if parameter.name in node.parameter_values:
+            value = node.get_parameter_value(parameter.name)
+        # Output values are more important
+        if parameter.name in node.parameter_output_values:
+            value = node.parameter_output_values[parameter.name]
+            is_output = True
+        try:
+            hash(value)
+            value_id = value
+        except TypeError:
+            value_id = id(value)
+        if value_id in value_hash_to_unique_serialized_value_index:
+            # We've already created this object. We're all good.
+            unique_index = value_hash_to_unique_serialized_value_index[value_id]
+
+            return f"GriptapeNodes.handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True, is_output={is_output}))"
+        # Set it up as a object in the code
+        imports = []
+        var_name = f"{node.name}_{parameter.name}_value"
+        values_created[value_id] = var_name
+        reconstruction_code = _convert_value_to_str_representation(var_name, value, imports)
+        # If it doesn't have a custom __str__, convert to dict if possible
+        if reconstruction_code != "":
+            # Add the request handling code
+            final_code = (
+                reconstruction_code
+                + f"GriptapeNodes.handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True, is_output={is_output}))"
+            )
+            # Combine imports and code
+            import_statements = ""
+            if imports:
+                import_statements = "\n".join(list(set(imports))) + "\n\n"  # Remove duplicates with set()
+            return import_statements + final_code
+        return None
+
+    @staticmethod
+    def _convert_value_to_str_representation(value: Any) -> str:
+        """Converts a Python value to its string representation as executable code.
+
+        This function generates Python code that can recreate the given value
+        when executed. It handles different types of values with specific strategies:
+        - Objects with a 'to_dict' method: Uses _create_object_in_file for reconstruction
+        - Basic Python types: Uses their repr representation
+        - If not representable: Raises a TypeError
+
+        Args:
+            value (Any): The Python value to convert to code
+
+        Returns:
+            str: Python code as a string that will reconstruct the value when executed.
+
+        Raises:
+            TypeError: If the value cannot be properly represented.
+        """
+        # If it doesn't have a custom __str__, convert to dict if possible
+        if hasattr(value, "to_dict") and callable(value.to_dict):
+            # For objects with to_dict method
+            reconstruction_code = NodeManager._create_object_in_file(value)
+            return reconstruction_code
+        if isinstance(value, (int, float, str, bool)) or value is None:
+            # For basic types, use repr to create a literal
+            return f"{value!r}"
+        if isinstance(value, (list, dict, tuple, set)):
+            reconstruction_code = NodeManager._convert_container_to_str_representation(value, type(value))
+            return reconstruction_code
+        details = f"Value of type {type(value)} could not be serialized."
+        raise TypeError(details)
+
+    @staticmethod
+    def _convert_container_to_str_representation(value: Any, value_type: type) -> str:
+        """Creates code to reconstruct a container type (list, dict, tuple, set) with its elements.
+
+        Args:
+            value (Any): The container value to convert to code
+            value_type (type): The type of container (list, dict, tuple, or set)
+
+        Returns:
+            str: Python code as a string that will reconstruct the container
+        """
+        # Get the initialization brackets from an empty container
+        empty_container = value_type()
+        init_brackets = repr(empty_container)
+        # Initialize the container
+        code = f"{var_name} = {init_brackets}\n"
+        temp_var_base = f"{var_name}_item"
+        if value_type is dict:
+            # Process dictionary items
+            for i, (k, v) in enumerate(value.items()):
+                temp_var = f"{temp_var_base}_{i}"
+                # Convert the value to code
+                value_code = NodeManager._convert_value_to_str_representation(temp_var, v, imports)
+                if value_code:
+                    code += value_code
+                    code += f"{var_name}[{k!r}] = {temp_var}\n"
+                else:
+                    code += f"{var_name}[{k!r}] = {v!r}\n"
+        else:
+            # Process sequence items (list, tuple, set)
+            # For immutable types like tuple and set, we need to build a list first
+            for i, item in enumerate(value):
+                temp_var = f"{temp_var_base}_{i}"
+                # Convert the item to code
+                item_code = NodeManager._convert_value_to_str_representation(temp_var, item, imports)
+                if item_code != "":
+                    code += item_code
+                    code += f"{var_name}.append({temp_var})\n"
+                else:
+                    code += f"{var_name}.append({item!r})\n"
+            # Convert the list to the final type if needed
+            if value_type in (tuple, set):
+                code += f"{var_name} = {value_type.__name__}({var_name})\n"
+        return code
+
+    @staticmethod
+    def _create_object_in_file(value: Any) -> str:
+        """Creates Python code to reconstruct an object from its dictionary representation and adds necessary import statements.
+
+        Args:
+            value (Any): The object to be serialized into Python code
+
+        Returns:
+            str: Python code string that reconstructs the object when executed
+
+
+        Notes:
+            - The function assumes the object has a 'to_dict()' method to serialize it. It is only called if the object does have that method.
+            - For class instances, it will add appropriate import statements to 'imports'
+            - The generated code will create a dictionary representation first, then
+            reconstruct the object using a 'from_dict' class method
+        """
+        obj_dict = value.to_dict()
+        reconstruction_code = f"{var_name} = {obj_dict!r}\n"
+        # If we know the class, we can reconstruct itt
+        if hasattr(value, "__class__"):
+            reconstruction_code += f"{var_name} = {class_name}.from_dict({var_name})\n"
+            return reconstruction_code
+        details = f"Value of type {type(value)} could not be serialized."
+        raise TypeError(details)
