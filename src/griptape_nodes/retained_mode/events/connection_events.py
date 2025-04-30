@@ -24,7 +24,7 @@ class CreateConnectionRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CreateConnectionResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class CreateConnectionResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
@@ -46,7 +46,7 @@ class DeleteConnectionRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteConnectionResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class DeleteConnectionResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
@@ -79,12 +79,12 @@ class OutgoingConnection:
 
 @dataclass
 @PayloadRegistry.register
-class ListConnectionsForNodeResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class ListConnectionsForNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     incoming_connections: list[IncomingConnection]
     outgoing_connections: list[OutgoingConnection]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListConnectionsForNodeResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class ListConnectionsForNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
