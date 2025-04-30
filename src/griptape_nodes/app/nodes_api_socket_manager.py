@@ -57,6 +57,9 @@ class NodesApiSocketManager:
                 }
             ),
         )
+        logger.debug(
+            "Responded to heartbeat request with session: %s and request: %s", session_id, request.get("request_id")
+        )
 
     def run(self, *args, **kwargs) -> None:
         pass
