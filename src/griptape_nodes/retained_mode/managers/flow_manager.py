@@ -721,7 +721,9 @@ class FlowManager:
         # After the connection has been removed, if it doesn't have PROPERTY as a type, wipe the set parameter value and unresolve future nodes
         if ParameterMode.PROPERTY not in target_param.allowed_modes:
             try:
-                target_node.remove_parameter_value(target_param.name)
+                # Only try to remove a value where one exists, otherwise it will generate errant warnings.
+                if target_param.name in target_node.parameter_values:
+                    target_node.remove_parameter_value(target_param.name)
                 # It removed it accurately
                 # Unresolve future nodes that depended on that value
                 source_flow.connections.unresolve_future_nodes(target_node)
