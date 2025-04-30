@@ -208,6 +208,9 @@ class NodeManager:
         state = request.resolution
         if state == NodeResolutionState.RESOLVING:
             state = NodeResolutionState.UNRESOLVED
+            logger.warning(
+                "Node '%s' was created in a RESOLVING state. This is not allowed. Setting to UNRESOLVED.", node.name
+            )
         node.state = NodeResolutionState(state)
 
         # See if we want to push this into the context of the current flow.
