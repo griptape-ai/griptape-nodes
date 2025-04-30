@@ -154,7 +154,7 @@ The documentation website ([docs.griptapenodes.com](https://docs.griptapenodes.c
 1. Set the new release version (this creates Git tags):
     ```shell
     # Example for version 0.8.0
-    make version/set v=0.8.0
+    make version/patch
     ```
 1. Publish the release (pushes tags to trigger GitHub Actions workflow):
     ```shell
