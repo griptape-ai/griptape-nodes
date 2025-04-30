@@ -43,9 +43,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     DeleteNodeRequest,
     DeleteNodeResultFailure,
     DeleteNodeResultSuccess,
-    DeserializeNodeCommandsRequest,
-    DeserializeNodeCommandsResultFailure,
-    DeserializeNodeCommandsResultSuccess,
+    DeserializeNodeFromCommandsRequest,
+    DeserializeNodeFromCommandsResultFailure,
+    DeserializeNodeFromCommandsResultSuccess,
     GetAllNodeInfoRequest,
     GetAllNodeInfoResultFailure,
     GetAllNodeInfoResultSuccess,
@@ -140,7 +140,9 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(
             GetNodeElementDetailsRequest, self.on_get_node_element_details_request
         )
-        event_manager.assign_manager_to_request_type(DeserializeNodeCommandsRequest, self.on_deserialize_node_commands)
+        event_manager.assign_manager_to_request_type(
+            DeserializeNodeFromCommandsRequest, self.on_deserialize_node_from_commands
+        )
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old node name and its parent.
@@ -1527,14 +1529,14 @@ class NodeManager:
             validation_succeeded=(len(all_exceptions) == 0), exceptions=all_exceptions
         )
 
-    def on_deserialize_node_commands(self, request: DeserializeNodeCommandsRequest) -> ResultPayload:
+    def on_deserialize_node_from_commands(self, request: DeserializeNodeFromCommandsRequest) -> ResultPayload:
         # Issue the creation command first.
         create_node_request = request.serialized_node_commands.create_node_command
         create_node_result = GriptapeNodes().handle_request(create_node_request)
         if not isinstance(create_node_result, CreateNodeResultSuccess):
             details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to create node '{create_node_request.node_name}'."
             logger.error(details)
-            return DeserializeNodeCommandsResultFailure()
+            return DeserializeNodeFromCommandsResultFailure()
 
         # Adopt the newly-created node as our current context.
         node_name = create_node_result.node_name
@@ -1544,8 +1546,8 @@ class NodeManager:
                 if element_result.failed():
                     details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to execute an element command for node '{node_name}'."
                     logger.error(details)
-                    return DeserializeNodeCommandsResultFailure()
+                    return DeserializeNodeFromCommandsResultFailure()
 
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         logger.debug(details)
-        return DeserializeNodeCommandsResultSuccess(node_name=node_name)
+        return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)

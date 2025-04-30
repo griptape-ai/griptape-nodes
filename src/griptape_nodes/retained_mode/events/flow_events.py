@@ -156,36 +156,36 @@ class SerializedFlowCommands:
 
 @dataclass
 @PayloadRegistry.register
-class SerializeFlowCommandsRequest(RequestPayload):
+class SerializeFlowToCommandsRequest(RequestPayload):
     # If None is passed, assumes we're serializing the flow in the Current Context.
     flow_name: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
-class SerializeFlowCommandsResultSuccess(ResultPayloadSuccess):
+class SerializeFlowToCommandsResultSuccess(ResultPayloadSuccess):
     serialized_flow_commands: SerializedFlowCommands
 
 
 @dataclass
 @PayloadRegistry.register
-class SerializeFlowCommandsResultFailure(ResultPayloadFailure):
+class SerializeFlowToCommandsResultFailure(ResultPayloadFailure):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class DeserializeFlowCommandsRequest(RequestPayload):
+class DeserializeFlowFromCommandsRequest(RequestPayload):
     serialized_flow_commands: SerializedFlowCommands
 
 
 @dataclass
 @PayloadRegistry.register
-class DeserializeFlowCommandsResultSuccess(ResultPayloadSuccess):
+class DeserializeFlowFromCommandsResultSuccess(ResultPayloadSuccess):
     flow_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class DeserializeFlowCommandsResultFailure(ResultPayloadFailure):
+class DeserializeFlowFromCommandsResultFailure(ResultPayloadFailure):
     pass

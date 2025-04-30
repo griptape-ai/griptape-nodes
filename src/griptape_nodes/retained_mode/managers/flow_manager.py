@@ -50,9 +50,9 @@ from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
     DeleteFlowResultFailure,
     DeleteFlowResultSuccess,
-    DeserializeFlowCommandsRequest,
-    DeserializeFlowCommandsResultFailure,
-    DeserializeFlowCommandsResultSuccess,
+    DeserializeFlowFromCommandsRequest,
+    DeserializeFlowFromCommandsResultFailure,
+    DeserializeFlowFromCommandsResultSuccess,
     GetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess,
     ListFlowsInCurrentContextRequest,
@@ -68,7 +68,7 @@ from griptape_nodes.retained_mode.events.flow_events import (
 from griptape_nodes.retained_mode.events.node_events import (
     DeleteNodeRequest,
     DeleteNodeResultFailure,
-    DeserializeNodeCommandsRequest,
+    DeserializeNodeFromCommandsRequest,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
@@ -115,7 +115,9 @@ class FlowManager:
             ValidateFlowDependenciesRequest, self.on_validate_flow_dependencies_request
         )
         event_manager.assign_manager_to_request_type(GetTopLevelFlowRequest, self.on_get_top_level_flow_request)
-        event_manager.assign_manager_to_request_type(DeserializeFlowCommandsRequest, self.on_deserialize_flow_commands)
+        event_manager.assign_manager_to_request_type(
+            DeserializeFlowFromCommandsRequest, self.on_deserialize_flow_from_commands
+        )
 
         self._name_to_parent_name = {}
 
@@ -1028,14 +1030,14 @@ class FlowManager:
 
         return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list)
 
-    def on_deserialize_flow_commands(self, request: DeserializeFlowCommandsRequest) -> ResultPayload:
+    def on_deserialize_flow_from_commands(self, request: DeserializeFlowFromCommandsRequest) -> ResultPayload:
         # Issue the creation command first.
         create_flow_request = request.serialized_flow_commands.create_flow_command
         create_flow_result = GriptapeNodes().handle_request(create_flow_request)
         if not isinstance(create_flow_result, CreateFlowResultSuccess):
             details = f"Attempted to deserialize a serialized set of Flow Creation commands. Failed to create flow '{create_flow_request.flow_name}'."
             logger.error(details)
-            return DeserializeFlowCommandsResultFailure()
+            return DeserializeFlowFromCommandsResultFailure()
 
         # Adopt the newly-created flow as our current context.
         flow_name = create_flow_result.flow_name
@@ -1046,12 +1048,12 @@ class FlowManager:
             # Preserve the indices because we will need to tie these back together with the Connections later.
             deserialized_node_results = []
             for serialized_node in request.serialized_flow_commands.serialized_node_commands:
-                deserialize_node_request = DeserializeNodeCommandsRequest(serialized_node_commands=serialized_node)
+                deserialize_node_request = DeserializeNodeFromCommandsRequest(serialized_node_commands=serialized_node)
                 deserialized_node_result = GriptapeNodes.handle_request(deserialize_node_request)
                 if deserialized_node_result.failed():
                     details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a node within the flow."
                     logger.error(details)
-                    return DeserializeFlowCommandsResultFailure()
+                    return DeserializeFlowFromCommandsResultFailure()
                 deserialized_node_results.append(deserialized_node_result)
 
             # Now apply the connections.
@@ -1073,17 +1075,17 @@ class FlowManager:
                 if create_connection_result.failed():
                     details = f"Attemped to deserialize a Flow '{flow_name}'. Failed while deserializing a Connection from '{source_node_name}.{indexed_connection.source_parameter_name}' to '{target_node_name}.{indexed_connection.target_parameter_name}' within the flow."
                     logger.error(details)
-                    return DeserializeFlowCommandsResultFailure()
+                    return DeserializeFlowFromCommandsResultFailure()
 
             # Now the child flows.
             for sub_flow_command in request.serialized_flow_commands.sub_flows_commands:
-                sub_flow_request = DeserializeFlowCommandsRequest(serialized_flow_commands=sub_flow_command)
+                sub_flow_request = DeserializeFlowFromCommandsRequest(serialized_flow_commands=sub_flow_command)
                 sub_flow_result = GriptapeNodes.handle_request(sub_flow_request)
                 if sub_flow_result.failed():
                     details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a sub-flow within the Flow."
                     logger.error(details)
-                    return DeserializeFlowCommandsResultFailure()
+                    return DeserializeFlowFromCommandsResultFailure()
 
         details = f"Successfully deserialized Flow '{flow_name}'."
         logger.debug(details)
-        return DeserializeFlowCommandsResultSuccess(flow_name=flow_name)
+        return DeserializeFlowFromCommandsResultSuccess(flow_name=flow_name)

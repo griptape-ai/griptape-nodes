@@ -183,36 +183,36 @@ class SerializedNodeCommands:
 
 @dataclass
 @PayloadRegistry.register
-class SerializeNodeCommandsRequest(RequestPayload):
+class SerializeNodeToCommandsRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
-class SerializeNodeCommandsResultSuccess(ResultPayloadSuccess):
+class SerializeNodeToCommandsResultSuccess(ResultPayloadSuccess):
     serialized_node_commands: SerializedNodeCommands
 
 
 @dataclass
 @PayloadRegistry.register
-class SerializeNodeCommandsResultFailure(ResultPayloadFailure):
+class SerializeNodeToCommandsResultFailure(ResultPayloadFailure):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class DeserializeNodeCommandsRequest(RequestPayload):
+class DeserializeNodeFromCommandsRequest(RequestPayload):
     serialized_node_commands: SerializedNodeCommands
 
 
 @dataclass
 @PayloadRegistry.register
-class DeserializeNodeCommandsResultSuccess(ResultPayloadSuccess):
+class DeserializeNodeFromCommandsResultSuccess(ResultPayloadSuccess):
     node_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class DeserializeNodeCommandsResultFailure(ResultPayloadFailure):
+class DeserializeNodeFromCommandsResultFailure(ResultPayloadFailure):
     pass
