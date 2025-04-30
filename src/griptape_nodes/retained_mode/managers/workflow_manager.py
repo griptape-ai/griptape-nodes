@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import importlib
-import inspect
 import logging
 import pkgutil
 import re
@@ -29,7 +27,6 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
-from griptape_nodes.retained_mode.events.base_events import RequestPayload
 from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
     GetLibraryMetadataResultSuccess,
@@ -714,7 +711,7 @@ class WorkflowManager:
 
     def _gather_workflow_imports(self) -> list[str]:
         """Gathers all the imports for the saved workflow file, specifically for the events."""
-        import_template = "from {} import {}"
+        import_template = "from {} import *"
         import_statements = []
 
         from griptape_nodes.retained_mode import events as events_pkg
@@ -723,13 +720,7 @@ class WorkflowManager:
         for _finder, module_name, _is_pkg in pkgutil.iter_modules(events_pkg.__path__, events_pkg.__name__ + "."):
             if module_name.endswith("generate_request_payload_schemas"):
                 continue
-            module = importlib.import_module(module_name)
-
-            # Inspect all class members in the module
-            for _, obj in inspect.getmembers(module, inspect.isclass):
-                # Filter down to subclasses of RequestPayload (but not the base class itself)
-                if issubclass(obj, RequestPayload) and obj is not RequestPayload:
-                    import_statements.append(import_template.format(module_name, obj.__name__))
+            import_statements.append(import_template.format(module_name))
 
         return import_statements
 

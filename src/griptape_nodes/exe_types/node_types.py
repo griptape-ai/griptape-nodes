@@ -32,7 +32,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
 )
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -442,10 +441,14 @@ class BaseNode(ABC):
         return None
 
     def get_config_value(self, service: str, value: str) -> str:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         config_value = GriptapeNodes.ConfigManager().get_config_value(f"nodes.{service}.{value}")
         return config_value
 
     def set_config_value(self, service: str, value: str, new_value: str) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         GriptapeNodes.ConfigManager().set_config_value(f"nodes.{service}.{value}", new_value)
 
     def clear_node(self) -> None:
