@@ -45,7 +45,7 @@ class AgentToTool(DataNode):
         )
 
         def validate_tool_description(_param: Parameter, value: str) -> None:
-            if not value or value == placeholder_description:
+            if not value:
                 msg = f"{self.name} : A meaningful description is critical for an Agent to know when to use this tool."
                 raise ValueError(msg)
 
@@ -56,8 +56,10 @@ class AgentToTool(DataNode):
                 input_types=["str"],
                 type="str",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                default_value=placeholder_description,
-                ui_options={"multiline": True},
+                ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Description for what the Tool does",
+                },
                 tooltip="Description for what the Tool does",
                 validators=[validate_tool_description],
             )
