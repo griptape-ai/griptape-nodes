@@ -147,16 +147,28 @@ The documentation website ([docs.griptapenodes.com](https://docs.griptapenodes.c
 ## Making a Release (Maintainers)
 
 1. Check out the `main` branch locally:
+
     ```shell
     git checkout main
     git pull origin main
     ```
-1. Set the new release version (this creates Git tags):
+
+1. Bump the new release version:
+
     ```shell
-    # Example for version 0.8.0
+    # e.g. bumping 0.8.0 to 0.8.1
     make version/patch
     ```
-1. Publish the release (pushes tags to trigger GitHub Actions workflow):
+
+    or:
+
+    ```shell
+    # e.g. bumping 0.8.0 to 0.9.0
+    make version/minor
+    ```
+
+1. Publish the release (creates and pushes tags to Github):
+
     ```shell
     make version/publish
     ```
