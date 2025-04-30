@@ -1,4 +1,4 @@
-# Getting Started with Griptape Nodes
+# Interface Basics
 
 Welcome to Griptape Nodes! This tutorial will guide you through your first steps with this powerful tool, from installation to creating your first workflow.
 

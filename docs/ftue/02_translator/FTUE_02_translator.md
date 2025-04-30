@@ -83,7 +83,7 @@ To see the final translation:
 1. Connect the output of the second agent to the display text node
 2. When the workflow runs, this node will show the translated English text
 
-![Display setup](assets/madarin_display.png)
+![Display setup](assets/mandarin_display.png)
 
 ## Understand Execution Order (Exec Chain)
 

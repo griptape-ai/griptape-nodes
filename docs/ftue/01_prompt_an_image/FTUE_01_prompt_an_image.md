@@ -54,10 +54,6 @@ Let's try generating some images with different prompts:
 
 Notice how dramatically different the results are just by changing a few words in your prompt. This demonstrates the flexibility and power of the GenerateImage node.  Anything you can describe, you can generate.
 
-## Next Steps
-
-Now that you've learned how to generate images using text prompts, you're ready to incorporate this functionality into more complex flows. In the next tutorial, we'll build on this knowledge to create more sophisticated node interactions.
-
 ## Summary
 
 In this tutorial, you learned how to:
