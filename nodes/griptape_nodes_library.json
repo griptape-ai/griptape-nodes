@@ -306,6 +306,24 @@
       }
     },
     {
+      "class_name": "ImageToVideo",
+      "file_path": "griptape_nodes_library/image/create_video.py",
+      "metadata": {
+        "category": "image",
+        "description": "ImageToVideo node.",
+        "display_name": "Image To Video"
+      }
+    },
+    {
+      "class_name": "TextToVideo",
+      "file_path": "griptape_nodes_library/image/text_to_video.py",
+      "metadata": {
+        "category": "image",
+        "description": "TextToVideo node.",
+        "display_name": "Text To Video"
+      }
+    },
+    {
       "class_name": "DescribeImage",
       "file_path": "griptape_nodes_library/image/describe_image.py",
       "metadata": {
