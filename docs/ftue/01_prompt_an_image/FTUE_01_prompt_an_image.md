@@ -5,7 +5,7 @@ Welcome to the second tutorial in our Griptape Nodes series! In this guide, you'
 
 In this tutorial, you will:
 
-- Learn how to open saved scenes
+- Learn how to open saved workflows
 - Learn the GenerateImage node
 - Generate images using text prompts
 
@@ -15,7 +15,7 @@ To begin this tutorial, you'll need to return to the main landing page. Click on
 
 ## Open the Image Prompt Example
 
-On the landing page, locate and click on the **"Prompt an Image"** tile to open this example scene.
+On the landing page, locate and click on the **"Prompt an Image"** tile to open this example workflow.
 
 ![Prompt an Image example](assets/prompt_image_example.png)
 
@@ -44,7 +44,7 @@ To generate your first image:
 
 Let's try generating some images with different prompts:
 
-1. **First Example**: The scene loads with "A potato making an oil painting" in the prompt field.  Run the flow
+1. **First Example**: The workflow loads with "A potato making an oil painting" in the prompt field.  Run the flow
    
    ![Potato painting result](assets/potato_painting.png)
 
@@ -57,7 +57,7 @@ Notice how dramatically different the results are just by changing a few words i
 ## Summary
 
 In this tutorial, you learned how to:
-- Learn how to open saved scenes
+- Learn how to open saved workflow
 - Learn the GenerateImage node
 - Generate images using text prompts
 

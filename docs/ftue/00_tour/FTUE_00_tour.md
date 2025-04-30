@@ -31,11 +31,11 @@ After executing the command, you'll see a link in your terminal. Click on it, an
 
 ## The Landing Page
 
-When your browser opens, you'll be greeted by the Griptape Nodes landing page. This page displays several sample scenes that showcase different things we want to introduce you to.
+When your browser opens, you'll be greeted by the Griptape Nodes landing page. This page displays several sample workflows that showcase different things we want to introduce you to.
 
    ![Griptape Nodes landing page](assets/landing_page.png)
 
-These sample scenes are excellent resources for learning about Griptape Nodes' capabilities, but for now, let's start from scratch.
+These sample workflows are excellent resources for learning about Griptape Nodes' capabilities, but for now, let's start from scratch.
 
 ## Create a new workspace from scratch
 

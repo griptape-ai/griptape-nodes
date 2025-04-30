@@ -17,7 +17,7 @@ To begin this tutorial, return to the main landing page by clicking on the navig
 
 ## Open the Compare Prompts Example
 
-On the landing page, locate and click on the **"Compare Prompts"** tile to open this example scene.
+On the landing page, locate and click on the **"Compare Prompts"** tile to open this example workflow.
 
 ![Compare Prompts example](assets/compare_prompts_example.png)
 
