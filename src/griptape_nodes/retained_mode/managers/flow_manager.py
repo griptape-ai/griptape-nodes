@@ -64,6 +64,10 @@ from griptape_nodes.retained_mode.events.flow_events import (
     ListNodesInFlowRequest,
     ListNodesInFlowResultFailure,
     ListNodesInFlowResultSuccess,
+    SerializedFlowCommands,
+    SerializeFlowToCommandsRequest,
+    SerializeFlowToCommandsResultFailure,
+    SerializeFlowToCommandsResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
     DeleteNodeRequest,
@@ -115,6 +119,7 @@ class FlowManager:
             ValidateFlowDependenciesRequest, self.on_validate_flow_dependencies_request
         )
         event_manager.assign_manager_to_request_type(GetTopLevelFlowRequest, self.on_get_top_level_flow_request)
+        event_manager.assign_manager_to_request_type(SerializeFlowToCommandsRequest, self.on_serialize_flow_to_commands)
         event_manager.assign_manager_to_request_type(
             DeserializeFlowFromCommandsRequest, self.on_deserialize_flow_from_commands
         )
@@ -1029,6 +1034,110 @@ class FlowManager:
         logger.debug(details)
 
         return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list)
+
+    def on_serialize_flow_to_commands(self, request: SerializeFlowToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
+        flow_name = request.flow_name
+        if flow_name is None:
+            if GriptapeNodes.ContextManager().has_current_flow():
+                flow_name = GriptapeNodes.ContextManager().get_current_flow_name()
+            else:
+                details = "Attempted to serialize a Flow to commands from the Current Context. Failed because the Current Context was empty."
+                logger.error(details)
+                return SerializeFlowToCommandsResultFailure()
+
+        # Does this flow exist?
+        flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+        if flow is None:
+            details = (
+                f"Attempted to serialize Flow '{flow_name}' to commands, but no Flow with that name could be found."
+            )
+            logger.error(details)
+            return SerializeFlowToCommandsResultFailure()
+
+        node_libraries_in_use = set()
+
+        with GriptapeNodes.ContextManager().flow(flow_name):
+            # The base flow creation.
+            create_flow_request = CreateFlowRequest(parent_flow_name=None)
+
+            serialized_node_commands = []
+
+            # Now each of the child nodes in the flow.
+            node_name_to_index = {}
+            nodes_in_flow_request = ListNodesInFlowRequest()
+            nodes_in_flow_result = GriptapeNodes().handle_request(nodes_in_flow_request)
+            if not isinstance(nodes_in_flow_result, ListNodesInFlowResultSuccess):
+                details = (
+                    f"Attempted to serialize Flow '{flow_name}'. Failed while attempting to list Nodes in the Flow."
+                )
+                logger.error(details)
+                return SerializeFlowToCommandsResultFailure()
+
+            for node_index, node_name in enumerate(nodes_in_flow_result.node_names):
+                node_name_to_index[node_name] = node_index
+
+                with GriptapeNodes.ContextManager().node(node_name):
+                    serialize_node_request = SerializeNodeToCommandsRequest()
+                    serialize_node_result = GriptapeNodes().handle_request(serialize_node_request)
+                    if not isinstance(serialize_node_result, SerializeNodeToCommandsResultSuccess):
+                        details = f"Attempted to serialize Flow '{flow_name}'. Failed while attempting to serialize Node '{node_name}' within the Flow."
+                        logger.error(details)
+                        return SerializeFlowToCommandsResultFailure()
+
+                    serialized_node = serialize_node_result.serialized_node_commands
+                    serialized_node_commands.append(serialized_node)
+                    node_libraries_in_use.add(serialized_node.node_library_details)
+
+            # We'll have to do a patch-up of all the connections, since we can't predict all of the node names being accurate
+            # when we're restored.
+            # Create all of the connections
+            create_connection_commands = []
+            for connection in flow.connections.connections.values():
+                source_node_index = node_name_to_index[connection.source_node.name]
+                target_node_index = node_name_to_index[connection.target_node.name]
+                create_connection_command = SerializedFlowCommands.IndexedConnectionSerialization(
+                    source_node_index=source_node_index,
+                    source_parameter_name=connection.source_parameter.name,
+                    target_node_index=target_node_index,
+                    target_parameter_name=connection.target_parameter.name,
+                )
+                create_connection_commands.append(create_connection_command)
+
+            # Now sub-flows.
+            flows_in_flow_request = ListFlowsInFlowRequest()
+            flows_in_flow_result = GriptapeNodes().handle_request(flows_in_flow_request)
+            if not isinstance(flows_in_flow_result, ListFlowsInFlowResultSuccess):
+                details = (
+                    f"Attempted to serialize Flow '{flow_name}'. Failed while attempting to list Flows in the Flow."
+                )
+                logger.error(details)
+                return SerializeFlowToCommandsResultFailure()
+
+            sub_flow_commands = []
+            for child_flow in flows_in_flow_result.flow_names:
+                with GriptapeNodes.ContextManager().flow(flow_name=child_flow):
+                    child_flow_request = SerializeFlowToCommandsRequest()
+                    child_flow_result = GriptapeNodes().handle_request(child_flow_request)
+                    if not isinstance(child_flow_result, SerializeFlowToCommandsResultSuccess):
+                        details = f"Attempted to serialize parent flow '{flow_name}'. Failed while serializing child flow '{child_flow}'."
+                        logger.error(details)
+                        return SerializeFlowToCommandsResultFailure()
+                    serialized_flow = child_flow_result.serialized_flow_commands
+                    sub_flow_commands.append(serialized_flow)
+
+                    # Merge in all child flow library details.
+                    node_libraries_in_use.union(serialized_flow.node_libraries_used)
+
+        serialized_flow = SerializedFlowCommands(
+            create_flow_command=create_flow_request,
+            serialized_node_commands=serialized_node_commands,
+            serialized_connections=create_connection_commands,
+            sub_flows_commands=sub_flow_commands,
+            node_libraries_used=node_libraries_in_use,
+        )
+        details = f"Successfully serialized Flow '{flow_name}' into commands."
+        result = SerializeFlowToCommandsResultSuccess(serialized_flow_commands=serialized_flow)
+        return result
 
     def on_deserialize_flow_from_commands(self, request: DeserializeFlowFromCommandsRequest) -> ResultPayload:
         # Issue the creation command first.
