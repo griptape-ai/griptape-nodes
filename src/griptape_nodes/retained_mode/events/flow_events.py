@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -7,6 +8,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
+from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
@@ -122,3 +124,68 @@ class GetTopLevelFlowRequest(RequestPayload):
 @PayloadRegistry.register
 class GetTopLevelFlowResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     flow_name: str | None
+
+
+# A Flow's state can be serialized into a sequence of commands that the engine then runs.
+@dataclass
+class SerializedFlowCommands:
+    @dataclass
+    class IndexedConnectionSerialization:
+        # Companion class to create connections from node indices, since we can't predict the names.
+        # These are indices into the SerializeNodeCommandsRequest list we maintain.
+        source_node_index: int
+        source_parameter_name: str
+        target_node_index: int
+        target_parameter_name: str
+
+    # Which node libraries are in use by this flow (includes child flows)
+    node_libraries_used: set[LibraryNameAndVersion]
+
+    # The command to create the flow that contains all of this.
+    create_flow_command: CreateFlowRequest
+
+    # Handles creating all of the nodes themselves, along with modifying Parameters and Values.
+    serialized_node_commands: list[SerializedNodeCommands]
+
+    # Creates the connections between Nodes.
+    serialized_connections: list[IndexedConnectionSerialization]
+
+    # Cascades into sub-flows within this serialization.
+    sub_flows_commands: list["SerializedFlowCommands"]
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeFlowCommandsRequest(RequestPayload):
+    # If None is passed, assumes we're serializing the flow in the Current Context.
+    flow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeFlowCommandsResultSuccess(ResultPayloadSuccess):
+    serialized_flow_commands: SerializedFlowCommands
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeFlowCommandsResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeFlowCommandsRequest(RequestPayload):
+    serialized_flow_commands: SerializedFlowCommands
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeFlowCommandsResultSuccess(ResultPayloadSuccess):
+    flow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeFlowCommandsResultFailure(ResultPayloadFailure):
+    pass

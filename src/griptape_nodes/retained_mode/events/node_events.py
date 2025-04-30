@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from griptape_nodes.exe_types.node_types import NodeResolutionState
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -169,4 +170,49 @@ class GetAllNodeInfoResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin)
 @dataclass
 @PayloadRegistry.register
 class GetAllNodeInfoResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+    pass
+
+
+# A Node's state can be serialized to a sequence of commands that the engine runs.
+@dataclass
+class SerializedNodeCommands:
+    create_node_command: CreateNodeRequest
+    element_commands: list[RequestPayload]
+    node_library_details: LibraryNameAndVersion
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeNodeCommandsRequest(RequestPayload):
+    # If None is passed, assumes we're using the Node in the Current Context
+    node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeNodeCommandsResultSuccess(ResultPayloadSuccess):
+    serialized_node_commands: SerializedNodeCommands
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeNodeCommandsResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeNodeCommandsRequest(RequestPayload):
+    serialized_node_commands: SerializedNodeCommands
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeNodeCommandsResultSuccess(ResultPayloadSuccess):
+    node_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeNodeCommandsResultFailure(ResultPayloadFailure):
     pass
