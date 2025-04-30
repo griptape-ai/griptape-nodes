@@ -9,9 +9,6 @@ class CompareImages(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self.category = "Image"
-        self.description = "Compare two images"
-
         self.add_parameter(
             Parameter(
                 name="Image 1",
