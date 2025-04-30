@@ -441,7 +441,7 @@ class BaseNode(ABC):
         return None
 
     # It could be quite common to want to validate whether or not a parameter is empty.
-    # this helper fuction can be used within the `validate_node` method along with other validations
+    # this helper function can be used within the `validate_node` method along with other validations
     #
     # Example:
     """
