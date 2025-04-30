@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from griptape_nodes.exe_types.node_types import NodeResolutionState
@@ -14,6 +14,7 @@ from griptape_nodes.retained_mode.events.connection_events import ListConnection
 from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterDetailsResultSuccess,
     GetParameterValueResultSuccess,
+    SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -173,11 +174,19 @@ class GetAllNodeInfoResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin)
     pass
 
 
+@dataclass
+class IndexedSetParameterValueCommand:
+    # The base set parameter command
+    set_parameter_value_command: SetParameterValueRequest
+    # Value will be overridden when de-serialized based on the unique value index.
+    unique_value_index: int
+
+
 # A Node's state can be serialized to a sequence of commands that the engine runs.
 @dataclass
 class SerializedNodeCommands:
     create_node_command: CreateNodeRequest
-    element_commands: list[RequestPayload]
+    element_modification_commands: list[RequestPayload]
     node_library_details: LibraryNameAndVersion
 
 
@@ -186,12 +195,21 @@ class SerializedNodeCommands:
 class SerializeNodeToCommandsRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
+    # The list of unique parameter values.
+    # Serialization will check a parameter's value against these, appending new values if necessary.
+    unique_parameter_values_list: list[Any] = field(default_factory=list)
+    # The mapping of hash value to unique parameter value index. If serialization adds new unique
+    # values, it will add them to this map.
+    value_hash_to_unique_value_index: dict[Any, int] = field(default_factory=dict)
 
 
 @dataclass
 @PayloadRegistry.register
 class SerializeNodeToCommandsResultSuccess(ResultPayloadSuccess):
+    # Serialize the node itself
     serialized_node_commands: SerializedNodeCommands
+    # The parameter value assignment commands used when deserializing.
+    set_parameter_value_commands: list[IndexedSetParameterValueCommand]
 
 
 @dataclass

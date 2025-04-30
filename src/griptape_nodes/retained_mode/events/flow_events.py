@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 from griptape_nodes.retained_mode.events.base_events import (
@@ -144,11 +145,15 @@ class SerializedFlowCommands:
     # The command to create the flow that contains all of this.
     create_flow_command: CreateFlowRequest
 
-    # Handles creating all of the nodes themselves, along with modifying Parameters and Values.
+    # Handles creating all of the nodes themselves, along with configuring them.
+    # Does NOT set Parameter values, which is done as a separate step.
     serialized_node_commands: list[SerializedNodeCommands]
 
     # Creates the connections between Nodes.
     serialized_connections: list[IndexedConnectionSerialization]
+
+    # Records the unique Parameter values used by the Flow.
+    unique_parameter_values: list[Any]
 
     # Cascades into sub-flows within this serialization.
     sub_flows_commands: list["SerializedFlowCommands"]
