@@ -1,4 +1,5 @@
 import base64
+import binascii
 import logging
 from pathlib import Path
 
@@ -40,8 +41,17 @@ class StaticFilesManager:
         file_name = request.file_name
         try:
             url = self.save_static_file(base64.b64decode(request.content), file_name)
-        except Exception:
-            msg = f"Failed to save file {file_name} to {self.config_manager.workspace_path}"
+        except binascii.Error:
+            msg = f"Invalid base64 encoding for file {file_name}."
+            logger.error(msg)
+            return CreateStaticFileResultFailure(error=msg)
+        except (OSError, PermissionError) as e:
+            msg = f"Failed to write file {file_name} to {self.config_manager.workspace_path}: {e}"
+            logger.error(msg)
+            return CreateStaticFileResultFailure(error=msg)
+        except ValueError as e:
+            msg = str(e)
+            logger.error(msg)
             return CreateStaticFileResultFailure(error=msg)
         else:
             return CreateStaticFileResultSuccess(url=url)

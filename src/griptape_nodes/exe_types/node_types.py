@@ -32,6 +32,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -74,8 +75,6 @@ class BaseNode(ABC):
         metadata: dict[Any, Any] | None = None,
         state: NodeResolutionState = NodeResolutionState.UNRESOLVED,
     ) -> None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         self.name = name
         self.state = state
         if metadata is None:
@@ -85,8 +84,6 @@ class BaseNode(ABC):
         self.parameter_values = {}
         self.parameter_output_values = {}
         self.root_ui_element = BaseNodeElement()
-        self.config_manager = GriptapeNodes.ConfigManager()
-        self.static_files_manager = GriptapeNodes.StaticFilesManager()
         self.process_generator = None
 
     def make_node_unresolved(self) -> None:
@@ -445,11 +442,11 @@ class BaseNode(ABC):
         return None
 
     def get_config_value(self, service: str, value: str) -> str:
-        config_value = self.config_manager.get_config_value(f"nodes.{service}.{value}")
+        config_value = GriptapeNodes.ConfigManager().get_config_value(f"nodes.{service}.{value}")
         return config_value
 
     def set_config_value(self, service: str, value: str, new_value: str) -> None:
-        self.config_manager.set_config_value(f"nodes.{service}.{value}", new_value)
+        GriptapeNodes.ConfigManager().set_config_value(f"nodes.{service}.{value}", new_value)
 
     def clear_node(self) -> None:
         # set state to unresolved

@@ -4,6 +4,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -24,11 +25,11 @@ class CreateStaticFileRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CreateStaticFileResultSuccess(ResultPayloadSuccess):
+class CreateStaticFileResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
     url: str
 
 
 @dataclass
 @PayloadRegistry.register
-class CreateStaticFileResultFailure(ResultPayloadFailure):
+class CreateStaticFileResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
     error: str
