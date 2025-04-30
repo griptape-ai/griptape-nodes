@@ -15,7 +15,7 @@ from griptape_nodes_library.utils.image_utils import dict_to_image_artifact
 DEFAULT_FILENAME = "griptape_nodes.png"
 
 
-def to_image_artifact(image: ImageArtifact | dict) -> ImageArtifact:
+def to_image_artifact(image: ImageArtifact | dict) -> ImageArtifact | ImageUrlArtifact:
     """Convert an image or a dictionary to an ImageArtifact."""
     if isinstance(image, dict):
         return dict_to_image_artifact(image)
