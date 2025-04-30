@@ -11,7 +11,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
-from griptape_nodes.node_library.library_registry import LibraryRegistry
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ResultPayload,
     ResultPayloadFailure,
@@ -36,6 +36,10 @@ from griptape_nodes.retained_mode.events.flow_events import (
     ListNodesInFlowRequest,
     ListNodesInFlowResultSuccess,
 )
+from griptape_nodes.retained_mode.events.library_events import (
+    GetLibraryMetadataRequest,
+    GetLibraryMetadataResultSuccess,
+)
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
     CreateNodeResultFailure,
@@ -58,6 +62,10 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
+    SerializedNodeCommands,
+    SerializeNodeToCommandsRequest,
+    SerializeNodeToCommandsResultFailure,
+    SerializeNodeToCommandsResultSuccess,
     SetNodeMetadataRequest,
     SetNodeMetadataResultFailure,
     SetNodeMetadataResultSuccess,
@@ -140,6 +148,7 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(
             GetNodeElementDetailsRequest, self.on_get_node_element_details_request
         )
+        event_manager.assign_manager_to_request_type(SerializeNodeToCommandsRequest, self.on_serialize_node_to_commands)
         event_manager.assign_manager_to_request_type(
             DeserializeNodeFromCommandsRequest, self.on_deserialize_node_from_commands
         )
@@ -1528,6 +1537,92 @@ class NodeManager:
         return ValidateNodeDependenciesResultSuccess(
             validation_succeeded=(len(all_exceptions) == 0), exceptions=all_exceptions
         )
+
+    def on_serialize_node_to_commands(self, request: SerializeNodeToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0912
+        node_name = request.node_name
+        if node_name is None:
+            if GriptapeNodes.ContextManager().has_current_node():
+                node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            else:
+                details = "Attempted to serialize a Node to commands from the Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return SerializeNodeToCommandsResultFailure()
+
+        # Does this node exist?
+        node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to serialize Node '{node_name}' to commands. Failed because no Node with that name could be found."
+            logger.error(details)
+            return SerializeNodeToCommandsResultFailure()
+
+        # This is our current dude.
+        with GriptapeNodes.ContextManager().node(node_name=node_name):
+            # Get the library and version details.
+            library_used = node.metadata["library"]
+            # Get the library metadata so we can get the version.
+            library_metadata_request = GetLibraryMetadataRequest(library=library_used)
+            library_metadata_result = GriptapeNodes().handle_request(library_metadata_request)
+            if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
+                details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
+                logger.error(details)
+                return SerializeNodeToCommandsResultFailure()
+
+            library_version = library_metadata_result.metadata["library_version"]
+            library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
+
+            # Get the creation details.
+            create_node_request = CreateNodeRequest(
+                node_type=node.__class__.__name__,
+                node_name=node_name,
+                specific_library_name=library_details.library_name,
+                metadata=node.metadata,
+            )
+
+            # We're going to compare this node instance vs. a canonical one. Rez that one up.
+            reference_node = type(node)(name="REFERENCE NODE")
+
+            # Now all of the parameters.
+            parameter_commands = []
+            for parameter in node.parameters:
+                param_dict = vars(parameter)
+                # Create the parameter, or alter it on the existing node
+                if parameter.user_defined:
+                    param_dict["node_name"] = node.name
+                    add_param_request = AddParameterToNodeRequest.create(**param_dict)
+                    parameter_commands.append(add_param_request)
+                else:
+                    # Not user defined. Get any deltas from a canonical one.
+                    diff = WorkflowManager._manage_alter_details(parameter, reference_node)
+                    relevant = False
+                    for key in diff:
+                        if key in AlterParameterDetailsRequest.relevant_parameters():
+                            relevant = True
+                            break
+                    if relevant:
+                        diff["node_name"] = node.name
+                        diff["parameter_name"] = parameter.name
+                        alter_param_request = AlterParameterDetailsRequest.create(**diff)
+                        parameter_commands.append(alter_param_request)
+                if parameter.name in node.parameter_values and parameter.name not in node.parameter_output_values:
+                    try:
+                        # SetParameterValueRequest event
+                        set_param_value_request = WorkflowManager._handle_parameter_value_saving(parameter, node)
+                        parameter_commands.append(set_param_value_request)
+                    except Exception as e:
+                        details = f"Failed to serialize Node because failed to save parameter creation for node '{node.name}'. Error: {e}"
+                        logger.error(details)
+                        return SerializeNodeToCommandsResultFailure()
+
+        # Hooray
+        serialized_node_commands = SerializedNodeCommands(
+            create_node_command=create_node_request,
+            element_commands=parameter_commands,
+            node_library_details=library_details,
+        )
+        details = f"Successfully serialized node '{node_name}' into commands."
+        logger.debug(details)
+        result = SerializeNodeToCommandsResultSuccess(serialized_node_commands=serialized_node_commands)
+        return result
 
     def on_deserialize_node_from_commands(self, request: DeserializeNodeFromCommandsRequest) -> ResultPayload:
         # Issue the creation command first.
