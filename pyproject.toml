@@ -61,8 +61,6 @@ ignore = [
   "FIX002", # Intentional
   "D101",   # Intentional
   "D102",   # Intentional
-  "D103",   # Too hard
-  "D106",   # Too hard
   "D107",   # Intentional
   "ANN002", # Intentional
   "ANN003", # Intentional

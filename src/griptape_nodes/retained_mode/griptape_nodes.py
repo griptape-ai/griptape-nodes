@@ -256,7 +256,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return AppGetSessionResultSuccess(session_id=BaseEvent._session_id)
 
 
-def create_flows_in_order(flow_name: str, flow_manager: FlowManager, created_flows: list[str], file: IO) -> list | None:
+def create_flows_in_order(flow_name: str, flow_manager: FlowManager, created_flows: list, file: IO) -> list | None:
+    """Creates flows in the correct order based on their dependencies."""
     # If this flow is already created, we can return
     if flow_name in created_flows:
         return None
@@ -280,6 +281,7 @@ def create_flows_in_order(flow_name: str, flow_manager: FlowManager, created_flo
 
 
 def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: list) -> str:
+    """Handles the creation and saving of flows."""
     flow_manager = GriptapeNodes.FlowManager()
     connection_request_workflows = ""
     for flow_name, flow in obj_manager.get_filtered_subset(type=ControlFlow).items():
@@ -299,6 +301,7 @@ def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: 
 
 
 def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tuple[str, bool]:
+    """Handles the creation and saving of parameters for a node."""
     parameter_details = ""
     saved_properly = True
     for parameter in node.parameters:
@@ -513,6 +516,7 @@ def _create_object_in_file(value: Any, var_name: str, imports: list) -> str:
 
 
 def manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
+    """Alters the details of a parameter based on the base node object."""
     base_param = base_node_obj.get_parameter_by_name(parameter.name)
     if base_param:
         diff = base_param.equals(parameter)

@@ -111,6 +111,8 @@ class BaseEvent(BaseModel, ABC):
 
     # Custom JSON encoder for the payload
     class Config:
+        """Pydantic configuration for the BaseEvent class."""
+
         arbitrary_types_allowed = True
         json_encoders: ClassVar[dict] = {
             # Use to_dict() methods for Griptape objects
