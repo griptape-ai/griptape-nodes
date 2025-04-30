@@ -83,12 +83,15 @@ class TextToVideo(ControlNode):
                 status = result["data"]["task_status"]
                 logger.info(f"Video generation status: {status}")
                 if status == "succeed":
+                    logger.info(f"Video generation succeeded: {result['data']['task_result']['videos'][0]['url']}")
                     video_url = result["data"]["task_result"]["videos"][0]["url"]
                     break
                 elif status == "failed":
+                    logger.error(f"Video generation failed: {result['data']['task_status_msg']}")
                     raise RuntimeError(f"Video generation failed: {result['data']['task_status_msg']}")
 
             self.publish_update_to_parameter("video_url", video_url)
+            logger.info(f"Video URL: {video_url}")
             return TextArtifact(video_url)
 
         yield generate_video
