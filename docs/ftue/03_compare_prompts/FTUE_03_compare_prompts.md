@@ -74,10 +74,9 @@ The third method demonstrates how we can create our own custom prompt enhancemen
    - A "Merge Texts" node that combines our prompt with specific enhancement instructions
    - An agent node that processes these combined inputs
 
-2. Look at the detailed instructions in the merge texts node:
-   ```
-   Enhance the following prompt for an image generation engine. Return only the image generation prompt. Include unique details that make the subject stand out. Specify a specific depth of field and time of day. Use dust in the air to create a sense of depth. Use a slight vignetting on the edges of the image. Use a color palette that is complementary to the subject. Focus on qualities that will make this the most professional looking photo in the world.
-   ```
+2. Look at the detailed instructions in "detail_prompt"
+
+![Detailed instructions](assets/detailed_instructions.png)
 
 3. Run the agent node to see how it transforms our basic prompt
 4. Examine the output in the display text node

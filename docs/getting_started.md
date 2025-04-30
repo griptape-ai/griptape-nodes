@@ -106,5 +106,4 @@ You're ready to proceed. Run `griptape-nodes` or `gtn` and return to your browse
 
 ![A Blank Griptape_nodes_ editor](assets/img/getting_started/getting_started-blank_editor.png)
 
-
 Next, on to learning how to actually work inside Griptape Nodes! [Begin](ftue/FTUE.md)
