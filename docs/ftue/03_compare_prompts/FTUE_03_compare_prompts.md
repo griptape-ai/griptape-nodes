@@ -19,15 +19,16 @@ To begin this tutorial, return to the main landing page by clicking on the navig
 
 On the landing page, locate and click on the **"Compare Prompts"** tile to open this example workflow.
 
-   ![Compare Prompts example](assets/compare_prompts_example.png)
+![Compare Prompts example](assets/compare_prompts_example.png)
 
 ## Understand the Workflow Structure
 
 When the example loads, you'll see a workflow with multiple nodes:
 
-   ![Compare Prompts workflow](assets/compare_prompts_workflow.png)
+![Compare Prompts workflow](assets/compare_prompts_workflow.png)
 
 This workflow contains:
+
 - A text input node with a basic prompt ("a capybara eating with utensils")
 - Three image generation nodes
 - An agent node
@@ -43,11 +44,14 @@ We'll run each part of the workflow individually to compare the results of diffe
 Let's start with the most straightforward approach:
 
 1. Locate the text input node with our basic prompt: "a capybara eating with utensils"
-2. Follow the connection to the first image generation node
-3. Notice that "Enhance Prompt" is set to False on this node
-4. Run just this node by clicking its individual run button
 
-   ![Basic prompt node](assets/basic_prompt_node.png)
+1. Follow the connection to the first image generation node
+
+1. Notice that "Enhance Prompt" is set to False on this node
+
+1. Run just this node by clicking its individual run button
+
+    ![Basic prompt node](assets/basic_prompt_node.png)
 
 Observe the resulting image. This shows how the AI interprets your direct, unmodified description.
 
@@ -56,10 +60,12 @@ Observe the resulting image. This shows how the AI interprets your direct, unmod
 For the second method, we'll use the same basic prompt but with Griptape's built-in enhancement:
 
 1. Find the second image generation node that receives the same basic prompt
-2. Notice that the "Enhance Prompt" feature is set to True
-3. Run this node individually
 
-   ![Enhanced prompt node](assets/enhanced_prompt_node.png)
+1. Notice that the "Enhance Prompt" feature is set to True
+
+1. Run this node individually
+
+    ![Enhanced prompt node](assets/enhanced_prompt_node.png)
 
 Compare this result with the first image. You should see a much more complex and artistic interpretation.
 
@@ -70,29 +76,32 @@ The difference is striking—same basic prompt, but the enhanced version produce
 The third method demonstrates how we can create our own custom prompt enhancement:
 
 1. Examine the flow that includes:
-   - The same basic prompt
-   - A "Merge Texts" node that combines our prompt with specific enhancement instructions
-   - An agent node that processes these combined inputs
 
-2. Look at the detailed instructions in "detail_prompt"
+    - The same basic prompt
+    - A "Merge Texts" node that combines our prompt with specific enhancement instructions
+    - An agent node that processes these combined inputs
 
-   ![Detailed instructions](assets/detailed_instructions.png)
+1. Look at the detailed instructions in "detail_prompt"
 
-3. Run the agent node to see how it transforms our basic prompt
-4. Examine the output in the display text node
+    ![Detailed instructions](assets/detailed_instructions.png)
 
-   ![Agent node output](assets/agent_node_output.png)
+1. Run the agent node to see how it transforms our basic prompt
 
-You'll see that the agent has created a much more elaborate prompt that addresses all the specifications:
-- Unique details about the capybara
-- Specific time of day (late afternoon sunlight)
-- Depth of field information
-- Color palette guidance
-- Professional photography elements
+1. Examine the output in the display text node
 
-5. Finally, run the third image generation node, which uses this agent-enhanced prompt with "Enhance Prompt" turned off
+    ![Agent node output](assets/agent_node_output.png)
 
-   ![Agent enhanced image result](assets/agent_enhanced_result.png)
+    You'll see that the agent has created a much more elaborate prompt that addresses all the specifications:
+
+    - Unique details about the capybara
+    - Specific time of day (late afternoon sunlight)
+    - Depth of field information
+    - Color palette guidance
+    - Professional photography elements
+
+1. Finally, run the third image generation node, which uses this agent-enhanced prompt with "Enhance Prompt" turned off
+
+![Agent enhanced image result](assets/agent_enhanced_result.png)
 
 Notice how this image contains specific details and artistic elements compared to the first, but is about the same level of sophistication as the second.
 
@@ -101,8 +110,8 @@ Notice how this image contains specific details and artistic elements compared t
 Here's the key insight from this tutorial: When you toggle the "Enhance Prompt" feature to True, Griptape is essentially doing what we just demonstrated manually. It's:
 
 1. Taking your basic prompt
-2. Running it through an agent with enhancement instructions (verbatim what we wrote)
-3. Using the enhanced output for image generation
+1. Running it through an agent with enhancement instructions (verbatim what we wrote)
+1. Using the enhanced output for image generation
 
 By creating our own explicit enhancement flow, we gain full control over exactly how we want the prompt to be improved or changed.
 
@@ -114,10 +123,10 @@ Based on what we've learned, consider these approaches for your own projects:
 - Enable "Enhance Prompt" when you want general improvements with minimal effort
 - Create custom agent-based enhancement flows when you need precise control over specific artistic elements or want to emphasize particular aspects like lighting, composition, or mood
 
-
 ## Summary
 
 In this tutorial, you learned how to:
+
 - Compare three different prompting approaches
 - Use the built-in "Enhance Prompt" feature
 - Create custom prompt enhancement flows with specific instructions

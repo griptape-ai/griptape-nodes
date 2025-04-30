@@ -28,31 +28,28 @@ When the example loads, you'll see a workflow with the following components:
 - **Second Agent Node (to_english)**: Translates the merged prompt into English
 - **Display Text Node**: Shows the final English translation
 
-When run, this workflow demonstrates how multiple agents can each have their own distinct "jobs".  By connecting the output of one agent, then transforming that output for use by another, you can start to get an inkling of some of the complexity you'll be able to control.  The final result of "write a 4-line story in Spanish" and then rewriting that into English, we can see the following result:
+When run, this workflow demonstrates how multiple agents can each have their own distinct "jobs". By connecting the output of one agent, then transforming that output for use by another, you can start to get an inkling of some of the complexity you'll be able to control. The final result of "write a 4-line story in Spanish" and then rewriting that into English, we can see the following result:
 
 ![Workflow overview](assets/workflow_result.png)
 
 !!! info
-    You should expect variability in these from run-to-run. That's okay - even normal!  Remember, talking with an Agent can in a way be like talking to a person.  You may get slightly different answers if you ask them the same question many times!
 
-
-
+    You should expect variability in these from run-to-run. That's okay - even normal! Remember, talking with an Agent can in a way be like talking to a person. You may get slightly different answers if you ask them the same question many times!
 
 ## Build Your Own Version
 
 Now let's build a similar workflow from scratch:
 
 1. Drag two agent nodes onto the canvas
-2. Add a merge text node
-3. Add a display text node
-
+1. Add a merge text node
+1. Add a display text node
 
 ## Configure the First Agent
 
 Set up your first agent to generate content in your chosen language:
 
 1. In the first agent node, enter: `Write me a four line story in [your chosen language]` (e.g., Mandarin, French, etc.)
-2. This agent will generate the initial story that we'll translate
+1. This agent will generate the initial story that we'll translate
 
 ![Story setup](assets/mandarin.png)
 
@@ -61,8 +58,8 @@ Set up your first agent to generate content in your chosen language:
 Next, prepare the translation prompt:
 
 1. Connect the output from the first agent to the merge text node
-2. Set the merge text node to combine: `Rewrite this in English` with the output from the first agent
-3. This creates the instruction for our translator agent
+1. Set the merge text node to combine: `Rewrite this in English` with the output from the first agent
+1. This creates the instruction for our translator agent
 
 ![Merge text setup](assets/mandarin_merge.png)
 
@@ -71,8 +68,8 @@ Next, prepare the translation prompt:
 Set up the translator agent:
 
 1. Connect the output of the merge text node to the second agent node
-2. This agent will receive both the original story and the instruction to translate it
-3. It will produce an English translation as output
+1. This agent will receive both the original story and the instruction to translate it
+1. It will produce an English translation as output
 
 ![Second agent setup](assets/mandarin_to_english.png)
 
@@ -81,7 +78,7 @@ Set up the translator agent:
 To see the final translation:
 
 1. Connect the output of the second agent to the display text node
-2. When the workflow runs, this node will show the translated English text
+1. When the workflow runs, this node will show the translated English text
 
 ![Display setup](assets/mandarin_display.png)
 
@@ -125,6 +122,7 @@ Execute your expanded workflow and observe the process:
 ## Summary
 
 In this tutorial, you learned how to:
+
 - Build a translation workflow with multiple agents
 - Use merge text nodes to prepare inputs for agents
 - Control execution order with exec chains
