@@ -5,11 +5,11 @@ Welcome to Griptape Nodes! This tutorial will guide you through your first steps
 ## What You'll Learn
 
 In this tutorial, you will:
-
 - Launch Griptape Nodes
-- Create a new workspace from scratch
-- Learn basic interface elements
-- Add your first node to the workspace
+- Navigate through the landing page to a workflow
+- Understand some of the most basic interface elements
+- Add your first node(s) to the workspace
+- Connect your nodes into a small workflow
 
 ## Launch Griptape Nodes
 
@@ -24,8 +24,6 @@ Or use the shorter version:
 ```bash
 gtn
 ```
-
-   ![Terminal command to launch Griptape Nodes](assets/terminal_launch.png)
 
 After executing the command, you'll see a link in your terminal. Click on it, and your browser will automatically open to the Griptape Nodes Editor.
 
@@ -64,31 +62,36 @@ Each node serves a specific function. As you become more familiar with Griptape 
 Let's add a node to your workspace. You have two options:
 
 1. **Drag and Drop**: Click and hold on a node from the left panel, then drag it onto your workspace.
-   
-   ![Dragging a node to the workspace](assets/drag_node.png)
-
 2. **Double-Click**: Simply double-click any node in the left panel to automatically place it in the center of your workspace.
-
-   ![Double-clicking to add a node](assets/double_click_node.png)
 
 After adding a node, you can:
 - Click and drag to reposition it on the workspace
 - Connect it to other nodes (which we'll cover in just a few moments)
 
-   ![Node on the workspace](assets/node_on_workspace.png)
+
+!!! info
+To follow the video exactly, create a "FloatInput" node and a "DisplayFloat" node
+
+   ![Node on the workspace](assets/nodes_in_workspace.png)
+
+## Connecting Nodes
+
+Now, very simply drag from a "pin" on one node to a "pin" on the other.  We cheated a _little_ bit by picking nodes that are compatible (not all are), but there you have it.  One connection between nodes - and you're building a graph!
+
+   ![Node on the workspace](assets/connected.png)
 
 ## Next Steps
 
-Now that you understand the basics of the Griptape Nodes interface and how to add nodes to your workspace, you're ready to start building workflows! 
+Now that you understand the basics of the Griptape Nodes interface and how to add nodes to your workspace, and connect them up you're ready to start building workflows! 
 
 ## Summary
 
 In this tutorial, you learned how to:
-- Launch Griptape Nodes using terminal commands
-- Navigate the landing page
-- Create a new workspace
-- Understand the basic interface elements
-- Add your first node to the workspace
+- Launch Griptape Nodes
+- Navigate through the landing page to a workflow
+- Understand some of the most basic interface elements
+- Add your first node(s) to the workspace
+- Connect your nodes into a small workflow
 
 Congratulations on taking your first steps with Griptape Nodes! With these fundamentals, you're well on your way to creating powerful, custom workflows.
 

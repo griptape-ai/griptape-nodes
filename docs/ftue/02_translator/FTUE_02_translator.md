@@ -1,107 +1,135 @@
 # Coordinating Agents
 
-Welcome to the third tutorial in our Griptape Nodes series! In this guide, you'll learn how to set up a translator workflow that demonstrates the powerful concept of coordinating multiple agents to perform sequential tasks.
+Welcome to the third tutorial in our Griptape Nodes series! In this guide, you'll learn how to coordinate multiple agents within a workflow to perform sequential tasks—specifically, translating stories between languages and summarizing them.
 
 ## What You'll Learn
 
 In this tutorial, you will:
 
-- Create an agent that writes stories in Spanish
-- Connect nodes to create a translation workflow
-- Configure a second agent to translate to English
+- Connect multiple Agent nodes in a workflow
+- Create a translation workflow between languages
 - Understand execution chains for controlling workflow order
-- Test your workflow with different prompts
+- Expand your workflow to summarize content
 
 ## Navigate to the Landing Page
 
-To begin this tutorial, return to the main landing page by clicking on the navigation element at the top of the interface.
-
-![Return to landing page](assets/return_to_landing.png)
-
-## Open the Translator Example
-
-On the landing page, locate and click on the **"Translator"** tile to open this example scene.
+To begin this tutorial, go to the landing page. Locate and open the example workflow called "Translator" at the top of the page.
 
 ![Translator example](assets/translator_example.png)
 
-## Setting Up the Initial Agent
+## Explore the Example Workflow
 
-The first step is to create an agent that will write a story in Spanish:
+When the example loads, you'll see a workflow with the following components:
 
-1. Locate the first agent node in the workflow
-2. Notice that it's configured with a prompt to write a four-line story in Spanish
-3. This agent will produce Spanish text as its output
+![Workflow overview](assets/workflow_overview.png)
 
-![Spanish agent node](assets/spanish_agent_node.png)
+- **Agent Node (spanish_story)**: Generates a four-line story in Spanish
+- **Merge Text Node**: Combines the Spanish story with "Rewrite this in English"
+- **Second Agent Node (to_english)**: Translates the merged prompt into English
+- **Display Text Node**: Shows the final English translation
 
-## Integrating the Merge Texts Node
+When run, this workflow demonstrates how multiple agents can each have their own distinct "jobs".  By connecting the output of one agent, then transforming that output for use by another, you can start to get an inkling of some of the complexity you'll be able to control.  The final result of "write a 4-line story in Spanish" and then rewriting that into English, we can see the following result:
 
-Next, we need to prepare the Spanish output for translation:
+![Workflow overview](assets/workflow_result.png)
 
-1. Find the "Merge Texts" node connected to the Spanish agent
-2. This node combines the Spanish story with the instruction "rewrite this in English"
-3. The combined text becomes the input for our next agent
+!!! info
+    You should expect variability in these from run-to-run. That's okay - even normal!  Remember, talking with an Agent can in a way be like talking to a person.  You may get slightly different answers if you ask them the same question many times!
 
-![Merge texts node](assets/merge_texts_node.png)
 
-## Configuring the Second Agent
 
-Now, let's set up the translator agent:
 
-1. Locate the second agent node in the workflow
-2. This agent takes the merged text (Spanish story + translation instruction)
-3. It processes the input and produces an English translation
-4. The output connects to a display node to show the final result
+## Build Your Own Version
 
-![English agent node](assets/english_agent_node.png)
+Now let's build a similar workflow from scratch:
 
-## Understanding the Execution Chain
+1. Drag two agent nodes onto the canvas
+2. Add a merge text node
+3. Add a display text node
 
-A key concept in Griptape Nodes is the execution chain, which controls the order of operations:
 
-1. Notice the lines connecting the nodes - these represent both data flow and execution order
-2. The Spanish agent runs first, producing the original story
-3. The Merge Texts node combines this output with translation instructions
-4. The English agent runs next, producing the translated version
-5. Finally, the display node shows the result
+## Configure the First Agent
 
-![Execution chain](assets/execution_chain.png)
+Set up your first agent to generate content in your chosen language:
 
-## Testing with Different Prompts
+1. In the first agent node, enter: `Write me a four line story in [your chosen language]` (e.g., Mandarin, French, etc.)
+2. This agent will generate the initial story that we'll translate
 
-Let's experiment with different inputs to see how our workflow adapts:
+![Story setup](assets/mandarin.png)
 
-1. Modify the prompt for the first agent to "write me a haiku in Japanese"
-2. Run the workflow again
-3. Observe how the second agent still performs its translation task, now converting from Japanese to English
+## Connect to the Merge Text Node
 
-![Different prompt test](assets/different_prompt.png)
+Next, prepare the translation prompt:
 
-## Adding Additional Agents
+1. Connect the output from the first agent to the merge text node
+2. Set the merge text node to combine: `Rewrite this in English` with the output from the first agent
+3. This creates the instruction for our translator agent
 
-To expand your workflow further:
+![Merge text setup](assets/mandarin_merge.png)
 
-1. Try adding a third agent with a different task, such as "tell me a bedtime story"
-2. Connect it appropriately in the execution chain
-3. Run the workflow and observe how the agents work together sequentially
+## Configure the Second Agent
 
-![Additional agent](assets/additional_agent.png)
+Set up the translator agent:
 
-## Next Steps
+1. Connect the output of the merge text node to the second agent node
+2. This agent will receive both the original story and the instruction to translate it
+3. It will produce an English translation as output
 
-Now that you understand how to coordinate multiple agents in a sequential workflow, you're ready to create more complex automations. In the next tutorial, we'll explore how to combine agents with image generation nodes.
+![Second agent setup](assets/mandarin_to_english.png)
+
+## Display the Result
+
+To see the final translation:
+
+1. Connect the output of the second agent to the display text node
+2. When the workflow runs, this node will show the translated English text
+
+![Display setup](assets/madarin_display.png)
+
+## Understand Execution Order (Exec Chain)
+
+A key concept in Griptape Nodes is the execution chain:
+
+1. Notice the "exec in" and "exec out" pins (half-circle connectors) on nodes
+1. These define the order in which nodes run
+1. For complex workflows, connect the last pin of one section to the first pin of the next
+1. This ensures nodes run in the correct sequence, even with complex data flows
+
+![Execution chain](assets/exec_chain.png)
+
+## Expand the Workflow: Summarize Multiple Stories
+
+Let's enhance our workflow to handle summarization:
+
+1. Add a new merge text node that combines both English translations
+1. In this merge text node, enter: `Summarize both these stories` as the first entry
+1. Connect both the to-english nodes' outputs into slots 2&3 on the merge texts node
+1. Add another agent node to process the summary prompt
+1. Connect the merge text output into the prompt for your new agent
+1. Connect the agent output to a new display text node
+1. Use exec chain pins to ensure this summary step runs last (even connect everything up to run in the order you want!)
+
+![Expanded workflow](assets/summary_pre.png)
+
+## Run the Complete Workflow
+
+Execute your expanded workflow and observe the process:
+
+1. The first agents generate stories in different languages
+1. The merge text nodes create prompts to translate them
+1. The second agents translate the stories into English
+1. The summary agent combines and summarizes both translations
+1. The display nodes show all the results
+
+![Final result](assets/final_result.png)
 
 ## Summary
 
 In this tutorial, you learned how to:
-- Create an agent that writes stories in Spanish
-- Connect nodes to create a translation workflow
-- Configure a second agent to translate to English
-- Understand execution chains for controlling workflow order
-- Test your workflow with different prompts
-
-These concepts form the foundation for more sophisticated Griptape Nodes workflows where multiple agents collaborate to accomplish complex tasks.
+- Build a translation workflow with multiple agents
+- Use merge text nodes to prepare inputs for agents
+- Control execution order with exec chains
+- Expand workflows to process and summarize multiple inputs
 
 ## Next Up
 
-In the next section: [Advanced Prompt Techniques](../03_compare_prompts/FTUE_03_compare_prompts.md), we'll look at combining Agents and GenerateImage nodes in a first-step into more complicated flows.
+In the next section: [Compare Prompts](../03_compare_prompts/FTUE_03_compare_prompts.md), we'll learn how to get AIs to bucket-brigade through flows!
