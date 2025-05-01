@@ -32,7 +32,7 @@ After executing the command, you'll see a link in your terminal. Click on it, an
 
 ## The Landing Page
 
-When your browser opens, you'll be greeted by the Griptape Nodes landing page. This page displays several sample workflows that showcase different things we want to introduce you to.
+When your browser opens, you'll be greeted by the Griptape Nodes landing page. This page displays several template workflows that showcase different things we want to introduce you to.
 
 ![Griptape Nodes landing page](assets/landing_page.png)
 
