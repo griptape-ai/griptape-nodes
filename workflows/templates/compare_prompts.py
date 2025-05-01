@@ -1,5 +1,8 @@
 from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd  # noqa: N813
 
+# Create flows
+cmd.create_flow(flow_name="compare_prompts")
+
 # --- Create nodes ---
 cmd.create_node(node_type="GenerateImage", node_name="basic_image", metadata={"position": {"x": 107, "y": -55}})
 cmd.create_node(
