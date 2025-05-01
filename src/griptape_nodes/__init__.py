@@ -242,7 +242,7 @@ def _update_self(*, restart_after_update: bool = False) -> None:
 
     try:
         args = ["--restart"] if restart_after_update else []
-        subprocess.run(["griptape-nodes-updater", *args], check=False)
+        subprocess.run([sys.executable, "-m", "griptape_nodes.updater", *args], check=False)
     except subprocess.CalledProcessError as e:
         console.print(f"[bold red]Error during update: {e}[/bold red]")
         sys.exit(1)

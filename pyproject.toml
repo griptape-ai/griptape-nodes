@@ -40,7 +40,6 @@ test = ["pytest>=8.3.5", "pytest-mock>=3.14.0", "pytest-xdist>=3.6.1"]
 [project.scripts]
 griptape-nodes = "griptape_nodes:main"
 gtn = "griptape_nodes:main"
-griptape-nodes-updater = "griptape_nodes.updater:main"
 
 [build-system]
 requires = ["hatchling"]
