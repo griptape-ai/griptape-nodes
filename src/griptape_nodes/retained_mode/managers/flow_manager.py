@@ -1218,7 +1218,7 @@ class FlowManager:
             )
             create_connection_result = GriptapeNodes.handle_request(create_connection_request)
             if create_connection_result.failed():
-                details = f"Attemped to deserialize a Flow '{flow_name}'. Failed while deserializing a Connection from '{source_node_name}.{indexed_connection.source_parameter_name}' to '{target_node_name}.{indexed_connection.target_parameter_name}' within the flow."
+                details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a Connection from '{source_node_name}.{indexed_connection.source_parameter_name}' to '{target_node_name}.{indexed_connection.target_parameter_name}' within the flow."
                 logger.error(details)
                 return DeserializeFlowFromCommandsResultFailure()
 

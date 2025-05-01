@@ -179,13 +179,13 @@ class SerializeFlowToCommandsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SerializeFlowToCommandsResultSuccess(ResultPayloadSuccess):
+class SerializeFlowToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     serialized_flow_commands: SerializedFlowCommands
 
 
 @dataclass
 @PayloadRegistry.register
-class SerializeFlowToCommandsResultFailure(ResultPayloadFailure):
+class SerializeFlowToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -197,7 +197,7 @@ class DeserializeFlowFromCommandsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeserializeFlowFromCommandsResultSuccess(ResultPayloadSuccess):
+class DeserializeFlowFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     flow_name: str
 
 

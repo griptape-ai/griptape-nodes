@@ -209,7 +209,7 @@ class SerializeNodeToCommandsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SerializeNodeToCommandsResultSuccess(ResultPayloadSuccess):
+class SerializeNodeToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     # Serialize the node itself
     serialized_node_commands: SerializedNodeCommands
     # And maintain the assignment of parameter values based on indices into the unique values list.
@@ -218,7 +218,7 @@ class SerializeNodeToCommandsResultSuccess(ResultPayloadSuccess):
 
 @dataclass
 @PayloadRegistry.register
-class SerializeNodeToCommandsResultFailure(ResultPayloadFailure):
+class SerializeNodeToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -230,7 +230,7 @@ class DeserializeNodeFromCommandsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeserializeNodeFromCommandsResultSuccess(ResultPayloadSuccess):
+class DeserializeNodeFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     node_name: str
 
 
