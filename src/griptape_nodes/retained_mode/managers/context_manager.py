@@ -9,13 +9,16 @@ if TYPE_CHECKING:
 
 
 class ContextManager:
-    """Context manager for Flow and Node contexts.
+    """Context manager for Workflow, Flow, Node, and Element contexts.
 
-    Flows own Nodes, and there must always be a Flow context active.
-    Clients can push/pop Flow contexts and Node contexts within the current Flow.
+    Workflows own Flows, Flows own Nodes, and Nodes own Elements. There must always be a Workflow context active.
+    Clients can push/pop Workflow contexts, Flow contexts within the current Workflow, Node contexts within the current Flow, and Element contexts within the current Node.
     """
 
-    _flow_stacklist: list[ContextManager.FlowContextState]
+    _workflow_context: WorkflowContextState | None = None
+
+    class NoActiveWorkflowError(Exception):
+        """Exception raised when trying to access a workflow when none is active."""
 
     class FlowContextError(Exception):
         """Base exception for flow context errors."""
@@ -25,6 +28,41 @@ class ContextManager:
 
     class EmptyStackError(FlowContextError):
         """Exception raised when trying to pop from an empty stack."""
+
+    class WorkflowContextState:
+        """Internal class that represents a Workflow's state which owns a stack of flow names."""
+
+        def __init__(self, name: str):
+            self._name = name
+            self._flow_stack = []
+
+        def push_flow(self, flow_name: str) -> str:
+            """Push a flow name onto this workflow's flow stack."""
+            flow_context = ContextManager.FlowContextState(flow_name)
+            self._flow_stack.append(flow_context)
+            return flow_name
+
+        def pop_flow(self) -> str:
+            """Pop the top flow from this workflow's flow stack."""
+            if not self._flow_stack:
+                msg = f"Cannot pop Flow: no active Flows in Workflow '{self._name}'"
+                raise ContextManager.EmptyStackError(msg)
+
+            flow_context = self._flow_stack.pop()
+            return flow_context._name
+
+        def get_current_flow_name(self) -> str:
+            """Get the name of the current flow in this workflow."""
+            if not self._flow_stack:
+                msg = f"No active Flow in Workflow '{self._name}'"
+                raise ContextManager.EmptyStackError(msg)
+
+            flow_context = self._flow_stack[-1]
+            return flow_context._name
+
+        def has_current_flow(self) -> bool:
+            """Check if this workflow has an active flow."""
+            return len(self._flow_stack) > 0
 
     class FlowContextState:
         """Internal class that represents a Flow's state which owns a stack of node names."""
@@ -101,6 +139,27 @@ class ContextManager:
             return len(self._element_stack) > 0
 
     # The admittedly-confusing term for using these as a Python context (e.g., the `with` keyword)
+    class WorkflowContext:
+        """A context manager for a Workflow."""
+
+        _manager: ContextManager
+        _workflow_name: str
+
+        def __init__(self, manager: ContextManager, workflow_name: str):
+            self._manager = manager
+            self._workflow_name = workflow_name
+
+        def __enter__(self) -> str:
+            return self._manager.set_workflow(self._workflow_name)
+
+        def __exit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc_value: BaseException | None,
+            exc_traceback: TracebackType | None,
+        ) -> None:
+            self._manager._workflow_context = None
+
     class FlowContext:
         """A context manager for a Flow."""
 
@@ -164,6 +223,37 @@ class ContextManager:
     def __init__(self, event_manager: EventManager) -> None:  # noqa: ARG002
         """Initialize the context manager with an empty flow stack."""
         self._flow_stack = []
+
+    def set_workflow(self, workflow_name: str) -> str:
+        """Set the current Workflow context.
+
+        Args:
+            workflow_name: The name of the Workflow to enter.
+
+        Returns:
+            The name of the Workflow that was entered.
+        """
+        self._workflow_context = ContextManager.WorkflowContextState(workflow_name)
+        return workflow_name
+
+    def get_current_workflow_name(self) -> str:
+        """Get the name of the current Workflow context.
+
+        Returns:
+            The name of the current Workflow.
+
+        Raises:
+            NoActiveWorkflowError: If no Workflow context is active.
+        """
+        if not self._workflow_context:
+            msg = "No active Workflow context"
+            raise self.NoActiveWorkflowError(msg)
+
+        return self._workflow_context._name
+
+    def has_current_workflow(self) -> bool:
+        """Check if there is an active Workflow context."""
+        return self._workflow_context is not None
 
     def has_current_flow(self) -> bool:
         """Check if there is an active Flow context."""
@@ -251,34 +341,38 @@ class ContextManager:
         return current_node.get_current_element_name()
 
     def push_flow(self, flow_name: str) -> str:
-        """Push a new Flow context onto the stack.
+        """Push a new Flow context onto the stack of the current Workflow.
 
         Args:
             flow_name: The name of the Flow to enter.
 
         Returns:
             The name of the Flow that was entered.
+
+        Raises:
+            NoActiveWorkflowError: If no Workflow context is active.
         """
-        flow_context_state = self.FlowContextState(flow_name)
-        self._flow_stack.append(flow_context_state)
-        return flow_name
+        if not self.has_current_workflow():
+            msg = "Cannot enter a Flow context without an active Workflow context"
+            raise self.NoActiveWorkflowError(msg)
+
+        return self._workflow_context.push_flow(flow_name)  # type: ignore (If we got here, we know that _workflow_context is not None)
 
     def pop_flow(self) -> str:
-        """Pop the current Flow context from the stack.
+        """Pop the current Flow context from the stack of the current Workflow.
 
         Returns:
             The name of the Flow that was popped.
 
         Raises:
+            NoActiveWorkflowError: If no Workflow context is active.
             EmptyStackError: If no Flow is active.
         """
-        if not self.has_current_flow():
-            msg = "Cannot pop Flow: stack is empty"
-            raise self.EmptyStackError(msg)
+        if not self.has_current_workflow():
+            msg = "Cannot pop Flow: no active Workflow context"
+            raise self.NoActiveWorkflowError(msg)
 
-        flow = self._flow_stack.pop()
-        flow_name = flow._name
-        return flow_name
+        return self._workflow_context.pop_flow()  # type: ignore (If we got here, we know that _workflow_context is not None)
 
     def push_node(self, node_name: str) -> str:
         """Push a new Node context onto the stack for the current Flow.
