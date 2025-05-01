@@ -146,7 +146,8 @@ class SerializedFlowCommands:
     node_libraries_used: set[LibraryNameAndVersion]
 
     # The command to create the flow that contains all of this.
-    create_flow_command: CreateFlowRequest
+    # If None, will deserialize into whatever Flow is in the Current Context.
+    create_flow_command: CreateFlowRequest | None
 
     # Handles creating all of the nodes themselves, along with configuring them.
     # Does NOT set Parameter values, which is done as a separate step.
@@ -170,6 +171,10 @@ class SerializedFlowCommands:
 class SerializeFlowToCommandsRequest(RequestPayload):
     # If None is passed, assumes we're serializing the flow in the Current Context.
     flow_name: str | None = None
+    # If set to False, this will omit the CreateFlow call from the serialized flow object.
+    # This can be useful so that the contents of a flow can be deserialized into an existing flow
+    # instead of creating a new one and deserializing the nodes into that. Copy/paste can make use of this.
+    include_create_flow_command: bool = True
 
 
 @dataclass
