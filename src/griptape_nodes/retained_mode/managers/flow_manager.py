@@ -922,7 +922,13 @@ class FlowManager:
         try:
             flow.single_execution_step(change_debug_mode)
         except Exception as e:
-            flow.cancel_flow_run()
+            # We REALLY don't want to fail here, else we'll take the whole engine down
+            try:
+                if flow.check_for_existing_running_flow():
+                    flow.cancel_flow_run()
+            except Exception as e_inner:
+                details = f"Could not cancel flow execution. Exception: {e_inner}"
+                logger.error(details)
 
             details = f"Could not advance to the next step of a running workflow. Exception: {e}"
             logger.error(details)
