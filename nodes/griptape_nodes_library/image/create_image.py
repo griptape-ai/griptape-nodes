@@ -185,6 +185,8 @@ Focus on qualities that will make this the most professional looking photo in th
         # Record a connection to the prompt Parameter so that node validation doesn't get aggro
         if target_parameter.name == "prompt":
             self._has_connection_to_prompt = True
+            # hey.. what if we just remove the property mode from the prompt parameter?
+            target_parameter.allowed_modes.remove(ParameterMode.PROPERTY)
 
     def after_incoming_connection_removed(
         self,
@@ -196,6 +198,8 @@ Focus on qualities that will make this the most professional looking photo in th
         # Remove the state maintenance of the connection to the prompt Parameter
         if target_parameter.name == "prompt":
             self._has_connection_to_prompt = False
+            # If we have no connections to the prompt parameter, add the property mode back
+            target_parameter.allowed_modes.add(ParameterMode.PROPERTY)
 
     def _create_image(self, agent: Agent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)
