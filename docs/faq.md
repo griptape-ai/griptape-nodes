@@ -28,6 +28,23 @@ For Windows PowerShell:
 $(Split-Path -Parent (Split-Path -Parent (Get-Command griptape-nodes | Select-Object -ExpandProperty Source)))
 ```
 
+## How do I update Griptape Nodes?
+
+Griptape Nodes will automatically check if it needs to update every time it runs. If it does, you will be prompted to answer with a (y/n) response. Respond with a y and it will automatically update to the latest version of the Engine.
+
+If you would like to _manually_ update, you can always use either of these commands:
+
+```bash
+griptape-nodes update
+```
+
+or
+
+```bash
+gtn update
+```
+
+
 ## How do I uninstall Griptape Nodes?
 
 Need to part ways with Griptape Nodes? It's a simple goodbye with a single command:
@@ -52,21 +69,6 @@ uv tool uninstall griptape-nodes
 
 When regret inevitably washes over you, have no fear. Open arms await; just revisit [Getting Started](getting_started.md)
 
-## How do I update Griptape Nodes?
-
-Griptape Nodes will automatically check if it needs to update every time it runs. If it does, you will be prompted to answer with a (y/n) response. Respond with a y and it will automatically update to the latest version of the Engine.
-
-If you would like to _manually_ update, you can always use either of these commands:
-
-```bash
-griptape-nodes update
-```
-
-or
-
-```bash
-gtn update
-```
 
 ## I'm seeing "failed to locate pyvenv.cfg: The system cannot find the file specified." - What should I do?
 
