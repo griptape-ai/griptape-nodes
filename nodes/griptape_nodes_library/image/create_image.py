@@ -6,7 +6,7 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes_library.utils.error_utils import try_throw_error
@@ -81,16 +81,21 @@ class GenerateImage(ControlNode):
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
-        self.add_parameter(
+        # Group for logging information.
+        with ParameterGroup(group_name="Logs") as logs_group:
+            Parameter(name="include_details", type="bool", default_value=False, tooltip="Include extra details.")
+
             Parameter(
                 name="logs",
                 type="str",
-                tooltip="None",
+                tooltip="Displays processing logs and detailed events if enabled.",
                 default_value="Node hasn't begun yet",
                 ui_options={"multiline": True},
                 allowed_modes={ParameterMode.OUTPUT},
             )
-        )
+        logs_group.ui_options = {"hide": True}  # Hide the logs group by default.
+
+        self.add_node_element(logs_group)
 
     def validate_node(self) -> list[Exception] | None:
         # TODO(kate): Figure out how to wrap this so it's easily repeatable
