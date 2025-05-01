@@ -19,7 +19,6 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, Param
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.utils.error_utils import try_throw_error
 
 # --- Constants ---
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -465,11 +464,9 @@ class Agent(ControlNode):
             self.append_value_to_parameter("logs", "\n[Finished processing agent.]\n")
         else:
             self.append_value_to_parameter("logs", "[No prompt provided, creating Agent.]\n")
-            self.set_parameter_value("output", "Agent created.")
+            self.parameter_output_values["output"] = "Agent created."
         # Set the agent
         self.parameter_output_values["agent"] = agent.to_dict()
-
-        try_throw_error(agent.output)
 
     def _process(self, agent: GtAgent, prompt: BaseArtifact | str) -> Structure:
         """Performs the synchronous, streaming interaction with the Griptape Agent.
