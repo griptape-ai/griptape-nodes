@@ -182,8 +182,7 @@ class Agent(ControlNode):
                 name="logs",
                 type="str",
                 tooltip="Displays processing logs and detailed events if enabled.",
-                default_value="Node hasn't begun yet",
-                ui_options={"multiline": True},
+                ui_options={"multiline": True, "placeholder_text": "Logs"},
                 allowed_modes={ParameterMode.OUTPUT},
             )
         logs_group.ui_options = {"hide": True}  # Hide the logs group by default.

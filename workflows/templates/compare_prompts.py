@@ -43,10 +43,8 @@ cmd.set_value(
 )
 cmd.set_value("enhanced_prompt_image.prompt", "A capybara eating with utensils")
 cmd.set_value("enhanced_prompt_image.enhance_prompt", True)
-cmd.set_value("enhanced_prompt_image.logs", "Node hasn't begun yet")
 cmd.set_value("bespoke_prompt.model", "gpt-4.1")
 cmd.set_value("bespoke_prompt.include_details", False)
-cmd.set_value("bespoke_prompt.logs", "Node hasn't begun yet")
 cmd.set_value(
     "assemble_prompt.input_1",
     "Enhance the following prompt for an image generation engine. Return only the image generation prompt.\nInclude unique details that make the subject stand out.\nSpecify a specific depth of field, and time of day.\nUse dust in the air to create a sense of depth.\nUse a slight vignetting on the edges of the image.\nUse a color palette that is complementary to the subject.\nFocus on qualities that will make this the most professional looking photo in the world.\n",
@@ -54,7 +52,6 @@ cmd.set_value(
 cmd.set_value("assemble_prompt.input_2", "A capybara eating with utensils")
 cmd.set_value("assemble_prompt.merge_string", "\\n\\n")
 cmd.set_value("bespoke_prompt_image.enhance_prompt", False)
-cmd.set_value("bespoke_prompt_image.logs", "Node hasn't begun yet")
 cmd.set_value("basic_prompt.text", "A capybara eating with utensils")
 
 # --- Create connections ---
