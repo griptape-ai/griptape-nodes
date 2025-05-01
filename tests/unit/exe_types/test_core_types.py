@@ -1,6 +1,6 @@
 from unittest.mock import ANY
 
-import pytest
+import pytest  # type: ignore[reportMissingImports]
 
 from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, ParameterGroup
 

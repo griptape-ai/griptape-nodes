@@ -3,20 +3,27 @@ import logging
 from collections.abc import Iterator
 from typing import ClassVar
 
-from diffusers_nodes_library.utils.huggingface_utils import list_repo_revisions_in_cache
+from diffusers_nodes_library.utils.huggingface_utils import (
+    list_repo_revisions_in_cache,  # type: ignore[reportMissingImports]
+)
 
 # TODO(dylan): Make kosher (don't import from other libs)
-from diffusers_nodes_library.utils.logging_utils import StdoutCapture
-from diffusers_nodes_library.utils.tiling_image_processor import TilingImageProcessor
+from diffusers_nodes_library.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.utils.tiling_image_processor import (
+    TilingImageProcessor,  # type: ignore[reportMissingImports]
+)
 from griptape.artifacts import ImageUrlArtifact
 from griptape.loaders import ImageLoader
-from PIL import Image
-from pillow_nodes_library.utils import image_artifact_to_pil, pil_to_image_artifact
+from PIL.Image import Image
+from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
+    image_artifact_to_pil,
+    pil_to_image_artifact,
+)
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.traits.options import Options
-from spandrel_nodes_library.utils import SpandrelPipeline
+from spandrel_nodes_library.utils import SpandrelPipeline  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("spandrel_nodes_library")
 

@@ -3,18 +3,28 @@ import logging
 from collections.abc import Iterator
 from typing import ClassVar
 
-import diffusers
-import torch
+import diffusers  # type: ignore[reportMissingImports]
+import torch  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 from griptape.loaders import ImageLoader
-from PIL import Image
-from pillow_nodes_library.utils import image_artifact_to_pil, pil_to_image_artifact
+from PIL.Image import Image
+from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
+    image_artifact_to_pil,  # type: ignore[reportMissingImports]
+    pil_to_image_artifact,  # type: ignore[reportMissingImports]
+)
 
-from diffusers_nodes_library.utils.huggingface_utils import list_repo_revisions_in_cache
-from diffusers_nodes_library.utils.logging_utils import StdoutCapture
-from diffusers_nodes_library.utils.lora_utils import configure_flux_loras
-from diffusers_nodes_library.utils.tiling_image_processor import TilingImageProcessor
-from diffusers_nodes_library.utils.torch_utils import get_best_device, optimize_flux_pipeline_memory_footprint
+from diffusers_nodes_library.utils.huggingface_utils import (  # type: ignore[reportMissingImports]
+    list_repo_revisions_in_cache,  # type: ignore[reportMissingImports]
+)
+from diffusers_nodes_library.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.utils.lora_utils import configure_flux_loras  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.utils.tiling_image_processor import (  # type: ignore[reportMissingImports]
+    TilingImageProcessor,  # type: ignore[reportMissingImports]
+)
+from diffusers_nodes_library.utils.torch_utils import (  # type: ignore[reportMissingImports]
+    get_best_device,  # type: ignore[reportMissingImports]
+    optimize_flux_pipeline_memory_footprint,  # type: ignore[reportMissingImports]
+)
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.traits.options import Options
@@ -309,7 +319,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
             tile_size=tile_size,
             tile_overlap=tile_overlap,
             tile_strategy=tile_strategy,
-            to_pipe_args=lambda tile, kwargs: [],  # noqa: ARG005
+            to_pipe_args=lambda tile, kwargs: (),  # noqa: ARG005
             to_pipe_kwargs=lambda tile, kwargs: {"image": tile, **kwargs},
             pipe_output_to_pil=lambda output: output.images[0],
         )

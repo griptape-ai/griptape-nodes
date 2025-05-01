@@ -1,12 +1,12 @@
 import hashlib
 import logging
 
-import diffusers
-import safetensors
-import torch
-import torch.nn.functional
+import diffusers  # type: ignore[reportMissingImports]
+import safetensors  # type: ignore[reportMissingImports]
+import torch  # type: ignore[reportMissingImports]
+import torch.nn.functional  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.utils.torch_utils import get_best_device
+from diffusers_nodes_library.utils.torch_utils import get_best_device  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.node_types import ControlNode
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -23,9 +23,11 @@ def configure_flux_loras(node: ControlNode, pipe: diffusers.FluxPipeline, loras:
         pipe.disable_lora()
         return
 
-    loras = {to_adapter_name(k): {"name": to_adapter_name(k), "path": k, "weight": float(v)} for k, v in loras.items()}
+    lora_by_name = {
+        to_adapter_name(k): {"name": to_adapter_name(k), "path": k, "weight": float(v)} for k, v in loras.items()
+    }
 
-    loras_to_load = dict(loras)
+    loras_to_load = dict(lora_by_name)
     existing_adapter_names = {name for names in pipe.get_list_adapters().values() for name in names}
     for name in existing_adapter_names:
         # Don't reload existing loras.
@@ -62,8 +64,8 @@ def configure_flux_loras(node: ControlNode, pipe: diffusers.FluxPipeline, loras:
             module.to(dtype=torch.bfloat16)
 
     # Use them with given weights.
-    adapter_names = [v["name"] for v in loras.values()]
-    adapter_weights = [v["weight"] for v in loras.values()]
+    adapter_names = [v["name"] for v in lora_by_name.values()]
+    adapter_weights = [v["weight"] for v in lora_by_name.values()]
     msg = f"Using adapter_names with weights:\n{adapter_names=}\n{adapter_weights=}"
     logger.info(msg)
     node.append_value_to_parameter("logs", f"{msg}\n")

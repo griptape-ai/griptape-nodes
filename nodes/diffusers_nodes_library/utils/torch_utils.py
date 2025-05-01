@@ -3,15 +3,15 @@ import os
 import platform
 import sys
 
-import diffusers
-import psutil
-import torch
-import torch.nn.functional
+import diffusers  # type: ignore[reportMissingImports]
+import psutil  # type: ignore[reportMissingImports]
+import torch  # type: ignore[reportMissingImports]
+import torch.nn.functional  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-def to_human_readable_size(size_in_bytes: int) -> str:
+def to_human_readable_size(size_in_bytes: float) -> str:
     """Convert a memory size in bytes to a human-readable string."""
     for unit in ["B", "KB", "MB", "GB", "TB", "PB"]:
         if size_in_bytes < 1024:  # noqa: PLR2004
@@ -51,7 +51,7 @@ def print_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffuser
 
     logger.info("Total: %s", to_human_readable_size(total_bytes))
     logger.info("Max: %s", to_human_readable_size(max_bytes))
-    logger.info()
+    logger.info("")
 
 
 def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline) -> None:

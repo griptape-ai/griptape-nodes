@@ -1,4 +1,4 @@
-import pytest
+import pytest  # type: ignore[reportMissingImports]
 
 from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, CreateFlowResultSuccess
 from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileRequest

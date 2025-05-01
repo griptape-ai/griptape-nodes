@@ -4,7 +4,8 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
-from PIL import Image
+import PIL.Image
+from PIL.Image import Image, Resampling
 
 type PositionList = list[tuple[int, int]]
 type PositionGrid = list[list[tuple[int, int]]]
@@ -155,7 +156,7 @@ class TilingImageProcessor:
 
             # Resize if pipe output is not the same size as input (important!)
             if processed_tile.size != tile.size:
-                processed_tile = processed_tile.resize(tile.size, Image.LANCZOS)
+                processed_tile = processed_tile.resize(tile.size, Resampling.LANCZOS)
 
             tile_np = np.array(processed_tile).astype(np.float32)
             h, w = tile_np.shape[:2]
@@ -183,12 +184,12 @@ class TilingImageProcessor:
                 # in there places. The image has the resolution of the final image.
                 # Normalize
                 preview_image_np = result_np / np.maximum(weight_np[..., None], 1e-5)
-                preview_image_pil = Image.fromarray(np.clip(preview_image_np, 0, 255).astype(np.uint8))
+                preview_image_pil = PIL.Image.fromarray(np.clip(preview_image_np, 0, 255).astype(np.uint8))
                 callback_on_tile_end(i, preview_image_pil)
 
         # Normalize
         result_np /= np.maximum(weight_np[..., None], 1e-5)
-        output_image_pil = Image.fromarray(np.clip(result_np, 0, 255).astype(np.uint8))
+        output_image_pil = PIL.Image.fromarray(np.clip(result_np, 0, 255).astype(np.uint8))
         return output_image_pil
 
 
@@ -258,8 +259,8 @@ def visualize_weight_mask(tile: Image, weight_mask: np.ndarray) -> Image:
     g = ((1 - weight_mask) * 255).astype(np.uint8)
     b = np.zeros_like(r)
     heat = np.stack([r, g, b], axis=-1)
-    heatmap = Image.fromarray(heat, mode="RGB").convert("RGBA")
-    return Image.blend(tile_rgba, heatmap, alpha=0.5)
+    heatmap = PIL.Image.fromarray(heat, mode="RGB").convert("RGBA")
+    return PIL.Image.blend(tile_rgba, heatmap, alpha=0.5)
 
 
 def apply_random_tint(tile_np: np.ndarray) -> np.ndarray:

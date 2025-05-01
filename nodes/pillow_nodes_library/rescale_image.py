@@ -2,14 +2,14 @@ import logging
 
 from griptape.artifacts import ImageUrlArtifact
 from griptape.loaders import ImageLoader
-from PIL import Image
+from PIL.Image import Resampling
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.traits.options import Options
-from pillow_nodes_library.utils import (
-    image_artifact_to_pil,
-    pil_to_image_artifact,
+from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
+    image_artifact_to_pil,  # type: ignore[reportMissingImports]
+    pil_to_image_artifact,  # type: ignore[reportMissingImports]
 )
 
 logger = logging.getLogger("pillow_nodes_library")
@@ -85,19 +85,20 @@ class RescaleImage(ControlNode):
 
         input_image_pil = image_artifact_to_pil(input_image_artifact)
 
+        resample = None
         match resample_strategy:
             case "nearest":
-                resample = Image.NEAREST
+                resample = Resampling.NEAREST
             case "box":
-                resample = Image.BOX
+                resample = Resampling.BOX
             case "bilinear":
-                resample = Image.BILINEAR
+                resample = Resampling.BILINEAR
             case "hamming":
-                resample = Image.HAMMING
+                resample = Resampling.HAMMING
             case "bicubic":
-                resample = Image.BICUBIC
+                resample = Resampling.BICUBIC
             case "lanczos":
-                resample = Image.LANCZOS
+                resample = Resampling.LANCZOS
             case _:
                 logger.exception("Unknown resampling strategy %s", resample_strategy)
 

@@ -1,12 +1,13 @@
 import io
 
+import PIL.Image
 from griptape.artifacts import ImageArtifact
-from PIL import Image
+from PIL.Image import Image
 
 
 def image_artifact_to_pil(image_artifact: ImageArtifact) -> Image:
     """Converts Griptape ImageArtifact to Pillow Image."""
-    return Image.open(io.BytesIO(image_artifact.value))
+    return PIL.Image.open(io.BytesIO(image_artifact.value))
 
 
 def pil_to_image_artifact(pil_image: Image) -> ImageArtifact:
