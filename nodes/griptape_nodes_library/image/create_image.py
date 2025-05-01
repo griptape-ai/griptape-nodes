@@ -106,7 +106,7 @@ class GenerateImage(ControlNode):
 
         # Validate that we have a prompt.
         prompt_error = self.validate_empty_parameter(param="prompt")
-        if prompt_error:
+        if prompt_error and not self._has_connection_to_prompt:
             exceptions.append(self.validate_empty_parameter(param="prompt"))
 
         return exceptions if exceptions else None
@@ -114,6 +114,13 @@ class GenerateImage(ControlNode):
     def process(self) -> AsyncResult:
         # Get the parameters from the node
         params = self.parameter_values
+
+        # Validate that we have a prompt.
+        prompt = params.get("prompt", "")
+        if prompt == "":
+            msg = f"Prompt is empty for {self.name}. Please provide a prompt to create an image."
+            raise ValueError(msg)
+
         agent = params.get("agent", None)
         if not agent:
             prompt_driver = GriptapeCloudPromptDriver(
@@ -123,8 +130,8 @@ class GenerateImage(ControlNode):
             agent = Agent(prompt_driver=prompt_driver)
         else:
             agent = Agent.from_dict(agent)
-        prompt = params.get("prompt", "")
 
+        # Check if we have a connection to the prompt parameter
         enhance_prompt = params.get("enhance_prompt", False)
 
         if enhance_prompt:
