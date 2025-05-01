@@ -1,6 +1,6 @@
 # Interface Basics
 
-Welcome to Griptape Nodes! This tutorial will guide you through your first steps with this powerful tool, from installation to creating your first workflow.
+Welcome to Griptape Nodes! This tutorial will guide you through your first step with this powerful tool, creating your first workflow.
 
 ## What You'll Learn
 
@@ -71,8 +71,7 @@ After adding a node, you can:
 - Connect it to other nodes (which we'll cover in just a few moments)
 
 !!! info
-
-To follow the video exactly, create a "FloatInput" node and a "DisplayFloat" node
+    To follow the video exactly, create a "FloatInput" node and a "DisplayFloat" node
 
 ![Node on the workspace](assets/nodes_in_workspace.png)
 
@@ -81,10 +80,6 @@ To follow the video exactly, create a "FloatInput" node and a "DisplayFloat" nod
 Now, very simply drag from a "pin" on one node to a "pin" on the other. We cheated a _little_ bit by picking nodes that are compatible (not all are), but there you have it. One connection between nodes - and you're building a graph!
 
 ![Node on the workspace](assets/connected.png)
-
-## Next Steps
-
-Now that you understand the basics of the Griptape Nodes interface and how to add nodes to your workspace, and connect them up you're ready to start building workflows!
 
 ## Summary
 
