@@ -18,13 +18,13 @@ class GetSecretValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetSecretValueResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetSecretValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     value: Any
 
 
 @dataclass
 @PayloadRegistry.register
-class GetSecretValueResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetSecretValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -37,13 +37,13 @@ class SetSecretValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SetSecretValueResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class SetSecretValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class SetSecretValueResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class SetSecretValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -55,13 +55,13 @@ class GetAllSecretValuesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetAllSecretValuesResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetAllSecretValuesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     values: dict[str, Any]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetAllSecretValuesResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetAllSecretValuesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -73,11 +73,11 @@ class DeleteSecretValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteSecretValueResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class DeleteSecretValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class DeleteSecretValueResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class DeleteSecretValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass

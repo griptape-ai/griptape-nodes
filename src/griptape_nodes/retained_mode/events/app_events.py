@@ -36,13 +36,13 @@ class AppGetSessionRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AppGetSessionResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class AppGetSessionResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     session_id: str | None
 
 
 @dataclass
 @PayloadRegistry.register
-class AppGetSessionResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class AppGetSessionResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -68,5 +68,5 @@ class GetEngineVersionResultSuccess(ResultPayloadSuccess):
 
 @dataclass
 @PayloadRegistry.register
-class GetEngineVersionResultFailure(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetEngineVersionResultFailure(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     pass

@@ -46,16 +46,18 @@ class ResultPayload(Payload, ABC):
         return not self.succeeded()
 
 
+@dataclass
 class WorkflowAlteredMixin:
     """Mixin for a ResultPayload that guarantees that a workflow was altered."""
 
-    altered_workflow_state: bool = True
+    altered_workflow_state: bool = field(default=True, init=False)
 
 
+@dataclass
 class WorkflowNotAlteredMixin:
     """Mixin for a ResultPayload that guarantees that a workflow was NOT altered."""
 
-    altered_workflow_state: bool = False
+    altered_workflow_state: bool = field(default=False, init=False)
 
 
 # Success result payload abstract base class

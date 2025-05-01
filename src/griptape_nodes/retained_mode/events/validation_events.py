@@ -20,7 +20,7 @@ class ValidateFlowDependenciesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ValidateFlowDependenciesResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class ValidateFlowDependenciesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     validation_succeeded: bool
     exceptions: list[Exception]
 
@@ -28,7 +28,7 @@ class ValidateFlowDependenciesResultSuccess(ResultPayloadSuccess, WorkflowNotAlt
 # if it doesn't have a dependency we want
 @dataclass
 @PayloadRegistry.register
-class ValidateFlowDependenciesResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class ValidateFlowDependenciesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -41,7 +41,7 @@ class ValidateNodeDependenciesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ValidateNodeDependenciesResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class ValidateNodeDependenciesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     validation_succeeded: bool
     exceptions: list[Exception]
 
@@ -49,5 +49,5 @@ class ValidateNodeDependenciesResultSuccess(ResultPayloadSuccess, WorkflowNotAlt
 # if it doesn't have a dependency we want
 @dataclass
 @PayloadRegistry.register
-class ValidateNodeDependenciesResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class ValidateNodeDependenciesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
