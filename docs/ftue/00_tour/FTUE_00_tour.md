@@ -8,8 +8,8 @@ In this tutorial, you will:
 
 - Launch Griptape Nodes
 - Navigate through the landing page to a workflow
-- Understand some of the most basic interface elements
-- Add your first node(s) to the workspace
+- Get familiar with the Griptape Nodes interface
+- Add your first nodes to the workspace
 - Connect your nodes into a small workflow
 
 ## Launch Griptape Nodes
@@ -38,7 +38,7 @@ When your browser opens, you'll be greeted by the Griptape Nodes landing page. T
 
 These sample workflows are excellent resources for learning about Griptape Nodes' capabilities, but for now, let's start from scratch.
 
-## Create a new workspace from scratch
+## Create a new workflow from scratch
 
 On the landing page, locate and click on the **"Create from scratch"** tile.
 
@@ -46,13 +46,13 @@ On the landing page, locate and click on the **"Create from scratch"** tile.
 
 This action opens a blank workspace where you can build custom workflows.
 
-## Learn basic interface elements
+## Get familiar with the Griptape Nodes interface
 
-Once you're in your new workspace, take a moment to familiarize yourself with the interface:
+Once you're in the Workflow Editor, take a moment to familiarize yourself with the interface:
 
 ![Griptape Nodes workspace interface](assets/workspace_interface.png)
 
-The most important area to focus on initially is the left panel, which contains the **"Create Nodes"** section. This panel houses all the standard nodes that come pre-packaged with Griptape Nodes.
+The most important area to focus on initially is the left panel, the node library, which contains the **"Create Nodes"** section. This panel houses all the standard nodes that come pre-packaged with Griptape Nodes.
 
 ![Create Nodes panel](assets/create_nodes_panel.png)
 
