@@ -19,7 +19,7 @@ To begin this tutorial, return to the main landing page by clicking on the navig
 
 ## Open the Photography Team Example
 
-On the landing page, locate and click on the **"Build a Photography Team"** tile to open this example workfow.
+On the landing page, locate and click on the **"Build a Photography Team"** tile to open this example workflow.
 
 ![Photography Team example](assets/photography_team_example.png)
 
