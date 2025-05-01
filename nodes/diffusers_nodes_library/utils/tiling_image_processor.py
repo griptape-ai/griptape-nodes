@@ -1,0 +1,272 @@
+import logging
+import random
+from collections.abc import Callable
+from typing import Any
+
+import numpy as np
+import PIL.Image
+from PIL.Image import Image, Resampling
+
+type PositionList = list[tuple[int, int]]
+type PositionGrid = list[list[tuple[int, int]]]
+
+DEBUG = False
+
+logger = logging.getLogger("diffusers_nodes_library")
+
+
+class TilingImageProcessor:
+    def __init__(  # noqa: PLR0913
+        self,
+        pipe: Callable[..., Any],
+        tile_size: int,
+        tile_overlap: int,
+        tile_strategy: str,
+        to_pipe_args: Callable[[Image, dict[str, Any]], tuple],
+        to_pipe_kwargs: Callable[[Image, dict[str, Any]], dict[str, Any]],
+        pipe_output_to_pil: Callable[[Any], Image],
+    ) -> None:
+        self.pipe = pipe
+        self.tile_size = tile_size
+        self.tile_overlap = tile_overlap
+        self.tile_strategy = tile_strategy
+        self.to_pipe_args = to_pipe_args
+        self.to_pipe_kwargs = to_pipe_kwargs
+        self.pipe_output_to_pil = pipe_output_to_pil
+
+    def get_tile_positions(self, image: Image) -> PositionList:
+        tile_size = self.tile_size
+        tile_overlap = self.tile_overlap
+        tile_strategy = self.tile_strategy
+        width, height = image.size
+
+        grid = []  # row major order (rows are contiguous)
+        # This is stupid, but I actually want to add some unit tests for this.
+        for y in range(0, height - tile_overlap, tile_size - tile_overlap):
+            # Appending a row
+            grid.append([])
+            for x in range(0, width - tile_overlap, tile_size - tile_overlap):
+                grid[-1].append((x, y))
+
+        match tile_strategy:
+            case "linear":
+                positions = self._linear_strategy(grid)
+            case "chess":
+                positions = self._chess_strategy(grid)
+            case "random":
+                positions = self._random_strategy(grid)
+            case "inward":
+                positions = self._inward_spiral_strategy(grid)
+            case "outward":
+                positions = self._outward_spiral_strategy(grid)
+            case _:
+                raise NotImplementedError
+        return positions
+
+    def _linear_strategy(self, grid: PositionGrid) -> PositionList:
+        rows = len(grid)
+        cols = len(grid[0]) if rows > 0 else 0
+        cells = []
+        for i in range(rows):
+            for j in range(cols):
+                cells.append(grid[i][j])  # noqa: PERF401
+        return cells
+
+    def _chess_strategy(self, grid: PositionGrid) -> PositionList:
+        rows = len(grid)
+        cols = len(grid[0]) if rows > 0 else 0
+        even_cells = []
+        odd_cells = []
+        for i in range(rows):
+            for j in range(cols):
+                if (i + j) % 2 == 0:
+                    even_cells.append(grid[i][j])
+                else:
+                    odd_cells.append(grid[i][j])
+        return even_cells + odd_cells
+
+    def _random_strategy(self, grid: PositionGrid) -> PositionList:
+        positions = self._linear_strategy(grid)
+        random.shuffle(positions)
+        return positions
+
+    def _inward_spiral_strategy(self, grid: PositionGrid) -> PositionList:
+        result = []
+        if not grid or not grid[0]:
+            return result
+
+        top, bottom = 0, len(grid) - 1
+        left, right = 0, len(grid[0]) - 1
+
+        while top <= bottom and left <= right:
+            # Traverse top row from left to right
+            for j in range(left, right + 1):
+                result.append(grid[top][j])  # noqa: PERF401
+            top += 1
+
+            # Traverse right column from top to bottom
+            for i in range(top, bottom + 1):
+                result.append(grid[i][right])  # noqa: PERF401
+            right -= 1
+
+            if top <= bottom:
+                # Traverse bottom row from right to left
+                for j in range(right, left - 1, -1):
+                    result.append(grid[bottom][j])  # noqa: PERF401
+                bottom -= 1
+
+            if left <= right:
+                # Traverse left column from bottom to top
+                for i in range(bottom, top - 1, -1):
+                    result.append(grid[i][left])  # noqa: PERF401
+                left += 1
+
+        return result
+
+    def _outward_spiral_strategy(self, grid: PositionGrid) -> PositionList:
+        return list(reversed(self._inward_spiral_strategy(grid)))
+
+    def get_num_tiles(self, image: Image) -> int:
+        """Returns the number of tiles required for a given image."""
+        return len(self.get_tile_positions(image))
+
+    def process(self, image: Image, pipe_kwargs: dict[str, Any], callback_on_tile_end: Any = None) -> Image:
+        pipe = self.pipe
+        tile_size = self.tile_size
+        tile_overlap = self.tile_overlap
+        width, height = image.size
+        result_np = np.zeros((height, width, 3), dtype=np.float32)
+        weight_np = np.zeros((height, width), dtype=np.float32)
+
+        positions = self.get_tile_positions(image)
+
+        for i, (x, y) in enumerate(positions, start=1):
+            logger.info("tile %d of %d", i, len(positions))
+            # Determine the tile region within image boundaries
+            tile_right = min(x + tile_size, width)
+            tile_bottom = min(y + tile_size, height)
+            tile_box = (x, y, tile_right, tile_bottom)
+            tile = image.crop(tile_box)
+
+            # Process the tile
+            # TODO(dylan): This is so dumb, the caller should just create a wrapper pipe...
+            args = self.to_pipe_args(tile, pipe_kwargs)
+            kwargs = self.to_pipe_kwargs(tile, pipe_kwargs)
+            processed_tile = self.pipe_output_to_pil(pipe(*args, **kwargs)).convert("RGB")
+
+            # Resize if pipe output is not the same size as input (important!)
+            if processed_tile.size != tile.size:
+                processed_tile = processed_tile.resize(tile.size, Resampling.LANCZOS)
+
+            tile_np = np.array(processed_tile).astype(np.float32)
+            h, w = tile_np.shape[:2]
+
+            # Create local weight mask
+            is_left = x == 0
+            is_top = y == 0
+            is_right = tile_right == width
+            is_bottom = tile_bottom == height
+
+            weight_mask = create_weight_mask((w, h), tile_overlap, (is_left, is_top, is_right, is_bottom))
+
+            if DEBUG:
+                # Saves an individual tile with a heatmap overlay to visualize the
+                # weight mask.
+                debug_tile = visualize_weight_mask(processed_tile, weight_mask)
+                debug_tile.save(f"weight_mask_tile_{i}.png")
+
+            # Blend into result
+            result_np[y : y + h, x : x + w] += tile_np * weight_mask[..., None]
+            weight_np[y : y + h, x : x + w] += weight_mask
+
+            if callback_on_tile_end:
+                # Save an image that indicates progress -> all currently generated tiles
+                # in there places. The image has the resolution of the final image.
+                # Normalize
+                preview_image_np = result_np / np.maximum(weight_np[..., None], 1e-5)
+                preview_image_pil = PIL.Image.fromarray(np.clip(preview_image_np, 0, 255).astype(np.uint8))
+                callback_on_tile_end(i, preview_image_pil)
+
+        # Normalize
+        result_np /= np.maximum(weight_np[..., None], 1e-5)
+        output_image_pil = PIL.Image.fromarray(np.clip(result_np, 0, 255).astype(np.uint8))
+        return output_image_pil
+
+
+def create_weight_mask(size: tuple[int, int], overlap: int, is_edge: tuple[bool, bool, bool, bool]) -> np.ndarray:
+    """Create a 2D blending mask using 1D linear ramps, accounting for image edges.
+
+    Args:
+        size (tuple): (width, height) of the tile.
+        overlap (int): Overlap in pixels.
+        is_edge (tuple): (left, top, right, bottom) — True if tile touches that image edge.
+
+    Returns:
+        np.ndarray: 2D blending mask (height, width) in [0.0, 1.0]
+    """
+    width, height = size
+    left, top, right, bottom = is_edge
+
+    if overlap == 0:
+        return np.ones((height, width))
+
+    # Clamp overlap to avoid overflow
+    #
+    # Long explanation of "why the +1"
+    # Add one because we are using linespace with the start value of 1,
+    # a weight of 1 should not be used if is actually overlapping cause
+    # you'd only see one of the tiles and that's not really overlapping is it?
+    # That means that the start pixel that gets the start value from linspace
+    # technically isn't part of the overlap, thus we need to expand the "overlap"
+    # region by 1.
+    # Alternatively, you  could consider adding an endpoint for 0 to make it symmetric
+    # but then you'd not be able to handle certain values of overlap (e.g. when it equals
+    # exactly 1, ideally you'd have 0.5 weight on one tile and 0.5 weight on the other in
+    # the overlapping region.
+    ox = min(overlap, width // 2) + 1
+    oy = min(overlap, height // 2) + 1
+
+    # Horizontal ramp
+    ramp_x = np.ones(width, dtype=np.float32)
+    if not left:
+        ramp_x[:ox] = np.flip(np.linspace(1, 0, ox, endpoint=False))
+    if not right:
+        ramp_x[-ox:] = np.linspace(1, 0, ox, endpoint=False)
+
+    # Vertical ramp
+    ramp_y = np.ones(height, dtype=np.float32)
+    if not top:
+        ramp_y[:oy] = np.flip(np.linspace(1, 0, oy, endpoint=False))
+    if not bottom:
+        ramp_y[-oy:] = np.linspace(1, 0, oy, endpoint=False)
+
+    return np.outer(ramp_y, ramp_x)
+
+
+# Useful for debugging the tiles.
+def visualize_weight_mask(tile: Image, weight_mask: np.ndarray) -> Image:
+    """Overlay a weight mask onto a tile for debugging.
+
+    Args:
+        tile (PIL.Image): Original tile image.
+        weight_mask (np.ndarray): 2D blending weight mask in [0, 1].
+
+    Returns:
+        Image: Tile with weight mask overlay.
+    """
+    tile_rgba = tile.convert("RGBA")
+    r = (weight_mask * 255).astype(np.uint8)
+    g = ((1 - weight_mask) * 255).astype(np.uint8)
+    b = np.zeros_like(r)
+    heat = np.stack([r, g, b], axis=-1)
+    heatmap = PIL.Image.fromarray(heat, mode="RGB").convert("RGBA")
+    return PIL.Image.blend(tile_rgba, heatmap, alpha=0.5)
+
+
+def apply_random_tint(tile_np: np.ndarray) -> np.ndarray:
+    """Applies a random color tint to a tile. Useful for debugging."""
+    r = random.uniform(0.6, 1.0)  # noqa: S311
+    g = random.uniform(0.6, 1.0)  # noqa: S311
+    b = random.uniform(0.6, 1.0)  # noqa: S311
+    tint = np.array([r, g, b], dtype=np.float32)
+    return np.clip(tile_np * tint, 0, 255)
