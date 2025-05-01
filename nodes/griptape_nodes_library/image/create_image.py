@@ -86,8 +86,7 @@ class GenerateImage(ControlNode):
                 name="logs",
                 type="str",
                 tooltip="None",
-                default_value="Node hasn't begun yet",
-                ui_options={"multiline": True},
+                ui_options={"multiline": True, "placeholder_text": "Logs"},
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
