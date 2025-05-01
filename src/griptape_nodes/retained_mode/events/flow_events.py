@@ -132,8 +132,11 @@ class GetTopLevelFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess
 class SerializedFlowCommands:
     @dataclass
     class IndexedConnectionSerialization:
-        # Companion class to create connections from node indices, since we can't predict the names.
-        # These are indices into the SerializeNodeCommandsRequest list we maintain.
+        """Companion class to create connections from node indices, since we can't predict the names.
+
+        These are indices into the SerializeNodeCommandsRequest list we maintain.
+        """
+
         source_node_index: int
         source_parameter_name: str
         target_node_index: int
@@ -154,6 +157,9 @@ class SerializedFlowCommands:
 
     # Records the unique Parameter values used by the Flow.
     unique_parameter_values: list[Any]
+
+    # The parameter value assignment commands used when deserializing.
+    set_parameter_value_commands: list[list[SerializedNodeCommands.IndexedSetParameterValueCommand]]
 
     # Cascades into sub-flows within this serialization.
     sub_flows_commands: list["SerializedFlowCommands"]

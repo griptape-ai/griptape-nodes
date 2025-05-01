@@ -59,7 +59,6 @@ from griptape_nodes.retained_mode.events.node_events import (
     GetNodeResolutionStateRequest,
     GetNodeResolutionStateResultFailure,
     GetNodeResolutionStateResultSuccess,
-    IndexedSetParameterValueCommand,
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
@@ -1680,7 +1679,7 @@ class NodeManager:
         node: BaseNode,
         value_hash_to_unique_value_index: dict[Any, int],
         unique_values: list[Any],
-    ) -> IndexedSetParameterValueCommand | None:
+    ) -> SerializedNodeCommands.IndexedSetParameterValueCommand | None:
         """Generates code to save a parameter value for a node in a Griptape workflow.
 
         This function handles the process of creating commands that will reconstruct and set
@@ -1743,7 +1742,7 @@ class NodeManager:
             is_output=is_output,
             initial_setup=True,
         )
-        indexed_set_value_command = IndexedSetParameterValueCommand(
+        indexed_set_value_command = SerializedNodeCommands.IndexedSetParameterValueCommand(
             set_parameter_value_command=set_value_command,
             unique_value_index=unique_index,
         )

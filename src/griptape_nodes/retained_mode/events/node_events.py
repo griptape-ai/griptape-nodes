@@ -174,17 +174,21 @@ class GetAllNodeInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
     pass
 
 
-@dataclass
-class IndexedSetParameterValueCommand:
-    # The base set parameter command
-    set_parameter_value_command: SetParameterValueRequest
-    # Value will be overridden when de-serialized based on the unique value index.
-    unique_value_index: int
-
-
 # A Node's state can be serialized to a sequence of commands that the engine runs.
 @dataclass
 class SerializedNodeCommands:
+    @dataclass
+    class IndexedSetParameterValueCommand:
+        """Companion class to assign parameter values from our unique values list into node indices, since we can't predict the names.
+
+        These are indices into the SerializeNodeCommandsRequest list we maintain.
+        """
+
+        # The base set parameter command
+        set_parameter_value_command: SetParameterValueRequest
+        # Value will be overridden when de-serialized based on the unique value index.
+        unique_value_index: int
+
     create_node_command: CreateNodeRequest
     element_modification_commands: list[RequestPayload]
     node_library_details: LibraryNameAndVersion
@@ -208,8 +212,8 @@ class SerializeNodeToCommandsRequest(RequestPayload):
 class SerializeNodeToCommandsResultSuccess(ResultPayloadSuccess):
     # Serialize the node itself
     serialized_node_commands: SerializedNodeCommands
-    # The parameter value assignment commands used when deserializing.
-    set_parameter_value_commands: list[IndexedSetParameterValueCommand]
+    # And maintain the assignment of parameter values based on indices into the unique values list.
+    set_parameter_value_commands: list[SerializedNodeCommands.IndexedSetParameterValueCommand]
 
 
 @dataclass
