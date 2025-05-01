@@ -71,7 +71,7 @@ cmd.set_value(
     "You identify as a cinematographer\nThe main subject of the image should be well framed\nIf no environment is specified, set the image in a location that will evoke a deep and meaningful connection to the viewer.\nYou care deeply about light, shadow, color, and composition\nWhen coming up with image prompts, you always specify the position of the camera, the lens, and the color\nYou are specific about the technical details of a shot.\nYou like to add atmosphere to your shots, so you include depth of field, haze, dust particles in the air close to and far away from camera, and the way lighting reacts with each item.\nYour responses are brief and concise\nAlways respond with your identity so the agent knows who you are.\nKeep your responses brief.",
 )
 cmd.set_value("Cinematographer.model", "gpt-4.1")
-cmd.set_value("Cinematographer.include details", False)
+cmd.set_value("Cinematographer.include_details", False)
 cmd.set_value("Cinematographer.logs", "Node hasn't begun yet")
 cmd.set_value("Cinematographer_asTool.name", "Cinematographer")
 cmd.set_value("Cinematographer_asTool.description", "This agent understands cinematography")
@@ -82,7 +82,7 @@ cmd.set_value(
     "You identify as an expert in color theory\nYou have a deep understanding of how color impacts one's psychological outlook\nYou are a fan of non-standard colors\nYour responses are brief and concise\nAlways respond with your identity  so the agent knows who you are.\nKeep your responses brief.",
 )
 cmd.set_value("Color_Theorist.model", "gpt-4.1")
-cmd.set_value("Color_Theorist.include details", False)
+cmd.set_value("Color_Theorist.include_details", False)
 cmd.set_value("Color_Theorist.logs", "Node hasn't begun yet")
 cmd.set_value("Color_Theorist_asTool.name", "Color_Theorist")
 cmd.set_value("Color_Theorist_asTool.description", "This agent can be used to ensure the best colors")
@@ -93,7 +93,7 @@ cmd.set_value(
     'You care about the unique details and specific descriptions of items.\nWhen describing things, call out specific details and don\'t be generic. Example: "Threadbare furry teddybear with dirty clumps" vs "Furry teddybear"\nFind the unique qualities of items that make them special and different.\nYour responses are concise\nAlways respond with your identity so the agent knows who you are.\nKeep your responses brief.\n',
 )
 cmd.set_value("Detail_Enthusiast.model", "gpt-4.1")
-cmd.set_value("Detail_Enthusiast.include details", False)
+cmd.set_value("Detail_Enthusiast.include_details", False)
 cmd.set_value("Detail_Enthusiast.logs", "Node hasn't begun yet")
 cmd.set_value("Detail_Enthusiast_asTool.name", "Detail_Enthusiast")
 cmd.set_value(
@@ -107,7 +107,7 @@ cmd.set_value(
     "You are an expert in creating prompts for image generation engines\nYou use the latest knowledge available to you to generate the best prompts.\nYou create prompts that are direct and succinct and you understand they need to be under 800 characters long\nUse your tools to find the best examples of prompts when necessary\nYou can use your tools to research the subject as well.\nYour responses are brief and concise\nYou are generating a prompt for a still image\nAlways include the following: subject, attributes of subject, visual characteristics of the image, film grain, camera angle, lighting, art style, color scheme, surrounding environment, camera used (ex: Nikon d850 film stock, polaroid, etc).\nAlways respond with your identity so the agent knows who you are.\nKeep your responses brief.\n",
 )
 cmd.set_value("Image_Generation_Specialist.model", "gpt-4.1")
-cmd.set_value("Image_Generation_Specialist.include details", False)
+cmd.set_value("Image_Generation_Specialist.include_details", False)
 cmd.set_value("Image_Generation_Specialist.logs", "Node hasn't begun yet")
 cmd.set_value("Image_Generation_Specialist_asTool.name", "Image_Generation_Specialist")
 cmd.set_value(
@@ -120,7 +120,7 @@ cmd.set_value(
     "Use all the tools at your disposal to create a spectacular image generation prompt about a teddy bear",
 )
 cmd.set_value("Orchestrator.model", "gpt-4.1")
-cmd.set_value("Orchestrator.include details", False)
+cmd.set_value("Orchestrator.include_details", False)
 cmd.set_value("Orchestrator.logs", "Node hasn't begun yet")
 cmd.set_value("GenerateImage_1.enhance_prompt", False)
 cmd.set_value("GenerateImage_1.logs", "Node hasn't begun yet")
