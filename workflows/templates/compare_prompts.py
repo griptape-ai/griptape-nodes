@@ -34,7 +34,6 @@ cmd.set_value(
         "height": 1024,
     },
 )
-cmd.set_value("basic_image.logs", "Node hasn't begun yet")
 cmd.set_value(
     "detail_prompt.text",
     "Enhance the following prompt for an image generation engine. Return only the image generation prompt.\nInclude unique details that make the subject stand out.\nSpecify a specific depth of field, and time of day.\nUse dust in the air to create a sense of depth.\nUse a slight vignetting on the edges of the image.\nUse a color palette that is complementary to the subject.\nFocus on qualities that will make this the most professional looking photo in the world.\n",
