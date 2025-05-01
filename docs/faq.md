@@ -59,13 +59,15 @@ Griptape Nodes will automatically check if it needs to update every time it runs
 If you would like to _manually_ update, you can always use either of these commands:
 
 ```bash
-griptape-nodes update
+griptape-nodes self update
+griptape-nodes assets update
 ```
 
 or
 
 ```bash
-gtn update
+gtn self update
+gtn assets update
 ```
 
 ## I'm seeing "failed to locate pyvenv.cfg: The system cannot find the file specified." - What should I do?
