@@ -24,7 +24,7 @@ class CreateFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CreateFlowResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class CreateFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     flow_name: str
 
 
@@ -43,7 +43,7 @@ class DeleteFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteFlowResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class DeleteFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
@@ -62,13 +62,13 @@ class ListNodesInFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListNodesInFlowResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class ListNodesInFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     node_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListNodesInFlowResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class ListNodesInFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -85,13 +85,13 @@ class ListFlowsInCurrentContextRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInCurrentContextResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class ListFlowsInCurrentContextResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     flow_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInCurrentContextResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class ListFlowsInCurrentContextResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -105,13 +105,13 @@ class ListFlowsInFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInFlowResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class ListFlowsInFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     flow_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListFlowsInFlowResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class ListFlowsInFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -123,7 +123,7 @@ class GetTopLevelFlowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetTopLevelFlowResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetTopLevelFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     flow_name: str | None
 
 

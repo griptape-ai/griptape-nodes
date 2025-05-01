@@ -1,16 +1,35 @@
 .PHONY: version/get
-version/get: ## Set version.
-	@uvx --from=toml-cli toml get --toml-path=pyproject.toml project.version
+version/get: ## Get version.
+	@uv version | awk '{print $$2}'
 	
 .PHONY: version/set
 version/set: ## Set version.
-	@uvx --from=toml-cli toml set --toml-path=pyproject.toml project.version ${v}
+	@uv version $(v)
+	@make version/commit
+
+.PHONY: version/patch
+version/patch: ## Bump patch version.
+	@uv version --bump patch
+	@make version/commit
+
+.PHONY: version/minor
+version/minor: ## Bump minor version.
+	@uv version --bump minor
+	@make version/commit
+
+.PHONY: version/major
+version/major: ## Bump major version.
+	@uv version --bump major
+	@make version/commit
+
+.PHONY: version/commit
+version/commit: ## Commit version.
 	@uv lock
 	@git add pyproject.toml uv.lock
 	@git commit -m "chore: bump v$$(make version/get)"
 
 .PHONY: version/publish
-version/publish: ## Push git tag and publish version to PyPI.
+version/publish: ## Create and push git tags.
 	@git tag v$$(make version/get)
 	@git tag latest -f
 	@git push -f --tags

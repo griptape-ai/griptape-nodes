@@ -8,14 +8,15 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.button import Button
 from griptape_nodes_library.utils.image_utils import dict_to_image_artifact
 
 DEFAULT_FILENAME = "griptape_nodes.png"
 
 
-def to_image_artifact(image: ImageArtifact | dict) -> ImageArtifact:
+def to_image_artifact(image: ImageArtifact | dict) -> ImageArtifact | ImageUrlArtifact:
+    """Convert an image or a dictionary to an ImageArtifact."""
     if isinstance(image, dict):
         return dict_to_image_artifact(image)
     return image
@@ -69,7 +70,7 @@ class SaveImage(ControlNode):
         try:
             image_artifact = to_image_artifact(image)
 
-            saved_path = self.save_static_file(image_artifact.to_bytes(), output_file)
+            saved_path = GriptapeNodes.StaticFilesManager().save_static_file(image_artifact.to_bytes(), output_file)
 
             success_msg = f"Saved image: {saved_path}"
             logger.info(success_msg)
