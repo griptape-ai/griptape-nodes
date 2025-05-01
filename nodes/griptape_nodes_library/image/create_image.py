@@ -111,7 +111,7 @@ class GenerateImage(ControlNode):
         # Validate that we have a prompt.
         prompt_error = self.validate_empty_parameter(param="prompt")
         if prompt_error and not self._has_connection_to_prompt:
-            exceptions.append(self.validate_empty_parameter(param="prompt"))
+            exceptions.append(prompt_error)
 
         return exceptions if exceptions else None
 
