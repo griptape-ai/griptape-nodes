@@ -85,7 +85,7 @@
       }
     },
     {
-      "image/upscale":{
+      "image/upscale": {
         "color": "border-purple-500",
         "title": "Image/Upscale",
         "description": "Image upscaling related nodes.",
@@ -273,6 +273,15 @@
         "category": "config/image",
         "description": "Node for OpenAI Image Generation Driver.",
         "display_name": "Open Ai Image"
+      }
+    },
+    {
+      "class_name": "AmazonBedrockPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/amazon_bedrock_prompt.py",
+      "metadata": {
+        "category": "config/prompt",
+        "description": "Node for Amazon Bedrock Prompt Driver.",
+        "display_name": "Amazon Bedrock Prompt"
       }
     },
     {

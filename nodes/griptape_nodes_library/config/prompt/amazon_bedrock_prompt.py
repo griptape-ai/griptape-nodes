@@ -14,7 +14,7 @@ from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 # --- Constants ---
 
 SERVICE = "Amazon"
-API_KEY_URL = "https://aws.amazon.com/console/bedrock/home?region=us-east-1#api-keys"
+API_KEY_URL = "https://console.aws.amazon.com/iam/home?#/security_credentials"
 AWS_ACCESS_KEY_ID_ENV_VAR = "AWS_ACCESS_KEY_ID"
 AWS_DEFAULT_REGION_ENV_VAR = "AWS_DEFAULT_REGION"
 AWS_SECRET_ACCCESS_KEY_ENV_VAR = "AWS_SECRET_ACCESS_KEY"  # noqa: S105
@@ -61,6 +61,12 @@ class AmazonBedrockPrompt(BasePrompt):
         # Update the 'model' parameter for Amazon Bedrock specifics.
         self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
 
+        # Remove the 'seed' parameter as it's not applicable for Amazon Bedrock.
+        self.remove_parameter_by_name("seed")
+
+        self.remove_parameter_by_name("min_p")
+        self.remove_parameter_by_name("top_k")
+
         # Amazon Bedrock tends to fail if max_tokens isn't set
         self.set_parameter_value("max_tokens", 100)
 
@@ -88,10 +94,8 @@ class AmazonBedrockPrompt(BasePrompt):
 
         # Get the selected model.
         specific_args["model"] = self.get_parameter_value("model")
-        specific_args["min_p"] = self.get_parameter_value("min_p")
-        specific_args["top_k"] = self.get_parameter_value("top_k")
-
         # Handle parameters that go into 'extra_params' for Amazon Bedrock.
+
         extra_params = {}
 
         # Assign extra_params if not empty
