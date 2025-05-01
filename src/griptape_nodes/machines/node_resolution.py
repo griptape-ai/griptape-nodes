@@ -135,7 +135,11 @@ class EvaluateParameterState(State):
         if next_node:
             next_node, _ = next_node
         if next_node and next_node.state == NodeResolutionState.UNRESOLVED:
-            # Already handles cycles with state
+            focus_stack_names = {focus.node.name for focus in context.focus_stack}
+            if next_node.name in focus_stack_names:
+                msg = f"Cycle detected between node '{current_node.name}' and '{next_node.name}'."
+                raise RuntimeError(msg)
+
             context.focus_stack.append(Focus(node=next_node))
             return InitializeSpotlightState
 

@@ -922,6 +922,8 @@ class FlowManager:
         try:
             flow.single_execution_step(change_debug_mode)
         except Exception as e:
+            flow.cancel_flow_run()
+
             details = f"Could not advance to the next step of a running workflow. Exception: {e}"
             logger.error(details)
             return SingleNodeStepResultFailure(validation_exceptions=[e])
