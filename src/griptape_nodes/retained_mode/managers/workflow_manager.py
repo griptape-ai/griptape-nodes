@@ -252,21 +252,21 @@ class WorkflowManager:
             workflow_name = f"{emoji} {name}"
 
             # Problems column - format with numbers if there's more than one
-            problems = "\n".join(wf_info.problems) if wf_info.problems else "None"
+            problems = "\n".join(wf_info.problems) if wf_info.problems else "No problems detected."
 
             # Dependencies column
             if wf_info.status == self.WorkflowStatus.MISSING or (
                 wf_info.status == self.WorkflowStatus.UNUSABLE and not wf_info.workflow_dependencies
             ):
-                dependencies = "UNKNOWN"
+                dependencies = "❓ UNKNOWN"
             else:
                 dependencies = (
                     "\n".join(
-                        f"{dep.library_name} ({dep.version_requested}): {dependency_status_emoji.get(dep.status, '?')}"
+                        f"{dependency_status_emoji.get(dep.status, '?')} {dep.library_name} ({dep.version_requested}): {dep.status.value}"
                         for dep in wf_info.workflow_dependencies
                     )
                     if wf_info.workflow_dependencies
-                    else "None"
+                    else "No dependencies"
                 )
 
             table.add_row(
