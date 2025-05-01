@@ -183,7 +183,7 @@ class SerializedNodeCommands:
 
         These are indices into the SerializeNodeCommandsRequest list we maintain.
         """
-
+TURN ALL COMMENTS INTO DOCSTRINGS, SEARCH "ATTRIBUTES"
         # The base set parameter command
         set_parameter_value_command: SetParameterValueRequest
         # Value will be overridden when de-serialized based on the unique value index.
