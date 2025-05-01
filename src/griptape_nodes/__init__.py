@@ -240,12 +240,8 @@ def _update_self(*, restart_after_update: bool = False) -> None:
     """Installs the latest release of the CLI *and* refreshes bundled assets."""
     console.print("[bold green]Starting updater...[/bold green]")
 
-    try:
-        args = ["--restart"] if restart_after_update else []
-        subprocess.run([sys.executable, "-m", "griptape_nodes.updater", *args], check=False)
-    except subprocess.CalledProcessError as e:
-        console.print(f"[bold red]Error during update: {e}[/bold red]")
-        sys.exit(1)
+    args = ["--restart"] if restart_after_update else []
+    subprocess.Popen([sys.executable, "-m", "griptape_nodes.updater", *args], start_new_session=True)
 
     sys.exit(0)
 
