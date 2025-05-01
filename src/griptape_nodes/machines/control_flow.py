@@ -187,13 +187,20 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             resolution_machine.change_debug_mode(True)
         resolution_machine.update()
 
-        if resolution_machine.is_complete() or (not resolution_machine.is_started()):
+        if (
+            resolution_machine.is_complete() or not resolution_machine.is_started()
+        ) and self._current_state is not None:
             self.update()
 
     def node_step(self) -> None:
         resolution_machine = self._context.resolution_machine
         resolution_machine.change_debug_mode(False)
         resolution_machine.update()
+
+        if (
+            resolution_machine.is_complete() or not resolution_machine.is_started()
+        ) and self._current_state is not None:
+            self.update()
 
     def reset_machine(self) -> None:
         self._context.reset()
