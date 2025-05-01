@@ -19,7 +19,7 @@ class RenameObjectRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RenameObjectResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class RenameObjectResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     final_name: str  # May not be the same as what was requested, if that bool was set
 
 
@@ -38,7 +38,7 @@ class ClearAllObjectStateRequest(RequestPayload):
 
 
 @PayloadRegistry.register
-class ClearAllObjectStateResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class ClearAllObjectStateResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 

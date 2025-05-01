@@ -25,11 +25,11 @@ class CreateStaticFileRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CreateStaticFileResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class CreateStaticFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     url: str
 
 
 @dataclass
 @PayloadRegistry.register
-class CreateStaticFileResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class CreateStaticFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     error: str

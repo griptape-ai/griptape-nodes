@@ -51,7 +51,7 @@ class AddParameterToNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AddParameterToNodeResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class AddParameterToNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     parameter_name: str
     type: str
     node_name: str
@@ -73,7 +73,7 @@ class RemoveParameterFromNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RemoveParameterFromNodeResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class RemoveParameterFromNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
@@ -99,7 +99,7 @@ class SetParameterValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SetParameterValueResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class SetParameterValueResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     finalized_value: Any
     data_type: str
 
@@ -120,7 +120,7 @@ class GetParameterDetailsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterDetailsResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetParameterDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     element_id: str
     type: str
     input_types: list[str]
@@ -139,7 +139,7 @@ class GetParameterDetailsResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredM
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterDetailsResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetParameterDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -204,7 +204,7 @@ class AlterParameterDetailsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AlterParameterDetailsResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class AlterParameterDetailsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
@@ -224,7 +224,7 @@ class GetParameterValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterValueResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetParameterValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     input_types: list[str]
     type: str
     output_type: str
@@ -233,13 +233,13 @@ class GetParameterValueResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMix
 
 @dataclass
 @PayloadRegistry.register
-class GetParameterValueResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetParameterValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class OnParameterValueChanged(ResultPayloadSuccess, WorkflowAlteredMixin):
+class OnParameterValueChanged(WorkflowAlteredMixin, ResultPayloadSuccess):
     node_name: str
     parameter_name: str
     data_type: str
@@ -262,13 +262,13 @@ class ParameterAndMode(NamedTuple):
 
 @dataclass
 @PayloadRegistry.register
-class GetCompatibleParametersResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetCompatibleParametersResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     valid_parameters_by_node: dict[str, list[ParameterAndMode]]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetCompatibleParametersResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetCompatibleParametersResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -282,11 +282,11 @@ class GetNodeElementDetailsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeElementDetailsResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetNodeElementDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     element_details: dict[str, Any]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeElementDetailsResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetNodeElementDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
