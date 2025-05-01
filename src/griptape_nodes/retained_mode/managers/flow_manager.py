@@ -1216,26 +1216,28 @@ class FlowManager:
                 request.serialized_flow_commands.set_parameter_value_commands
             ):
                 node_name = deserialized_node_results[node_index].node_name
-                # Iterate through each set value command in the list for this node.
-                for indexed_set_value_command in set_value_command_list:
-                    parameter_name = indexed_set_value_command.set_parameter_value_command.parameter_name
-                    unique_value_index = indexed_set_value_command.unique_value_index
-                    try:
-                        value = request.serialized_flow_commands.unique_parameter_values[unique_value_index]
-                    except IndexError as err:
-                        details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a value assignment for node '{node_name}.{parameter_name}': {err}"
-                        logger.error(details)
-                        return DeserializeFlowFromCommandsResultFailure()
+                # Make this node the current context.
+                with GriptapeNodes.ContextManager().node(node_name=node_name):
+                    # Iterate through each set value command in the list for this node.
+                    for indexed_set_value_command in set_value_command_list:
+                        parameter_name = indexed_set_value_command.set_parameter_value_command.parameter_name
+                        unique_value_index = indexed_set_value_command.unique_value_index
+                        try:
+                            value = request.serialized_flow_commands.unique_parameter_values[unique_value_index]
+                        except IndexError as err:
+                            details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a value assignment for node '{node_name}.{parameter_name}': {err}"
+                            logger.error(details)
+                            return DeserializeFlowFromCommandsResultFailure()
 
-                    # Call the SetParameterValueRequest, subbing in the value from our unique value list.
-                    indexed_set_value_command.set_parameter_value_command.value = value
-                    set_parameter_value_result = GriptapeNodes.handle_request(
-                        indexed_set_value_command.set_parameter_value_command
-                    )
-                    if set_parameter_value_result.failed():
-                        details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a value assignment for node '{node_name}.{parameter_name}'."
-                        logger.error(details)
-                        return DeserializeFlowFromCommandsResultFailure()
+                        # Call the SetParameterValueRequest, subbing in the value from our unique value list.
+                        indexed_set_value_command.set_parameter_value_command.value = value
+                        set_parameter_value_result = GriptapeNodes.handle_request(
+                            indexed_set_value_command.set_parameter_value_command
+                        )
+                        if set_parameter_value_result.failed():
+                            details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a value assignment for node '{node_name}.{parameter_name}'."
+                            logger.error(details)
+                            return DeserializeFlowFromCommandsResultFailure()
 
             # Now the child flows.
             for sub_flow_command in request.serialized_flow_commands.sub_flows_commands:
