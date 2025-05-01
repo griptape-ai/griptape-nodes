@@ -1,11 +1,13 @@
 import base64
+import uuid
 
-from griptape.artifacts import ImageArtifact, ImageUrlArtifact
-from griptape.loaders import ImageLoader
+from griptape.artifacts import ImageUrlArtifact
 
 
-def dict_to_image_artifact(image_dict: dict, image_format: str | None = None) -> ImageArtifact | ImageUrlArtifact:
+def dict_to_image_url_artifact(image_dict: dict, image_format: str | None = None) -> ImageUrlArtifact:
     """Convert a dictionary representation of an image to an ImageArtifact."""
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
     # Get the base64 encoded string
     value = image_dict["value"]
     if image_dict["type"] == "ImageUrlArtifact":
@@ -19,11 +21,14 @@ def dict_to_image_artifact(image_dict: dict, image_format: str | None = None) ->
     image_bytes = base64.b64decode(value)
 
     # Determine the format from the MIME type if not specified
-    if not image_format and "type" in image_dict:
-        # Extract format from MIME type (e.g., 'image/png' -> 'png')
-        mime_format = image_dict["type"].split("/")[1] if "/" in image_dict["type"] else None
-        image_format = mime_format
-    loader = ImageLoader(format=image_format)
-    image_artifact = loader.try_parse(image_bytes)
+    if image_format is None:
+        if "type" in image_dict:
+            # Extract format from MIME type (e.g., 'image/png' -> 'png')
+            mime_format = image_dict["type"].split("/")[1] if "/" in image_dict["type"] else None
+            image_format = mime_format
+        else:
+            image_format = "png"
 
-    return image_artifact
+    url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, f"{uuid.uuid4()}.{image_format}")
+
+    return ImageUrlArtifact(url)
