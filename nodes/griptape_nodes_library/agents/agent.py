@@ -325,7 +325,7 @@ class Agent(ControlNode):
 
     # --- Validation ---
 
-    def validate_node(self) -> list[Exception] | None:
+    def validate_node_before_run(self) -> list[Exception] | None:
         """Performs pre-run validation checks for the node.
 
         Currently checks if the Griptape Cloud API key is configured if the default

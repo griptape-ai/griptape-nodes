@@ -67,7 +67,19 @@ class DescribeImage(ControlNode):
             )
         )
 
-    def validate_node(self) -> list[Exception] | None:
+    def validate_node_before_run(self) -> list[Exception] | None:
+        """Validates a node is configured correctly before a run is started. This prevents wasting time executing nodes if there is a known failure.
+
+        Override this method in your Node classes to add custom validation logic to confirm that your Node
+        will not encounter any issues before a run is started.
+
+        If there are no errors, return None. Otherwise, collate all errors into a list of Exceptions. These
+        Exceptions will be surfaced to the user in order to give them directed feedback for how to resolve
+        the issues.
+
+        Returns:
+            list[Exception] | None: A list of Exceptions if validation fails, otherwise None.
+        """
         # TODO(kate): Figure out how to wrap this so it's easily repeatable
         exceptions = []
         api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)

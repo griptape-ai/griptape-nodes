@@ -71,7 +71,7 @@ class GriptapeCloudPrompt(BasePrompt):
 
         Raises:
             KeyError: If the Griptape Cloud API key is not found in the node configuration
-                      (though `validate_node` should prevent this during execution).
+                      (though `validate_node_before_run` should prevent this during execution).
         """
         # Retrieve all parameter values set on the node UI or via input connections.
         params = self.parameter_values
@@ -109,7 +109,7 @@ class GriptapeCloudPrompt(BasePrompt):
         # Set the output parameter 'prompt_model_config'.
         self.parameter_output_values["prompt_model_config"] = driver
 
-    def validate_node(self) -> list[Exception] | None:
+    def validate_node_before_run(self) -> list[Exception] | None:
         """Validates that the Griptape Cloud API key is configured correctly.
 
         Calls the base class helper `_validate_api_key` with Griptape-specific

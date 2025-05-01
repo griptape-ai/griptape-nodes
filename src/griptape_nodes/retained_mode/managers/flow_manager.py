@@ -999,7 +999,7 @@ class FlowManager:
         # If we're just running the whole flow
         all_exceptions = []
         for node in nodes:
-            exceptions = node.validate_node()
+            exceptions = node.validate_node_before_run()
             if exceptions:
                 all_exceptions = all_exceptions + exceptions
         return ValidateFlowDependenciesResultSuccess(

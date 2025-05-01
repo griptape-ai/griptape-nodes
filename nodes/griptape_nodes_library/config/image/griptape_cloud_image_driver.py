@@ -76,7 +76,7 @@ class GriptapeCloudImage(BaseImageDriver):
 
         self.parameter_output_values["image_model_config"] = GtGriptapeCloudImageGenerationDriver(**all_kwargs)
 
-    def validate_node(self) -> list[Exception] | None:
+    def validate_node_before_run(self) -> list[Exception] | None:
         """Validates that the Griptape Cloud API key is configured correctly.
 
         Calls the base class helper `_validate_api_key` with Griptape-specific
