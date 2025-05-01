@@ -14,6 +14,7 @@ class AppInitializationComplete(BaseModel):
             str(xdg_data_home() / "griptape_nodes/workflows/templates/translator.py"),
             str(xdg_data_home() / "griptape_nodes/workflows/templates/compare_prompts.py"),
             str(xdg_data_home() / "griptape_nodes/workflows/templates/prompt_an_image.py"),
+            str(xdg_data_home() / "griptape_nodes/workflows/templates/photography_team.py"),
         ]
     )
 
