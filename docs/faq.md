@@ -44,7 +44,6 @@ or
 gtn update
 ```
 
-
 ## How do I uninstall Griptape Nodes?
 
 Need to part ways with Griptape Nodes? It's a simple goodbye with a single command:
@@ -68,7 +67,6 @@ uv tool uninstall griptape-nodes
 ```
 
 When regret inevitably washes over you, have no fear. Open arms await; just revisit [Getting Started](getting_started.md)
-
 
 ## I'm seeing "failed to locate pyvenv.cfg: The system cannot find the file specified." - What should I do?
 

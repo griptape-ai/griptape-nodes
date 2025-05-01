@@ -71,6 +71,7 @@ After adding a node, you can:
 - Connect it to other nodes (which we'll cover in just a few moments)
 
 !!! info
+
     To follow the video exactly, create a "FloatInput" node and a "DisplayFloat" node
 
 ![Node on the workspace](assets/nodes_in_workspace.png)
