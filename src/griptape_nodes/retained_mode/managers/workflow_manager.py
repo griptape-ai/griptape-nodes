@@ -225,7 +225,7 @@ class WorkflowManager:
         # Status emojis mapping
         status_emoji = {
             self.WorkflowStatus.GOOD: "✅",
-            self.WorkflowStatus.FLAWED: "🚨",
+            self.WorkflowStatus.FLAWED: "🟡",
             self.WorkflowStatus.UNUSABLE: "❌",
             self.WorkflowStatus.MISSING: "❓",
         }
@@ -233,7 +233,7 @@ class WorkflowManager:
         dependency_status_emoji = {
             self.WorkflowDependencyStatus.PERFECT: "✅",
             self.WorkflowDependencyStatus.GOOD: "👌",
-            self.WorkflowDependencyStatus.CAUTION: "⚡",
+            self.WorkflowDependencyStatus.CAUTION: "🟡",
             self.WorkflowDependencyStatus.BAD: "❌",
             self.WorkflowDependencyStatus.MISSING: "❓",
             self.WorkflowDependencyStatus.UNKNOWN: "❓",
