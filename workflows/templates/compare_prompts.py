@@ -31,7 +31,7 @@ cmd.set_value(
         "reference": None,
         "meta": {"model": "dall-e-3", "prompt": "A capybara eating with utensils"},
         "name": "image_artifact_250411205314_ll63.png",
-        "value": "<Image data omitted - 20 bytes>",
+        "value": "",
         "format": "png",
         "width": 1024,
         "height": 1024,
@@ -75,8 +75,8 @@ cmd.connect("basic_prompt.text", "basic_image.prompt")
 # name = "compare_prompts"
 # description = "See how 3 different approaches to prompts affect image generation."
 # image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/workflows/templates/thumbnail_compare_prompts.webp"
-# schema_version = "0.1.0"
-# engine_version_created_with = "0.14.1"
+# schema_version = "0.2.0"
+# engine_version_created_with = "0.23.2"
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
 # is_griptape_provided = true
 # is_template = true
