@@ -11,7 +11,7 @@ logger = logging.getLogger("spandrel_nodes_library")
 
 
 class SpandrelPipeline:
-    def __init__(self, model) -> None:
+    def __init__(self, model: spandrel.ModelDescriptor) -> None:
         self.model = model
 
     @classmethod
