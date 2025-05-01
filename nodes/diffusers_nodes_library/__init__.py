@@ -1,1 +1,1 @@
-"""Nodes package."""
+"""Diffusers Nodes Library package."""

@@ -1,1 +1,1 @@
-"""Nodes package."""
+"""Pillow Nodes Library package."""
