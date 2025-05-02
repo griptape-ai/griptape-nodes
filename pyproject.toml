@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = "~=3.12"
 dependencies = [
-  "griptape[drivers-prompt-anthropic,drivers-prompt-ollama,drivers-prompt-amazon-bedrock,loaders-image,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo]>=1.6.2",
+  "griptape@git+https://github.com/griptape-ai/griptape.git#egg=griptape[drivers-prompt-anthropic,drivers-prompt-ollama,drivers-prompt-amazon-bedrock,loaders-image,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo]>=1.6.2",
   "pydantic>=2.10.6",
   "python-dotenv>=1.0.1",
   "xdg-base-dirs>=6.0.2",
@@ -45,8 +45,8 @@ gtn = "griptape_nodes:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv.sources]
-griptape = { git = "git+https://github.com/griptape-ai/griptape.git", branch = "main" }
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.ruff]
 line-length = 120
