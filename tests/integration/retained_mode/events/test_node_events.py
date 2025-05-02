@@ -1,7 +1,7 @@
 from typing import Any
 from unittest.mock import ANY
 
-import pytest
+import pytest  # type: ignore[reportMissingImports]
 
 from griptape_nodes.retained_mode.events.base_events import EventResultSuccess
 from griptape_nodes.retained_mode.events.node_events import (

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import importlib
-import inspect
 import logging
 import pkgutil
 import re
@@ -29,7 +27,6 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
-from griptape_nodes.retained_mode.events.base_events import RequestPayload
 from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
     GetLibraryMetadataResultSuccess,
@@ -98,12 +95,16 @@ class WorkflowManager:
     MAX_MINOR_VERSION_DEVIATION: ClassVar[int] = 2
 
     class WorkflowStatus(StrEnum):
+        """The status of a workflow that was attempted to be loaded."""
+
         GOOD = "GOOD"  # No errors detected during loading. Registered.
         FLAWED = "FLAWED"  # Some errors detected, but recoverable. Registered.
         UNUSABLE = "UNUSABLE"  # Errors detected and not recoverable. Not registered.
         MISSING = "MISSING"  # File not found. Not registered.
 
     class WorkflowDependencyStatus(StrEnum):
+        """Records the status of each dependency for a workflow that was attempted to be loaded."""
+
         PERFECT = "PERFECT"  # Same major, minor, and patch version
         GOOD = "GOOD"  # Same major, minor version
         CAUTION = "CAUTION"  # Dependency is ahead within maximum minor revisions
@@ -113,6 +114,8 @@ class WorkflowManager:
 
     @dataclass
     class WorkflowDependencyInfo:
+        """Information about each dependency in a workflow that was attempted to be loaded."""
+
         library_name: str
         version_requested: str
         version_present: str | None
@@ -120,6 +123,8 @@ class WorkflowManager:
 
     @dataclass
     class WorkflowInfo:
+        """Information about a workflow that was attempted to be loaded."""
+
         status: WorkflowManager.WorkflowStatus
         workflow_path: str
         workflow_name: str | None = None
@@ -130,6 +135,8 @@ class WorkflowManager:
 
     # Track how many contexts we have that intend to squelch (set to False) altered_workflow_state event values.
     class WorkflowSquelchContext:
+        """Context manager to squelch workflow altered events."""
+
         def __init__(self, manager: WorkflowManager):
             self.manager = manager
 
@@ -147,6 +154,8 @@ class WorkflowManager:
     _squelch_workflow_altered_count: int = 0
 
     class WorkflowExecutionResult(NamedTuple):
+        """Result of a workflow execution."""
+
         execution_successful: bool
         execution_details: str
 
@@ -216,7 +225,7 @@ class WorkflowManager:
         # Status emojis mapping
         status_emoji = {
             self.WorkflowStatus.GOOD: "✅",
-            self.WorkflowStatus.FLAWED: "🚨",
+            self.WorkflowStatus.FLAWED: "🟡",
             self.WorkflowStatus.UNUSABLE: "❌",
             self.WorkflowStatus.MISSING: "❓",
         }
@@ -224,7 +233,7 @@ class WorkflowManager:
         dependency_status_emoji = {
             self.WorkflowDependencyStatus.PERFECT: "✅",
             self.WorkflowDependencyStatus.GOOD: "👌",
-            self.WorkflowDependencyStatus.CAUTION: "⚡",
+            self.WorkflowDependencyStatus.CAUTION: "🟡",
             self.WorkflowDependencyStatus.BAD: "❌",
             self.WorkflowDependencyStatus.MISSING: "❓",
             self.WorkflowDependencyStatus.UNKNOWN: "❓",
@@ -243,21 +252,21 @@ class WorkflowManager:
             workflow_name = f"{emoji} {name}"
 
             # Problems column - format with numbers if there's more than one
-            problems = "\n".join(wf_info.problems) if wf_info.problems else "None"
+            problems = "\n".join(wf_info.problems) if wf_info.problems else "No problems detected."
 
             # Dependencies column
             if wf_info.status == self.WorkflowStatus.MISSING or (
                 wf_info.status == self.WorkflowStatus.UNUSABLE and not wf_info.workflow_dependencies
             ):
-                dependencies = "UNKNOWN"
+                dependencies = "❓ UNKNOWN"
             else:
                 dependencies = (
                     "\n".join(
-                        f"{dep.library_name} ({dep.version_requested}): {dependency_status_emoji.get(dep.status, '?')}"
+                        f"{dependency_status_emoji.get(dep.status, '?')} {dep.library_name} ({dep.version_requested}): {dep.status.value}"
                         for dep in wf_info.workflow_dependencies
                     )
                     if wf_info.workflow_dependencies
-                    else "None"
+                    else "No dependencies"
                 )
 
             table.add_row(
@@ -702,7 +711,7 @@ class WorkflowManager:
 
     def _gather_workflow_imports(self) -> list[str]:
         """Gathers all the imports for the saved workflow file, specifically for the events."""
-        import_template = "from {} import {}"
+        import_template = "from {} import *"
         import_statements = []
 
         from griptape_nodes.retained_mode import events as events_pkg
@@ -711,13 +720,7 @@ class WorkflowManager:
         for _finder, module_name, _is_pkg in pkgutil.iter_modules(events_pkg.__path__, events_pkg.__name__ + "."):
             if module_name.endswith("generate_request_payload_schemas"):
                 continue
-            module = importlib.import_module(module_name)
-
-            # Inspect all class members in the module
-            for _, obj in inspect.getmembers(module, inspect.isclass):
-                # Filter down to subclasses of RequestPayload (but not the base class itself)
-                if issubclass(obj, RequestPayload) and obj is not RequestPayload:
-                    import_statements.append(import_template.format(module_name, obj.__name__))
+            import_statements.append(import_template.format(module_name))
 
         return import_statements
 

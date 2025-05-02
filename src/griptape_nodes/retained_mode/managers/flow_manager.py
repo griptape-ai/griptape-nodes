@@ -721,7 +721,9 @@ class FlowManager:
         # After the connection has been removed, if it doesn't have PROPERTY as a type, wipe the set parameter value and unresolve future nodes
         if ParameterMode.PROPERTY not in target_param.allowed_modes:
             try:
-                target_node.remove_parameter_value(target_param.name)
+                # Only try to remove a value where one exists, otherwise it will generate errant warnings.
+                if target_param.name in target_node.parameter_values:
+                    target_node.remove_parameter_value(target_param.name)
                 # It removed it accurately
                 # Unresolve future nodes that depended on that value
                 source_flow.connections.unresolve_future_nodes(target_node)
@@ -819,7 +821,7 @@ class FlowManager:
             flow.start_flow(start_node, debug_mode)
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
-            logger.exception(details)
+            logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[e])
 
         details = f"Successfully kicked off flow with name {flow_name}"
@@ -920,6 +922,14 @@ class FlowManager:
         try:
             flow.single_execution_step(change_debug_mode)
         except Exception as e:
+            # We REALLY don't want to fail here, else we'll take the whole engine down
+            try:
+                if flow.check_for_existing_running_flow():
+                    flow.cancel_flow_run()
+            except Exception as e_inner:
+                details = f"Could not cancel flow execution. Exception: {e_inner}"
+                logger.error(details)
+
             details = f"Could not advance to the next step of a running workflow. Exception: {e}"
             logger.error(details)
             return SingleNodeStepResultFailure(validation_exceptions=[e])

@@ -69,6 +69,8 @@ logger = logging.getLogger("griptape_nodes")
 
 class LibraryManager:
     class LibraryStatus(StrEnum):
+        """Status of the library that was attempted to be loaded."""
+
         GOOD = "GOOD"  # No errors detected during loading. Registered.
         FLAWED = "FLAWED"  # Some errors detected, but recoverable. Registered.
         UNUSABLE = "UNUSABLE"  # Errors detected and not recoverable. Not registered.
@@ -76,6 +78,11 @@ class LibraryManager:
 
     @dataclass
     class LibraryInfo:
+        """Information about a library that was attempted to be loaded.
+
+        Includes the status of the library, the file path, and any problems encountered during loading.
+        """
+
         status: LibraryManager.LibraryStatus
         library_path: str
         library_name: str | None = None
@@ -143,6 +150,7 @@ class LibraryManager:
         # Using SQUARE box style which includes row dividers
         table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True, expand=True)
         table.add_column("Library Name", style="green")
+        table.add_column("Status", style="green")
         table.add_column("Version", style="green")
         table.add_column("File Path", style="cyan")
         table.add_column("Problems", style="yellow")
@@ -150,7 +158,7 @@ class LibraryManager:
         # Status emojis mapping
         status_emoji = {
             LibraryManager.LibraryStatus.GOOD: "✅",
-            LibraryManager.LibraryStatus.FLAWED: "🚨",
+            LibraryManager.LibraryStatus.FLAWED: "🟡",
             LibraryManager.LibraryStatus.UNUSABLE: "❌",
             LibraryManager.LibraryStatus.MISSING: "❓",
         }
@@ -163,7 +171,7 @@ class LibraryManager:
             file_path_text.overflow = "fold"  # Force wrapping
 
             # Library name column with emoji based on status
-            emoji = status_emoji.get(lib_info.status, "ERR: Unknown/Unexpected Library Status")
+            emoji = status_emoji.get(lib_info.status, "ERROR: Unknown/Unexpected Library Status")
             name = lib_info.library_name if lib_info.library_name else "*UNKNOWN*"
             library_name = f"{emoji} {name}"
 
@@ -175,7 +183,7 @@ class LibraryManager:
 
             # Problems column - format with numbers if there's more than one
             if not lib_info.problems:
-                problems = "<none>"
+                problems = "No problems detected."
             elif len(lib_info.problems) == 1:
                 problems = lib_info.problems[0]
             else:
@@ -183,7 +191,7 @@ class LibraryManager:
                 problems = "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(lib_info.problems)])
 
             # Add the row to the table
-            table.add_row(library_name, version_str, file_path_text, problems)
+            table.add_row(library_name, lib_info.status.value, version_str, file_path_text, problems)
 
         # Create a panel containing the table
         panel = Panel(table, title="Library Information", border_style="blue")

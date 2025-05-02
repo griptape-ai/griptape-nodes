@@ -68,6 +68,24 @@ uv tool uninstall griptape-nodes
 
 When regret inevitably washes over you, have no fear. Open arms await; just revisit [Getting Started](getting_started.md)
 
+## How do I update Griptape Nodes?
+
+Griptape Nodes will automatically check if it needs to update every time it runs. If it does, you will be prompted to answer with a (y/n) response. Respond with a y and it will automatically update to the latest version of the Engine.
+
+If you would like to _manually_ update, you can always use either of these commands:
+
+```bash
+griptape-nodes self update
+griptape-nodes assets update
+```
+
+or
+
+```bash
+gtn self update
+gtn assets update
+```
+
 ## I'm seeing "failed to locate pyvenv.cfg: The system cannot find the file specified." - What should I do?
 
 It is possible, that during a previous uninstall things were not _fully_ uninstalled. Simply perform an uninstall again, and then [re-install](getting_started.md).

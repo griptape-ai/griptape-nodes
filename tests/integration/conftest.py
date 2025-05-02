@@ -1,4 +1,4 @@
-import pytest
+import pytest  # type: ignore[reportMissingImports]
 
 from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, CreateFlowResultSuccess
 from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileRequest
@@ -7,6 +7,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 @pytest.fixture
 def flow() -> CreateFlowResultSuccess:
+    """Fixture to create a flow for testing."""
     request = RegisterLibraryFromFileRequest(file_path="../griptape-nodes/nodes/griptape_nodes_library.json")
     result = GriptapeNodes.handle_request(request)
 

@@ -18,13 +18,13 @@ class ListRegisteredLibrariesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListRegisteredLibrariesResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class ListRegisteredLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     libraries: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListRegisteredLibrariesResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class ListRegisteredLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -36,13 +36,13 @@ class ListNodeTypesInLibraryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListNodeTypesInLibraryResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class ListNodeTypesInLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     node_types: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListNodeTypesInLibraryResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class ListNodeTypesInLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -55,13 +55,13 @@ class GetNodeMetadataFromLibraryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeMetadataFromLibraryResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetNodeMetadataFromLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     metadata: dict
 
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeMetadataFromLibraryResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetNodeMetadataFromLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -74,7 +74,7 @@ class RegisterLibraryFromFileRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RegisterLibraryFromFileResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class RegisterLibraryFromFileResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     library_name: str
 
 
@@ -92,13 +92,13 @@ class ListCategoriesInLibraryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListCategoriesInLibraryResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class ListCategoriesInLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     categories: list[dict]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListCategoriesInLibraryResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class ListCategoriesInLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -110,13 +110,13 @@ class GetLibraryMetadataRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetLibraryMetadataResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetLibraryMetadataResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     metadata: dict
 
 
 @dataclass
 @PayloadRegistry.register
-class GetLibraryMetadataResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetLibraryMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -129,7 +129,7 @@ class GetAllInfoForLibraryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetAllInfoForLibraryResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetAllInfoForLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     library_metadata_details: GetLibraryMetadataResultSuccess
     category_details: ListCategoriesInLibraryResultSuccess
     node_type_name_to_node_metadata_details: dict[str, GetNodeMetadataFromLibraryResultSuccess]
@@ -137,7 +137,7 @@ class GetAllInfoForLibraryResultSuccess(ResultPayloadSuccess, WorkflowNotAltered
 
 @dataclass
 @PayloadRegistry.register
-class GetAllInfoForLibraryResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetAllInfoForLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -150,13 +150,13 @@ class GetAllInfoForAllLibrariesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetAllInfoForAllLibrariesResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetAllInfoForAllLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     library_name_to_library_info: dict[str, GetAllInfoForLibraryResultSuccess]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetAllInfoForAllLibrariesResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetAllInfoForAllLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -168,7 +168,7 @@ class UnloadLibraryFromRegistryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class UnloadLibraryFromRegistryResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class UnloadLibraryFromRegistryResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 

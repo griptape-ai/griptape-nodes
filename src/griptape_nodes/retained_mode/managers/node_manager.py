@@ -204,7 +204,14 @@ class NodeManager:
         obj_mgr.add_object_by_name(node.name, node)
         self._name_to_parent_flow_name[node.name] = parent_flow_name
 
-        node.state = NodeResolutionState(request.resolution)
+        # We don't want to start in a resolving state, bump it back to unresolved.
+        state = request.resolution
+        if state == NodeResolutionState.RESOLVING:
+            state = NodeResolutionState.UNRESOLVED
+            logger.warning(
+                "Node '%s' was created in a RESOLVING state. This is not allowed. Setting to UNRESOLVED.", node.name
+            )
+        node.state = NodeResolutionState(state)
 
         # See if we want to push this into the context of the current flow.
         if request.set_as_new_context:

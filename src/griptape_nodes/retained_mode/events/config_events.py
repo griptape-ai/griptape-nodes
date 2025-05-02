@@ -18,13 +18,13 @@ class GetConfigValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigValueResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetConfigValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     value: Any
 
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigValueResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetConfigValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -55,13 +55,13 @@ class GetConfigCategoryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigCategoryResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetConfigCategoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     contents: dict[str, Any]
 
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigCategoryResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetConfigCategoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -92,13 +92,13 @@ class GetConfigPathRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigPathResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetConfigPathResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     config_path: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
-class GetConfigPathResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetConfigPathResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 

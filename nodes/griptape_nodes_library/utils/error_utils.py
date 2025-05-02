@@ -5,6 +5,7 @@ from griptape.artifacts import BaseArtifact, ErrorArtifact
 
 
 def get_error_message(error: str) -> str:
+    """Get the error message from a string that contains an error code and JSON dictionary."""
     try:
         # Find the JSON dictionary part that starts after "Error code: 401 - "
         match = re.search(r"Error code: \d+ - (\{.*\})", error)
@@ -20,6 +21,7 @@ def get_error_message(error: str) -> str:
 
 
 def try_throw_error(agent_output: BaseArtifact) -> None:
+    """Throws an error if the agent output is an ErrorArtifact."""
     if isinstance(agent_output, ErrorArtifact):
         error_message = get_error_message(agent_output.value)
         msg = f"Agent run failed because of an exception: {error_message}"

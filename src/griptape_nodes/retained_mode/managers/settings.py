@@ -7,13 +7,17 @@ from xdg_base_dirs import xdg_data_home
 
 class AppInitializationComplete(BaseModel):
     libraries_to_register: list[str] = Field(
-        default_factory=lambda: [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")]
+        default_factory=lambda: [
+            str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json"),
+            str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library_extras.json"),
+        ]
     )
     workflows_to_register: list[str] = Field(
         default_factory=lambda: [
             str(xdg_data_home() / "griptape_nodes/workflows/templates/translator.py"),
             str(xdg_data_home() / "griptape_nodes/workflows/templates/compare_prompts.py"),
             str(xdg_data_home() / "griptape_nodes/workflows/templates/prompt_an_image.py"),
+            str(xdg_data_home() / "griptape_nodes/workflows/templates/photography_team.py"),
         ]
     )
 

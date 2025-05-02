@@ -17,11 +17,11 @@ class OpenAssociatedFileRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class OpenAssociatedFileResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class OpenAssociatedFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class OpenAssociatedFileResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class OpenAssociatedFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass

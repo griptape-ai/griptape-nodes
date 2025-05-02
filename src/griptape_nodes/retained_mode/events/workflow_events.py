@@ -19,7 +19,7 @@ class RunWorkflowFromScratchRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RunWorkflowFromScratchResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class RunWorkflowFromScratchResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
@@ -37,7 +37,7 @@ class RunWorkflowWithCurrentStateRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RunWorkflowWithCurrentStateResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class RunWorkflowWithCurrentStateResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
@@ -56,7 +56,7 @@ class RunWorkflowFromRegistryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RunWorkflowFromRegistryResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class RunWorkflowFromRegistryResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
@@ -75,13 +75,13 @@ class RegisterWorkflowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RegisterWorkflowResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class RegisterWorkflowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     workflow_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class RegisterWorkflowResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class RegisterWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -93,13 +93,13 @@ class ListAllWorkflowsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListAllWorkflowsResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class ListAllWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     workflows: dict
 
 
 @dataclass
 @PayloadRegistry.register
-class ListAllWorkflowsResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class ListAllWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -111,7 +111,7 @@ class DeleteWorkflowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteWorkflowResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class DeleteWorkflowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
@@ -130,7 +130,7 @@ class RenameWorkflowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RenameWorkflowResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class RenameWorkflowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
@@ -148,13 +148,13 @@ class SaveWorkflowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SaveWorkflowResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class SaveWorkflowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     file_path: str
 
 
 @dataclass
 @PayloadRegistry.register
-class SaveWorkflowResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class SaveWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -166,11 +166,11 @@ class LoadWorkflowMetadata(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class LoadWorkflowMetadataResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class LoadWorkflowMetadataResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     metadata: WorkflowMetadata
 
 
 @dataclass
 @PayloadRegistry.register
-class LoadWorkflowMetadataResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class LoadWorkflowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass

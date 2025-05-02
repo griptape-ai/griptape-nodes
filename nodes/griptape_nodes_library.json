@@ -69,6 +69,14 @@
       }
     },
     {
+      "image/upscale":{
+        "color": "border-purple-500",
+        "title": "Image/Upscale",
+        "description": "Image upscaling related nodes.",
+        "icon": "Image"
+      }
+    },
+    {
       "number": {
         "color": "border-blue-500",
         "title": "Number",
@@ -321,6 +329,15 @@
         "category": "image",
         "description": "DisplayImage node.",
         "display_name": "Display Image"
+      }
+    },
+    {
+      "class_name": "CompareImages",
+      "file_path": "griptape_nodes_library/image/compare_images.py",
+      "metadata": {
+        "category": "image",
+        "description": "CompareImages node.",
+        "display_name": "Compare Images"
       }
     },
     {

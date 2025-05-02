@@ -4,7 +4,6 @@
 import argparse
 import importlib.metadata
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -41,6 +40,7 @@ secrets_manager = SecretsManager(config_manager)
 
 
 def main() -> None:
+    """Main entry point for the Griptape Nodes CLI."""
     load_dotenv(ENV_FILE)
 
     # Hack to make paths "just work". # noqa: FIX004
@@ -58,50 +58,98 @@ def _run_init(api_key: str | None = None, workspace_directory: str | None = None
     __init_system_config()
     _prompt_for_workspace(workspace_directory)
     _prompt_for_api_key(api_key)
+    _update_assets()
+    console.print("Initialization complete! You can now run the engine with 'griptape-nodes' (or just 'gtn').")
 
-    latest_tag = _get_latest_version(REPO_NAME)
-    _install_nodes_assets(tag=latest_tag)
+
+def _start_engine(*, no_update: bool) -> None:
+    """Starts the Griptape Nodes engine.
+
+    Args:
+        no_update: If True, skips the auto-update check.
+    """
+    if not CONFIG_DIR.exists():
+        # Default init flow if there is no config directory
+        _run_init()
+        webbrowser.open(NODES_APP_URL)
+
+    # Confusing double negation -- If `no_update` is set, we want to skip the update
+    if not no_update:
+        _auto_update_self()
+
+    start_app()
 
 
 def _get_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="griptape-nodes", description="Griptape Nodes Engine.")
-
-    parser.add_argument(
-        "command",
-        help="Command to run",
-        nargs="?",
-        choices=["init", "engine", "config", "update", "uninstall", "version"],
-        default="engine",
+    """Parse CLI arguments for the *griptape-nodes* entry-point."""
+    parser = argparse.ArgumentParser(
+        prog="griptape-nodes",
+        description="Griptape Nodes Engine.",
     )
 
-    # Optional subcommand for 'config' (e.g., config list)
-    parser.add_argument(
-        "config_subcommand",
-        help="Subcommand for 'config'",
-        nargs="?",
-        choices=["list", "reset"],
-        default=None,
-    )
-
-    # Optionally allow setting the API key or workspace directory directly for the init command
-    parser.add_argument(
-        "--api-key",
-        help="Override the Griptape Nodes API key when running 'init'.",
-        required=False,
-    )
-    parser.add_argument(
-        "--workspace-directory",
-        help="Override the Griptape Nodes workspace directory when running 'init'.",
-        required=False,
-    )
+    # Global options (apply to every command)
     parser.add_argument(
         "--no-update",
         action="store_true",
         help="Skip the auto-update check.",
+    )
+
+    subparsers = parser.add_subparsers(
+        dest="command",
+        metavar="COMMAND",
         required=False,
     )
 
-    return parser.parse_args()
+    init_parser = subparsers.add_parser("init", help="Initialize a workspace.")
+    init_parser.add_argument(
+        "--api-key",
+        help="Override the Griptape Nodes API key.",
+    )
+    init_parser.add_argument(
+        "--workspace-directory",
+        help="Override the Griptape Nodes workspace directory.",
+    )
+
+    # engine
+    subparsers.add_parser("engine", help="Run the Griptape Nodes engine.")
+
+    # config
+    config_parser = subparsers.add_parser("config", help="Manage configuration.")
+    config_subparsers = config_parser.add_subparsers(
+        dest="subcommand",
+        metavar="SUBCOMMAND",
+        required=True,
+    )
+    config_subparsers.add_parser("list", help="List configuration values.")
+    config_subparsers.add_parser("reset", help="Reset configuration to defaults.")
+
+    # self
+    self_parser = subparsers.add_parser("self", help="Manage this CLI installation.")
+    self_subparsers = self_parser.add_subparsers(
+        dest="subcommand",
+        metavar="SUBCOMMAND",
+        required=True,
+    )
+    self_subparsers.add_parser("update", help="Update the CLI.")
+    self_subparsers.add_parser("uninstall", help="Uninstall the CLI.")
+    self_subparsers.add_parser("version", help="Print the CLI version.")
+
+    # assets
+    assets_parser = subparsers.add_parser("assets", help="Manage local assets (libraries, workflows, etc.).")
+    assets_subparsers = assets_parser.add_subparsers(
+        dest="subcommand",
+        metavar="SUBCOMMAND",
+        required=True,
+    )
+    assets_subparsers.add_parser("update", help="Update bundled assets.")
+
+    args = parser.parse_args()
+
+    # Default to the `engine` command when none is given.
+    if args.command is None:
+        args.command = "engine"
+
+    return args
 
 
 def _prompt_for_api_key(api_key: str | None = None) -> None:
@@ -173,9 +221,9 @@ def _get_latest_version(repo: str) -> str:
         return response.json()["tag_name"]
 
 
-def _auto_update() -> None:
+def _auto_update_self() -> None:
     """Automatically updates the script to the latest version if the user confirms."""
-    current_version = _get_current_version()
+    current_version = __get_current_version()
     latest_version = _get_latest_version(REPO_NAME)
 
     if current_version < latest_version:
@@ -184,34 +232,28 @@ def _auto_update() -> None:
             default=True,
         )
 
+        _update_assets()
+
         if update:
-            _install_latest_release(run_after_install=True)
+            _update_self(restart_after_update=True)
 
 
-def _install_latest_release(*, run_after_install: bool = False) -> None:
+def _update_self(*, restart_after_update: bool = False) -> None:
     """Installs the latest release of the CLI *and* refreshes bundled assets."""
-    console.print("[bold green]Starting update…[/bold green]")
+    console.print("[bold green]Starting updater...[/bold green]")
 
-    try:
-        __download_and_run_installer()
-    except subprocess.CalledProcessError as e:
-        console.print(f"[bold red]Error during update: {e}[/bold red]")
-        sys.exit(1)
+    args = ["--restart"] if restart_after_update else []
+    subprocess.Popen([sys.executable, "-m", "griptape_nodes.updater", *args], start_new_session=True)
 
-    latest_tag = _get_latest_version(REPO_NAME)
-    _install_nodes_assets(tag=latest_tag)
-
-    console.print("[bold green]Update complete![/bold green]")
-
-    if run_after_install:
-        # Restart the executable itself
-        os.execv(sys.argv[0], sys.argv)  # noqa: S606
     sys.exit(0)
 
 
-def _install_nodes_assets(tag: str = "latest") -> None:
+def _update_assets() -> None:
     """Download the release tarball identified."""
+    tag = _get_latest_version(REPO_NAME)
+
     console.print(f"[bold cyan]Fetching Griptape Nodes assets ({tag})…[/bold cyan]")
+
     tar_url = NODES_TARBALL_URL.format(tag=tag)
     dest_nodes = DATA_DIR / "nodes"
     dest_workflows = DATA_DIR / "workflows"
@@ -242,34 +284,16 @@ def _install_nodes_assets(tag: str = "latest") -> None:
     console.print("[bold green]Nodes + Workflows updated.[/bold green]")
 
 
-def __download_and_run_installer() -> None:
-    """Runs the update commands for the engine."""
-    try:
-        subprocess.run(
-            ["uv", "tool", "upgrade", "griptape-nodes"],
-            text=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError as e:
-        console.print(f"[bold red]Error during update: {e}[/bold red]")
+def _print_current_version() -> None:
+    """Prints the current version of the script."""
+    version = __get_current_version()
+    console.print(f"[bold green]{version}[/bold green]")
 
 
-def _get_current_version() -> str:
-    """Fetches the current version of the script.
-
-    Returns:
-        str: Current version (e.g., "v0.31.4")
-    """
-    return f"v{importlib.metadata.version('griptape_nodes')}"
-
-
-def _get_user_config() -> dict:
-    """Fetches the user configuration from the config file.
-
-    Returns:
-        dict: User configuration.
-    """
-    return config_manager.user_config
+def _print_user_config() -> None:
+    """Prints the user configuration from the config file."""
+    config = config_manager.user_config
+    sys.stdout.write(json.dumps(config, indent=2))
 
 
 def _list_user_configs() -> None:
@@ -331,35 +355,28 @@ def _uninstall_self() -> None:
     sys.exit(0)
 
 
-def _process_args(args: argparse.Namespace) -> None:  # noqa: C901
+def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
     if args.command == "init":
         _run_init(api_key=args.api_key, workspace_directory=args.workspace_directory)
-        console.print("Initialization complete! You can now run the engine with 'griptape-nodes' (or just 'gtn').")
     elif args.command == "engine":
-        if not CONFIG_DIR.exists():
-            # Default init flow if there is no config directory
-            _run_init()
-            webbrowser.open(NODES_APP_URL)
-
-        # Confusing double negation -- If `no_update` is set, we want to skip the update
-        if not args.no_update:
-            _auto_update()
-
-        start_app()
+        _start_engine(no_update=args.no_update)
     elif args.command == "config":
-        if args.config_subcommand == "list":
+        if args.subcommand == "list":
             _list_user_configs()
-        elif args.config_subcommand == "reset":
+        elif args.subcommand == "reset":
             _reset_user_config()
         else:
-            sys.stdout.write(json.dumps(_get_user_config(), indent=2))
-    elif args.command == "update":
-        _install_latest_release()
-    elif args.command == "uninstall":
-        _uninstall_self()
-    elif args.command == "version":
-        version = _get_current_version()
-        console.print(f"[bold green]{version}[/bold green]")
+            _print_user_config()
+    elif args.command == "self":
+        if args.subcommand == "update":
+            _update_self()
+        elif args.subcommand == "uninstall":
+            _uninstall_self()
+        elif args.subcommand == "version":
+            _print_current_version()
+    elif args.command == "assets":
+        if args.subcommand == "update":
+            _update_assets()
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)
@@ -398,6 +415,13 @@ def __uninstall_executable() -> bool:
     console.print("[bold green]Uninstall complete![/bold green]")
 
     return executable_removed
+
+
+def __get_current_version() -> str:
+    """Returns the current version of the Griptape Nodes package."""
+    version = importlib.metadata.version("griptape_nodes")
+
+    return f"v{version}"
 
 
 def __init_system_config() -> None:
