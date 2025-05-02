@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from typing import Any, ClassVar
 
 import diffusers  # type: ignore[reportMissingImports]
+import PIL.Image
 import torch  # type: ignore[reportMissingImports]
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
@@ -228,6 +229,11 @@ class FluxPipeline(ControlNode):
         num_inference_steps = int(self.parameter_values["num_inference_steps"])
         guidance_scale = float(self.parameter_values["guidance_scale"])
         seed = int(self.parameter_values["seed"]) if ("seed" in self.parameter_values) else None
+
+        # Immediately set a preview placeholder image to make it react quickly and adjust
+        # the size of the image preview on the node.
+        preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
+        self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
         self.append_value_to_parameter("logs", "Preparing models...\n")
         with self._append_stdout_to_logs():
