@@ -130,13 +130,32 @@ class AmazonBedrockPrompt(BasePrompt):
         self.parameter_output_values["prompt_model_config"] = driver
 
     def validate_node(self) -> list[Exception] | None:
-        """Validates that the Amazon Bedrock API key is configured correctly.
+        """Validates that the Amazon Bedrock API keys are configured correctly.
 
         Calls the base class helper `_validate_api_key` with Amazon Bedrock-specific
         configuration details.
         """
-        return self._validate_api_key(
-            service_name=SERVICE,
-            api_key_env_var=AWS_ACCESS_KEY_ID_ENV_VAR,
-            api_key_url=API_KEY_URL,
+        exceptions = []
+        exceptions.append(
+            self._validate_api_key(
+                service_name=SERVICE,
+                api_key_env_var=AWS_ACCESS_KEY_ID_ENV_VAR,
+                api_key_url=API_KEY_URL,
+            )
         )
+        exceptions.append(
+            self._validate_api_key(
+                service_name=SERVICE,
+                api_key_env_var=AWS_SECRET_ACCCESS_KEY_ENV_VAR,
+                api_key_url=API_KEY_URL,
+            )
+        )
+        exceptions.append(
+            self._validate_api_key(
+                service_name=SERVICE,
+                api_key_env_var=AWS_DEFAULT_REGION_ENV_VAR,
+                api_key_url=API_KEY_URL,
+            )
+        )
+
+        return exceptions if any(exceptions) else None
