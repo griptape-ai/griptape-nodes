@@ -35,7 +35,7 @@ You can! To get a path to the file, go to the top Settings menu in the Editor, a
 If you prefer working in the command line, you can also use:
 
 ```
-gtn config
+gtn config show
 ```
 
 ## How do I uninstall Griptape Nodes?
