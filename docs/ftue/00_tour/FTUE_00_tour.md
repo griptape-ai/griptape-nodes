@@ -28,13 +28,17 @@ gtn
 
 After executing the command, you'll see a link in your terminal. Click on it, and your browser will automatically open to the Griptape Nodes Editor.
 
-![Griptape Nodes launch link in terminal](assets/launch_link.png)
+<p align="center">
+  <img src="../assets/launch_link.png" alt="Griptape Nodes launch link in terminal">
+</p>
 
 ## The Landing Page
 
 When your browser opens, you'll be greeted by the Griptape Nodes landing page. This page displays several template workflows that showcase different things we want to introduce you to.
 
-![Griptape Nodes landing page](assets/landing_page.png)
+<p align="center">
+  <img src="../assets/landing_page.png" alt="Griptape Nodes landing page">
+</p>
 
 These sample workflows are excellent resources for learning about Griptape Nodes' capabilities, but for now, let's start from scratch.
 
@@ -42,7 +46,9 @@ These sample workflows are excellent resources for learning about Griptape Nodes
 
 On the landing page, locate and click on the **"Create from scratch"** tile.
 
-![Create from scratch option](assets/create_from_scratch.png)
+<p align="center">
+  <img src="../assets/create_from_scratch.png" alt="Create from scratch option">
+</p>
 
 This action opens a blank workspace where you can build custom workflows.
 
@@ -50,11 +56,15 @@ This action opens a blank workspace where you can build custom workflows.
 
 Once you're in the Workflow Editor, take a moment to familiarize yourself with the interface:
 
-![Griptape Nodes workspace interface](assets/workspace_interface.png)
+<p align="center">
+  <img src="../assets/workspace_interface.png" alt="Griptape Nodes workspace interface">
+</p>
 
 The most important area to focus on initially is the left panel, the node library, which contains the **"Create Nodes"** section. This panel houses all the standard nodes that come pre-packaged with Griptape Nodes.
 
-![Create Nodes panel](assets/create_nodes_panel.png)
+<p align="center">
+  <img src="../assets/create_nodes_panel.png" alt="Create Nodes panel">
+</p>
 
 Each node serves a specific function. As you become more familiar with Griptape Nodes, you'll learn how each one works and how they can be combined to create powerful automations.
 
@@ -74,13 +84,17 @@ After adding a node, you can:
 
     To follow the video exactly, create a "FloatInput" node and a "DisplayFloat" node
 
-![Node on the workspace](assets/nodes_in_workspace.png)
+<p align="center">
+  <img src="../assets/nodes_in_workspace.png" alt="Node on the workspace">
+</p>
 
 ## Connecting Nodes
 
 Now, very simply drag from a "pin" on one node to a "pin" on the other. We cheated a _little_ bit by picking nodes that are compatible (not all are), but there you have it. One connection between nodes - and you're building a graph!
 
-![Node on the workspace](assets/connected.png)
+<p align="center">
+  <img src="../assets/connected.png" alt="Node on the workspace">
+</p>
 
 ## Summary
 

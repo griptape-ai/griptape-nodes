@@ -15,13 +15,17 @@ In this tutorial, you will:
 
 To begin this tutorial, go to the landing page. Locate and open the example workflow called "Translator" at the top of the page.
 
-![Translator example](assets/translator_example.png)
+<p align="center">
+  <img src="../assets/translator_example.png" alt="Translator example">
+</p>
 
 ## Explore the Example Workflow
 
 When the example loads, you'll see a workflow with the following components:
 
-![Workflow overview](assets/workflow_overview.png)
+<p align="center">
+  <img src="../assets/workflow_overview.png" alt="Workflow overview">
+</p>
 
 - **Agent Node (spanish_story)**: Generates a four-line story in Spanish
 - **Merge Text Node**: Combines the Spanish story with "Rewrite this in English"
@@ -30,7 +34,9 @@ When the example loads, you'll see a workflow with the following components:
 
 When run, this workflow demonstrates how multiple agents can each have their own distinct "jobs". By connecting the output of one agent, then transforming that output for use by another, you can start to get an inkling of some of the complexity you'll be able to control. The final result of "write a 4-line story in Spanish" and then rewriting that into English, we can see the following result:
 
-![Workflow overview](assets/workflow_result.png)
+<p align="center">
+  <img src="../assets/workflow_result.png" alt="Workflow result"  width="500">>
+</p>
 
 !!! info
 
@@ -51,7 +57,9 @@ Set up your first agent to generate content in your chosen language:
 1. In the first agent node, enter: `Write me a four line story in [your chosen language]` (e.g., Mandarin, French, etc.)
 1. This agent will generate the initial story that we'll translate
 
-![Story setup](assets/mandarin.png)
+<p align="center">
+  <img src="../assets/mandarin.png" alt="Story setup" width="400">
+</p>
 
 ## Connect to the Merge Text Node
 
@@ -61,7 +69,9 @@ Next, prepare the translation prompt:
 1. Set the merge text node to combine: `Rewrite this in English` with the output from the first agent
 1. This creates the instruction for our translator agent
 
-![Merge text setup](assets/mandarin_merge.png)
+<p align="center">
+  <img src="../assets/mandarin_merge.png" alt="Merge text setup">
+</p>
 
 ## Configure the Second Agent
 
@@ -71,7 +81,9 @@ Set up the translator agent:
 1. This agent will receive both the original story and the instruction to translate it
 1. It will produce an English translation as output
 
-![Second agent setup](assets/mandarin_to_english.png)
+<p align="center">
+  <img src="../assets/mandarin_to_english.png" alt="Second agent setup">
+</p>
 
 ## Display the Result
 
@@ -80,7 +92,9 @@ To see the final translation:
 1. Connect the output of the second agent to the display text node
 1. When the workflow runs, this node will show the translated English text
 
-![Display setup](assets/mandarin_display.png)
+<p align="center">
+  <img src="../assets/mandarin_display.png" alt="Display setup"  width="500">>
+</p>
 
 ## Understand Execution Order (Exec Chain)
 
@@ -91,7 +105,9 @@ A key concept in Griptape Nodes is the execution chain:
 1. For complex workflows, connect the last pin of one section to the first pin of the next
 1. This ensures nodes run in the correct sequence, even with complex data flows
 
-![Execution chain](assets/exec_chain.png)
+<p align="center">
+  <img src="../assets/exec_chain.png" alt="Execution chain">
+</p>
 
 ## Expand the Workflow: Summarize Multiple Stories
 
@@ -105,7 +121,9 @@ Let's enhance our workflow to handle summarization:
 1. Connect the agent output to a new display text node
 1. Use exec chain pins to ensure this summary step runs last (even connect everything up to run in the order you want!)
 
-![Expanded workflow](assets/summary_pre.png)
+<p align="center">
+  <img src="../assets/summary_pre.png" alt="Expanded workflow">
+</p>
 
 ## Run the Complete Workflow
 
@@ -117,7 +135,13 @@ Execute your expanded workflow and observe the process:
 1. The summary agent combines and summarizes both translations
 1. The display nodes show all the results
 
-![Final result](assets/final_result.png)
+<p align="center">
+  <img src="../assets/final_result.png" alt="Final result" width="500">
+</p>
+
+!!! info
+
+    Again, remember!  Look for this _construction_ in the response you get, not that it matches what you see here - it is likely to be wildly different!
 
 ## Summary
 

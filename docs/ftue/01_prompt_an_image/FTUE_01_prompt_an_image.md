@@ -18,13 +18,17 @@ To begin this tutorial, you'll need to return to the main landing page. Click on
 
 On the landing page, locate and click on the **"Prompt an Image"** tile to open this example workflow.
 
-![Prompt an Image example](assets/prompt_image_example.png)
+<p align="center">
+  <img src="../assets/prompt_image_example.png" alt="Prompt an Image example">
+</p>
 
 ## Understand the GenerateImage Node
 
 When the example loads, you'll notice it consists of just a single node. Don't be fooled by its simplicity – this node is one of the most powerful tools in Griptape Nodes and will likely feature prominently in your future flows.
 
-![GenerateImage node](assets/generate_image_node.png)
+<p align="center">
+  <img src="../assets/generate_image_node.png" alt="GenerateImage node">
+</p>
 
 This node has been configured to handle many tasks that would typically require a more complex flow, making it perfect for getting started with AI image generation.
 
@@ -39,7 +43,9 @@ To generate your first image:
 1. Run the flow by clicking either the run workflow button OR
 1. Run the flow by clicking either run node button in the top right corner of the node
 
-![Text prompt field](assets/text_prompt_field.png)
+<p align="center">
+  <img src="../assets/text_prompt_field.png" alt="Text prompt field">
+</p>
 
 ## Experiment with Different Descriptions
 
@@ -47,11 +53,15 @@ Let's try generating some images with different prompts:
 
 1. **First Example**: The workflow loads with "A potato making an oil painting" in the prompt field. Run the flow
 
-    ![Potato painting result](assets/potato_painting.png)
+    <p align="center">
+    <img src="../assets/potato_painting.png" alt="Potato painting result">
+    </p>
 
 1. **Second Example**: Change the prompt to "A potato doing aerobics in 70s workout attire" and run the flow again
 
-    ![Potato aerobics result](assets/potato_aerobics.png)
+    <p align="center">
+    <img src="../assets/potato_aerobics.png" alt="Potato aerobics result">
+    </p>
 
 Notice how dramatically different the results are just by changing a few words in your prompt. This demonstrates the flexibility and power of the GenerateImage node. Anything you can describe, you can generate.
 
