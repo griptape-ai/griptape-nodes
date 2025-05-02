@@ -1,80 +1,59 @@
-# Prompt an Image
+from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd  # noqa: N813
 
-Welcome to the second tutorial in our Griptape Nodes series! In this guide, you'll learn how to generate images using AI through the powerful GenerateImage node.
+# Create flows
+cmd.create_flow(flow_name="prompt_an_image")
 
-## What You'll Learn
+# Create nodes
+cmd.create_node(
+    node_type="GenerateImage",
+    node_name="GenerateImage_1",
+    parent_flow_name="prompt_an_image",
+    specific_library_name="Griptape Nodes Library",
+    metadata={
+        "position": {"x": 323, "y": 160},
+        "library_node_metadata": {
+            "category": "Image",
+            "description": "Generates images using configurable image drivers",
+        },
+        "library": "Griptape Nodes Library",
+        "node_type": "GenerateImage",
+        "category": "Image",
+    },
+)
 
-In this tutorial, you will:
+# Set parameter values
+cmd.set_value("GenerateImage_1.prompt", "A potato making an oil painting\n\n")
+cmd.set_value("GenerateImage_1.enhance_prompt", True)
+cmd.set_value(
+    "GenerateImage_1.output",
+    {
+        "type": "ImageArtifact",
+        "id": "89a02c8165d449b1898c1b3abf3e4262",
+        "reference": None,
+        "meta": {
+            "model": "dall-e-3",
+            "prompt": "A hyper-realistic close-up of a potato artist meticulously painting an oil masterpiece on a canvas, set in a rustic studio illuminated by the warm, golden light of late afternoon. The potato has a textured, earthy skin with subtle imperfections, and is holding a fine paintbrush with a delicate grip. The canvas features vibrant brushstrokes, hinting at an abstract landscape. Dust particles float gently in the air, catching the sunlight to create a dreamy sense of depth. The background is softly blurred with a shallow depth of field, showcasing wooden easels, jars of paint, and scattered brushes. A slight vignette frames the image, drawing focus to the potato and its artistic endeavor. The color palette is rich and harmonious, with warm browns, deep greens, and golden yellows complementing the potato's natural tones, while pops of crimson and cobalt blue from the painting add visual intrigue.",
+        },
+        "name": "image_artifact_250412022658_lkwk.png",
+        "value": "",
+        "format": "png",
+        "width": 1024,
+        "height": 1024,
+    },
+)
 
-- Learn how to open saved workflows
-- Learn the GenerateImage node
-- Generate images using text prompts
-
-## Navigate to the Landing Page
-
-To begin this tutorial, you'll need to return to the main landing page. Click on the navigation element at the top of the interface to go back to where all the example workflows are displayed.
-
-## Open the Image Prompt Example
-
-On the landing page, locate and click on the **"Prompt an Image"** tile to open this example workflow.
-
-<p align="center">
-  <img src="../assets/prompt_image_example.png" alt="Prompt an Image example">
-</p>
-
-## Understand the GenerateImage Node
-
-When the example loads, you'll notice it consists of just a single node. Don't be fooled by its simplicity – this node is one of the most powerful tools in Griptape Nodes and will likely feature prominently in your future flows.
-
-<p align="center">
-  <img src="../assets/generate_image_node.png" alt="GenerateImage node">
-</p>
-
-This node has been configured to handle many tasks that would typically require a more complex flow, making it perfect for getting started with AI image generation.
-
-## Generate Images Using Text Prompts
-
-The primary point of interaction for this node is the text prompt field where you describe what image you want the AI to create.
-
-To generate your first image:
-
-1. Locate the text prompt field in the node
-1. Type a description for the image you want to create
-1. Run the flow by clicking either the run workflow button OR
-1. Run the flow by clicking either run node button in the top right corner of the node
-
-<p align="center">
-  <img src="../assets/text_prompt_field.png" alt="Text prompt field">
-</p>
-
-## Experiment with Different Descriptions
-
-Let's try generating some images with different prompts:
-
-1. **First Example**: The workflow loads with "A potato making an oil painting" in the prompt field. Run the flow
-
-    <p align="center">
-      <img src="../assets/potato_painting.png" alt="Potato painting result">
-    </p>
-
-1. **Second Example**: Change the prompt to "A potato doing aerobics in 70s workout attire" and run the flow again
-
-    <p align="center">
-      <img src="../assets/potato_aerobics.png" alt="Potato aerobics result">
-    </p>
-
-Notice how dramatically different the results are just by changing a few words in your prompt. This demonstrates the flexibility and power of the GenerateImage node. Anything you can describe, you can generate.
-
-## Summary
-
-In this tutorial, you learned how to:
-
-- Learn how to open saved workflow
-- Learn the GenerateImage node
-- Generate images using text prompts
-
-The GenerateImage node is a fundamental building block for creative flows in Griptape Nodes. As you progress, you'll discover how to combine it with other nodes to develop even more powerful applications.
-
-## Next Up
-
-In the next section: [Coordinating Agents](../02_translator/FTUE_02_translator.md), we'll learn how to get AIs to bucket-brigade through flows!
+# Create connections
+# /// script
+# dependencies = []
+#
+# [tool.griptape-nodes]
+# name = "prompt_an_image"
+# description = "The simplest image generation workflow."
+# image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/workflows/templates/thumbnail_prompt_an_image.webp"
+# schema_version = "0.1.0"
+# engine_version_created_with = "0.14.1"
+# node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
+# is_griptape_provided = true
+# is_template = true
+#
+# ///
