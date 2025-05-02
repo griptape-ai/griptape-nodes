@@ -273,7 +273,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
-    def _process(self) -> AsyncResult | None:
+    def _process(self) -> AsyncResult | None:  # noqa: PLR0915
         model = self.get_parameter_value("model")
         if model is None:
             logger.exception("No model specified")
@@ -306,7 +306,9 @@ class TilingFluxImg2ImgPipeline(ControlNode):
 
         if tile_size % 16 != 0:
             new_tile_size = next_multiple_ge(tile_size, 16)
-            self.append_value_to_parameter("logs", f"max_tile_size({tile_size}) not multiple of 16, rounding up to {new_tile_size}.\n")
+            self.append_value_to_parameter(
+                "logs", f"max_tile_size({tile_size}) not multiple of 16, rounding up to {new_tile_size}.\n"
+            )
             tile_size = new_tile_size
 
         if strength == 0:
