@@ -32,63 +32,50 @@ class SpandrelPipeline:
 
         return SpandrelPipeline(model)
 
-    def __call__(self, input_image_pil: Image, *, scale: float) -> Image:
-        model = self.model
-
+    def __call__(self, input_image_pil: Image) -> Image:
         # Will fail if not RGB (like RGBA), I think it actually just
         # needs to be 3 channels, not sure what will happen if you
         # do for example BurGeR.
         input_image_pil = input_image_pil.convert("RGB")
 
-        device = torch.device("cpu")
-
         input_tensor = pil_to_tensor(input_image_pil)
         input_tensor = input_tensor.movedim(-1, -3)
-        input_tensor.to(device)
+        input_tensor.to("cpu")
 
         with torch.no_grad():
-            output_tensor = model(input_tensor)
+            output_tensor = self.model(input_tensor)
 
-        # TODO(dylan): DO NOT SMOOTH the output (or make configurable!)
-        output_tensor = torch.nn.functional.interpolate(
-            output_tensor,
-            # This 1/4 scale factor specifically to account for 4x-ClearRealityV1.pth,
-            # which changes the image size by 4x. Totally forgot about this. need to mention to amaru...
-            scale_factor=(scale / 4.0),
-            mode="bilinear",
-            align_corners=False,
-        )
         output_tensor = torch.clamp(output_tensor.movedim(-3, -1), min=0, max=1.0)
         output_image_pil = tensor_to_pil(output_tensor)
         return output_image_pil
 
 
-def tensor_to_pil(img_tensor: torch.Tensor, batch_index: int = 0) -> Image:
-    """Converts a image tensor to a Pillow Image.
+def tensor_to_pil(image_pt: torch.Tensor, batch_index: int = 0) -> Image:
+    """Converts an image tensor to a Pillow Image.
 
     Args:
-        img_tensor: tensor of shape [batch_size, channels, height, width]
+        image_pt: tensor of shape [batch_size, channels, height, width]
         batch_index: index of the desired batch (image within a batch)
 
     Returns:
         Pillow Image with the corresponding mode deduced by the number of channels
     """
-    img_tensor = img_tensor[batch_index].unsqueeze(0)
-    i = 255.0 * img_tensor.cpu().numpy()
-    img = PIL.Image.fromarray(np.clip(i, 0, 255).astype(np.uint8).squeeze())
-    return img
+    image_pt = image_pt[batch_index].unsqueeze(0)
+    i = 255.0 * image_pt.cpu().numpy()
+    image_pil = PIL.Image.fromarray(np.clip(i, 0, 255).astype(np.uint8).squeeze())
+    return image_pil
 
 
-def pil_to_tensor(image: Image) -> torch.Tensor:
+def pil_to_tensor(image_pil: Image) -> torch.Tensor:
     """Converts a Pillow Image to a Torch Tensor.
 
     Args:
-        image: Pillow Image
+        image_pil: Pillow Image
 
     Returns:
         Torch Tensor of shape [batch_size, height, width, channels] where batch_size is always 1 (single image)
     """
-    image_np = np.array(image).astype(np.float32) / 255.0
+    image_np = np.array(image_pil).astype(np.float32) / 255.0
     image_pt = torch.from_numpy(image_np).unsqueeze(0)
     # If the image is grayscale, add a channel dimension
     if len(image_pt.shape) == 3:  # noqa:  PLR2004
