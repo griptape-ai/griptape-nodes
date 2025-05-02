@@ -28,6 +28,10 @@ For Windows PowerShell:
 $(Split-Path -Parent (Split-Path -Parent (Get-Command griptape-nodes | Select-Object -ExpandProperty Source)))
 ```
 
+## Can I see or edit my config file?
+
+You can! To get a path to the file, go to the top Settings menu in the Editor, and select **Copy Path to Settings**. That will copy the config file path to your clipboard.
+
 ## How do I uninstall Griptape Nodes?
 
 Need to part ways with Griptape Nodes? It's a simple goodbye with a single command:
