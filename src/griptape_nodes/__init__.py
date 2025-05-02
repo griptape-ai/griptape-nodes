@@ -234,9 +234,8 @@ def _auto_update_self() -> None:
             default=True,
         )
 
-        _update_assets()
-
         if update:
+            _update_assets()
             _update_self(restart_after_update=True)
 
 
