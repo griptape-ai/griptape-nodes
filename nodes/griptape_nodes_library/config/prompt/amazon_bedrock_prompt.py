@@ -18,7 +18,7 @@ SERVICE = "Amazon"
 API_KEY_URL = "https://console.aws.amazon.com/iam/home?#/security_credentials"
 AWS_ACCESS_KEY_ID_ENV_VAR = "AWS_ACCESS_KEY_ID"
 AWS_DEFAULT_REGION_ENV_VAR = "AWS_DEFAULT_REGION"
-AWS_SECRET_ACCCESS_KEY_ENV_VAR = "AWS_SECRET_ACCESS_KEY"  # noqa: S105
+AWS_SECRET_ACCESS_KEY_ENV_VAR = "AWS_SECRET_ACCESS_KEY"  # noqa: S105
 MODEL_CHOICES = [
     "anthropic.claude-3-5-sonnet-20240620-v1:0",
     "anthropic.claude-3-opus-20240229-v1:0",
@@ -74,7 +74,7 @@ class AmazonBedrockPrompt(BasePrompt):
     def start_session(self) -> boto3.Session:
         """Starts a session with Amazon Bedrock using the provided AWS credentials."""
         aws_access_key_id = self.get_config_value(SERVICE, AWS_ACCESS_KEY_ID_ENV_VAR)
-        aws_secret_access_key = self.get_config_value(SERVICE, AWS_SECRET_ACCCESS_KEY_ENV_VAR)
+        aws_secret_access_key = self.get_config_value(SERVICE, AWS_SECRET_ACCESS_KEY_ENV_VAR)
         aws_default_region = self.get_config_value(SERVICE, AWS_DEFAULT_REGION_ENV_VAR)
 
         try:
@@ -151,7 +151,7 @@ class AmazonBedrockPrompt(BasePrompt):
         exceptions.append(
             self._validate_api_key(
                 service_name=SERVICE,
-                api_key_env_var=AWS_SECRET_ACCCESS_KEY_ENV_VAR,
+                api_key_env_var=AWS_SECRET_ACCESS_KEY_ENV_VAR,
                 api_key_url=API_KEY_URL,
             )
         )
