@@ -90,7 +90,7 @@ class NodesApiSocketManager:
                         os.getenv("GRIPTAPE_NODES_API_BASE_URL", "wss://api.nodes.griptape.ai")
                         .replace("http", "ws")
                         .replace("https", "wss"),
-                        "/api/editors/ws",  # TODO(matt): this is the destination path for events. reevaluate if we do bi-directional communication
+                        "/api/editors/ws",  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/866
                     ),
                     additional_headers={"Authorization": f"Bearer {api_key}"},
                     ping_timeout=None,

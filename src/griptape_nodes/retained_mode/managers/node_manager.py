@@ -971,19 +971,19 @@ class NodeManager:
         if request.output_type is not None:
             parameter.output_type = request.output_type
         if request.mode_allowed_input is not None:
-            # TODO(griptape): may alter existing connections
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/828
             if request.mode_allowed_input is True:
                 parameter.allowed_modes.add(ParameterMode.INPUT)
             else:
                 parameter.allowed_modes.discard(ParameterMode.INPUT)
         if request.mode_allowed_property is not None:
-            # TODO(griptape): may alter existing connections
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/828
             if request.mode_allowed_property is True:
                 parameter.allowed_modes.add(ParameterMode.PROPERTY)
             else:
                 parameter.allowed_modes.discard(ParameterMode.PROPERTY)
         if request.mode_allowed_output is not None:
-            # TODO(griptape): may alter existing connections
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/828
             if request.mode_allowed_output is True:
                 parameter.allowed_modes.add(ParameterMode.OUTPUT)
             else:
@@ -1023,19 +1023,19 @@ class NodeManager:
                 parameter_group.ui_options = request.ui_options
             return AlterParameterDetailsResultSuccess()
 
-        # TODO(griptape): Verify that we can get through all the OTHER tricky stuff before we proceed to actually making changes.
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/827
         # Now change all the values on the Parameter.
         self.modify_alterable_fields(request, parameter)
         # The rest of these are not alterable
         if parameter.user_defined is False and request.request_id:
-            # TODO(griptape): there may be SOME properties on a non-user-defined Parameter that can be changed
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
             details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
             logger.warning(details)
             return AlterParameterDetailsResultSuccess()
         self.modify_key_parameter_fields(request, parameter)
         # This field requires the node as well
         if request.default_value is not None:
-            # TODO(griptape): vet that default value matches types allowed
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/825
             node.parameter_values[request.parameter_name] = request.default_value
 
         details = f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{node_name}'."

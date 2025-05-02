@@ -255,7 +255,7 @@ class ConfigManager:
         # If the key is workspace_directory, we need to fully reload the user config
         # because the workspace changing may influence the config files we load.
         # Also need to reload registered workflows.
-        # TODO(collin): https://github.com/griptape-ai/griptape-nodes/issues/437
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/437
         if key == "workspace_directory":
             self.load_user_config()
         logger.debug("Config value '%s' set to '%s'", key, value)

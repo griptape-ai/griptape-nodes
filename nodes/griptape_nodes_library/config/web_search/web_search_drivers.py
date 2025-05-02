@@ -79,5 +79,5 @@ class DuckDuckGo(BaseWebSearchDriver):
 
         # Set the output
         self.parameter_output_values["web_search_config"] = (
-            driver  # TODO(osipa): Replace this when drivers are serializable
+            driver  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/874
         )

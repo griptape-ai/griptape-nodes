@@ -184,7 +184,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                 tooltip="strength (basically denoise) -- 0.0 is original image 1.0 is a completely new image -- impacts effective steps",
             )
         )
-        # TODO(dylan): sigmas: Optional[List[float]] = None,
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/841
         self.add_parameter(
             Parameter(
                 name="guidance_scale",
@@ -195,7 +195,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                 tooltip="guidance_scale",
             )
         )
-        # TODO(dylan): How to have no default (default to None?)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/842
         self.add_parameter(
             Parameter(
                 name="seed",
@@ -252,7 +252,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
             )
         )
 
-        # TODO(dylan): Add seed parameter int or None -- How to have no default (default to None?)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/843
         self.add_parameter(
             Parameter(
                 name="output_image",
@@ -364,7 +364,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                 "guidance_scale": guidance_scale,
                 "generator": generator,
                 "output_type": "pil",
-                # TODO(dylan): oh man this is a crazy one! a nested callback :sweat: -- "callback_on_step_end":
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/879
             },
             callback_on_tile_end=callback_on_tile_end,
         )

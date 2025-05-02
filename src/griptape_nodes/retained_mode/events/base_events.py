@@ -105,7 +105,7 @@ class BaseEvent(BaseModel, ABC):
     """Abstract base class for all events."""
 
     # Keeping here instead of in GriptapeNodes to avoid circular import hell.
-    # TODO(griptape): Move this to the singleton
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/848
     _session_id: ClassVar[str | None] = None
 
     # Instance variable with a default_factory that references the class variable

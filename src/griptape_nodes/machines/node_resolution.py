@@ -83,7 +83,7 @@ class InitializeSpotlightState(State):
         current_node = context.focus_stack[-1].node
         if current_node.state == NodeResolutionState.UNRESOLVED:
             # Mark all future nodes unresolved.
-            # TODO(griptape): Is this necessary? Should it be in these UNRESOLVED sections?
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/862
             context.flow.connections.unresolve_future_nodes(current_node)
             current_node.initialize_spotlight()
         # Set node to resolving - we are now resolving this node.
@@ -97,7 +97,7 @@ class InitializeSpotlightState(State):
             # if not true, we have no ports left to advance to or none at all
             return ExecuteNodeState
         # We are already set here
-        return EvaluateParameterState  # TODO(griptape): check if this is valid
+        return EvaluateParameterState  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/863
 
 
 class EvaluateParameterState(State):
@@ -151,7 +151,7 @@ class EvaluateParameterState(State):
 class ExecuteNodeState(State):
     executor: ThreadPoolExecutor = ThreadPoolExecutor()
 
-    # TODO(kate): Can we refactor this method to make it a lot cleaner? might involve changing how parameter values are retrieved/stored.
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/864
     @staticmethod
     def clear_parameter_output_values(context: ResolutionContext) -> None:
         """Clears all parameter output values for the currently focused node in the resolution context.
@@ -208,7 +208,7 @@ class ExecuteNodeState(State):
                     modified_parameters = current_node.set_parameter_value(parameter.name, value)
                     if modified_parameters:
                         for modified_parameter_name in modified_parameters:
-                            # TODO(kate): Move to a different type of event
+                            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
 
                             modified_request = GetParameterDetailsRequest(
                                 parameter_name=modified_parameter_name, node_name=current_node.name

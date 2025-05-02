@@ -62,7 +62,7 @@ class AmazonBedrockPrompt(BasePrompt):
         # Amazon Bedrock offers a lot of different models, so instead of using
         # a dropdown, we'll provide just a text field for the user to enter the model name
         # and set the default to the first model in the list.
-        # TODO(griptape): Add a method to query the available models from Amazon Bedrock.
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/876
         self._remove_options_trait(param="model")
         param = self.get_parameter_by_name("model")
         if param is not None:
