@@ -1,5 +1,5 @@
 [project]
-name = "griptape_nodes"
+name = "griptape-nodes"
 version = "0.26.3"
 description = "Add your description here"
 readme = "README.md"
