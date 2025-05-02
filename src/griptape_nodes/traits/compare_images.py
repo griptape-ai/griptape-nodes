@@ -33,7 +33,7 @@ class CompareImagesTrait(Trait):
                 if extra:
                     details.append(f"unexpected keys: {sorted(extra)}")
                 detail_msg = "; ".join(details)
-                msg = f"Dictionary for Parameter '{parameter.name}' must contain exactly 'image_1' and 'image_2' keys; {detail_msg}"
+                msg = f"Dictionary for Parameter '{parameter.name}' must contain exactly 'input_image_1' and 'input_image_2' keys; {detail_msg}"
                 raise ValueError(msg)
 
             return value
