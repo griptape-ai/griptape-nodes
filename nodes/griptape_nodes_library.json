@@ -316,7 +316,7 @@
     },
     {
       "class_name": "TextToVideo",
-      "file_path": "griptape_nodes_library/image/text_to_video.py",
+      "file_path": "griptape_nodes_library/video/text_to_video.py",
       "metadata": {
         "category": "image",
         "description": "TextToVideo node.",
