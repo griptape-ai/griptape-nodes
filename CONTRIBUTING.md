@@ -92,7 +92,8 @@ Griptape Nodes uses a configuration loading system. For full details, see the [C
           "app_events": {
             "on_app_initialization_complete": {
               "libraries_to_register": [
-                "nodes/griptape_nodes_library.json"
+                "nodes/griptape_nodes_library.json",
+                "nodes/griptape_nodes_library_extras.json"
               ]
             }
           }
