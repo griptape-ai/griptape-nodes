@@ -5,7 +5,12 @@ from typing import Any
 
 import numpy as np
 import PIL.Image
-from PIL.Image import Image, Resampling
+from PIL.Image import Image
+from pillow_nodes_library.utils import pad_mirror  # type: ignore[reportMissingImports]
+
+from diffusers_nodes_library.utils.math_utils import (  # type: ignore[reportMissingImports]
+    next_multiple_ge,  # type: ignore[reportMissingImports]
+)
 
 type PositionList = list[tuple[int, int]]
 type PositionGrid = list[list[tuple[int, int]]]
@@ -130,44 +135,100 @@ class TilingImageProcessor:
         """Returns the number of tiles required for a given image."""
         return len(self.get_tile_positions(image))
 
-    def process(self, image: Image, pipe_kwargs: dict[str, Any], callback_on_tile_end: Any = None) -> Image:
+    def process(
+        self,
+        image: Image,
+        output_scale: float = 1.0,
+        pipe_kwargs: dict[str, Any] | None = None,
+        callback_on_tile_end: Any = None,
+    ) -> Image:
+        """Process an image in tiles with a given model/pipeline/function (self.pipe).
+
+        Args:
+            image: image to process given the model/pipeline/function (self.pipe)
+            output_scale: The inherent scale factor for the model's output w.r.t. its input.
+                For example 4.0 if the model outputs an image that has dimensions
+                that are four times the input dimensions.
+            pipe_kwargs: Forwarded to the model/pipeline/function
+            callback_on_tile_end: Callback to call after each tile.
+
+        Returns:
+            a new image - the size of which depends on the the given model/pipeline/function and its inherent output_scale factor
+        """
         pipe = self.pipe
         tile_size = self.tile_size
         tile_overlap = self.tile_overlap
         width, height = image.size
-        result_np = np.zeros((height, width, 3), dtype=np.float32)
-        weight_np = np.zeros((height, width), dtype=np.float32)
+        result_height, result_width = int(height * output_scale), int(width * output_scale)
+        result_np = np.zeros((result_height, result_width, 3), dtype=np.float32)
+        weight_np = np.zeros((result_height, result_width), dtype=np.float32)
 
         positions = self.get_tile_positions(image)
+
+        # Use a mirrored image to ensure that the tile sizes can be uniform
+        # an proportional. This is important for some models (e.g. Flux) where
+        # image dimensions must be multiples of 16. Constraints like this lead
+        # us toward either resizing the image (non-proportionally) or filling
+        # the space with something reasonable. I think the mirror approach
+        # is the most compelling, so I'm going with it. Would be nice to make
+        # it configurable though.
+        #
+        # TODO(dylan): This should be moved in to the caller -> it is a preprocessing + postprocessing step!
+        #       pad_with_mirror to get to smallest multiple of tile size, and there are other options
+        #       (like for example resize non-proportionally into exact tile size, then resize back)
+        #       Then this class can simply assume that the image is a multiple of tile_size? maybe?
+        #
+        # Many models assume that the tile_size is smaller than the input image.
+        # We can either change the tile size or pad the image to fit it.
+        # We should pad the image instead of the former. The reason is, is that
+        # the tile size will have implications for model compatibility, some
+        # models only accept an input of a specific size.
+        # Ideally I would choose the tile size in a model compatible way if
+        # possible, but that logic should ideally be done by the caller who
+        # has that information (using the pre/post process steps mentioned
+        # previously.)
+        #
+        # TL;DR Make sure that the mirrored image is at least as big as the tile.
+        padded_size = (next_multiple_ge(width, tile_size), next_multiple_ge(height, tile_size))
+        padded_image = pad_mirror(image, padded_size)
 
         for i, (x, y) in enumerate(positions, start=1):
             logger.info("tile %d of %d", i, len(positions))
             # Determine the tile region within image boundaries
-            tile_right = min(x + tile_size, width)
-            tile_bottom = min(y + tile_size, height)
+            # Remember that we are assuming a padded image, so
+            # we can exceed the original image bounds.
+            tile_right = x + tile_size
+            tile_bottom = y + tile_size
             tile_box = (x, y, tile_right, tile_bottom)
-            tile = image.crop(tile_box)
+            tile = padded_image.crop(tile_box)
 
             # Process the tile
             # TODO(dylan): This is so dumb, the caller should just create a wrapper pipe...
+            pipe_kwargs = pipe_kwargs or {}
             args = self.to_pipe_args(tile, pipe_kwargs)
             kwargs = self.to_pipe_kwargs(tile, pipe_kwargs)
             processed_tile = self.pipe_output_to_pil(pipe(*args, **kwargs)).convert("RGB")
 
-            # Resize if pipe output is not the same size as input (important!)
-            if processed_tile.size != tile.size:
-                processed_tile = processed_tile.resize(tile.size, Resampling.LANCZOS)
+            # Crop out the padding to recover the original tile
+            processed_tile_right = min(tile_size, width - x) * output_scale
+            processed_tile_bottom = min(tile_size, height - y) * output_scale
+            processed_tile_box = (0, 0, processed_tile_right, processed_tile_bottom)
+            processed_tile = processed_tile.crop(processed_tile_box)
 
             tile_np = np.array(processed_tile).astype(np.float32)
-            h, w = tile_np.shape[:2]
+            oh, ow = tile_np.shape[:2]
+            ox, oy = int(x * output_scale), int(y * output_scale)
+
+            logger.info("tile input size: %s", tile.size)
+            logger.info("tile output size: %s", processed_tile.size)
 
             # Create local weight mask
-            is_left = x == 0
-            is_top = y == 0
+            is_left = ox == 0
+            is_top = oy == 0
             is_right = tile_right == width
             is_bottom = tile_bottom == height
 
-            weight_mask = create_weight_mask((w, h), tile_overlap, (is_left, is_top, is_right, is_bottom))
+            weight_mask = create_weight_mask((ow, oh), tile_overlap, (is_left, is_top, is_right, is_bottom))
 
             if DEBUG:
                 # Saves an individual tile with a heatmap overlay to visualize the
@@ -176,8 +237,8 @@ class TilingImageProcessor:
                 debug_tile.save(f"weight_mask_tile_{i}.png")
 
             # Blend into result
-            result_np[y : y + h, x : x + w] += tile_np * weight_mask[..., None]
-            weight_np[y : y + h, x : x + w] += weight_mask
+            result_np[oy : oy + oh, ox : ox + ow] += tile_np * weight_mask[..., None]
+            weight_np[oy : oy + oh, ox : ox + ow] += weight_mask
 
             if callback_on_tile_end:
                 # Save an image that indicates progress -> all currently generated tiles

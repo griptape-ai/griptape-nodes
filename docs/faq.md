@@ -5,7 +5,7 @@
 Run this command and it will report back your workspace location:
 
 ```bash
-gtn config | grep workspace
+gtn config show | grep workspace
 ```
 
 ## Can I run the Engine on a different machine than the Editor?
@@ -27,6 +27,10 @@ For Windows PowerShell:
 ```powershell
 $(Split-Path -Parent (Split-Path -Parent (Get-Command griptape-nodes | Select-Object -ExpandProperty Source)))
 ```
+
+## Can I see or edit my config file?
+
+You can! To get a path to the file, go to the top Settings menu in the Editor, and select **Copy Path to Settings**. That will copy the config file path to your clipboard.
 
 ## How do I uninstall Griptape Nodes?
 

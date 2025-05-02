@@ -65,6 +65,7 @@ nav:
   - Reference:
       - Glossary: reference/glossary.md
       - Scripting: reference/retained_mode.md
+      - Command Line Interface: reference/command_line_interface.md
       - Nodes:
           - Overview: nodes/overview.md
           - Base:

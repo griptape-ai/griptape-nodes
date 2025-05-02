@@ -6,9 +6,9 @@ from typing import ClassVar
 from diffusers_nodes_library.utils.huggingface_utils import (
     list_repo_revisions_in_cache,  # type: ignore[reportMissingImports]
 )
+from diffusers_nodes_library.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
 
 # TODO(dylan): Make kosher (don't import from other libs)
-from diffusers_nodes_library.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.utils.tiling_image_processor import (
     TilingImageProcessor,  # type: ignore[reportMissingImports]
 )
@@ -112,28 +112,22 @@ class TilingSPAN(ControlNode):
         )
         self.add_parameter(
             Parameter(
-                name="scale",
-                default_value=2.0,
-                input_types=["float"],
-                type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="scale",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="tile_size",
-                default_value=1024,
+                name="max_tile_size",
+                default_value=256,
                 input_types=["int"],
                 type="int",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="tile_size",
+                tooltip=(
+                    "max_tile_size, "
+                    "if unecessily larger than input image, it will automatically "
+                    "be lowered to fit the input image as tightly as possible"
+                ),
             )
         )
         self.add_parameter(
             Parameter(
                 name="tile_overlap",
-                default_value=64,
+                default_value=16,
                 input_types=["int"],
                 type="int",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
@@ -188,8 +182,7 @@ class TilingSPAN(ControlNode):
         repo, revision, filename = TilingSPAN._key_to_repo_revision_filename(model)
         input_image_artifact = self.get_parameter_value("input_image")
 
-        scale = float(self.get_parameter_value("scale"))
-        tile_size = int(self.get_parameter_value("tile_size"))
+        max_tile_size = int(self.get_parameter_value("max_tile_size"))
         tile_overlap = int(self.get_parameter_value("tile_overlap"))
         tile_strategy = str(self.get_parameter_value("tile_strategy"))
 
@@ -197,12 +190,13 @@ class TilingSPAN(ControlNode):
             input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
         input_image_pil = image_artifact_to_pil(input_image_artifact)
 
+        # Adjust tile size so that it is not much bigger than the input image.
+        largest_reasonable_tile_size = max(input_image_pil.height, input_image_pil.width)
+        tile_size = min(largest_reasonable_tile_size, max_tile_size)
+
         self.append_value_to_parameter("logs", "Preparing models...\n")
         with self._append_stdout_to_logs():
             pipe = self._get_pipe(repo, revision, filename)
-
-        w, h = input_image_pil.size
-        input_image_pil = input_image_pil.resize((int(w * scale), int(h * scale)))
 
         tiling_image_processor = TilingImageProcessor(
             pipe,
@@ -224,7 +218,7 @@ class TilingSPAN(ControlNode):
         self.append_value_to_parameter("logs", f"Starting tile 1 of {num_tiles}...\n")
         output_image_pil = tiling_image_processor.process(
             image=input_image_pil,
-            pipe_kwargs={"scale": scale},
+            output_scale=4,  # THIS IS SPECIFIC TO 4x-ClearRealityV1 AFAIK
             callback_on_tile_end=callback_on_tile_end,
         )
         self.append_value_to_parameter("logs", f"Finished tile {num_tiles} of {num_tiles}.\n")

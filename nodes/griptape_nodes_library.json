@@ -485,15 +485,6 @@
       }
     },
     {
-      "class_name": "AudioTranscription",
-      "file_path": "griptape_nodes_library/tools/audio_transcription_tool.py",
-      "metadata": {
-        "category": "tools",
-        "description": "AudioTranscription node.",
-        "display_name": "Audio Transcription"
-      }
-    },
-    {
       "class_name": "Calculator",
       "file_path": "griptape_nodes_library/tools/calculator_tool.py",
       "metadata": {

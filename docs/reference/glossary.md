@@ -66,9 +66,16 @@ Griptape Nodes is a creative toolkit (built with Python) that helps artists and
 - **Parameter**: A setting or value you can adjust on a node. Parameters are like the knobs and sliders in a music synthesizer — they let you fine-tune how things work.
 
     - **ParameterMode**: Describes if a parameter is for input, output, internal, or any combination.
+
     - **ParameterValue**: The "internal" value for a parameter (this is the data the node works with internally)
+
     - **ParameterOutputValues**: The results or "output" value for your parameters (this is the data that results from what the node did)
+
     - **ParameterUIOptions**: Settings for how parameters appear in the user interface.
+
+    - **Port**: The circular indicators displayed on the left and/or right sides of a parameter. Ports on the left side indicate the parameter can accept incoming connections, while ports on the right side indicate the parameter supports outgoing connections.
+
+    - **Pin**: Interchangeable with "Port"
 
 - **Default Value**: The pre-set value a parameter has before you change it. This is like the factory settings on a device.
 
