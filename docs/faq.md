@@ -28,21 +28,9 @@ For Windows PowerShell:
 $(Split-Path -Parent (Split-Path -Parent (Get-Command griptape-nodes | Select-Object -ExpandProperty Source)))
 ```
 
-## How do I update Griptape Nodes?
+## Can I see or edit my config file?
 
-Griptape Nodes will automatically check if it needs to update every time it runs. If it does, you will be prompted to answer with a (y/n) response. Respond with a y and it will automatically update to the latest version of the Engine.
-
-If you would like to _manually_ update, you can always use either of these commands:
-
-```bash
-griptape-nodes update
-```
-
-or
-
-```bash
-gtn update
-```
+You can! To get a path to the file, go to the top Settings menu in the Editor, and select **Copy Path to Settings**. That will copy the config file path to your clipboard.
 
 ## How do I uninstall Griptape Nodes?
 
