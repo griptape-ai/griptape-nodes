@@ -75,7 +75,7 @@ class ObjectManager:
             # We'll use the next available name.
             final_name = next_name
 
-        # Let the object's manager know. TODO(griptape): find a better way than a bunch of special cases.
+            # Let the object's manager know. TODO: https://github.com/griptape-ai/griptape-nodes/issues/869
         match source_obj:
             case ControlFlow():
                 GriptapeNodes.FlowManager().handle_flow_rename(old_name=request.object_name, new_name=final_name)

@@ -42,7 +42,7 @@ class BaseDriver(DataNode):
     # -----------------------------------------------------------------------------
     # Abstract Methods
     # -----------------------------------------------------------------------------
-    # @abstractmethod TODO:(jason) Implement this method in subclasses
+    # @abstractmethod TODO: https://github.com/griptape-ai/griptape-nodes/issues/872
     def _get_common_driver_args(self, params: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
         """Gets common driver arguments from parameters.
 

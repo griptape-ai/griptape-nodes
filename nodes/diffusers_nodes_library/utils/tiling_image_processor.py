@@ -173,10 +173,7 @@ class TilingImageProcessor:
         # is the most compelling, so I'm going with it. Would be nice to make
         # it configurable though.
         #
-        # TODO(dylan): This should be moved in to the caller -> it is a preprocessing + postprocessing step!
-        #       pad_with_mirror to get to smallest multiple of tile size, and there are other options
-        #       (like for example resize non-proportionally into exact tile size, then resize back)
-        #       Then this class can simply assume that the image is a multiple of tile_size? maybe?
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/850
         #
         # Many models assume that the tile_size is smaller than the input image.
         # We can either change the tile size or pad the image to fit it.
@@ -203,7 +200,7 @@ class TilingImageProcessor:
             tile = padded_image.crop(tile_box)
 
             # Process the tile
-            # TODO(dylan): This is so dumb, the caller should just create a wrapper pipe...
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/851
             pipe_kwargs = pipe_kwargs or {}
             args = self.to_pipe_args(tile, pipe_kwargs)
             kwargs = self.to_pipe_kwargs(tile, pipe_kwargs)

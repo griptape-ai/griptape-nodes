@@ -332,7 +332,6 @@ class RetainedMode:
             except Exception as e:
                 details = f"Invalid list index format in parameter name: '{param_name}'. Error: {e}."
                 logger.exception(details)
-                # TODO(griptape): what to do here?
         return (final_param_name, index)
 
     @classmethod

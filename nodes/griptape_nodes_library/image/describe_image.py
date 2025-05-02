@@ -68,7 +68,7 @@ class DescribeImage(ControlNode):
         )
 
     def validate_node(self) -> list[Exception] | None:
-        # TODO(kate): Figure out how to wrap this so it's easily repeatable
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/871
         exceptions = []
         api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         # No need for the api key. These exceptions caught on other nodes.

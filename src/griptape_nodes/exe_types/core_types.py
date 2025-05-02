@@ -294,7 +294,7 @@ class ParameterGroup(BaseNodeElement):
         return our_dict
 
 
-# TODO(james): revisit this if we want to do flyweight Parameters
+# TODO: https://github.com/griptape-ai/griptape-nodes/issues/856
 class ParameterBase(BaseNodeElement, ABC):
     name: str  # must be unique from other parameters in Node
 
@@ -338,7 +338,7 @@ class ParameterBase(BaseNodeElement, ABC):
 
     @abstractmethod
     def get_type(self) -> str | None:
-        pass  # TODO(griptape): add docstrings everywhere after this works
+        pass
 
     @abstractmethod
     def get_tooltip_as_input(self) -> str | list[dict] | None:
@@ -511,9 +511,7 @@ class Parameter(BaseNodeElement):
     @property
     def validators(self) -> list[Callable[[Parameter, Any], None]]:
         validators = []
-        traits = self.find_elements_by_type(
-            Trait
-        )  # TODO(kate): Should these be ordered? does this return them in order?
+        traits = self.find_elements_by_type(Trait)  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/857
         for trait in traits:
             validators += trait.validators_for_trait()
         validators += self._validators
@@ -1263,7 +1261,7 @@ class ParameterDictionary(ParameterContainer):
         return param
 
 
-# TODO(kate): What do we want traits to have? there will probably be more..
+# TODO: https://github.com/griptape-ai/griptape-nodes/issues/858
 
 
 @dataclass(eq=False)

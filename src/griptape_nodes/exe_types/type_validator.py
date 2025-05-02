@@ -17,7 +17,7 @@ class TypeValidator(SingletonMixin):
     """
 
     @classmethod
-    def safe_serialize(cls, obj: Any) -> Any:  # noqa: PLR0911 TODO(griptape): resolve
+    def safe_serialize(cls, obj: Any) -> Any:  # noqa: PLR0911
         if obj is None:
             return None
         if isinstance(obj, dict):

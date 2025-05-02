@@ -399,7 +399,7 @@ class BaseNode(ABC):
                 return param
         return None
 
-    # TODO(kate): can we remove this or change to default value?
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/852
     def valid_or_fallback(self, param_name: str, fallback: Any = None) -> Any:
         """Get a parameter value if valid, otherwise use fallback.
 
@@ -548,7 +548,7 @@ class StartNode(BaseNode):
 
 
 class EndNode(BaseNode):
-    # TODO(griptape): Anything else for an EndNode?
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/854
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
         self.add_parameter(ControlParameterInput())

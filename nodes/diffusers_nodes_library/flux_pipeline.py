@@ -170,7 +170,7 @@ class FluxPipeline(ControlNode):
                 tooltip="num_inference_steps",
             )
         )
-        # TODO(dylan): sigmas: Optional[List[float]] = None,
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/841
         self.add_parameter(
             Parameter(
                 name="guidance_scale",
@@ -181,7 +181,7 @@ class FluxPipeline(ControlNode):
                 tooltip="guidance_scale",
             )
         )
-        # TODO(dylan): How to have no default (default to None?)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/842
         self.add_parameter(
             Parameter(
                 name="seed",
@@ -253,7 +253,7 @@ class FluxPipeline(ControlNode):
                 latents = pipe._unpack_latents(latents, height, width, pipe.vae_scale_factor)
                 latents = (latents / pipe.vae.config.scaling_factor) + pipe.vae.config.shift_factor
                 image = pipe.vae.decode(latents, return_dict=False)[0]
-                # TODO(dylan): if we add support for num_images_per_prompt > 1, then the `[0]` is wrong.
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/845
                 intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
                 self.publish_update_to_parameter("output_image", pil_to_image_artifact(intermediate_pil_image))
                 self.append_value_to_parameter("logs", f"Finished inference step {i + 1} of {num_inference_steps}.\n")

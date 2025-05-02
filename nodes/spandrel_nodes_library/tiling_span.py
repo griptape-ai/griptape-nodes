@@ -8,7 +8,7 @@ from diffusers_nodes_library.utils.huggingface_utils import (
 )
 from diffusers_nodes_library.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
 
-# TODO(dylan): Make kosher (don't import from other libs)
+# TODO: https://github.com/griptape-ai/griptape-nodes/issues/829
 from diffusers_nodes_library.utils.tiling_image_processor import (
     TilingImageProcessor,  # type: ignore[reportMissingImports]
 )
@@ -38,13 +38,10 @@ class TilingSPAN(ControlNode):
             pipe = SpandrelPipeline.from_hf_file(repo_id=repo_id, revision=revision, filename=filename)
 
             # Putting this on a device other than cpu is overkill I think.
-            # TODO(dylan): play with device later and see if compute speed up from moving to
-            #      mps or cuda is worth the transfer cost.
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/830
             # device = get_best_device() # noqa: ERA001
 
-            # TODO(dylan): Would be nice to optimize for memory footprint here,
-            #       but honestly not really need at least for this model
-            #       cause its so small.
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/831
             # optimize_pipe_memory_footprint(pipe) # noqa: ERA001
 
             cls._pipes[key] = pipe
@@ -155,7 +152,7 @@ class TilingSPAN(ControlNode):
                 tooltip="tile_strategy",
             )
         )
-        # TODO(dylan): Add seed parameter int|None -- How to have no default (default to None?)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/832
         self.add_parameter(
             Parameter(
                 name="output_image",

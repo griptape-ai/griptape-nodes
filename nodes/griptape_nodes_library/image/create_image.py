@@ -22,8 +22,7 @@ class GenerateImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        # TODO(griptape): Give nodes a way to ask about the current state of their connections instead of forcing them to maintain
-        # state: https://github.com/griptape-ai/griptape-nodes/issues/720
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/720
         self._has_connection_to_prompt = False
 
         self.add_parameter(
@@ -97,7 +96,7 @@ class GenerateImage(ControlNode):
         self.add_node_element(logs_group)
 
     def validate_node(self) -> list[Exception] | None:
-        # TODO(kate): Figure out how to wrap this so it's easily repeatable
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/871
         exceptions = []
         api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         if not api_key:

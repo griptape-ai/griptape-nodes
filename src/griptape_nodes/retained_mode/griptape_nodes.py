@@ -253,7 +253,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
         BaseEvent._session_id = request.session_id
 
-        # TODO(griptape): Do we want to broadcast that a session started?
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/855
 
         return AppStartSessionResultSuccess(request.session_id)
 

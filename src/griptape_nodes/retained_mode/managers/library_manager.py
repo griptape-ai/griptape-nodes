@@ -831,7 +831,7 @@ class LibraryManager:
         # Print 'em all pretty
         self.print_library_load_status()
 
-    # TODO(griptape): Move to WorkflowManager
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/867
     def _register_workflows_from_config(self, config_section: str) -> None:
         config_mgr = GriptapeNodes.ConfigManager()
         workflows_to_register = config_mgr.get_config_value(config_section)
