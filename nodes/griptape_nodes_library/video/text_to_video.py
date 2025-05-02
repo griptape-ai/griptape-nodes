@@ -9,7 +9,7 @@ from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 
 SERVICE = "Kling"
-API_KEY_ENV_VAR = "KLING_ACCESS_KEY"  # noqa: S105
+API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
 SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
 BASE_URL = "https://api.klingai.com/v1/videos/text2video"
 
@@ -86,7 +86,7 @@ class TextToVideo(ControlNode):
 
             payload = {"model_name": "kling-v1", "prompt": prompt, "duration": "5"}
 
-            response = requests.post(BASE_URL, headers=headers, json=payload)  # noqa: C0103 Collin is this ok to ignore?
+            response = requests.post(BASE_URL, headers=headers, json=payload)  # noqa: S113 Collin is this ok to ignore?
             response.raise_for_status()
             task_id = response.json()["data"]["task_id"]
 
@@ -95,7 +95,7 @@ class TextToVideo(ControlNode):
 
             while True:
                 time.sleep(3)
-                result = requests.get(poll_url, headers=headers).json()
+                result = requests.get(poll_url, headers=headers).json()  # noqa: S113 Collin is this ok to ignore?
                 status = result["data"]["task_status"]
                 logger.info(f"Video generation status: {status}")
                 if status == "succeed":
@@ -103,8 +103,9 @@ class TextToVideo(ControlNode):
                     video_url = result["data"]["task_result"]["videos"][0]["url"]
                     break
                 if status == "failed":
-                    logger.error(f"Video generation failed: {result['data']['task_status_msg']}")
-                    raise RuntimeError(f"Video generation failed: {result['data']['task_status_msg']}")
+                    error_msg = f"Video generation failed: {result['data']['task_status_msg']}"
+                    logger.error(error_msg)
+                    raise RuntimeError(error_msg)
 
             self.publish_update_to_parameter("video_url", video_url)
             logger.info(f"Video URL: {video_url}")
