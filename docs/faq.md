@@ -82,7 +82,7 @@ gtn assets update
 
 ## I'm seeing "failed to locate pyvenv.cfg: The system cannot find the file specified." - What should I do?
 
-It is possible, that during a previous uninstall things were not _fully_ uninstalled. Simply perform an [uninstall](#how-do-i-uninstall) again, and then [re-install](getting_started.md).
+It is possible, that during a previous uninstall things were not _fully_ uninstalled. Simply perform an uninstall again, and then [re-install](getting_started.md).
 
 ## I'm seeing "Attempted to create a Flow with a parent 'None', but no parent with that name could be found." - What should I do?
 
