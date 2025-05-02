@@ -457,15 +457,17 @@ class Agent(ControlNode):
         else:
             agent = GtAgent.from_dict(agent_dict)
 
-        # Run the agent asynchronously
-        self.append_value_to_parameter("logs", "[Started processing agent..]\n")
-        yield lambda: self._process(agent, prompt)
-        self.append_value_to_parameter("logs", "\n[Finished processing agent.]\n")
-
+        if prompt and not prompt.isspace():
+            # Run the agent asynchronously
+            self.append_value_to_parameter("logs", "[Started processing agent..]\n")
+            yield lambda: self._process(agent, prompt)
+            self.append_value_to_parameter("logs", "\n[Finished processing agent.]\n")
+            try_throw_error(agent.output)
+        else:
+            self.append_value_to_parameter("logs", "[No prompt provided, creating Agent.]\n")
+            self.parameter_output_values["output"] = "Agent created."
         # Set the agent
         self.parameter_output_values["agent"] = agent.to_dict()
-
-        try_throw_error(agent.output)
 
     def _process(self, agent: GtAgent, prompt: BaseArtifact | str) -> Structure:
         """Performs the synchronous, streaming interaction with the Griptape Agent.
