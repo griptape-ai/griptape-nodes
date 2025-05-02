@@ -62,9 +62,8 @@ class AmazonBedrockPrompt(BasePrompt):
         # Update the 'model' parameter for Amazon Bedrock specifics.
         self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
 
-        # Remove the 'seed' parameter as it's not applicable for Amazon Bedrock.
+        # Remove unused parameters for Amazon Bedrock
         self.remove_parameter_by_name("seed")
-
         self.remove_parameter_by_name("min_p")
         self.remove_parameter_by_name("top_k")
 
