@@ -30,7 +30,7 @@ CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 DATA_DIR = xdg_data_home() / "griptape_nodes"
 ENV_FILE = CONFIG_DIR / ".env"
 CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
-REPO_NAME = "griptape-ai/griptape-nodes"
+PACKAGE_NAME = "griptape-nodes"
 NODES_APP_URL = "https://nodes.griptape.ai"
 NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/tags/{tag}.tar.gz"
 
@@ -207,26 +207,27 @@ def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
     console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
 
 
-def _get_latest_version(repo: str) -> str:
-    """Fetches the latest release tag from a GitHub repository using httpx.
+def _get_latest_version(package: str) -> str:
+    """Fetches the latest release tag from PyPI.
 
     Args:
-        repo (str): Repository name in the format "owner/repo"
+        package: The name of the package to fetch the latest version for.
 
     Returns:
         str: Latest release tag (e.g., "v0.31.4")
     """
-    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    url = f"https://pypi.org/pypi/{package}/json"
     with httpx.Client() as client:
         response = client.get(url)
         response.raise_for_status()
-        return response.json()["tag_name"]
+        print(f"Latest version: {response.json()['info']['version']}")
+        return response.json()["info"]["version"]
 
 
 def _auto_update_self() -> None:
     """Automatically updates the script to the latest version if the user confirms."""
     current_version = __get_current_version()
-    latest_version = _get_latest_version(REPO_NAME)
+    latest_version = _get_latest_version(PACKAGE_NAME)
 
     if current_version < latest_version:
         update = Confirm.ask(
@@ -249,7 +250,7 @@ def _update_self(*, restart_after_update: bool = False) -> None:
 
 def _update_assets() -> None:
     """Download the release tarball identified."""
-    tag = _get_latest_version(REPO_NAME)
+    tag = _get_latest_version(PACKAGE_NAME)
 
     console.print(f"[bold cyan]Fetching Griptape Nodes assets ({tag})…[/bold cyan]")
 
