@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 from griptape.artifacts import BaseArtifact
 from griptape.events import BaseEvent as GtBaseEvent
+from griptape.mixins.serializable_mixin import SerializableMixin
 from griptape.structures import Structure
 from griptape.tools import BaseTool
 from pydantic import BaseModel, Field
@@ -139,7 +140,32 @@ class BaseEvent(BaseModel, ABC):
 
     def json(self, **kwargs) -> str:
         """Serialize to JSON string."""
-        return json.dumps(self.dict(), default=str, **kwargs)
+
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/906
+        def default_encoder(obj: Any) -> Any:
+            """Custom JSON encoder for various object types.
+
+            Attempts the following encodings in order:
+            1. If the object is a SerializableMixin, call to_dict()
+            2. If the object is a Pydantic model, call model_dump()
+            3. Attempt to use the default JSON encoder
+            4. If all else fails, return the string representation of the object
+
+            Args:
+                obj: The object to encode
+
+
+            """
+            if isinstance(obj, SerializableMixin):
+                return obj.to_dict()
+            if isinstance(obj, BaseModel):
+                return obj.model_dump()
+            try:
+                return json.JSONEncoder().default(obj)
+            except TypeError:
+                return str(obj)
+
+        return json.dumps(self.dict(), default=default_encoder, **kwargs)
 
     @abstractmethod
     def get_request(self) -> Payload:
