@@ -220,7 +220,7 @@ def _get_latest_version(package: str) -> str:
     with httpx.Client() as client:
         response = client.get(url)
         response.raise_for_status()
-        return response.json()["info"]["version"]
+        return f"v{response.json()['info']['version']}"
 
 
 def _auto_update_self() -> None:
