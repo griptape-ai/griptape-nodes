@@ -6,8 +6,9 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape.artifacts import TextArtifact
 
-ACCESS_KEY = "40e7a4bb24244e999e02b882650bd7d3"
-SECRET_KEY = "3ad48f8845f54e279f2bc4937f3750e3"
+SERVICE = "Kling"
+API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
+SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"
 BASE_URL = "https://api.klingai.com/v1/videos/text2video"
 
 
@@ -53,11 +54,31 @@ class TextToVideo(ControlNode):
             )
         )
 
+    def validate_node(self) -> list[Exception] | None:
+        """Validates that the Kling API keys are configured.
+
+        Returns:
+            list[Exception] | None: List of exceptions if validation fails, None if validation passes.
+        """
+        access_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
+        secret_key = self.get_config_value(service=SERVICE, value=SECRET_KEY_ENV_VAR)
+        
+        errors = []
+        if not access_key:
+            errors.append(ValueError(f"Kling access key not found. Please set the {API_KEY_ENV_VAR} environment variable."))
+        if not secret_key:
+            errors.append(ValueError(f"Kling secret key not found. Please set the {SECRET_KEY_ENV_VAR} environment variable."))
+        
+        return errors if errors else None
+
     def process(self) -> AsyncResult:
         prompt = self.get_parameter_value("prompt")
 
         def generate_video():
-            jwt_token = encode_jwt_token(ACCESS_KEY, SECRET_KEY)
+            access_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
+            secret_key = self.get_config_value(service=SERVICE, value=SECRET_KEY_ENV_VAR)
+            
+            jwt_token = encode_jwt_token(access_key, secret_key)
 
             headers = {
                 "Content-Type": "application/json",
