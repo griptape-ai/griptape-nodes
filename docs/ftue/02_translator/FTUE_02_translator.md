@@ -141,7 +141,7 @@ Execute your expanded workflow and observe the process:
 
 !!! info
 
-    Again, remember!  Look for this _construction_ in the response you get, not that it matches what you see here - it is likely to be wildly different!
+    Again, remember! Look for this _construction_ in the response you get, not that it matches what you see here - it is likely to be wildly different!
 
 ## Summary
 

@@ -145,7 +145,7 @@ The central component of this workflow is the orchestrator agent:
     ```
 
     <p align="center">
-      <img src="../assets/orchestrator_setup.png" alt="Orchestrator setup">
+    <img src="../assets/orchestrator_setup.png" alt="Orchestrator setup">
     </p>
 
 ## How the Workflow Functions

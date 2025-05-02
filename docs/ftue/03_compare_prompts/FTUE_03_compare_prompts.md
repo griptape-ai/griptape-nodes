@@ -56,7 +56,7 @@ Let's start with the most straightforward approach:
 1. Run just this node by clicking its individual run button
 
     <p align="center">
-      <img src="../assets/basic_image_node.png" alt="Basic image node" width="450">
+    <img src="../assets/basic_image_node.png" alt="Basic image node" width="450">
     </p>
 
 Observe the resulting image. This shows how the AI interprets your direct, unmodified description.
@@ -72,7 +72,7 @@ For the second method, we'll use the same basic prompt but with Griptape's built
 1. Run this node individually
 
     <p align="center">
-      <img src="../assets/enhanced_prompt_image.png" alt="Enhanced prompt image" width="450">
+    <img src="../assets/enhanced_prompt_image.png" alt="Enhanced prompt image" width="450">
     </p>
 
 Compare this result with the first image. You should see a much more complex and artistic interpretation.
@@ -92,7 +92,7 @@ The third method demonstrates how we can create our own custom prompt enhancemen
 1. Look at the detailed instructions in "detail_prompt"
 
     <p align="center">
-      <img src="../assets/detailed_instructions.png" alt="Detailed instructions">
+    <img src="../assets/detailed_instructions.png" alt="Detailed instructions">
     </p>
 
 1. Run the agent node to see how it transforms our basic prompt
@@ -100,7 +100,7 @@ The third method demonstrates how we can create our own custom prompt enhancemen
 1. Examine the output in the display text node
 
     <p align="center">
-      <img src="../assets/agent_node_output.png" alt="Agent node output">
+    <img src="../assets/agent_node_output.png" alt="Agent node output">
     </p>
 
     You'll see that the agent has created a much more elaborate prompt that addresses all the specifications:
