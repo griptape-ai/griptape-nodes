@@ -3,8 +3,8 @@ import logging
 from collections.abc import Iterator
 from typing import Any, ClassVar
 
-import PIL.Image
 import diffusers  # type: ignore[reportMissingImports]
+import PIL.Image
 import torch  # type: ignore[reportMissingImports]
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
@@ -232,7 +232,7 @@ class FluxPipeline(ControlNode):
 
         # Immediately set a preview placeholder image to make it react quickly and adjust
         # the size of the image preview on the node.
-        preview_placeholder_image = PIL.Image.new('RGB', (width, height), color='black')
+        preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
         self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
         self.append_value_to_parameter("logs", "Preparing models...\n")

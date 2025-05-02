@@ -197,8 +197,8 @@ class TilingSPAN(ControlNode):
         # Immediately set a preview placeholder image to make it react quickly and adjust
         # the size of the image preview on the node.
         w, h = input_image_pil.size
-        ow, oh = int(w*output_scale), int(h*output_scale)
-        preview_placeholder_image = PIL.Image.new('RGB', (ow, oh), color='black')
+        ow, oh = int(w * output_scale), int(h * output_scale)
+        preview_placeholder_image = PIL.Image.new("RGB", (ow, oh), color="black")
         self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
         # Adjust tile size so that it is not much bigger than the input image.

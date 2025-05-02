@@ -4,8 +4,8 @@ from collections.abc import Iterator
 from typing import ClassVar
 
 import diffusers  # type: ignore[reportMissingImports]
-import torch  # type: ignore[reportMissingImports]
 import PIL.Image
+import torch  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 from griptape.loaders import ImageLoader
 from PIL.Image import Image
@@ -302,7 +302,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         # The output image will be the same size as the input image.
         # Immediately set a preview placeholder image to make it react quickly and adjust
         # the size of the image preview on the node.
-        preview_placeholder_image = PIL.Image.new('RGB', input_image_pil.size, color='black')
+        preview_placeholder_image = PIL.Image.new("RGB", input_image_pil.size, color="black")
         self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
         # Adjust tile size so that it is not much bigger than the input image.
