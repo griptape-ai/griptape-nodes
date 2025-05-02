@@ -4,6 +4,7 @@
 import argparse
 import importlib.metadata
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -244,9 +245,7 @@ def _update_self(*, restart_after_update: bool = False) -> None:
     console.print("[bold green]Starting updater...[/bold green]")
 
     args = ["--restart"] if restart_after_update else []
-    subprocess.Popen([sys.executable, "-m", "griptape_nodes.updater", *args], start_new_session=True)
-
-    sys.exit(0)
+    os.execvp(sys.executable, [sys.executable, "-m", "griptape_nodes.updater", *args])  # noqa: S606
 
 
 def _update_assets() -> None:
