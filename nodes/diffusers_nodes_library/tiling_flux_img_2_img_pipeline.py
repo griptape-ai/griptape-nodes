@@ -18,6 +18,9 @@ from diffusers_nodes_library.utils.huggingface_utils import (  # type: ignore[re
 )
 from diffusers_nodes_library.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.utils.lora_utils import configure_flux_loras  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.utils.math_utils import (  # type: ignore[reportMissingImports]
+    next_multiple_ge,  # type: ignore[reportMissingImports]
+)
 from diffusers_nodes_library.utils.tiling_image_processor import (  # type: ignore[reportMissingImports]
     TilingImageProcessor,  # type: ignore[reportMissingImports]
 )
@@ -203,22 +206,17 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         )
         self.add_parameter(
             Parameter(
-                name="scale",
-                default_value=1.0,
-                input_types=["float"],
-                type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="TODO: remove we shouldn't be scaling inside this node -- use pillow resize or tiling spandrel",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="tile_size",
+                name="max_tile_size",
                 default_value=1024,
                 input_types=["int"],
                 type="int",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="tile_size",
+                tooltip=(
+                    "max_tile_size, "
+                    "must be a multiple of 16, "
+                    "if unecessily larger than input image, it will automatically "
+                    "be lowered to smallest multiple of 16 that will fit the input image"
+                ),
             )
         )
         self.add_parameter(
@@ -287,8 +285,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         negative_prompt = self.get_parameter_value("negative_prompt")
         negative_prompt_2 = self.parameter_values.get("negative_prompt_2", prompt)
         true_cfg_scale = float(self.parameter_values["true_cfg_scale"])
-        scale = float(self.get_parameter_value("scale"))
-        tile_size = int(self.get_parameter_value("tile_size"))
+        max_tile_size = int(self.get_parameter_value("max_tile_size"))
         tile_overlap = int(self.get_parameter_value("tile_overlap"))
         tile_strategy = str(self.get_parameter_value("tile_strategy"))
         num_inference_steps = int(self.parameter_values["num_inference_steps"])
@@ -299,8 +296,18 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         if isinstance(input_image_artifact, ImageUrlArtifact):
             input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
         input_image_pil = image_artifact_to_pil(input_image_artifact)
-        w, h = input_image_pil.size
-        input_image_pil = input_image_pil.resize((int(w * scale), int(h * scale)))
+        input_image_pil = input_image_pil.convert("RGB")
+
+        # Adjust tile size so that it is not much bigger than the input image.
+        largest_reasonable_tile_width = next_multiple_ge(input_image_pil.width, 16)
+        largest_reasonable_tile_height = next_multiple_ge(input_image_pil.height, 16)
+        largest_reasonable_tile_size = max(largest_reasonable_tile_height, largest_reasonable_tile_width)
+        tile_size = min(largest_reasonable_tile_size, max_tile_size)
+
+        if tile_size % 16 != 0:
+            new_tile_size = next_multiple_ge(tile_size, 16)
+            self.append_value_to_parameter("logs", f"max_tile_size({tile_size}) not multiple of 16, rounding up to {new_tile_size}.\n")
+            tile_size = new_tile_size
 
         if strength == 0:
             self.set_parameter_value("output_image", pil_to_image_artifact(input_image_pil))
@@ -320,7 +327,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
             tile_overlap=tile_overlap,
             tile_strategy=tile_strategy,
             to_pipe_args=lambda tile, kwargs: (),  # noqa: ARG005
-            to_pipe_kwargs=lambda tile, kwargs: {"image": tile, **kwargs},
+            to_pipe_kwargs=lambda tile, kwargs: {"image": tile, "width": tile.width, "height": tile.height, **kwargs},
             pipe_output_to_pil=lambda output: output.images[0],
         )
         num_tiles = tiling_image_processor.get_num_tiles(image=input_image_pil)
