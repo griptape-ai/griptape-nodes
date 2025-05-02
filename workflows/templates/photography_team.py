@@ -75,7 +75,6 @@ cmd.set_value(
 )
 cmd.set_value("Cinematographer.model", "gpt-4.1")
 cmd.set_value("Cinematographer.include_details", False)
-cmd.set_value("Cinematographer.logs", "Node hasn't begun yet")
 cmd.set_value("Cinematographer_asTool.name", "Cinematographer")
 cmd.set_value("Cinematographer_asTool.description", "This agent understands cinematography")
 cmd.set_value("Cinematographer_asTool.off_prompt", False)
@@ -86,7 +85,6 @@ cmd.set_value(
 )
 cmd.set_value("Color_Theorist.model", "gpt-4.1")
 cmd.set_value("Color_Theorist.include_details", False)
-cmd.set_value("Color_Theorist.logs", "Node hasn't begun yet")
 cmd.set_value("Color_Theorist_asTool.name", "Color_Theorist")
 cmd.set_value("Color_Theorist_asTool.description", "This agent can be used to ensure the best colors")
 cmd.set_value("Color_Theorist_asTool.off_prompt", False)
@@ -97,7 +95,6 @@ cmd.set_value(
 )
 cmd.set_value("Detail_Enthusiast.model", "gpt-4.1")
 cmd.set_value("Detail_Enthusiast.include_details", False)
-cmd.set_value("Detail_Enthusiast.logs", "Node hasn't begun yet")
 cmd.set_value("Detail_Enthusiast_asTool.name", "Detail_Enthusiast")
 cmd.set_value(
     "Detail_Enthusiast_asTool.description",
@@ -111,7 +108,6 @@ cmd.set_value(
 )
 cmd.set_value("Image_Generation_Specialist.model", "gpt-4.1")
 cmd.set_value("Image_Generation_Specialist.include_details", False)
-cmd.set_value("Image_Generation_Specialist.logs", "Node hasn't begun yet")
 cmd.set_value("Image_Generation_Specialist_asTool.name", "Image_Generation_Specialist")
 cmd.set_value(
     "Image_Generation_Specialist_asTool.description",
@@ -124,9 +120,7 @@ cmd.set_value(
 )
 cmd.set_value("Orchestrator.model", "gpt-4.1")
 cmd.set_value("Orchestrator.include_details", False)
-cmd.set_value("Orchestrator.logs", "Node hasn't begun yet")
 cmd.set_value("GenerateImage_1.enhance_prompt", False)
-cmd.set_value("GenerateImage_1.logs", "Node hasn't begun yet")
 cmd.set_value("Agent_Ruleset.name", "Agent Rules")
 cmd.set_value(
     "Agent_Ruleset.rules",

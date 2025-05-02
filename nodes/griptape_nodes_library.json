@@ -69,6 +69,14 @@
       }
     },
     {
+      "image/upscale":{
+        "color": "border-purple-500",
+        "title": "Image/Upscale",
+        "description": "Image upscaling related nodes.",
+        "icon": "Image"
+      }
+    },
+    {
       "number": {
         "color": "border-blue-500",
         "title": "Number",
