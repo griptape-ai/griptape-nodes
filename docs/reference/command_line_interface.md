@@ -51,6 +51,7 @@ griptape-nodes config SUBCOMMAND
 
 Subcommands:
 
+- `show` - Show the current configuration settings
 - `list` - List all configuration files in order of precedence
 - `reset` - Reset your configuration to default values
 

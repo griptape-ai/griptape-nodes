@@ -5,7 +5,7 @@
 Run this command and it will report back your workspace location:
 
 ```bash
-gtn config | grep workspace
+gtn config show | grep workspace
 ```
 
 ## Can I run the Engine on a different machine than the Editor?

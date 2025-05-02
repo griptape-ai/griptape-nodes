@@ -120,6 +120,7 @@ def _get_args() -> argparse.Namespace:
         metavar="SUBCOMMAND",
         required=True,
     )
+    config_subparsers.add_parser("show", help="Show configuration values.")
     config_subparsers.add_parser("list", help="List configuration values.")
     config_subparsers.add_parser("reset", help="Reset configuration to defaults.")
 
@@ -365,7 +366,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
             _list_user_configs()
         elif args.subcommand == "reset":
             _reset_user_config()
-        else:
+        elif args.subcommand == "show":
             _print_user_config()
     elif args.command == "self":
         if args.subcommand == "update":
