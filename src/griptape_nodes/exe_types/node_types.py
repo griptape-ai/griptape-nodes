@@ -453,12 +453,12 @@ class BaseNode(ABC):
         return exceptions if exceptions else None
     """
 
-    def validate_empty_parameter(self, param: str, additional_msg: str = "") -> list[Exception] | None:
+    def validate_empty_parameter(self, param: str, additional_msg: str = "") -> Exception | None:
         param_value = self.parameter_values.get(param, None)
         node_name = self.name
         if not param_value or param_value.isspace():
             msg = str(f"Parameter \"{param}\" was left blank for node '{node_name}'. {additional_msg}").strip()
-            return [ValueError(msg)]
+            return ValueError(msg)
         return None
 
     def get_config_value(self, service: str, value: str) -> str:
