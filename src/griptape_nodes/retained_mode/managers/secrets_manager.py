@@ -3,7 +3,7 @@ import re
 from os import getenv
 from pathlib import Path
 
-from dotenv import dotenv_values, get_key, set_key, unset_key
+from dotenv import dotenv_values, get_key, load_dotenv, set_key, unset_key
 from dotenv.main import DotEnv
 from xdg_base_dirs import xdg_config_home
 
@@ -125,6 +125,7 @@ class SecretsManager:
         if not ENV_VAR_PATH.exists():
             ENV_VAR_PATH.touch()
         set_key(ENV_VAR_PATH, secret_name, secret_value)
+        load_dotenv(ENV_VAR_PATH)
 
     @staticmethod
     def _apply_secret_name_compliance(secret_name: str) -> str:
