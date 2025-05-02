@@ -18,6 +18,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress
 from rich.prompt import Confirm, Prompt
+from rich.spinner import Spinner
 from xdg_base_dirs import xdg_config_home, xdg_data_home
 
 from griptape_nodes.app import start_app
@@ -224,8 +225,9 @@ def _get_latest_version(repo: str) -> str:
 
 def _auto_update_self() -> None:
     """Automatically updates the script to the latest version if the user confirms."""
-    current_version = __get_current_version()
-    latest_version = _get_latest_version(REPO_NAME)
+    with console.status("[bold green]Checking for updates...[/bold green]", spinner="dots"):
+        current_version = __get_current_version()
+        latest_version = _get_latest_version(REPO_NAME)
 
     if current_version < latest_version:
         update = Confirm.ask(
