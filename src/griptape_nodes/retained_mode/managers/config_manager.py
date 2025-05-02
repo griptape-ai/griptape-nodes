@@ -420,7 +420,11 @@ class ConfigManager:
             USER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
             USER_CONFIG_PATH.touch()
             USER_CONFIG_PATH.write_text(json.dumps({}, indent=2))
-        current_config = json.loads(USER_CONFIG_PATH.read_text())
+        try:
+            current_config = json.loads(USER_CONFIG_PATH.read_text())
+        except json.JSONDecodeError:
+            logger.error("Error parsing user config file. Creating a new one.")
+            current_config = {}
         merged_config = merge_dicts(current_config, user_config_delta)
         USER_CONFIG_PATH.write_text(json.dumps(merged_config, indent=2))
 
