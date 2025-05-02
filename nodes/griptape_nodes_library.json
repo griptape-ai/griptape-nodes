@@ -69,6 +69,14 @@
       }
     },
     {
+      "video": {
+        "color": "border-pink-500",
+        "title": "Video",
+        "description": "Video related nodes.",
+        "icon": "VideoCamera"
+      }
+    },
+    {
       "number": {
         "color": "border-blue-500",
         "title": "Number",
@@ -318,16 +326,16 @@
       "class_name": "TextToVideo",
       "file_path": "griptape_nodes_library/video/text_to_video.py",
       "metadata": {
-        "category": "image",
+        "category": "video",
         "description": "TextToVideo node.",
         "display_name": "Text To Video"
       }
     },
     {
       "class_name": "DisplayVideo",
-      "file_path": "griptape_nodes_library/image/display_video.py",
+      "file_path": "griptape_nodes_library/video/display_video.py",
       "metadata": {
-        "category": "image",
+        "category": "video",
         "description": "DisplayVideo node.",
         "display_name": "Display Video"
       }
