@@ -1039,6 +1039,8 @@ class FlowManager:
 
         return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list)
 
+    # TODO(griptape): refactor the serialization and deserialization functions into clearer, tighter functions. Use this as an example for other
+    # similar manager refactors: https://github.com/griptape-ai/griptape-nodes/issues/806
     def on_serialize_flow_to_commands(self, request: SerializeFlowToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         flow_name = request.flow_name
         if flow_name is None:
