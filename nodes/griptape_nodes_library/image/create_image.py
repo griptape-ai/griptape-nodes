@@ -120,10 +120,10 @@ class GenerateImage(ControlNode):
         params = self.parameter_values
 
         # Validate that we have a prompt.
-        prompt = params.get("prompt", "")
-        if prompt == "":
-            msg = f"Prompt is empty for {self.name}. Please provide a prompt to create an image."
-            raise ValueError(msg)
+        prompt = self.get_parameter_value("prompt")
+        exception = self.validate_empty_parameter(param="prompt")
+        if exception:
+            raise exception
 
         agent = params.get("agent", None)
         if not agent:
