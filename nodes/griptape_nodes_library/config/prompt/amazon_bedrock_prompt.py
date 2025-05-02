@@ -7,6 +7,7 @@ OpenAi specific model options, requires a OpenAi API key via
 node configuration, and instantiates the `OpenAiPromptDriver`.
 """
 
+import boto3
 from griptape.drivers.prompt.amazon_bedrock import AmazonBedrockPromptDriver as GtAmazonBedrockPromptDriver
 
 from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
@@ -89,7 +90,22 @@ class AmazonBedrockPrompt(BasePrompt):
         # Use the helper method from BasePrompt to get args like temperature, stream, max_attempts, etc.
         common_args = self._get_common_driver_args(params)
 
-        # --- Prepare OpenAi Specific Arguments ---
+        # Start a session with the AWS Credentials.
+        aws_access_key_id = self.get_config_value(SERVICE, AWS_ACCESS_KEY_ID_ENV_VAR)
+        aws_secret_access_key = self.get_config_value(SERVICE, AWS_SECRET_ACCCESS_KEY_ENV_VAR)
+        aws_default_region = self.get_config_value(SERVICE, AWS_DEFAULT_REGION_ENV_VAR)
+
+        try:
+            session = boto3.Session(
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+                region_name=aws_default_region,
+            )
+        except Exception as e:
+            msg = f"Failed to create AWS session for node {self.name}. Please check your AWS credentials and region."
+            raise RuntimeError(msg) from e
+
+        # --- Prepare Amazon Bedrock Specific Arguments ---
         specific_args = {}
 
         # Get the selected model.
@@ -108,7 +124,7 @@ class AmazonBedrockPrompt(BasePrompt):
         all_kwargs = {**common_args, **specific_args}
 
         # Create the Amazon Bedrock prompt driver instance.
-        driver = GtAmazonBedrockPromptDriver(**all_kwargs)
+        driver = GtAmazonBedrockPromptDriver(session=session, **all_kwargs)
 
         # Set the output parameter 'prompt_model_config'.
         self.parameter_output_values["prompt_model_config"] = driver
