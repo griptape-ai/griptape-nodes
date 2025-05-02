@@ -11,11 +11,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
-class LibraryNodeIdentifier(NamedTuple):
-    """Unique identifier for a node type."""
-
-    library: str
-    node_name: str
+class LibraryNameAndVersion(NamedTuple):
+    library_name: str
+    library_version: str
 
 
 class LibraryRegistry(SingletonMixin):
