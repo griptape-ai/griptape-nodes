@@ -14,9 +14,9 @@ class DisplayVideo(ControlNode):
                 default_value="",
                 allowed_modes={ParameterMode.INPUT},
                 tooltip="Video URL",
-                ui_options={"display_video": True}
+                ui_options={"display_video": True},
             )
         )
 
-    def process(self):
+    def process(self) -> None:
         pass

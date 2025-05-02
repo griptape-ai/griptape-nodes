@@ -1,32 +1,30 @@
 import time
+
 import jwt
 import requests
-from griptape_nodes.retained_mode.griptape_nodes import logger
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape.artifacts import TextArtifact
 
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.retained_mode.griptape_nodes import logger
+
 SERVICE = "Kling"
-API_KEY_ENV_VAR = "KLING_ACCESS_KEY"
-SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"
+API_KEY_ENV_VAR = "KLING_ACCESS_KEY"  # noqa: S105
+SECRET_KEY_ENV_VAR = "KLING_SECRET_KEY"  # noqa: S105
 BASE_URL = "https://api.klingai.com/v1/videos/text2video"
 
 
-def encode_jwt_token(ak, sk):
-    headers = {
-        "alg": "HS256",
-        "typ": "JWT"
-    }
+def encode_jwt_token(ak: str, sk: str) -> str:
+    headers = {"alg": "HS256", "typ": "JWT"}
 
     payload = {
         "iss": ak,
         "exp": int(time.time()) + 1800,  # valid for 30 minutes
-        "nbf": int(time.time()) - 5      # valid 5 seconds ago
+        "nbf": int(time.time()) - 5,  # valid 5 seconds ago
     }
 
     token = jwt.encode(payload, sk, algorithm="HS256", headers=headers)
     return token
-
 
 class TextToVideo(ControlNode):
     def __init__(self, **kwargs) -> None:
@@ -62,36 +60,33 @@ class TextToVideo(ControlNode):
         """
         access_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
         secret_key = self.get_config_value(service=SERVICE, value=SECRET_KEY_ENV_VAR)
-        
+
         errors = []
         if not access_key:
-            errors.append(ValueError(f"Kling access key not found. Please set the {API_KEY_ENV_VAR} environment variable."))
+            errors.append(
+                ValueError(f"Kling access key not found. Please set the {API_KEY_ENV_VAR} environment variable.")
+            )
         if not secret_key:
-            errors.append(ValueError(f"Kling secret key not found. Please set the {SECRET_KEY_ENV_VAR} environment variable."))
-        
+            errors.append(
+                ValueError(f"Kling secret key not found. Please set the {SECRET_KEY_ENV_VAR} environment variable.")
+            )
+
         return errors if errors else None
 
     def process(self) -> AsyncResult:
         prompt = self.get_parameter_value("prompt")
 
-        def generate_video():
+        def generate_video() -> TextArtifact:
             access_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
             secret_key = self.get_config_value(service=SERVICE, value=SECRET_KEY_ENV_VAR)
-            
+
             jwt_token = encode_jwt_token(access_key, secret_key)
 
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {jwt_token}"
-            }
+            headers = {"Content-Type": "application/json", "Authorization": f"Bearer {jwt_token}"}
 
-            payload = {
-                "model_name": "kling-v1",
-                "prompt": prompt,
-                "duration": "5"
-            }
+            payload = {"model_name": "kling-v1", "prompt": prompt, "duration": "5"}
 
-            response = requests.post(BASE_URL, headers=headers, json=payload)
+            response = requests.post(BASE_URL, headers=headers, json=payload)  # noqa: C0103 Collin is this ok to ignore?
             response.raise_for_status()
             task_id = response.json()["data"]["task_id"]
 
@@ -107,7 +102,7 @@ class TextToVideo(ControlNode):
                     logger.info(f"Video generation succeeded: {result['data']['task_result']['videos'][0]['url']}")
                     video_url = result["data"]["task_result"]["videos"][0]["url"]
                     break
-                elif status == "failed":
+                if status == "failed":
                     logger.error(f"Video generation failed: {result['data']['task_status_msg']}")
                     raise RuntimeError(f"Video generation failed: {result['data']['task_status_msg']}")
 
