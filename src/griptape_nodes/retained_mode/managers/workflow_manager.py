@@ -366,6 +366,11 @@ class WorkflowManager:
             logger.error("Failed to get workflow from registry.")
             return RunWorkflowFromRegistryResultFailure()
 
+        # Update current context for workflow.
+        if GriptapeNodes.ContextManager().has_current_workflow():
+            details = f"Started a new workflow '{request.workflow_name}' but a workflow '{GriptapeNodes.ContextManager().get_current_workflow_name()}' was already in the Current Context. Replacing the old with the new."
+            logger.warning(details)
+
         # get file_path from workflow
         relative_file_path = workflow.file_path
 
@@ -399,12 +404,15 @@ class WorkflowManager:
             # run file
             execution_result = self.run_workflow(relative_file_path=relative_file_path)
 
-            if execution_result.execution_successful:
+            if not execution_result.execution_successful:
                 logger.debug(execution_result.execution_details)
-                return RunWorkflowFromRegistryResultSuccess()
+                return RunWorkflowFromRegistryResultFailure()
 
+            # Success!
+            # Set as the current workflow.
+            GriptapeNodes.ContextManager().set_workflow(request.workflow_name)
             logger.error(execution_result.execution_details)
-            return RunWorkflowFromRegistryResultFailure()
+            return RunWorkflowFromRegistryResultSuccess()
 
     def on_register_workflow_request(self, request: RegisterWorkflowRequest) -> ResultPayload:
         try:
