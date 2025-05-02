@@ -3,6 +3,7 @@ import logging
 from collections.abc import Iterator
 from typing import ClassVar
 
+import PIL.Image
 from diffusers_nodes_library.utils.huggingface_utils import (
     list_repo_revisions_in_cache,  # type: ignore[reportMissingImports]
 )
@@ -189,6 +190,16 @@ class TilingSPAN(ControlNode):
         if isinstance(input_image_artifact, ImageUrlArtifact):
             input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
         input_image_pil = image_artifact_to_pil(input_image_artifact)
+
+        output_scale = 4  # THIS IS SPECIFIC TO 4x-ClearRealityV1 - TODO(dylan): Make per-model configurable
+
+        # The output image will be the scaled by output_scale compared to the input image.
+        # Immediately set a preview placeholder image to make it react quickly and adjust
+        # the size of the image preview on the node.
+        w, h = input_image_pil.size
+        ow, oh = int(w*output_scale), int(h*output_scale)
+        preview_placeholder_image = PIL.Image.new('RGB', (ow, oh), color='black')
+        self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
         # Adjust tile size so that it is not much bigger than the input image.
         largest_reasonable_tile_size = max(input_image_pil.height, input_image_pil.width)
