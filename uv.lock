@@ -270,7 +270,7 @@ dependencies = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.26.13"
+version = "0.26.14"
 source = { editable = "." }
 dependencies = [
     { name = "cohere" },
