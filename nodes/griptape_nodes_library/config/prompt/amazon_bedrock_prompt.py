@@ -114,13 +114,6 @@ class AmazonBedrockPrompt(BasePrompt):
 
         # Get the selected model.
         specific_args["model"] = self.get_parameter_value("model")
-        # Handle parameters that go into 'extra_params' for Amazon Bedrock.
-
-        extra_params = {}
-
-        # Assign extra_params if not empty
-        if extra_params:
-            specific_args["extra_params"] = extra_params
 
         # --- Combine Arguments and Instantiate Driver ---
         # Combine common arguments with Amazon Bedrock specific arguments.
