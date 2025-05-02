@@ -16,6 +16,8 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+winget install --id Git.Git -e --source winget
+
 uv tool install --force --python python3.12 git+https://github.com/griptape-ai/griptape-nodes
 
 Write-Host "**************************************"
