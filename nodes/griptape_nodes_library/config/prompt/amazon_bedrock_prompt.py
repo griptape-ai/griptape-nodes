@@ -1,10 +1,10 @@
-"""Defines the OpenAiPrompt node for configuring the OpenAi Prompt Driver.
+"""Defines the AmazonBedrockPrompt node for configuring the Amazon Bedrock Prompt Driver.
 
-This module provides the `OpenAiPrompt` class, which allows users
-to configure and utilize the OpenAi prompt service within the Griptape
+This module provides the `AmazonBedrockPrompt` class, which allows users
+to configure and utilize the Amazon Bedrock prompt service within the Griptape
 Nodes framework. It inherits common prompt parameters from `BasePrompt`, sets
-OpenAi specific model options, requires a OpenAi API key via
-node configuration, and instantiates the `OpenAiPromptDriver`.
+Amazon Bedrock specific model options, requires a Amazon API Keys via
+node configuration, and instantiates the `AmazonBedrockPromptDriver`.
 """
 
 import boto3
@@ -59,8 +59,14 @@ class AmazonBedrockPrompt(BasePrompt):
 
         # --- Customize Inherited Parameters ---
 
-        # Update the 'model' parameter for Amazon Bedrock specifics.
-        self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
+        # Amazon Bedrock offers a lot of different models, so instead of using
+        # a dropdown, we'll provide just a text field for the user to enter the model name
+        # and set the default to the first model in the list.
+        # TODO(griptape): Add a method to query the available models from Amazon Bedrock.
+        self._remove_options_trait(param="model")
+        param = self.get_parameter_by_name("model")
+        if param is not None:
+            param.default_value = MODEL_CHOICES[0]
 
         # Remove unused parameters for Amazon Bedrock
         self.remove_parameter_by_name("seed")
