@@ -70,6 +70,10 @@ Griptape Nodes is a creative toolkit (built with Python) that helps artists and
     - **ParameterOutputValues**: The results or "output" value for your parameters (this is the data that results from what the node did)
     - **ParameterUIOptions**: Settings for how parameters appear in the user interface.
 
+    - **Port**: The circular indicators displayed on the left and/or right sides of a parameter. Ports on the left side indicate the parameter can accept incoming connections, while ports on the right side indicate the parameter supports outgoing connections.
+
+    - **Pin**: Interchangeable with "Port"
+
 - **Default Value**: The pre-set value a parameter has before you change it. This is like the factory settings on a device.
 
 - **Parameter Validation**: A check that ensures the values you enter make sense. This prevents errors like trying to use text where a number is needed.
