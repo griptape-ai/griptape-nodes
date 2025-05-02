@@ -133,26 +133,13 @@ class AmazonBedrockPrompt(BasePrompt):
         configuration details.
         """
         exceptions = []
-        exceptions.append(
-            self._validate_api_key(
-                service_name=SERVICE,
-                api_key_env_var=AWS_ACCESS_KEY_ID_ENV_VAR,
-                api_key_url=API_KEY_URL,
-            )
-        )
-        exceptions.append(
-            self._validate_api_key(
-                service_name=SERVICE,
-                api_key_env_var=AWS_SECRET_ACCESS_KEY_ENV_VAR,
-                api_key_url=API_KEY_URL,
-            )
-        )
-        exceptions.append(
-            self._validate_api_key(
-                service_name=SERVICE,
-                api_key_env_var=AWS_DEFAULT_REGION_ENV_VAR,
-                api_key_url=API_KEY_URL,
-            )
-        )
-
+        api_keys_to_check = [
+            AWS_ACCESS_KEY_ID_ENV_VAR,
+            AWS_SECRET_ACCESS_KEY_ENV_VAR,
+            AWS_DEFAULT_REGION_ENV_VAR,
+        ]
+        for key in api_keys_to_check:
+            valid_key = self._validate_api_key(service_name=SERVICE, api_key_env_var=key, api_key_url=API_KEY_URL)
+            if valid_key is not None:
+                exceptions.append(valid_key)
         return exceptions if any(exceptions) else None
