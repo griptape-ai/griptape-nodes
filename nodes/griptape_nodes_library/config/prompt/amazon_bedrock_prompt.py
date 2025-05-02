@@ -71,6 +71,23 @@ class AmazonBedrockPrompt(BasePrompt):
         # Amazon Bedrock tends to fail if max_tokens isn't set
         self.set_parameter_value("max_tokens", 100)
 
+    def start_session(self) -> boto3.Session:
+        """Starts a session with Amazon Bedrock using the provided AWS credentials."""
+        aws_access_key_id = self.get_config_value(SERVICE, AWS_ACCESS_KEY_ID_ENV_VAR)
+        aws_secret_access_key = self.get_config_value(SERVICE, AWS_SECRET_ACCCESS_KEY_ENV_VAR)
+        aws_default_region = self.get_config_value(SERVICE, AWS_DEFAULT_REGION_ENV_VAR)
+
+        try:
+            session = boto3.Session(
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+                region_name=aws_default_region,
+            )
+        except Exception as e:
+            msg = f"Failed to create AWS session for node {self.name}. Please check your AWS credentials and region."
+            raise RuntimeError(msg) from e
+        return session
+
     def process(self) -> None:
         """Processes the node configuration to create a AmazonBedrockPromptDriver.
 
@@ -91,19 +108,7 @@ class AmazonBedrockPrompt(BasePrompt):
         common_args = self._get_common_driver_args(params)
 
         # Start a session with the AWS Credentials.
-        aws_access_key_id = self.get_config_value(SERVICE, AWS_ACCESS_KEY_ID_ENV_VAR)
-        aws_secret_access_key = self.get_config_value(SERVICE, AWS_SECRET_ACCCESS_KEY_ENV_VAR)
-        aws_default_region = self.get_config_value(SERVICE, AWS_DEFAULT_REGION_ENV_VAR)
-
-        try:
-            session = boto3.Session(
-                aws_access_key_id=aws_access_key_id,
-                aws_secret_access_key=aws_secret_access_key,
-                region_name=aws_default_region,
-            )
-        except Exception as e:
-            msg = f"Failed to create AWS session for node {self.name}. Please check your AWS credentials and region."
-            raise RuntimeError(msg) from e
+        session = self.start_session()
 
         # --- Prepare Amazon Bedrock Specific Arguments ---
         specific_args = {}
