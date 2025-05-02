@@ -177,16 +177,27 @@ class GetAllNodeInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 # A Node's state can be serialized to a sequence of commands that the engine runs.
 @dataclass
 class SerializedNodeCommands:
+    """Represents a set of serialized commands for a node, including its creation and modifications.
+
+    This is useful for encapsulating a Node, either for saving a workflow, copy/paste, etc.
+
+    Attributes:
+        create_node_command (CreateNodeRequest): The command to create the node.
+        element_modification_commands (list[RequestPayload]): A list of commands to create or modify the elements (including Parameters) of the node.
+        node_library_details (LibraryNameAndVersion): Details of the library and version used by the node.
+    """
+
     @dataclass
     class IndexedSetParameterValueCommand:
         """Companion class to assign parameter values from our unique values list into node indices, since we can't predict the names.
 
-        These are indices into the SerializeNodeCommandsRequest list we maintain.
+        Attributes:
+            set_parameter_value_command (SetParameterValueRequest): The base set parameter command.
+            unique_value_index (int): The index into the unique values list that must be provided when serializing/deserializing,
+                used to assign values upon deserialization.
         """
-TURN ALL COMMENTS INTO DOCSTRINGS, SEARCH "ATTRIBUTES"
-        # The base set parameter command
+
         set_parameter_value_command: SetParameterValueRequest
-        # Value will be overridden when de-serialized based on the unique value index.
         unique_value_index: int
 
     create_node_command: CreateNodeRequest
@@ -197,22 +208,33 @@ TURN ALL COMMENTS INTO DOCSTRINGS, SEARCH "ATTRIBUTES"
 @dataclass
 @PayloadRegistry.register
 class SerializeNodeToCommandsRequest(RequestPayload):
-    # If None is passed, assumes we're using the Node in the Current Context
+    """Request payload to serialize a node into a sequence of commands.
+
+    Attributes:
+        node_name (str | None): The name of the node to serialize. If None, the node in the current context is used.
+        unique_parameter_values_list (list[Any]): List of unique parameter values. Serialization will check a
+            parameter's value against these, appending new values if necessary. NOTE that it modifies the list in-place.
+        value_hash_to_unique_value_index (dict[Any, int]): Mapping of hash values to unique parameter value indices.
+            If serialization adds new unique values, they are added to this map. NOTE that it modifies the list in-place.
+    """
+
     node_name: str | None = None
-    # The list of unique parameter values.
-    # Serialization will check a parameter's value against these, appending new values if necessary.
     unique_parameter_values_list: list[Any] = field(default_factory=list)
-    # The mapping of hash value to unique parameter value index. If serialization adds new unique
-    # values, it will add them to this map.
     value_hash_to_unique_value_index: dict[Any, int] = field(default_factory=dict)
 
 
 @dataclass
 @PayloadRegistry.register
 class SerializeNodeToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    # Serialize the node itself
+    """Represents a successful result for serializing a node into a sequence of commands.
+
+    Attributes:
+        serialized_node_commands (SerializedNodeCommands): The serialized commands representing the node.
+        set_parameter_value_commands (list[SerializedNodeCommands.IndexedSetParameterValueCommand]): A list of
+            commands to set parameter values, indexed into the unique values list.
+    """
+
     serialized_node_commands: SerializedNodeCommands
-    # And maintain the assignment of parameter values based on indices into the unique values list.
     set_parameter_value_commands: list[SerializedNodeCommands.IndexedSetParameterValueCommand]
 
 
