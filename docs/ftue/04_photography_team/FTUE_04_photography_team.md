@@ -21,13 +21,17 @@ To begin this tutorial, return to the main landing page by clicking on the navig
 
 On the landing page, locate and click on the **"Build a Photography Team"** tile to open this example workflow.
 
-![Photography Team example](assets/photography_team_example.png)
+<p align="center">
+  <img src="../assets/photography_team_example.png" alt="Photography Team example">
+</p>
 
 ## Overview of the Workflow
 
 When the example loads, you'll notice this is the most complex workflow we've seen so far:
 
-![Workflow overview](assets/workflow_overview.png)
+<p align="center">
+  <img src="../assets/workflow_overview.png" alt="Workflow overview">
+</p>
 
 The workflow consists of several key components:
 
@@ -48,7 +52,9 @@ Rule sets are a powerful feature that define *how* agents should approach their 
 1. Notice it's connected to a rule set
 1. Examine the rule set content - it defines the agent's expertise, approach, and response style
 
-![Cinematographer rule set](assets/cinematographer_ruleset.png)
+<p align="center">
+  <img src="../assets/cinematographer_ruleset.png" alt="Cinematographer rule set" width="800">
+</p>
 
 The Cinematographer's rule set is quite detailed, providing guidance on framing, composition, and visual storytelling approaches.
 
@@ -68,7 +74,9 @@ You'll notice that rule sets are implemented using a rule set list node:
 1. Currently it contains only one rule set, but the list structure allows for multiple rules if needed
 1. The list connects to the "rule sets" input on the agent
 
-![Rule set list](assets/ruleset_list.png)
+<p align="center">
+  <img src="../assets/ruleset_list.png" alt="Rule set list" width="500">
+</p>
 
 ## Understanding Tools in Griptape
 
@@ -79,7 +87,9 @@ Tools in Griptape Nodes represent capabilities that agents can access:
 1. When an agent has access to tools, it can decide when to use them based on its needs
 1. This creates a powerful dynamic where agents can delegate subtasks to specialized tools
 
-![Tools concept](assets/tools_concept.png)
+<p align="center">
+  <img src="../assets/tools_concept.png" alt="Tools concept">
+</p>
 
 ## Converting Agents to Tools
 
@@ -89,7 +99,9 @@ A key concept in this workflow is converting specialized agents into tools:
 1. Notice how each specialized agent connects directly to its converter
 1. The converter transforms the agent into a tool that can be used by other agents
 
-![Agent to tool conversion](assets/agent_tool_conversion.png)
+<p align="center">
+  <img src="../assets/agent_tool_conversion.png" alt="Agent to tool conversion" width="500">
+</p>
 
 ```
   Each converter includes a description that helps the orchestrator understand when to use that particular tool:
@@ -110,7 +122,9 @@ All converted tools are collected in a tool list:
 1. Notice how all four converted agents connect to this list
 1. The tool list then connects to the "tools" input on the orchestrator agent
 
-![Tool list](assets/tool_list.png)
+<p align="center">
+  <img src="../assets/tool_list.png" alt="Tool list">
+</p>
 
 ## The Orchestrator
 
@@ -130,7 +144,9 @@ The central component of this workflow is the orchestrator agent:
     Use all the tools at your disposal to create a spectacular image generation prompt about a teddy bear.
     ```
 
-    ![Orchestrator setup](assets/orchestrator_setup.png)
+    <p align="center">
+      <img src="../assets/orchestrator_setup.png" alt="Orchestrator setup">
+    </p>
 
 ## How the Workflow Functions
 
@@ -156,7 +172,9 @@ Let's execute the workflow to see the photography team in action:
 1. The final output is a sophisticated image prompt
 1. This prompt is then used to generate the image
 
-![Workflow execution](assets/workflow_execution.png)
+<p align="center">
+  <img src="../assets/workflow_result.png" alt="Workflow result" width="500">
+</p>
 
 ## Summary
 

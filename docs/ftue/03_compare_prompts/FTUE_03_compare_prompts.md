@@ -19,13 +19,17 @@ To begin this tutorial, return to the main landing page by clicking on the navig
 
 On the landing page, locate and click on the **"Compare Prompts"** tile to open this example workflow.
 
-![Compare Prompts example](assets/compare_prompts_example.png)
+<p align="center">
+  <img src="../assets/compare_prompts_example.png" alt="Compare Prompts example">
+</p>
 
 ## Understand the Workflow Structure
 
 When the example loads, you'll see a workflow with multiple nodes:
 
-![Compare Prompts workflow](assets/compare_prompts_workflow.png)
+<p align="center">
+  <img src="../assets/compare_prompts_workflow.png" alt="Compare Prompts workflow">
+</p>
 
 This workflow contains:
 
@@ -51,7 +55,9 @@ Let's start with the most straightforward approach:
 
 1. Run just this node by clicking its individual run button
 
-    ![Basic prompt node](assets/basic_prompt_node.png)
+    <p align="center">
+      <img src="../assets/basic_image_node.png" alt="Basic image node" width="450">
+    </p>
 
 Observe the resulting image. This shows how the AI interprets your direct, unmodified description.
 
@@ -65,7 +71,9 @@ For the second method, we'll use the same basic prompt but with Griptape's built
 
 1. Run this node individually
 
-    ![Enhanced prompt node](assets/enhanced_prompt_node.png)
+    <p align="center">
+      <img src="../assets/enhanced_prompt_image.png" alt="Enhanced prompt image" width="450">
+    </p>
 
 Compare this result with the first image. You should see a much more complex and artistic interpretation.
 
@@ -83,13 +91,17 @@ The third method demonstrates how we can create our own custom prompt enhancemen
 
 1. Look at the detailed instructions in "detail_prompt"
 
-    ![Detailed instructions](assets/detailed_instructions.png)
+    <p align="center">
+      <img src="../assets/detailed_instructions.png" alt="Detailed instructions">
+    </p>
 
 1. Run the agent node to see how it transforms our basic prompt
 
 1. Examine the output in the display text node
 
-    ![Agent node output](assets/agent_node_output.png)
+    <p align="center">
+      <img src="../assets/agent_node_output.png" alt="Agent node output">
+    </p>
 
     You'll see that the agent has created a much more elaborate prompt that addresses all the specifications:
 
@@ -101,7 +113,9 @@ The third method demonstrates how we can create our own custom prompt enhancemen
 
 1. Finally, run the third image generation node, which uses this agent-enhanced prompt with "Enhance Prompt" turned off
 
-![Agent enhanced image result](assets/agent_enhanced_result.png)
+<p align="center">
+  <img src="../assets/bespoke_prompt_image.png" alt="Bespoke Prompt Image" width="450">
+</p>
 
 Notice how this image contains specific details and artistic elements compared to the first, but is about the same level of sophistication as the second.
 

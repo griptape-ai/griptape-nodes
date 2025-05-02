@@ -90,7 +90,7 @@ After adding a node, you can:
 
 ## Connecting Nodes
 
-Now, very simply drag from a "pin" on one node to a "pin" on the other. We cheated a _little_ bit by picking nodes that are compatible (not all are), but there you have it. One connection between nodes - and you're building a graph!
+Now, very simply drag from a port on one node to a port on the other. We cheated a _little_ bit by picking nodes that are compatible (not all are), but there you have it. One connection between nodes - and you're building a graph.
 
 <p align="center">
   <img src="../assets/connected.png" alt="Node on the workspace">
