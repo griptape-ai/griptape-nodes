@@ -41,7 +41,7 @@ secrets_manager = SecretsManager(config_manager)
 
 def main() -> None:
     """Main entry point for the Griptape Nodes CLI."""
-    load_dotenv(ENV_FILE)
+    load_dotenv(ENV_FILE, override=True)
 
     # Hack to make paths "just work". # noqa: FIX004
     # Without this, packages like `nodes` don't properly import.

@@ -125,7 +125,7 @@ class SecretsManager:
         if not ENV_VAR_PATH.exists():
             ENV_VAR_PATH.touch()
         set_key(ENV_VAR_PATH, secret_name, secret_value)
-        load_dotenv(ENV_VAR_PATH)
+        load_dotenv(ENV_VAR_PATH, override=True)
 
     @staticmethod
     def _apply_secret_name_compliance(secret_name: str) -> str:

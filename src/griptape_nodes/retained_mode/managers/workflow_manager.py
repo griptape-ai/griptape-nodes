@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, NamedTuple, TypeVar, cast
 
 import tomlkit
-from dotenv import load_dotenv
 from rich.box import HEAVY_EDGE
 from rich.console import Console
 from rich.panel import Panel
@@ -82,7 +81,6 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
-load_dotenv()
 
 T = TypeVar("T")
 
