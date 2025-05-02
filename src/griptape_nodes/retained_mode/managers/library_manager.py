@@ -158,7 +158,7 @@ class LibraryManager:
         # Status emojis mapping
         status_emoji = {
             LibraryManager.LibraryStatus.GOOD: "✅",
-            LibraryManager.LibraryStatus.FLAWED: "🚨",
+            LibraryManager.LibraryStatus.FLAWED: "🟡",
             LibraryManager.LibraryStatus.UNUSABLE: "❌",
             LibraryManager.LibraryStatus.MISSING: "❓",
         }

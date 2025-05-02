@@ -1,6 +1,6 @@
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes_library.utils.image_utils import dict_to_image_artifact
+from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
 
 
 class LoadImage(DataNode):
@@ -14,7 +14,7 @@ class LoadImage(DataNode):
             name="image",
             input_types=["ImageArtifact", "ImageUrlArtifact"],
             type="ImageArtifact",
-            output_type="ImageArtifact",
+            output_type="ImageUrlArtifact",
             ui_options={"clickable_file_browser": True, "expander": True},
             tooltip="The image that has been generated.",
         )
@@ -25,7 +25,7 @@ class LoadImage(DataNode):
         image = self.parameter_values["image"]
 
         if isinstance(image, dict):
-            image_artifact = dict_to_image_artifact(image)
+            image_artifact = dict_to_image_url_artifact(image)
         else:
             image_artifact = image
 

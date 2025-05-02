@@ -46,6 +46,8 @@ class CompareImages(ControlNode):
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         if parameter.name in {"Image_1", "Image_2"}:
             current_value = self.get_parameter_value("Compare")
+            if current_value is None:
+                current_value = {"input_image_1": None, "input_image_2": None}
             if parameter.name == "Image_1":
                 current_value["input_image_1"] = value
             elif parameter.name == "Image_2":

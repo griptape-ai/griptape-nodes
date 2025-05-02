@@ -9,7 +9,7 @@ Nodes framework.
 
 from griptape.drivers.prompt.ollama import OllamaPromptDriver as GtOllamaPromptDriver
 
-from griptape_nodes.exe_types.node_types import Parameter
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 
