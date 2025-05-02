@@ -227,6 +227,7 @@ def _auto_update_self() -> None:
     """Automatically updates the script to the latest version if the user confirms."""
     current_version = __get_current_version()
     latest_version = _get_latest_version(PACKAGE_NAME)
+    print(current_version, latest_version)
 
     if current_version < latest_version:
         update = Confirm.ask(
