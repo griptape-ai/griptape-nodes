@@ -35,7 +35,7 @@ class CreateNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CreateNodeResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class CreateNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     node_name: str
 
 
@@ -54,7 +54,7 @@ class DeleteNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteNodeResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class DeleteNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
@@ -73,13 +73,13 @@ class GetNodeResolutionStateRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeResolutionStateResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetNodeResolutionStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     state: str
 
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeResolutionStateResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetNodeResolutionStateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -92,13 +92,13 @@ class ListParametersOnNodeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListParametersOnNodeResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class ListParametersOnNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     parameter_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListParametersOnNodeResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class ListParametersOnNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -111,13 +111,13 @@ class GetNodeMetadataRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeMetadataResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetNodeMetadataResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     metadata: dict
 
 
 @dataclass
 @PayloadRegistry.register
-class GetNodeMetadataResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetNodeMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -131,7 +131,7 @@ class SetNodeMetadataRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SetNodeMetadataResultSuccess(ResultPayloadSuccess, WorkflowAlteredMixin):
+class SetNodeMetadataResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
@@ -158,7 +158,7 @@ class ParameterInfoValue:
 
 @dataclass
 @PayloadRegistry.register
-class GetAllNodeInfoResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin):
+class GetAllNodeInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     metadata: dict
     node_resolution_state: str
     connections: ListConnectionsForNodeResultSuccess
@@ -168,5 +168,5 @@ class GetAllNodeInfoResultSuccess(ResultPayloadSuccess, WorkflowNotAlteredMixin)
 
 @dataclass
 @PayloadRegistry.register
-class GetAllNodeInfoResultFailure(ResultPayloadFailure, WorkflowNotAlteredMixin):
+class GetAllNodeInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass

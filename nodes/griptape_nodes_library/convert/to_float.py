@@ -43,7 +43,7 @@ class ToFloat(DataNode):
     ) -> None:
         pass
 
-    def to_float(self, input_value) -> float:
+    def to_float(self, input_value: Any) -> float:
         result = 0.0  # Default return value
 
         try:

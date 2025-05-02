@@ -1,13 +1,65 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
+    from types import TracebackType
+
+    from griptape_nodes.retained_mode.events.arbitrary_python_events import RunArbitraryPythonStringRequest
     from griptape_nodes.retained_mode.events.base_events import RequestPayload
+    from griptape_nodes.retained_mode.events.config_events import (
+        GetConfigCategoryRequest,
+        GetConfigValueRequest,
+        SetConfigCategoryRequest,
+        SetConfigValueRequest,
+    )
+    from griptape_nodes.retained_mode.events.connection_events import (
+        CreateConnectionRequest,
+        DeleteConnectionRequest,
+        ListConnectionsForNodeRequest,
+    )
+    from griptape_nodes.retained_mode.events.execution_events import (
+        CancelFlowRequest,
+        ContinueExecutionStepRequest,
+        GetFlowStateRequest,
+        ResolveNodeRequest,
+        SingleExecutionStepRequest,
+        SingleNodeStepRequest,
+        StartFlowRequest,
+        UnresolveFlowRequest,
+    )
+    from griptape_nodes.retained_mode.events.flow_events import (
+        CreateFlowRequest,
+        DeleteFlowRequest,
+        ListFlowsInFlowRequest,
+        ListNodesInFlowRequest,
+    )
+    from griptape_nodes.retained_mode.events.library_events import (
+        GetNodeMetadataFromLibraryRequest,
+        ListNodeTypesInLibraryRequest,
+        ListRegisteredLibrariesRequest,
+    )
+    from griptape_nodes.retained_mode.events.node_events import (
+        CreateNodeRequest,
+        DeleteNodeRequest,
+        GetNodeMetadataRequest,
+        GetNodeResolutionStateRequest,
+        ListParametersOnNodeRequest,
+        SetNodeMetadataRequest,
+    )
+    from griptape_nodes.retained_mode.events.parameter_events import (
+        AddParameterToNodeRequest,
+        AlterParameterDetailsRequest,
+        GetParameterDetailsRequest,
+        GetParameterValueRequest,
+        RemoveParameterFromNodeRequest,
+        SetParameterValueRequest,
+    )
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 
 
-def handle_parameter_tooltips(payload, params) -> list:
+def handle_parameter_tooltips(payload: Any, params: Any) -> list:
+    """Handle converting tooltips to the correct format for RetainedMode."""
     tooltip = getattr(payload, "tooltip", "")
     if tooltip is not None:
         params.append(f'tooltip="{tooltip}"')
@@ -60,24 +112,24 @@ class PayloadConverter:
         return command_string
 
     @staticmethod
-    def _handle_DeleteFlowRequest(payload) -> str:
+    def _handle_DeleteFlowRequest(payload: DeleteFlowRequest) -> str:
         """Handle DeleteFlowRequest payloads."""
         return f"""cmd.delete_flow(flow_name="{payload.flow_name}")"""
 
     @staticmethod
-    def _handle_ListFlowsInFlowRequest(payload) -> str:
+    def _handle_ListFlowsInFlowRequest(payload: ListFlowsInFlowRequest) -> str:
         """Handle ListFlowsInFlowRequest payloads."""
         return f"""cmd.get_flows(parent_flow_name="{getattr(payload, "parent_flow_name", None)}")"""
 
     @staticmethod
-    def _handle_ListNodesInFlowRequest(payload) -> str:
+    def _handle_ListNodesInFlowRequest(payload: ListNodesInFlowRequest) -> str:
         """Handle ListNodesInFlowRequest payloads."""
         return f"""cmd.get_nodes_in_flow(flow_name="{payload.flow_name}")"""
 
     # NODE OPERATION HANDLERS
 
     @staticmethod
-    def _handle_CreateNodeRequest(payload) -> str:
+    def _handle_CreateNodeRequest(payload: CreateNodeRequest) -> str:
         """Handle CreateNodeRequest payloads."""
         # Start with the required parameter
         params = [f'node_type="{payload.node_type}"']
@@ -101,39 +153,39 @@ class PayloadConverter:
         return f"""cmd.create_node({command_params})"""
 
     @staticmethod
-    def _handle_DeleteNodeRequest(payload) -> str:
+    def _handle_DeleteNodeRequest(payload: DeleteNodeRequest) -> str:
         """Handle DeleteNodeRequest payloads."""
         return f"""cmd.delete_node(node_name="{payload.node_name}")"""
 
     @staticmethod
-    def _handle_GetNodeResolutionStateRequest(payload) -> str:
+    def _handle_GetNodeResolutionStateRequest(payload: GetNodeResolutionStateRequest) -> str:
         """Handle GetNodeResolutionStateRequest payloads."""
         return f"""cmd.get_resolution_state_for_node(node_name="{payload.node_name}")"""
 
     @staticmethod
-    def _handle_GetNodeMetadataRequest(payload) -> str:
+    def _handle_GetNodeMetadataRequest(payload: GetNodeMetadataRequest) -> str:
         """Handle GetNodeMetadataRequest payloads."""
         return f"""cmd.get_metadata_for_node(node_name="{payload.node_name}")"""
 
     @staticmethod
-    def _handle_SetNodeMetadataRequest(payload) -> str:
+    def _handle_SetNodeMetadataRequest(payload: SetNodeMetadataRequest) -> str:
         """Handle SetNodeMetadataRequest payloads."""
         return f"""cmd.set_metadata_for_node(node_name="{payload.node_name}",metadata="{payload.metadata}")"""
 
     @staticmethod
-    def _handle_ListConnectionsForNodeRequest(payload) -> str:
+    def _handle_ListConnectionsForNodeRequest(payload: ListConnectionsForNodeRequest) -> str:
         """Handle ListConnectionsForNodeRequest payloads."""
         return f"""cmd.get_connections_for_node(node_name="{payload.node_name}")"""
 
     @staticmethod
-    def _handle_ListParametersOnNodeRequest(payload) -> str:
+    def _handle_ListParametersOnNodeRequest(payload: ListParametersOnNodeRequest) -> str:
         """Handle ListParametersOnNodeRequest payloads."""
         return f"""cmd.list_params(node="{payload.node_name}")"""
 
     # PARAMETER OPERATION HANDLERS
 
     @staticmethod
-    def _handle_AddParameterToNodeRequest(payload) -> str:
+    def _handle_AddParameterToNodeRequest(payload: AddParameterToNodeRequest) -> str:
         """Handle AddParameterToNodeRequest payloads."""
         # Start with required parameters
         params = [
@@ -168,7 +220,7 @@ class PayloadConverter:
         return f"""cmd.add_param({command_params})"""
 
     @staticmethod
-    def _handle_AlterParameterDetailsRequest(payload) -> str:
+    def _handle_AlterParameterDetailsRequest(payload: AlterParameterDetailsRequest) -> str:
         """Handle AlterParameterDetailsRequest payloads."""
         # Start with required parameters
         params = [
@@ -203,22 +255,22 @@ class PayloadConverter:
         return f"""cmd.add_param({command_params})"""
 
     @staticmethod
-    def _handle_RemoveParameterFromNodeRequest(payload) -> str:
+    def _handle_RemoveParameterFromNodeRequest(payload: RemoveParameterFromNodeRequest) -> str:
         """Handle RemoveParameterFromNodeRequest payloads."""
         return f"""cmd.del_param(node_name="{payload.node_name}",parameter_name="{payload.parameter_name}")"""
 
     @staticmethod
-    def _handle_GetParameterDetailsRequest(payload) -> str:
+    def _handle_GetParameterDetailsRequest(payload: GetParameterDetailsRequest) -> str:
         """Handle GetParameterDetailsRequest payloads."""
         return f"""cmd.param_info("{payload.node_name}.{payload.parameter_name}")"""
 
     @staticmethod
-    def _handle_GetParameterValueRequest(payload) -> str:
+    def _handle_GetParameterValueRequest(payload: GetParameterValueRequest) -> str:
         """Handle GetParameterValueRequest payloads."""
         return f"""cmd.get_value("{payload.node_name}.{payload.parameter_name}")"""
 
     @staticmethod
-    def _handle_SetParameterValueRequest(payload) -> str:
+    def _handle_SetParameterValueRequest(payload: SetParameterValueRequest) -> str:
         """Handle SetParameterValueRequest payloads."""
         max_length = 100  # Adjust this as needed
 
@@ -246,108 +298,108 @@ class PayloadConverter:
     # CONNECTION OPERATION HANDLERS
 
     @staticmethod
-    def _handle_CreateConnectionRequest(payload) -> str:
+    def _handle_CreateConnectionRequest(payload: CreateConnectionRequest) -> str:
         """Handle CreateConnectionRequest payloads."""
         source = f"{payload.source_node_name}.{payload.source_parameter_name}"
         destination = f"{payload.target_node_name}.{payload.target_parameter_name}"
         return f"""cmd.connect(source="{source}",destination="{destination}")"""
 
     @staticmethod
-    def _handle_DeleteConnectionRequest(payload) -> str:
+    def _handle_DeleteConnectionRequest(payload: DeleteConnectionRequest) -> str:
         """Handle DeleteConnectionRequest payloads."""
         return f"""cmd.delete_connection(source_node_name="{payload.source_node_name}",source_param_name="{payload.source_parameter_name}",target_node_name="{payload.target_node_name}",target_param_name="{payload.target_parameter_name}")"""
 
     # LIBRARY OPERATION HANDLERS
 
     @staticmethod
-    def _handle_ListRegisteredLibrariesRequest(payload) -> str:  # noqa: ARG004
+    def _handle_ListRegisteredLibrariesRequest(payload: ListRegisteredLibrariesRequest) -> str:  # noqa: ARG004
         """Handle ListRegisteredLibrariesRequest payloads."""
         return """cmd.get_available_libraries()"""
 
     @staticmethod
-    def _handle_ListNodeTypesInLibraryRequest(payload) -> str:
+    def _handle_ListNodeTypesInLibraryRequest(payload: ListNodeTypesInLibraryRequest) -> str:
         """Handle ListNodeTypesInLibraryRequest payloads."""
         return f"""cmd.get_node_types_in_library(library_name="{payload.library}")"""
 
     @staticmethod
-    def _handle_GetNodeMetadataFromLibraryRequest(payload) -> str:
+    def _handle_GetNodeMetadataFromLibraryRequest(payload: GetNodeMetadataFromLibraryRequest) -> str:
         """Handle GetNodeMetadataFromLibraryRequest payloads."""
         return f"""cmd.get_node_metadata_from_library(library_name="{payload.library}",node_type_name="{payload.node_type}")"""
 
     # FLOW EXECUTION HANDLERS
 
     @staticmethod
-    def _handle_StartFlowRequest(payload) -> str:
+    def _handle_StartFlowRequest(payload: StartFlowRequest) -> str:
         """Handle StartFlowRequest payloads."""
         return f"""cmd.run_flow(flow_name="{payload.flow_name}")"""
 
     @staticmethod
-    def _handle_ResolveNodeRequest(payload) -> str:
+    def _handle_ResolveNodeRequest(payload: ResolveNodeRequest) -> str:
         """Handle ResolveNodeRequest payloads."""
         return f"""cmd.run_node(node_name="{payload.node_name}")"""
 
     @staticmethod
-    def _handle_SingleNodeStepRequest(payload) -> str:
+    def _handle_SingleNodeStepRequest(payload: SingleNodeStepRequest) -> str:
         """Handle SingleNodeStepRequest payloads."""
         return f"""cmd.single_step(flow_name="{payload.flow_name}")"""
 
     @staticmethod
-    def _handle_SingleExecutionStepRequest(payload) -> str:
+    def _handle_SingleExecutionStepRequest(payload: SingleExecutionStepRequest) -> str:
         """Handle SingleExecutionStepRequest payloads."""
         return f"""cmd.single_execution_step(flow_name="{payload.flow_name}")"""
 
     @staticmethod
-    def _handle_ContinueExecutionStepRequest(payload) -> str:
+    def _handle_ContinueExecutionStepRequest(payload: ContinueExecutionStepRequest) -> str:
         """Handle ContinueExecutionStepRequest payloads."""
         return f"""cmd.continue_flow(flow_name="{payload.flow_name}")"""
 
     @staticmethod
-    def _handle_UnresolveFlowRequest(payload) -> str:
+    def _handle_UnresolveFlowRequest(payload: UnresolveFlowRequest) -> str:
         """Handle UnresolveFlowRequest payloads."""
         return f"""cmd.reset_flow(flow_name="{payload.flow_name}")"""
 
     @staticmethod
-    def _handle_CancelFlowRequest(payload) -> str:
+    def _handle_CancelFlowRequest(payload: CancelFlowRequest) -> str:
         """Handle CancelFlowRequest payloads."""
         return f"""cmd.cancel_flow(flow_name="{payload.flow_name}")"""
 
     @staticmethod
-    def _handle_GetFlowStateRequest(payload) -> str:
+    def _handle_GetFlowStateRequest(payload: GetFlowStateRequest) -> str:
         """Handle GetFlowStateRequest payloads."""
         return f"""cmd.get_flow_state(flow_name="{payload.flow_name}")"""
 
     # ARBITRARY PYTHON EXECUTION HANDLER
 
     @staticmethod
-    def _handle_RunArbitraryPythonStringRequest(payload) -> str:
+    def _handle_RunArbitraryPythonStringRequest(payload: RunArbitraryPythonStringRequest) -> str:
         """Handle RunArbitraryPythonStringRequest payloads."""
         return f"""cmd.run_arbitrary_python(python_str="{payload.python_string}")"""
 
     # CONFIG MANAGER HANDLERS
 
     @staticmethod
-    def _handle_GetConfigValueRequest(payload) -> str:
+    def _handle_GetConfigValueRequest(payload: GetConfigValueRequest) -> str:
         """Handle GetConfigValueRequest payloads."""
         return f"""cmd.get_config_value(category_and_key="{payload.category_and_key}")"""
 
     @staticmethod
-    def _handle_SetConfigValueRequest(payload) -> str:
+    def _handle_SetConfigValueRequest(payload: SetConfigValueRequest) -> str:
         """Handle SetConfigValueRequest payloads."""
         return f"""cmd.set_config_value(category_and_key="{payload.category_and_key}",value="{payload.value}")"""
 
     @staticmethod
-    def _handle_GetConfigCategoryRequest(payload) -> str:
+    def _handle_GetConfigCategoryRequest(payload: GetConfigCategoryRequest) -> str:
         """Handle GetConfigCategoryRequest payloads."""
         return f"""cmd.get_config_category(category="{getattr(payload, "category", None)}")"""
 
     @staticmethod
-    def _handle_SetConfigCategoryRequest(payload) -> str:
+    def _handle_SetConfigCategoryRequest(payload: SetConfigCategoryRequest) -> str:
         """Handle SetConfigCategoryRequest payloads."""
         return f"""cmd.set_config_category(category="{getattr(payload, "category", None)}",contents="{payload.contents}")"""
 
     # FLOW OPERATIONS
     @staticmethod
-    def _handle_CreateFlowRequest(payload) -> str:
+    def _handle_CreateFlowRequest(payload: CreateFlowRequest) -> str:
         """Handle CreateFlowRequest payloads."""
         params = []
         if getattr(payload, "flow_name", None) is not None:
@@ -381,7 +433,12 @@ class OperationDepthManager:
         self._depth += 1
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        exc_traceback: TracebackType | None,
+    ) -> None:
         # Decrement depth when exiting context
         self._depth -= 1
 

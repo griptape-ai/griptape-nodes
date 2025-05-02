@@ -336,7 +336,7 @@ class RetainedMode:
         return (final_param_name, index)
 
     @classmethod
-    def parse_indexed_variable(cls, expr_str) -> tuple[str, list[str]]:
+    def parse_indexed_variable(cls, expr_str: str) -> tuple[str, list[str]]:
         """Parse an indexed variable expression and return the variable name and a list of index operations.
 
         Args:
@@ -374,7 +374,7 @@ class RetainedMode:
         return var_name, indices
 
     @classmethod
-    def _get_indexed_value(cls, node_name, base_param_name, indices) -> Any:
+    def _get_indexed_value(cls, node_name: str, base_param_name: str, indices: list) -> Any:
         """Get a value at specified indices from a container parameter.
 
         Args:
@@ -420,7 +420,7 @@ class RetainedMode:
         return True, curr_value
 
     @classmethod
-    def _set_indexed_value(cls, node_name, base_param_name, indices, value) -> ResultPayload:
+    def _set_indexed_value(cls, node_name: str, base_param_name: str, indices: list, value: Any) -> ResultPayload:
         """Set a value at specified indices in a container parameter.
 
         Args:

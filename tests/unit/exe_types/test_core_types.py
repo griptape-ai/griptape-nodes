@@ -1,6 +1,6 @@
 from unittest.mock import ANY
 
-import pytest
+import pytest  # type: ignore[reportMissingImports]
 
 from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, ParameterGroup
 
@@ -41,7 +41,7 @@ class TestBaseNodeElement:
     def test__repr__(self) -> None:
         assert repr(BaseNodeElement()) == "BaseNodeElement(self.children=[])"
 
-    def test_to_dict(self, ui_element) -> None:
+    def test_to_dict(self, ui_element: BaseNodeElement) -> None:
         assert ui_element.to_dict() == {
             "element_id": ANY,
             "element_type": "BaseNodeElement",
@@ -92,8 +92,10 @@ class TestBaseNodeElement:
             ],
         }
 
-    def test_add_child(self, ui_element) -> None:
-        ui_element.find_element_by_id("leaf1").add_child(BaseNodeElement(element_id="leaf3"))
+    def test_add_child(self, ui_element: BaseNodeElement) -> None:
+        found_element = ui_element.find_element_by_id("leaf1")
+        assert found_element is not None
+        found_element.add_child(BaseNodeElement(element_id="leaf3"))
 
         assert ui_element.to_dict() == {
             "element_id": ANY,
@@ -153,17 +155,24 @@ class TestBaseNodeElement:
             ],
         }
 
-    def test_find_element_by_id(self, ui_element) -> None:
-        assert ui_element.find_element_by_id("leaf1").element_id == "leaf1"
-        assert ui_element.find_element_by_id("leaf2").element_id == "leaf2"
+    def test_find_element_by_id(self, ui_element: BaseNodeElement) -> None:
+        element = ui_element.find_element_by_id("leaf1")
+        assert element is not None
+        assert element.element_id == "leaf1"
+
+        element = ui_element.find_element_by_id("leaf2")
+        assert element is not None
+        assert element.element_id == "leaf2"
 
     @pytest.mark.parametrize(("element_type", "num_expected"), [(BaseNodeElement, 7), (Parameter, 1)])
-    def test_find_elements_by_type(self, ui_element, element_type, num_expected) -> None:
+    def test_find_elements_by_type(self, ui_element: BaseNodeElement, element_type: type, num_expected: int) -> None:
         elements = ui_element.find_elements_by_type(element_type)
         assert len(elements) == num_expected
 
-    def test_remove_child(self, ui_element) -> None:
+    def test_remove_child(self, ui_element: BaseNodeElement) -> None:
         element_to_remove = ui_element.find_element_by_id("leaf1")
+
+        assert element_to_remove is not None
 
         ui_element.remove_child(element_to_remove)
 

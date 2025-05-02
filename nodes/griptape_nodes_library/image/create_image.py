@@ -7,8 +7,8 @@ from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -22,8 +22,9 @@ class GenerateImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self.category = "Agent"
-        self.description = "Generate an image"
+        # TODO(griptape): Give nodes a way to ask about the current state of their connections instead of forcing them to maintain
+        # state: https://github.com/griptape-ai/griptape-nodes/issues/720
+        self._has_connection_to_prompt = False
 
         self.add_parameter(
             Parameter(
@@ -47,11 +48,6 @@ class GenerateImage(ControlNode):
             )
         )
 
-        def validate_prompt(_param: Parameter, value: str) -> None:
-            if not value:
-                msg = "Prompt is required for image generation."
-                raise ValueError(msg)
-
         self.add_parameter(
             Parameter(
                 name="prompt",
@@ -62,7 +58,6 @@ class GenerateImage(ControlNode):
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"multiline": True, "placeholder_text": "Enter your image generation prompt here."},
-                validators=[validate_prompt],
             )
         )
         self.add_parameter(
@@ -78,9 +73,9 @@ class GenerateImage(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output",
-                input_types=["ImageArtifact"],
-                output_type="ImageArtifact",
-                type="ImageArtifact",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                output_type="ImageUrlArtifact",
+                type="ImageUrlArtifact",
                 tooltip="None",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
@@ -91,8 +86,7 @@ class GenerateImage(ControlNode):
                 name="logs",
                 type="str",
                 tooltip="None",
-                default_value="Node hasn't begun yet",
-                ui_options={"multiline": True},
+                ui_options={"multiline": True, "placeholder_text": "Logs"},
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
@@ -101,13 +95,21 @@ class GenerateImage(ControlNode):
         # TODO(kate): Figure out how to wrap this so it's easily repeatable
         exceptions = []
         api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
-        # No need for the api key. These exceptions caught on other nodes.
-        if self.parameter_values.get("agent", None) and self.parameter_values.get("driver", None):
-            return None
         if not api_key:
-            msg = f"{API_KEY_ENV_VAR} is not defined"
-            exceptions.append(KeyError(msg))
-            return exceptions
+            # If we have an agent or a driver, the lack of API key will be surfaced on them, not us.
+            agent_val = self.parameter_values.get("agent", None)
+            driver_val = self.parameter_values.get("driver", None)
+            if agent_val is None and driver_val is None:
+                msg = f"{API_KEY_ENV_VAR} is not defined"
+                exceptions.append(KeyError(msg))
+
+        # Validate that we have a prompt.
+        prompt_value = self.parameter_values.get("prompt", None)
+        # Ensure no empty prompt; if there's an input connection to this Parameter, that will be OK though.
+        if (not prompt_value or prompt_value.isspace()) and (not self._has_connection_to_prompt):
+            msg = "No prompt was provided. Cannot generate an image without a valid prompt."
+            exceptions.append(ValueError(msg))
+
         return exceptions if exceptions else None
 
     def process(self) -> AsyncResult:
@@ -123,6 +125,7 @@ class GenerateImage(ControlNode):
         else:
             agent = Agent.from_dict(agent)
         prompt = params.get("prompt", "")
+
         enhance_prompt = params.get("enhance_prompt", False)
 
         if enhance_prompt:
@@ -173,9 +176,31 @@ Focus on qualities that will make this the most professional looking photo in th
         # Reset the agent
         agent._tasks = []
 
+    def after_incoming_connection(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,
+    ) -> None:
+        """Callback after a Connection has been established TO this Node."""
+        # Record a connection to the prompt Parameter so that node validation doesn't get aggro
+        if target_parameter.name == "prompt":
+            self._has_connection_to_prompt = True
+
+    def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,
+    ) -> None:
+        """Callback after a Connection TO this Node was REMOVED."""
+        # Remove the state maintenance of the connection to the prompt Parameter
+        if target_parameter.name == "prompt":
+            self._has_connection_to_prompt = False
+
     def _create_image(self, agent: Agent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)
-        static_url = self.save_static_file(agent.output.to_bytes(), f"{uuid.uuid4()}.png")
+        static_url = GriptapeNodes.StaticFilesManager().save_static_file(agent.output.to_bytes(), f"{uuid.uuid4()}.png")
         url_artifact = ImageUrlArtifact(value=static_url)
         self.publish_update_to_parameter("output", url_artifact)
         try_throw_error(agent.output)

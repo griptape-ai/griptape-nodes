@@ -92,7 +92,8 @@ Griptape Nodes uses a configuration loading system. For full details, see the [C
           "app_events": {
             "on_app_initialization_complete": {
               "libraries_to_register": [
-                "nodes/griptape_nodes_library.json"
+                "nodes/griptape_nodes_library.json",
+                "nodes/griptape_nodes_library_extras.json"
               ]
             }
           }
@@ -107,7 +108,7 @@ Griptape Nodes uses a variety of environment variables for influencing its low-l
 - **`GRIPTAPE_NODES_API_BASE_URL`**: The base URL for the Griptape Nodes API (default `https://api.nodes.griptape.ai`). This is used to connect the engine to the Workflow Editor.
 - **`GT_CLOUD_API_KEY`**: The API key for authenticating with the Griptape Cloud API. This is required for the engine to function properly.
 - **`STATIC_SERVER_HOST`**: The host for the static server (default `localhost`). This is used to serve static files from the engine.
-- **`STATIC_SERVER_PORT`**: The port for the static server (default `8000`). This is used to serve static files from the engine.
+- **`STATIC_SERVER_PORT`**: The port for the static server (default `8124`). This is used to serve static files from the engine.
 - **`STATIC_SERVER_URL`**: The URL path for the static server (default `/static`). This is used to serve static files from the engine.
 - **`STATIC_SERVER_LOG_LEVEL`**: The log level for the static server (default `info`). This is used to control the verbosity of the static server logs.
 - **`STATIC_SERVER_ENABLED`**: Whether the static server is enabled (default `true`. This is used to control whether the static server is started or not.
@@ -147,16 +148,28 @@ The documentation website ([docs.griptapenodes.com](https://docs.griptapenodes.c
 ## Making a Release (Maintainers)
 
 1. Check out the `main` branch locally:
+
     ```shell
     git checkout main
     git pull origin main
     ```
-1. Set the new release version (this creates Git tags):
+
+1. Bump the new release version:
+
     ```shell
-    # Example for version 0.8.0
-    make version/set v=0.8.0
+    # e.g. bumping 0.8.0 to 0.8.1
+    make version/patch
     ```
-1. Publish the release (pushes tags to trigger GitHub Actions workflow):
+
+    or:
+
+    ```shell
+    # e.g. bumping 0.8.0 to 0.9.0
+    make version/minor
+    ```
+
+1. Publish the release (creates and pushes tags to Github):
+
     ```shell
     make version/publish
     ```

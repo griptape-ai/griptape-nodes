@@ -173,7 +173,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     def update(self) -> None:
         if self._current_state is None:
-            msg = "Cannot step machine that has not started"
+            msg = "Attempted to run the next step of a workflow that was either already complete or has not started."
             raise RuntimeError(msg)
         super().update()
 
@@ -187,16 +187,22 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             resolution_machine.change_debug_mode(True)
         resolution_machine.update()
 
-        if resolution_machine.is_complete() or (not resolution_machine.is_started()):
-            self.update()
+        # Tick the control flow if the resolution machine inside it isn't busy.
+        if resolution_machine.is_complete() or not resolution_machine.is_started():  # noqa: SIM102
+            # Don't tick ourselves if we are already complete.
+            if self._current_state is not None:
+                self.update()
 
     def node_step(self) -> None:
         resolution_machine = self._context.resolution_machine
         resolution_machine.change_debug_mode(False)
         resolution_machine.update()
 
-        if resolution_machine.is_complete() or (not resolution_machine.is_started()):
-            self.update()
+        # Tick the control flow if the resolution machine inside it isn't busy.
+        if resolution_machine.is_complete() or not resolution_machine.is_started():  # noqa: SIM102
+            # Don't tick ourselves if we are already complete.
+            if self._current_state is not None:
+                self.update()
 
     def reset_machine(self) -> None:
         self._context.reset()

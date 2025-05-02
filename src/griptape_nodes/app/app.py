@@ -23,6 +23,7 @@ from griptape.events import (
 )
 from rich.align import Align
 from rich.console import Console
+from rich.logging import RichHandler
 from rich.panel import Panel
 from xdg_base_dirs import xdg_config_home
 
@@ -47,16 +48,16 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 # This is a global event queue that will be used to pass events between threads
 event_queue = Queue()
 
+# Whether to enable the static server
+STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
 # Host of the static server
 STATIC_SERVER_HOST = os.getenv("STATIC_SERVER_HOST", "localhost")
 # Port of the static server
-STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8000"))
+STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8124"))
 # URL path for the static server
 STATIC_SERVER_URL = os.getenv("STATIC_SERVER_URL", "/static")
 # Log level for the static server
 STATIC_SERVER_LOG_LEVEL = os.getenv("STATIC_SERVER_LOG_LEVEL", "info").lower()
-# Whether to enable the static server
-STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
 
 
 class EventLogHandler(logging.Handler):
@@ -65,7 +66,7 @@ class EventLogHandler(logging.Handler):
     This is used to forward log messages to the event queue so they can be sent to the GUI.
     """
 
-    def emit(self, record) -> None:
+    def emit(self, record: logging.LogRecord) -> None:
         event_queue.put(
             AppEvent(
                 payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)
@@ -85,10 +86,10 @@ def start_app() -> None:
 
     Starts the event loop and listens for events from the Nodes API.
     """
-    global socket  # noqa: PLW0603 # Need to initialize the socket lazily here to avoid auth-ing too early
+    global socket_manager  # noqa: PLW0603 # Need to initialize the socket lazily here to avoid auth-ing too early
 
     # Listen for SSE events from the Nodes API in a separate thread
-    socket = NodesApiSocketManager()
+    socket_manager = NodesApiSocketManager()
 
     _init_event_listeners()
 
@@ -122,7 +123,7 @@ def _serve_static_server() -> None:
             "http://localhost",
         ],
         allow_credentials=True,
-        allow_methods=["OPTIONS, GET"],
+        allow_methods=["GET"],
         allow_headers=["*"],
     )
 
@@ -132,7 +133,13 @@ def _serve_static_server() -> None:
         name="static",
     )
 
-    uvicorn.run(app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL)
+    logging.getLogger("uvicorn").addHandler(
+        RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)
+    )
+
+    uvicorn.run(
+        app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL, log_config=None
+    )
 
 
 def _init_event_listeners() -> None:
@@ -193,7 +200,7 @@ def _listen_for_api_events() -> None:
                                 # but we don't have a proper EventRequest for it yet.
                                 if event.get("request_type") == "Heartbeat":
                                     session_id = GriptapeNodes.get_session_id()
-                                    socket.heartbeat(session_id=session_id, request=event["request"])
+                                    socket_manager.heartbeat(session_id=session_id, request=event["request"])
                                 else:
                                     __process_api_event(event)
                             except Exception:
@@ -220,7 +227,7 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
 
     # Don't send events over the wire that don't have a request_id set (e.g. engine-internal events)
     event_json = result_event.json()
-    socket.emit(dest_socket, event_json)
+    socket_manager.emit(dest_socket, event_json)
 
 
 def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
@@ -243,7 +250,7 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
             raise KeyError(msg) from None
         GriptapeNodes.EventManager().current_active_node = None
     # Set the node name here so I am not double importing
-    socket.emit("execution_event", event_json)
+    socket_manager.emit("execution_event", event_json)
 
 
 def __process_progress_event(gt_event: ProgressEvent) -> None:
@@ -255,7 +262,7 @@ def __process_progress_event(gt_event: ProgressEvent) -> None:
             node_name=node_name, parameter_name=gt_event.parameter_name, type=type(gt_event).__name__, value=value
         )
         event_to_emit = ExecutionEvent(payload=payload)
-        socket.emit("execution_event", event_to_emit.json())
+        socket_manager.emit("execution_event", event_to_emit.json())
 
 
 def __process_app_event(event: AppEvent) -> None:
@@ -263,7 +270,7 @@ def __process_app_event(event: AppEvent) -> None:
     # Let Griptape Nodes broadcast it.
     GriptapeNodes.broadcast_app_event(event.payload)
 
-    socket.emit("app_event", event.json())
+    socket_manager.emit("app_event", event.json())
 
 
 def _process_event_queue() -> None:
@@ -365,23 +372,23 @@ def __process_api_event(data: Any) -> None:
         data["request"]
     except KeyError:
         msg = "Error: 'request' was expected but not found."
-        raise Exception(msg) from None
+        raise RuntimeError(msg) from None
 
     try:
         event_type = data["event_type"]
         if event_type != "EventRequest":
             msg = "Error: 'event_type' was found on request, but did not match 'EventRequest' as expected."
-            raise Exception(msg) from None
+            raise RuntimeError(msg) from None
     except KeyError:
         msg = "Error: 'event_type' not found in request."
-        raise Exception(msg) from None
+        raise RuntimeError(msg) from None
 
     # Now attempt to convert it into an EventRequest.
     try:
         request_event: EventRequest = cast("EventRequest", deserialize_event(json_data=data))
     except Exception as e:
         msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{e}'"
-        raise Exception(msg) from None
+        raise RuntimeError(msg) from None
 
     # Add a request_id to the payload
     request_id = request_event.request.request_id

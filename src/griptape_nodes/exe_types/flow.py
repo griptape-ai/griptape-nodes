@@ -89,16 +89,21 @@ class ControlFlow:
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
             errormsg = "This workflow is already in progress. Please wait for the current process to finish before starting again."
-            raise Exception(errormsg)
+            raise RuntimeError(errormsg)
 
         if start_node is None:
             if self.flow_queue.empty():
                 errormsg = "No Flow exists. You must create at least one control connection."
-                raise Exception(errormsg)
+                raise RuntimeError(errormsg)
             start_node = self.flow_queue.get()
 
-        self.control_flow_machine.start_flow(start_node, debug_mode)
-        self.flow_queue.task_done()
+        try:
+            self.control_flow_machine.start_flow(start_node, debug_mode)
+            self.flow_queue.task_done()
+        except Exception:
+            if self.check_for_existing_running_flow():
+                self.cancel_flow_run()
+            raise
 
     def check_for_existing_running_flow(self) -> bool:
         if self.control_flow_machine._current_state is not CompleteState and self.control_flow_machine._current_state:
@@ -114,7 +119,7 @@ class ControlFlow:
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
             errormsg = f"This workflow is already in progress. Please wait for the current process to finish before starting {node.name} again."
-            raise Exception(errormsg)
+            raise RuntimeError(errormsg)
         self.single_node_resolution = True
         # Get the node resolution machine for the current flow!
         self.control_flow_machine._context.current_node = node
@@ -134,7 +139,7 @@ class ControlFlow:
         if not self.check_for_existing_running_flow():
             if self.flow_queue.empty():
                 errormsg = "Flow has not yet been started. Cannot step while no flow has begun."
-                raise Exception(errormsg)
+                raise RuntimeError(errormsg)
             start_node = self.flow_queue.get()
             self.control_flow_machine.start_flow(start_node, debug_mode=True)
             start_node = self.flow_queue.task_done()
@@ -151,7 +156,7 @@ class ControlFlow:
         if not self.check_for_existing_running_flow():
             if self.flow_queue.empty():
                 errormsg = "Flow has not yet been started. Cannot step while no flow has begun."
-                raise Exception(errormsg)
+                raise RuntimeError(errormsg)
             start_node = self.flow_queue.get()
             self.control_flow_machine.start_flow(start_node, debug_mode=True)
             start_node = self.flow_queue.task_done()
@@ -159,7 +164,7 @@ class ControlFlow:
         # Step over a whole node
         if self.single_node_resolution:
             msg = "Cannot step through the Control Flow in Single Node Execution"
-            raise Exception(msg)
+            raise RuntimeError(msg)
         self.control_flow_machine.node_step()
         # Start the next resolution step now please.
         if not self.check_for_existing_running_flow() and not self.flow_queue.empty():
@@ -171,7 +176,7 @@ class ControlFlow:
         if not self.check_for_existing_running_flow():
             if self.flow_queue.empty():
                 errormsg = "Flow has not yet been started. Cannot step while no flow has begun."
-                raise Exception(errormsg)
+                raise RuntimeError(errormsg)
             start_node = self.flow_queue.get()
             self.flow_queue.task_done()
             self.control_flow_machine.start_flow(start_node, debug_mode=False)
@@ -194,7 +199,7 @@ class ControlFlow:
     def cancel_flow_run(self) -> None:
         if not self.check_for_existing_running_flow():
             errormsg = "Flow has not yet been started. Cannot cancel flow that hasn't begun."
-            raise Exception(errormsg)
+            raise RuntimeError(errormsg)
         self.clear_flow_queue()
         self.control_flow_machine.reset_machine()
         # Reset control flow machine
@@ -212,7 +217,7 @@ class ControlFlow:
     def flow_state(self) -> CurrentNodes:
         if not self.check_for_existing_running_flow():
             msg = "Flow hasn't started."
-            raise Exception(msg)
+            raise RuntimeError(msg)
         current_control_node = (
             self.control_flow_machine._context.current_node.name
             if self.control_flow_machine._context.current_node is not None

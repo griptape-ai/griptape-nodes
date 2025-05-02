@@ -57,11 +57,6 @@ class ResolutionContext:
             node.clear_node()
             self.focus_stack[-1].process_generator = None
             self.focus_stack[-1].scheduled_value = None
-            EventBus.publish_event(
-                ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=node.name))
-                )
-            )
         self.focus_stack.clear()
         self.paused = False
 
@@ -140,7 +135,11 @@ class EvaluateParameterState(State):
         if next_node:
             next_node, _ = next_node
         if next_node and next_node.state == NodeResolutionState.UNRESOLVED:
-            # Already handles cycles with state
+            focus_stack_names = {focus.node.name for focus in context.focus_stack}
+            if next_node.name in focus_stack_names:
+                msg = f"Cycle detected between node '{current_node.name}' and '{next_node.name}'."
+                raise RuntimeError(msg)
+
             context.focus_stack.append(Focus(node=next_node))
             return InitializeSpotlightState
 
@@ -259,7 +258,7 @@ class ExecuteNodeState(State):
                 logger.debug("Pausing Node %s to run background work", current_node.name)
                 return None
         except Exception as e:
-            logger.error("Error processing node '%s': %s", current_node.name, e)
+            logger.exception("Error processing node '%s", current_node.name)
             msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
             current_node.state = NodeResolutionState.UNRESOLVED
             current_focus.process_generator = None

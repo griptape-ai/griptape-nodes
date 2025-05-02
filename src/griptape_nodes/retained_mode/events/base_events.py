@@ -46,16 +46,18 @@ class ResultPayload(Payload, ABC):
         return not self.succeeded()
 
 
+@dataclass
 class WorkflowAlteredMixin:
     """Mixin for a ResultPayload that guarantees that a workflow was altered."""
 
-    altered_workflow_state: bool = True
+    altered_workflow_state: bool = field(default=True, init=False)
 
 
+@dataclass
 class WorkflowNotAlteredMixin:
     """Mixin for a ResultPayload that guarantees that a workflow was NOT altered."""
 
-    altered_workflow_state: bool = False
+    altered_workflow_state: bool = field(default=False, init=False)
 
 
 # Success result payload abstract base class
@@ -111,6 +113,8 @@ class BaseEvent(BaseModel, ABC):
 
     # Custom JSON encoder for the payload
     class Config:
+        """Pydantic configuration for the BaseEvent class."""
+
         arbitrary_types_allowed = True
         json_encoders: ClassVar[dict] = {
             # Use to_dict() methods for Griptape objects
@@ -339,7 +343,7 @@ class EventResultFailure(EventResult[P, R]):
 
 
 # Helper function to deserialize event from JSON
-def deserialize_event(json_data) -> BaseEvent:
+def deserialize_event(json_data: str | dict | Any) -> BaseEvent:
     """Deserialize an event from JSON or dict, using the payload type information embedded in the data.
 
     Args:

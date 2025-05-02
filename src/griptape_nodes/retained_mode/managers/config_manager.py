@@ -13,9 +13,14 @@ from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultFailure,
     GetConfigCategoryResultSuccess,
+    GetConfigPathRequest,
+    GetConfigPathResultSuccess,
     GetConfigValueRequest,
     GetConfigValueResultFailure,
     GetConfigValueResultSuccess,
+    ResetConfigRequest,
+    ResetConfigResultFailure,
+    ResetConfigResultSuccess,
     SetConfigCategoryRequest,
     SetConfigCategoryResultFailure,
     SetConfigCategoryResultSuccess,
@@ -24,7 +29,7 @@ from griptape_nodes.retained_mode.events.config_events import (
     SetConfigValueResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.managers.settings import Settings, WorkflowSettingsDetail
+from griptape_nodes.retained_mode.managers.settings import Settings
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
 
 logger = logging.getLogger("griptape_nodes")
@@ -63,6 +68,8 @@ class ConfigManager:
             )
             event_manager.assign_manager_to_request_type(GetConfigValueRequest, self.on_handle_get_config_value_request)
             event_manager.assign_manager_to_request_type(SetConfigValueRequest, self.on_handle_set_config_value_request)
+            event_manager.assign_manager_to_request_type(GetConfigPathRequest, self.on_handle_get_config_path_request)
+            event_manager.assign_manager_to_request_type(ResetConfigRequest, self.on_handle_reset_config_request)
 
             event_manager.add_listener_to_app_event(
                 AppInitializationComplete,
@@ -175,21 +182,20 @@ class ConfigManager:
         return env_var_names
 
     def save_user_workflow_json(self, workflow_file_name: str) -> None:
-        workflow_details = WorkflowSettingsDetail(file_name=workflow_file_name, is_griptape_provided=False)
         config_loc = "app_events.on_app_initialization_complete.workflows_to_register"
         existing_workflows = self.get_config_value(config_loc)
         if not existing_workflows:
             existing_workflows = []
-        existing_workflows.append(workflow_details.__dict__)
+        existing_workflows.append(workflow_file_name)
         self.set_config_value(config_loc, existing_workflows)
 
-    def delete_user_workflow(self, workflow: dict) -> None:
+    def delete_user_workflow(self, workflow_file_name: str) -> None:
         default_workflows = self.get_config_value("app_events.on_app_initialization_complete.workflows_to_register")
         if default_workflows:
             default_workflows = [
                 saved_workflow
                 for saved_workflow in default_workflows
-                if saved_workflow["file_name"] != workflow["file_path"]
+                if (saved_workflow.lower() != workflow_file_name.lower())
             ]
             self.set_config_value("app_events.on_app_initialization_complete.workflows_to_register", default_workflows)
 
@@ -314,6 +320,21 @@ class ConfigManager:
         logger.info(details)
         return GetConfigValueResultSuccess(value=find_results)
 
+    def on_handle_get_config_path_request(self, request: GetConfigPathRequest) -> ResultPayload:  # noqa: ARG002
+        return GetConfigPathResultSuccess(config_path=str(USER_CONFIG_PATH))
+
+    def on_handle_reset_config_request(self, request: ResetConfigRequest) -> ResultPayload:  # noqa: ARG002
+        try:
+            self.reset_user_config()
+            self._set_log_level(str(self.user_config["log_level"]))
+            self.workspace_path = Path(self.user_config["workspace_directory"])
+
+            return ResetConfigResultSuccess()
+        except Exception as e:
+            details = f"Attempted to reset user configuration but failed: {e}."
+            logger.error(details)
+            return ResetConfigResultFailure()
+
     def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
         """Generate a diff between the old and new values."""
         if isinstance(old_value, dict) and isinstance(new_value, dict):
@@ -347,7 +368,7 @@ class ConfigManager:
             elif new is None:
                 formatted_lines.append(f"[{key}]: REMOVED: '{old}'")
             else:
-                formatted_lines.append(f"[{key}]:\n\tFROM: '{old}'\n\tTO: '{new}'")
+                formatted_lines.append(f"[{key}]:\n\tFROM: '{old}'\n\t  TO: '{new}'")
         return "\n".join(formatted_lines)
 
     def on_handle_set_config_value_request(self, request: SetConfigValueRequest) -> ResultPayload:

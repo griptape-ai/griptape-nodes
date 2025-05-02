@@ -1,4 +1,6 @@
+from griptape.artifacts import ImageUrlArtifact
 from griptape.drivers.prompt.griptape_cloud_prompt_driver import GriptapeCloudPromptDriver
+from griptape.loaders import ImageLoader
 from griptape.structures import Structure
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptTask
@@ -32,7 +34,7 @@ class DescribeImage(ControlNode):
         self.add_parameter(
             Parameter(
                 name="image",
-                input_types=["ImageArtifact"],
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 tooltip="The image you would like to describe",
                 default_value=None,
@@ -98,6 +100,9 @@ class DescribeImage(ControlNode):
         if prompt == "":
             prompt = "Describe the image"
         image_artifact = params.get("image", None)
+
+        if isinstance(image_artifact, ImageUrlArtifact):
+            image_artifact = ImageLoader().parse(image_artifact.to_bytes())
         if image_artifact is None:
             self.parameter_output_values["output"] = "No image provided"
             return

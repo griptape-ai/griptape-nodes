@@ -8,6 +8,10 @@ Run this command and it will report back your workspace location:
 gtn config | grep workspace
 ```
 
+## Can I run the Engine on a different machine than the Editor?
+
+Absolutely! The Engine and Editor can run on completely separate machines. Just remember that any files you save or libraries you register will be stored on the machine where the Engine is running. So if you're looking for your files and can't find them right away, double-check which machine the Engine is running on.
+
 ## Where is Griptape Nodes installed?
 
 Looking for the exact installation location of your Griptape Nodes? This command will show you precisely where it's installed:
@@ -24,15 +28,57 @@ For Windows PowerShell:
 $(Split-Path -Parent (Split-Path -Parent (Get-Command griptape-nodes | Select-Object -ExpandProperty Source)))
 ```
 
-## How do I uninstall?
+## How do I uninstall Griptape Nodes?
 
 Need to part ways with Griptape Nodes? It's a simple goodbye with a single command:
+
+### For Mac/Linux:
 
 ```bash
 griptape-nodes uninstall
 ```
 
+### For Windows PowerShell:
+
+```powershell
+griptape-nodes uninstall
+```
+
+then:
+
+```powershell
+uv tool uninstall griptape-nodes
+```
+
 When regret inevitably washes over you, have no fear. Open arms await; just revisit [Getting Started](getting_started.md)
+
+## How do I update Griptape Nodes?
+
+Griptape Nodes will automatically check if it needs to update every time it runs. If it does, you will be prompted to answer with a (y/n) response. Respond with a y and it will automatically update to the latest version of the Engine.
+
+If you would like to _manually_ update, you can always use either of these commands:
+
+```bash
+griptape-nodes self update
+griptape-nodes assets update
+```
+
+or
+
+```bash
+gtn self update
+gtn assets update
+```
+
+## I'm seeing "failed to locate pyvenv.cfg: The system cannot find the file specified." - What should I do?
+
+It is possible, that during a previous uninstall things were not _fully_ uninstalled. Simply perform an [uninstall](#how-do-i-uninstall) again, and then [re-install](getting_started.md).
+
+## I'm seeing "Attempted to create a Flow with a parent 'None', but no parent with that name could be found." - What should I do?
+
+The good news is, this is usually harmless, and you can usually disregard it. If you're getting it in a way that stops work, please restart your engine, and that should take care of it.
+
+That said, we apologize for this elusive bug. We're working to catch and fix it as soon as possible. If you are so inclined, we'd be grateful if you wanted to [log a bug](https://github.com/griptape-ai/griptape-nodes/issues/new?template=bug_report.yml&title=Attempted%20to%20create%20flow%20with%20a%20parent%20%27None%27) and provide any context around what may have led to the issue when you see it!
 
 ## Where can I provide feedback or ask questions?
 

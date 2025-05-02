@@ -176,14 +176,13 @@ class Agent(ControlNode):
 
         # Group for logging information.
         with ParameterGroup(group_name="Logs") as logs_group:
-            Parameter(name="include details", type="bool", default_value=False, tooltip="Include extra details.")
+            Parameter(name="include_details", type="bool", default_value=False, tooltip="Include extra details.")
 
             Parameter(
                 name="logs",
                 type="str",
                 tooltip="Displays processing logs and detailed events if enabled.",
-                default_value="Node hasn't begun yet",
-                ui_options={"multiline": True},
+                ui_options={"multiline": True, "placeholder_text": "Logs"},
                 allowed_modes={ParameterMode.OUTPUT},
             )
         logs_group.ui_options = {"hide": True}  # Hide the logs group by default.
@@ -347,7 +346,7 @@ class Agent(ControlNode):
         # Return any exceptions
         return exceptions if exceptions else None
 
-    def _handle_additional_context(self, prompt, additional_context: str | int | float | dict[str, Any]) -> str:  # noqa: PYI041
+    def _handle_additional_context(self, prompt: str, additional_context: str | int | float | dict[str, Any]) -> str:  # noqa: PYI041
         """Integrates additional context into the main prompt string.
 
         - If context is numeric, it's converted to a string and appended.
@@ -401,7 +400,7 @@ class Agent(ControlNode):
         # Get the parameters from the node
         params = self.parameter_values
         # Grab toggles for logging events
-        include_details = self.get_parameter_value("include details")
+        include_details = self.get_parameter_value("include_details")
 
         # Initialize the logs parameter
         self.append_value_to_parameter("logs", "[Processing..]\n")
@@ -487,7 +486,7 @@ class Agent(ControlNode):
         Returns:
             The agent structure after processing.
         """
-        include_details = self.get_parameter_value("include details")
+        include_details = self.get_parameter_value("include_details")
 
         for event in agent.run_stream(prompt, event_types=[TextChunkEvent, ActionChunkEvent]):
             # If the artifact is a TextChunkEvent, append it to the output parameter.

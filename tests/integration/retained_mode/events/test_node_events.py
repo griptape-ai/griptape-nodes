@@ -1,11 +1,12 @@
 from typing import Any
 from unittest.mock import ANY
 
-import pytest
+import pytest  # type: ignore[reportMissingImports]
 
 from griptape_nodes.retained_mode.events.base_events import EventResultSuccess
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
+    CreateNodeResultSuccess,
     GetAllNodeInfoRequest,
     GetAllNodeInfoResultSuccess,
 )
@@ -14,13 +15,13 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 class TestNodeEvents:
     @pytest.fixture
-    def create_node_result(self, flow) -> Any:  # noqa: ARG002
+    def create_node_result(self) -> Any:
         request = CreateNodeRequest(node_type="RunAgentNode", override_parent_flow_name="canvas")
         result = GriptapeNodes.handle_request(request)
 
         return result
 
-    def test_GetAllNodeInfoResult(self, create_node_result) -> None:
+    def test_GetAllNodeInfoResult(self, create_node_result: CreateNodeResultSuccess) -> None:
         request = GetAllNodeInfoRequest(node_name=create_node_result.node_name)
         result = GriptapeNodes.handle_request(request)
 

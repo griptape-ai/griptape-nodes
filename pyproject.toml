@@ -1,6 +1,6 @@
 [project]
 name = "griptape_nodes"
-version = "0.21.12"
+version = "0.25.11"
 description = "Add your description here"
 readme = "README.md"
 requires-python = "~=3.12"
@@ -61,11 +61,7 @@ ignore = [
   "FIX002", # Intentional
   "D101",   # Intentional
   "D102",   # Intentional
-  "D103",   # Too hard
-  "D106",   # Too hard
   "D107",   # Intentional
-  "A004",   # Intentional
-  "ANN001", # TODO(griptape): add type annotations to function arguments
   "ANN002", # Intentional
   "ANN003", # Intentional
   "ANN401", # Intentional
@@ -80,7 +76,6 @@ ignore = [
   "D105",   # Intentional
   "N802",   # TODO(griptape): discuss with team
   "TRY400", # Intentional
-  "TRY002", # TODO(griptape): discuss with team
   "FBT003", # Intentional
   "RET504", # Intentional
 ]
