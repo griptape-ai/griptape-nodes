@@ -29,7 +29,8 @@ fi
 echo ""
 cecho "$CYAN$BOLD" "Installing Griptape Nodes Engine..."
 echo ""
-uv tool install --force --python python3.12 griptape-nodes
+# uv tool install --force --python python3.12 griptape-nodes
+uv tool install --force --python python3.12 git+https://github.com/griptape-ai/griptape-nodes
 
 cecho "$GREEN$BOLD" "**************************************"
 cecho "$GREEN$BOLD" "*      Installation complete!        *"

@@ -27,7 +27,8 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 }
 
 ColorWrite "`nInstalling Griptape Nodes Engine...`n" 'Cyan'
-uv tool install --force --python python3.12 griptape-nodes
+# uv tool install --force --python python3.12 griptape-nodes
+uv tool install --force --python python3.12 git+https://github.com/griptape-ai/griptape-nodes
 
 ColorWrite "**************************************" 'Green'
 ColorWrite "*      Installation complete!        *" 'Green'
