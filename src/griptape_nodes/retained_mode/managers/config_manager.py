@@ -131,11 +131,11 @@ class ConfigManager:
         # We need to load the user config file first so we can get the workspace directory which may contain a workspace config file.
         # Load the user config file to get the workspace directory.
         self.default_config = Settings().model_dump()
-        full_config = self.default_config
+        merged_config = self.default_config
         if USER_CONFIG_PATH.exists():
             try:
                 self.user_config = json.loads(USER_CONFIG_PATH.read_text())
-                full_config = merge_dicts(self.default_config, self.user_config)
+                merged_config = merge_dicts(self.default_config, self.user_config)
             except json.JSONDecodeError as e:
                 logger.error("Error parsing user config file: %s", e)
                 self.user_config = {}
@@ -144,11 +144,11 @@ class ConfigManager:
             logger.debug("User config file not found")
 
         # Merge in any settings from the workspace directory.
-        self.workspace_path = full_config["workspace_directory"]
+        self.workspace_path = merged_config["workspace_directory"]
         if self.workspace_config_path.exists():
             try:
                 self.workspace_config = json.loads(self.workspace_config_path.read_text())
-                full_config = merge_dicts(full_config, self.workspace_config)
+                merged_config = merge_dicts(merged_config, self.workspace_config)
             except json.JSONDecodeError as e:
                 logger.error("Error parsing workspace config file: %s", e)
                 self.workspace_config = {}
@@ -158,8 +158,8 @@ class ConfigManager:
 
         # Validate the full config against the Settings model.
         try:
-            Settings.model_validate(full_config)
-            self.merged_config = full_config
+            Settings.model_validate(merged_config)
+            self.merged_config = merged_config
         except ValidationError as e:
             logger.error("Error validating config file: %s", e)
             self.merged_config = self.default_config
@@ -230,6 +230,7 @@ class ConfigManager:
         *,
         should_load_env_var_if_detected: bool = True,
         config_source: Literal["user_config", "workspace_config", "default_config", "merged_config"] = "merged_config",
+        default: Any | None = None,
     ) -> Any:
         """Get a value from the configuration.
 
@@ -240,6 +241,7 @@ class ConfigManager:
                  If the key refers to a category (dictionary), returns the entire category.
             should_load_env_var_if_detected: If True, and the value starts with a $, it will be pulled from the environment variables.
             config_source: The source of the configuration to use. Can be 'user_config', 'workspace_config', 'default_config', or 'merged_config'.
+            default: The default value to return if the key is not found in the configuration.
 
         Returns:
             The value associated with the key, or the entire category if key points to a dict.
@@ -251,7 +253,8 @@ class ConfigManager:
             "default_config": self.default_config,
         }
         config = config_source_map.get(config_source, self.merged_config)
-        value = get_dot_value(config, key)
+        value = get_dot_value(config, key, default)
+
         if value is None:
             msg = f"Config key '{key}' not found in config file."
             logger.error(msg)
