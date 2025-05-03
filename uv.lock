@@ -336,7 +336,7 @@ wheels = [
 [[package]]
 name = "griptape"
 version = "1.6.0"
-source = { git = "https://github.com/griptape-ai/griptape.git?rev=main#b2a900a39f477e0a2de04d0a37c8e46a2723f22b" }
+source = { git = "https://github.com/griptape-ai/griptape.git?branch=main#b2a900a39f477e0a2de04d0a37c8e46a2723f22b" }
 dependencies = [
     { name = "attrs" },
     { name = "filetype" },
@@ -380,7 +380,7 @@ loaders-image = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.26.16"
+version = "0.26.18"
 source = { editable = "." }
 dependencies = [
     { name = "cohere" },
@@ -422,7 +422,7 @@ test = [
 requires-dist = [
     { name = "cohere", specifier = ">=5.14.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "griptape", extras = ["drivers-prompt-anthropic", "drivers-prompt-ollama", "drivers-prompt-amazon-bedrock", "loaders-image", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo"], git = "https://github.com/griptape-ai/griptape.git?rev=main" },
+    { name = "griptape", extras = ["drivers-prompt-anthropic", "drivers-prompt-ollama", "drivers-prompt-amazon-bedrock", "loaders-image", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo"], git = "https://github.com/griptape-ai/griptape.git?branch=main" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
