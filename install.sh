@@ -17,7 +17,8 @@ cecho() { printf "%b%s%b\n" "$1" "$2" "$RESET"; } # colour echo
 echo ""
 cecho "$CYAN$BOLD" "Installing uv..."
 echo ""
-curl -LsSf https://astral.sh/uv/install.sh | sh
+curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null
+cecho "$GREEN$BOLD" "uv installed successfully!"
 
 # Verify uv is on the user's PATH
 if ! command -v uv >/dev/null 2>&1; then
@@ -30,7 +31,7 @@ echo ""
 cecho "$CYAN$BOLD" "Installing Griptape Nodes Engine..."
 echo ""
 # uv tool install --force --python python3.12 griptape-nodes
-~/.local/bin/uv tool install --force --python python3.12 git+https://github.com/griptape-ai/griptape-nodes
+~/.local/bin/uv tool install --force --python python3.12 git+https://github.com/griptape-ai/griptape-nodes >/dev/null
 
 cecho "$GREEN$BOLD" "**************************************"
 cecho "$GREEN$BOLD" "*      Installation complete!        *"
