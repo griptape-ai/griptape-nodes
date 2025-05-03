@@ -111,7 +111,7 @@ def _serve_static_server() -> None:
     config_manager = GriptapeNodes.ConfigManager()
     app = FastAPI()
 
-    static_dir = config_manager.workspace_path / config_manager.user_config["static_files_directory"]
+    static_dir = config_manager.workspace_path / config_manager.merged_config["static_files_directory"]
 
     if not static_dir.exists():
         static_dir.mkdir(parents=True, exist_ok=True)

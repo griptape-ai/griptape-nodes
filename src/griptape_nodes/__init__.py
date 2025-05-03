@@ -52,11 +52,14 @@ def main() -> None:
     _process_args(args)
 
 
-def _run_init(api_key: str | None = None, workspace_directory: str | None = None) -> None:
+def _run_init(
+    *, api_key: str | None = None, workspace_directory: str | None = None, register_advanced_library: bool | None = None
+) -> None:
     """Runs through the engine init steps, optionally skipping prompts if the user provided `--api-key`."""
     __init_system_config()
-    _prompt_for_workspace(workspace_directory)
-    _prompt_for_api_key(api_key)
+    _prompt_for_workspace(workspace_directory_arg=workspace_directory)
+    _prompt_for_api_key(api_key=api_key)
+    _prompt_for_libraries_to_register(register_advanced_library=register_advanced_library)
     _update_assets()
     console.print("Initialization complete! You can now run the engine with 'griptape-nodes' (or just 'gtn').")
 
@@ -99,14 +102,20 @@ def _get_args() -> argparse.Namespace:
         required=False,
     )
 
-    init_parser = subparsers.add_parser("init", help="Initialize a workspace.")
+    init_parser = subparsers.add_parser("init", help="Initialize engine configuration.")
     init_parser.add_argument(
         "--api-key",
-        help="Override the Griptape Nodes API key.",
+        help="Set the Griptape Nodes API key.",
     )
     init_parser.add_argument(
         "--workspace-directory",
-        help="Override the Griptape Nodes workspace directory.",
+        help="Set the Griptape Nodes workspace directory.",
+    )
+    init_parser.add_argument(
+        "--register-advanced-library",
+        action="store_true",
+        default=None,
+        help="Install the Griptape Nodes Advanced Image Library.",
     )
 
     # engine
@@ -176,7 +185,7 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
     secrets_manager.set_secret("GT_CLOUD_API_KEY", current_key)
 
 
-def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
+def _prompt_for_workspace(*, workspace_directory_arg: str | None) -> None:
     """Prompts the user for their workspace directory and stores it in config directory."""
     explainer = """[bold cyan]Workspace Directory[/bold cyan]
     Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows.
@@ -203,6 +212,37 @@ def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
         except json.JSONDecodeError as e:
             console.print(f"[bold red]Error reading config file: {e}[/bold red]")
     console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
+
+
+def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None = None) -> None:
+    """Prompts the user for the libraries to register and stores them in config directory."""
+    explainer = """[bold cyan]Advanced Image Library[/bold cyan]
+    Would you like to install the Griptape Nodes Advanced Image Library?
+    This node library makes advanced image generation and manipulation nodes available.
+    Installing this library requires additional dependencies to download and install, which can take several minutes.
+    The Griptape Nodes Advanced Image Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
+    """
+    console.print(Panel(explainer, expand=False))
+
+    current_libraries = config_manager.get_config_value(
+        "app_events.on_app_initialization_complete.libraries_to_register", config_source="user_config"
+    )
+    default_library = str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")
+    extra_libraries = [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library_extras.json")]
+    libraries_to_merge = [default_library]
+
+    if register_advanced_library is None:
+        register_extras = Confirm.ask("Register Advanced Image Library?", default=False)
+    else:
+        register_extras = register_advanced_library
+
+    if register_extras:
+        libraries_to_merge.extend(extra_libraries)
+
+    # Remove duplicates
+    merged_libraries = list(set(current_libraries + libraries_to_merge))
+
+    config_manager.set_config_value("app_events.on_app_initialization_complete.libraries_to_register", merged_libraries)
 
 
 def _get_latest_version(package: str) -> str:
@@ -289,7 +329,7 @@ def _print_current_version() -> None:
 
 def _print_user_config() -> None:
     """Prints the user configuration from the config file."""
-    config = config_manager.user_config
+    config = config_manager.merged_config
     sys.stdout.write(json.dumps(config, indent=2))
 
 
@@ -347,7 +387,11 @@ def _uninstall_self() -> None:
 
 def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
     if args.command == "init":
-        _run_init(api_key=args.api_key, workspace_directory=args.workspace_directory)
+        _run_init(
+            api_key=args.api_key,
+            workspace_directory=args.workspace_directory,
+            register_advanced_library=args.register_advanced_library,
+        )
     elif args.command == "engine":
         _start_engine(no_update=args.no_update)
     elif args.command == "config":

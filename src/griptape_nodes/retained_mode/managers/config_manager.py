@@ -2,7 +2,7 @@ import copy
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 from xdg_base_dirs import xdg_config_home
@@ -46,6 +46,12 @@ class ConfigManager:
 
     Supports categorized configuration using dot notation (e.g., 'category.subcategory.key')
     to organize related configuration items.
+
+    Attributes:
+        default_config (dict): The default configuration loaded from the Settings model.
+        user_config (dict): The user configuration loaded from the config file.
+        workspace_config (dict): The workspace configuration loaded from the workspace config file.
+        merged_config (dict): The merged configuration, combining default, user, and workspace settings.
     """
 
     def __init__(self, event_manager: EventManager | None = None) -> None:
@@ -56,7 +62,7 @@ class ConfigManager:
         """
         self.load_user_config()
 
-        self._set_log_level(self.user_config.get("log_level", logging.INFO))
+        self._set_log_level(self.merged_config.get("log_level", logging.INFO))
 
         if event_manager is not None:
             # Register all our listeners.
@@ -124,32 +130,39 @@ class ConfigManager:
         """Load user configuration from the config file."""
         # We need to load the user config file first so we can get the workspace directory which may contain a workspace config file.
         # Load the user config file to get the workspace directory.
-        full_config = Settings().model_dump()
+        self.default_config = Settings().model_dump()
+        full_config = self.default_config
         if USER_CONFIG_PATH.exists():
             try:
-                user_config = json.loads(USER_CONFIG_PATH.read_text())
-                full_config = merge_dicts(full_config, user_config)
+                self.user_config = json.loads(USER_CONFIG_PATH.read_text())
+                full_config = merge_dicts(self.default_config, self.user_config)
             except json.JSONDecodeError as e:
                 logger.error("Error parsing user config file: %s", e)
+                self.user_config = {}
         else:
-            logger.info("User config file not found")
+            self.user_config = {}
+            logger.debug("User config file not found")
 
         # Merge in any settings from the workspace directory.
         self.workspace_path = full_config["workspace_directory"]
         if self.workspace_config_path.exists():
             try:
-                workspace_config = json.loads(self.workspace_config_path.read_text())
-                full_config = merge_dicts(full_config, workspace_config)
+                self.workspace_config = json.loads(self.workspace_config_path.read_text())
+                full_config = merge_dicts(full_config, self.workspace_config)
             except json.JSONDecodeError as e:
                 logger.error("Error parsing workspace config file: %s", e)
+                self.workspace_config = {}
+        else:
+            self.workspace_config = {}
+            logger.debug("Workspace config file not found")
 
         # Validate the full config against the Settings model.
         try:
             Settings.model_validate(full_config)
-            self.user_config = full_config
+            self.merged_config = full_config
         except ValidationError as e:
             logger.error("Error validating config file: %s", e)
-            self.user_config = Settings().model_dump()
+            self.merged_config = self.default_config
 
     def reset_user_config(self) -> None:
         """Reset the user configuration to the default values."""
@@ -169,7 +182,7 @@ class ConfigManager:
 
     def gather_env_var_names(self) -> list[str]:
         """Gather all environment variable names within the config."""
-        return self._gather_env_var_names_in_dict(self.user_config)
+        return self._gather_env_var_names_in_dict(self.merged_config)
 
     def _gather_env_var_names_in_dict(self, config: dict) -> list[str]:
         """Gather all environment variable names from a given config dictionary."""
@@ -211,7 +224,13 @@ class ConfigManager:
         workspace_path = self.workspace_path
         return workspace_path / relative_path
 
-    def get_config_value(self, key: str, *, should_load_env_var_if_detected: bool = True) -> Any:
+    def get_config_value(
+        self,
+        key: str,
+        *,
+        should_load_env_var_if_detected: bool = True,
+        config_source: Literal["user_config", "workspace_config", "default_config", "merged_config"] = "merged_config",
+    ) -> Any:
         """Get a value from the configuration.
 
         If `should_load_env_var_if_detected` is True (default), and the value starts with a $, it will be pulled from the environment variables.
@@ -220,11 +239,19 @@ class ConfigManager:
             key: The configuration key to get. Can use dot notation for nested keys (e.g., 'category.subcategory.key').
                  If the key refers to a category (dictionary), returns the entire category.
             should_load_env_var_if_detected: If True, and the value starts with a $, it will be pulled from the environment variables.
+            config_source: The source of the configuration to use. Can be 'user_config', 'workspace_config', 'default_config', or 'merged_config'.
 
         Returns:
             The value associated with the key, or the entire category if key points to a dict.
         """
-        value = get_dot_value(self.user_config, key)
+        config_source_map = {
+            "user_config": self.user_config,
+            "workspace_config": self.workspace_config,
+            "merged_config": self.merged_config,
+            "default_config": self.default_config,
+        }
+        config = config_source_map.get(config_source, self.merged_config)
+        value = get_dot_value(config, key)
         if value is None:
             msg = f"Config key '{key}' not found in config file."
             logger.error(msg)
@@ -249,7 +276,7 @@ class ConfigManager:
             self._set_log_level(value)
         elif key == "workspace_directory":
             self.workspace_path = value
-        self.user_config = merge_dicts(self.user_config, delta)
+        self.user_config = merge_dicts(self.merged_config, delta)
         self._write_user_config_delta(delta)
 
         # If the key is workspace_directory, we need to fully reload the user config
@@ -263,7 +290,7 @@ class ConfigManager:
     def on_handle_get_config_category_request(self, request: GetConfigCategoryRequest) -> ResultPayload:
         if request.category is None or request.category == "":
             # Return the whole shebang. Start with the defaults and then layer on the user config.
-            contents = self.user_config
+            contents = self.merged_config
             details = "Successfully returned the entire config dictionary."
             logger.info(details)
             return GetConfigCategoryResultSuccess(contents=contents)
@@ -326,8 +353,8 @@ class ConfigManager:
     def on_handle_reset_config_request(self, request: ResetConfigRequest) -> ResultPayload:  # noqa: ARG002
         try:
             self.reset_user_config()
-            self._set_log_level(str(self.user_config["log_level"]))
-            self.workspace_path = Path(self.user_config["workspace_directory"])
+            self._set_log_level(str(self.merged_config["log_level"]))
+            self.workspace_path = Path(self.merged_config["workspace_directory"])
 
             return ResetConfigResultSuccess()
         except Exception as e:
