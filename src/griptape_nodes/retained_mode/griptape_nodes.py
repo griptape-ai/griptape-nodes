@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import IO, TYPE_CHECKING, Any, ClassVar, TextIO
 
-from rich.logging import RichHandler
-
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.retained_mode.events.app_events import (
     AppGetSessionRequest,
@@ -42,9 +40,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger("griptape_nodes")
-logger.setLevel(logging.INFO)
-
-logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
 
 
 @dataclass
