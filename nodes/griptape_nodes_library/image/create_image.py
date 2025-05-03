@@ -6,7 +6,7 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes_library.utils.error_utils import try_throw_error
@@ -22,8 +22,7 @@ class GenerateImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        # TODO(griptape): Give nodes a way to ask about the current state of their connections instead of forcing them to maintain
-        # state: https://github.com/griptape-ai/griptape-nodes/issues/720
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/720
         self._has_connection_to_prompt = False
 
         self.add_parameter(
@@ -79,20 +78,26 @@ class GenerateImage(ControlNode):
                 tooltip="None",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"pulse_on_run": True},
             )
         )
-        self.add_parameter(
+        # Group for logging information.
+        with ParameterGroup(group_name="Logs") as logs_group:
+            Parameter(name="include_details", type="bool", default_value=False, tooltip="Include extra details.")
+
             Parameter(
                 name="logs",
                 type="str",
-                tooltip="None",
+                tooltip="Displays processing logs and detailed events if enabled.",
                 ui_options={"multiline": True, "placeholder_text": "Logs"},
                 allowed_modes={ParameterMode.OUTPUT},
             )
-        )
+        logs_group.ui_options = {"hide": True}  # Hide the logs group by default.
+
+        self.add_node_element(logs_group)
 
     def validate_node(self) -> list[Exception] | None:
-        # TODO(kate): Figure out how to wrap this so it's easily repeatable
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/871
         exceptions = []
         api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
@@ -104,17 +109,22 @@ class GenerateImage(ControlNode):
                 exceptions.append(KeyError(msg))
 
         # Validate that we have a prompt.
-        prompt_value = self.parameter_values.get("prompt", None)
-        # Ensure no empty prompt; if there's an input connection to this Parameter, that will be OK though.
-        if (not prompt_value or prompt_value.isspace()) and (not self._has_connection_to_prompt):
-            msg = "No prompt was provided. Cannot generate an image without a valid prompt."
-            exceptions.append(ValueError(msg))
+        prompt_error = self.validate_empty_parameter(param="prompt")
+        if prompt_error and not self._has_connection_to_prompt:
+            exceptions.append(prompt_error)
 
         return exceptions if exceptions else None
 
     def process(self) -> AsyncResult:
         # Get the parameters from the node
         params = self.parameter_values
+
+        # Validate that we have a prompt.
+        prompt = self.get_parameter_value("prompt")
+        exception = self.validate_empty_parameter(param="prompt")
+        if exception:
+            raise exception
+
         agent = params.get("agent", None)
         if not agent:
             prompt_driver = GriptapeCloudPromptDriver(
@@ -124,8 +134,8 @@ class GenerateImage(ControlNode):
             agent = Agent(prompt_driver=prompt_driver)
         else:
             agent = Agent.from_dict(agent)
-        prompt = params.get("prompt", "")
 
+        # Check if we have a connection to the prompt parameter
         enhance_prompt = params.get("enhance_prompt", False)
 
         if enhance_prompt:
@@ -186,6 +196,8 @@ Focus on qualities that will make this the most professional looking photo in th
         # Record a connection to the prompt Parameter so that node validation doesn't get aggro
         if target_parameter.name == "prompt":
             self._has_connection_to_prompt = True
+            # hey.. what if we just remove the property mode from the prompt parameter?
+            target_parameter.allowed_modes.remove(ParameterMode.PROPERTY)
 
     def after_incoming_connection_removed(
         self,
@@ -197,6 +209,8 @@ Focus on qualities that will make this the most professional looking photo in th
         # Remove the state maintenance of the connection to the prompt Parameter
         if target_parameter.name == "prompt":
             self._has_connection_to_prompt = False
+            # If we have no connections to the prompt parameter, add the property mode back
+            target_parameter.allowed_modes.add(ParameterMode.PROPERTY)
 
     def _create_image(self, agent: Agent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)

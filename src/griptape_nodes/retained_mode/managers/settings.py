@@ -7,10 +7,7 @@ from xdg_base_dirs import xdg_data_home
 
 class AppInitializationComplete(BaseModel):
     libraries_to_register: list[str] = Field(
-        default_factory=lambda: [
-            str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json"),
-            str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library_extras.json"),
-        ]
+        default_factory=lambda: [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")]
     )
     workflows_to_register: list[str] = Field(
         default_factory=lambda: [

@@ -138,7 +138,7 @@ class Agent(ControlNode):
                 tooltip="Connect prompt_model_config. If not supplied, we will use the Griptape Cloud Prompt Model.",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
-                ui_options={"hide": False},  # TODO(jason): Hide by default once UI updating works correctly
+                ui_options={"hide": False},  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/877
             )
         )
 
@@ -207,7 +207,7 @@ class Agent(ControlNode):
         # Show 'prompt_model_config' input only if 'model' is set to CONNECTED_CHOICE.
         if parameter.name == "model":
             """
-            TODO(jason): Use this code as soon as the UI updating works correctly.
+            TODO: https://github.com/griptape-ai/griptape-nodes/issues/878
 
             # Find the prompt_model_settings parameter and hide it
             prompt_model_settings_param = self.get_parameter_by_name("prompt_model_config")
@@ -253,7 +253,7 @@ class Agent(ControlNode):
                 if param:
                     param._ui_options["hide"] = True
 
-        # TODO(jason): Enable this after the UI updating works correctly.
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/878
         # If a prompt_model_config is connected, hide the manual model selector.
         """
         if target_parameter.name == "prompt_model_config":
@@ -305,7 +305,7 @@ class Agent(ControlNode):
 
                     param._ui_options["hide"] = False
 
-        # TODO(jason): Enable this after the UI updating works correctly.
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/878
         # If the prompt_model_config connection is removed, show the model dropdown,
         """
         if target_parameter.name == "prompt_model_config":
@@ -457,15 +457,17 @@ class Agent(ControlNode):
         else:
             agent = GtAgent.from_dict(agent_dict)
 
-        # Run the agent asynchronously
-        self.append_value_to_parameter("logs", "[Started processing agent..]\n")
-        yield lambda: self._process(agent, prompt)
-        self.append_value_to_parameter("logs", "\n[Finished processing agent.]\n")
-
+        if prompt and not prompt.isspace():
+            # Run the agent asynchronously
+            self.append_value_to_parameter("logs", "[Started processing agent..]\n")
+            yield lambda: self._process(agent, prompt)
+            self.append_value_to_parameter("logs", "\n[Finished processing agent.]\n")
+            try_throw_error(agent.output)
+        else:
+            self.append_value_to_parameter("logs", "[No prompt provided, creating Agent.]\n")
+            self.parameter_output_values["output"] = "Agent created."
         # Set the agent
         self.parameter_output_values["agent"] = agent.to_dict()
-
-        try_throw_error(agent.output)
 
     def _process(self, agent: GtAgent, prompt: BaseArtifact | str) -> Structure:
         """Performs the synchronous, streaming interaction with the Griptape Agent.

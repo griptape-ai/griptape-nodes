@@ -160,7 +160,7 @@ class FlowManager:
             # Aha! Just use that.
             parent_name = GriptapeNodes.ContextManager().get_current_flow_name()
 
-        # TODO(griptape): FIX THIS LOGIC MESS https://github.com/griptape-ai/griptape-nodes/issues/616
+        # TODO: FIX THIS LOGIC MESS https://github.com/griptape-ai/griptape-nodes/issues/616
 
         parent = None
         if parent_name is not None:
@@ -379,7 +379,7 @@ class FlowManager:
         # Let the Node Manager know about the change, too.
         GriptapeNodes.NodeManager().handle_flow_rename(old_name=old_name, new_name=new_name)
 
-    def on_create_connection_request(self, request: CreateConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901 TODO(griptape): resolve
+    def on_create_connection_request(self, request: CreateConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
         # Vet the two nodes first.
         source_node_name = request.source_node_name
         if source_node_name is None:
@@ -454,7 +454,7 @@ class FlowManager:
 
         target_param = target_node.get_parameter_by_name(request.target_parameter_name)
         if target_param is None:
-            # TODO(griptape): We may make this a special type of failure, or attempt to handle it gracefully.
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/860
             details = f'Connection failed: "{target_node_name}.{request.target_parameter_name}" not found'
             logger.error(details)
             return CreateConnectionResultFailure()
@@ -1047,7 +1047,7 @@ class FlowManager:
 
         return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list)
 
-    # TODO(griptape): refactor the serialization and deserialization functions into clearer, tighter functions. Use this as an example for other
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/861
     # similar manager refactors: https://github.com/griptape-ai/griptape-nodes/issues/806
     def on_serialize_flow_to_commands(self, request: SerializeFlowToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         flow_name = request.flow_name

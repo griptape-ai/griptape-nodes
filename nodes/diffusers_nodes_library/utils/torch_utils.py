@@ -72,20 +72,20 @@ def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffu
             # This fp8 layerwise caching is important for lower VRAM
             # gpus (say 25GB or lower). Not important if not on a gpu.
             # We only do this for the transformer, because its the biggest.
-            # TODO(dylan): Conditionally enable based on machine stats.
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
             logger.info("Enabling fp8 layerwise caching for transformer")
             pipe.transformer.enable_layerwise_casting(
                 storage_dtype=torch.float8_e4m3fn,
                 compute_dtype=torch.bfloat16,
             )
         # Sequential cpu offload only makes sense for gpus (VRAM <-> RAM).
-        # TODO(dylan): Conditionally enable based on machine stats.
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
         logger.info("Enabling sequential cpu offload")
         pipe.enable_sequential_cpu_offload()
-    # TODO(dylan): Conditionally enable based on machine stats.
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
     logger.info("Enabling attention slicing")
     pipe.enable_attention_slicing()
-    # TODO(dylan): Conditionally enable based on machine stats.
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
     if hasattr(pipe, "enable_vae_slicing"):
         logger.info("Enabling vae slicing")
         pipe.enable_vae_slicing()
@@ -102,7 +102,7 @@ def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffu
         logger.info("Transferring model to MPS/GPU (slow because big)")
         logger.info("Sorry bout the lack of a progress bar.")
         pipe.to(device)
-        # TODO(dylan): move_module_with_custom_progress(pipe, device)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/847
 
     if device == torch.device("cuda"):
         # We specifically do not call pipe.to(device) for gpus

@@ -56,7 +56,15 @@ markdown_extensions:
 nav:
   - Home:
       - Overview: index.md
-      - Getting Started: getting_started.md
+      - Getting Started:
+        - Installation: getting_started.md
+        - New Users Start here:
+          - Lesson Overview: ftue/FTUE.md
+          - 1. Interface Basics: ftue/00_tour/FTUE_00_tour.md
+          - 2. Prompt an Image: ftue/01_prompt_an_image/FTUE_01_prompt_an_image.md
+          - 3. Coordinating Agents: ftue/02_translator/FTUE_02_translator.md
+          - 4. Compare Prompts: ftue/03_compare_prompts/FTUE_03_compare_prompts.md
+          - 5. Build a Photography Team: ftue/04_photography_team/FTUE_04_photography_team.md
       - Engine Configuration: configuration.md
   - How-To:
       - Making Custom Nodes: how_to/making_custom_nodes.md
@@ -65,6 +73,7 @@ nav:
   - Reference:
       - Glossary: reference/glossary.md
       - Scripting: reference/retained_mode.md
+      - Command Line Interface: reference/command_line_interface.md
       - Nodes:
           - Overview: nodes/overview.md
           - Base:

@@ -1,9 +1,10 @@
 import contextlib
 import logging
 from collections.abc import Iterator
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import diffusers  # type: ignore[reportMissingImports]
+import PIL.Image
 import torch  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 from griptape.loaders import ImageLoader
@@ -18,6 +19,9 @@ from diffusers_nodes_library.utils.huggingface_utils import (  # type: ignore[re
 )
 from diffusers_nodes_library.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.utils.lora_utils import configure_flux_loras  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.utils.math_utils import (  # type: ignore[reportMissingImports]
+    next_multiple_ge,  # type: ignore[reportMissingImports]
+)
 from diffusers_nodes_library.utils.tiling_image_processor import (  # type: ignore[reportMissingImports]
     TilingImageProcessor,  # type: ignore[reportMissingImports]
 )
@@ -180,7 +184,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                 tooltip="strength (basically denoise) -- 0.0 is original image 1.0 is a completely new image -- impacts effective steps",
             )
         )
-        # TODO(dylan): sigmas: Optional[List[float]] = None,
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/841
         self.add_parameter(
             Parameter(
                 name="guidance_scale",
@@ -191,7 +195,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                 tooltip="guidance_scale",
             )
         )
-        # TODO(dylan): How to have no default (default to None?)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/842
         self.add_parameter(
             Parameter(
                 name="seed",
@@ -203,22 +207,17 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         )
         self.add_parameter(
             Parameter(
-                name="scale",
-                default_value=1.0,
-                input_types=["float"],
-                type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="TODO: remove we shouldn't be scaling inside this node -- use pillow resize or tiling spandrel",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="tile_size",
+                name="max_tile_size",
                 default_value=1024,
                 input_types=["int"],
                 type="int",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="tile_size",
+                tooltip=(
+                    "max_tile_size, "
+                    "must be a multiple of 16, "
+                    "if unecessily larger than input image, it will automatically "
+                    "be lowered to smallest multiple of 16 that will fit the input image"
+                ),
             )
         )
         self.add_parameter(
@@ -253,7 +252,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
             )
         )
 
-        # TODO(dylan): Add seed parameter int or None -- How to have no default (default to None?)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/843
         self.add_parameter(
             Parameter(
                 name="output_image",
@@ -275,7 +274,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
-    def _process(self) -> AsyncResult | None:
+    def _process(self) -> AsyncResult | None:  # noqa: PLR0915, C901
         model = self.get_parameter_value("model")
         if model is None:
             logger.exception("No model specified")
@@ -287,8 +286,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         negative_prompt = self.get_parameter_value("negative_prompt")
         negative_prompt_2 = self.parameter_values.get("negative_prompt_2", prompt)
         true_cfg_scale = float(self.parameter_values["true_cfg_scale"])
-        scale = float(self.get_parameter_value("scale"))
-        tile_size = int(self.get_parameter_value("tile_size"))
+        max_tile_size = int(self.get_parameter_value("max_tile_size"))
         tile_overlap = int(self.get_parameter_value("tile_overlap"))
         tile_strategy = str(self.get_parameter_value("tile_strategy"))
         num_inference_steps = int(self.parameter_values["num_inference_steps"])
@@ -299,8 +297,26 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         if isinstance(input_image_artifact, ImageUrlArtifact):
             input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
         input_image_pil = image_artifact_to_pil(input_image_artifact)
-        w, h = input_image_pil.size
-        input_image_pil = input_image_pil.resize((int(w * scale), int(h * scale)))
+        input_image_pil = input_image_pil.convert("RGB")
+
+        # The output image will be the same size as the input image.
+        # Immediately set a preview placeholder image to make it react quickly and adjust
+        # the size of the image preview on the node.
+        preview_placeholder_image = PIL.Image.new("RGB", input_image_pil.size, color="black")
+        self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
+
+        # Adjust tile size so that it is not much bigger than the input image.
+        largest_reasonable_tile_width = next_multiple_ge(input_image_pil.width, 16)
+        largest_reasonable_tile_height = next_multiple_ge(input_image_pil.height, 16)
+        largest_reasonable_tile_size = max(largest_reasonable_tile_height, largest_reasonable_tile_width)
+        tile_size = min(largest_reasonable_tile_size, max_tile_size)
+
+        if tile_size % 16 != 0:
+            new_tile_size = next_multiple_ge(tile_size, 16)
+            self.append_value_to_parameter(
+                "logs", f"max_tile_size({tile_size}) not multiple of 16, rounding up to {new_tile_size}.\n"
+            )
+            tile_size = new_tile_size
 
         if strength == 0:
             self.set_parameter_value("output_image", pil_to_image_artifact(input_image_pil))
@@ -314,14 +330,58 @@ class TilingFluxImg2ImgPipeline(ControlNode):
 
         configure_flux_loras(self, pipe, loras)
 
+        def wrapped_pipe(tile: Image, get_preview_image_with_partial_tile: Any) -> Image:
+            def callback_on_step_end(pipe: diffusers.FluxPipeline, i: int, _t: Any, callback_kwargs: dict) -> dict:
+                if i < num_inference_steps - 1:
+                    # Generate a preview image if this is not yet the last step.
+                    # That would be redundant, since the pipeline automatically
+                    # does that for the last step.
+                    latents = callback_kwargs["latents"]
+                    latents = pipe._unpack_latents(latents, tile_size, tile_size, pipe.vae_scale_factor)
+                    latents = (latents / pipe.vae.config.scaling_factor) + pipe.vae.config.shift_factor
+                    image = pipe.vae.decode(latents, return_dict=False)[0]
+                    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/845
+                    intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
+
+                    # HERE -> need to update the tile by calling something in the tile processor.
+                    preview_image_with_partial_tile = get_preview_image_with_partial_tile(intermediate_pil_image)
+                    self.publish_update_to_parameter(
+                        "output_image", pil_to_image_artifact(preview_image_with_partial_tile)
+                    )
+                    self.append_value_to_parameter(
+                        "logs", f"Finished inference step {i + 1} of {num_inference_steps}.\n"
+                    )
+                    self.append_value_to_parameter(
+                        "logs", f"Starting inference step {i + 2} of {num_inference_steps}...\n"
+                    )
+                return {}
+
+            return (
+                pipe(
+                    image=tile,
+                    width=tile.width,
+                    height=tile.height,
+                    prompt=prompt,
+                    prompt_2=prompt_2,
+                    negative_prompt=negative_prompt,
+                    negative_prompt_2=negative_prompt_2,
+                    true_cfg_scale=true_cfg_scale,
+                    strength=strength,
+                    num_inference_steps=num_inference_steps,
+                    guidance_scale=guidance_scale,
+                    generator=generator,
+                    output_type="pil",
+                    callback_on_step_end=callback_on_step_end,
+                )
+                .images[0]
+                .convert("RGB")
+            )
+
         tiling_image_processor = TilingImageProcessor(
-            pipe,
+            pipe=wrapped_pipe,
             tile_size=tile_size,
             tile_overlap=tile_overlap,
             tile_strategy=tile_strategy,
-            to_pipe_args=lambda tile, kwargs: (),  # noqa: ARG005
-            to_pipe_kwargs=lambda tile, kwargs: {"image": tile, **kwargs},
-            pipe_output_to_pil=lambda output: output.images[0],
         )
         num_tiles = tiling_image_processor.get_num_tiles(image=input_image_pil)
         generator = torch.Generator(get_best_device())
@@ -337,19 +397,6 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         self.append_value_to_parameter("logs", f"Starting tile 1 of {num_tiles}...\n")
         output_image_pil = tiling_image_processor.process(
             image=input_image_pil,
-            pipe_kwargs={
-                "prompt": prompt,
-                "prompt_2": prompt_2,
-                "negative_prompt": negative_prompt,
-                "negative_prompt_2": negative_prompt_2,
-                "true_cfg_scale": true_cfg_scale,
-                "strength": strength,
-                "num_inference_steps": num_inference_steps,
-                "guidance_scale": guidance_scale,
-                "generator": generator,
-                "output_type": "pil",
-                # TODO(dylan): oh man this is a crazy one! a nested callback :sweat: -- "callback_on_step_end":
-            },
             callback_on_tile_end=callback_on_tile_end,
         )
         self.append_value_to_parameter("logs", f"Finished tile {num_tiles} of {num_tiles}.\n")

@@ -51,7 +51,7 @@ def configure_flux_loras(node: ControlNode, pipe: diffusers.FluxPipeline, loras:
         # cast to bfloat16. That's fine because there are a lot less lora
         # weights when compared to the original transformer (so it won't
         # take up that much space on the device).
-        # TODO(dylan): print the new memory footprint after adding loras...
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/849
         logger.info("converting all lora_A and lora_B layers to bfloat16")
         lora_modules = [
             module

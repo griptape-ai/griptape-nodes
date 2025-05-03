@@ -111,7 +111,7 @@ def _serve_static_server() -> None:
     config_manager = GriptapeNodes.ConfigManager()
     app = FastAPI()
 
-    static_dir = config_manager.workspace_path / config_manager.user_config["static_files_directory"]
+    static_dir = config_manager.workspace_path / config_manager.merged_config["static_files_directory"]
 
     if not static_dir.exists():
         static_dir.mkdir(parents=True, exist_ok=True)
@@ -164,8 +164,8 @@ def _init_event_listeners() -> None:
 
     EventBus.add_event_listener(
         event_listener=EventListener(
-            on_event=__process_app_event,  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
-            event_types=[AppEvent],  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
+            on_event=__process_app_event,  # pyright: ignore[reportArgumentType] TODO: https://github.com/griptape-ai/griptape-nodes/issues/868
+            event_types=[AppEvent],  # pyright: ignore[reportArgumentType] TODO: https://github.com/griptape-ai/griptape-nodes/issues/868
         )
     )
 

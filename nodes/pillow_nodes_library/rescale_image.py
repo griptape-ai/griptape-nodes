@@ -106,7 +106,7 @@ class RescaleImage(ControlNode):
         output_image_pil = input_image_pil.resize(
             size=(int(w * scale), int(h * scale)),
             resample=resample,
-            # TODO(dylan): reducing_gap=reducing_gap, # NEED TO ALLOW FLOAT OR NONE...
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/844
         )
         self.set_parameter_value("output_image", pil_to_image_artifact(output_image_pil))
         self.parameter_output_values["output_image"] = pil_to_image_artifact(output_image_pil)

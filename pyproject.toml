@@ -1,11 +1,11 @@
 [project]
-name = "griptape_nodes"
-version = "0.25.11"
+name = "griptape-nodes"
+version = "0.26.18"
 description = "Add your description here"
 readme = "README.md"
 requires-python = "~=3.12"
 dependencies = [
-  "griptape[drivers-prompt-anthropic,drivers-prompt-ollama,loaders-image,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo]>=1.6.2",
+  "griptape[drivers-prompt-anthropic,drivers-prompt-ollama,drivers-prompt-amazon-bedrock,loaders-image,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo]>=1.6.2",
   "pydantic>=2.10.6",
   "python-dotenv>=1.0.1",
   "xdg-base-dirs>=6.0.2",
@@ -13,7 +13,7 @@ dependencies = [
   "cohere>=5.14.0",
   "websockets>=15.0.1,<16.0.0",
   "tomlkit>=0.13.2",
-  # TODO(collin): Remove once https://github.com/astral-sh/uv/issues/1632 is resolved
+  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/833 
   "uv>=0.6.16",
   "fastapi>=0.115.12",
   "uvicorn>=0.34.2",
@@ -57,7 +57,7 @@ exclude = [".venv"]
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-  "TD003",  # Intentional
+  "TD002",  # Intentional
   "FIX002", # Intentional
   "D101",   # Intentional
   "D102",   # Intentional
@@ -66,15 +66,15 @@ ignore = [
   "ANN003", # Intentional
   "ANN401", # Intentional
   "COM812", # Intentional
-  "E501",   # TODO(griptape): break up long strings
-  "D100",   # TODO(griptape): document public modules
-  "BLE001", # TODO(griptape): too hard
-  "B026",   # TODO(griptape): discuss with team
-  "SLF001", # TODO(griptape): discuss with team
+  "E501",   # TODO: https://github.com/griptape-ai/griptape-nodes/issues/834 
+  "D100",   # TODO: https://github.com/griptape-ai/griptape-nodes/issues/835 
+  "BLE001", # TODO: https://github.com/griptape-ai/griptape-nodes/issues/839
+  "B026",   # TODO: https://github.com/griptape-ai/griptape-nodes/issues/836 
+  "SLF001", # TODO :https://github.com/griptape-ai/griptape-nodes/issues/838 
   "SIM108", # Intentional
   "SIM110", # Intentional
   "D105",   # Intentional
-  "N802",   # TODO(griptape): discuss with team
+  "N802",   # TODO: https://github.com/griptape-ai/griptape-nodes/issues/840
   "TRY400", # Intentional
   "FBT003", # Intentional
   "RET504", # Intentional

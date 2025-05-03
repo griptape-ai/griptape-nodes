@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import IO, TYPE_CHECKING, Any, ClassVar, TextIO
 
-from dotenv import load_dotenv
 from rich.logging import RichHandler
 
 from griptape_nodes.exe_types.flow import ControlFlow
@@ -40,8 +39,6 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
     from griptape_nodes.retained_mode.managers.static_files_manager import StaticFilesManager
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
-
-load_dotenv()
 
 
 logger = logging.getLogger("griptape_nodes")
@@ -256,7 +253,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
         BaseEvent._session_id = request.session_id
 
-        # TODO(griptape): Do we want to broadcast that a session started?
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/855
 
         return AppStartSessionResultSuccess(request.session_id)
 

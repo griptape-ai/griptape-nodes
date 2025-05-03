@@ -42,7 +42,7 @@ class BaseDriver(DataNode):
     # -----------------------------------------------------------------------------
     # Abstract Methods
     # -----------------------------------------------------------------------------
-    # @abstractmethod TODO:(jason) Implement this method in subclasses
+    # @abstractmethod TODO: https://github.com/griptape-ai/griptape-nodes/issues/872
     def _get_common_driver_args(self, params: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
         """Gets common driver arguments from parameters.
 
@@ -151,6 +151,24 @@ class BaseDriver(DataNode):
                     raise ValueError(msg)
         else:
             msg = f"Parameter '{param}' not found for updating model choices."
+            raise ValueError(msg)
+
+    def _remove_options_trait(self, param: str) -> None:
+        """Removes the options trait from the specified parameter.
+
+        This method is intended to be called by subclasses to remove the
+        `Options` trait from a parameter, if it exists.
+
+        Args:
+            param: The name of the parameter from which to remove the `Options` trait.
+        """
+        parameter = self.get_parameter_by_name(param)
+        if parameter is not None:
+            trait = parameter.find_element_by_id("Options")
+            if trait and isinstance(trait, Options):
+                parameter.remove_trait(trait)
+        else:
+            msg = f"Parameter '{param}' not found for removing options trait."
             raise ValueError(msg)
 
     def _replace_param_by_name(  # noqa: PLR0913

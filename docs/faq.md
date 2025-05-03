@@ -5,7 +5,7 @@
 Run this command and it will report back your workspace location:
 
 ```bash
-gtn config | grep workspace
+gtn config show | grep workspace
 ```
 
 ## Can I run the Engine on a different machine than the Editor?
@@ -28,26 +28,22 @@ For Windows PowerShell:
 $(Split-Path -Parent (Split-Path -Parent (Get-Command griptape-nodes | Select-Object -ExpandProperty Source)))
 ```
 
+## Can I see or edit my config file?
+
+You can! To get a path to the file, go to the top Settings menu in the Editor, and select **Copy Path to Settings**. That will copy the config file path to your clipboard.
+
+If you prefer working in the command line, you can also use:
+
+```
+gtn config show
+```
+
 ## How do I uninstall Griptape Nodes?
 
 Need to part ways with Griptape Nodes? It's a simple goodbye with a single command:
 
-### For Mac/Linux:
-
 ```bash
-griptape-nodes uninstall
-```
-
-### For Windows PowerShell:
-
-```powershell
-griptape-nodes uninstall
-```
-
-then:
-
-```powershell
-uv tool uninstall griptape-nodes
+griptape-nodes self uninstall
 ```
 
 When regret inevitably washes over you, have no fear. Open arms await; just revisit [Getting Started](getting_started.md)
@@ -72,7 +68,7 @@ gtn assets update
 
 ## I'm seeing "failed to locate pyvenv.cfg: The system cannot find the file specified." - What should I do?
 
-It is possible, that during a previous uninstall things were not _fully_ uninstalled. Simply perform an [uninstall](#how-do-i-uninstall) again, and then [re-install](getting_started.md).
+It is possible, that during a previous uninstall things were not _fully_ uninstalled. Simply perform an uninstall again, and then [re-install](getting_started.md).
 
 ## I'm seeing "Attempted to create a Flow with a parent 'None', but no parent with that name could be found." - What should I do?
 

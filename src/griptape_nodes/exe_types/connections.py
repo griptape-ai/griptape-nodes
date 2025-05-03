@@ -117,7 +117,7 @@ class Connections:
         connections_from_node = connections.get(node.name, {})
 
         connection_id = connections_from_node.get(parameter.name, [])
-        # TODO(griptape): Add more verbose error handling here. Or connection management.
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/859
         if not len(connection_id):
             return None
         if len(connection_id) > 1:
