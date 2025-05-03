@@ -21,23 +21,17 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class TilingImageProcessor:
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         pipe: Callable[..., Any],
         tile_size: int,
         tile_overlap: int,
         tile_strategy: str,
-        to_pipe_args: Callable[[Image, dict[str, Any]], tuple],
-        to_pipe_kwargs: Callable[[Image, dict[str, Any]], dict[str, Any]],
-        pipe_output_to_pil: Callable[[Any], Image],
     ) -> None:
         self.pipe = pipe
         self.tile_size = tile_size
         self.tile_overlap = tile_overlap
         self.tile_strategy = tile_strategy
-        self.to_pipe_args = to_pipe_args
-        self.to_pipe_kwargs = to_pipe_kwargs
-        self.pipe_output_to_pil = pipe_output_to_pil
 
     def get_tile_positions(self, image: Image) -> PositionList:
         tile_size = self.tile_size
@@ -139,7 +133,6 @@ class TilingImageProcessor:
         self,
         image: Image,
         output_scale: float = 1.0,
-        pipe_kwargs: dict[str, Any] | None = None,
         callback_on_tile_end: Any = None,
     ) -> Image:
         """Process an image in tiles with a given model/pipeline/function (self.pipe).
@@ -155,15 +148,18 @@ class TilingImageProcessor:
         Returns:
             a new image - the size of which depends on the the given model/pipeline/function and its inherent output_scale factor
         """
-        pipe = self.pipe
         tile_size = self.tile_size
-        tile_overlap = self.tile_overlap
         width, height = image.size
         result_height, result_width = int(height * output_scale), int(width * output_scale)
-        result_np = np.zeros((result_height, result_width, 3), dtype=np.float32)
-        weight_np = np.zeros((result_height, result_width), dtype=np.float32)
+        self.result_np = np.zeros((result_height, result_width, 3), dtype=np.float32)
+        self.weight_np = np.zeros((result_height, result_width), dtype=np.float32)
 
         positions = self.get_tile_positions(image)
+
+        def result_to_pil(result_np: np.ndarray, weight_np: np.ndarray) -> Image:
+            image_np = result_np / np.maximum(weight_np[..., None], 1e-5)
+            output_image_pil = PIL.Image.fromarray(np.clip(image_np, 0, 255).astype(np.uint8))
+            return output_image_pil
 
         # Use a mirrored image to ensure that the tile sizes can be uniform
         # an proportional. This is important for some models (e.g. Flux) where
@@ -199,56 +195,64 @@ class TilingImageProcessor:
             tile_box = (x, y, tile_right, tile_bottom)
             tile = padded_image.crop(tile_box)
 
+            def blend_tile(  # noqa: PLR0913
+                processed_tile: Image,
+                i: int = i,
+                x: int = x,
+                y: int = y,
+                tile: Image = tile,
+                tile_right: int = tile_right,
+                tile_bottom: int = tile_bottom,
+            ) -> tuple[np.ndarray, np.ndarray]:
+                # Crop out the padding to recover the original tile
+                processed_tile_right = min(self.tile_size, width - x) * output_scale
+                processed_tile_bottom = min(self.tile_size, height - y) * output_scale
+                processed_tile_box = (0, 0, processed_tile_right, processed_tile_bottom)
+                processed_cropped_tile = processed_tile.crop(processed_tile_box)
+
+                logger.info("tile input size: %s", tile.size)
+                logger.info("tile output size: %s", processed_tile.size)
+
+                tile_np = np.array(processed_cropped_tile).astype(np.float32)
+                oh, ow = tile_np.shape[:2]
+                ox, oy = int(x * output_scale), int(y * output_scale)
+
+                # Create local weight mask
+                is_left = ox == 0
+                is_top = oy == 0
+                is_right = tile_right == width
+                is_bottom = tile_bottom == height
+
+                weight_mask = create_weight_mask((ow, oh), self.tile_overlap, (is_left, is_top, is_right, is_bottom))
+
+                if DEBUG:
+                    # Saves an individual tile with a heatmap overlay to visualize the
+                    # weight mask.
+                    debug_tile = visualize_weight_mask(processed_cropped_tile, weight_mask)
+                    debug_tile.save(f"weight_mask_tile_{i}.png")
+
+                # Blend into result
+                new_result_np = self.result_np.copy()
+                new_weight_np = self.weight_np.copy()
+
+                new_result_np[oy : oy + oh, ox : ox + ow] += tile_np * weight_mask[..., None]
+                new_weight_np[oy : oy + oh, ox : ox + ow] += weight_mask
+
+                return (new_result_np, new_weight_np)
+
+            def get_preview_image_with_partial_tile(partial_processed_tile: Image) -> Image:
+                partial_result_np, partial_weight_np = blend_tile(partial_processed_tile)
+                partial_result = result_to_pil(partial_result_np, partial_weight_np)
+                return partial_result
+
             # Process the tile
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/851
-            pipe_kwargs = pipe_kwargs or {}
-            args = self.to_pipe_args(tile, pipe_kwargs)
-            kwargs = self.to_pipe_kwargs(tile, pipe_kwargs)
-            processed_tile = self.pipe_output_to_pil(pipe(*args, **kwargs)).convert("RGB")
-
-            # Crop out the padding to recover the original tile
-            processed_tile_right = min(tile_size, width - x) * output_scale
-            processed_tile_bottom = min(tile_size, height - y) * output_scale
-            processed_tile_box = (0, 0, processed_tile_right, processed_tile_bottom)
-            processed_tile = processed_tile.crop(processed_tile_box)
-
-            tile_np = np.array(processed_tile).astype(np.float32)
-            oh, ow = tile_np.shape[:2]
-            ox, oy = int(x * output_scale), int(y * output_scale)
-
-            logger.info("tile input size: %s", tile.size)
-            logger.info("tile output size: %s", processed_tile.size)
-
-            # Create local weight mask
-            is_left = ox == 0
-            is_top = oy == 0
-            is_right = tile_right == width
-            is_bottom = tile_bottom == height
-
-            weight_mask = create_weight_mask((ow, oh), tile_overlap, (is_left, is_top, is_right, is_bottom))
-
-            if DEBUG:
-                # Saves an individual tile with a heatmap overlay to visualize the
-                # weight mask.
-                debug_tile = visualize_weight_mask(processed_tile, weight_mask)
-                debug_tile.save(f"weight_mask_tile_{i}.png")
-
-            # Blend into result
-            result_np[oy : oy + oh, ox : ox + ow] += tile_np * weight_mask[..., None]
-            weight_np[oy : oy + oh, ox : ox + ow] += weight_mask
+            processed_tile = self.pipe(tile, get_preview_image_with_partial_tile)
+            self.result_np, self.weight_np = blend_tile(processed_tile)
 
             if callback_on_tile_end:
-                # Save an image that indicates progress -> all currently generated tiles
-                # in there places. The image has the resolution of the final image.
-                # Normalize
-                preview_image_np = result_np / np.maximum(weight_np[..., None], 1e-5)
-                preview_image_pil = PIL.Image.fromarray(np.clip(preview_image_np, 0, 255).astype(np.uint8))
-                callback_on_tile_end(i, preview_image_pil)
+                callback_on_tile_end(i, result_to_pil(self.result_np, self.weight_np))
 
-        # Normalize
-        result_np /= np.maximum(weight_np[..., None], 1e-5)
-        output_image_pil = PIL.Image.fromarray(np.clip(result_np, 0, 255).astype(np.uint8))
-        return output_image_pil
+        return result_to_pil(self.result_np, self.weight_np)
 
 
 def create_weight_mask(size: tuple[int, int], overlap: int, is_edge: tuple[bool, bool, bool, bool]) -> np.ndarray:

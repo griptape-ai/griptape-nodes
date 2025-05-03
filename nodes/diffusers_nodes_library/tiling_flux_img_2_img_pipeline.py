@@ -1,7 +1,7 @@
 import contextlib
 import logging
 from collections.abc import Iterator
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
@@ -274,7 +274,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
-    def _process(self) -> AsyncResult | None:  # noqa: PLR0915
+    def _process(self) -> AsyncResult | None:  # noqa: PLR0915, C901
         model = self.get_parameter_value("model")
         if model is None:
             logger.exception("No model specified")
@@ -330,14 +330,58 @@ class TilingFluxImg2ImgPipeline(ControlNode):
 
         configure_flux_loras(self, pipe, loras)
 
+        def wrapped_pipe(tile: Image, get_preview_image_with_partial_tile: Any) -> Image:
+            def callback_on_step_end(pipe: diffusers.FluxPipeline, i: int, _t: Any, callback_kwargs: dict) -> dict:
+                if i < num_inference_steps - 1:
+                    # Generate a preview image if this is not yet the last step.
+                    # That would be redundant, since the pipeline automatically
+                    # does that for the last step.
+                    latents = callback_kwargs["latents"]
+                    latents = pipe._unpack_latents(latents, tile_size, tile_size, pipe.vae_scale_factor)
+                    latents = (latents / pipe.vae.config.scaling_factor) + pipe.vae.config.shift_factor
+                    image = pipe.vae.decode(latents, return_dict=False)[0]
+                    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/845
+                    intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
+
+                    # HERE -> need to update the tile by calling something in the tile processor.
+                    preview_image_with_partial_tile = get_preview_image_with_partial_tile(intermediate_pil_image)
+                    self.publish_update_to_parameter(
+                        "output_image", pil_to_image_artifact(preview_image_with_partial_tile)
+                    )
+                    self.append_value_to_parameter(
+                        "logs", f"Finished inference step {i + 1} of {num_inference_steps}.\n"
+                    )
+                    self.append_value_to_parameter(
+                        "logs", f"Starting inference step {i + 2} of {num_inference_steps}...\n"
+                    )
+                return {}
+
+            return (
+                pipe(
+                    image=tile,
+                    width=tile.width,
+                    height=tile.height,
+                    prompt=prompt,
+                    prompt_2=prompt_2,
+                    negative_prompt=negative_prompt,
+                    negative_prompt_2=negative_prompt_2,
+                    true_cfg_scale=true_cfg_scale,
+                    strength=strength,
+                    num_inference_steps=num_inference_steps,
+                    guidance_scale=guidance_scale,
+                    generator=generator,
+                    output_type="pil",
+                    callback_on_step_end=callback_on_step_end,
+                )
+                .images[0]
+                .convert("RGB")
+            )
+
         tiling_image_processor = TilingImageProcessor(
-            pipe,
+            pipe=wrapped_pipe,
             tile_size=tile_size,
             tile_overlap=tile_overlap,
             tile_strategy=tile_strategy,
-            to_pipe_args=lambda tile, kwargs: (),  # noqa: ARG005
-            to_pipe_kwargs=lambda tile, kwargs: {"image": tile, "width": tile.width, "height": tile.height, **kwargs},
-            pipe_output_to_pil=lambda output: output.images[0],
         )
         num_tiles = tiling_image_processor.get_num_tiles(image=input_image_pil)
         generator = torch.Generator(get_best_device())
@@ -353,19 +397,6 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         self.append_value_to_parameter("logs", f"Starting tile 1 of {num_tiles}...\n")
         output_image_pil = tiling_image_processor.process(
             image=input_image_pil,
-            pipe_kwargs={
-                "prompt": prompt,
-                "prompt_2": prompt_2,
-                "negative_prompt": negative_prompt,
-                "negative_prompt_2": negative_prompt_2,
-                "true_cfg_scale": true_cfg_scale,
-                "strength": strength,
-                "num_inference_steps": num_inference_steps,
-                "guidance_scale": guidance_scale,
-                "generator": generator,
-                "output_type": "pil",
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/879
-            },
             callback_on_tile_end=callback_on_tile_end,
         )
         self.append_value_to_parameter("logs", f"Finished tile {num_tiles} of {num_tiles}.\n")
