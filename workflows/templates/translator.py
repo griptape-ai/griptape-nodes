@@ -7,7 +7,12 @@ cmd.create_flow(flow_name="translator")
 cmd.create_node(
     node_type="Note",
     node_name="ReadMe",
-    metadata={"position": {"x": -535, "y": -200}, "size": {"width": 900, "height": 175}},
+    metadata={"position": {"x": -550, "y": -400}, "size": {"width": 1000, "height": 350}},
+)
+cmd.create_node(
+    node_type="Note",
+    node_name="NextStep",
+    metadata={"position": {"x": 1200, "y": 500}, "size": {"width": 1100, "height": 200}},
 )
 cmd.create_node(
     node_type="Agent",
@@ -84,7 +89,20 @@ cmd.set_value(
     "ReadMe.note",
     """This workflow serves as the lesson material for the tutorial located at:
 
-https://docs.griptapenodes.com/en/stable/ftue/02_translator/FTUE_02_translator/""",
+https://docs.griptapenodes.com/en/stable/ftue/02_translator/FTUE_02_translator/
+
+The concepts covered are:
+
+- Multi-agent workflows where agents have different "jobs"
+- How to use Merge Text nodes to better pass information between agents
+- Understanding execution chains to control the order things happen in""",
+)
+cmd.set_value(
+    "NextStep.note",
+    """If you're following along with our Getting Started tutorials, check out the next suggested template: Compare_Prompts.
+
+Load the next tutorial page here:
+https://docs.griptapenodes.com/en/stable/ftue/03_compare_prompts/FTUE_03_compare_prompts/""",
 )
 cmd.set_value(
     "spanish_story.agent",
@@ -253,7 +271,7 @@ cmd.connect("prompt_header.output", "to_english.prompt")
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
 # is_griptape_provided = true
 # is_template = true
-# creation_date = 1847-10-25T11:30:05.456789-04:30
-# last_modified_date = 1847-10-25T13:45:22.987654-04:30
+# creation_date = 2025-05-01T02:00:00.000000+00:00
+# last_modified_date = 2025-05-01T02:00:00.000000+00:00
 #
 # ///

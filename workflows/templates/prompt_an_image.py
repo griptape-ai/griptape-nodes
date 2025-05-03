@@ -7,7 +7,12 @@ cmd.create_flow(flow_name="prompt_an_image")
 cmd.create_node(
     node_type="Note",
     node_name="ReadMe",
-    metadata={"position": {"x": 0, "y": -200}, "size": {"width": 1000, "height": 175}},
+    metadata={"position": {"x": 0, "y": -400}, "size": {"width": 1000, "height": 350}},
+)
+cmd.create_node(
+    node_type="Note",
+    node_name="NextStep",
+    metadata={"position": {"x": 0, "y": 450}, "size": {"width": 1000, "height": 200}},
 )
 cmd.create_node(
     node_type="GenerateImage",
@@ -31,7 +36,20 @@ cmd.set_value(
     "ReadMe.note",
     """This workflow serves as the lesson material for the tutorial located at:
 
-https://docs.griptapenodes.com/en/stable/ftue/01_prompt_an_image/FTUE_01_prompt_an_image/""",
+https://docs.griptapenodes.com/en/stable/ftue/01_prompt_an_image/FTUE_01_prompt_an_image/
+
+The concepts covered are:
+
+- Opening saved workflows
+- Using text prompts to generate images using the GenerateImage node
+- Running entire workflows, or just specific nodes""",
+)
+cmd.set_value(
+    "NextStep.note",
+    """If you're following along with our Getting Started tutorials, check out the next workflow: Translator.
+
+Load the next tutorial page here:
+https://docs.griptapenodes.com/en/stable/ftue/02_translator/FTUE_02_translator/""",
 )
 cmd.set_value("GenerateImage_1.prompt", "A potato making an oil painting\n\n")
 cmd.set_value("GenerateImage_1.enhance_prompt", True)
@@ -66,7 +84,7 @@ cmd.set_value(
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
 # is_griptape_provided = true
 # is_template = true
-# creation_date = 1750-03-12T08:15:42.123456-05:00
-# last_modified_date = 1750-03-12T09:20:15.789012-05:00
+# creation_date = 2025-05-01T03:00:00.000000+00:00
+# last_modified_date = 2025-05-01T03:00:00.000000+00:00
 #
 # ///

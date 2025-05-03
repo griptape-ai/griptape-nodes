@@ -7,6 +7,17 @@ cmd.create_flow(flow_name="photography_team")
 cmd.create_node(
     node_type="Note",
     node_name="ReadMe",
+    metadata={"position": {"x": -500, "y": -500}, "size": {"width": 1000, "height": 450}},
+)
+
+cmd.create_node(
+    node_type="Note",
+    node_name="Congratulations",
+    metadata={"position": {"x": 4600, "y": 1500}, "size": {"width": 650, "height": 150}},
+)
+cmd.create_node(
+    node_type="Note",
+    node_name="ReadMe",
     metadata={"position": {"x": -500, "y": -257}, "size": {"width": 1000, "height": 175}},
 )
 cmd.create_node(
@@ -76,8 +87,19 @@ cmd.set_value(
     "ReadMe.note",
     """This workflow serves as the lesson material for the tutorial located at:
 
-https://docs.griptapenodes.com/en/stable/ftue/04_photography_team/FTUE_04_photography_team/""",
+https://docs.griptapenodes.com/en/stable/ftue/04_photography_team/FTUE_04_photography_team/
+
+The concepts covered are:
+
+- Incorporating key upgrades available to agents:
+    - Rulesets to define and manage agent behaviors
+    - Tools to give agents more abilities
+- Converting agents into tools
+- Creating and orchestrating a team of "experts" with specific roles
+""",
 )
+cmd.set_value("Congratulations.note", """Good job. You've completed our "Getting Started" set of tutorials!""")
+
 cmd.set_value("Cinematographer_Ruleset.name", "Cinematographer Ruleset")
 cmd.set_value(
     "Cinematographer_Ruleset.rules",
@@ -170,8 +192,7 @@ cmd.connect("Agent_RulesetList.rulesets", "Orchestrator.rulesets")
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
 # is_griptape_provided = true
 # is_template = true
-# creation_date = 1985-11-30T22:43:17.864209-08:00
-# last_modified_date = 1985-11-30T23:51:48.753951-08:00
-#
+# creation_date = 2025-05-01T00:00:00.000000+00:00
+# last_modified_date = 2025-05-01T00:00:00.000000+00:00
 #
 # ///

@@ -5,6 +5,16 @@ cmd.create_flow(flow_name="compare_prompts")
 
 # --- Create nodes ---
 cmd.create_node(
+    node_type="Note",
+    node_name="ReadMe",
+    metadata={"position": {"x": -700, "y": -500}, "size": {"width": 1200, "height": 400}},
+)
+cmd.create_node(
+    node_type="Note",
+    node_name="NextStep",
+    metadata={"position": {"x": 1900, "y": 650}, "size": {"width": 1100, "height": 200}},
+)
+cmd.create_node(
     node_type="TextInput",
     node_name="detail_prompt",
     metadata={"position": {"x": -650, "y": 600}, "size": {"width": 650, "height": 330}},
@@ -13,11 +23,6 @@ cmd.create_node(node_type="TextInput", node_name="basic_prompt", metadata={"posi
 cmd.create_node(node_type="MergeTexts", node_name="assemble_prompt", metadata={"position": {"x": 100, "y": 600}})
 cmd.create_node(node_type="GenerateImage", node_name="basic_image", metadata={"position": {"x": 100, "y": -50}})
 cmd.create_node(
-    node_type="Note",
-    node_name="ReadMe",
-    metadata={"position": {"x": 100, "y": -250}, "size": {"width": 900, "height": 175}},
-)
-cmd.create_node(
     node_type="GenerateImage", node_name="enhanced_prompt_image", metadata={"position": {"x": 700, "y": 200}}
 )
 cmd.create_node(node_type="Agent", node_name="bespoke_prompt", metadata={"position": {"x": 1300, "y": 200}})
@@ -25,13 +30,27 @@ cmd.create_node(
     node_type="GenerateImage", node_name="bespoke_prompt_image", metadata={"position": {"x": 1900, "y": 200}}
 )
 
-
 # --- Set parameter values ---
 cmd.set_value(
     "ReadMe.note",
     """This workflow serves as the lesson material for the tutorial located at:
 
-https://docs.griptapenodes.com/en/stable/ftue/03_compare_prompts/FTUE_03_compare_prompts/""",
+https://docs.griptapenodes.com/en/stable/ftue/03_compare_prompts/FTUE_03_compare_prompts/
+
+The concepts covered are:
+
+- How to use one TextInput node to feed to multiple other inputs
+- Different approaches to prompt engineering
+- The GenerateImage "Enhance Prompt" feature and how it works behind the scenes
+- Comparing the results of different prompting techniques
+""",
+)
+cmd.set_value(
+    "NextStep.note",
+    """If you're following along with our Getting Started tutorials, check out the next suggested template: Photography_Team.
+
+Load the next tutorial page here:
+https://docs.griptapenodes.com/en/stable/ftue/04_photography_team/FTUE_04_photography_team/""",
 )
 cmd.set_value("basic_image.prompt", "A capybara eating with utensils")
 cmd.set_value("basic_image.enhance_prompt", False)
@@ -89,7 +108,7 @@ cmd.connect("basic_prompt.text", "basic_image.prompt")
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
 # is_griptape_provided = true
 # is_template = true
-# creation_date = 1923-07-04T17:05:33.246810-03:00
-# last_modified_date = 1923-07-04T19:18:59.135790-03:00
+# creation_date = 2025-05-01T01:00:00.000000+00:00
+# last_modified_date = 2025-05-01T01:00:00.000000+00:00
 #
 # ///
