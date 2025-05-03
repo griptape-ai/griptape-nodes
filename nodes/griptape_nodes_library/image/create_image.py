@@ -78,7 +78,7 @@ class GenerateImage(ControlNode):
                 tooltip="None",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"pulse_on_update": True},
+                ui_options={"pulse_on_run": True},
             )
         )
         # Group for logging information.
