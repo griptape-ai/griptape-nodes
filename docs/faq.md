@@ -42,22 +42,8 @@ gtn config show
 
 Need to part ways with Griptape Nodes? It's a simple goodbye with a single command:
 
-### For Mac/Linux:
-
 ```bash
-griptape-nodes uninstall
-```
-
-### For Windows PowerShell:
-
-```powershell
-griptape-nodes uninstall
-```
-
-then:
-
-```powershell
-uv tool uninstall griptape-nodes
+griptape-nodes self uninstall
 ```
 
 When regret inevitably washes over you, have no fear. Open arms await; just revisit [Getting Started](getting_started.md)
