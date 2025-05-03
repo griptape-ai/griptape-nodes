@@ -206,14 +206,14 @@ class TilingSPAN(ControlNode):
         with self._append_stdout_to_logs():
             pipe = self._get_pipe(repo, revision, filename)
 
+        def wrapped_pipe(tile: Image, *_) -> Image:
+            return pipe(tile)
+
         tiling_image_processor = TilingImageProcessor(
-            pipe,
+            pipe=wrapped_pipe,
             tile_size=tile_size,
             tile_overlap=tile_overlap,
             tile_strategy=tile_strategy,
-            to_pipe_args=lambda tile, kwargs: (tile,),  # noqa: ARG005
-            to_pipe_kwargs=lambda tile, kwargs: kwargs,  # noqa: ARG005
-            pipe_output_to_pil=lambda output: output,
         )
         num_tiles = tiling_image_processor.get_num_tiles(image=input_image_pil)
 
@@ -226,7 +226,7 @@ class TilingSPAN(ControlNode):
         self.append_value_to_parameter("logs", f"Starting tile 1 of {num_tiles}...\n")
         output_image_pil = tiling_image_processor.process(
             image=input_image_pil,
-            output_scale=4,  # THIS IS SPECIFIC TO 4x-ClearRealityV1 AFAIK
+            output_scale=output_scale,
             callback_on_tile_end=callback_on_tile_end,
         )
         self.append_value_to_parameter("logs", f"Finished tile {num_tiles} of {num_tiles}.\n")
