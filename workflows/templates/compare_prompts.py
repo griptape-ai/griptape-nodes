@@ -4,21 +4,34 @@ from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd  # no
 cmd.create_flow(flow_name="compare_prompts")
 
 # --- Create nodes ---
-cmd.create_node(node_type="TextInput",      node_name="detail_prompt",          metadata={"position": {"x": -650, "y":  600} , "size": {"width": 650, "height": 330}})
-cmd.create_node(node_type="TextInput",      node_name="basic_prompt",           metadata={"position": {"x": -500, "y":  300}})
-cmd.create_node(node_type="MergeTexts",     node_name="assemble_prompt",        metadata={"position": {"x":  100, "y":  600}})
-cmd.create_node(node_type="GenerateImage",  node_name="basic_image",            metadata={"position": {"x":  100, "y":  -50}})
-cmd.create_node(node_type="Note",           node_name="ReadMe",                 metadata={'position': {'x':  100, 'y': -250} , "size": {"width": 900, "height": 175}})
-cmd.create_node(node_type="GenerateImage",  node_name="enhanced_prompt_image",  metadata={"position": {"x":  700, "y":  200}})
-cmd.create_node(node_type="Agent",          node_name="bespoke_prompt",         metadata={"position": {"x": 1300, "y":  200}})
-cmd.create_node(node_type="GenerateImage",  node_name="bespoke_prompt_image",   metadata={"position": {"x": 1900, "y":  200}})
+cmd.create_node(
+    node_type="TextInput",
+    node_name="detail_prompt",
+    metadata={"position": {"x": -650, "y": 600}, "size": {"width": 650, "height": 330}},
+)
+cmd.create_node(node_type="TextInput", node_name="basic_prompt", metadata={"position": {"x": -500, "y": 300}})
+cmd.create_node(node_type="MergeTexts", node_name="assemble_prompt", metadata={"position": {"x": 100, "y": 600}})
+cmd.create_node(node_type="GenerateImage", node_name="basic_image", metadata={"position": {"x": 100, "y": -50}})
+cmd.create_node(
+    node_type="Note",
+    node_name="ReadMe",
+    metadata={"position": {"x": 100, "y": -250}, "size": {"width": 900, "height": 175}},
+)
+cmd.create_node(
+    node_type="GenerateImage", node_name="enhanced_prompt_image", metadata={"position": {"x": 700, "y": 200}}
+)
+cmd.create_node(node_type="Agent", node_name="bespoke_prompt", metadata={"position": {"x": 1300, "y": 200}})
+cmd.create_node(
+    node_type="GenerateImage", node_name="bespoke_prompt_image", metadata={"position": {"x": 1900, "y": 200}}
+)
 
 
 # --- Set parameter values ---
-cmd.set_value("ReadMe.note",
-"""This workflow serves as the lesson material for the tutorial located at:
+cmd.set_value(
+    "ReadMe.note",
+    """This workflow serves as the lesson material for the tutorial located at:
 
-https://docs.griptapenodes.com/en/stable/ftue/03_compare_prompts/FTUE_03_compare_prompts/"""
+https://docs.griptapenodes.com/en/stable/ftue/03_compare_prompts/FTUE_03_compare_prompts/""",
 )
 cmd.set_value("basic_image.prompt", "A capybara eating with utensils")
 cmd.set_value("basic_image.enhance_prompt", False)

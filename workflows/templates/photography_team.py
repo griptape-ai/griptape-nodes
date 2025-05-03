@@ -5,9 +5,10 @@ cmd.create_flow(flow_name="photography_team")
 
 # --- Create nodes ---
 cmd.create_node(
-                node_type="Note",
-                node_name="ReadMe",
-                metadata={'position': {'x': -500,'y': -257},'size': {'width': 1000,'height': 175}})
+    node_type="Note",
+    node_name="ReadMe",
+    metadata={"position": {"x": -500, "y": -257}, "size": {"width": 1000, "height": 175}},
+)
 cmd.create_node(
     node_type="RulesetList", node_name="Cinematographer_RulesetList", metadata={"position": {"x": 500, "y": 0}}
 )
@@ -71,10 +72,11 @@ cmd.create_node(
 )
 
 # --- Set parameter values ---
-cmd.set_value("ReadMe.note",
-"""This workflow serves as the lesson material for the tutorial located at:
+cmd.set_value(
+    "ReadMe.note",
+    """This workflow serves as the lesson material for the tutorial located at:
 
-https://docs.griptapenodes.com/en/stable/ftue/04_photography_team/FTUE_04_photography_team/"""
+https://docs.griptapenodes.com/en/stable/ftue/04_photography_team/FTUE_04_photography_team/""",
 )
 cmd.set_value("Cinematographer_Ruleset.name", "Cinematographer Ruleset")
 cmd.set_value(

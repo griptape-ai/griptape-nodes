@@ -5,9 +5,10 @@ cmd.create_flow(flow_name="translator")
 
 # Create nodes
 cmd.create_node(
-                node_type="Note",
-                node_name="ReadMe",
-                metadata={'position': {'x': -535,'y': -200},'size': {'width': 900,'height': 175}})
+    node_type="Note",
+    node_name="ReadMe",
+    metadata={"position": {"x": -535, "y": -200}, "size": {"width": 900, "height": 175}},
+)
 cmd.create_node(
     node_type="Agent",
     node_name="spanish_story",
@@ -79,10 +80,11 @@ cmd.create_node(
 )
 
 # Set parameter values
-cmd.set_value("ReadMe.note",
-"""This workflow serves as the lesson material for the tutorial located at:
+cmd.set_value(
+    "ReadMe.note",
+    """This workflow serves as the lesson material for the tutorial located at:
 
-https://docs.griptapenodes.com/en/stable/ftue/02_translator/FTUE_02_translator/"""
+https://docs.griptapenodes.com/en/stable/ftue/02_translator/FTUE_02_translator/""",
 )
 cmd.set_value(
     "spanish_story.agent",

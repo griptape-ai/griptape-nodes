@@ -5,9 +5,10 @@ cmd.create_flow(flow_name="prompt_an_image")
 
 # Create nodes
 cmd.create_node(
-                node_type="Note",
-                node_name="ReadMe",
-                metadata={'position': {'x': 0,'y': -200},'size': {'width': 1000,'height': 175}})
+    node_type="Note",
+    node_name="ReadMe",
+    metadata={"position": {"x": 0, "y": -200}, "size": {"width": 1000, "height": 175}},
+)
 cmd.create_node(
     node_type="GenerateImage",
     node_name="GenerateImage_1",
@@ -26,10 +27,11 @@ cmd.create_node(
 )
 
 # Set parameter values
-cmd.set_value("ReadMe.note",
-"""This workflow serves as the lesson material for the tutorial located at:
+cmd.set_value(
+    "ReadMe.note",
+    """This workflow serves as the lesson material for the tutorial located at:
 
-https://docs.griptapenodes.com/en/stable/ftue/01_prompt_an_image/FTUE_01_prompt_an_image/"""
+https://docs.griptapenodes.com/en/stable/ftue/01_prompt_an_image/FTUE_01_prompt_an_image/""",
 )
 cmd.set_value("GenerateImage_1.prompt", "A potato making an oil painting\n\n")
 cmd.set_value("GenerateImage_1.enhance_prompt", True)
