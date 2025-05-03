@@ -79,7 +79,9 @@ class StaticFilesManager:
             msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
             raise ValueError(msg)
 
-        file_path = Path(self.config_manager.workspace_path / self.config_manager.user_config["static_files_directory"])
+        file_path = Path(
+            self.config_manager.workspace_path / self.config_manager.merged_config["static_files_directory"]
+        )
         if not file_path.exists():
             file_path.mkdir(parents=True, exist_ok=True)
         Path(file_path / file_name).write_bytes(data)
