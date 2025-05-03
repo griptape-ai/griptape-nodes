@@ -4,7 +4,22 @@ from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd  # no
 cmd.create_flow(flow_name="photography_team")
 
 # --- Create nodes ---
+cmd.create_node(
+    node_type="Note",
+    node_name="ReadMe",
+    metadata={"position": {"x": -500, "y": -500}, "size": {"width": 1000, "height": 450}},
+)
 
+cmd.create_node(
+    node_type="Note",
+    node_name="Congratulations",
+    metadata={"position": {"x": 4600, "y": 1500}, "size": {"width": 650, "height": 150}},
+)
+cmd.create_node(
+    node_type="Note",
+    node_name="ReadMe",
+    metadata={"position": {"x": -500, "y": -257}, "size": {"width": 1000, "height": 175}},
+)
 cmd.create_node(
     node_type="RulesetList", node_name="Cinematographer_RulesetList", metadata={"position": {"x": 500, "y": 0}}
 )
@@ -68,6 +83,23 @@ cmd.create_node(
 )
 
 # --- Set parameter values ---
+cmd.set_value(
+    "ReadMe.note",
+    """This workflow serves as the lesson material for the tutorial located at:
+
+https://docs.griptapenodes.com/en/stable/ftue/04_photography_team/FTUE_04_photography_team/
+
+The concepts covered are:
+
+- Incorporating key upgrades available to agents:
+    - Rulesets to define and manage agent behaviors
+    - Tools to give agents more abilities
+- Converting agents into tools
+- Creating and orchestrating a team of "experts" with specific roles
+""",
+)
+cmd.set_value("Congratulations.note", """Good job. You've completed our "Getting Started" set of tutorials!""")
+
 cmd.set_value("Cinematographer_Ruleset.name", "Cinematographer Ruleset")
 cmd.set_value(
     "Cinematographer_Ruleset.rules",
@@ -104,7 +136,7 @@ cmd.set_value("Detail_Enthusiast_asTool.off_prompt", False)
 cmd.set_value("Image_Generation_Specialist_Ruleset.name", "Image_Generation_Specialist Ruleset")
 cmd.set_value(
     "Image_Generation_Specialist_Ruleset.rules",
-    "You are an expert in creating prompts for image generation engines\nYou use the latest knowledge available to you to generate the best prompts.\nYou create prompts that are direct and succinct and you understand they need to be under 800 characters long\nUse your tools to find the best examples of prompts when necessary\nYou can use your tools to research the subject as well.\nYour responses are brief and concise\nYou are generating a prompt for a still image\nAlways include the following: subject, attributes of subject, visual characteristics of the image, film grain, camera angle, lighting, art style, color scheme, surrounding environment, camera used (ex: Nikon d850 film stock, polaroid, etc).\nAlways respond with your identity so the agent knows who you are.\nKeep your responses brief.\n",
+    "You are an expert in creating prompts for image generation engines\nYou use the latest knowledge available to you to generate the best prompts.\nYou create prompts that are direct and succinct and you understand they need to be under 800 characters long\nAlways include the following: subject, attributes of subject, visual characteristics of the image, film grain, camera angle, lighting, art style, color scheme, surrounding environment, camera used (ex: Nikon d850 film stock, polaroid, etc).\nAlways respond with your identity so the agent knows who you are.\nKeep your responses brief.\n",
 )
 cmd.set_value("Image_Generation_Specialist.model", "gpt-4.1")
 cmd.set_value("Image_Generation_Specialist.include_details", False)
@@ -160,5 +192,7 @@ cmd.connect("Agent_RulesetList.rulesets", "Orchestrator.rulesets")
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
 # is_griptape_provided = true
 # is_template = true
+# creation_date = 2025-05-01T00:00:00.000000+00:00
+# last_modified_date = 2025-05-01T00:00:00.000000+00:00
 #
 # ///
