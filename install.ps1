@@ -19,16 +19,10 @@ try {
     exit
 }
 
-# Verify uv is on the user's PATH
-if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    ColorWrite "Error: Griptape Nodes dependency 'uv' was installed but requires the terminal instance to be restarted to be run." 'Red'
-    ColorWrite "Please close this terminal, open a new terminal, and then re-run the install command you performed earlier." 'Red'
-    exit 1
-}
-
 ColorWrite "`nInstalling Griptape Nodes Engine...`n" 'Cyan'
+$uvPath = "$HOME\.local\bin\uv.exe"
 # uv tool install --force --python python3.12 griptape-nodes
-uv tool install --force --python python3.12 git+https://github.com/griptape-ai/griptape-nodes
+& $uvPath tool install --force --python python3.12 git+https://github.com/griptape-ai/griptape-nodes
 
 ColorWrite "**************************************" 'Green'
 ColorWrite "*      Installation complete!        *" 'Green'
