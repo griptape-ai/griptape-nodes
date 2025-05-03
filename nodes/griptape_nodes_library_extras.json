@@ -1,9 +1,9 @@
 {
-  "name": "Griptape Nodes Library Extras",
+  "name": "Griptape Nodes Advanced Image Library",
   "library_schema_version": "0.1.0",
   "metadata": {
     "author": "Griptape, Inc.",
-    "description": "Extra nodes for Griptape Nodes.",
+    "description": "Advanced image generation and manipulation nodes for Griptape Nodes.",
     "library_version": "0.1.0",
     "engine_version": "0.1.0",
     "tags": [
