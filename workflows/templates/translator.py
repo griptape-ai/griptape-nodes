@@ -5,6 +5,10 @@ cmd.create_flow(flow_name="translator")
 
 # Create nodes
 cmd.create_node(
+                node_type="Note",
+                node_name="ReadMe",
+                metadata={'position': {'x': -535,'y': -200},'size': {'width': 900,'height': 175}})
+cmd.create_node(
     node_type="Agent",
     node_name="spanish_story",
     parent_flow_name="translator",
@@ -18,7 +22,7 @@ cmd.create_node(
         "library": "Griptape Nodes Library",
         "node_type": "Agent",
         "category": "Agent",
-        "position": {"x": -535.7908683713299, "y": -7.476151651692973},
+        "position": {"x": -535, "y": 0},
     },
 )
 cmd.create_node(
@@ -35,7 +39,7 @@ cmd.create_node(
         "library": "Griptape Nodes Library",
         "node_type": "Agent",
         "category": "Agent",
-        "position": {"x": 638.5560890213236, "y": -9.073446632293525},
+        "position": {"x": 635, "y": 0},
     },
 )
 cmd.create_node(
@@ -52,7 +56,7 @@ cmd.create_node(
         "library": "Griptape Nodes Library",
         "node_type": "MergeTexts",
         "category": "Text",
-        "position": {"x": 40.84838920453933, "y": 189.99943192938494},
+        "position": {"x": 40, "y": 200},
     },
 )
 cmd.create_node(
@@ -69,12 +73,17 @@ cmd.create_node(
         "library": "Griptape Nodes Library",
         "node_type": "DisplayText",
         "category": "Text",
-        "position": {"x": 1227.628176549459, "y": 232.41954302364212},
-        "size": {"width": 475, "height": 264},
+        "position": {"x": 1200, "y": 200},
+        "size": {"width": 475, "height": 265},
     },
 )
 
 # Set parameter values
+cmd.set_value("ReadMe.note",
+"""This workflow serves as the lesson material for the tutorial located at:
+
+https://docs.griptapenodes.com/en/stable/ftue/02_translator/FTUE_02_translator/"""
+)
 cmd.set_value(
     "spanish_story.agent",
     {
@@ -242,5 +251,7 @@ cmd.connect("prompt_header.output", "to_english.prompt")
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
 # is_griptape_provided = true
 # is_template = true
+# creation_date = 1847-10-25T11:30:05.456789-04:30
+# last_modified_date = 1847-10-25T13:45:22.987654-04:30
 #
 # ///
