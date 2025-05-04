@@ -1,4 +1,4 @@
-# Getting Started with Griptape Nodes
+# Installing Griptape Nodes
 
 An important bit of overview before we begin: Griptape Nodes is actually two things that work together - an Engine and an Editor. The Engine will install and run on your computer, while the Editor is served from the web, and you'll interact with your Engine through a web browser.
 
