@@ -51,7 +51,11 @@ To generate your first image:
     <img src="../assets/text_prompt_field.png" alt="Text prompt field" width="300">
   </p>
 
-Now, run your node. There are three ways to do this in the editor:
+Now, run your node. There are three UI buttons but those perform only two distinct operations:
+
+<p align="center">
+  <img src="../assets/ways_to_run.png" alt="Ways to run" width="300">
+</p>
 
 1. Run the *whole* workflow:
 
@@ -63,10 +67,6 @@ Now, run your node. There are three ways to do this in the editor:
     1. Or, select a node and click **Run Selected** from the toolbar.
 
 Running a single node can be very useful for testing or debugging specific parts of your workflow, or simply getting things to run faster if you don't care about updating other parts of the workflow just yet.
-
-<p align="center">
-  <img src="../assets/ways_to_run.png" alt="Ways to run" width="300">
-  </p>
 
 The difference is in scope - the first option runs everything, while the second options run just the selected node and everything that precedes it that it may need.
 
@@ -108,4 +108,4 @@ The GenerateImage node is a fundamental building block for creative flows in Gri
 
 ## Next Up
 
-In the next section: [Coordinating Agents](../02_translator/FTUE_02_translator.md), we'll learn how to get AIs to bucket-brigade through flows!
+In the next section: [Coordinating Agents](../02_translator/FTUE_02_translator.md), we'll learn how to get AIs to team up and form a bucket-brigade through a workflow.
