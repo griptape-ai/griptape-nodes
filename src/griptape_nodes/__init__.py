@@ -20,9 +20,12 @@ from rich.progress import Progress
 from rich.prompt import Confirm, Prompt
 from xdg_base_dirs import xdg_config_home, xdg_data_home
 
-from griptape_nodes.app import start_app
-from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
-from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+console = Console()
+
+with console.status("Loading Griptape Nodes...") as status:
+    from griptape_nodes.app import start_app
+    from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+    from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 DATA_DIR = xdg_data_home() / "griptape_nodes"
@@ -33,7 +36,6 @@ NODES_APP_URL = "https://nodes.griptape.ai"
 NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/tags/{tag}.tar.gz"
 
 
-console = Console()
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
 
