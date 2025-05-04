@@ -36,21 +36,22 @@ This workflow demonstrates how multiple agents can each perform their own distin
 
 By connecting one agent's output to another through a **MergeTexts** node, you create _new_ prompts that direct the next agent's behavior.
 
-All a **MergeTexts** node does is stick the incoming texts together using the "merge string" to separate them.  The default merge string is just two "newlines": ```\n\n```. In the example here, I've simply typed "Rewrite this in English:" into **input_1** of the MergedTexts node, but _connected_ the output of my **spanish_story** node into **input_2**. When run, the MergeTexts node will resolve and output the two texts merged:
+### A quick aside on MergeTexts and prompting
 
-  > Rewrite this in English:
-  >
-  > Bajo la luna, el río cantó,  
-  > Un secreto antiguo en su agua dejó.  
-  > La niña lo escuchó y empezó a soñar,  
-  > Que el mundo era suyo, listo para amar.
+All a **MergeTexts** node does is combine incoming texts using the "merge string" as a separator. The default merge string is two newlines: `\n\n`. In this example, I've typed "Rewrite this in English:" into **input_1** of the MergeTexts node and connected the output of my **spanish_story** node to **input_2**. When run, the **MergeTexts** node will output:
 
+> Rewrite this in English:
+>
+> Bajo la luna, el río cantó,
+> Un secreto antiguo en su agua dejó.
+> La niña lo escuchó y empezó a soñar,
+> Que el mundo era suyo, listo para amar.
 
-This approach enables controlled yet sophisticated interactions. In this example, we first prompt one agent to "write a 4-line story in Spanish" and then incoporate that spanish story result into a _new_ prompt for a _second_ agent to translate that Spanish text into English, producing the following result:
+This approach creates a sophisticated multi-agent workflow where the first agent writes a Spanish story, and the second agent translates it to English. Your final output will be the English translation of whatever unique Spanish story was generated.
 
 <p align="center">
-  <img src="../assets/workflow_result.png" alt="Workflow result"  width="500">>
-</p>
+    <img src="../assets/workflow_result.png" alt="Workflow result"  width="500">>
+  </p>
 
 !!! info
 
@@ -58,11 +59,20 @@ This approach enables controlled yet sophisticated interactions. In this example
 
 ## Build a sibling workflow
 
-Let's build another almost identical flow just below this one, to get some practice creating and connecting nodes.
+This is what we're aiming to get to:
 
-1. Drag two **Agent** nodes onto the canvas
-1. Add a **MergeTexts** node
-1. Add a **DisplayText** node
+<p align="center">
+  <img src="../assets/sibling_target.png" alt="Sibling target" width="500">
+</p>
+
+Now it's time to build your own workflow. Create another nearly identical flow just below this one to practice creating and connecting nodes. Add the following to your workflow:
+
+1. Two **Agents** ( agents > Agent )
+    \- These are agents that interact with LLMs (Like ChatGPT, or Claude)
+1. A **MergeTexts** node ( text > MergeTexts )
+    \- A node to accept multipkle texts and output them "merged"
+1. A **DisplayText** ( text > DisplayInput )
+    \- A node to simply display text output for easier viewing
 
 ## Configure the First Agent
 
@@ -72,16 +82,15 @@ Set up your first agent to generate content in your chosen language:
 1. This agent will generate the initial story that we'll translate
 
 <p align="center">
-  <img src="../assets/mandarin.png" alt="Story setup" width="400">
+  <img src="../assets/mandarin.png" alt="Story setup" width="300">
 </p>
 
-## Connect to the Merge Text Node
+## Connect to the MergeTexts Node
 
 Next, prepare the translation prompt:
 
-1. Connect the output from the first agent to the merge text node
-1. Set the merge text node to combine: `Rewrite this in English` with the output from the first agent
-1. This creates the instruction for our translator agent
+1. Type directly into the MergeTexts node's **input_1** field and enter: `Rewrite this in English`
+1. Connect the output from the first Agent to **input_2** of the MergeTexts node
 
 <p align="center">
   <img src="../assets/mandarin_merge.png" alt="Merge text setup">
@@ -91,9 +100,7 @@ Next, prepare the translation prompt:
 
 Set up the translator agent:
 
-1. Connect the output of the merge text node to the second agent node
-1. This agent will receive both the original story and the instruction to translate it
-1. It will produce an English translation as output
+Connect the output of the MergTexts node to the second Agent node's **prompt**. This Agent will now receive both the original story, and the instruction to translate it
 
 <p align="center">
   <img src="../assets/mandarin_to_english.png" alt="Second agent setup">
@@ -103,21 +110,28 @@ Set up the translator agent:
 
 To see the final translation:
 
-1. Connect the output of the second agent to the display text node
-1. When the workflow runs, this node will show the translated English text
+1. Connect the output of the second Agent to the DisplayText node
+1. Run your workflow.
+1. After the workflow runs, this node will show the translated English text:
 
 <p align="center">
   <img src="../assets/mandarin_display.png" alt="Display setup"  width="500">>
 </p>
 
-## Understand Execution Order (Exec Chain)
+## Understanding Execution Order (Exec Chain)
 
 A key concept in Griptape Nodes is the execution chain:
 
 1. Notice the "exec in" and "exec out" pins (half-circle connectors) on nodes
 1. These define the order in which nodes run
 1. For complex workflows, connect the last pin of one section to the first pin of the next
-1. This ensures nodes run in the correct sequence, even with complex data flows
+1. This ensures nodes run in the intended sequence, even with complex data flows
+
+!!! info
+
+    Griptape Nodes will automatically determine the execution order of nodes by analyzing their dependencies. However, when you need more precise control over the execution sequence, you can use the exec chain feature. This provides a way to explicitly define the order you want when the automatic dependency detection might not align with your intended behavior.
+
+    There is no cost or penalty to using the exec chain anytime you want, except for the possibility of forcing things to execute in a faulty order. For most simple flows, it is unnecessary.
 
 <p align="center">
   <img src="../assets/exec_chain.png" alt="Execution chain">
@@ -125,15 +139,15 @@ A key concept in Griptape Nodes is the execution chain:
 
 ## Expand the Workflow: Summarize Multiple Stories
 
-Let's enhance our workflow to handle summarization:
+Let's enhance our workflow to handle summarization of _all_ the stories:
 
-1. Add a new merge text node that combines both English translations
-1. In this merge text node, enter: `Summarize both these stories` as the first entry
-1. Connect both the to-english nodes' outputs into slots 2&3 on the merge texts node
-1. Add another agent node to process the summary prompt
-1. Connect the merge text output into the prompt for your new agent
-1. Connect the agent output to a new display text node
-1. Use exec chain pins to ensure this summary step runs last (even connect everything up to run in the order you want!)
+1. Add another new **MergeTexts** node that combines both English translations
+    1. In this merge text node, enter: `Summarize both these stories` in **input_1**
+    1. Connect both the translation nodes' **outputs** into **input_1** and **input_2** on the MergeTexts node
+1. Add another **Agent** node
+1. Connect the MergeTexts **output** into the **prompt** for your new agent
+1. Connect the agent **output** to a new **DisplayText** node
+1. Optionally, use exec chain connections to ensure this summary step runs last (you can even connect _everything_ up to run in the order you want)
 
 <p align="center">
   <img src="../assets/summary_pre.png" alt="Expanded workflow">
