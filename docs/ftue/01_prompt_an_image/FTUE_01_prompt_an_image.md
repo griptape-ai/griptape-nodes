@@ -51,20 +51,22 @@ To generate your first image:
     <img src="../assets/text_prompt_field.png" alt="Text prompt field" width="300">
   </p>
 
-1. Now, run your node. There are three ways to do this in the editor (two of them do the same thing, though):
+Now, run your node. There are three ways to do this in the editor:
 
-    1. Run the _whole_ workflow.
+1. Run the *whole* workflow:
 
-        - **Run Workflow** button at the top of the editor. This executes the entire workflow from start to finish. All nodes will be processed in sequence according to their connections
+    1. Click the **Run Workflow** button at the top of the editor. This executes the entire workflow from start to finish. All nodes will be processed in sequence according to their connections.
 
-    1. Run a single node in the workflow. Which can be very useful for testing or debugging specific parts of your workflow, or simply getting things to run faster if you don't care about updating other parts of the graph just yet.
+1. Run a single node in the workflow (two methods that do the same thing):
 
-        - **Run Node** button in the top right corner of a specific node.
-        - **Run Selected** when you have a single node selected, this option will become available
+    1. Click the **Run Node** button in the top right corner of a specific node.
+    1. Or, select a node and click **Run Selected** from the toolbar.
 
-    <p align="center">
-    <img src="../assets/ways_to_run.png" alt="Ways to run" width="300">
-    </p>
+Running a single node can be very useful for testing or debugging specific parts of your workflow, or simply getting things to run faster if you don't care about updating other parts of the workflow just yet.
+
+<p align="center">
+  <img src="../assets/ways_to_run.png" alt="Ways to run" width="300">
+  </p>
 
 The difference is in scope - the first option runs everything, while the second options run just the selected node and everything that precedes it that it may need.
 
