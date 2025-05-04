@@ -2,26 +2,26 @@
 
 Welcome to the third tutorial in our Griptape Nodes series! In this guide, you'll learn how to coordinate multiple agents within a workflow to perform sequential tasks—specifically, translating stories between languages and summarizing them.
 
-## What You'll Learn
+## What we'll cover
 
-In this tutorial, you will:
+In this tutorial, we will:
 
-- Connect multiple Agent nodes in a workflow
-- Create a translation workflow between languages
-- Understand execution chains for controlling workflow order
-- Expand your workflow to summarize content
+- Study then recreate a translation workflow between agents working sequentially
+- Discover how to "merge texts" to take outputs and modify them into new prompts
+- Learn about the "exec chain" for controlling workflow execution order
+- Build more into the template workflow to add a summarization task
 
 ## Navigate to the Landing Page
 
-To begin this tutorial, go to the landing page. Locate and open the example workflow called "Translator" at the top of the page.
+To begin this tutorial, go to the landing page via the nav bar with the Griptape Nodes logo in the top left. Locate and open the example workflow called "Translator" at the top of the page.
 
 <p align="center">
   <img src="../assets/translator_example.png" alt="Translator example">
 </p>
 
-## Explore the Example Workflow
+## Explore the Template Workflow
 
-When the example loads, you'll see a workflow with the following components:
+When the template loads, you'll see a workflow with the following components:
 
 <p align="center">
   <img src="../assets/workflow_overview.png" alt="Workflow overview">
@@ -32,7 +32,21 @@ When the example loads, you'll see a workflow with the following components:
 - **Second Agent Node (to_english)**: Translates the merged prompt into English
 - **Display Text Node**: Shows the final English translation
 
-When run, this workflow demonstrates how multiple agents can each have their own distinct "jobs". By connecting the output of one agent, then transforming that output for use by another, you can start to get an inkling of some of the complexity you'll be able to control. The final result of "write a 4-line story in Spanish" and then rewriting that into English, we can see the following result:
+This workflow demonstrates how multiple agents can each perform their own distinct "jobs."
+
+By connecting one agent's output to another through a **MergeTexts** node, you create _new_ prompts that direct the next agent's behavior.
+
+All a **MergeTexts** node does is stick the incoming texts together using the "merge string" to separate them.  The default merge string is just two "newlines": ```\n\n```. In the example here, I've simply typed "Rewrite this in English:" into **input_1** of the MergedTexts node, but _connected_ the output of my **spanish_story** node into **input_2**. When run, the MergeTexts node will resolve and output the two texts merged:
+
+  > Rewrite this in English:
+  >
+  > Bajo la luna, el río cantó,  
+  > Un secreto antiguo en su agua dejó.  
+  > La niña lo escuchó y empezó a soñar,  
+  > Que el mundo era suyo, listo para amar.
+
+
+This approach enables controlled yet sophisticated interactions. In this example, we first prompt one agent to "write a 4-line story in Spanish" and then incoporate that spanish story result into a _new_ prompt for a _second_ agent to translate that Spanish text into English, producing the following result:
 
 <p align="center">
   <img src="../assets/workflow_result.png" alt="Workflow result"  width="500">>
@@ -40,15 +54,15 @@ When run, this workflow demonstrates how multiple agents can each have their own
 
 !!! info
 
-    You should expect variability in these from run-to-run. That's okay - even normal! Remember, talking with an Agent can in a way be like talking to a person. You may get slightly different answers if you ask them the same question many times!
+    You should expect variability in these from run-to-run. That's okay! Remember, talking with an Agent can in a way be like talking to a person. You may get slightly different answers if you ask them the same question many times.
 
-## Build Your Own Version
+## Build a sibling workflow
 
-Now let's build a similar workflow from scratch:
+Let's build another almost identical flow just below this one, to get some practice creating and connecting nodes.
 
-1. Drag two agent nodes onto the canvas
-1. Add a merge text node
-1. Add a display text node
+1. Drag two **Agent** nodes onto the canvas
+1. Add a **MergeTexts** node
+1. Add a **DisplayText** node
 
 ## Configure the First Agent
 
@@ -145,12 +159,12 @@ Execute your expanded workflow and observe the process:
 
 ## Summary
 
-In this tutorial, you learned how to:
+In this tutorial, we covered:
 
-- Build a translation workflow with multiple agents
-- Use merge text nodes to prepare inputs for agents
-- Control execution order with exec chains
-- Expand workflows to process and summarize multiple inputs
+- How a workflow can hand things off between agents to perform tasks like translation
+- Discover how "merge texts" allows you to take outputs and modify them into new prompts
+- Learned about the "exec chain" for controlling workflow execution order
+- Built more into the template workflow to add a summarization task
 
 ## Next Up
 
