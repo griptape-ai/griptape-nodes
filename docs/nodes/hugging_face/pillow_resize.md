@@ -44,4 +44,5 @@ Use this node when you need to:
 - **output_image**: The resized image as an ImageArtifact
 
 ## Important Note
+
 - Different resampling strategies can affect the quality and processing time of the resized image
