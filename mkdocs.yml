@@ -28,7 +28,7 @@ extra:
 
 theme:
   name: material
-  logo: assets/img/griptape_nodes_header_logo.png
+  logo: assets/img/griptape_nodes_header_logo.svg
   palette:
     # Dark mode
     - scheme: slate
