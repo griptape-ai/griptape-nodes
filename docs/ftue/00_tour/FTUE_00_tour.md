@@ -1,20 +1,16 @@
-# Getting Started
+# Lesson 1: Getting Started
 
-You just interacted with a Large Language Model (LLM). If you kept the default settings, you specifically used OpenAI's ChatGPT (GPT-4.1).
+Welcome to Griptape Nodes! This tutorial will guide you through the basics of this powerful visual workflow tool. You'll learn how to launch the application, navigate the interface, add and connect nodes, and run your first AI agent. By the end of this guide, you'll have the foundational knowledge needed to continue with subsequent tutorials.
 
-While this experience might seem similar to using ChatGPT on the web, the real power comes from using LLMs alongside other components in Griptape Nodes. What you've seen is just one node. Take another look at the library panel on the left to see all the other nodes available.
+## What We'll Cover
 
-We're just getting started—there's so much more to explore!
+In this tutorial, topics include:
 
-## What You'll Learn
-
-In this tutorial, you will:
-
-- Launch Griptape Nodes
-- Navigate through the landing page to a workflow
-- Get familiar with the Griptape Nodes Editor
-- Add your first nodes to the workspace
-- Learn about which parameters can connect to which
+- Launching Griptape Nodes
+- Navigating through the landing page to a workflow
+- Getting familiar with the Griptape Nodes Editor
+- Adding nodes to the workspace
+- Learning what can connect to what
 - Run an agent
 
 ## Launch Griptape Nodes
@@ -31,7 +27,7 @@ Or use the shorter version:
 gtn
 ```
 
-After executing the command, you'll see a link to [https://nodes.griptape.ai](https://nodes.griptape.ai) in your terminal. A browser should automatically open to this address, but if it doesn't, or if you need to re-open the page, you can ctrl-click (or cmd-click on Mac) the link in your terminal. This will either open the Griptape Nodes Editor directly or show you a list of options—if the latter, select "Open in browser."
+After executing the command, your browser should automatically open to [https://nodes.griptape.ai](https://nodes.griptape.ai). If it doesn't, simply ctrl-click (or cmd-click on Mac) the link displayed in your terminal and select "Open in browser" if prompted.  Of course, you can always simply bookmark it in your browser, and come back to it that way.
 
 <p align="center">
   <a href="https://nodes.griptape.ai">
@@ -39,9 +35,12 @@ After executing the command, you'll see a link to [https://nodes.griptape.ai](ht
   </a>
 </p>
 
+!!! tip
+    For the best experience, keep two browser windows open side-by-side: this tutorial in one, and your Griptape Nodes session in the other.
+
 ## The Landing Page
 
-When your browser opens, you'll be greeted by the Griptape Nodes landing page. This page displays several template workflows that showcase different things we want to introduce you to. Once you start saving your own files, they will appear here in order of newest-to-oldest.
+When your browser opens, you'll be greeted by the Griptape Nodes landing page. This page displays several template workflows that showcase different things we want to introduce you to. Once you start saving your own workflows, they will appear here in order of newest-to-oldest.
 
 <p align="center">
   <img src="../assets/landing_page.png" alt="Griptape Nodes landing page">
@@ -51,13 +50,12 @@ These sample workflows are excellent resources for learning about Griptape Nodes
 
 ## Create a new workflow from scratch
 
-On the landing page, locate and click on the **"Create from scratch"** tile.
+On the landing page, locate and click on the **"Create from scratch"** tile.  This action opens a blank workspace where you can build workflows.
 
 <p align="center">
   <img src="../assets/create_from_scratch.png" alt="Create from scratch option">
 </p>
 
-This action opens a blank workspace where you can build workflows.
 
 ## Get familiar with the Griptape Nodes interface
 
@@ -73,14 +71,6 @@ The most important area to focus on initially is the left panel, the node librar
 
 <p align="center">
   <img src="../assets/create_nodes_panel.png" alt="Create Nodes panel" width=250">
-</p>
-
-### Workflow Console
-
-On the right hand side, you'll see the workflow console. This serves as a resource for tracking and understanding your workflow's creation and execution. For more technical users, it also displays a command log that corresponds to actions in the Editor. This provides a "watch-it-live" learning experience that can lead to custom Python scripting opportunities. You can minimize this panel if you prefer a cleaner interface while working through these tutorials. We won't be using the workflow console for now.
-
-<p align="center">
-  <img src="../assets/workflow_console.png" alt="Workflow Console" width="300">
 </p>
 
 ## Adding Nodes to the Workspace
@@ -116,28 +106,32 @@ There are three interactive methods to creating nodes (and even more in Retained
 After adding a node, you can:
 
 - Click and drag to reposition it on the workspace
-- Edit it's values and behaviors
-- Connect it to other nodes (which we'll cover in just a few moments)
-
-!!! info
-
-    To follow the video exactly, create:
-
-    1. An **Agent** ( agents > Agent )
-
-    1. A **FloatInput** ( number > FloatInput )
-
-    1. A **TextInput** ( text > TextInput )
-
-<p align="center">
-  <img src="../assets/nodes_in_workspace.png" alt="Node on the workspace">
-</p>
+- Edit its values and behaviors
+- Connect it to other nodes
 
 ## Connecting Nodes
 
-Try dragging from a port on one node to a port on another. Notice anything unusual?
+Using what you know, let's create these nodes:
 
-Some connections won't work because not all parameters are compatible with each other. The TextInput node can connect to several places on the Agent, but the FloatInput won't connect to anything on the Agent. Don't worry—you haven't made a mistake. The FloatInput was included specifically to demonstrate this compatibility limitation. Not all parameters can connect to each other.
+  1. An **Agent** ( agents > Agent )
+    - This is an agent that interacts with LLMs (Like ChatGPT, or Claude)
+  1. A **FloatInput** ( number > FloatInput )
+    - A node to input decimal numbers (floats)
+  1. A **TextInput** ( text > TextInput )
+    - A node to input text
+
+  <p align="center">
+    <img src="../assets/nodes_in_workspace.png" alt="Node on the workspace">
+  </p>
+
+Experiment with connections by dragging from ports on both input nodes to various ports on the Agent. Try multiple combinations and observe that not all connections succeed.
+
+This happens because parameters can only connect directly when their data types are compatible:
+
+ - The **TextInput** node outputs **text**, so it can connect to any Agent parameter that accepts text.
+ - The **FloatInput** node outputs decimal numbers (**floats**), which can't connect to any parameter on the Agent.
+
+Don't worry that you can't connect the FloatInput to anything - that's exactly the point. This node was included here solely to demonstrate how not all parameters can connect to each other.
 
 !!! Pro tip "Pro Tip"
 
@@ -149,13 +143,12 @@ Some connections won't work because not all parameters are compatible with each 
 
 ## Use an Agent
 
-For now, lets get a clean slate and get a real AI interaction under our belt:
+For now, lets try another method to wipe the slate clean, and get a real AI interaction under our belt:
 
-1. Go to the File menu and choose **New**. Don't save any changes.
-
-1. In your new scene, make an Agent any way you prefer, and then type something into the prompt field.
-
-1. Click the play button icon in the top right corner to run the node
+1. Go to the File menu and choose **New**.
+1. In your new workflow, make an Agent any way you prefer
+1. Type a question into the agent's prompt field. You can use "Who trained you?" to verify the AI service, or simply enter any question you'd normally ask a chatbot.
+1. Click the play button icon in the top right corner of the agent to run the node
 
     <p align="center">
     <img src="../assets/run_node.png" alt="Run the node" width="200">
@@ -163,21 +156,21 @@ For now, lets get a clean slate and get a real AI interaction under our belt:
 
 1. When text appears, read the output.
 
-And that was you interacting with an LLM. If you haven't changed any settings, it'll have specifically been Open AI's Chat GPT (gpt-4.1).
+You just interacted with a Large Language Model (LLM). If you kept the default settings, you specifically used OpenAI's ChatGPT (GPT-4.1).
 
-While that was basically no different than going to chatgpt on the web, what is _going to be very different_ is interacting with LLMs among a lot of other things in Griptape Nodes. That's just one node; take a look again at the library on the left. There's a lot more fun to come.
+While this experience might seem similar to using ChatGPT on the web, the real power comes from using LLMs alongside other components in Griptape Nodes. Take another look at the library panel on the left to see all the other nodes available.  We're just getting started—there's so much more to explore!
 
 ## Summary
 
-In this tutorial, you learned how to:
+In this tutorial, we covered how to:
 
 - Launch Griptape Nodes
 - Navigate through the landing page to a workflow
 - Get familiar with the Griptape Nodes Editor
 - Add your first nodes to the workspace
-- Learn about which parameters can connect to which
+- Learn about what can connect to what
 - Run an agent
 
 ## Next Up
 
-In the next section: [Prompt an Image](../01_prompt_an_image/FTUE_01_prompt_an_image.md), we'll start in on the good stuff: making images!
+In the next section: [Lesson 2: Prompt an Image](../01_prompt_an_image/FTUE_01_prompt_an_image.md), we'll start in on the good stuff: making images!
