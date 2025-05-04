@@ -2,8 +2,6 @@
 
 Welcome to your journey with Griptape Nodes! This learning path will guide you through everything from basic setup to creating complex, coordinated workflows with multiple agents.
 
-## Learning Path
-
 Each tutorial builds upon the knowledge gained in previous lessons, gradually introducing more complex concepts and techniques.
 
 <div class="grid grid-wide cards" markdown>
@@ -49,7 +47,6 @@ Each tutorial builds upon the knowledge gained in previous lessons, gradually in
     This advanced tutorial brings together everything you've learned so far.
 
 </div>
-
 
 ## What You'll Learn
 

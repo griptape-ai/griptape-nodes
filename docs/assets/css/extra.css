@@ -8,7 +8,7 @@ iframe {
 
 /* Grid Layout */
 .grid {
-  grid-template-columns: repeat(auto-fill, minmax(45%, 1fr));
+  grid-template-columns: 1fr !important;
 }
 
 .grid ul {
@@ -17,15 +17,19 @@ iframe {
   display: flex !important;
   flex-wrap: wrap !important;
   gap: 2em !important;
+  padding: 0;
 }
 
 .grid li {
-  margin-left: 0px !important;
-  flex: 1 0 45% !important;
-  box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.7);
   margin: 0;
-  transition: all 1s cubic-bezier(0.075, 0.82, 0.165, 1);
-  background-color: rgba(255, 255, 255, 0.05);
+  flex: 1 0 45% !important;
+  padding: 1.25em;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 0px !important;
+  border-radius: 0.5em !important;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
 }
 
 .grid-wide li {
