@@ -51,7 +51,7 @@ All a **MergeTexts** node does is combine incoming texts using the "merge string
 > La niña lo escuchó y empezó a soñar,
 > Que el mundo era suyo, listo para amar.
 
-This approach creates a sophisticated multi-agent workflow where the first agent writes a Spanish story, and the second agent translates it to English. Your final output will be the English translation of whatever unique Spanish story was generated.
+You can see how this method of creating new prompts out of the results of other nodes can allow for a sophisticated multi-agent workflow where the first agent writes a Spanish story, and the second agent translates it to English. Your final output will be the English translation of whatever unique Spanish story was generated.
 
 <p align="center">
     <img src="../assets/workflow_result.png" alt="Workflow result"  width="500">
