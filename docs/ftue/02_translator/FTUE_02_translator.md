@@ -6,10 +6,10 @@ Welcome to the third tutorial in our Griptape Nodes series! In this guide, you'l
 
 In this tutorial, we will:
 
-  - Study then recreate a translation workflow between agents working sequentially
-  - Discover how to "merge texts" to take outputs and modify them into new prompts
-  - Learn about the "exec chain" for controlling workflow execution order
-  - Build more into the template workflow to add a summarization task
+- Study then recreate a translation workflow between agents working sequentially
+- Discover how to "merge texts" to take outputs and modify them into new prompts
+- Learn about the "exec chain" for controlling workflow execution order
+- Build more into the template workflow to add a summarization task
 
 By the end of this journey, you'll understand how to create workflows where agents build upon each other's work, passing information seamlessly between specialized tasks. This foundation will prepare you for creating sophisticated AI systems that can handle multi-step processes requiring different types of intelligence at each stage.
 
@@ -31,16 +31,16 @@ When the template loads, you'll see a workflow with the following components:
   <img src="../assets/workflow_overview.png" alt="Workflow overview">
 </p>
 
-- **Agent Node (spanish_story)**: Generates a four-line story in Spanish
-- **Merge Text Node**: Combines the Spanish story with "Rewrite this in English"
-- **Second Agent Node (to_english)**: Translates the merged prompt into English
-- **Display Text Node**: Shows the final English translation
+1. **Agent Node (spanish_story)**: Generates a four-line story in Spanish
+1. **Merge Text Node**: Combines the Spanish story with "Rewrite this in English"
+1. **Second Agent Node (to_english)**: Translates the merged prompt into English
+1. **Display Text Node**: Shows the final English translation
 
 This workflow demonstrates how multiple agents can each perform their own distinct "jobs."
 
 By connecting one agent's output to another through a **MergeTexts** node, you create _new_ prompts that direct the next agent's behavior.
 
-## How we're using the MergeText node hre
+## How we're using the MergeText node here
 
 All a **MergeTexts** node does is combine incoming texts using the "merge string" as a separator. The default merge string is two newlines: `\n\n`. In this example, I've typed "Rewrite this in English:" into **input_1** of the MergeTexts node and connected the output of my **spanish_story** node to **input_2**. When run, the **MergeTexts** node will output:
 
@@ -54,12 +54,12 @@ All a **MergeTexts** node does is combine incoming texts using the "merge string
 This approach creates a sophisticated multi-agent workflow where the first agent writes a Spanish story, and the second agent translates it to English. Your final output will be the English translation of whatever unique Spanish story was generated.
 
 <p align="center">
-    <img src="../assets/workflow_result.png" alt="Workflow result"  width="500">>
+    <img src="../assets/workflow_result.png" alt="Workflow result"  width="500">
   </p>
 
 !!! info
 
-    You should expect variability in these from run-to-run. That's okay! Remember, talking with an Agent can in a way be like talking to a person. You may get slightly different answers if you ask them the same question many times.
+    You should expect variability in these from run-to-run. That's okay! Remember, talking with an agent can in a way be like talking to a person. You may get slightly different answers if you ask them the same question many times.
 
 ## Build a sibling workflow
 
@@ -104,7 +104,7 @@ Next, prepare the translation prompt:
 
 Set up the translator agent:
 
-Connect the output of the MergTexts node to the second Agent node's **prompt**. This Agent will now receive both the original story, and the instruction to translate it
+Connect the output of the MergeTexts node to the second Agent node's **prompt**. This agent will now receive both the original story, and the instruction to translate it
 
 <p align="center">
   <img src="../assets/mandarin_to_english.png" alt="Second agent setup">
@@ -119,7 +119,7 @@ To see the final translation:
 1. After the workflow runs, this node will show the translated English text:
 
 <p align="center">
-  <img src="../assets/mandarin_display.png" alt="Display setup"  width="500">>
+  <img src="../assets/mandarin_display.png" alt="Display setup"  width="500">
 </p>
 
 ## Understanding Execution Order (Exec Chain)
@@ -131,15 +131,19 @@ A key concept in Griptape Nodes is the execution chain. As workflows become more
 1. For complex workflows, connect the exec ports in the order you want execution to occur
 1. This ensures nodes run in the intended sequence, even with complex data flows
 
-!!! info
-
-    Griptape Nodes will automatically determine the execution order of nodes by analyzing their dependencies. However, when you need more precise control over the execution sequence, you can use the exec chain feature. This provides a way to explicitly define the order you want when the automatic dependency detection might not align with your intended behavior.
-
-    There is no cost or penalty to using the exec chain anytime you want, except for the possibility of forcing things to execute in a faulty order. For most simple flows, it is unnecessary.
-
+```
 <p align="center">
   <img src="../assets/exec_chain.png" alt="Execution chain">
 </p>
+
+!!! info
+
+    Griptape Nodes will automatically determine the execution order of nodes by analyzing their dependencies.
+    
+    However, when you need more precise control over the execution sequence, you can use the exec chain feature. This provides a way to explicitly define the order you want when the automatic dependency detection might not align with your intended behavior.
+
+    There is no cost or penalty to using the exec chain anytime you want, except for the possibility of forcing things to execute in a faulty order. For most simple flows, it is unnecessary.
+```
 
 ## Expand the Workflow: Summarize Multiple Stories
 
@@ -180,10 +184,10 @@ Execute your expanded workflow and observe the process:
 In this tutorial, we covered:
 
 - How a workflow can hand things off between agents to perform tasks like translation
-- Discover how "merge texts" allows you to take outputs and modify them into new prompts
+- Discovered how "merge texts" allows you to take outputs and modify them into new prompts
 - Learned about the "exec chain" for controlling workflow execution order
 - Built more into the template workflow to add a summarization task
 
 ## Next Up
 
-In the next section: [Compare Prompts](../03_compare_prompts/FTUE_03_compare_prompts.md), we'll learn how to get AIs to bucket-brigade through flows!
+In the next section: [Compare Prompts](../03_compare_prompts/FTUE_03_compare_prompts.md), we'll learn how to get AIs to bucket-brigade, where agents pass work sequentially, through flows!
