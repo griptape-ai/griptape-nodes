@@ -400,18 +400,20 @@ class WorkflowManager:
                         logger.error(details)
                         return RunWorkflowFromRegistryResultFailure()
 
-            # run file
-            execution_result = self.run_workflow(relative_file_path=relative_file_path)
+            # Let's run under the assumption that this Workflow will become our Current Context; if we fail, it will revert.
+            with GriptapeNodes.ContextManager().workflow(request.workflow_name):
+                # run file
+                execution_result = self.run_workflow(relative_file_path=relative_file_path)
 
-            if not execution_result.execution_successful:
-                logger.debug(execution_result.execution_details)
-                return RunWorkflowFromRegistryResultFailure()
+                if not execution_result.execution_successful:
+                    logger.error(execution_result.execution_details)
+                    return RunWorkflowFromRegistryResultFailure()
 
-            # Success!
-            # Set as the current workflow.
-            GriptapeNodes.ContextManager().set_workflow(request.workflow_name)
-            logger.error(execution_result.execution_details)
-            return RunWorkflowFromRegistryResultSuccess()
+        # Success!
+        # Set as the current workflow.
+        GriptapeNodes.ContextManager().push_workflow(request.workflow_name)
+        logger.debug(execution_result.execution_details)
+        return RunWorkflowFromRegistryResultSuccess()
 
     def on_register_workflow_request(self, request: RegisterWorkflowRequest) -> ResultPayload:
         try:
