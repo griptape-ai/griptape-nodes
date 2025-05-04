@@ -1,0 +1,68 @@
+.body,
+
+/* Make youtube videos full screen */
+iframe {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+/* Grid Layout */
+.grid {
+  grid-template-columns: repeat(auto-fill, minmax(45%, 1fr));
+}
+
+.grid ul {
+  margin: 0 !important;
+  list-style: none;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 2em !important;
+}
+
+.grid li {
+  margin-left: 0px !important;
+  flex: 1 0 45% !important;
+  box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.7);
+  margin: 0;
+  transition: all 1s cubic-bezier(0.075, 0.82, 0.165, 1);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.grid-wide li {
+  flex: 1 0 100% !important;
+}
+
+.grid > ul li > h1 {
+  margin: 0px;
+  display: block;
+  font-size: 1.5em;
+}
+.grid > ul li:hover {
+  box-shadow: 5px 10px 0px rgba(0, 0, 0, 0.7);
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.grid ul li h2 {
+  margin: 0px;
+  display: block;
+  font-weight: 400;
+  font-size: 1.2em;
+}
+.grid ul li > hr {
+  margin: 0.5em 0;
+}
+
+.grid ul li > p {
+  font-weight: 100;
+}
+
+.grid ul li img {
+  float: left;
+  margin-right: 2em;
+  width: 30%;
+}
+
+/* Read the docs */
+.rst-versions.rst-badge {
+  bottom: 80px !important;
+}
