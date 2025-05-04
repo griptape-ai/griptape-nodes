@@ -27,7 +27,7 @@ iframe {
   background-color: rgba(255, 255, 255, 0.03);
   border: 0px !important;
   border-radius: 0.5em !important;
-  transition: all 0.3s ease;
+  transition: all 0.5s ease;
   display: flex;
   flex-direction: column;
 }
@@ -43,7 +43,7 @@ iframe {
 }
 .grid > ul li:hover {
   box-shadow: 5px 10px 0px rgba(0, 0, 0, 0.7);
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 .grid ul li h2 {
@@ -69,4 +69,25 @@ iframe {
 /* Read the docs */
 .rst-versions.rst-badge {
   bottom: 80px !important;
+}
+.grid ul li a {
+  color: #29b6f6 !important;
+  text-decoration: none;
+}
+
+.grid ul li a:hover {
+  color: white !important;
+  /* text-decoration: underline; */
+}
+
+.grid > ul li > h1 > a::after {
+  content: "→";
+  margin-left: 0.3em;
+  font-size: 0.9em;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+
+.grid > ul li > h1 > a:hover::after {
+  opacity: 1;
 }

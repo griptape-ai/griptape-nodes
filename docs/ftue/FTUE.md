@@ -8,7 +8,7 @@ Each tutorial builds upon the knowledge gained in previous lessons, gradually in
 
 -   # [Step 1. Getting Started](../ftue/00_tour/FTUE_00_tour.md)
 
-    ![img](assets/FTUE_01_prompt_an_image.png)
+    ![img](00_tour/assets/workspace_interface.png)
 
     Now that you've [installed](../getting_started.md) the Griptape Nodes Editor, it's time to launch and work in Griptape Nodes. 
     
