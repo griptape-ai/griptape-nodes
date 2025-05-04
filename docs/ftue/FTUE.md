@@ -59,4 +59,4 @@ By completing this learning path, you'll master:
 - Converting agents into reusable tools
 - Coordinating multiple agents in a single system
 
-Ready to start your journey with Griptape Nodes? [Start with Interface Basics](00_tour/FTUE_00_tour.md)
+Ready to start your journey with Griptape Nodes? Let's learn about the interface in [Getting Started](00_tour/FTUE_00_tour.md)
