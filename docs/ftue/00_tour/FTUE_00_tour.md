@@ -27,7 +27,7 @@ Or use the shorter version:
 gtn
 ```
 
-After executing the command, your browser should automatically open to [https://nodes.griptape.ai](https://nodes.griptape.ai). If it doesn't, simply ctrl-click (or cmd-click on Mac) the link displayed in your terminal and select "Open in browser" if prompted.  Of course, you can always simply bookmark it in your browser, and come back to it that way.
+After executing the command, your browser should automatically open to [https://nodes.griptape.ai](https://nodes.griptape.ai). If it doesn't, simply ctrl-click (or cmd-click on Mac) the link displayed in your terminal and select "Open in browser" if prompted. Of course, you can always simply bookmark it in your browser, and come back to it that way.
 
 <p align="center">
   <a href="https://nodes.griptape.ai">
@@ -36,6 +36,7 @@ After executing the command, your browser should automatically open to [https://
 </p>
 
 !!! tip
+
     For the best experience, keep two browser windows open side-by-side: this tutorial in one, and your Griptape Nodes session in the other.
 
 ## The Landing Page
@@ -50,12 +51,11 @@ These sample workflows are excellent resources for learning about Griptape Nodes
 
 ## Create a new workflow from scratch
 
-On the landing page, locate and click on the **"Create from scratch"** tile.  This action opens a blank workspace where you can build workflows.
+On the landing page, locate and click on the **"Create from scratch"** tile. This action opens a blank workspace where you can build workflows.
 
 <p align="center">
   <img src="../assets/create_from_scratch.png" alt="Create from scratch option">
 </p>
-
 
 ## Get familiar with the Griptape Nodes interface
 
@@ -113,14 +113,14 @@ After adding a node, you can:
 
 Using what you know, let's create these nodes:
 
-  1. An **Agent** ( agents > Agent )
-    - This is an agent that interacts with LLMs (Like ChatGPT, or Claude)
-  1. A **FloatInput** ( number > FloatInput )
-    - A node to input decimal numbers (floats)
-  1. A **TextInput** ( text > TextInput )
-    - A node to input text
+1. An **Agent** ( agents > Agent )
+    \- This is an agent that interacts with LLMs (Like ChatGPT, or Claude)
+1. A **FloatInput** ( number > FloatInput )
+    \- A node to input decimal numbers (floats)
+1. A **TextInput** ( text > TextInput )
+    \- A node to input text
 
-  <p align="center">
+<p align="center">
     <img src="../assets/nodes_in_workspace.png" alt="Node on the workspace">
   </p>
 
@@ -128,8 +128,8 @@ Experiment with connections by dragging from ports on both input nodes to variou
 
 This happens because parameters can only connect directly when their data types are compatible:
 
- - The **TextInput** node outputs **text**, so it can connect to any Agent parameter that accepts text.
- - The **FloatInput** node outputs decimal numbers (**floats**), which can't connect to any parameter on the Agent.
+- The **TextInput** node outputs **text**, so it can connect to any Agent parameter that accepts text.
+- The **FloatInput** node outputs decimal numbers (**floats**), which can't connect to any parameter on the Agent.
 
 Don't worry that you can't connect the FloatInput to anything - that's exactly the point. This node was included here solely to demonstrate how not all parameters can connect to each other.
 
@@ -146,8 +146,11 @@ Don't worry that you can't connect the FloatInput to anything - that's exactly t
 For now, lets try another method to wipe the slate clean, and get a real AI interaction under our belt:
 
 1. Go to the File menu and choose **New**.
+
 1. In your new workflow, make an Agent any way you prefer
+
 1. Type a question into the agent's prompt field. You can use "Who trained you?" to verify the AI service, or simply enter any question you'd normally ask a chatbot.
+
 1. Click the play button icon in the top right corner of the agent to run the node
 
     <p align="center">
@@ -158,7 +161,7 @@ For now, lets try another method to wipe the slate clean, and get a real AI inte
 
 You just interacted with a Large Language Model (LLM). If you kept the default settings, you specifically used OpenAI's ChatGPT (GPT-4.1).
 
-While this experience might seem similar to using ChatGPT on the web, the real power comes from using LLMs alongside other components in Griptape Nodes. Take another look at the library panel on the left to see all the other nodes available.  We're just getting started—there's so much more to explore!
+While this experience might seem similar to using ChatGPT on the web, the real power comes from using LLMs alongside other components in Griptape Nodes. Take another look at the library panel on the left to see all the other nodes available. We're just getting started—there's so much more to explore!
 
 ## Summary
 
