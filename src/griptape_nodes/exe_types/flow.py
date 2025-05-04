@@ -4,8 +4,6 @@ import logging
 from queue import Queue
 from typing import TYPE_CHECKING, NamedTuple
 
-from griptape.events import EventBus
-
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState, StartNode
@@ -197,6 +195,8 @@ class ControlFlow:
             self.control_flow_machine.start_flow(start_node, debug_mode=False)
 
     def cancel_flow_run(self) -> None:
+        from griptape.events import EventBus
+
         if not self.check_for_existing_running_flow():
             errormsg = "Flow has not yet been started. Cannot cancel flow that hasn't begun."
             raise RuntimeError(errormsg)

@@ -12,15 +12,7 @@ from typing import Any, cast
 from urllib.parse import urljoin
 
 import httpx
-import uvicorn
 from dotenv import get_key
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from griptape.events import (
-    EventBus,
-    EventListener,
-)
 from rich.align import Align
 from rich.console import Console
 from rich.logging import RichHandler
@@ -112,6 +104,11 @@ def start_app() -> None:
 
 def _serve_static_server() -> None:
     """Run FastAPI with Uvicorn in order to serve static files produced by nodes."""
+    import uvicorn
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.staticfiles import StaticFiles
+
     config_manager = GriptapeNodes.ConfigManager()
     app = FastAPI()
 
@@ -148,6 +145,11 @@ def _serve_static_server() -> None:
 
 def _init_event_listeners() -> None:
     """Set up the Griptape EventBus EventListeners."""
+    from griptape.events import (
+        EventBus,
+        EventListener,
+    )
+
     EventBus.add_event_listener(
         event_listener=EventListener(on_event=__process_node_event, event_types=[GriptapeNodeEvent])
     )

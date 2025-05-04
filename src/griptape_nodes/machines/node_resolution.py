@@ -6,9 +6,6 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from griptape.events import EventBus
-from griptape.utils import with_contextvars
-
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -64,6 +61,8 @@ class ResolutionContext:
 class InitializeSpotlightState(State):
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:
+        from griptape.events import EventBus
+
         # If the focus stack is empty
         current_node = context.focus_stack[-1].node
         EventBus.publish_event(
@@ -103,6 +102,8 @@ class InitializeSpotlightState(State):
 class EvaluateParameterState(State):
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:
+        from griptape.events import EventBus
+
         current_node = context.focus_stack[-1].node
         current_parameter = current_node.get_current_parameter()
         if current_parameter is None:
@@ -173,6 +174,8 @@ class ExecuteNodeState(State):
             - For each parameter, publishes a ParameterValueUpdateEvent with value=None
             - Events are wrapped in ExecutionGriptapeNodeEvent before publishing
         """
+        from griptape.events import EventBus
+
         current_node = context.focus_stack[-1].node
         for parameter_name in current_node.parameter_output_values.copy():
             parameter = current_node.get_parameter_by_name(parameter_name)
@@ -193,6 +196,8 @@ class ExecuteNodeState(State):
 
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:
+        from griptape.events import EventBus
+
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         current_node = context.focus_stack[-1].node
@@ -239,6 +244,8 @@ class ExecuteNodeState(State):
 
     @staticmethod
     def on_update(context: ResolutionContext) -> type[State] | None:
+        from griptape.events import EventBus
+
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         # Once everything has been set
@@ -356,6 +363,8 @@ class ExecuteNodeState(State):
         Returns:
             bool: True if work has been scheduled, False if the node is done processing.
         """
+        from griptape.events import EventBus
+        from griptape.utils import with_contextvars
 
         def on_future_done(future: Future) -> None:
             """Called when the future is done.

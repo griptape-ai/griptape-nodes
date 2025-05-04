@@ -5,11 +5,8 @@ from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
-from griptape.artifacts import BaseArtifact
 from griptape.events import BaseEvent as GtBaseEvent
 from griptape.mixins.serializable_mixin import SerializableMixin
-from griptape.structures import Structure
-from griptape.tools import BaseTool
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
@@ -117,12 +114,6 @@ class BaseEvent(BaseModel, ABC):
         """Pydantic configuration for the BaseEvent class."""
 
         arbitrary_types_allowed = True
-        json_encoders: ClassVar[dict] = {
-            # Use to_dict() methods for Griptape objects
-            BaseArtifact: lambda obj: obj.to_dict(),
-            BaseTool: lambda obj: obj.to_dict(),
-            Structure: lambda obj: obj.to_dict(),
-        }
 
     def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Override dict to handle payload serialization and add event_type."""

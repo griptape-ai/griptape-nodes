@@ -1,8 +1,6 @@
 import logging
 from dataclasses import dataclass
 
-from griptape.events import EventBus
-
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState
 from griptape_nodes.retained_mode.events.base_events import (
@@ -180,6 +178,8 @@ class Connections:
 
     # Used to check data connections for all future nodes to be BAD!
     def unresolve_future_nodes(self, node: BaseNode) -> None:
+        from griptape.events import EventBus
+
         # Recursive loop
         # For each parameter
         if node.name not in self.outgoing_index:

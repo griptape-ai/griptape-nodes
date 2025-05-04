@@ -2,7 +2,6 @@ from collections import defaultdict
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from griptape.events import EventBus
 from typing_extensions import TypeVar
 
 from griptape_nodes.retained_mode.events.base_events import (
@@ -66,6 +65,8 @@ class EventManager:
             operation_depth_mgr: The operation depth manager to use
             workflow_mgr: The workflow manager to use
         """
+        from griptape.events import EventBus
+
         # Notify the manager of the event type
         with operation_depth_mgr as depth_manager:
             request_type = type(request)

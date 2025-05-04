@@ -9,6 +9,7 @@ import shutil
 import sys
 import tarfile
 import tempfile
+import time
 import webbrowser
 from pathlib import Path
 
@@ -20,9 +21,12 @@ from rich.progress import Progress
 from rich.prompt import Confirm, Prompt
 from xdg_base_dirs import xdg_config_home, xdg_data_home
 
+now = time.time()
 from griptape_nodes.app import start_app
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+
+print(time.time() - now)
 
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 DATA_DIR = xdg_data_home() / "griptape_nodes"

@@ -4,8 +4,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from griptape.events import EventBus
-
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
@@ -62,6 +60,8 @@ class ControlFlowContext:
 class ResolveNodeState(State):
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
+        from griptape.events import EventBus
+
         # The state machine has started, but it hasn't began to execute yet.
         if context.current_node is None:
             # We don't have anything else to do. Move back to Complete State so it has to restart.
