@@ -24,8 +24,8 @@ Use this node when you want to:
 1. Run the node to generate a description of the image
 
 !!! info "Be Specific About What You Want"
-    
-    When creating your prompt, clearly state the elements you are interested in.  For example:
+
+    When creating your prompt, clearly state the elements you are interested in. For example:
 
     - For color information, try prompts like "Describe the color palette, the color of light and shadow, the saturation and value"
     - For character details, try "Descibe the character's gender, age, clothing, posture, demeanor, and actions"
