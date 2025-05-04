@@ -224,8 +224,12 @@ def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None 
     """
     console.print(Panel(explainer, expand=False))
 
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/929
+    key = "app_events.on_app_initialization_complete.libraries_to_register"
     current_libraries = config_manager.get_config_value(
-        "app_events.on_app_initialization_complete.libraries_to_register", config_source="user_config"
+        key,
+        config_source="user_config",
+        default=config_manager.get_config_value(key, config_source="default_config", default=[]),
     )
     default_library = str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")
     extra_libraries = [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library_extras.json")]
