@@ -23,6 +23,15 @@ Use this node when you want to:
 1. Optionally provide specific instructions in the "prompt" field
 1. Run the node to generate a description of the image
 
+!!! info "Be Specific About What You Want"
+    
+    When creating your prompt, clearly state the elements you are interested in.  For example:
+
+    - For color information, try prompts like "Describe the color palette, the color of light and shadow, the saturation and value"
+    - For character details, try "Descibe the character's gender, age, clothing, posture, demeanor, and actions"
+
+    The more precise you are with your prompts, the more likely it is you'll get the kind of output you desire.
+
 ### Parameters
 
 - **agent**: An optional existing agent configuration to use for image description
