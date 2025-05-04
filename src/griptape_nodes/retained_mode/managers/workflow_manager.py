@@ -4,13 +4,12 @@ import logging
 import pkgutil
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, NamedTuple, TypeVar, cast
 
 import tomlkit
-from dotenv import load_dotenv
 from rich.box import HEAVY_EDGE
 from rich.console import Console
 from rich.panel import Panel
@@ -18,8 +17,8 @@ from rich.table import Table
 from rich.text import Text
 
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 from griptape_nodes.node_library.workflow_registry import (
-    LibraryNameAndVersion,
     WorkflowMetadata,
     WorkflowRegistry,
 )
@@ -82,7 +81,6 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
-load_dotenv()
 
 T = TypeVar("T")
 
@@ -93,6 +91,7 @@ logger = logging.getLogger("griptape_nodes")
 class WorkflowManager:
     WORKFLOW_METADATA_HEADER: ClassVar[str] = "script"
     MAX_MINOR_VERSION_DEVIATION: ClassVar[int] = 2
+    EPOCH_START = datetime(tzinfo=UTC, year=1970, month=1, day=1)
 
     class WorkflowStatus(StrEnum):
         """The status of a workflow that was attempted to be loaded."""
@@ -297,7 +296,7 @@ class WorkflowManager:
         else:
             complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         try:
-            # TODO(griptape): scope the libraries loaded to JUST those used by this workflow, eventually: https://github.com/griptape-ai/griptape-nodes/issues/284
+            # TODO: scope the libraries loaded to JUST those used by this workflow, eventually: https://github.com/griptape-ai/griptape-nodes/issues/284
             # Load (or reload, which should trigger a hot reload) all libraries
             GriptapeNodes.LibraryManager().load_all_libraries_from_config()
 
@@ -567,10 +566,25 @@ class WorkflowManager:
             return LoadWorkflowMetadataResultFailure()
 
         # We have valid dependencies, etc.
-        # TODO(griptape): validate schema versions, engine versions: https://github.com/griptape-ai/griptape-nodes/issues/617
+        # TODO: validate schema versions, engine versions: https://github.com/griptape-ai/griptape-nodes/issues/617
         problems = []
-        dependency_infos = []
         had_critical_error = False
+
+        # Confirm dates are correct.
+        if workflow_metadata.creation_date is None:
+            # Assign it to the epoch start and flag it as a warning.
+            workflow_metadata.creation_date = WorkflowManager.EPOCH_START
+            problems.append(
+                f"Workflow metadata was missing a creation date. Defaulting to {WorkflowManager.EPOCH_START}. This value will be replaced with the current date the first time it is saved."
+            )
+        if workflow_metadata.last_modified_date is None:
+            # Assign it to the epoch start and flag it as a warning.
+            workflow_metadata.last_modified_date = WorkflowManager.EPOCH_START
+            problems.append(
+                f"Workflow metadata was missing a last modified date. Defaulting to {WorkflowManager.EPOCH_START}. This value will be replaced with the current date the first time it is saved."
+            )
+
+        dependency_infos = []
         for node_library_referenced in workflow_metadata.node_libraries_referenced:
             library_name = node_library_referenced.library_name
             desired_version_str = node_library_referenced.library_version
@@ -731,33 +745,44 @@ class WorkflowManager:
         node_manager = GriptapeNodes.NodeManager()
         config_manager = GriptapeNodes.ConfigManager()
 
+        local_tz = datetime.now().astimezone().tzinfo
+
         # Start with the file name provided; we may change it.
         file_name = request.file_name
 
-        # Let's see if this is a template file; if so, re-route it as a copy in the customer's workflow directory.
+        # See if we had an existing workflow for this.
+        prior_workflow = None
+        creation_date = None
         if file_name and WorkflowRegistry.has_workflow_with_name(file_name):
             # Get the metadata.
-            workflow = WorkflowRegistry.get_workflow_by_name(file_name)
-            if workflow.metadata.is_template:
-                # Aha! User is attempting to save a template. Create a differently-named file in their workspace.
-                # Find the first available file name that doesn't conflict.
-                curr_idx = 1
-                free_file_found = False
-                while not free_file_found:
-                    # Composite a new candidate file name to test.
-                    new_file_name = f"{file_name}_{curr_idx}"
-                    new_file_name_with_extension = f"{new_file_name}.py"
-                    new_file_full_path = config_manager.workspace_path.joinpath(new_file_name_with_extension)
-                    if new_file_full_path.exists():
-                        # Keep going.
-                        curr_idx += 1
-                    else:
-                        free_file_found = True
-                        file_name = new_file_name
+            prior_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
+            # We'll use it's creation date.
+            creation_date = prior_workflow.metadata.creation_date
+
+        if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
+            # Either a new workflow, or a backcompat situation.
+            creation_date = datetime.now(tz=local_tz)
+
+        # Let's see if this is a template file; if so, re-route it as a copy in the customer's workflow directory.
+        if prior_workflow and prior_workflow.metadata.is_template:
+            # Aha! User is attempting to save a template. Create a differently-named file in their workspace.
+            # Find the first available file name that doesn't conflict.
+            curr_idx = 1
+            free_file_found = False
+            while not free_file_found:
+                # Composite a new candidate file name to test.
+                new_file_name = f"{file_name}_{curr_idx}"
+                new_file_name_with_extension = f"{new_file_name}.py"
+                new_file_full_path = config_manager.workspace_path.joinpath(new_file_name_with_extension)
+                if new_file_full_path.exists():
+                    # Keep going.
+                    curr_idx += 1
+                else:
+                    free_file_found = True
+                    file_name = new_file_name
 
         # open my file
         if not file_name:
-            local_tz = datetime.now().astimezone().tzinfo
             file_name = datetime.now(tz=local_tz).strftime("%d.%m_%H.%M")
         relative_file_path = f"{file_name}.py"
         file_path = config_manager.workspace_path.joinpath(relative_file_path)
@@ -851,6 +876,8 @@ class WorkflowManager:
                     schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
                     engine_version_created_with=engine_version,
                     node_libraries_referenced=list(node_libraries_used),
+                    creation_date=creation_date,
+                    last_modified_date=datetime.now(tz=local_tz),
                 )
 
                 try:

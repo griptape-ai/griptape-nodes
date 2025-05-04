@@ -74,8 +74,12 @@ class EventLogHandler(logging.Handler):
         )
 
 
+griptape_nodes_logger = logging.getLogger("griptape_nodes")
 # When running as an app, we want to forward all log messages to the event queue so they can be sent to the GUI
-logging.getLogger("griptape_nodes").addHandler(EventLogHandler())
+griptape_nodes_logger.addHandler(EventLogHandler())
+griptape_nodes_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
+griptape_nodes_logger.setLevel(logging.INFO)
+
 # Logger for this module. Important that this is not the same as the griptape_nodes logger or else we'll have infinite log events.
 logger = logging.getLogger(__name__)
 console = Console()
@@ -111,7 +115,7 @@ def _serve_static_server() -> None:
     config_manager = GriptapeNodes.ConfigManager()
     app = FastAPI()
 
-    static_dir = config_manager.workspace_path / config_manager.user_config["static_files_directory"]
+    static_dir = config_manager.workspace_path / config_manager.merged_config["static_files_directory"]
 
     if not static_dir.exists():
         static_dir.mkdir(parents=True, exist_ok=True)
@@ -164,8 +168,8 @@ def _init_event_listeners() -> None:
 
     EventBus.add_event_listener(
         event_listener=EventListener(
-            on_event=__process_app_event,  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
-            event_types=[AppEvent],  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
+            on_event=__process_app_event,  # pyright: ignore[reportArgumentType] TODO: https://github.com/griptape-ai/griptape-nodes/issues/868
+            event_types=[AppEvent],  # pyright: ignore[reportArgumentType] TODO: https://github.com/griptape-ai/griptape-nodes/issues/868
         )
     )
 

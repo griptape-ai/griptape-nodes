@@ -3,12 +3,13 @@ import logging
 from collections.abc import Iterator
 from typing import ClassVar
 
+import PIL.Image
 from diffusers_nodes_library.utils.huggingface_utils import (
     list_repo_revisions_in_cache,  # type: ignore[reportMissingImports]
 )
-
-# TODO(dylan): Make kosher (don't import from other libs)
 from diffusers_nodes_library.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
+
+# TODO: https://github.com/griptape-ai/griptape-nodes/issues/829
 from diffusers_nodes_library.utils.tiling_image_processor import (
     TilingImageProcessor,  # type: ignore[reportMissingImports]
 )
@@ -38,13 +39,10 @@ class TilingSPAN(ControlNode):
             pipe = SpandrelPipeline.from_hf_file(repo_id=repo_id, revision=revision, filename=filename)
 
             # Putting this on a device other than cpu is overkill I think.
-            # TODO(dylan): play with device later and see if compute speed up from moving to
-            #      mps or cuda is worth the transfer cost.
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/830
             # device = get_best_device() # noqa: ERA001
 
-            # TODO(dylan): Would be nice to optimize for memory footprint here,
-            #       but honestly not really need at least for this model
-            #       cause its so small.
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/831
             # optimize_pipe_memory_footprint(pipe) # noqa: ERA001
 
             cls._pipes[key] = pipe
@@ -112,28 +110,22 @@ class TilingSPAN(ControlNode):
         )
         self.add_parameter(
             Parameter(
-                name="scale",
-                default_value=2.0,
-                input_types=["float"],
-                type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="scale",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="tile_size",
-                default_value=1024,
+                name="max_tile_size",
+                default_value=256,
                 input_types=["int"],
                 type="int",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="tile_size",
+                tooltip=(
+                    "max_tile_size, "
+                    "if unecessily larger than input image, it will automatically "
+                    "be lowered to fit the input image as tightly as possible"
+                ),
             )
         )
         self.add_parameter(
             Parameter(
                 name="tile_overlap",
-                default_value=64,
+                default_value=16,
                 input_types=["int"],
                 type="int",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
@@ -161,7 +153,7 @@ class TilingSPAN(ControlNode):
                 tooltip="tile_strategy",
             )
         )
-        # TODO(dylan): Add seed parameter int|None -- How to have no default (default to None?)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/832
         self.add_parameter(
             Parameter(
                 name="output_image",
@@ -188,8 +180,7 @@ class TilingSPAN(ControlNode):
         repo, revision, filename = TilingSPAN._key_to_repo_revision_filename(model)
         input_image_artifact = self.get_parameter_value("input_image")
 
-        scale = float(self.get_parameter_value("scale"))
-        tile_size = int(self.get_parameter_value("tile_size"))
+        max_tile_size = int(self.get_parameter_value("max_tile_size"))
         tile_overlap = int(self.get_parameter_value("tile_overlap"))
         tile_strategy = str(self.get_parameter_value("tile_strategy"))
 
@@ -197,21 +188,32 @@ class TilingSPAN(ControlNode):
             input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
         input_image_pil = image_artifact_to_pil(input_image_artifact)
 
+        output_scale = 4  # THIS IS SPECIFIC TO 4x-ClearRealityV1 - TODO(dylan): Make per-model configurable
+
+        # The output image will be the scaled by output_scale compared to the input image.
+        # Immediately set a preview placeholder image to make it react quickly and adjust
+        # the size of the image preview on the node.
+        w, h = input_image_pil.size
+        ow, oh = int(w * output_scale), int(h * output_scale)
+        preview_placeholder_image = PIL.Image.new("RGB", (ow, oh), color="black")
+        self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
+
+        # Adjust tile size so that it is not much bigger than the input image.
+        largest_reasonable_tile_size = max(input_image_pil.height, input_image_pil.width)
+        tile_size = min(largest_reasonable_tile_size, max_tile_size)
+
         self.append_value_to_parameter("logs", "Preparing models...\n")
         with self._append_stdout_to_logs():
             pipe = self._get_pipe(repo, revision, filename)
 
-        w, h = input_image_pil.size
-        input_image_pil = input_image_pil.resize((int(w * scale), int(h * scale)))
+        def wrapped_pipe(tile: Image, *_) -> Image:
+            return pipe(tile)
 
         tiling_image_processor = TilingImageProcessor(
-            pipe,
+            pipe=wrapped_pipe,
             tile_size=tile_size,
             tile_overlap=tile_overlap,
             tile_strategy=tile_strategy,
-            to_pipe_args=lambda tile, kwargs: (tile,),  # noqa: ARG005
-            to_pipe_kwargs=lambda tile, kwargs: kwargs,  # noqa: ARG005
-            pipe_output_to_pil=lambda output: output,
         )
         num_tiles = tiling_image_processor.get_num_tiles(image=input_image_pil)
 
@@ -224,7 +226,7 @@ class TilingSPAN(ControlNode):
         self.append_value_to_parameter("logs", f"Starting tile 1 of {num_tiles}...\n")
         output_image_pil = tiling_image_processor.process(
             image=input_image_pil,
-            pipe_kwargs={"scale": scale},
+            output_scale=output_scale,
             callback_on_tile_end=callback_on_tile_end,
         )
         self.append_value_to_parameter("logs", f"Finished tile {num_tiles} of {num_tiles}.\n")

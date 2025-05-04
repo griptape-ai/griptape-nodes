@@ -1,6 +1,6 @@
 """Defines the Ollama node for configuring the OpenAi Prompt Driver.
 
-TODO(jason): Get this working with the new driver system, then add it to the library.json
+TODO: https://github.com/griptape-ai/griptape-nodes/issues/875
 
 This module provides the `OllamaPrompt` class, which allows users
 to configure and utilize the Ollama prompt service within the Griptape

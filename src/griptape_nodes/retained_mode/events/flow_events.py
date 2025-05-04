@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+from typing import Any
 
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -7,6 +9,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
+from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
@@ -122,3 +125,99 @@ class GetTopLevelFlowRequest(RequestPayload):
 @PayloadRegistry.register
 class GetTopLevelFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     flow_name: str | None
+
+
+# A Flow's state can be serialized into a sequence of commands that the engine then runs.
+@dataclass
+class SerializedFlowCommands:
+    """Represents the serialized commands for a flow, including the nodes and their connections.
+
+    Useful for save/load, copy/paste, etc.
+
+    Attributes:
+        node_libraries_used (set[LibraryNameAndVersion]): Set of libraries and versions used by the nodes,
+            including those in child flows.
+        create_flow_command (CreateFlowRequest | None): Command to create the flow that contains all of this.
+            If None, will deserialize into whatever Flow is in the Current Context.
+        serialized_node_commands (list[SerializedNodeCommands]): List of serialized commands for nodes.
+            Handles creating all of the nodes themselves, along with configuring them. Does NOT set Parameter values,
+            which is done as a separate step.
+        serialized_connections (list[SerializedFlowCommands.IndexedConnectionSerialization]): List of serialized connections.
+            Creates the connections between Nodes.
+        unique_parameter_values (list[Any]): Records the unique Parameter values used by the Flow.
+        set_parameter_value_commands (list[list[SerializedNodeCommands.IndexedSetParameterValueCommand]]): List of commands
+            to set parameter values, indexed by node, during deserialization.
+        sub_flows_commands (list["SerializedFlowCommands"]): List of sub-flow commands. Cascades into sub-flows within this serialization.
+    """
+
+    @dataclass
+    class IndexedConnectionSerialization:
+        """Companion class to create connections from node indices, since we can't predict the names.
+
+        These are indices into the serialized_node_commands list we maintain.
+
+        Attributes:
+            source_node_index (int): Index of the source node.
+            source_parameter_name (str): Name of the source parameter.
+            target_node_index (int): Index of the target node.
+            target_parameter_name (str): Name of the target parameter.
+        """
+
+        source_node_index: int
+        source_parameter_name: str
+        target_node_index: int
+        target_parameter_name: str
+
+    node_libraries_used: set[LibraryNameAndVersion]
+    create_flow_command: CreateFlowRequest | None
+    serialized_node_commands: list[SerializedNodeCommands]
+    serialized_connections: list[IndexedConnectionSerialization]
+    unique_parameter_values: list[Any]
+    set_parameter_value_commands: list[list[SerializedNodeCommands.IndexedSetParameterValueCommand]]
+    sub_flows_commands: list["SerializedFlowCommands"]
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeFlowToCommandsRequest(RequestPayload):
+    """Request payload to serialize a flow into a sequence of commands.
+
+    Attributes:
+        flow_name (str | None): The name of the flow to serialize. If None is passed, assumes we're serializing the flow in the Current Context.
+        include_create_flow_command (bool): If set to False, this will omit the CreateFlow call from the serialized flow object.
+            This can be useful so that the contents of a flow can be deserialized into an existing flow instead of creating a new one and deserializing the nodes into that.
+            Copy/paste can make use of this.
+    """
+
+    flow_name: str | None = None
+    include_create_flow_command: bool = True
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeFlowToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    serialized_flow_commands: SerializedFlowCommands
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeFlowToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeFlowFromCommandsRequest(RequestPayload):
+    serialized_flow_commands: SerializedFlowCommands
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeFlowFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    flow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeFlowFromCommandsResultFailure(ResultPayloadFailure):
+    pass

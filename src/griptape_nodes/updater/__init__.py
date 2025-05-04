@@ -8,6 +8,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 
 from rich.console import Console
@@ -56,11 +57,7 @@ def _restart_engine() -> None:
     """Restarts the engine."""
     console.print("[bold green]Restarting engine...[/bold green]")
     try:
-        subprocess.run(  # noqa: S603
-            ["griptape-nodes"],  # noqa: S607
-            text=True,
-            check=True,
-        )
+        os.execvp("griptape-nodes", ["griptape-nodes --no-update"])  # noqa: S606, S607
     except subprocess.CalledProcessError as e:
         console.print(f"[bold red]Error during restart: {e}[/bold red]")
 

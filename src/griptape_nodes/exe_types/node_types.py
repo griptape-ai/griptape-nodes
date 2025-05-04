@@ -399,7 +399,7 @@ class BaseNode(ABC):
                 return param
         return None
 
-    # TODO(kate): can we remove this or change to default value?
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/852
     def valid_or_fallback(self, param_name: str, fallback: Any = None) -> Any:
         """Get a parameter value if valid, otherwise use fallback.
 
@@ -438,6 +438,27 @@ class BaseNode(ABC):
 
     # if not implemented, it will return no issues.
     def validate_node(self) -> list[Exception] | None:
+        return None
+
+    # It could be quite common to want to validate whether or not a parameter is empty.
+    # this helper function can be used within the `validate_node` method along with other validations
+    #
+    # Example:
+    """
+    def validate_node(self) -> list[Exception] | None:
+        exceptions = []
+        prompt_error = self.validate_empty_parameter(param="prompt", additional_msg="Please provide a prompt to generate an image.")
+        if prompt_error:
+            exceptions.append(prompt_error)
+        return exceptions if exceptions else None
+    """
+
+    def validate_empty_parameter(self, param: str, additional_msg: str = "") -> Exception | None:
+        param_value = self.parameter_values.get(param, None)
+        node_name = self.name
+        if not param_value or param_value.isspace():
+            msg = str(f"Parameter \"{param}\" was left blank for node '{node_name}'. {additional_msg}").strip()
+            return ValueError(msg)
         return None
 
     def get_config_value(self, service: str, value: str) -> str:
@@ -527,7 +548,7 @@ class StartNode(BaseNode):
 
 
 class EndNode(BaseNode):
-    # TODO(griptape): Anything else for an EndNode?
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/854
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
         self.add_parameter(ControlParameterInput())

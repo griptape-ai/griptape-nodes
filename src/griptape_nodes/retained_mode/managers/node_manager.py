@@ -11,7 +11,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
-from griptape_nodes.node_library.library_registry import LibraryRegistry
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ResultPayload,
     ResultPayloadFailure,
@@ -36,6 +36,10 @@ from griptape_nodes.retained_mode.events.flow_events import (
     ListNodesInFlowRequest,
     ListNodesInFlowResultSuccess,
 )
+from griptape_nodes.retained_mode.events.library_events import (
+    GetLibraryMetadataRequest,
+    GetLibraryMetadataResultSuccess,
+)
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
     CreateNodeResultFailure,
@@ -43,6 +47,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     DeleteNodeRequest,
     DeleteNodeResultFailure,
     DeleteNodeResultSuccess,
+    DeserializeNodeFromCommandsRequest,
+    DeserializeNodeFromCommandsResultFailure,
+    DeserializeNodeFromCommandsResultSuccess,
     GetAllNodeInfoRequest,
     GetAllNodeInfoResultFailure,
     GetAllNodeInfoResultSuccess,
@@ -55,6 +62,10 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
+    SerializedNodeCommands,
+    SerializeNodeToCommandsRequest,
+    SerializeNodeToCommandsResultFailure,
+    SerializeNodeToCommandsResultSuccess,
     SetNodeMetadataRequest,
     SetNodeMetadataResultFailure,
     SetNodeMetadataResultSuccess,
@@ -136,6 +147,10 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(
             GetNodeElementDetailsRequest, self.on_get_node_element_details_request
+        )
+        event_manager.assign_manager_to_request_type(SerializeNodeToCommandsRequest, self.on_serialize_node_to_commands)
+        event_manager.assign_manager_to_request_type(
+            DeserializeNodeFromCommandsRequest, self.on_deserialize_node_from_commands
         )
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
@@ -956,19 +971,19 @@ class NodeManager:
         if request.output_type is not None:
             parameter.output_type = request.output_type
         if request.mode_allowed_input is not None:
-            # TODO(griptape): may alter existing connections
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/828
             if request.mode_allowed_input is True:
                 parameter.allowed_modes.add(ParameterMode.INPUT)
             else:
                 parameter.allowed_modes.discard(ParameterMode.INPUT)
         if request.mode_allowed_property is not None:
-            # TODO(griptape): may alter existing connections
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/828
             if request.mode_allowed_property is True:
                 parameter.allowed_modes.add(ParameterMode.PROPERTY)
             else:
                 parameter.allowed_modes.discard(ParameterMode.PROPERTY)
         if request.mode_allowed_output is not None:
-            # TODO(griptape): may alter existing connections
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/828
             if request.mode_allowed_output is True:
                 parameter.allowed_modes.add(ParameterMode.OUTPUT)
             else:
@@ -1008,19 +1023,19 @@ class NodeManager:
                 parameter_group.ui_options = request.ui_options
             return AlterParameterDetailsResultSuccess()
 
-        # TODO(griptape): Verify that we can get through all the OTHER tricky stuff before we proceed to actually making changes.
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/827
         # Now change all the values on the Parameter.
         self.modify_alterable_fields(request, parameter)
         # The rest of these are not alterable
         if parameter.user_defined is False and request.request_id:
-            # TODO(griptape): there may be SOME properties on a non-user-defined Parameter that can be changed
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
             details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
             logger.warning(details)
             return AlterParameterDetailsResultSuccess()
         self.modify_key_parameter_fields(request, parameter)
         # This field requires the node as well
         if request.default_value is not None:
-            # TODO(griptape): vet that default value matches types allowed
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/825
             node.parameter_values[request.parameter_name] = request.default_value
 
         details = f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{node_name}'."
@@ -1529,3 +1544,206 @@ class NodeManager:
         return ValidateNodeDependenciesResultSuccess(
             validation_succeeded=(len(all_exceptions) == 0), exceptions=all_exceptions
         )
+
+    def on_serialize_node_to_commands(self, request: SerializeNodeToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0912
+        node_name = request.node_name
+        if node_name is None:
+            if GriptapeNodes.ContextManager().has_current_node():
+                node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            else:
+                details = "Attempted to serialize a Node to commands from the Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return SerializeNodeToCommandsResultFailure()
+
+        # Does this node exist?
+        node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to serialize Node '{node_name}' to commands. Failed because no Node with that name could be found."
+            logger.error(details)
+            return SerializeNodeToCommandsResultFailure()
+
+        # This is our current dude.
+        with GriptapeNodes.ContextManager().node(node_name=node_name):
+            # Get the library and version details.
+            library_used = node.metadata["library"]
+            # Get the library metadata so we can get the version.
+            library_metadata_request = GetLibraryMetadataRequest(library=library_used)
+            library_metadata_result = GriptapeNodes().handle_request(library_metadata_request)
+            if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
+                details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
+                logger.error(details)
+                return SerializeNodeToCommandsResultFailure()
+
+            library_version = library_metadata_result.metadata["library_version"]
+            library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
+
+            # Get the creation details.
+            create_node_request = CreateNodeRequest(
+                node_type=node.__class__.__name__,
+                node_name=node_name,
+                specific_library_name=library_details.library_name,
+                metadata=node.metadata,
+            )
+
+            # We're going to compare this node instance vs. a canonical one. Rez that one up.
+            reference_node = type(node)(name="REFERENCE NODE")
+
+            # Now creation or alteration of all of the elements.
+            element_modification_commands = []
+            for parameter in node.parameters:
+                # Create the parameter, or alter it on the existing node
+                if parameter.user_defined:
+                    # Add a user-defined Parameter.
+                    param_dict = parameter.to_dict()
+                    param_dict["node_name"] = node.name
+                    param_dict["initial_setup"] = True
+                    add_param_request = AddParameterToNodeRequest.create(**param_dict)
+                    element_modification_commands.append(add_param_request)
+                else:
+                    # Not user defined. Get any deltas from the values on the reference node.
+                    diff = NodeManager._manage_alter_details(parameter, reference_node)
+                    relevant = False
+                    for key in diff:
+                        if key in AlterParameterDetailsRequest.relevant_parameters():
+                            relevant = True
+                            break
+                    if relevant:
+                        diff["node_name"] = node.name
+                        diff["parameter_name"] = parameter.name
+                        diff["initial_setup"] = True
+                        alter_param_request = AlterParameterDetailsRequest.create(**diff)
+                        element_modification_commands.append(alter_param_request)
+
+            # Now assignment of values to all of the parameters.
+            set_value_commands = []
+            for parameter in node.parameters:
+                # SetParameterValueRequest event
+                set_param_value_request = NodeManager._handle_parameter_value_saving(
+                    parameter=parameter,
+                    node=node,
+                    value_hash_to_unique_value_index=request.value_hash_to_unique_value_index,
+                    unique_values=request.unique_parameter_values_list,
+                )
+                if set_param_value_request is not None:
+                    set_value_commands.append(set_param_value_request)
+
+        # Hooray
+        serialized_node_commands = SerializedNodeCommands(
+            create_node_command=create_node_request,
+            element_modification_commands=element_modification_commands,
+            node_library_details=library_details,
+        )
+        details = f"Successfully serialized node '{node_name}' into commands."
+        logger.debug(details)
+        result = SerializeNodeToCommandsResultSuccess(
+            serialized_node_commands=serialized_node_commands,  # How to serialize this node
+            set_parameter_value_commands=set_value_commands,  # The commands to serialize it with
+        )
+        return result
+
+    def on_deserialize_node_from_commands(self, request: DeserializeNodeFromCommandsRequest) -> ResultPayload:
+        # Issue the creation command first.
+        create_node_request = request.serialized_node_commands.create_node_command
+        create_node_result = GriptapeNodes().handle_request(create_node_request)
+        if not isinstance(create_node_result, CreateNodeResultSuccess):
+            details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to create node '{create_node_request.node_name}'."
+            logger.error(details)
+            return DeserializeNodeFromCommandsResultFailure()
+
+        # Adopt the newly-created node as our current context.
+        node_name = create_node_result.node_name
+        with GriptapeNodes.ContextManager().node(node_name=node_name):
+            for element_command in request.serialized_node_commands.element_modification_commands:
+                element_result = GriptapeNodes().handle_request(element_command)
+                if element_result.failed():
+                    details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to execute an element command for node '{node_name}'."
+                    logger.error(details)
+                    return DeserializeNodeFromCommandsResultFailure()
+
+        details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
+        logger.debug(details)
+        return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)
+
+    @staticmethod
+    def _manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
+        base_param = base_node_obj.get_parameter_by_name(parameter.name)
+        if base_param:
+            diff = base_param.equals(parameter)
+        else:
+            return vars(parameter)
+        return diff
+
+    @staticmethod
+    def _handle_parameter_value_saving(
+        parameter: Parameter,
+        node: BaseNode,
+        value_hash_to_unique_value_index: dict[Any, int],
+        unique_values: list[Any],
+    ) -> SerializedNodeCommands.IndexedSetParameterValueCommand | None:
+        """Generates code to save a parameter value for a node in a Griptape workflow.
+
+        This function handles the process of creating commands that will reconstruct and set
+        parameter values for nodes. It performs the following steps:
+        1. Retrieves the parameter value from the node's parameter values or output values
+        2. Checks if the value has already been created in our list of unique values
+        3. If so, it records the index for later correlation.
+        4. If not, it adds the value to the uniques list and records the new index.
+        5. Creates a SetParameterValueRequest to reconstruct this for the node
+
+        Args:
+            parameter (Parameter): The parameter object containing metadata
+            node (BaseNode): The node object that contains the parameter
+            value_hash_to_unique_value_index (dict[Any, int]): Dictionary mapping value hashes to indices in unique_values list
+            unique_values (list[Any]): List of unique values
+
+        Returns:
+            None (if no value to be serialized) or an IndexedSetParameterValueCommand linking the value to the unique value list
+
+        Notes:
+            - Parameter output values take precedence over regular parameter values
+            - For values that can be hashed, the value itself is used as the key in values_created
+            - For unhashable values, the object's id is used as the key
+            - The function will reuse already created values to avoid duplication
+        """
+        if parameter.name in node.parameter_output_values:
+            # Output values are more important.
+            value = node.parameter_output_values[parameter.name]
+            is_output = True
+        elif parameter.name in node.parameter_values:
+            # Check the internal parameter values
+            value = node.get_parameter_value(parameter.name)
+            is_output = False
+        else:
+            # No value set; bail.
+            return None
+
+        # We have a value. Attempt to get a hash for it to see if it matches one
+        # we've already indexed.
+        try:
+            hash(value)
+            value_id = value
+        except TypeError:
+            # Couldn't get a hash. Use the object's ID
+            value_id = id(value)
+
+        if value_id in value_hash_to_unique_value_index:
+            # We have a match on this value. We're all good.
+            unique_index = value_hash_to_unique_value_index[value_id]
+        else:
+            # This one is new for us. Append it to the list of uniques.
+            unique_index = len(unique_values)
+            value_hash_to_unique_value_index[value_id] = unique_index
+            unique_values.append(value)
+
+        # Serialize it
+        set_value_command = SetParameterValueRequest(
+            parameter_name=parameter.name,
+            value=None,  # <- this will get overridden when instantiated
+            is_output=is_output,
+            initial_setup=True,
+        )
+        indexed_set_value_command = SerializedNodeCommands.IndexedSetParameterValueCommand(
+            set_parameter_value_command=set_value_command,
+            unique_value_index=unique_index,
+        )
+        return indexed_set_value_command

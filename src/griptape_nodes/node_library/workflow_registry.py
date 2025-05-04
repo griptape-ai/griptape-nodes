@@ -1,19 +1,19 @@
 from __future__ import annotations
 
+from datetime import datetime  # noqa: TC003 (can't put into type checking block as Pydantic model relies on it)
 from pathlib import Path
-from typing import ClassVar, NamedTuple
+from typing import ClassVar
 
 from griptape.mixins.singleton_mixin import SingletonMixin
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-
-class LibraryNameAndVersion(NamedTuple):
-    library_name: str
-    library_version: str
+from griptape_nodes.node_library.library_registry import (
+    LibraryNameAndVersion,  # noqa: TC001 (putting this into type checking causes it to not be defined)
+)
 
 
 class WorkflowMetadata(BaseModel):
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.2.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.0"
 
     name: str
     schema_version: str
@@ -23,6 +23,8 @@ class WorkflowMetadata(BaseModel):
     image: str | None = None
     is_griptape_provided: bool | None = False
     is_template: bool | None = False
+    creation_date: datetime | None = Field(default=None)
+    last_modified_date: datetime | None = Field(default=None)
 
 
 class WorkflowRegistry(SingletonMixin):

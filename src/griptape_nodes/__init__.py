@@ -4,8 +4,8 @@
 import argparse
 import importlib.metadata
 import json
+import os
 import shutil
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -22,14 +22,13 @@ from xdg_base_dirs import xdg_config_home, xdg_data_home
 
 from griptape_nodes.app import start_app
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
-from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 DATA_DIR = xdg_data_home() / "griptape_nodes"
 ENV_FILE = CONFIG_DIR / ".env"
 CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
-REPO_NAME = "griptape-ai/griptape-nodes"
+PACKAGE_NAME = "griptape-nodes"
 NODES_APP_URL = "https://nodes.griptape.ai"
 NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/tags/{tag}.tar.gz"
 
@@ -41,7 +40,7 @@ secrets_manager = SecretsManager(config_manager)
 
 def main() -> None:
     """Main entry point for the Griptape Nodes CLI."""
-    load_dotenv(ENV_FILE)
+    load_dotenv(ENV_FILE, override=True)
 
     # Hack to make paths "just work". # noqa: FIX004
     # Without this, packages like `nodes` don't properly import.
@@ -53,11 +52,14 @@ def main() -> None:
     _process_args(args)
 
 
-def _run_init(api_key: str | None = None, workspace_directory: str | None = None) -> None:
+def _run_init(
+    *, api_key: str | None = None, workspace_directory: str | None = None, register_advanced_library: bool | None = None
+) -> None:
     """Runs through the engine init steps, optionally skipping prompts if the user provided `--api-key`."""
     __init_system_config()
-    _prompt_for_workspace(workspace_directory)
-    _prompt_for_api_key(api_key)
+    _prompt_for_workspace(workspace_directory_arg=workspace_directory)
+    _prompt_for_api_key(api_key=api_key)
+    _prompt_for_libraries_to_register(register_advanced_library=register_advanced_library)
     _update_assets()
     console.print("Initialization complete! You can now run the engine with 'griptape-nodes' (or just 'gtn').")
 
@@ -100,14 +102,20 @@ def _get_args() -> argparse.Namespace:
         required=False,
     )
 
-    init_parser = subparsers.add_parser("init", help="Initialize a workspace.")
+    init_parser = subparsers.add_parser("init", help="Initialize engine configuration.")
     init_parser.add_argument(
         "--api-key",
-        help="Override the Griptape Nodes API key.",
+        help="Set the Griptape Nodes API key.",
     )
     init_parser.add_argument(
         "--workspace-directory",
-        help="Override the Griptape Nodes workspace directory.",
+        help="Set the Griptape Nodes workspace directory.",
+    )
+    init_parser.add_argument(
+        "--register-advanced-library",
+        action="store_true",
+        default=None,
+        help="Install the Griptape Nodes Advanced Image Library.",
     )
 
     # engine
@@ -120,6 +128,7 @@ def _get_args() -> argparse.Namespace:
         metavar="SUBCOMMAND",
         required=True,
     )
+    config_subparsers.add_parser("show", help="Show configuration values.")
     config_subparsers.add_parser("list", help="List configuration values.")
     config_subparsers.add_parser("reset", help="Reset configuration to defaults.")
 
@@ -176,7 +185,7 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
     secrets_manager.set_secret("GT_CLOUD_API_KEY", current_key)
 
 
-def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
+def _prompt_for_workspace(*, workspace_directory_arg: str | None) -> None:
     """Prompts the user for their workspace directory and stores it in config directory."""
     explainer = """[bold cyan]Workspace Directory[/bold cyan]
     Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows.
@@ -205,26 +214,61 @@ def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
     console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
 
 
-def _get_latest_version(repo: str) -> str:
-    """Fetches the latest release tag from a GitHub repository using httpx.
+def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None = None) -> None:
+    """Prompts the user for the libraries to register and stores them in config directory."""
+    explainer = """[bold cyan]Advanced Image Library[/bold cyan]
+    Would you like to install the Griptape Nodes Advanced Image Library?
+    This node library makes advanced image generation and manipulation nodes available.
+    Installing this library requires additional dependencies to download and install, which can take several minutes.
+    The Griptape Nodes Advanced Image Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
+    """
+    console.print(Panel(explainer, expand=False))
+
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/929
+    key = "app_events.on_app_initialization_complete.libraries_to_register"
+    current_libraries = config_manager.get_config_value(
+        key,
+        config_source="user_config",
+        default=config_manager.get_config_value(key, config_source="default_config", default=[]),
+    )
+    default_library = str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")
+    extra_libraries = [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library_extras.json")]
+    libraries_to_merge = [default_library]
+
+    if register_advanced_library is None:
+        register_extras = Confirm.ask("Register Advanced Image Library?", default=False)
+    else:
+        register_extras = register_advanced_library
+
+    if register_extras:
+        libraries_to_merge.extend(extra_libraries)
+
+    # Remove duplicates
+    merged_libraries = list(set(current_libraries + libraries_to_merge))
+
+    config_manager.set_config_value("app_events.on_app_initialization_complete.libraries_to_register", merged_libraries)
+
+
+def _get_latest_version(package: str) -> str:
+    """Fetches the latest release tag from PyPI.
 
     Args:
-        repo (str): Repository name in the format "owner/repo"
+        package: The name of the package to fetch the latest version for.
 
     Returns:
         str: Latest release tag (e.g., "v0.31.4")
     """
-    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    url = f"https://pypi.org/pypi/{package}/json"
     with httpx.Client() as client:
         response = client.get(url)
         response.raise_for_status()
-        return response.json()["tag_name"]
+        return f"v{response.json()['info']['version']}"
 
 
 def _auto_update_self() -> None:
     """Automatically updates the script to the latest version if the user confirms."""
     current_version = __get_current_version()
-    latest_version = _get_latest_version(REPO_NAME)
+    latest_version = _get_latest_version(PACKAGE_NAME)
 
     if current_version < latest_version:
         update = Confirm.ask(
@@ -232,9 +276,8 @@ def _auto_update_self() -> None:
             default=True,
         )
 
-        _update_assets()
-
         if update:
+            _update_assets()
             _update_self(restart_after_update=True)
 
 
@@ -243,14 +286,12 @@ def _update_self(*, restart_after_update: bool = False) -> None:
     console.print("[bold green]Starting updater...[/bold green]")
 
     args = ["--restart"] if restart_after_update else []
-    subprocess.Popen([sys.executable, "-m", "griptape_nodes.updater", *args], start_new_session=True)
-
-    sys.exit(0)
+    os.execvp(sys.executable, [sys.executable, "-m", "griptape_nodes.updater", *args])  # noqa: S606
 
 
 def _update_assets() -> None:
     """Download the release tarball identified."""
-    tag = _get_latest_version(REPO_NAME)
+    tag = _get_latest_version(PACKAGE_NAME)
 
     console.print(f"[bold cyan]Fetching Griptape Nodes assets ({tag})…[/bold cyan]")
 
@@ -292,7 +333,7 @@ def _print_current_version() -> None:
 
 def _print_user_config() -> None:
     """Prints the user configuration from the config file."""
-    config = config_manager.user_config
+    config = config_manager.merged_config
     sys.stdout.write(json.dumps(config, indent=2))
 
 
@@ -318,6 +359,7 @@ def _uninstall_self() -> None:
     console.print("[bold]Uninstalling Griptape Nodes...[/bold]")
 
     # Remove config and data directories
+    console.print("[bold]Removing config and data directories...[/bold]")
     dirs = [(CONFIG_DIR, "Config Dir"), (DATA_DIR, "Data Dir")]
     for dir_path, dir_name in dirs:
         if dir_path.exists():
@@ -329,9 +371,6 @@ def _uninstall_self() -> None:
         else:
             console.print(f"[yellow]{dir_name} '{dir_path}' does not exist; skipping.[/yellow]")
 
-    # Remove the executable/tool
-    executable_removed = __uninstall_executable()
-
     caveats = []
     # Handle any remaining config files not removed by design
     remaining_config_files = config_manager.config_files
@@ -339,25 +378,24 @@ def _uninstall_self() -> None:
         caveats.append("- Some config files were intentionally not removed:")
         caveats.extend(f"\t[yellow]- {file}[/yellow]" for file in remaining_config_files)
 
-    if not executable_removed:
-        caveats.append(
-            "- The uninstaller was not able to remove the Griptape Nodes executable. "
-            "Please remove the executable manually by running '[bold]uv tool uninstall griptape-nodes[/bold]'."
-        )
-
     # If there were any caveats to the uninstallation process, print them
     if caveats:
         console.print("[bold]Caveats:[/bold]")
         for line in caveats:
             console.print(line)
 
-    # Exit the process
-    sys.exit(0)
+    # Remove the executable
+    console.print("[bold]Removing the executable...[/bold]")
+    os.execvp("uv", ["uv", "tool", "uninstall", "griptape-nodes"])  # noqa: S606
 
 
 def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
     if args.command == "init":
-        _run_init(api_key=args.api_key, workspace_directory=args.workspace_directory)
+        _run_init(
+            api_key=args.api_key,
+            workspace_directory=args.workspace_directory,
+            register_advanced_library=args.register_advanced_library,
+        )
     elif args.command == "engine":
         _start_engine(no_update=args.no_update)
     elif args.command == "config":
@@ -365,7 +403,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
             _list_user_configs()
         elif args.subcommand == "reset":
             _reset_user_config()
-        else:
+        elif args.subcommand == "show":
             _print_user_config()
     elif args.command == "self":
         if args.subcommand == "update":
@@ -380,41 +418,6 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)
-
-
-def __uninstall_executable() -> bool:
-    """Uninstalls the Griptape Nodes executable.
-
-    This is skipped on Windows due to OS limitations.
-
-    Returns:
-        bool: True if the executable was removed, False otherwise.
-
-    """
-    executable_path = shutil.which("griptape-nodes")
-    executable_removed = False
-    if executable_path:
-        if OSManager.is_windows():
-            console.print(
-                "[bold]Windows does not allow for uninstalling executables while they are running. Please review uninstallation caveats for manual steps.[/bold]"
-            )
-        else:
-            console.print(f"[bold]Removing Griptape Nodes executable ({executable_path})...[/bold]")
-            try:
-                subprocess.run(
-                    ["uv", "tool", "uninstall", "griptape-nodes"],
-                    check=True,
-                    text=True,
-                )
-                executable_removed = True
-            except subprocess.CalledProcessError:
-                executable_removed = False
-    else:
-        console.print("[yellow]Griptape Nodes executable not found; skipping removal.[/yellow]")
-
-    console.print("[bold green]Uninstall complete![/bold green]")
-
-    return executable_removed
 
 
 def __get_current_version() -> str:
