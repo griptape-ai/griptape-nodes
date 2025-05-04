@@ -70,7 +70,7 @@ Now it's time to build your own workflow. Create another nearly identical flow j
 1. Two **Agents** ( agents > Agent )
     \- These are agents that interact with LLMs (Like ChatGPT, or Claude)
 1. A **MergeTexts** node ( text > MergeTexts )
-    \- A node to accept multipkle texts and output them "merged"
+    \- A node to accept multiple texts and output them "merged"
 1. A **DisplayText** ( text > DisplayInput )
     \- A node to simply display text output for easier viewing
 
