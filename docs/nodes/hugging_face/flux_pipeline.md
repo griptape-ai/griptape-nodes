@@ -2,7 +2,7 @@
 
 !!! warning "You need to perform setup steps to use Hugging Face nodes"
 
-    [This guide](/nodes/hugging_face/hugging_face_install) will walk you through setting up a Hugging Face account, creating an access token, and installing the required models to make this node fully functional.
+    [This guide](hugging_face_install.md) will walk you through setting up a Hugging Face account, creating an access token, and installing the required models to make this node fully functional.
 
 ## What is it?
 
@@ -47,16 +47,11 @@ Use this node when you need to:
 - **output_image**: The final generated image as an ImageArtifact
 - **logs**: A string containing logs of the image generation process
 
-## Important Notes
+## Important Note
 
-- The node requires a valid Hugging Face API token set as the environment variable `HUGGINGFACE_HUB_ACCESS_TOKEN`
-- Only specific FLUX.1 models are supported: "black-forest-labs/FLUX.1-schnell" and "black-forest-labs/FLUX.1-dev"
-- The "black-forest-labs/FLUX.1-dev" model requires a Hugging Face token
-- The number of inference steps can be adjusted based on the selected model
+- Only specific FLUX.1 models are currently supported: "black-forest-labs/FLUX.1-schnell" and "black-forest-labs/FLUX.1-dev"
 
 ## Common Issues
 
-- **Missing API Key**: Ensure the Hugging Face API token is set as `HUGGINGFACE_HUB_ACCESS_TOKEN`
-- **Unsupported Model**: Verify that the selected model is supported by the node
-- **Invalid Parameters**: Ensure all required parameters are correctly set before running the node
+- **Missing API Key**: Ensure the Hugging Face API token is set as `HUGGINGFACE_HUB_ACCESS_TOKEN`; instructions for that are in [this guide](hugging_face_install.md)
 - **Memory Constraints**: Large image dimensions or high inference steps may require significant memory resources

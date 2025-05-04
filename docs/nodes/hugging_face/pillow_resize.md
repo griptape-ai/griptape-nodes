@@ -2,7 +2,7 @@
 
 !!! warning "You need to perform setup steps to use Hugging Face nodes"
 
-    [This guide](/nodes/hugging_face/hugging_face_install) will walk you through setting up a Hugging Face account, creating an access token, and installing the required models to make this node fully functional.
+    [This guide](hugging_face_install.md) will walk you through setting up a Hugging Face account, creating an access token, and installing the required models to make this node fully functional.
 
 ## What is it?
 
@@ -43,14 +43,5 @@ Use this node when you need to:
 
 - **output_image**: The resized image as an ImageArtifact
 
-## Important Notes
-
-- Ensure the input image is a valid ImageArtifact before processing
-- The scale factor must be a positive float value
+## Important Note
 - Different resampling strategies can affect the quality and processing time of the resized image
-
-## Common Issues
-
-- **Unsupported Resample Strategy**: Ensure the resampling strategy is one of the supported options
-- **Invalid Scale Factor**: The scale factor should be a positive number to avoid errors
-- **No Image Provided**: Make sure an image is connected to the "input_image" parameter before running the node
