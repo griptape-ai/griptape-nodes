@@ -6,10 +6,14 @@ Welcome to the third tutorial in our Griptape Nodes series! In this guide, you'l
 
 In this tutorial, we will:
 
-- Study then recreate a translation workflow between agents working sequentially
-- Discover how to "merge texts" to take outputs and modify them into new prompts
-- Learn about the "exec chain" for controlling workflow execution order
-- Build more into the template workflow to add a summarization task
+  - Study then recreate a translation workflow between agents working sequentially
+  - Discover how to "merge texts" to take outputs and modify them into new prompts
+  - Learn about the "exec chain" for controlling workflow execution order
+  - Build more into the template workflow to add a summarization task
+
+By the end of this journey, you'll understand how to create workflows where agents build upon each other's work, passing information seamlessly between specialized tasks. This foundation will prepare you for creating sophisticated AI systems that can handle multi-step processes requiring different types of intelligence at each stage.
+
+Let's begin by examining a simple translation workflow that demonstrates these principles in action.
 
 ## Navigate to the Landing Page
 
@@ -36,7 +40,7 @@ This workflow demonstrates how multiple agents can each perform their own distin
 
 By connecting one agent's output to another through a **MergeTexts** node, you create _new_ prompts that direct the next agent's behavior.
 
-### A quick aside on MergeTexts and prompting
+## How we're using the MergeText node hre
 
 All a **MergeTexts** node does is combine incoming texts using the "merge string" as a separator. The default merge string is two newlines: `\n\n`. In this example, I've typed "Rewrite this in English:" into **input_1** of the MergeTexts node and connected the output of my **spanish_story** node to **input_2**. When run, the **MergeTexts** node will output:
 
@@ -120,11 +124,11 @@ To see the final translation:
 
 ## Understanding Execution Order (Exec Chain)
 
-A key concept in Griptape Nodes is the execution chain:
+A key concept in Griptape Nodes is the execution chain. As workflows become more complex, controlling the order of execution becomes important. Let's explore this concept.
 
 1. Notice the "exec in" and "exec out" pins (half-circle connectors) on nodes
 1. These define the order in which nodes run
-1. For complex workflows, connect the last pin of one section to the first pin of the next
+1. For complex workflows, connect the exec ports in the order you want execution to occur
 1. This ensures nodes run in the intended sequence, even with complex data flows
 
 !!! info
