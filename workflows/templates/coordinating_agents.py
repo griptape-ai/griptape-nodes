@@ -17,7 +17,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="Agent",
     node_name="spanish_story",
-    parent_flow_name="coordinating_agents",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "library_node_metadata": {
@@ -34,7 +33,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="Agent",
     node_name="to_english",
-    parent_flow_name="coordinating_agents",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "library_node_metadata": {
@@ -51,7 +49,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="MergeTexts",
     node_name="prompt_header",
-    parent_flow_name="coordinating_agents",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "library_node_metadata": {
@@ -68,7 +65,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="DisplayText",
     node_name="english_story",
-    parent_flow_name="coordinating_agents",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "library_node_metadata": {
