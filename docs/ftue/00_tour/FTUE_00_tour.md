@@ -113,24 +113,27 @@ After adding a node, you can:
 
 Let's create some nodes using the first technique mentioned above - dragging and dropping a node from the library to the workspace to create three nodes.
 
-  1. An **Agent** ( agents > Agent )
-      \- This is an agent that interacts with LLMs (Like OpenAI ChatGPT or Anthropic Claude)
+1. An **Agent** ( agents > Agent )
+    \- This is an agent that interacts with LLMs (Like OpenAI ChatGPT or Anthropic Claude)
 
-      1. Open the agents category in the sidebar
-      1. Drag the Agent node to the workspace and release to create it
+    1. Open the agents category in the sidebar
+    1. Drag the Agent node to the workspace and release to create it
 
-        !!! info
-            For brevity, we'll describe this as ( category > Node ), so for an Agent, we'd shorthand the above with (&nbsp;agents&nbsp;>&nbsp;Agent&nbsp;).  Try the same process with the next two nodes.
+    !!! info
 
+        For brevity, we'll describe this as ( category > Node ), so for an Agent, we'd shorthand the above with ( agents > Agent ). Try the same process with the next two nodes.
 
-  1. A **FloatInput** ( number > FloatInput )
-      \- A node to input decimal numbers (floats)
-  1. A **TextInput** ( text > TextInput )
-      \- A node to input text
+1. A **FloatInput** ( number > FloatInput )
+    \- A node to input decimal numbers (floats)
 
-    <p align="center">
-      <img src="../assets/nodes_in_workspace.png" alt="Node on the workspace">
-    </p>
+1. A **TextInput** ( text > TextInput )
+    \- A node to input text
+
+```
+<p align="center">
+  <img src="../assets/nodes_in_workspace.png" alt="Node on the workspace">
+</p>
+```
 
 Experiment with connections by dragging from ports on both input nodes to various ports on the Agent. Try multiple combinations and observe that not all connections succeed.
 
@@ -139,7 +142,7 @@ This happens because parameters can only connect directly when their data types 
 - The **TextInput** node outputs **text**, so it can connect to any Agent parameter that accepts text.
 - The **FloatInput** node outputs decimal numbers (**floats**), which can't connect to any parameter on the Agent.
 
-Don't worry that you can't connect the FloatInput to anything - that's exactly the point. This node was included _here_ solely to demonstrate how not all parameters can connect to each other.  The FloatInput node is indeed very useful, it's just not one we can use with the other nodes currently in _this_ workflow.
+Don't worry that you can't connect the FloatInput to anything - that's exactly the point. This node was included _here_ solely to demonstrate how not all parameters can connect to each other. The FloatInput node is indeed very useful, it's just not one we can use with the other nodes currently in _this_ workflow.
 
 !!! Pro tip "Pro Tip"
 
@@ -160,13 +163,13 @@ For now, lets try another method to wipe the slate clean, and get a real AI inte
 1. Type a question into the agent's prompt field. You can use "Who trained you?" to verify the AI service, or simply enter any question you'd normally ask a chatbot.
 
     <p align="center">
-      <img src="../assets/eg_prompt.png" alt="Example prompt" width="300">
+    <img src="../assets/eg_prompt.png" alt="Example prompt" width="300">
     </p>
 
 1. Click the play button icon in the top right corner of the agent to run the node
 
     <p align="center">
-      <img src="../assets/run_node.png" alt="Run the node" width="200">
+    <img src="../assets/run_node.png" alt="Run the node" width="200">
     </p>
 
 1. When text appears, read the output.
