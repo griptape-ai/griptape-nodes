@@ -218,11 +218,11 @@ def _prompt_for_workspace(*, workspace_directory_arg: str | None) -> None:
 
 def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None = None) -> None:
     """Prompts the user for the libraries to register and stores them in config directory."""
-    explainer = """[bold cyan]Advanced Image Library[/bold cyan]
-    Would you like to install the Griptape Nodes Advanced Image Library?
-    This node library makes advanced image generation and manipulation nodes available.
+    explainer = """[bold cyan]Advanced Media Library[/bold cyan]
+    Would you like to install the Griptape Nodes Advanced Media Library?
+    This node library makes advanced media generation and manipulation nodes available.
     Installing this library requires additional dependencies to download and install, which can take several minutes.
-    The Griptape Nodes Advanced Image Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
+    The Griptape Nodes Advanced Media Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
     """
     console.print(Panel(explainer, expand=False))
 
@@ -233,12 +233,19 @@ def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None 
         config_source="user_config",
         default=config_manager.get_config_value(key, config_source="default_config", default=[]),
     )
-    default_library = str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")
-    extra_libraries = [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library_extras.json")]
+    default_library = str(
+        xdg_data_home() / "griptape_nodes/libraries/griptape_nodes_library/griptape_nodes_library.json"
+    )
+    extra_libraries = [
+        str(
+            xdg_data_home()
+            / "griptape_nodes/libraries/griptape_nodes_advanced_media_library/griptape_nodes_library.json"
+        )
+    ]
     libraries_to_merge = [default_library]
 
     if register_advanced_library is None:
-        register_extras = Confirm.ask("Register Advanced Image Library?", default=False)
+        register_extras = Confirm.ask("Register Advanced Media Library?", default=False)
     else:
         register_extras = register_advanced_library
 
