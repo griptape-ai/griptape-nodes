@@ -26,7 +26,7 @@ def encode_jwt_token(ak: str, sk: str) -> str:
     return token
 
 
-class TextToVideo(ControlNode):
+class KlingAI_TextToVideo(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 

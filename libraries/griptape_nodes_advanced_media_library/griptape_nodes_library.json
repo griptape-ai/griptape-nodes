@@ -20,7 +20,8 @@
       "sentencepiece>=0.2.0",
       "spandrel>=0.4.1",
       "torch>=2.7.0",
-      "transformers>=4.51.2"
+      "transformers>=4.51.2",
+      "pyjwt>=2.11.0"
     ],
     "pip_install_flags": [
       "--preview",
@@ -64,6 +65,15 @@
         "category": "image/upscale",
         "description": "TilingSPAN node. Useful as a 1st pass with upscaling.",
         "display_name": "Upscale Image with SPAN and Tiling"
+      }
+    },
+    {
+      "class_name": "KlingAI_TextToVideo",
+      "file_path": "klingai_nodes_library/klingai_text_to_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "KlingAI Text-To-Video node.",
+        "display_name": "KlingAI Text-To-Video"
       }
     }
   ]
