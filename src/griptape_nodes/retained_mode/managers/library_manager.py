@@ -12,6 +12,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from pydantic import ValidationError
 from rich.box import HEAVY_EDGE
 from rich.console import Console
 from rich.panel import Panel
@@ -20,7 +21,7 @@ from rich.text import Text
 from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.node_library.library_registry import LibraryRegistry
+from griptape_nodes.node_library.library_registry import LibraryRegistry, LibrarySchema
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
 )
@@ -324,7 +325,7 @@ class LibraryManager:
         # Load the JSON
         try:
             with json_path.open("r") as f:
-                library_data = json.load(f)
+                library_json = json.load(f)
         except json.JSONDecodeError:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
@@ -346,19 +347,25 @@ class LibraryManager:
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
-        # Extract library information
+        # Do you comport, my dude
         try:
-            library_name: str = library_data["name"]
-            library_metadata = library_data["metadata"]
-            nodes_metadata = library_data.get("nodes", [])
-        except KeyError as err:
+            library_data = LibrarySchema.model_validate(library_json)
+        except ValidationError as err:
+            # Do some more hardcore error handling.
+            problems = []
+            for error in err.errors():
+                loc = " -> ".join(map(str, error["loc"]))
+                msg = error["msg"]
+                error_type = error["type"]
+                problem = f"Error in section '{loc}': {error_type}, {msg}"
+                problems.append(problem)
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=None,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[f"Exception occurred when attempting to load required fields in the library: {err}."],
+                problems=problems,
             )
-            details = f"Attempted to load Library JSON file from '{json_path}'. Failed because it was missing required field in library metadata: {err}"
+            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
         except Exception as err:
@@ -366,43 +373,26 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=None,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[f"Exception occurred when attempting to load the library: {err}."],
+                problems=[f"Library file did not match the library schema specified due to: {err}"],
             )
-            details = (
-                f"Attempted to load Library JSON file from '{json_path}'. Failed because an exception occurred: {err}"
-            )
-            logger.error(details)
-            return RegisterLibraryFromFileResultFailure()
-
-        # Get the library version.
-        library_version_key = "library_version"
-        if library_version_key not in library_metadata:
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=library_name,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[f"Library was missing the '{library_version_key}' in its metadata section."],
-            )
-            details = f"Attempted to load Library '{library_name}' JSON file from '{json_path}'. Failed because it was missing the '{library_version_key}' in its metadata section."
+            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
         # Make sure the version string is copacetic.
-        library_version = library_metadata[library_version_key]
+        library_version = library_data.metadata.library_version
         if library_version is None:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
-                library_name=library_name,
+                library_name=library_data.name,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
                 problems=[
-                    f"Library's version string '{library_metadata[library_version_key]}' wasn't valid. Must be in major.minor.patch format."
+                    f"Library's version string '{library_data.metadata.library_version}' wasn't valid. Must be in major.minor.patch format."
                 ],
             )
-            details = f"Attempted to load Library '{library_name}' JSON file from '{json_path}'. Failed because version string '{library_metadata[library_version_key]}' wasn't valid. Must be in major.minor.patch format."
+            details = f"Attempted to load Library '{library_data.name}' JSON file from '{json_path}'. Failed because version string '{library_data.metadata.library_version}' wasn't valid. Must be in major.minor.patch format."
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
-
-        categories = library_data.get("categories", None)
 
         # Get the directory containing the JSON file to resolve relative paths
         base_dir = json_path.parent.absolute()
@@ -413,16 +403,15 @@ class LibraryManager:
         try:
             # Try to create a new library
             library = LibraryRegistry.generate_new_library(
-                name=library_name,
+                library_data=library_data,
                 mark_as_default_library=request.load_as_default_library,
-                categories=categories,
             )
 
         except KeyError as err:
             # Library already exists
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
-                library_name=library_name,
+                library_name=library_data.name,
                 library_version=library_version,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
                 problems=[
@@ -430,16 +419,21 @@ class LibraryManager:
                 ],
             )
 
-            details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_name}' already exists. Error: {err}."
+            details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
         # Install node library dependencies
         try:
-            dependencies = library_metadata.get("dependencies", [])
             site_packages = None
-            if dependencies:
-                pip_install_flags = library_metadata.get("pip_install_flags", [])
+            if library_data.metadata.dependencies:
+                pip_install_flags = library_data.metadata.dependencies.pip_install_flags
+                if pip_install_flags is None:
+                    pip_install_flags = []
+                dependencies = library_data.metadata.dependencies.dependencies
+                if dependencies is None:
+                    dependencies = []
+
                 # Create a virtual environment for the library
                 python_version = platform.python_version()
                 library_venv_path = (
@@ -447,7 +441,7 @@ class LibraryManager:
                     / "griptape_nodes"
                     / "venvs"
                     / python_version
-                    / library_name.replace(" ", "_").strip()
+                    / library_data.name.replace(" ", "_").strip()
                 )
                 if library_venv_path.exists():
                     logger.debug("Virtual environment already exists at %s", library_venv_path)
@@ -493,7 +487,7 @@ class LibraryManager:
             # Failed to create the library
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
-                library_name=library_name,
+                library_name=library_data.name,
                 library_version=library_version,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
                 problems=[f"Failed to create the library: {e}"],
@@ -504,53 +498,36 @@ class LibraryManager:
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
-        # Update library metadata
-        library._metadata = library_metadata
-
         problems = []
         any_successes = False
         # Process each node in the metadata
-        for node_meta in nodes_metadata:
-            try:
-                class_name = node_meta["class_name"]
-            except Exception as err:
-                problems.append(f"Failed to load node with error: {err}")
-                details = (
-                    f"Attempted to load node from Library at '{json_path}'. Failed because an exception occurred: {err}"
-                )
-                logger.error(details)
-                continue  # SKIP IT
-            try:
-                node_file_path = node_meta["file_path"]
-                node_metadata = node_meta.get("metadata", {})
-            except Exception as err:
-                problems.append(f"Failed to load node '{class_name}' with error: {err}")
-                details = f"Attempted to load node '{class_name}' from Library at '{json_path}'. Failed because an exception occurred: {err}"
-                logger.error(details)
-                continue  # SKIP IT
-
+        for node_definition in library_data.nodes:
             # Resolve relative path to absolute path
-            node_file_path = Path(node_file_path)
+            node_file_path = Path(node_definition.file_path)
             if not node_file_path.is_absolute():
                 node_file_path = base_dir / node_file_path
 
             try:
                 # Dynamically load the module containing the node class
-                node_class = self._load_class_from_file(node_file_path, class_name)
+                node_class = self._load_class_from_file(node_file_path, node_definition.class_name)
             except Exception as err:
-                problems.append(f"Failed to load node '{class_name}' from '{node_file_path}' with error: {err}")
-                details = f"Attempted to load node '{class_name}' from '{node_file_path}'. Failed because an exception occurred: {err}"
+                problems.append(
+                    f"Failed to load node '{node_definition.class_name}' from '{node_file_path}' with error: {err}"
+                )
+                details = f"Attempted to load node '{node_definition.class_name}' from '{node_file_path}'. Failed because an exception occurred: {err}"
                 logger.error(details)
                 continue  # SKIP IT
 
             try:
                 # Register the node type with the library
-                forensics_string = library.register_new_node_type(node_class, metadata=node_metadata)
+                forensics_string = library.register_new_node_type(node_class, metadata=node_definition.metadata)
                 if forensics_string is not None:
                     problems.append(forensics_string)
             except Exception as err:
-                problems.append(f"Failed to register node '{class_name}' from '{node_file_path}' with error: {err}")
-                details = f"Attempted to load node '{class_name}' from '{node_file_path}'. Failed because an exception occurred: {err}"
+                problems.append(
+                    f"Failed to register node '{node_definition.class_name}' from '{node_file_path}' with error: {err}"
+                )
+                details = f"Attempted to load node '{node_definition.class_name}' from '{node_file_path}'. Failed because an exception occurred: {err}"
                 logger.error(details)
                 continue  # SKIP IT
 
@@ -560,7 +537,7 @@ class LibraryManager:
         if not any_successes:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
-                library_name=library_name,
+                library_name=library_data.name,
                 library_version=library_version,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
                 problems=problems,
@@ -573,7 +550,7 @@ class LibraryManager:
         if problems:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
-                library_name=library_name,
+                library_name=library_data.name,
                 library_version=library_version,
                 status=LibraryManager.LibraryStatus.FLAWED,
                 problems=problems,
@@ -584,15 +561,15 @@ class LibraryManager:
             # Flawless victory.
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
-                library_name=library_name,
+                library_name=library_data.name,
                 library_version=library_version,
                 status=LibraryManager.LibraryStatus.GOOD,
                 problems=problems,
             )
-            details = f"Successfully loaded Library '{library_name}' from JSON file at {json_path}"
+            details = f"Successfully loaded Library '{library_data.name}' from JSON file at {json_path}"
             logger.info(details)
 
-        return RegisterLibraryFromFileResultSuccess(library_name=library_name)
+        return RegisterLibraryFromFileResultSuccess(library_name=library_data.name)
 
     def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
         try:
