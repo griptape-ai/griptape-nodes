@@ -63,7 +63,7 @@ def _run_init(
     _prompt_for_api_key(api_key=api_key)
     _prompt_for_libraries_to_register(register_advanced_library=register_advanced_library)
     _update_assets()
-    console.print("Initialization complete! You can now run the engine with 'griptape-nodes' (or just 'gtn').")
+    console.print("[bold green]Initialization complete![/bold green]")
 
 
 def _start_engine(*, no_update: bool) -> None:
@@ -74,6 +74,7 @@ def _start_engine(*, no_update: bool) -> None:
     """
     if not CONFIG_DIR.exists():
         # Default init flow if there is no config directory
+        console.print("[bold green]Config directory not found. Initializing...[/bold green]")
         _run_init()
         webbrowser.open(NODES_APP_URL)
 
@@ -81,6 +82,7 @@ def _start_engine(*, no_update: bool) -> None:
     if not no_update:
         _auto_update_self()
 
+    console.print("[bold green]Starting Griptape Nodes engine...[/bold green]")
     start_app()
 
 
@@ -276,6 +278,7 @@ def _get_latest_version(package: str) -> str:
 
 def _auto_update_self() -> None:
     """Automatically updates the script to the latest version if the user confirms."""
+    console.print("[bold green]Checking for updates...[/bold green]")
     current_version = __get_current_version()
     latest_version = _get_latest_version(PACKAGE_NAME)
 
