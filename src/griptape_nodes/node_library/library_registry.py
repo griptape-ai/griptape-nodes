@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING, Any, NamedTuple, Self, cast
 
 from griptape.mixins.singleton_mixin import SingletonMixin
+from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
@@ -14,6 +15,73 @@ logger = logging.getLogger("griptape_nodes")
 class LibraryNameAndVersion(NamedTuple):
     library_name: str
     library_version: str
+
+
+class LibraryDependencies(BaseModel):
+    dependencies: list[str] | None = None
+    pip_install_flags: list[str] | None = None
+
+
+class LibraryMetadata(BaseModel):
+    """Metadata that explains details about the library, including versioning and search details."""
+
+    author: str
+    description: str
+    library_version: str
+    engine_version: str
+    tags: list[str]
+    dependencies: LibraryDependencies | None = None
+    # If True, this library will be surfaced to Griptape Nodes customers when listing Node Libraries available to them.
+    is_griptape_nodes_searchable: bool = True
+
+
+class LibraryCategoryDefinition(BaseModel):
+    """Defines categories within a library, which influences how nodes are organized within an editor."""
+
+    title: str
+    description: str
+    color: str
+    icon: str
+
+
+class LibraryNodeMetadata(BaseModel):
+    """Metadata about each node within the library, which informs where in the hierarchy it sits, details on usage, and tags to assist search."""
+
+    category: str
+    description: str
+    display_name: str
+    tags: list[str] | None = None
+
+
+class LibraryNodeDefinition(BaseModel):
+    """Defines a node within a library, including class name and file name and metadata about the node."""
+
+    class_name: str
+    file_path: str
+    metadata: LibraryNodeMetadata
+
+
+class LibraryWorkflowDefinition(BaseModel):
+    """Defines a workflow within a library, which will be automatically registered with the library. Metadata about the template is stored within the workflow itself."""
+
+    file_path: str
+
+
+class LibraryScriptDefinition(BaseModel):
+    """Defines a script within a library, which will be installed with the library."""
+
+    file_path: str
+
+
+class LibrarySchema(BaseModel):
+    name: str
+    library_schema_version: str
+    metadata: LibraryMetadata
+    categories: list[dict[str, LibraryCategoryDefinition]]
+    nodes: list[LibraryNodeDefinition]
+    workflows: list[LibraryWorkflowDefinition] | None = None
+    scripts: list[LibraryScriptDefinition] | None = None
+    is_default_library: bool = False
 
 
 class LibraryRegistry(SingletonMixin):
