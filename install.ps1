@@ -22,6 +22,7 @@ ColorWrite "uv installed successfully." 'Green'
 
 ColorWrite "`nInstalling Griptape Nodes Engine...`n" 'Cyan'
 $uvPath = "$HOME\.local\bin\uv.exe"
+& $uvPath tool update-shell
 & $uvPath tool install --force --python python3.12 griptape-nodes > $null
 
 ColorWrite "**************************************" 'Green'
