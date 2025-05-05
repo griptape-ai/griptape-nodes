@@ -196,6 +196,31 @@ class WorkflowManager:
         )
         event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
 
+    def get_workflow_metadata(self, workflow_file_path: Path, block_name: str) -> list[re.Match[str]]:
+        """Get the workflow metadata for a given workflow file path.
+
+        Args:
+            workflow_file_path (Path): The path to the workflow file.
+            block_name (str): The name of the metadata block to search for.
+
+        Returns:
+            list[re.Match[str]]: A list of regex matches for the specified metadata block.
+
+        """
+        with workflow_file_path.open("r") as file:
+            workflow_content = file.read()
+
+        # Find the metadata block.
+        regex = r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
+        matches = list(
+            filter(
+                lambda m: m.group("type") == block_name,
+                re.finditer(regex, workflow_content),
+            )
+        )
+
+        return matches
+
     def print_workflow_load_status(self) -> None:
         workflow_file_paths = self.get_workflows_attempted_to_load()
         workflow_infos = []
@@ -484,19 +509,9 @@ class WorkflowManager:
             logger.error(details)
             return LoadWorkflowMetadataResultFailure()
 
-        # Open 'er up.
-        with complete_file_path.open("r") as file:
-            workflow_content = file.read()
-
         # Find the metadata block.
-        regex = r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
         block_name = "script"
-        matches = list(
-            filter(
-                lambda m: m.group("type") == block_name,
-                re.finditer(regex, workflow_content),
-            )
-        )
+        matches = self.get_workflow_metadata(complete_file_path, block_name=block_name)
         if len(matches) != 1:
             self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
                 status=WorkflowManager.WorkflowStatus.UNUSABLE,
