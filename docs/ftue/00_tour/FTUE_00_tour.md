@@ -75,7 +75,7 @@ The most important area to focus on initially is the left panel, the node librar
 
 ## Adding Nodes to the Workspace
 
-There are three interactive methods to creating nodes (and even more in Retained Mode):
+There are three interactive methods to creating nodes (and even more in [Retained Mode](../reference/retained_mode.md):
 
 <div style="display: flex; justify-content: space-between; gap: 20px; margin-bottom: 30px;">
   <div style="flex: 1;">
