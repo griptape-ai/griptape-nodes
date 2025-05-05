@@ -17,7 +17,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="GenerateImage",
     node_name="GenerateImage_1",
-    parent_flow_name="prompt_an_image",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "position": {"x": 0, "y": 0},
