@@ -29,7 +29,7 @@ Once you've logged in, you'll be presented with a setup screen which walks you t
 
 ## 2. Install Your Engine
 
-1. Copy the installation command from the **New Installation** section (it's the bit that starts with `curl`).
+1. On the **New Installation** tab, copy the installation command from the first step: **Iinstall Griptape nodes Engine** (it's the bit that starts with `curl`).
 
 1. Open a Terminal on your machine
 
@@ -79,9 +79,15 @@ Pressing Enter will use the default: `<current_working_directory>/GriptapeNodes`
 
 > You can always return to this dialog using the `gtn init` command if you need to make changes in the future.
 
-**Second**, you'll be prompted for your Griptape Cloud API Key. Return to the web browser and click the *Generate API Key* button. Copy that key and enter it in the next step.
+**Second**, you'll be prompted for your Griptape Cloud API Key. 
 
-![Installation Page wKey hint](assets/img/getting_started/getting_started-installation_page_key_hint.png)
+1. Return to the web browser and open **Step 3: Generate an API Key**.
+
+1. Click the *Generate API Key* button. 
+
+1. Copy that key and enter it in the next step.
+
+![Installation Page wKey hint](assets/img/getting_started/getting_started-installation_page_key_hint.webp)
 
 ```
 Workspace directory set to: /Users/user/Documents/local-dev/nodes-test-eng/GriptapeNodes
