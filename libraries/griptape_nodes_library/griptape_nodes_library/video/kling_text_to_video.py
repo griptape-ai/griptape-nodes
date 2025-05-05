@@ -25,6 +25,7 @@ def encode_jwt_token(ak: str, sk: str) -> str:
     token = jwt.encode(payload, sk, algorithm="HS256", headers=headers)
     return token
 
+
 class TextToVideo(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
