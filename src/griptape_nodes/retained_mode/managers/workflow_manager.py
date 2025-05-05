@@ -960,7 +960,7 @@ class WorkflowManager:
 
         ast_container = WorkflowManager.ASTContainer()
 
-        # Generate unique values code AST node
+        # Generate unique values code AST node.
         unique_values_node = WorkflowManager._generate_unique_values_code(
             unique_parameter_values=serialized_flow_commands.unique_parameter_values,
             prefix="top_level",
@@ -968,7 +968,7 @@ class WorkflowManager:
         )
         ast_container.add_node(unique_values_node)
 
-        # Extract create_flow_command from serialized_flow_commands
+        # See if this serialized flow has a create flow command; if it does, we'll need to insert that.
         create_flow_command = serialized_flow_commands.create_flow_command
 
         if create_flow_command is not None:
@@ -979,12 +979,15 @@ class WorkflowManager:
         # Generate assign flow context AST node
         assign_flow_context_node = WorkflowManager._generate_assign_flow_context(create_flow_command, import_recorder)
 
-        # Generate nodes in flow AST node
+        # Generate nodes in flow AST node. This will create the node and apply all element modifiers.
         nodes_in_flow = WorkflowManager._generate_nodes_in_flow(serialized_flow_commands, import_recorder)
 
-        # Add the nodes to the body of the with statement
+        # Add the nodes to the body of the Current Context flow's "with" statement
         assign_flow_context_node.body.extend(nodes_in_flow)
         ast_container.add_node(assign_flow_context_node)
+
+        # Now generate the connection code.
+        # TODO
 
         # Generate final code from ASTContainer
         ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
