@@ -791,6 +791,25 @@ class LibraryManager:
         # App just got init'd. See if there are library JSONs to load!
         self.load_all_libraries_from_config()
 
+        # We have to load all libraries before we attempt to load workflows.
+
+        # Load workflows specified by libraries.
+        library_workflow_files_to_register = []
+        library_result = self.on_list_registered_libraries_request(ListRegisteredLibrariesRequest())
+        if isinstance(library_result, ListRegisteredLibrariesResultSuccess):
+            for library_name in library_result.libraries:
+                try:
+                    library = LibraryRegistry.get_library(name=library_name)
+                except KeyError:
+                    # Skip it.
+                    logger.error("Could not find library '%s'", library_name)
+                    continue
+                library_data = library.get_library_data()
+                if library_data.workflows:
+                    for workflow in library_data.workflows:
+                        workflow_file_path = workflow.file_path
+                        library_workflow_files_to_register.append(workflow_file_path)
+
         # See if there are workflow JSONs to load!
         default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
         self._register_workflows_from_config(config_section=default_workflow_section)
