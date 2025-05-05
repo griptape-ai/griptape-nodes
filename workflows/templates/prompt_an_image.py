@@ -12,7 +12,7 @@ cmd.create_node(
 cmd.create_node(
     node_type="Note",
     node_name="NextStep",
-    metadata={"position": {"x": 0, "y": 450}, "size": {"width": 1000, "height": 200}},
+    metadata={"position": {"x": 500, "y": 450}, "size": {"width": 1000, "height": 200}},
 )
 cmd.create_node(
     node_type="GenerateImage",
