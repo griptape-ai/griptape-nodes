@@ -1,7 +1,7 @@
 from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd  # noqa: N813
 
 # Create flows
-cmd.create_flow(flow_name="translator")
+cmd.create_flow(flow_name="coordinating_agents")
 
 # Create nodes
 cmd.create_node(
@@ -17,7 +17,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="Agent",
     node_name="spanish_story",
-    parent_flow_name="translator",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "library_node_metadata": {
@@ -34,7 +33,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="Agent",
     node_name="to_english",
-    parent_flow_name="translator",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "library_node_metadata": {
@@ -51,7 +49,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="MergeTexts",
     node_name="prompt_header",
-    parent_flow_name="translator",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "library_node_metadata": {
@@ -68,7 +65,6 @@ cmd.create_node(
 cmd.create_node(
     node_type="DisplayText",
     node_name="english_story",
-    parent_flow_name="translator",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "library_node_metadata": {
@@ -89,7 +85,7 @@ cmd.set_value(
     "ReadMe.note",
     """This workflow serves as the lesson material for the tutorial located at:
 
-https://docs.griptapenodes.com/en/stable/ftue/02_translator/FTUE_02_translator/
+https://docs.griptapenodes.com/en/stable/ftue/02_coordinating_agents/FTUE_02_coordinating_agents/
 
 The concepts covered are:
 
@@ -263,9 +259,9 @@ cmd.connect("prompt_header.output", "to_english.prompt")
 # dependencies = []
 #
 # [tool.griptape-nodes]
-# name = "translator"
+# name = "coordinating_agents"
 # description = "Multiple agents, with different jobs."
-# image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/workflows/templates/thumbnail_translator.webp"
+# image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/workflows/templates/thumbnail_coordinating_agents.webp"
 # schema_version = "0.1.0"
 # engine_version_created_with = "0.14.1"
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]

@@ -22,9 +22,9 @@ Each tutorial builds upon the knowledge gained in previous lessons, gradually in
 
     This tutorial introduces you to one of the most popular and versatile nodes in the Griptape ecosystem.
 
-- # [Step 3: Coordinating Agents](../ftue/02_translator/FTUE_02_translator.md)
+- # [Step 3: Coordinating Agents](../ftue/02_coordinating_agents/FTUE_02_coordinating_agents.md)
 
-    ![img](assets/FTUE_02_translator.png)
+    ![img](assets/FTUE_02_coordinating_agents.png)
 
     Discover how to coordinate multiple agents to perform sequential tasks.
 

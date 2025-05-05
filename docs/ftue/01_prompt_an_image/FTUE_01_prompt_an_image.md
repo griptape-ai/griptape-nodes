@@ -108,4 +108,4 @@ The GenerateImage node is a fundamental building block for creative flows in Gri
 
 ## Next Up
 
-In the next section: [Coordinating Agents](../02_translator/FTUE_02_translator.md), we'll learn how to get AIs to team up and form a bucket-brigade through a workflow.
+In the next section: [Coordinating Agents](../02_coordinating_agents/FTUE_02_coordinating_agents.md), we'll learn how to get AIs to team up and form a bucket-brigade through a workflow.
