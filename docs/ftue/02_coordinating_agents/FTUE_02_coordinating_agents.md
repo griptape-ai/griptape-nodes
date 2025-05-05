@@ -17,10 +17,10 @@ Let's begin by examining a simple translation workflow that demonstrates these p
 
 ## Navigate to the Landing Page
 
-To begin this tutorial, go to the landing page via the nav bar with the Griptape Nodes logo in the top left. Locate and open the example workflow called "Translator" at the top of the page.
+To begin this tutorial, go to the landing page via the nav bar with the Griptape Nodes logo in the top left. Locate and open the example workflow called "coordinating_agents" at the top of the page.
 
 <p align="center">
-  <img src="../assets/translator_example.png" alt="Translator example">
+  <img src="../assets/coordinating_agents_example.png" alt="Coordinating Agents example">
 </p>
 
 ## Explore the Template Workflow

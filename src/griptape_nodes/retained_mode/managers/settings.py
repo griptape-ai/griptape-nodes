@@ -12,7 +12,7 @@ class AppInitializationComplete(BaseModel):
     workflows_to_register: list[str] = Field(
         default_factory=lambda: [
             str(xdg_data_home() / "griptape_nodes/workflows/templates/prompt_an_image.py"),
-            str(xdg_data_home() / "griptape_nodes/workflows/templates/translator.py"),
+            str(xdg_data_home() / "griptape_nodes/workflows/templates/coordinating_agents.py"),
             str(xdg_data_home() / "griptape_nodes/workflows/templates/compare_prompts.py"),
             str(xdg_data_home() / "griptape_nodes/workflows/templates/photography_team.py"),
         ]
