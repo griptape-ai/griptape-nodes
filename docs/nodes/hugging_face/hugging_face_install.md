@@ -96,7 +96,7 @@ For more information, visit the [official CLI documentation](https://huggingface
 
 ### 2. Login with Your Token
 
-In your terminal, authenticate with the access token you made earler:
+In your terminal, authenticate with the access token you made earlier:
 
 ```bash
 huggingface-cli login
