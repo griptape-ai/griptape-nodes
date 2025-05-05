@@ -958,6 +958,10 @@ class WorkflowManager:
         import_recorder.add_from_import("griptape_nodes.retained_mode.griptape_nodes", "GriptapeNodes")
         import_recorder.add_from_import("griptape_nodes.retained_mode.managers.context_manager", "ContextManager")
 
+        # CHEATING
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.flow_events", "CreateFlowRequest")
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeRequest")
+
         # Generate each section of code with AST.
         unique_values_code = self._generate_unique_values_code(
             unique_parameter_values=serialized_flow_commands.unique_parameter_values,
@@ -975,7 +979,7 @@ class WorkflowManager:
             unique_values_code,
             flow_context_code,
         ]
-        final_code_output = "\n".join(code_segments)
+        final_code_output = "\n\n".join(code_segments)
 
         relative_serialized_file_path = f"{file_name}_serialize_test.py"
         serialized_file_path = config_manager.workspace_path.joinpath(relative_serialized_file_path)
@@ -1047,12 +1051,13 @@ class WorkflowManager:
 
         # Generate a comment explaining what we're doing:
         comment_text = (
-            "# 1. We've collated all of the unique parameter values into a list so that we do not have to duplicate them.\n"
-            "#    This minimizes the size of the code, especially for large objects like serialized image files.\n"
-            "# 2. We're using a prefix so that it's clear which Flow these values are associated with.\n"
-            "# 3. The values are serialized using pickle, which is a binary format. This makes them harder to read, but makes\n"
-            "#    them consistently save and load. It allows us to serialize complex objects like custom classes, which otherwise\n"
-            "#    would be difficult to serialize.\n"
+            "\n"
+            "1. We've collated all of the unique parameter values into a list so that we do not have to duplicate them.\n"
+            "   This minimizes the size of the code, especially for large objects like serialized image files.\n"
+            "2. We're using a prefix so that it's clear which Flow these values are associated with.\n"
+            "3. The values are serialized using pickle, which is a binary format. This makes them harder to read, but makes\n"
+            "   them consistently save and load. It allows us to serialize complex objects like custom classes, which otherwise\n"
+            "   would be difficult to serialize.\n"
         )
 
         # Generate the list of unique values
@@ -1096,17 +1101,32 @@ class WorkflowManager:
     def _generate_flow_context(
         possible_create_flow_command: CreateFlowRequest | None, import_recorder: ImportRecorder
     ) -> str:
+        import ast
+        from dataclasses import fields, is_dataclass
+
         flow_code_ast = []
 
         if possible_create_flow_command:
             # Comment for creating a new Flow
             comment_text = (
-                "# Creating a new Flow and assigning that as the current context.\n"
-                "# This Flow will be used to manage the following nodes and connections."
+                "\n"
+                "Creating a new Flow and assigning that as the current context.\n"
+                "This Flow will be used to manage the following nodes and connections."
             )
             flow_code_ast.append(
                 ast.Expr(value=ast.Constant(value=comment_text, lineno=1, col_offset=0), lineno=1, col_offset=0)
             )
+
+            # Prepare arguments for CreateFlowRequest
+            create_flow_request_args = []
+
+            if is_dataclass(possible_create_flow_command):
+                for field in fields(possible_create_flow_command):
+                    field_value = getattr(possible_create_flow_command, field.name)
+                    if field_value != field.default:
+                        create_flow_request_args.append(
+                            ast.keyword(arg=field.name, value=ast.Constant(value=field_value))
+                        )
 
             # Create flow result
             create_flow_result = ast.Assign(
@@ -1119,7 +1139,15 @@ class WorkflowManager:
                         lineno=1,
                         col_offset=0,
                     ),
-                    args=[ast.Constant(value=possible_create_flow_command, lineno=1, col_offset=0)],
+                    args=[
+                        ast.Call(
+                            func=ast.Name(id="CreateFlowRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                            args=[],
+                            keywords=create_flow_request_args,
+                            lineno=1,
+                            col_offset=0,
+                        )
+                    ],
                     keywords=[],
                     lineno=1,
                     col_offset=0,
@@ -1136,10 +1164,16 @@ class WorkflowManager:
                         ast.withitem(
                             context_expr=ast.Call(
                                 func=ast.Attribute(
-                                    value=ast.Attribute(
-                                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                                        attr="ContextManager",
-                                        ctx=ast.Load(),
+                                    value=ast.Call(
+                                        func=ast.Attribute(
+                                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                                            attr="ContextManager",
+                                            ctx=ast.Load(),
+                                            lineno=1,
+                                            col_offset=0,
+                                        ),
+                                        args=[],
+                                        keywords=[],  # No arguments for ContextManager constructor
                                         lineno=1,
                                         col_offset=0,
                                     ),
@@ -1164,82 +1198,15 @@ class WorkflowManager:
                             optional_vars=None,
                         )
                     ],
-                    body=[],
-                    lineno=1,
-                    col_offset=0,
-                )
-            )
-        else:
-            # Comment for deserializing into the existing Flow
-            comment_text = (
-                "# Deserializing into the Flow that is present in the current context.\n"
-                "# This Flow will be used to manage the following nodes and connections."
-            )
-            flow_code_ast.append(
-                ast.Expr(value=ast.Constant(value=comment_text, lineno=1, col_offset=0), lineno=1, col_offset=0)
-            )
-
-            # With statement for the existing flow context
-            flow_code_ast.append(
-                ast.With(
-                    items=[
-                        ast.withitem(
-                            context_expr=ast.Call(
-                                func=ast.Attribute(
-                                    value=ast.Attribute(
-                                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                                        attr="ContextManager",
-                                        ctx=ast.Load(),
-                                        lineno=1,
-                                        col_offset=0,
-                                    ),
-                                    attr="flow",
-                                    ctx=ast.Load(),
-                                    lineno=1,
-                                    col_offset=0,
-                                ),
-                                args=[
-                                    ast.Call(
-                                        func=ast.Attribute(
-                                            value=ast.Attribute(
-                                                value=ast.Name(
-                                                    id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0
-                                                ),
-                                                attr="ContextManager",
-                                                ctx=ast.Load(),
-                                                lineno=1,
-                                                col_offset=0,
-                                            ),
-                                            attr="get_current_flow_name",
-                                            ctx=ast.Load(),
-                                            lineno=1,
-                                            col_offset=0,
-                                        ),
-                                        args=[],
-                                        keywords=[],
-                                        lineno=1,
-                                        col_offset=0,
-                                    )
-                                ],
-                                keywords=[],
-                                lineno=1,
-                                col_offset=0,
-                            ),
-                            optional_vars=None,
-                        )
-                    ],
-                    body=[],
+                    body=[ast.Pass()],
                     lineno=1,
                     col_offset=0,
                 )
             )
 
-        # Wrap in a Module node to conform to ast.unparse expectations
-        module_node = ast.Module(body=flow_code_ast, type_ignores=[])
-
-        # Convert AST to source code
-        flow_code = ast.unparse(module_node)
-        return flow_code
+        # Create the final AST
+        full_ast = ast.Module(body=flow_code_ast, type_ignores=[])
+        return ast.unparse(full_ast)
 
     @staticmethod
     def _generate_flow_node_creation(serialized_flow_commands: SerializedFlowCommands, prefix: str) -> list:
