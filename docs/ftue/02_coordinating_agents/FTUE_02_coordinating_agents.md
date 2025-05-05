@@ -1,4 +1,4 @@
-# Coordinating Agents
+# Lesson 3: Coordinating Agents
 
 Welcome to the third tutorial in our Griptape Nodes series! In this guide, you'll learn how to coordinate multiple agents within a workflow to perform sequential tasks—specifically, translating stories between languages and summarizing them.
 
@@ -188,4 +188,4 @@ In this tutorial, we covered:
 
 ## Next Up
 
-In the next section: [Compare Prompts](../03_compare_prompts/FTUE_03_compare_prompts.md), we'll learn how to get AIs to bucket-brigade, where agents pass work sequentially, through flows!
+In the next section: [Lesson 4: Compare Prompts](../03_compare_prompts/FTUE_03_compare_prompts.md), we'll learn how to get AIs to bucket-brigade, where agents pass work sequentially, through flows!

@@ -1,4 +1,4 @@
-# Compare Prompts
+# Lesson 4: Compare Prompts
 
 Welcome to the fourth tutorial in our Griptape Nodes series! This guide explores how different prompting methods can significantly enhance your AI-generated images.
 
@@ -150,4 +150,4 @@ These techniques demonstrate the power of prompt engineering—the art of crafti
 
 ## Next Up
 
-In the next section: [Build a Photography Team](../04_photography_team/FTUE_04_photography_team.md), we'll learn about Rulesets, Tools, and converting Agents into tools to achieve even more sophisticated coordination!
+In the next section: [Lesson 5: Build a Photography Team](../04_photography_team/FTUE_04_photography_team.md), we'll learn about Rulesets, Tools, and converting Agents into tools to achieve even more sophisticated coordination!

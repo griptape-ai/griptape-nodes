@@ -6,7 +6,7 @@ Each tutorial builds upon the knowledge gained in previous lessons, gradually in
 
 <div class="grid grid-wide cards" markdown>
 
-- # [Step 1. Getting Started](../ftue/00_tour/FTUE_00_tour.md)
+- # [Lesson 1. Getting Started](../ftue/00_tour/FTUE_00_tour.md)
 
     ![img](00_tour/assets/workspace_interface.png)
 
@@ -14,7 +14,7 @@ Each tutorial builds upon the knowledge gained in previous lessons, gradually in
 
     Explore the interface, and understand how to add nodes to your workspace. This simple but foundational tutorial will prepare you for all future workflows.
 
-- # [Step 2: Prompt an Image](../ftue/01_prompt_an_image/FTUE_01_prompt_an_image.md)
+- # [Lesson 2: Prompt an Image](../ftue/01_prompt_an_image/FTUE_01_prompt_an_image.md)
 
     ![img](assets/FTUE_01_prompt_an_image.png)
 
@@ -22,7 +22,7 @@ Each tutorial builds upon the knowledge gained in previous lessons, gradually in
 
     This tutorial introduces you to one of the most popular and versatile nodes in the Griptape ecosystem.
 
-- # [Step 3: Coordinating Agents](../ftue/02_coordinating_agents/FTUE_02_coordinating_agents.md)
+- # [Lesson 3: Coordinating Agents](../ftue/02_coordinating_agents/FTUE_02_coordinating_agents.md)
 
     ![img](assets/FTUE_02_coordinating_agents.png)
 
@@ -30,7 +30,7 @@ Each tutorial builds upon the knowledge gained in previous lessons, gradually in
 
     Examine a workflow that translates content between languages, teaching you the fundamentals of agent connections and execution chains. This tutorial introduces the concept of multi-step workflows.
 
-- # [Step 4: Compare Prompts](../ftue/03_compare_prompts/FTUE_03_compare_prompts.md)
+- # [Lesson 4: Compare Prompts](../ftue/03_compare_prompts/FTUE_03_compare_prompts.md)
 
     ![img](assets/FTUE_03_compare_prompts.png)
 
@@ -38,7 +38,7 @@ Each tutorial builds upon the knowledge gained in previous lessons, gradually in
 
     Compare basic prompts, GenerateImage "enhanced prompts", and custom agent-enhanced prompts to see how each affects your results. Learn how to craft detailed instructions for more precise creative control.
 
-- # [Step 5: Build a Photography Team](../ftue/04_photography_team/FTUE_04_photography_team.md)
+- # [Lesson 5: Build a Photography Team](../ftue/04_photography_team/FTUE_04_photography_team.md)
 
     ![img](assets/FTUE_04_photography_team.png)
 
@@ -59,4 +59,4 @@ By completing this learning path, you'll master:
 - Converting agents into reusable tools
 - Coordinating multiple agents in a single system
 
-Ready to start your journey with Griptape Nodes? Let's learn about the interface in [Getting Started](00_tour/FTUE_00_tour.md)
+Ready to start your journey with Griptape Nodes? Let's learn about the interface in [Lesson&nbsp;1:&nbsp;Getting Started](00_tour/FTUE_00_tour.md)
