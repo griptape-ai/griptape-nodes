@@ -237,7 +237,10 @@ def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None 
         xdg_data_home() / "griptape_nodes/libraries/griptape_nodes_library/griptape_nodes_library.json"
     )
     extra_libraries = [
-        str(xdg_data_home() / "griptape_nodes/libraries/griptape_nodes_advanced_media_library/griptape_nodes_library.json")
+        str(
+            xdg_data_home()
+            / "griptape_nodes/libraries/griptape_nodes_advanced_media_library/griptape_nodes_library.json"
+        )
     ]
     libraries_to_merge = [default_library]
 
