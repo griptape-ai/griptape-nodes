@@ -1,4 +1,5 @@
 import uuid
+from typing import Any
 
 from griptape.artifacts import BaseArtifact, ImageUrlArtifact
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
@@ -9,13 +10,21 @@ from griptape.tasks import PromptImageGenerationTask
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
-DEFAULT_MODEL = "dall-e-3"
+CONNECTED_CHOICE = "use incoming config"
+MODEL_CHOICES = [
+    "dall-e-3",
+    CONNECTED_CHOICE,
+]
+DEFAULT_MODEL = MODEL_CHOICES[0]
 DEFAULT_QUALITY = "hd"
 DEFAULT_STYLE = "natural"
+AVAILABLE_SIZES = ["1024x1024", "1024x1792", "1792x1024"]
+DEFAULT_SIZE = AVAILABLE_SIZES[0]
 
 
 class GenerateImage(ControlNode):
@@ -38,17 +47,6 @@ class GenerateImage(ControlNode):
         )
         self.add_parameter(
             Parameter(
-                name="image_model_config",
-                input_types=["Image Generation Driver"],
-                output_type="Image Generation Driver",
-                type="Image Generation Driver",
-                tooltip="None",
-                default_value="",
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
                 name="prompt",
                 input_types=["str"],
                 output_type="str",
@@ -59,6 +57,38 @@ class GenerateImage(ControlNode):
                 ui_options={"multiline": True, "placeholder_text": "Enter your image generation prompt here."},
             )
         )
+        self.add_parameter(
+            Parameter(
+                name="model",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value=DEFAULT_MODEL,
+                tooltip="Select the model you want to use from the available options.",
+                traits={Options(choices=MODEL_CHOICES)},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="image_size",
+                type="str",
+                default_value=DEFAULT_SIZE,
+                tooltip="Select the size of the generated image.",
+                traits={Options(choices=AVAILABLE_SIZES)},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="image_model_config",
+                input_types=["Image Generation Driver"],
+                output_type="Image Generation Driver",
+                type="Image Generation Driver",
+                tooltip="None",
+                default_value="",
+                allowed_modes={ParameterMode.INPUT},  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/877
+            )
+        )
+
         self.add_parameter(
             Parameter(
                 name="enhance_prompt",
@@ -97,7 +127,6 @@ class GenerateImage(ControlNode):
         self.add_node_element(logs_group)
 
     def validate_node(self) -> list[Exception] | None:
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/871
         exceptions = []
         api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         if not api_key:
@@ -125,7 +154,7 @@ class GenerateImage(ControlNode):
         if exception:
             raise exception
 
-        agent = params.get("agent", None)
+        agent = self.get_parameter_value("agent")
         if not agent:
             prompt_driver = GriptapeCloudPromptDriver(
                 model="gpt-4o",
@@ -170,7 +199,8 @@ Focus on qualities that will make this the most professional looking photo in th
             driver = driver_val
         else:
             driver = GriptapeCloudImageGenerationDriver(
-                model=params.get("model", DEFAULT_MODEL),
+                model=self.get_parameter_value("model"),
+                image_size=self.get_parameter_value("image_size"),
                 api_key=self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
             )
         kwargs["image_generation_driver"] = driver
@@ -186,6 +216,24 @@ Focus on qualities that will make this the most professional looking photo in th
         # Reset the agent
         agent._tasks = []
 
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        # Show 'image_model_config' input only if 'model' is set to CONNECTED_CHOICE.
+        if parameter.name == "model":
+            # Find the image_model_config parameter and hide it
+            image_model_settings_param = self.get_parameter_by_name("image_model_config")
+            image_size_param = self.get_parameter_by_name("image_size")
+            if value == CONNECTED_CHOICE and image_model_settings_param and image_size_param:
+                image_model_settings_param._ui_options["hide"] = False
+                image_size_param._ui_options["hide"] = True
+            elif value != CONNECTED_CHOICE and image_model_settings_param and image_size_param:
+                image_model_settings_param._ui_options["hide"] = True
+                image_size_param._ui_options["hide"] = False
+
+            # Add this to the modified parameters set so we can cascade the change.
+            modified_parameters_set.add("image_model_config")
+
+        return super().after_value_set(parameter, value, modified_parameters_set)
+
     def after_incoming_connection(
         self,
         source_node: BaseNode,  # noqa: ARG002
@@ -199,6 +247,17 @@ Focus on qualities that will make this the most professional looking photo in th
             # hey.. what if we just remove the property mode from the prompt parameter?
             target_parameter.allowed_modes.remove(ParameterMode.PROPERTY)
 
+        # Hide individual model parameters
+        if target_parameter.name == "image_model_config":
+            model_param = self.get_parameter_by_name("model")
+            image_size_param = self.get_parameter_by_name("image_size")
+
+            # If the incoming connection is to the model parameter, hide it
+            if model_param:
+                model_param._ui_options["hide"] = True
+            if image_size_param:
+                image_size_param._ui_options["hide"] = True
+
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,  # noqa: ARG002
@@ -211,6 +270,17 @@ Focus on qualities that will make this the most professional looking photo in th
             self._has_connection_to_prompt = False
             # If we have no connections to the prompt parameter, add the property mode back
             target_parameter.allowed_modes.add(ParameterMode.PROPERTY)
+
+        # Show individual model parameters
+        if target_parameter.name == "image_model_config":
+            model_param = self.get_parameter_by_name("model")
+            image_size_param = self.get_parameter_by_name("image_size")
+
+            # If the incoming connection is to the model parameter, show it
+            if model_param:
+                model_param._ui_options["hide"] = False
+            if image_size_param and self.get_parameter_value("model") != CONNECTED_CHOICE:
+                image_size_param._ui_options["hide"] = False
 
     def _create_image(self, agent: Agent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)
