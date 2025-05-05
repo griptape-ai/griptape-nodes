@@ -75,7 +75,7 @@ The most important area to focus on initially is the left panel, the node librar
 
 ## Adding Nodes to the Workspace
 
-There are three interactive methods to creating nodes (and even more in [Retained Mode](../reference/retained_mode.md):
+There are three interactive methods to creating nodes (and even more in [Retained Mode](../../reference/retained_mode.md))
 
 <div style="display: flex; justify-content: space-between; gap: 20px; margin-bottom: 30px;">
   <div style="flex: 1;">
@@ -111,18 +111,26 @@ After adding a node, you can:
 
 ## Connecting Nodes
 
-Using what you know, let's create these nodes:
+Let's create some nodes using the first technique mentioned above - dragging and dropping a node from the library to the workspace to create three nodes.
 
-1. An **Agent** ( agents > Agent )
-    \- This is an agent that interacts with LLMs (Like ChatGPT, or Claude)
-1. A **FloatInput** ( number > FloatInput )
-    \- A node to input decimal numbers (floats)
-1. A **TextInput** ( text > TextInput )
-    \- A node to input text
+  1. An **Agent** ( agents > Agent )
+      \- This is an agent that interacts with LLMs (Like OpenAI ChatGPT or Anthropic Claude)
 
-<p align="center">
-    <img src="../assets/nodes_in_workspace.png" alt="Node on the workspace">
-  </p>
+      1. Open the agents category in the sidebar
+      1. Drag the Agent node to the workspace and release to create it
+
+        !!! info
+            For brevity, we'll describe this as ( category > Node ), so for an Agent, we'd shorthand the above with (&nbsp;agents&nbsp;>&nbsp;Agent&nbsp;).  Try the same process with the next two nodes.
+
+
+  1. A **FloatInput** ( number > FloatInput )
+      \- A node to input decimal numbers (floats)
+  1. A **TextInput** ( text > TextInput )
+      \- A node to input text
+
+    <p align="center">
+      <img src="../assets/nodes_in_workspace.png" alt="Node on the workspace">
+    </p>
 
 Experiment with connections by dragging from ports on both input nodes to various ports on the Agent. Try multiple combinations and observe that not all connections succeed.
 
@@ -131,7 +139,7 @@ This happens because parameters can only connect directly when their data types 
 - The **TextInput** node outputs **text**, so it can connect to any Agent parameter that accepts text.
 - The **FloatInput** node outputs decimal numbers (**floats**), which can't connect to any parameter on the Agent.
 
-Don't worry that you can't connect the FloatInput to anything - that's exactly the point. This node was included here solely to demonstrate how not all parameters can connect to each other.
+Don't worry that you can't connect the FloatInput to anything - that's exactly the point. This node was included _here_ solely to demonstrate how not all parameters can connect to each other.  The FloatInput node is indeed very useful, it's just not one we can use with the other nodes currently in _this_ workflow.
 
 !!! Pro tip "Pro Tip"
 
@@ -151,17 +159,21 @@ For now, lets try another method to wipe the slate clean, and get a real AI inte
 
 1. Type a question into the agent's prompt field. You can use "Who trained you?" to verify the AI service, or simply enter any question you'd normally ask a chatbot.
 
+    <p align="center">
+      <img src="../assets/eg_prompt.png" alt="Example prompt" width="200">
+    </p>
+
 1. Click the play button icon in the top right corner of the agent to run the node
 
     <p align="center">
-    <img src="../assets/run_node.png" alt="Run the node" width="200">
+      <img src="../assets/run_node.png" alt="Run the node" width="200">
     </p>
 
 1. When text appears, read the output.
 
-You just interacted with a Large Language Model (LLM). If you kept the default settings, you specifically used OpenAI's ChatGPT (GPT-4.1).
+You just interacted with a Large Language Model (LLM). If you kept the default settings, you specifically used OpenAI ChatGPT (GPT-4.1).
 
-While this experience might seem similar to using ChatGPT on the web, the real power comes from using LLMs alongside other components in Griptape Nodes. Take another look at the library panel on the left to see all the other nodes available. We're just getting started—there's so much more to explore!
+While this experience might seem similar to using OpenAI ChatGPT or Anthropic Claude on the web, the real power comes from using LLMs alongside other components in Griptape Nodes. Take another look at the library panel on the left to see all the other nodes available. We're just getting started—there's so much more to explore!
 
 ## Summary
 
