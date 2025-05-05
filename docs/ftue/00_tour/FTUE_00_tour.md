@@ -160,7 +160,7 @@ For now, lets try another method to wipe the slate clean, and get a real AI inte
 1. Type a question into the agent's prompt field. You can use "Who trained you?" to verify the AI service, or simply enter any question you'd normally ask a chatbot.
 
     <p align="center">
-      <img src="../assets/eg_prompt.png" alt="Example prompt" width="200">
+      <img src="../assets/eg_prompt.png" alt="Example prompt" width="300">
     </p>
 
 1. Click the play button icon in the top right corner of the agent to run the node
