@@ -1,0 +1,93 @@
+.body,
+
+/* Make youtube videos full screen */
+iframe {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+/* Grid Layout */
+.grid {
+  grid-template-columns: 1fr !important;
+}
+
+.grid ul {
+  margin: 0 !important;
+  list-style: none;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 2em !important;
+  padding: 0;
+}
+
+.grid li {
+  margin: 0;
+  flex: 1 0 45% !important;
+  padding: 1.25em;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 0px !important;
+  border-radius: 0.5em !important;
+  transition: all 0.5s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.grid-wide li {
+  flex: 1 0 100% !important;
+}
+
+.grid > ul li > h1 {
+  margin: 0px;
+  display: block;
+  font-size: 1.5em;
+}
+.grid > ul li:hover {
+  box-shadow: 5px 10px 0px rgba(0, 0, 0, 0.7);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.grid ul li h2 {
+  margin: 0px;
+  display: block;
+  font-weight: 400;
+  font-size: 1.2em;
+}
+.grid ul li > hr {
+  margin: 0.5em 0;
+}
+
+.grid ul li > p {
+  font-weight: 100;
+}
+
+.grid ul li img {
+  float: left;
+  margin-right: 2em;
+  width: 30%;
+}
+
+/* Read the docs */
+.rst-versions.rst-badge {
+  bottom: 80px !important;
+}
+.grid ul li a {
+  color: #29b6f6 !important;
+  text-decoration: none;
+}
+
+.grid ul li a:hover {
+  color: white !important;
+  /* text-decoration: underline; */
+}
+
+.grid > ul li > h1 > a::after {
+  content: "→";
+  margin-left: 0.3em;
+  font-size: 0.9em;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+
+.grid > ul li > h1 > a:hover::after {
+  opacity: 1;
+}
