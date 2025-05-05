@@ -10,7 +10,7 @@ Each tutorial builds upon the knowledge gained in previous lessons, gradually in
 
     ![img](00_tour/assets/workspace_interface.png)
 
-    Now that you've [installed](../getting_started.md) the Griptape Nodes Editor, it's time to launch and work in Griptape Nodes.
+    Now that you've [installed](../installation.md) the Griptape Nodes Editor, it's time to launch and work in Griptape Nodes.
 
     Explore the interface, and understand how to add nodes to your workspace. This simple but foundational tutorial will prepare you for all future workflows.
 

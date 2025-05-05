@@ -46,7 +46,7 @@ Need to part ways with Griptape Nodes? It's a simple goodbye with a single comm
 griptape-nodes self uninstall
 ```
 
-When regret inevitably washes over you, have no fear. Open arms await; just revisit [Getting Started](getting_started.md)
+When regret inevitably washes over you, have no fear. Open arms await; just revisit [installation](installation.md)
 
 ## How do I update Griptape Nodes?
 
@@ -68,7 +68,7 @@ gtn assets update
 
 ## I'm seeing "failed to locate pyvenv.cfg: The system cannot find the file specified." - What should I do?
 
-It is possible, that during a previous uninstall things were not _fully_ uninstalled. Simply perform an uninstall again, and then [re-install](getting_started.md).
+It is possible, that during a previous uninstall things were not _fully_ uninstalled. Simply perform an uninstall again, and then [re-install](installation.md).
 
 ## I'm seeing "Attempted to create a Flow with a parent 'None', but no parent with that name could be found." - What should I do?
 

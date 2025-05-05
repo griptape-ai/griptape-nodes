@@ -62,7 +62,7 @@ nav:
   - Home:
       - Overview: index.md
       - Getting Started:
-          - Installation: getting_started.md
+          - Installation: installation.md
           - New Users Start here:
               - Lesson Overview: ftue/FTUE.md
               - 1. Getting Started: ftue/00_tour/FTUE_00_tour.md
