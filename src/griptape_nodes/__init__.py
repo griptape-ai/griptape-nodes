@@ -233,8 +233,12 @@ def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None 
         config_source="user_config",
         default=config_manager.get_config_value(key, config_source="default_config", default=[]),
     )
-    default_library = str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")
-    extra_libraries = [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library_extras.json")]
+    default_library = str(
+        xdg_data_home() / "griptape_nodes/libraries/griptape_nodes_library/griptape_nodes_library.json"
+    )
+    extra_libraries = [
+        str(xdg_data_home() / "griptape_nodes/libraries/griptape_nodes_advanced_library/griptape_nodes_library.json")
+    ]
     libraries_to_merge = [default_library]
 
     if register_advanced_library is None:
