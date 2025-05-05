@@ -13,7 +13,7 @@ cmd.create_node(
 cmd.create_node(
     node_type="Note",
     node_name="Congratulations",
-    metadata={"position": {"x": 4600, "y": 1500}, "size": {"width": 650, "height": 150}},
+    metadata={"position": {"x": 5100, "y": 1500}, "size": {"width": 650, "height": 150}},
 )
 cmd.create_node(
     node_type="Note",
