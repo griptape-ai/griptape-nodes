@@ -954,30 +954,94 @@ class WorkflowManager:
             return SaveWorkflowResultFailure()
         serialized_flow_commands = serialized_flow_result.serialized_flow_commands
 
+        import_recorder = WorkflowManager.ImportRecorder()
+        import_recorder.add_from_import("griptape_nodes.retained_mode.griptape_nodes", "GriptapeNodes")
+        import_recorder.add_from_import("griptape_nodes.retained_mode.managers.context_manager", "ContextManager")
+
         # Generate each section of code with AST.
         unique_values_code = self._generate_unique_values_code(
-            unique_parameter_values=serialized_flow_commands.unique_parameter_values, prefix="top_level"
+            unique_parameter_values=serialized_flow_commands.unique_parameter_values,
+            prefix="top_level",
+            import_recorder=import_recorder,
         )
         # Generate the top-level flow context code.
         flow_context_code = self._generate_flow_context(
-            possible_create_flow_command=serialized_flow_commands.create_flow_command
+            possible_create_flow_command=serialized_flow_commands.create_flow_command, import_recorder=import_recorder
         )
+
+        # Assemble all segments.
+        code_segments = [
+            import_recorder.generate_imports(),
+            unique_values_code,
+            flow_context_code,
+        ]
+        final_code_output = "\n".join(code_segments)
 
         relative_serialized_file_path = f"{file_name}_serialize_test.py"
         serialized_file_path = config_manager.workspace_path.joinpath(relative_serialized_file_path)
         with serialized_file_path.open("w") as file:
-            file.write(unique_values_code)
-            file.write(flow_context_code)
+            file.write(final_code_output)
 
         return SaveWorkflowResultSuccess(file_path=str(file_path))
 
+    @dataclass
+    class ImportRecorder:
+        """Recorder to keep track of imports and generate code for them."""
+
+        imports: set[str]
+        from_imports: dict[str, set[str]]
+
+        def __init__(self) -> None:
+            """Initialize the recorder."""
+            self.imports = set()
+            self.from_imports = {}
+
+        def add_import(self, module_name: str) -> None:
+            """Add an import to the recorder.
+
+            Args:
+                module_name (str): The module name to import.
+            """
+            self.imports.add(module_name)
+
+        def add_from_import(self, module_name: str, class_name: str) -> None:
+            """Add a from-import to the recorder.
+
+            Args:
+                module_name (str): The module name to import from.
+                class_name (str): The class name to import.
+            """
+            if module_name not in self.from_imports:
+                self.from_imports[module_name] = set()
+            self.from_imports[module_name].add(class_name)
+
+        def generate_imports(self) -> str:
+            """Generate the import code from the recorded imports.
+
+            Returns:
+                str: The generated code.
+            """
+            import_lines = []
+            for module_name in sorted(self.imports):
+                import_lines.append(f"import {module_name}")  # noqa: PERF401
+
+            for module_name, class_names in sorted(self.from_imports.items()):
+                sorted_class_names = sorted(class_names)
+                import_lines.append(f"from {module_name} import {', '.join(sorted_class_names)}")
+
+            return "\n".join(import_lines)
+
     @staticmethod
-    def _generate_unique_values_code(unique_parameter_values: list[Any], prefix: str) -> str:
+    def _generate_unique_values_code(
+        unique_parameter_values: list[Any], prefix: str, import_recorder: ImportRecorder
+    ) -> str:
+        import_recorder.add_import("pickle")
+
         # Serialize the unique values as pickled strings.
         unique_parameter_byte_strs = []
         for unique_parameter_value in unique_parameter_values:
             unique_parameter_bytes = pickle.dumps(unique_parameter_value)
-            # Since we'll be serializing this as a code-generation string, we'll use latin1 encoding. utf-8 could generate invalid sequences.
+            # Encode the bytes as a string using latin1
             unique_parameter_byte_str = unique_parameter_bytes.decode("latin1")
             unique_parameter_byte_strs.append(unique_parameter_byte_str)
 
@@ -1005,7 +1069,7 @@ class WorkflowManager:
                             lineno=1,
                             col_offset=0,
                         ),
-                        args=[ast.Constant(value=byte_str, lineno=1, col_offset=0)],
+                        args=[ast.Constant(value=byte_str.encode("latin1"), lineno=1, col_offset=0)],
                         keywords=[],
                         lineno=1,
                         col_offset=0,
@@ -1020,15 +1084,18 @@ class WorkflowManager:
             col_offset=0,
         )
 
-        # Create the final code string
-        unique_values_code = ast.unparse(unique_values_ast)
-
-        # Combine comment and code
-        full_code = comment_text + "\n" + unique_values_code
-        return full_code
+        # Create the final AST with comments
+        module_body = [
+            ast.Expr(value=ast.Constant(value=comment_text, lineno=1, col_offset=0), lineno=1, col_offset=0),
+            unique_values_ast,
+        ]
+        full_ast = ast.Module(body=module_body, type_ignores=[])
+        return ast.unparse(full_ast)
 
     @staticmethod
-    def _generate_flow_context(possible_create_flow_command: CreateFlowRequest | None) -> str:
+    def _generate_flow_context(
+        possible_create_flow_command: CreateFlowRequest | None, import_recorder: ImportRecorder
+    ) -> str:
         flow_code_ast = []
 
         if possible_create_flow_command:
@@ -1173,3 +1240,50 @@ class WorkflowManager:
         # Convert AST to source code
         flow_code = ast.unparse(module_node)
         return flow_code
+
+    @staticmethod
+    def _generate_flow_node_creation(serialized_flow_commands: SerializedFlowCommands, prefix: str) -> list:
+        body = []
+
+        # Comment for creating nodes
+        comment_text = "# Creating all nodes in this Flow."
+        body.append(ast.Expr(value=ast.Constant(value=comment_text, lineno=1, col_offset=0), lineno=1, col_offset=0))
+
+        # Create nodes
+        for idx, node_command in enumerate(serialized_flow_commands.serialized_node_commands):
+            node_var_name = f"{prefix}_node{idx}_name"
+            node_creation = ast.Assign(
+                targets=[ast.Name(id=node_var_name, ctx=ast.Store(), lineno=1, col_offset=0)],
+                value=ast.Attribute(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="handle_request",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="CreateNodeRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                                args=[ast.Constant(value=node_command, lineno=1, col_offset=0)],
+                                keywords=[],
+                                lineno=1,
+                                col_offset=0,
+                            )
+                        ],
+                        keywords=[],
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    attr="name",
+                    ctx=ast.Load(),
+                    lineno=1,
+                    col_offset=0,
+                ),
+                lineno=1,
+                col_offset=0,
+            )
+            body.append(node_creation)
+
+        return body
