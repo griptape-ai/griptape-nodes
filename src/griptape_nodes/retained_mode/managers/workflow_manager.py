@@ -958,33 +958,38 @@ class WorkflowManager:
         import_recorder.add_from_import("griptape_nodes.retained_mode.griptape_nodes", "GriptapeNodes")
         import_recorder.add_from_import("griptape_nodes.retained_mode.managers.context_manager", "ContextManager")
 
-        # CHEATING
-        import_recorder.add_from_import("griptape_nodes.retained_mode.events.flow_events", "CreateFlowRequest")
-        import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeRequest")
+        ast_container = WorkflowManager.ASTContainer()
 
-        # Generate each section of code with AST.
-        unique_values_code = self._generate_unique_values_code(
+        # Generate unique values code AST node
+        unique_values_node = WorkflowManager._generate_unique_values_code(
             unique_parameter_values=serialized_flow_commands.unique_parameter_values,
             prefix="top_level",
             import_recorder=import_recorder,
         )
-        # Generate the top-level flow context code.
-        flow_context_code = self._generate_flow_context(
-            possible_create_flow_command=serialized_flow_commands.create_flow_command, import_recorder=import_recorder
-        )
+        ast_container.add_node(unique_values_node)
 
-        nodes_in_flow_code = self._generate_nodes_in_flow(
-            serialized_node_commands=serialized_flow_commands.serialized_node_commands, import_recorder=import_recorder
-        )
+        # Extract create_flow_command from serialized_flow_commands
+        create_flow_command = serialized_flow_commands.create_flow_command
 
-        # Assemble all segments.
-        code_segments = [
-            import_recorder.generate_imports(),
-            unique_values_code,
-            flow_context_code,
-            nodes_in_flow_code,
-        ]
-        final_code_output = "\n\n".join(code_segments)
+        if create_flow_command is not None:
+            # Generate create flow context AST node
+            create_flow_context_node = WorkflowManager._generate_create_flow(create_flow_command, import_recorder)
+            ast_container.add_node(create_flow_context_node)
+
+        # Generate assign flow context AST node
+        assign_flow_context_node = WorkflowManager._generate_assign_flow_context(create_flow_command, import_recorder)
+
+        # Generate nodes in flow AST node
+        nodes_in_flow = WorkflowManager._generate_nodes_in_flow(serialized_flow_commands, import_recorder)
+
+        # Add the nodes to the body of the with statement
+        assign_flow_context_node.body.extend(nodes_in_flow)
+        ast_container.add_node(assign_flow_context_node)
+
+        # Generate final code from ASTContainer
+        ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
+        import_output = import_recorder.generate_imports()
+        final_code_output = f"{import_output}\n\n{ast_output}"
 
         relative_serialized_file_path = f"{file_name}_serialize_test.py"
         serialized_file_path = config_manager.workspace_path.joinpath(relative_serialized_file_path)
@@ -992,6 +997,19 @@ class WorkflowManager:
             file.write(final_code_output)
 
         return SaveWorkflowResultSuccess(file_path=str(file_path))
+
+    class ASTContainer:
+        """ASTContainer is a helper class to keep track of AST nodes and generate final code from them."""
+
+        def __init__(self) -> None:
+            """Initialize an empty list to store AST nodes."""
+            self.nodes = []
+
+        def add_node(self, node: ast.AST) -> None:
+            self.nodes.append(node)
+
+        def get_ast(self) -> list[ast.AST]:
+            return self.nodes
 
     @dataclass
     class ImportRecorder:
@@ -1043,7 +1061,7 @@ class WorkflowManager:
     @staticmethod
     def _generate_unique_values_code(
         unique_parameter_values: list[Any], prefix: str, import_recorder: ImportRecorder
-    ) -> str:
+    ) -> ast.AST:
         import_recorder.add_import("pickle")
 
         # Serialize the unique values as pickled strings.
@@ -1100,141 +1118,147 @@ class WorkflowManager:
             unique_values_ast,
         ]
         full_ast = ast.Module(body=module_body, type_ignores=[])
-        return ast.unparse(full_ast)
+        return full_ast
 
     @staticmethod
-    def _generate_flow_context(
-        possible_create_flow_command: CreateFlowRequest | None, import_recorder: ImportRecorder
-    ) -> str:
-        flow_code_ast = []
+    def _generate_create_flow(create_flow_command: CreateFlowRequest, import_recorder: ImportRecorder) -> ast.AST:
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.flow_events", "CreateFlowRequest")
 
-        if possible_create_flow_command:
-            # Record this command as an import.
-            import_recorder.add_from_import("griptape_nodes.retained_mode.events.flow_events", "CreateFlowRequest")
+        # Prepare arguments for CreateFlowRequest
+        create_flow_request_args = []
 
-            # Comment for creating a new Flow
-            comment_text = (
-                "\n"
-                "Creating a new Flow and assigning that as the current context.\n"
-                "This Flow will be used to manage the following nodes and connections."
-            )
-            flow_code_ast.append(
-                ast.Expr(value=ast.Constant(value=comment_text, lineno=1, col_offset=0), lineno=1, col_offset=0)
-            )
+        # Omit values that match default values.
+        if is_dataclass(create_flow_command):
+            for field in fields(create_flow_command):
+                field_value = getattr(create_flow_command, field.name)
+                if field_value != field.default:
+                    create_flow_request_args.append(
+                        ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
+                    )
 
-            # Prepare arguments for CreateFlowRequest
-            create_flow_request_args = []
-
-            if is_dataclass(possible_create_flow_command):
-                for field in fields(possible_create_flow_command):
-                    field_value = getattr(possible_create_flow_command, field.name)
-                    if field_value != field.default:
-                        create_flow_request_args.append(
-                            ast.keyword(arg=field.name, value=ast.Constant(value=field_value))
-                        )
-
-            # Create flow result
-            create_flow_result = ast.Assign(
-                targets=[ast.Name(id="create_flow_result", ctx=ast.Store(), lineno=1, col_offset=0)],
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                        attr="handle_request",
-                        ctx=ast.Load(),
-                        lineno=1,
-                        col_offset=0,
-                    ),
-                    args=[
-                        ast.Call(
-                            func=ast.Name(id="CreateFlowRequest", ctx=ast.Load(), lineno=1, col_offset=0),
-                            args=[],
-                            keywords=create_flow_request_args,
-                            lineno=1,
-                            col_offset=0,
-                        )
-                    ],
-                    keywords=[],
+        # Construct the AST for creating the flow
+        create_flow_result = ast.Assign(
+            targets=[ast.Name(id="create_flow_result", ctx=ast.Store(), lineno=1, col_offset=0)],
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                    attr="handle_request",
+                    ctx=ast.Load(),
                     lineno=1,
                     col_offset=0,
                 ),
+                args=[
+                    ast.Call(
+                        func=ast.Name(id="CreateFlowRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                        args=[],
+                        keywords=create_flow_request_args,
+                        lineno=1,
+                        col_offset=0,
+                    )
+                ],
+                keywords=[],
+                lineno=1,
+                col_offset=0,
+            ),
+            lineno=1,
+            col_offset=0,
+        )
+
+        return create_flow_result
+
+    @staticmethod
+    def _generate_assign_flow_context(
+        create_flow_command: CreateFlowRequest | None, import_recorder: ImportRecorder
+    ) -> ast.With:
+        context_manager = ast.Attribute(
+            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+            attr="ContextManager",
+            ctx=ast.Load(),
+            lineno=1,
+            col_offset=0,
+        )
+
+        if create_flow_command is None:
+            # Construct AST for "GriptapeNodes.ContextManager().flow(GriptapeNodes.ContextManager().get_current_flow_name())"
+            flow_call = ast.Call(
+                func=ast.Attribute(
+                    value=ast.Call(func=context_manager, args=[], keywords=[], lineno=1, col_offset=0),
+                    attr="flow",
+                    ctx=ast.Load(),
+                    lineno=1,
+                    col_offset=0,
+                ),
+                args=[
+                    ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Call(func=context_manager, args=[], keywords=[], lineno=1, col_offset=0),
+                            attr="get_current_flow_name",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[],
+                        keywords=[],
+                        lineno=1,
+                        col_offset=0,
+                    )
+                ],
+                keywords=[],
                 lineno=1,
                 col_offset=0,
             )
-            flow_code_ast.append(create_flow_result)
-
-            # With statement for the new flow context
-            flow_code_ast.append(
-                ast.With(
-                    items=[
-                        ast.withitem(
-                            context_expr=ast.Call(
-                                func=ast.Attribute(
-                                    value=ast.Call(
-                                        func=ast.Attribute(
-                                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                                            attr="ContextManager",
-                                            ctx=ast.Load(),
-                                            lineno=1,
-                                            col_offset=0,
-                                        ),
-                                        args=[],
-                                        keywords=[],  # No arguments for ContextManager constructor
-                                        lineno=1,
-                                        col_offset=0,
-                                    ),
-                                    attr="flow",
-                                    ctx=ast.Load(),
-                                    lineno=1,
-                                    col_offset=0,
-                                ),
-                                args=[
-                                    ast.Attribute(
-                                        value=ast.Name(id="create_flow_result", ctx=ast.Load(), lineno=1, col_offset=0),
-                                        attr="flow_name",
-                                        ctx=ast.Load(),
-                                        lineno=1,
-                                        col_offset=0,
-                                    )
-                                ],
-                                keywords=[],
-                                lineno=1,
-                                col_offset=0,
-                            ),
-                            optional_vars=None,
-                        )
-                    ],
-                    body=[ast.Pass()],
+        else:
+            # Construct AST for "GriptapeNodes.ContextManager().flow(create_flow_result.flow_name)"
+            flow_call = ast.Call(
+                func=ast.Attribute(
+                    value=ast.Call(func=context_manager, args=[], keywords=[], lineno=1, col_offset=0),
+                    attr="flow",
+                    ctx=ast.Load(),
                     lineno=1,
                     col_offset=0,
-                )
+                ),
+                args=[
+                    ast.Attribute(
+                        value=ast.Name(id="create_flow_result", ctx=ast.Load(), lineno=1, col_offset=0),
+                        attr="flow_name",
+                        ctx=ast.Load(),
+                        lineno=1,
+                        col_offset=0,
+                    )
+                ],
+                keywords=[],
+                lineno=1,
+                col_offset=0,
             )
 
-        # Create the final AST
-        full_ast = ast.Module(body=flow_code_ast, type_ignores=[])
-        return ast.unparse(full_ast)
+        # Construct the "with" statement with an empty body
+        with_stmt = ast.With(
+            items=[ast.withitem(context_expr=flow_call, optional_vars=None)],
+            body=[],  # Initialize the body as an empty list
+            type_comment=None,
+            lineno=1,
+            col_offset=0,
+        )
+
+        return with_stmt
 
     @staticmethod
     def _generate_nodes_in_flow(
-        serialized_node_commands: list[SerializedNodeCommands], import_recorder: ImportRecorder
-    ) -> str:
-        # Construct AST for the function body
-        nodes_in_flow_ast = []
-
-        # Iterate through the serialized_node_commands
-        for node_index, serialized_node_command in enumerate(serialized_node_commands):
-            # Generate node creation code
-            node_creation_code_ast = WorkflowManager._generate_node_creation_code(
+        serialized_flow_commands: SerializedFlowCommands, import_recorder: ImportRecorder
+    ) -> list[ast.stmt]:
+        # Generate node creation code and add it to the flow context
+        node_creation_asts = []
+        for node_index, serialized_node_command in enumerate(serialized_flow_commands.serialized_node_commands):
+            node_creation_ast = WorkflowManager._generate_node_creation_code(
                 serialized_node_command, node_index, import_recorder
             )
-            nodes_in_flow_ast.extend(node_creation_code_ast)
-
-        # Return the generated code
-        return ast.unparse(ast.Module(body=nodes_in_flow_ast, type_ignores=[]))
+            node_creation_asts.extend(node_creation_ast)
+        return node_creation_asts
 
     @staticmethod
     def _generate_node_creation_code(
         serialized_node_command: SerializedNodeCommands, node_index: int, import_recorder: ImportRecorder
-    ) -> list:
+    ) -> list[ast.stmt]:
         # Ensure necessary imports are recorded
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeRequest")
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeResultSuccess")
@@ -1250,7 +1274,9 @@ class WorkflowManager:
             for field in fields(create_node_request):
                 field_value = getattr(create_node_request, field.name)
                 if field_value != field.default:
-                    create_node_request_args.append(ast.keyword(arg=field.name, value=ast.Constant(value=field_value)))
+                    create_node_request_args.append(
+                        ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
+                    )
 
         # Handle the create node command and assign to node name
         create_node_call_ast = ast.Assign(
@@ -1285,48 +1311,8 @@ class WorkflowManager:
             lineno=1,
             col_offset=0,
         )
+
         node_creation_ast.append(create_node_call_ast)
-
-        # Adopt the newly-created node as our current context
-        adopt_node_ast = ast.With(
-            items=[
-                ast.withitem(
-                    context_expr=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Call(
-                                func=ast.Attribute(
-                                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                                    attr="ContextManager",
-                                    ctx=ast.Load(),
-                                    lineno=1,
-                                    col_offset=0,
-                                ),
-                                args=[],
-                                keywords=[],
-                                lineno=1,
-                                col_offset=0,
-                            ),
-                            attr="node",
-                            ctx=ast.Load(),
-                            lineno=1,
-                            col_offset=0,
-                        ),
-                        args=[ast.Name(id=f"node{node_index}_name", ctx=ast.Load(), lineno=1, col_offset=0)],
-                        keywords=[],
-                        lineno=1,
-                        col_offset=0,
-                    ),
-                    optional_vars=None,
-                )
-            ],
-            body=[
-                ast.Pass()  # Placeholder for further processing
-            ],
-            lineno=1,
-            col_offset=0,
-        )
-        node_creation_ast.append(adopt_node_ast)
-
         return node_creation_ast
 
     @staticmethod
