@@ -79,11 +79,11 @@ Pressing Enter will use the default: `<current_working_directory>/GriptapeNodes`
 
 > You can always return to this dialog using the `gtn init` command if you need to make changes in the future.
 
-**Second**, you'll be prompted for your Griptape Cloud API Key. 
+**Second**, you'll be prompted for your Griptape Cloud API Key.
 
 1. Return to the web browser and open **Step 3: Generate an API Key**.
 
-1. Click the *Generate API Key* button. 
+1. Click the *Generate API Key* button.
 
 1. Copy that key and enter it in the next step.
 
