@@ -305,7 +305,7 @@ def _update_assets() -> None:
     console.print(f"[bold cyan]Fetching Griptape Nodes assets ({tag})…[/bold cyan]")
 
     tar_url = NODES_TARBALL_URL.format(tag=tag)
-    dest_nodes = DATA_DIR / "nodes"
+    dest_nodes = DATA_DIR / "libraries"
     dest_workflows = DATA_DIR / "workflows"
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -327,7 +327,7 @@ def _update_assets() -> None:
         extracted_root = next(Path(tmp).glob("griptape-nodes-*"))
 
         console.print("[yellow]Copying nodes directory…[/yellow]")
-        shutil.copytree(extracted_root / "nodes", dest_nodes, dirs_exist_ok=True)
+        shutil.copytree(extracted_root / "libraries", dest_nodes, dirs_exist_ok=True)
         console.print("[yellow]Copying workflows directory…[/yellow]")
         shutil.copytree(extracted_root / "workflows", dest_workflows, dirs_exist_ok=True)
 
