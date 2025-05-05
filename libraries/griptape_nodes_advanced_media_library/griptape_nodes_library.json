@@ -1,9 +1,9 @@
 {
-  "name": "Griptape Nodes Advanced Library",
+  "name": "Griptape Nodes Advanced Media Library",
   "library_schema_version": "0.1.0",
   "metadata": {
     "author": "Griptape, Inc.",
-    "description": "Advanced generation and manipulation nodes for Griptape Nodes.",
+    "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
     "library_version": "0.1.0",
     "engine_version": "0.1.0",
     "tags": [
