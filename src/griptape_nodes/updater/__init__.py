@@ -13,6 +13,8 @@ import subprocess
 
 from rich.console import Console
 
+from griptape_nodes.retained_mode.managers.os_manager import OSManager
+
 console = Console()
 
 
@@ -36,6 +38,11 @@ def main() -> None:
     _download_and_run_installer()
     if args.restart:
         _restart_engine()
+    elif OSManager().is_windows():
+        # On Windows, the terminal prompt doesn't refresh after the update finishes.
+        # This gives the appearance of the program hanging, but it is not.
+        # This is a workaround to manually refresh the terminal.
+        console.print("[bold yellow]Please press Enter to exit updater...[/bold yellow]")
 
 
 def _download_and_run_installer() -> None:
