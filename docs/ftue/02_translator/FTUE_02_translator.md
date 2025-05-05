@@ -42,7 +42,7 @@ By connecting one agent's output to another through a **MergeTexts** node, you c
 
 ## How we're using the MergeText node here
 
-All a **MergeTexts** node does is combine incoming texts using the "merge string" as a separator. The default merge string is two newlines: ```\n\n```. In this example, I've typed "Rewrite this in English:" into **input_1** of the MergeTexts node and connected the output of my **spanish_story** node to **input_2**. When run, the **MergeTexts** node will output:
+All a **MergeTexts** node does is combine incoming texts using the "merge string" as a separator. The default merge string is two newlines: `\n\n`. In this example, I've typed "Rewrite this in English:" into **input_1** of the MergeTexts node and connected the output of my **spanish_story** node to **input_2**. When run, the **MergeTexts** node will output:
 
 > Rewrite this in English:
 >
@@ -138,11 +138,10 @@ A key concept in Griptape Nodes is the execution chain. As workflows become more
 !!! info
 
     Griptape Nodes will automatically determine the execution order of nodes by analyzing their dependencies.
-    
+
     However, when you need more precise control over the execution sequence, you can use the exec chain feature. This provides a way to explicitly define the order you want when the automatic dependency detection might not align with your intended behavior.
 
     There is no cost or penalty to using the exec chain anytime you want, except for the possibility of forcing things to execute in a faulty order. For most simple flows, it is unnecessary.
-
 
 ## Expand the Workflow: Summarize Multiple Stories
 
