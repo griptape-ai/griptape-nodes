@@ -64,7 +64,9 @@ def _restart_engine() -> None:
     """Restarts the engine."""
     console.print("[bold green]Restarting engine...[/bold green]")
     try:
-        os.execvp("griptape-nodes", ["griptape-nodes --no-update"])  # noqa: S606, S607
+        subprocess.Popen(  # noqa: S603
+            ["griptape-nodes", "--no-update"],  # noqa: S607
+        )
     except subprocess.CalledProcessError as e:
         console.print(f"[bold red]Error during restart: {e}[/bold red]")
 

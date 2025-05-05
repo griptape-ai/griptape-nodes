@@ -6,6 +6,7 @@ import importlib.metadata
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -295,7 +296,8 @@ def _update_self(*, restart_after_update: bool = False) -> None:
     console.print("[bold green]Starting updater...[/bold green]")
 
     args = ["--restart"] if restart_after_update else []
-    os.execvp(sys.executable, [sys.executable, "-m", "griptape_nodes.updater", *args])  # noqa: S606
+    subprocess.Popen([sys.executable, "-m", "griptape_nodes.updater", *args], stdout=sys.stdout, stderr=sys.stderr)
+    sys.exit(0)
 
 
 def _update_assets() -> None:
@@ -395,7 +397,14 @@ def _uninstall_self() -> None:
 
     # Remove the executable
     console.print("[bold]Removing the executable...[/bold]")
-    os.execvp("uv", ["uv", "tool", "uninstall", "griptape-nodes"])  # noqa: S606
+    try:
+        subprocess.Popen(
+            ["uv", "tool", "uninstall", "griptape-nodes"],
+        )
+    except subprocess.CalledProcessError as e:
+        console.print(f"[bold red]Error during uninstallation: {e}[/bold red]")
+        console.print("[bold red]Please uninstall manually.[/bold red]")
+    sys.exit(0)
 
 
 def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
