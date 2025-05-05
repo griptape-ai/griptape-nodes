@@ -32,53 +32,45 @@ This guide will walk you through setting up a Hugging Face account, creating an 
 
 1. Select **Settings** from the dropdown menu (or go directly to [Settings](https://huggingface.co/settings/profile/))
 
-```
-<p align="center">
-  <img src="../assets/02_HF_Settings.png" alt="Settings" width="500"/>
-</p>
+    <p align="center">
+    <img src="../assets/02_HF_Settings.png" alt="Settings" width="500"/>
+    </p>
 
 !!! warning "Email Verification Required"
+
     If you encounter issues during token creation, ensure you've verified your email address. Complete the verification process before continuing.
-```
 
 1. Navigate to **Access Tokens** in the settings menu
 
-```
 <p align="center">
   <img src="../assets/03_HF_AccessTokens.png" alt="Access Tokens" width="500"/>
 </p>
-```
 
 1. Click **Create new token** in the top right area
 
 1. Select **Read** as the token type for the access you'll need
 
-```
 <p align="center">
   <img src="../assets/04_HF_TokenRead.png" alt="Token Read" width="500"/>
 </p>
-```
 
 1. Give your token a descriptive name (GriptapeNodes, for example)
 1. Click **Create Token**. That will bring up a window with you new token in it. Read and understand the messages there; this really is the only time you'll be able to see or copy this key.
 
-```
 <p align="center">
   <img src="../assets/05_HF_SaveToken.png" alt="Save Token" width="400"/>
 </p>
-```
 
 1. Copy and securely store your token
 1. Click **Done** to close the token window.
 
-```
 !!! danger "Security Notice"
+
     It is recommended to save this token in a password locker or secure notes app, so you can find it, but also keep it secure.
 
     Your access token is a personal identifier for requests made to Hugging Face services. Never share it with anyone, and take precautions to avoid displaying it in screenshots, videos, or during screen-sharing sessions.
-    
+
     Treat it like you would a credit card number.
-```
 
 ## Install Required Files
 
