@@ -5,7 +5,7 @@ import logging
 import pickle
 import pkgutil
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -973,11 +973,16 @@ class WorkflowManager:
             possible_create_flow_command=serialized_flow_commands.create_flow_command, import_recorder=import_recorder
         )
 
+        nodes_in_flow_code = self._generate_nodes_in_flow(
+            serialized_node_commands=serialized_flow_commands.serialized_node_commands, import_recorder=import_recorder
+        )
+
         # Assemble all segments.
         code_segments = [
             import_recorder.generate_imports(),
             unique_values_code,
             flow_context_code,
+            nodes_in_flow_code,
         ]
         final_code_output = "\n\n".join(code_segments)
 
@@ -1101,12 +1106,12 @@ class WorkflowManager:
     def _generate_flow_context(
         possible_create_flow_command: CreateFlowRequest | None, import_recorder: ImportRecorder
     ) -> str:
-        import ast
-        from dataclasses import fields, is_dataclass
-
         flow_code_ast = []
 
         if possible_create_flow_command:
+            # Record this command as an import.
+            import_recorder.add_from_import("griptape_nodes.retained_mode.events.flow_events", "CreateFlowRequest")
+
             # Comment for creating a new Flow
             comment_text = (
                 "\n"
@@ -1209,19 +1214,153 @@ class WorkflowManager:
         return ast.unparse(full_ast)
 
     @staticmethod
-    def _generate_flow_node_creation(serialized_flow_commands: SerializedFlowCommands, prefix: str) -> list:
-        body = []
+    def _generate_nodes_in_flow(
+        serialized_node_commands: list[SerializedNodeCommands], import_recorder: ImportRecorder
+    ) -> str:
+        # Construct AST for the function body
+        nodes_in_flow_ast = []
 
-        # Comment for creating nodes
-        comment_text = "# Creating all nodes in this Flow."
-        body.append(ast.Expr(value=ast.Constant(value=comment_text, lineno=1, col_offset=0), lineno=1, col_offset=0))
+        # Iterate through the serialized_node_commands
+        for node_index, serialized_node_command in enumerate(serialized_node_commands):
+            # Generate node creation code
+            node_creation_code_ast = WorkflowManager._generate_node_creation_code(
+                serialized_node_command, node_index, import_recorder
+            )
+            nodes_in_flow_ast.extend(node_creation_code_ast)
 
-        # Create nodes
-        for idx, node_command in enumerate(serialized_flow_commands.serialized_node_commands):
-            node_var_name = f"{prefix}_node{idx}_name"
-            node_creation = ast.Assign(
-                targets=[ast.Name(id=node_var_name, ctx=ast.Store(), lineno=1, col_offset=0)],
+        # Return the generated code
+        return ast.unparse(ast.Module(body=nodes_in_flow_ast, type_ignores=[]))
+
+    @staticmethod
+    def _generate_node_creation_code(
+        serialized_node_command: SerializedNodeCommands, node_index: int, import_recorder: ImportRecorder
+    ) -> list:
+        # Ensure necessary imports are recorded
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeRequest")
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeResultSuccess")
+
+        # Construct AST for the function body
+        node_creation_ast = []
+
+        # Create the CreateNodeRequest parameters
+        create_node_request = serialized_node_command.create_node_command
+        create_node_request_args = []
+
+        if is_dataclass(create_node_request):
+            for field in fields(create_node_request):
+                field_value = getattr(create_node_request, field.name)
+                if field_value != field.default:
+                    create_node_request_args.append(ast.keyword(arg=field.name, value=ast.Constant(value=field_value)))
+
+        # Handle the create node command and assign to node name
+        create_node_call_ast = ast.Assign(
+            targets=[ast.Name(id=f"node{node_index}_name", ctx=ast.Store(), lineno=1, col_offset=0)],
+            value=ast.Attribute(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                        attr="handle_request",
+                        ctx=ast.Load(),
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    args=[
+                        ast.Call(
+                            func=ast.Name(id="CreateNodeRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                            args=[],
+                            keywords=create_node_request_args,
+                            lineno=1,
+                            col_offset=0,
+                        )
+                    ],
+                    keywords=[],
+                    lineno=1,
+                    col_offset=0,
+                ),
+                attr="node_name",
+                ctx=ast.Load(),
+                lineno=1,
+                col_offset=0,
+            ),
+            lineno=1,
+            col_offset=0,
+        )
+        node_creation_ast.append(create_node_call_ast)
+
+        # Adopt the newly-created node as our current context
+        adopt_node_ast = ast.With(
+            items=[
+                ast.withitem(
+                    context_expr=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Call(
+                                func=ast.Attribute(
+                                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                                    attr="ContextManager",
+                                    ctx=ast.Load(),
+                                    lineno=1,
+                                    col_offset=0,
+                                ),
+                                args=[],
+                                keywords=[],
+                                lineno=1,
+                                col_offset=0,
+                            ),
+                            attr="node",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[ast.Name(id=f"node{node_index}_name", ctx=ast.Load(), lineno=1, col_offset=0)],
+                        keywords=[],
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    optional_vars=None,
+                )
+            ],
+            body=[
+                ast.Pass()  # Placeholder for further processing
+            ],
+            lineno=1,
+            col_offset=0,
+        )
+        node_creation_ast.append(adopt_node_ast)
+
+        return node_creation_ast
+
+    @staticmethod
+    def _generate_element_modification_code(
+        deserialize_commands: DeserializeNodeFromCommandsRequest, import_recorder: ImportRecorder
+    ) -> str:
+        # Ensure necessary imports are recorded
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.node_events", "DeserializeNodeFromCommandsRequest"
+        )
+        import_recorder.add_import("logging")
+
+        # Construct AST for the function body
+        element_modification_ast = []
+
+        # Execute all element modification commands
+        execute_element_commands_ast = ast.For(
+            target=ast.Name(id="element_command", ctx=ast.Store(), lineno=1, col_offset=0),
+            iter=ast.Attribute(
                 value=ast.Attribute(
+                    value=ast.Name(id="deserialize_commands", ctx=ast.Load(), lineno=1, col_offset=0),
+                    attr="serialized_node_commands",
+                    ctx=ast.Load(),
+                    lineno=1,
+                    col_offset=0,
+                ),
+                attr="element_modification_commands",
+                ctx=ast.Load(),
+                lineno=1,
+                col_offset=0,
+            ),
+            body=[
+                ast.Assign(
+                    targets=[ast.Name(id="element_result", ctx=ast.Store(), lineno=1, col_offset=0)],
                     value=ast.Call(
                         func=ast.Attribute(
                             value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
@@ -1230,27 +1369,21 @@ class WorkflowManager:
                             lineno=1,
                             col_offset=0,
                         ),
-                        args=[
-                            ast.Call(
-                                func=ast.Name(id="CreateNodeRequest", ctx=ast.Load(), lineno=1, col_offset=0),
-                                args=[ast.Constant(value=node_command, lineno=1, col_offset=0)],
-                                keywords=[],
-                                lineno=1,
-                                col_offset=0,
-                            )
-                        ],
+                        args=[ast.Name(id="element_command", ctx=ast.Load(), lineno=1, col_offset=0)],
                         keywords=[],
                         lineno=1,
                         col_offset=0,
                     ),
-                    attr="name",
-                    ctx=ast.Load(),
                     lineno=1,
                     col_offset=0,
                 ),
-                lineno=1,
-                col_offset=0,
-            )
-            body.append(node_creation)
+                ast.Pass(),  # Placeholder for further processing
+            ],
+            orelse=[],
+            lineno=1,
+            col_offset=0,
+        )
+        element_modification_ast.append(execute_element_commands_ast)
 
-        return body
+        # Return the generated code
+        return ast.unparse(ast.Module(body=element_modification_ast, type_ignores=[]))
