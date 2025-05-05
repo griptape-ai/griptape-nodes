@@ -1574,7 +1574,7 @@ class NodeManager:
                 logger.error(details)
                 return SerializeNodeToCommandsResultFailure()
 
-            library_version = library_metadata_result.metadata["library_version"]
+            library_version = library_metadata_result.metadata.library_version
             library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
 
             # Get the creation details.

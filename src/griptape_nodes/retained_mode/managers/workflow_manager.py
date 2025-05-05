@@ -625,27 +625,9 @@ class WorkflowManager:
                 # SKIP IT.
                 continue
 
-            # Is there a version string in the metadata?
-            library_metadata = library_metadata_result.metadata
-            version_key = "library_version"
-            if version_key not in library_metadata:
-                had_critical_error = True
-                problems.append(
-                    f"Library '{library_name}' has malformed metadata. Was unable to find required field '{version_key}'."
-                )
-                dependency_infos.append(
-                    WorkflowManager.WorkflowDependencyInfo(
-                        library_name=library_name,
-                        version_requested=desired_version_str,
-                        version_present=None,
-                        status=WorkflowManager.WorkflowDependencyStatus.MISSING,
-                    )
-                )
-                # SKIP IT.
-                continue
-
             # Attempt to parse out the version string.
-            library_version_str = library_metadata[version_key]
+            library_metadata = library_metadata_result.metadata
+            library_version_str = library_metadata.library_version
             library_version = Version.from_string(version_string=library_version_str)
             if library_version is None:
                 had_critical_error = True
@@ -858,7 +840,7 @@ class WorkflowManager:
                         return SaveWorkflowResultFailure()
                     try:
                         library_metadata_success = cast("GetLibraryMetadataResultSuccess", library_metadata_result)
-                        library_version = library_metadata_success.metadata["library_version"]
+                        library_version = library_metadata_success.metadata.library_version
                     except Exception as err:
                         details = f"Attempted to save workflow '{relative_file_path}', but failed to get library version from metadata for library '{library_used}': {err}."
                         logger.error(details)
