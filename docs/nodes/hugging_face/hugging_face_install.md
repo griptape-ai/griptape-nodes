@@ -2,9 +2,11 @@
 
 ## Account and Token Creation
 
-!!! info "Overview"
+This guide will walk you through setting up a Hugging Face account, creating an access token, and installing the required models for use with Griptape Nodes.
 
-    This guide will walk you through setting up a Hugging Face account, creating an access token, and installing the required models for use with Griptape Nodes.
+!!! info
+
+    If you already have an account skip ahead to [Step 2](#2-access-your-account-settings)
 
 ### 1. Create a new account on Hugging Face
 
@@ -39,22 +41,29 @@
     If you encounter issues during token creation, ensure you've verified your email address. Complete the verification process before continuing.
 
 1. Navigate to **Access Tokens** in the settings menu
-1. Click **Create new token** in the top right area
-1. Select **Read** as the token type for basic access
-1. Give your token a descriptive name
-1. Copy and securely store your token
 
 <p align="center">
-  <img src="../assets/03_HF_AccessTokens.png" alt="Access Tokens" width="500"/>
-</p>
+    <img src="../assets/03_HF_AccessTokens.png" alt="Access Tokens" width="500"/>
+  </p>
+1. Click **Create new token** in the top right area
+1. Select **Read** as the token type for basic access
 
 <p align="center">
   <img src="../assets/04_HF_TokenRead.png" alt="Token Read" width="500"/>
 </p>
 
+1. Give your token a descriptive name (GriptapeNodes, for example)
+1. Click "Create Token". That will bring up a window with you new token in it. Read and understand the messages there; this really is the only time you'll be able to see or copy this key.
+1. Copy and securely store your token
+1. Click "done" to close the token window.
+
 <p align="center">
-  <img src="../assets/05_HF_SaveToken.png" alt="Save Token" width="500"/>
+  <img src="../assets/05_HF_SaveToken.png" alt="Save Token" width="400"/>
 </p>
+
+!!! tip
+
+    It is recommended to save this token in a password locker or secure notes app, so you can find it, but also keep it secure.
 
 !!! danger "Security Notice"
 
@@ -76,7 +85,7 @@ For more information, visit the [official CLI documentation](https://huggingface
 
 ### 2. Login with Your Token
 
-In your terminal, authenticate with your access token:
+In your terminal, authenticate with the access token you made earler:
 
 ```bash
 huggingface-cli login
@@ -84,13 +93,49 @@ huggingface-cli login
 
 You'll be prompted to enter your token.
 
-### 3. Install Required Models
+### 3. Install Models as Required
+
+Each Hugging Face node is designed to work with specific models. While some nodes work with only one model, others are compatible with multiple options. The table below outlines which models can be used with each node:
+
+| Node                      | Compatible Model(s)        |
+| ------------------------- | -------------------------- |
+| TilingSpandrelPipeline    | 4x-ClearRealityV1.pth      |
+| FluxPipeline              | FLUX.1-dev, FLUX.1-schnell |
+| TilingFluxImg2ImgPipeline | FLUX.1-dev, FLUX.1-schnell |
+
+## Model Installation Considerations
+
+You have two options for model installation. Your choice depends on your specific workflow requirements, available disk space, and internet connection speed.
+
+1. **Selective Installation**: Install only the specific models needed for the nodes you plan to use.
+
+    - **Advantages**: Reduced download time and disk space usage.
+    - **Disadvantages**: Limited functionality until additional models are installed.
+
+1. **Complete Installation**: Download all available models.
+
+    - **Advantages**: Full access to all node capabilities without additional downloads.
+    - **Disadvantages**: Longer initial download time and greater disk space requirements.
 
 !!! note "Download Time"
 
-    These model downloads may collectively take 30-50 minutes to complete, depending on your internet connection speed.
+    These model downloads are quite large an may collectively take anywhere from 30 minutes to several hours to complete, depending on your internet connection speed.
 
-Install the following models for use with different Griptape Nodes:
+!!! info "Download Location"
+
+    Models will be downloaded into your Hugging Face Hub Cache Directory. To see where this is, you can use the huggingface-cli, and look for HF_HUB_CACHE.
+
+    Running this command in the terminal will produce a list with several entries
+
+    ```
+    huggingface-cli env
+    ```
+
+    Look for an entry that starts with `- HF_HUB_CACHE:`
+
+    ```
+    - HF_HUB_CACHE: /Users/jason/.cache/huggingface/hub
+    ```
 
 #### For TilingSpandrelPipeline
 
@@ -109,6 +154,24 @@ huggingface-cli download black-forest-labs/FLUX.1-schnell
 ```bash
 huggingface-cli download black-forest-labs/FLUX.1-dev
 ```
+
+!!! warning "Download errors"
+
+    It is possible to encounter errors during download that start like this:
+
+    ```
+    Cannot access gated repo for url https://huggingface.co...
+    ```
+
+    The end of those errors will contain a link, though, with instructions to request access.
+
+    Follow those instructions:
+
+    Visit [https://huggingface.co/black-forest-labs/FLUX.1-schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell) to ask for access. When that is successful you should see a message about being granted access, and you can try to download again.
+
+    <p align="center">
+      <img src="../assets/gated_model.png" alt="Gated model" width="350"/>
+    </p>
 
 ## Add Your Token to Griptape Nodes settings
 
