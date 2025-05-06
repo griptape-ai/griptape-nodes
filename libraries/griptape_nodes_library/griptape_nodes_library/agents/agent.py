@@ -209,18 +209,18 @@ class Agent(ControlNode):
             """
             TODO: https://github.com/griptape-ai/griptape-nodes/issues/878
 
-            # Find the prompt_model_settings parameter and hide it
+            """
             prompt_model_settings_param = self.get_parameter_by_name("prompt_model_config")
             if value == CONNECTED_CHOICE and prompt_model_settings_param:
+                if prompt_model_settings_param._ui_options["hide"]:
+                    modified_parameters_set.add("prompt_model_config")
                 prompt_model_settings_param._ui_options["hide"] = False
-            elif value != CONNECTED_CHOICE and prompt_model_settings_param:
+                return None
+            if value != CONNECTED_CHOICE and prompt_model_settings_param:
+                if not prompt_model_settings_param._ui_options["hide"]:
+                    modified_parameters_set.add("prompt_model_config")
                 prompt_model_settings_param._ui_options["hide"] = True
-
-            # Add this to the modified parameters set so we can cascade the change.
-            modified_parameters_set.add("prompt_model_config")
-
-            """
-            pass  # noqa: PIE790
+                return None
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
