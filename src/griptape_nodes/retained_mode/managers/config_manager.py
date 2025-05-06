@@ -279,7 +279,7 @@ class ConfigManager:
             self._set_log_level(value)
         elif key == "workspace_directory":
             self.workspace_path = value
-        self.user_config = merge_dicts(self.merged_config, delta)
+        self.merged_config = merge_dicts(self.merged_config, delta)
         self._write_user_config_delta(delta)
 
         # If the key is workspace_directory, we need to fully reload the user config
