@@ -128,7 +128,7 @@ nav:
               - Info Retriever: nodes/tools/rag_tool.md
               - Tool List: nodes/tools/tool_list.md
               - Web Scraper: nodes/tools/web_scraper_tool.md
-          - Advanced Media LIbrary:
+          - Advanced Media Library:
               - Flux Pipeline: nodes/advanced_media_library/flux_pipeline.md
               - Pillow Resize: nodes/advanced_media_library/pillow_resize.md
               - Tiling Flux img2img: nodes/advanced_media_library/tiling_flux_img_2_img_pipeline.md
