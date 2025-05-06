@@ -207,6 +207,12 @@ class LibraryManager:
     def get_library_info_for_attempted_load(self, library_file_path: str) -> LibraryInfo:
         return self._library_file_path_to_info[library_file_path]
 
+    def get_library_info_by_library_name(self, library_name: str) -> LibraryInfo | None:
+        for library_info in self._library_file_path_to_info.values():
+            if library_info.library_name == library_name:
+                return library_info
+        return None
+
     def on_list_registered_libraries_request(self, _request: ListRegisteredLibrariesRequest) -> ResultPayload:
         # Make a COPY of the list
         snapshot_list = LibraryRegistry.list_libraries()
@@ -615,6 +621,12 @@ class LibraryManager:
             details = f"Attempted to unload library '{request.library_name}'. Failed due to {e}"
             logger.error(details)
             return UnloadLibraryFromRegistryResultFailure()
+
+        # Remove the library from our library info list. This prevents it from still showing
+        # up in the table of attempted library loads.
+        lib_info = self.get_library_info_by_library_name(request.library_name)
+        if lib_info:
+            del self._library_file_path_to_info[lib_info.library_path]
 
         details = f"Successfully unloaded (and unregistered) library '{request.library_name}'."
         logger.debug(details)
