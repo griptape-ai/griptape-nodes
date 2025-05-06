@@ -86,7 +86,8 @@ class BaseNode(ABC):
         self.root_ui_element = BaseNodeElement()
         self.process_generator = None
 
-    # TODO(griptape): Make a more reliable system to trigger on resolution changes.
+    # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
+    # https://github.com/griptape-ai/griptape-nodes/issues/994
     def make_node_unresolved(self, current_states_to_trigger_change_event: set[NodeResolutionState] | None) -> None:
         # See if the current state is in the set of states to trigger a change event.
         if current_states_to_trigger_change_event is not None and self.state in current_states_to_trigger_change_event:

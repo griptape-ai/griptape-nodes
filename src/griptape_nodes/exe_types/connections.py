@@ -1,17 +1,8 @@
 import logging
 from dataclasses import dataclass
 
-from griptape.events import EventBus
-
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState
-from griptape_nodes.retained_mode.events.base_events import (
-    ExecutionEvent,
-    ExecutionGriptapeNodeEvent,
-)
-from griptape_nodes.retained_mode.events.execution_events import (
-    NodeUnresolvedEvent,
-)
 
 logger = logging.getLogger("griptape_nodes")
 
