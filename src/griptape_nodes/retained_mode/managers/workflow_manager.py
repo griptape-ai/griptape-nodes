@@ -196,6 +196,31 @@ class WorkflowManager:
         )
         event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
 
+    def get_workflow_metadata(self, workflow_file_path: Path, block_name: str) -> list[re.Match[str]]:
+        """Get the workflow metadata for a given workflow file path.
+
+        Args:
+            workflow_file_path (Path): The path to the workflow file.
+            block_name (str): The name of the metadata block to search for.
+
+        Returns:
+            list[re.Match[str]]: A list of regex matches for the specified metadata block.
+
+        """
+        with workflow_file_path.open("r") as file:
+            workflow_content = file.read()
+
+        # Find the metadata block.
+        regex = r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
+        matches = list(
+            filter(
+                lambda m: m.group("type") == block_name,
+                re.finditer(regex, workflow_content),
+            )
+        )
+
+        return matches
+
     def print_workflow_load_status(self) -> None:
         workflow_file_paths = self.get_workflows_attempted_to_load()
         workflow_infos = []
@@ -494,19 +519,9 @@ class WorkflowManager:
             logger.error(details)
             return LoadWorkflowMetadataResultFailure()
 
-        # Open 'er up.
-        with complete_file_path.open("r") as file:
-            workflow_content = file.read()
-
         # Find the metadata block.
-        regex = r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
-        block_name = "script"
-        matches = list(
-            filter(
-                lambda m: m.group("type") == block_name,
-                re.finditer(regex, workflow_content),
-            )
-        )
+        block_name = WorkflowManager.WORKFLOW_METADATA_HEADER
+        matches = self.get_workflow_metadata(complete_file_path, block_name=block_name)
         if len(matches) != 1:
             self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
                 status=WorkflowManager.WorkflowStatus.UNUSABLE,
@@ -635,27 +650,9 @@ class WorkflowManager:
                 # SKIP IT.
                 continue
 
-            # Is there a version string in the metadata?
-            library_metadata = library_metadata_result.metadata
-            version_key = "library_version"
-            if version_key not in library_metadata:
-                had_critical_error = True
-                problems.append(
-                    f"Library '{library_name}' has malformed metadata. Was unable to find required field '{version_key}'."
-                )
-                dependency_infos.append(
-                    WorkflowManager.WorkflowDependencyInfo(
-                        library_name=library_name,
-                        version_requested=desired_version_str,
-                        version_present=None,
-                        status=WorkflowManager.WorkflowDependencyStatus.MISSING,
-                    )
-                )
-                # SKIP IT.
-                continue
-
             # Attempt to parse out the version string.
-            library_version_str = library_metadata[version_key]
+            library_metadata = library_metadata_result.metadata
+            library_version_str = library_metadata.library_version
             library_version = Version.from_string(version_string=library_version_str)
             if library_version is None:
                 had_critical_error = True
@@ -732,6 +729,81 @@ class WorkflowManager:
             problems=problems,
         )
         return LoadWorkflowMetadataResultSuccess(metadata=workflow_metadata)
+
+    def register_workflows_from_config(self, config_section: str) -> None:
+        workflows_to_register = GriptapeNodes.ConfigManager().get_config_value(config_section)
+        if workflows_to_register is not None:
+            self.register_list_of_workflows(workflows_to_register)
+
+    def register_list_of_workflows(self, workflows_to_register: list[str]) -> None:
+        for workflow_to_register in workflows_to_register:
+            path = Path(workflow_to_register)
+
+            if path.is_dir():
+                # If it's a directory, register all the workflows in it.
+                for workflow_file in path.glob("*.py"):
+                    # Check that the python file has script metadata
+                    metadata_blocks = self.get_workflow_metadata(
+                        workflow_file, block_name=WorkflowManager.WORKFLOW_METADATA_HEADER
+                    )
+                    if len(metadata_blocks) == 1:
+                        self._register_workflow(str(workflow_file))
+            else:
+                # If it's a file, register it directly.
+                self._register_workflow(str(path))
+
+    def _register_workflow(self, workflow_to_register: str) -> bool:
+        """Registers a workflow from a file.
+
+        Args:
+            config_mgr: The ConfigManager instance to use for path resolution.
+            workflow_mgr: The WorkflowManager instance to use for workflow registration.
+            workflow_to_register: The path to the workflow file to register.
+
+        Returns:
+            bool: True if the workflow was successfully registered, False otherwise.
+        """
+        # Presently, this will not fail if a workflow with that name is already registered. That failure happens with a later check.
+        # However, the table of WorkflowInfo DOES get updated in this request, which may present a confusing state of affairs to the user.
+        # On one hand, we want the user to know how a specific workflow fared, but also not let them think it was registered when it wasn't.
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/996
+
+        # Attempt to extract the metadata out of the workflow.
+        load_metadata_request = LoadWorkflowMetadata(file_name=str(workflow_to_register))
+        load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
+        if not load_metadata_result.succeeded():
+            # SKIP IT
+            return False
+
+        if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
+            err_str = (
+                f"Attempted to register workflow '{workflow_to_register}', but failed to extract metadata. SKIPPING IT."
+            )
+            logger.error(err_str)
+            return False
+
+        workflow_metadata = load_metadata_result.metadata
+
+        # Prepend the image paths appropriately.
+        if workflow_metadata.image is not None:
+            if workflow_metadata.is_griptape_provided:
+                workflow_metadata.image = workflow_metadata.image
+            else:
+                workflow_metadata.image = str(
+                    GriptapeNodes.ConfigManager().workspace_path.joinpath(workflow_metadata.image)
+                )
+
+        # Register it as a success.
+        workflow_register_request = RegisterWorkflowRequest(
+            metadata=workflow_metadata, file_name=str(workflow_to_register)
+        )
+        workflow_register_result = GriptapeNodes.handle_request(workflow_register_request)
+        if not isinstance(workflow_register_result, RegisterWorkflowResultSuccess):
+            err_str = f"Error attempting to register workflow '{workflow_to_register}': {workflow_register_result}. SKIPPING IT."
+            logger.error(err_str)
+            return False
+
+        return True
 
     def _gather_workflow_imports(self) -> list[str]:
         """Gathers all the imports for the saved workflow file, specifically for the events."""
@@ -868,7 +940,7 @@ class WorkflowManager:
                         return SaveWorkflowResultFailure()
                     try:
                         library_metadata_success = cast("GetLibraryMetadataResultSuccess", library_metadata_result)
-                        library_version = library_metadata_success.metadata["library_version"]
+                        library_version = library_metadata_success.metadata.library_version
                     except Exception as err:
                         details = f"Attempted to save workflow '{relative_file_path}', but failed to get library version from metadata for library '{library_used}': {err}."
                         logger.error(details)

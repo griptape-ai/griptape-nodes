@@ -39,8 +39,8 @@ class NodesApiSocketManager:
             try:
                 self.socket.send(json.dumps(body))
                 sent = True
-            except WebSocketException:
-                logger.warning("Error sending event to Nodes API, attempting to reconnect.")
+            except WebSocketException as e:
+                logger.error("Error sending event to Nodes API, attempting to reconnect. %s", e)
                 self.socket = self._connect()
 
     def heartbeat(self, *, session_id: str | None, request: dict) -> None:
@@ -100,16 +100,18 @@ class NodesApiSocketManager:
                 logger.debug("Error: ", exc_info=True)
                 sleep(5)
             except InvalidStatus as e:
-                if e.response.status_code in {401, 403}:
-                    message = Panel(
-                        Align.center(
-                            "[bold red]Nodes API key is invalid, please re-run [code]gtn init[/code] with a valid key: [/bold red]"
-                            "[code]gtn init --api-key <your key>[/code]\n"
-                            "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
-                        ),
-                        title="🔑 ❌ Invalid Nodes API Key",
-                        border_style="red",
-                        padding=(1, 4),
-                    )
-                    console.print(message)
-                    sys.exit(1)
+                message = Panel(
+                    Align.center(
+                        f"[bold red]Nodes API key is invalid ({e.response.status_code}), please re-run [code]gtn init[/code] with a valid key: [/bold red]"
+                        "[code]gtn init --api-key <your key>[/code]\n"
+                        "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
+                    ),
+                    title="🔑 ❌ Invalid Nodes API Key",
+                    border_style="red",
+                    padding=(1, 4),
+                )
+                console.print(message)
+                sys.exit(1)
+            except Exception:
+                logger.exception("Unexpected error while connecting to Nodes API")
+                sys.exit(1)

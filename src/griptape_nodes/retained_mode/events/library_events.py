@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from griptape_nodes.node_library.library_registry import LibraryMetadata, NodeMetadata
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -56,7 +57,7 @@ class GetNodeMetadataFromLibraryRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetNodeMetadataFromLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    metadata: dict
+    metadata: NodeMetadata
 
 
 @dataclass
@@ -111,7 +112,7 @@ class GetLibraryMetadataRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetLibraryMetadataResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    metadata: dict
+    metadata: LibraryMetadata
 
 
 @dataclass

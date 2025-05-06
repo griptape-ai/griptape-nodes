@@ -4,7 +4,6 @@
 import argparse
 import importlib.metadata
 import json
-import os
 import shutil
 import sys
 import tarfile
@@ -20,9 +19,14 @@ from rich.progress import Progress
 from rich.prompt import Confirm, Prompt
 from xdg_base_dirs import xdg_config_home, xdg_data_home
 
-from griptape_nodes.app import start_app
-from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
-from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+from griptape_nodes.retained_mode.managers.os_manager import OSManager
+
+console = Console()
+
+with console.status("Loading Griptape Nodes...") as status:
+    from griptape_nodes.app import start_app
+    from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+    from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 DATA_DIR = xdg_data_home() / "griptape_nodes"
@@ -33,9 +37,9 @@ NODES_APP_URL = "https://nodes.griptape.ai"
 NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/tags/{tag}.tar.gz"
 
 
-console = Console()
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
+os_manager = OSManager()
 
 
 def main() -> None:
@@ -61,7 +65,7 @@ def _run_init(
     _prompt_for_api_key(api_key=api_key)
     _prompt_for_libraries_to_register(register_advanced_library=register_advanced_library)
     _update_assets()
-    console.print("Initialization complete! You can now run the engine with 'griptape-nodes' (or just 'gtn').")
+    console.print("[bold green]Initialization complete![/bold green]")
 
 
 def _start_engine(*, no_update: bool) -> None:
@@ -72,6 +76,7 @@ def _start_engine(*, no_update: bool) -> None:
     """
     if not CONFIG_DIR.exists():
         # Default init flow if there is no config directory
+        console.print("[bold green]Config directory not found. Initializing...[/bold green]")
         _run_init()
         webbrowser.open(NODES_APP_URL)
 
@@ -79,6 +84,7 @@ def _start_engine(*, no_update: bool) -> None:
     if not no_update:
         _auto_update_self()
 
+    console.print("[bold green]Starting Griptape Nodes engine...[/bold green]")
     start_app()
 
 
@@ -216,11 +222,11 @@ def _prompt_for_workspace(*, workspace_directory_arg: str | None) -> None:
 
 def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None = None) -> None:
     """Prompts the user for the libraries to register and stores them in config directory."""
-    explainer = """[bold cyan]Advanced Image Library[/bold cyan]
-    Would you like to install the Griptape Nodes Advanced Image Library?
-    This node library makes advanced image generation and manipulation nodes available.
+    explainer = """[bold cyan]Advanced Media Library[/bold cyan]
+    Would you like to install the Griptape Nodes Advanced Media Library?
+    This node library makes advanced media generation and manipulation nodes available.
     Installing this library requires additional dependencies to download and install, which can take several minutes.
-    The Griptape Nodes Advanced Image Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
+    The Griptape Nodes Advanced Media Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
     """
     console.print(Panel(explainer, expand=False))
 
@@ -231,12 +237,19 @@ def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None 
         config_source="user_config",
         default=config_manager.get_config_value(key, config_source="default_config", default=[]),
     )
-    default_library = str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")
-    extra_libraries = [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library_extras.json")]
+    default_library = str(
+        xdg_data_home() / "griptape_nodes/libraries/griptape_nodes_library/griptape_nodes_library.json"
+    )
+    extra_libraries = [
+        str(
+            xdg_data_home()
+            / "griptape_nodes/libraries/griptape_nodes_advanced_media_library/griptape_nodes_library.json"
+        )
+    ]
     libraries_to_merge = [default_library]
 
     if register_advanced_library is None:
-        register_extras = Confirm.ask("Register Advanced Image Library?", default=False)
+        register_extras = Confirm.ask("Register Advanced Media Library?", default=False)
     else:
         register_extras = register_advanced_library
 
@@ -267,6 +280,7 @@ def _get_latest_version(package: str) -> str:
 
 def _auto_update_self() -> None:
     """Automatically updates the script to the latest version if the user confirms."""
+    console.print("[bold green]Checking for updates...[/bold green]")
     current_version = __get_current_version()
     latest_version = _get_latest_version(PACKAGE_NAME)
 
@@ -286,7 +300,8 @@ def _update_self(*, restart_after_update: bool = False) -> None:
     console.print("[bold green]Starting updater...[/bold green]")
 
     args = ["--restart"] if restart_after_update else []
-    os.execvp(sys.executable, [sys.executable, "-m", "griptape_nodes.updater", *args])  # noqa: S606
+
+    os_manager.replace_process([sys.executable, "-m", "griptape_nodes.updater", *args])
 
 
 def _update_assets() -> None:
@@ -296,8 +311,7 @@ def _update_assets() -> None:
     console.print(f"[bold cyan]Fetching Griptape Nodes assets ({tag})…[/bold cyan]")
 
     tar_url = NODES_TARBALL_URL.format(tag=tag)
-    dest_nodes = DATA_DIR / "nodes"
-    dest_workflows = DATA_DIR / "workflows"
+    dest_nodes = DATA_DIR / "libraries"
 
     with tempfile.TemporaryDirectory() as tmp:
         tar_path = Path(tmp) / "nodes.tar.gz"
@@ -318,11 +332,9 @@ def _update_assets() -> None:
         extracted_root = next(Path(tmp).glob("griptape-nodes-*"))
 
         console.print("[yellow]Copying nodes directory…[/yellow]")
-        shutil.copytree(extracted_root / "nodes", dest_nodes, dirs_exist_ok=True)
-        console.print("[yellow]Copying workflows directory…[/yellow]")
-        shutil.copytree(extracted_root / "workflows", dest_workflows, dirs_exist_ok=True)
+        shutil.copytree(extracted_root / "libraries", dest_nodes, dirs_exist_ok=True)
 
-    console.print("[bold green]Nodes + Workflows updated.[/bold green]")
+    console.print("[bold green]Node Libraries updated.[/bold green]")
 
 
 def _print_current_version() -> None:
@@ -386,7 +398,8 @@ def _uninstall_self() -> None:
 
     # Remove the executable
     console.print("[bold]Removing the executable...[/bold]")
-    os.execvp("uv", ["uv", "tool", "uninstall", "griptape-nodes"])  # noqa: S606
+    console.print("[bold yellow]When done, press Enter to exit.[/bold yellow]")
+    os_manager.replace_process(["uv", "tool", "uninstall", "griptape-nodes"])
 
 
 def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912

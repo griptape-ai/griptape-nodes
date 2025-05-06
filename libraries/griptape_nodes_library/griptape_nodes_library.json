@@ -1,0 +1,593 @@
+{
+  "name": "Griptape Nodes Library",
+  "library_schema_version": "0.1.0",
+  "metadata": {
+    "author": "Griptape, Inc.",
+    "description": "Default nodes for Griptape Nodes.",
+    "library_version": "0.1.0",
+    "engine_version": "0.1.0",
+    "tags": [
+      "Griptape",
+      "AI"
+    ]
+  },
+  "categories": [
+    {
+      "Base": {
+        "title": "Base",
+        "description": "Base related nodes.",
+        "color": "border-gray-500",
+        "icon": "Folder"
+      }
+    },
+    {
+      "execution": {
+        "color": "border-green-500",
+        "title": "Execution",
+        "description": "Execution Nodes.",
+        "icon": "Braces"
+      }
+    },
+    {
+      "agents": {
+        "color": "border-red-500",
+        "title": "Agent",
+        "description": "Nodes related to Agents.",
+        "icon": "UserCircle"
+      }
+    },
+    {
+      "rules": {
+        "color": "border-amber-500",
+        "title": "Rules",
+        "description": "Basic nodes.",
+        "icon": "Scale"
+      }
+    },
+    {
+      "tools": {
+        "color": "border-cyan-500",
+        "title": "Tools",
+        "description": "Tools an agent can use.",
+        "icon": "Wrench"
+      }
+    },
+    {
+      "audio": {
+        "color": "border-purple-500",
+        "title": "Audio",
+        "description": "Audio related nodes.",
+        "icon": "SpeakerWave"
+      }
+    },
+    {
+      "image": {
+        "color": "border-purple-500",
+        "title": "Image",
+        "description": "Image related nodes.",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/upscale": {
+        "color": "border-purple-500",
+        "title": "Image/Upscale",
+        "description": "Image upscaling related nodes.",
+        "icon": "Image"
+      }
+    },
+    {
+      "number": {
+        "color": "border-blue-500",
+        "title": "Number",
+        "description": "Number Nodes.",
+        "icon": "Hash"
+      }
+    },
+    {
+      "text": {
+        "color": "border-blue-500",
+        "title": "Text",
+        "description": "Text related nodes.",
+        "icon": "DocumentText"
+      }
+    },
+    {
+      "dict": {
+        "color": "border-green-500",
+        "title": "Dictionary",
+        "description": "Dictionary Nodes.",
+        "icon": "Braces"
+      }
+    },
+    {
+      "convert": {
+        "color": "border-cyan-500",
+        "title": "Convert",
+        "description": "Convert nodes.",
+        "icon": "Shuffle"
+      }
+    },
+    {
+      "config/image": {
+        "color": "border-lime-500",
+        "title": "Image",
+        "description": "Image Drivers for Griptape Agents.",
+        "icon": "Truck"
+      }
+    },
+    {
+      "config/prompt": {
+        "color": "border-lime-500",
+        "title": "Prompt",
+        "description": "Prompt Drivers for Griptape Agents.",
+        "icon": "Truck"
+      }
+    },
+    {
+      "config/web_search": {
+        "color": "border-lime-500",
+        "title": "Drivers",
+        "description": "Drivers for Griptape Agents.",
+        "icon": "Truck"
+      }
+    },
+    {
+      "utils": {
+        "color": "border-gray-500",
+        "title": "Utility",
+        "description": "Utility nodes like save, etc., etc.",
+        "icon": "Cog"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "class_name": "Agent",
+      "file_path": "griptape_nodes_library/agents/agent.py",
+      "metadata": {
+        "category": "agents",
+        "description": "Agent node.",
+        "display_name": "Agent"
+      }
+    },
+    {
+      "class_name": "ToBool",
+      "file_path": "griptape_nodes_library/convert/to_bool.py",
+      "metadata": {
+        "category": "convert",
+        "description": "ToBool node.",
+        "display_name": "To Bool"
+      }
+    },
+    {
+      "class_name": "ToDictionary",
+      "file_path": "griptape_nodes_library/convert/to_dict.py",
+      "metadata": {
+        "category": "convert",
+        "description": "ToDictionary node.",
+        "display_name": "To Dictionary"
+      }
+    },
+    {
+      "class_name": "ToFloat",
+      "file_path": "griptape_nodes_library/convert/to_float.py",
+      "metadata": {
+        "category": "convert",
+        "description": "ToFloat node.",
+        "display_name": "To Float"
+      }
+    },
+    {
+      "class_name": "ToInteger",
+      "file_path": "griptape_nodes_library/convert/to_int.py",
+      "metadata": {
+        "category": "convert",
+        "description": "ToInteger node.",
+        "display_name": "To Integer"
+      }
+    },
+    {
+      "class_name": "ToText",
+      "file_path": "griptape_nodes_library/convert/to_text.py",
+      "metadata": {
+        "category": "convert",
+        "description": "ToText node.",
+        "display_name": "To Text"
+      }
+    },
+    {
+      "class_name": "DisplayDictionary",
+      "file_path": "griptape_nodes_library/dict/display_dict.py",
+      "metadata": {
+        "category": "dict",
+        "description": "DisplayDictionary node.",
+        "display_name": "Display Dictionary"
+      }
+    },
+    {
+      "class_name": "KeyValuePair",
+      "file_path": "griptape_nodes_library/dict/key_value_pair.py",
+      "metadata": {
+        "category": "dict",
+        "description": "Create a Key Value Pair.",
+        "display_name": "Key Value Pair"
+      }
+    },
+    {
+      "class_name": "LoadDictionary",
+      "file_path": "griptape_nodes_library/dict/load_dict.py",
+      "metadata": {
+        "category": "dict",
+        "description": "LoadDictionary node.",
+        "display_name": "Load Dictionary"
+      }
+    },
+    {
+      "class_name": "MergeKeyValuePairs",
+      "file_path": "griptape_nodes_library/dict/merge_key_value_pair.py",
+      "metadata": {
+        "category": "dict",
+        "description": "MergeKeyValuePairs node.",
+        "display_name": "Merge Key Value Pairs"
+      }
+    },
+    {
+      "class_name": "SaveDictionary",
+      "file_path": "griptape_nodes_library/dict/save_dict.py",
+      "metadata": {
+        "category": "dict",
+        "description": "Save dict to a file.",
+        "display_name": "Save Dictionary"
+      }
+    },
+    {
+      "class_name": "GriptapeCloudImage",
+      "file_path": "griptape_nodes_library/config/image/griptape_cloud_image_driver.py",
+      "metadata": {
+        "category": "config/image",
+        "description": "Node for Griptape Cloud Image Generation Driver.",
+        "display_name": "Griptape Cloud Image"
+      }
+    },
+    {
+      "class_name": "OpenAiImage",
+      "file_path": "griptape_nodes_library/config/image/openai_image_driver.py",
+      "metadata": {
+        "category": "config/image",
+        "description": "Node for OpenAI Image Generation Driver.",
+        "display_name": "Open Ai Image"
+      }
+    },
+    {
+      "class_name": "AmazonBedrockPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/amazon_bedrock_prompt.py",
+      "metadata": {
+        "category": "config/prompt",
+        "description": "Node for Amazon Bedrock Prompt Driver.",
+        "display_name": "Amazon Bedrock Prompt"
+      }
+    },
+    {
+      "class_name": "AnthropicPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/anthropic_prompt.py",
+      "metadata": {
+        "category": "config/prompt",
+        "description": "Node for Anthropic Prompt Driver.",
+        "display_name": "Anthropic Prompt"
+      }
+    },
+    {
+      "class_name": "CoherePrompt",
+      "file_path": "griptape_nodes_library/config/prompt/cohere_prompt.py",
+      "metadata": {
+        "category": "config/prompt",
+        "description": "Node for Cohere Prompt Driver.",
+        "display_name": "Cohere Prompt"
+      }
+    },
+    {
+      "class_name": "GriptapeCloudPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/griptape_cloud_prompt.py",
+      "metadata": {
+        "category": "config/prompt",
+        "description": "Node for Griptape Cloud Prompt Driver.",
+        "display_name": "Griptape Cloud Prompt"
+      }
+    },
+    {
+      "class_name": "GrokPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/grok_prompt.py",
+      "metadata": {
+        "category": "config/prompt",
+        "description": "Node for Grok Prompt Driver.",
+        "display_name": "Grok Prompt"
+      }
+    },
+    {
+      "class_name": "OpenAiPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/openai_prompt.py",
+      "metadata": {
+        "category": "config/prompt",
+        "description": "Node for OpenAi Prompt Driver.",
+        "display_name": "Open Ai Prompt"
+      }
+    },
+    {
+      "class_name": "DuckDuckGo",
+      "file_path": "griptape_nodes_library/config/web_search/web_search_drivers.py",
+      "metadata": {
+        "category": "config/web_search",
+        "description": "DuckDuckGo node.",
+        "display_name": "Duck Duck Go"
+      }
+    },
+    {
+      "class_name": "GenerateImage",
+      "file_path": "griptape_nodes_library/image/create_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "GenerateImage node.",
+        "display_name": "Generate Image"
+      }
+    },
+    {
+      "class_name": "DescribeImage",
+      "file_path": "griptape_nodes_library/image/describe_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "DescribeImage node.",
+        "display_name": "Describe Image"
+      }
+    },
+    {
+      "class_name": "DisplayImage",
+      "file_path": "griptape_nodes_library/image/display_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "DisplayImage node.",
+        "display_name": "Display Image"
+      }
+    },
+    {
+      "class_name": "CompareImages",
+      "file_path": "griptape_nodes_library/image/compare_images.py",
+      "metadata": {
+        "category": "image",
+        "description": "CompareImages node.",
+        "display_name": "Compare Images"
+      }
+    },
+    {
+      "class_name": "LoadImage",
+      "file_path": "griptape_nodes_library/image/load_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "LoadImage node.",
+        "display_name": "Load Image"
+      }
+    },
+    {
+      "class_name": "SaveImage",
+      "file_path": "griptape_nodes_library/image/save_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Save an image to a file.",
+        "display_name": "Save Image"
+      }
+    },
+    {
+      "class_name": "Note",
+      "file_path": "griptape_nodes_library/note.py",
+      "metadata": {
+        "category": "Base",
+        "description": "Note node.",
+        "display_name": "Note"
+      }
+    },
+    {
+      "class_name": "FloatInput",
+      "file_path": "griptape_nodes_library/number/create_float.py",
+      "metadata": {
+        "category": "number",
+        "description": "FloatInput node.",
+        "display_name": "Float Input"
+      }
+    },
+    {
+      "class_name": "IntegerInput",
+      "file_path": "griptape_nodes_library/number/create_int.py",
+      "metadata": {
+        "category": "number",
+        "description": "IntegerInput node.",
+        "display_name": "Integer Input"
+      }
+    },
+    {
+      "class_name": "DisplayFloat",
+      "file_path": "griptape_nodes_library/number/display_float.py",
+      "metadata": {
+        "category": "number",
+        "description": "DisplayFloat node.",
+        "display_name": "Display Float"
+      }
+    },
+    {
+      "class_name": "DisplayInteger",
+      "file_path": "griptape_nodes_library/number/display_int.py",
+      "metadata": {
+        "category": "number",
+        "description": "DisplayInteger node.",
+        "display_name": "Display Integer"
+      }
+    },
+    {
+      "class_name": "Ruleset",
+      "file_path": "griptape_nodes_library/rules/create_ruleset.py",
+      "metadata": {
+        "category": "rules",
+        "description": "Ruleset node.",
+        "display_name": "Ruleset"
+      }
+    },
+    {
+      "class_name": "RulesetList",
+      "file_path": "griptape_nodes_library/rules/ruleset_list.py",
+      "metadata": {
+        "category": "rules",
+        "description": "Combine rulesets to give an agent a more complex set of behaviors.",
+        "display_name": "Ruleset List"
+      }
+    },
+    {
+      "class_name": "TextInput",
+      "file_path": "griptape_nodes_library/text/create_multiline_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "TextInput node.",
+        "display_name": "Text Input"
+      }
+    },
+    {
+      "class_name": "DisplayText",
+      "file_path": "griptape_nodes_library/text/display_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "DisplayText node.",
+        "display_name": "Display Text"
+      }
+    },
+    {
+      "class_name": "ListTexts",
+      "file_path": "griptape_nodes_library/text/list_texts.py",
+      "metadata": {
+        "category": "text",
+        "description": "Create a list of strings from multiple input values, and immediately forwards to output.",
+        "display_name": "List Texts"
+      }
+    },
+    {
+      "class_name": "LoadText",
+      "file_path": "griptape_nodes_library/text/load_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "LoadText node.",
+        "display_name": "Load Text"
+      }
+    },
+    {
+      "class_name": "MergeTexts",
+      "file_path": "griptape_nodes_library/text/merge_texts.py",
+      "metadata": {
+        "category": "text",
+        "description": "MergeTexts node.",
+        "display_name": "Merge Texts"
+      }
+    },
+    {
+      "class_name": "SaveText",
+      "file_path": "griptape_nodes_library/text/save_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "Save text to a file.",
+        "display_name": "Save Text"
+      }
+    },
+    {
+      "class_name": "Calculator",
+      "file_path": "griptape_nodes_library/tools/calculator_tool.py",
+      "metadata": {
+        "category": "tools",
+        "description": "Calculator node.",
+        "display_name": "Calculator"
+      }
+    },
+    {
+      "class_name": "DateTime",
+      "file_path": "griptape_nodes_library/tools/date_time_tool.py",
+      "metadata": {
+        "category": "tools",
+        "description": "DateTime node.",
+        "display_name": "Date Time"
+      }
+    },
+    {
+      "class_name": "FileManager",
+      "file_path": "griptape_nodes_library/tools/file_manager_tool.py",
+      "metadata": {
+        "category": "tools",
+        "description": "FileManager node.",
+        "display_name": "File Manager"
+      }
+    },
+    {
+      "class_name": "ToolList",
+      "file_path": "griptape_nodes_library/tools/tool_list.py",
+      "metadata": {
+        "category": "tools",
+        "description": "Combine tools to give an agent a more complex set of tools.",
+        "display_name": "Tool List"
+      }
+    },
+    {
+      "class_name": "WebSearch",
+      "file_path": "griptape_nodes_library/tools/web_search_tool.py",
+      "metadata": {
+        "category": "tools",
+        "description": "WebSearch node.",
+        "display_name": "Web Search"
+      }
+    },
+    {
+      "class_name": "WebScraper",
+      "file_path": "griptape_nodes_library/tools/web_scraper_tool.py",
+      "metadata": {
+        "category": "tools",
+        "description": "WebScraper node.",
+        "display_name": "Web Scraper"
+      }
+    },
+    {
+      "class_name": "StartFlow",
+      "file_path": "griptape_nodes_library/execution/start_flow.py",
+      "metadata": {
+        "category": "execution",
+        "description": "StartFlow node.",
+        "display_name": "Start Flow"
+      }
+    },
+    {
+      "class_name": "EndFlow",
+      "file_path": "griptape_nodes_library/execution/end_flow.py",
+      "metadata": {
+        "category": "execution",
+        "description": "EndFlow node.",
+        "display_name": "End Flow"
+      }
+    },
+    {
+      "class_name": "Reroute",
+      "file_path": "griptape_nodes_library/execution/reroute.py",
+      "metadata": {
+        "category": "execution",
+        "description": "Reroute node.",
+        "display_name": "Reroute"
+      }
+    },
+    {
+      "class_name": "AgentToTool",
+      "file_path": "griptape_nodes_library/convert/agent_to_tool.py",
+      "metadata": {
+        "category": "convert",
+        "description": "AgentToTool node.",
+        "display_name": "Agent To Tool"
+      }
+    }
+  ],
+  "workflows": [
+    "workflows/templates/prompt_an_image.py",
+    "workflows/templates/coordinating_agents.py",
+    "workflows/templates/compare_prompts.py",
+    "workflows/templates/photography_team.py"
+  ]
+}

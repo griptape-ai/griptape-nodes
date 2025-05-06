@@ -1,4 +1,4 @@
-# Build a Photography Team
+# Lesson 5: Build a Photography Team
 
 Welcome to the fifth and final tutorial in our Griptape Nodes New-Users series! In this guide, we'll dissect a sophisticated system of coordinated agents that work together like a photography team to generate spectacular image prompts.
 

@@ -71,7 +71,7 @@ format: ## Format project.
 .PHONY: fix
 fix: ## Fix project.
 	@make format
-	@uv run ruff check --fix --unsafe-fixes
+	@uv run ruff check --fix --unsafe-fixes --exclude "libraries/**/tests/**/*"
 
 .PHONY: check
 check: check/format check/lint check/types check/spell ## Run all checks.
@@ -79,11 +79,11 @@ check: check/format check/lint check/types check/spell ## Run all checks.
 .PHONY: check/format
 check/format:
 	@uv run ruff format --check
-	@uv run mdformat --check .github docs nodes src tests workflows *.md
+	@uv run mdformat --check .github docs libraries src tests *.md
 
 .PHONY: check/lint
 check/lint:
-	@uv run ruff check
+	@uv run ruff check --exclude "libraries/**/tests/**/*"
 
 .PHONY: check/types
 check/types:
@@ -99,12 +99,12 @@ test: test/unit test/integration
 .PHONY: test/unit
 test/unit: ## Run unit tests.
 	@uv run pytest -n auto tests/unit
-	@uv run pytest -n auto nodes/tests/unit
+	@uv run pytest -n auto libraries/griptape_nodes_library/tests/unit
 
 .PHONY: test/integration
 test/integration: ## Run integration tests.
 	@uv run pytest -n auto tests/integration
-	@uv run pytest -n auto nodes/tests/integration
+	@uv run pytest -n auto libraries/griptape_nodes_library/tests/integration
 
 .PHONY: docs
 docs: ## Build documentation.

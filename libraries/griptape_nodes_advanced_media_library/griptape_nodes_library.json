@@ -1,0 +1,72 @@
+{
+  "name": "Griptape Nodes Advanced Media Library",
+  "library_schema_version": "0.1.0",
+  "metadata": {
+    "author": "Griptape, Inc.",
+    "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
+    "library_version": "0.1.0",
+    "engine_version": "0.1.0",
+    "tags": [
+      "Griptape",
+      "AI"
+    ],
+    "dependencies": {
+      "pip_dependencies": [
+        "accelerate>=1.6.0",
+        "diffusers>=0.33.1",
+        "numpy>=2.2.4",
+        "peft>=0.15.2",
+        "pillow>=11.2.1",
+        "protobuf>=6.30.2",
+        "sentencepiece>=0.2.0",
+        "spandrel>=0.4.1",
+        "torch>=2.7.0",
+        "transformers>=4.51.2"
+      ],
+      "pip_install_flags": [
+        "--preview",
+        "--torch-backend=auto"
+      ]
+    }
+  },
+  "categories": [
+  ],
+  "nodes": [
+    {
+      "class_name": "FluxPipeline",
+      "file_path": "diffusers_nodes_library/flux_pipeline.py",
+      "metadata": {
+        "category": "image",
+        "description": "FluxPipeline node.",
+        "display_name": "Generate Image with Flux"
+      }
+    },
+    {
+      "class_name": "TilingFluxImg2ImgPipeline",
+      "file_path": "diffusers_nodes_library/tiling_flux_img_2_img_pipeline.py",
+      "metadata": {
+        "category": "image/upscale",
+        "description": "TilingFluxImg2ImgPipeline node. Useful as a 2nd pass when upscaling.",
+        "display_name": "Generate Image Variation with Flux and Tiling"
+      }
+    },
+    {
+      "class_name": "RescaleImage",
+      "file_path": "pillow_nodes_library/rescale_image.py",
+      "metadata": {
+        "category": "image/upscale",
+        "description": "RescaleImage node. Useful to select resampling strategy when upscaling.",
+        "display_name": "Rescale Image"
+      }
+    },
+    {
+      "class_name": "TilingSPAN",
+      "file_path": "spandrel_nodes_library/tiling_span.py",
+      "metadata": {
+        "category": "image/upscale",
+        "description": "TilingSPAN node. Useful as a 1st pass with upscaling.",
+        "display_name": "Upscale Image with SPAN and Tiling"
+      }
+    }
+  ]
+}
