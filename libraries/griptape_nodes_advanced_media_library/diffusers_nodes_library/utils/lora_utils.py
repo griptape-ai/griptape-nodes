@@ -30,15 +30,15 @@ def configure_flux_loras(node: ControlNode, pipe: diffusers.FluxPipeline, loras:
     loras_to_load = dict(lora_by_name)
     existing_adapter_names = {name for names in pipe.get_list_adapters().values() for name in names}
     for name in existing_adapter_names:
-        # Don't reload existing loras.
-        loras_to_load.pop(name)
+        if name in loras_to_load:
+            # Don't reload existing loras.
+            loras_to_load.pop(name)
 
     # Load the loras.
     for item in loras_to_load.values():
         lora_path = item["path"]
         msg = f"Loading lora weights: {lora_path}"
         logger.info(msg)
-        node.append_value_to_parameter("logs", f"{msg}\n")
         state_dict = safetensors.torch.load_file(lora_path)
         pipe.load_lora_weights(state_dict, adapter_name=item["name"])
 
@@ -68,6 +68,5 @@ def configure_flux_loras(node: ControlNode, pipe: diffusers.FluxPipeline, loras:
     adapter_weights = [v["weight"] for v in lora_by_name.values()]
     msg = f"Using adapter_names with weights:\n{adapter_names=}\n{adapter_weights=}"
     logger.info(msg)
-    node.append_value_to_parameter("logs", f"{msg}\n")
     pipe.set_adapters(adapter_names=adapter_names, adapter_weights=adapter_weights)
     pipe.enable_lora()
