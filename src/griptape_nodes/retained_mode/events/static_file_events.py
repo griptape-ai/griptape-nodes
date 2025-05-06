@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -19,7 +19,7 @@ class CreateStaticFileRequest(RequestPayload):
         file_name: Name of the file to create
     """
 
-    content: str
+    content: str = field(metadata={"omit_from_result": True})
     file_name: str
 
 

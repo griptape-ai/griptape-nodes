@@ -152,7 +152,8 @@ Specify a specific depth of field, and time of day.
 Use dust in the air to create a sense of depth.
 Use a slight vignetting on the edges of the image.
 Use a color palette that is complementary to the subject.
-Focus on qualities that will make this the most professional looking photo in the world.""",
+Focus on qualities that will make this the most professional looking photo in the world.
+IMPORTANT: Output must be a single, raw prompt string for an image generation model. Do not include any preamble, explanation, or conversational language.""",
                     prompt,
                 ]
             )
