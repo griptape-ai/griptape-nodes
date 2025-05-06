@@ -16,7 +16,7 @@ from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 SERVICE = "Grok"
 API_KEY_URL = "https://console.x.ai"
 API_KEY_ENV_VAR = "GROK_API_KEY"
-MODEL_CHOICES = ["grok-beta", "grok-vision-beta", "grok-2-latest", "grok-2-vision-latest"]
+MODEL_CHOICES = ["grok-3-beta", "grok-3-fast-beta", "grok-3-mini-beta", "grok-3-mini-fast-beta", "grok-2-vision-1212"]
 DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
