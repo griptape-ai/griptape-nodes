@@ -387,7 +387,7 @@ loaders-image = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.30.8"
+version = "0.30.9"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
