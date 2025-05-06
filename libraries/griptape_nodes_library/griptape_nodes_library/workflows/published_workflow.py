@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import time
 from collections.abc import Callable
@@ -27,6 +28,9 @@ DEFAULT_WORKFLOW_BASE_ENDPOINT = urljoin(
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 
 @dataclass(eq=False)
 class WorkflowOptions(Options):
@@ -35,16 +39,20 @@ class WorkflowOptions(Options):
     def converters_for_trait(self) -> list[Callable]:
         def converter(value: Any) -> Any:
             if value not in self.choices:
+                msg = f"Selection '{value}' is not in choices. Defaulting to first choice: '{self.choices[0]}'."
+                logger.warning(msg)
                 value = self.choices[0]
             value = self.choices_value_lookup.get(value, self.choices[0])["id"]
+            msg = f"Converted choice into value: {value}"
+            logger.warning(msg)
             return value
 
         return [converter]
 
     def validators_for_trait(self) -> list[Callable[[Parameter, Any], Any]]:
-        def validator(param: Parameter, value: Any) -> None:  # noqa: ARG001
-            if value not in (self.choices_value_lookup.get(x, self.choices[0])["id"] for x in self.choices):
-                msg = "Choice not allowed"
+        def validator(param: Parameter, value: Any) -> None:
+            if value not in [x.get("id") for x in self.choices_value_lookup.values()]:
+                msg = f"Attempted to set Parameter '{param.name}' to value '{value}', but that was not one of the available choices."
 
                 def raise_error() -> None:
                     raise ValueError(msg)
@@ -58,9 +66,6 @@ class PublishedWorkflow(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self.config = GriptapeNodes.ConfigManager()
-        self.flow_manager = GriptapeNodes.FlowManager()
-        self.node_manager = GriptapeNodes.NodeManager()
         self.workflows = self._get_workflow_options()
         self.choices = list(map(PublishedWorkflow._workflow_to_name_and_id, self.workflows))
 
@@ -128,7 +133,8 @@ class PublishedWorkflow(ControlNode):
 
     def _purge_old_connections(self) -> None:
         connection_request: ListConnectionsForNodeRequest = ListConnectionsForNodeRequest(node_name=self.name)
-        result = self.node_manager.on_list_connections_for_node_request(request=connection_request)
+        result = GriptapeNodes.NodeManager().on_list_connections_for_node_request(request=connection_request)
+        flow_manager = GriptapeNodes.FlowManager()
         if isinstance(result, ListConnectionsForNodeResultSuccess):
             for con in result.incoming_connections:
                 del_req: DeleteConnectionRequest = DeleteConnectionRequest(
@@ -137,7 +143,7 @@ class PublishedWorkflow(ControlNode):
                     source_node_name=con.source_node_name,
                     target_node_name=self.name,
                 )
-                del_result = self.flow_manager.on_delete_connection_request(request=del_req)
+                del_result = flow_manager.on_delete_connection_request(request=del_req)
                 if not isinstance(del_result, DeleteConnectionResultSuccess):
                     err_msg = f"Error deleting connection for node {self.name}: {del_result}"
                     raise TypeError(err_msg)
@@ -148,7 +154,7 @@ class PublishedWorkflow(ControlNode):
                     source_node_name=self.name,
                     target_node_name=con.target_node_name,
                 )
-                del_result = self.flow_manager.on_delete_connection_request(request=del_req)
+                del_result = flow_manager.on_delete_connection_request(request=del_req)
                 if not isinstance(del_result, DeleteConnectionResultSuccess):
                     err_msg = f"Error deleting connection for node {self.name}: {del_result}"
                     raise TypeError(err_msg)
@@ -182,14 +188,26 @@ class PublishedWorkflow(ControlNode):
                 workflow = response.json()
                 self.workflow_details = workflow
 
+                # If the targeted workflow is updated, we need to purge the old connections
+                # since the workflow parameters have likely changed.
                 self._purge_old_connections()
 
-                modified_parameters_set.update(
-                    self._purge_old_parameters({i for i, v in cast("dict[str, Any]", workflow["input"]).items()})
-                )
-                modified_parameters_set.update(
-                    self._purge_old_parameters({i for i, v in cast("dict[str, Any]", workflow["output"]).items()})
-                )
+                # Additionally, we need to purge the old parameters for the Node,
+                # and update the set of modified parameters.
+
+                # Retrieve the input parameters modified, and update the set of modified parameters
+                input_parameters_defined_for_workflow = {
+                    i for i, v in cast("dict[str, Any]", workflow["input"]).items()
+                }
+                modified_input_parameters = self._purge_old_parameters(input_parameters_defined_for_workflow)
+                modified_parameters_set.update(modified_input_parameters)
+
+                # Retrieve the output parameters modified, and update the set of modified parameters
+                output_parameters_defined_for_workflow = {
+                    i for i, v in cast("dict[str, Any]", workflow["output"]).items()
+                }
+                modified_output_parameters = self._purge_old_parameters(output_parameters_defined_for_workflow)
+                modified_parameters_set.update(modified_output_parameters)
 
                 self.add_parameter(
                     Parameter(
@@ -239,26 +257,34 @@ class PublishedWorkflow(ControlNode):
             api_key = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
 
             if not api_key:
-                msg = f"API key for {SERVICE} is not set."
-                raise_error(msg)
+                msg = f"{API_KEY_ENV_VAR} is not defined"
+                exceptions.append(KeyError(msg))
 
             if not self.get_parameter_value("workflow_id"):
-                msg = "Workflow ID is not set."
-                raise_error(msg)
+                msg = "Workflow ID is not set. Configure the Node with a valid published workflow ID before running."
+                exceptions.append(ValueError(msg))
 
             if (self.workflow_details.get("status", None)) not in ["READY"]:
                 response = self._get_workflow()
                 response.raise_for_status()
                 workflow = response.json()
-                if workflow["status"] != "READY":
-                    msg = f"Workflow ID {self.get_parameter_value('workflow_id')} is not ready. Status: {workflow['status']}"
-                    raise_error(msg)
+                if workflow["status"] == "PENDING":
+                    msg = f"Workflow ID {self.get_parameter_value('workflow_id')} is currently {workflow['status']}. Please wait until the workflow status is 'READY' before running the Node."
+                    exceptions.append(ValueError(msg))
+                elif workflow["status"] == "ERROR":
+                    structure_url = urljoin(
+                        os.getenv("GRIPTAPE_CLOUD_API_BASE_URL", "https://cloud.griptape.ai"),
+                        f"/structures/{self.get_parameter_value('workflow_id')}",
+                    )
+                    # TODO: Add details about a Workflow's status: https://github.com/griptape-ai/griptape-nodes/issues/1010
+                    msg = f"Workflow ID {self.get_parameter_value('workflow_id')} is currently {workflow['status']}. Please check the Griptape Cloud Structure for more details: {structure_url}"
+                    exceptions.append(ValueError(msg))
                 self.workflow_details = workflow
 
         except Exception as e:
             # Add any exceptions to your list to return
             exceptions.append(e)
-            return exceptions
+
         # if there are exceptions, they will display when the user tries to run the flow with the node.
         return exceptions if exceptions else None
 
@@ -315,6 +341,13 @@ class PublishedWorkflow(ControlNode):
                 for param, val in params.items():
                     if param in [param.name for param in self.parameters]:
                         self.append_value_to_parameter(param, value=val)
+        else:
+            run_url = urljoin(
+                os.getenv("GRIPTAPE_CLOUD_API_BASE_URL", "https://cloud.griptape.ai"),
+                f"/structures/{workflow_id}/runs/{workflow_run_id}",
+            )
+            err_msg = f"Workflow run failed with status: {response_data['status']}. Please check the Griptape Cloud Structure for more details: {run_url}"
+            raise ValueError(err_msg)
 
         return Response(
             json=response_data,

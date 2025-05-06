@@ -97,8 +97,8 @@ def __handle_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
         # for the flow to be resumed for any Node that yields a generator in its process method.
         node_name = result_event.payload.node_name
         flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
-        request = EventRequest(request=SingleExecutionStepRequest(flow_name=flow_name))
-        GriptapeNodes.handle_request(request.request)
+        event_request = EventRequest(request=SingleExecutionStepRequest(flow_name=flow_name))
+        GriptapeNodes.handle_request(event_request.request)
 
     elif type(result_event.payload).__name__ == "NodeFinishProcessEvent":
         event_log = f"NodeFinishProcessEvent: {result_event.payload}"
@@ -146,14 +146,14 @@ def _set_input_for_flow(flow_name: str, flow_input: dict[str, dict]) -> None:
             param_map: dict | None = flow_input.get(node_name)
             if param_map is not None:
                 for parameter_name, parameter_value in param_map.items():
-                    request = SetParameterValueRequest(
+                    set_parameter_value_request = SetParameterValueRequest(
                         parameter_name=parameter_name,
                         value=parameter_value,
                         node_name=node_name,
                     )
-                    result = GriptapeNodes.handle_request(request)
+                    set_parameter_value_result = GriptapeNodes.handle_request(set_parameter_value_request)
 
-                    if result.failed():
+                    if set_parameter_value_result.failed():
                         msg = f"Failed to set parameter {parameter_name} for node {node_name}."
                         raise ValueError(msg)
 
@@ -192,11 +192,13 @@ def run(flow_name: str, flow_input: Any) -> None:
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/951
     # These should all come from the customer's published script and installed
     # along with other dependencies.
-    request = RegisterLibraryFromFileRequest(file_path="libraries/griptape_nodes_library/griptape_nodes_library.json")
-    result = GriptapeNodes.handle_request(request)
+    library_path = "libraries/griptape_nodes_library/griptape_nodes_library.json"
+    register_library_request = RegisterLibraryFromFileRequest(file_path=library_path)
+    register_library_result = GriptapeNodes.handle_request(register_library_request)
 
-    if result.failed():
-        raise ValueError
+    if register_library_result.failed():
+        msg = f"Failed to register library from {library_path}"
+        raise ValueError(msg)
 
     # Execute the customer's script to establish the layout of nodes, etc.
     _load_user_workflow("workflow.py")
@@ -204,11 +206,12 @@ def run(flow_name: str, flow_input: Any) -> None:
     _set_input_for_flow(flow_name=flow_name, flow_input=flow_input)
 
     # Now send the run command to actually execute it
-    request = StartFlowRequest(flow_name=flow_name)
-    result = GriptapeNodes.handle_request(request)
+    start_flow_request = StartFlowRequest(flow_name=flow_name)
+    start_flow_result = GriptapeNodes.handle_request(start_flow_request)
 
-    if result.failed():
-        raise ValueError
+    if start_flow_result.failed():
+        msg = f"Failed to start flow {flow_name}"
+        raise ValueError(msg)
 
     logger.info("Workflow started!")
 

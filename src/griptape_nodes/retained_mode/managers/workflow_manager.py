@@ -198,6 +198,10 @@ class WorkflowManager:
             self.on_save_workflow_request,
         )
         event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
+        event_manager.assign_manager_to_request_type(
+            PublishWorkflowRequest,
+            self.on_publish_workflow_request,
+        )
 
     def on_libraries_initialization_complete(self) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
@@ -1064,20 +1068,34 @@ class WorkflowManager:
         return minimal_dict
 
     def _create_workflow_shape_from_nodes(
-        self, nodes: Sequence[BaseNode], workflow_shape: dict[str, Any], key: str
+        self, nodes: Sequence[BaseNode], workflow_shape: dict[str, Any], workflow_shape_type: str
     ) -> dict[str, Any]:
+        """Creates a workflow shape from the nodes.
+
+        This method iterates over a sequence of a certain Node type (input or output)
+        and creates a dictionary representation of the workflow shape. This informs which
+        Parameters can be set for input, and which Parameters are expected as output.
+        """
         for node in nodes:
             for param in node.parameters:
                 if param.user_defined:
-                    if node.name in workflow_shape[key]:
-                        cast("dict", workflow_shape[key][node.name])[param.name] = (
+                    if node.name in workflow_shape[workflow_shape_type]:
+                        cast("dict", workflow_shape[workflow_shape_type][node.name])[param.name] = (
                             self._convert_parameter_to_minimal_dict(param)
                         )
                     else:
-                        workflow_shape[key][node.name] = {param.name: self._convert_parameter_to_minimal_dict(param)}
+                        workflow_shape[workflow_shape_type][node.name] = {
+                            param.name: self._convert_parameter_to_minimal_dict(param)
+                        }
         return workflow_shape
 
     def _validate_workflow_shape_for_publish(self, workflow_name: str) -> dict[str, Any]:
+        """Validates the workflow shape for publishing.
+
+        Here we gather information about the Workflow's exposed input and output Parameters
+        such that a client invoking the Workflow can understand what values to provide
+        as well as what values to expect back as output.
+        """
         workflow_shape: dict[str, Any] = {"input": {}, "output": {}}
         flow_manager = GriptapeNodes.get_instance()._flow_manager
 
@@ -1087,6 +1105,7 @@ class WorkflowManager:
         start_nodes: list[StartNode] = []
         end_nodes: list[EndNode] = []
 
+        # First, validate that there are at least one StartNode and one EndNode
         for node in nodes.values():
             if isinstance(node, StartNode):
                 start_nodes.append(node)
@@ -1101,11 +1120,12 @@ class WorkflowManager:
             logger.error(details)
             raise ValueError(details)
 
+        # Now, we need to gather the input and output parameters for each node type.
         workflow_shape = self._create_workflow_shape_from_nodes(
-            nodes=start_nodes, workflow_shape=workflow_shape, key="input"
+            nodes=start_nodes, workflow_shape=workflow_shape, workflow_shape_type="input"
         )
         workflow_shape = self._create_workflow_shape_from_nodes(
-            nodes=end_nodes, workflow_shape=workflow_shape, key="output"
+            nodes=end_nodes, workflow_shape=workflow_shape, workflow_shape_type="output"
         )
 
         return workflow_shape
@@ -1130,6 +1150,7 @@ class WorkflowManager:
 
         # TODO (https://github.com/griptape-ai/griptape-nodes/issues/951): Libraries
 
+        # Gather the paths to the files we need to copy.
         root_path = Path(__file__).parent.parent.parent.parent.parent
         libraries_path = root_path / "libraries"
         structure_file_path = root_path / "src" / "griptape_nodes" / "bootstrap" / "bootstrap_script.py"
@@ -1139,6 +1160,7 @@ class WorkflowManager:
         config = config_manager.user_config
         config["workspace_directory"] = "/structure"
 
+        # Create a temporary directory to perform the packaging
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_dir_path = Path(tmp_dir)
             temp_workflow_file_path = tmp_dir_path / "workflow.py"
@@ -1147,6 +1169,7 @@ class WorkflowManager:
             init_file_path = tmp_dir_path / "src" / "griptape_nodes" / "__init__.py"
 
             try:
+                # Copy the workflow file, libraries, and structure files to the temporary directory
                 shutil.copyfile(workflow.file_path, temp_workflow_file_path)
                 shutil.copytree(libraries_path, tmp_dir_path / "libraries")
                 shutil.copyfile(structure_file_path, temp_structure_path)
@@ -1168,6 +1191,7 @@ class WorkflowManager:
                 logger.error(details)
                 raise
 
+            # Create the requirements.txt file using the correct engine version
             requirements_file_path = tmp_dir_path / "requirements.txt"
             with requirements_file_path.open("w") as requirements_file:
                 requirements_file.write(
@@ -1233,7 +1257,7 @@ class WorkflowManager:
             }
             input_data.update(workflow_shape)
             response = self._deploy_workflow_to_cloud(package_path, input_data)
-            logger.info("Workflow published successfully: %s", response)
+            logger.info("Workflow '%s' published successfully: %s", request.workflow_name, response)
 
             return PublishWorkflowResultSuccess(
                 workflow_id=response["id"],
