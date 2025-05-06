@@ -22,7 +22,7 @@ ColorWrite "uv installed successfully." 'Green'
 
 ColorWrite "`nInstalling Griptape Nodes Engine...`n" 'Cyan'
 $uvPath = "$HOME\.local\bin\uv.exe"
-$env:Path = "$HOME\.local\bin;$env:Path"
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ';' + $env:USERPROFILE + '.local\bin', 'User')
 & $uvPath tool update-shell
 & $uvPath tool install --force --python python3.12 griptape-nodes > $null
 
