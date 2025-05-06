@@ -37,7 +37,7 @@ class StructuredDataExtractor(BaseTool):
         # Set the output
         self.parameter_output_values["tool"] = tool
 
-    def validate_node(self) -> list[Exception] | None:
+    def validate_before_workflow_run(self) -> list[Exception] | None:
         exceptions = []
         if self.parameter_values.get("prompt_driver", None):
             return exceptions

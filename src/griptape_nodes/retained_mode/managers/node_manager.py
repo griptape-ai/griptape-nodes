@@ -1543,7 +1543,7 @@ class NodeManager:
         nodes = flow.get_node_dependencies(node)
         all_exceptions = []
         for dependent_node in nodes:
-            exceptions = dependent_node.validate_node()
+            exceptions = dependent_node.validate_before_workflow_run()
             if exceptions:
                 all_exceptions = all_exceptions + exceptions
         return ValidateNodeDependenciesResultSuccess(
