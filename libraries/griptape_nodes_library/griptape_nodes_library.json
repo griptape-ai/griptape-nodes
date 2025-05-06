@@ -69,6 +69,14 @@
       }
     },
     {
+      "video": {
+        "color": "border-orange-500",
+        "title": "Video",
+        "description": "Video related nodes.",
+        "icon": "Video"
+      }
+    },
+    {
       "image/upscale": {
         "color": "border-purple-500",
         "title": "Image/Upscale",
@@ -374,6 +382,24 @@
         "category": "image",
         "description": "Save an image to a file.",
         "display_name": "Save Image"
+      }
+    },
+    {
+      "class_name": "LoadVideo",
+      "file_path": "griptape_nodes_library/video/load_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "LoadVideo node.",
+        "display_name": "Load Video"
+      }
+    },
+    {
+      "class_name": "DisplayVideo",
+      "file_path": "griptape_nodes_library/video/display_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "DisplayVideo node.",
+        "display_name": "Display Video"
       }
     },
     {
