@@ -6,6 +6,7 @@ import importlib.metadata
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -19,6 +20,8 @@ from rich.panel import Panel
 from rich.progress import Progress
 from rich.prompt import Confirm, Prompt
 from xdg_base_dirs import xdg_config_home, xdg_data_home
+
+from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 console = Console()
 
@@ -298,7 +301,12 @@ def _update_self(*, restart_after_update: bool = False) -> None:
     console.print("[bold green]Starting updater...[/bold green]")
 
     args = ["--restart"] if restart_after_update else []
-    os.execvp(sys.executable, [sys.executable, "-m", "griptape_nodes.updater", *args])  # noqa: S606
+
+    if OSManager().is_windows():
+        subprocess.Popen([sys.executable, "-m", "griptape_nodes.updater", *args])
+        sys.exit(0)
+    else:
+        os.execvp(sys.executable, [sys.executable, "-m", "griptape_nodes.updater", *args])  # noqa: S606
 
 
 def _update_assets() -> None:

@@ -67,6 +67,14 @@ class NodeDefinition(BaseModel):
     metadata: NodeMetadata
 
 
+class Setting(BaseModel):
+    """Defines a library-specific setting, which will automatically be injected into the user's Configuration."""
+
+    category: str  # Name of the category in the config
+    contents: dict[str, Any]  # The actual settings content
+    description: str | None = None  # Optional description for the setting
+
+
 class LibrarySchema(BaseModel):
     """Schema for a library definition file.
 
@@ -82,6 +90,7 @@ class LibrarySchema(BaseModel):
     nodes: list[NodeDefinition]
     workflows: list[str] | None = None
     scripts: list[str] | None = None
+    settings: list[Setting] | None = None
     is_default_library: bool = False
 
 

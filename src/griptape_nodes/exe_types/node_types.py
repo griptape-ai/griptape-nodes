@@ -27,6 +27,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ProgressEvent,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
+    NodeUnresolvedEvent,
     ParameterValueUpdateEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
@@ -85,7 +86,18 @@ class BaseNode(ABC):
         self.root_ui_element = BaseNodeElement()
         self.process_generator = None
 
-    def make_node_unresolved(self) -> None:
+    # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
+    # https://github.com/griptape-ai/griptape-nodes/issues/994
+    def make_node_unresolved(self, current_states_to_trigger_change_event: set[NodeResolutionState] | None) -> None:
+        # See if the current state is in the set of states to trigger a change event.
+        if current_states_to_trigger_change_event is not None and self.state in current_states_to_trigger_change_event:
+            # Trigger the change event.
+            # Send an event to the GUI so it knows this node has changed resolution state.
+            EventBus.publish_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=NodeUnresolvedEvent(node_name=self.name))
+                )
+            )
         self.state = NodeResolutionState.UNRESOLVED
 
     def allow_incoming_connection(

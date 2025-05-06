@@ -25,6 +25,12 @@ from griptape_nodes.node_library.library_registry import LibraryRegistry, Librar
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
 )
+from griptape_nodes.retained_mode.events.config_events import (
+    GetConfigCategoryRequest,
+    GetConfigCategoryResultSuccess,
+    SetConfigCategoryRequest,
+    SetConfigCategoryResultSuccess,
+)
 from griptape_nodes.retained_mode.events.library_events import (
     GetAllInfoForAllLibrariesRequest,
     GetAllInfoForAllLibrariesResultFailure,
@@ -493,8 +499,44 @@ class LibraryManager:
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
+        # We are at least potentially viable.
+        # Record all problems that occurred
         problems = []
-        any_successes = False
+
+        # Check the library's custom config settings.
+        if library_data.settings is not None:
+            # Assign them into the config space.
+            for library_data_setting in library_data.settings:
+                # Does the category exist?
+                get_category_request = GetConfigCategoryRequest(category=library_data_setting.category)
+                get_category_result = GriptapeNodes.handle_request(get_category_request)
+                if not isinstance(get_category_result, GetConfigCategoryResultSuccess):
+                    # That's OK, we'll invent it. Or at least we'll try.
+                    create_new_category_request = SetConfigCategoryRequest(
+                        category=library_data_setting.category, contents=library_data_setting.contents
+                    )
+                    create_new_category_result = GriptapeNodes.handle_request(create_new_category_request)
+                    if not isinstance(create_new_category_result, SetConfigCategoryResultSuccess):
+                        problems.append(f"Failed to create new config category '{library_data_setting.category}'.")
+                        details = f"Failed attempting to create new config category '{library_data_setting.category}' for library '{library_data.name}'."
+                        logger.error(details)
+                        continue  # SKIP IT
+                else:
+                    # We had an existing category. Union our changes into it (not replacing anything that matched).
+                    existing_category_contents = get_category_result.contents
+                    existing_category_contents.update(library_data_setting.contents)
+                    set_category_request = SetConfigCategoryRequest(
+                        category=library_data_setting.category, contents=existing_category_contents
+                    )
+                    set_category_result = GriptapeNodes.handle_request(set_category_request)
+                    if not isinstance(set_category_result, SetConfigCategoryResultSuccess):
+                        problems.append(f"Failed to update config category '{library_data_setting.category}'.")
+                        details = f"Failed attempting to update config category '{library_data_setting.category}' for library '{library_data.name}'."
+                        logger.error(details)
+                        continue  # SKIP IT
+
+        # Attempt to load nodes from the library.
+        any_nodes_loaded_successesfully = False
         # Process each node in the metadata
         for node_definition in library_data.nodes:
             # Resolve relative path to absolute path
@@ -527,9 +569,9 @@ class LibraryManager:
                 continue  # SKIP IT
 
             # If we got here, at least one node came in.
-            any_successes = True
+            any_nodes_loaded_successesfully = True
 
-        if not any_successes:
+        if not any_nodes_loaded_successesfully:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=library_data.name,

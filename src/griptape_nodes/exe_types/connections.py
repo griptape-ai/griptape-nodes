@@ -1,17 +1,8 @@
 import logging
 from dataclasses import dataclass
 
-from griptape.events import EventBus
-
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState
-from griptape_nodes.retained_mode.events.base_events import (
-    ExecutionEvent,
-    ExecutionGriptapeNodeEvent,
-)
-from griptape_nodes.retained_mode.events.execution_events import (
-    NodeUnresolvedEvent,
-)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -202,13 +193,10 @@ class Connections:
                         target_node = connection.target_node
                         # if that node is already unresolved, we're all good.
                         if target_node.state == NodeResolutionState.RESOLVED:
-                            target_node.state = NodeResolutionState.UNRESOLVED
-                            # Send an event to the GUI so it knows this node is now unresolved. Execution event bc this happens bc of executions
-                            EventBus.publish_event(
-                                ExecutionGriptapeNodeEvent(
-                                    wrapped_event=ExecutionEvent(
-                                        payload=NodeUnresolvedEvent(node_name=target_node.name)
-                                    )
+                            # Sends an event to the GUI so it knows this node has changed resolution state.
+                            target_node.make_node_unresolved(
+                                current_states_to_trigger_change_event=set(
+                                    {NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
                                 )
                             )
                             self.unresolve_future_nodes(target_node)
