@@ -8,7 +8,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 
 from rich.console import Console
@@ -16,6 +15,8 @@ from rich.console import Console
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 console = Console()
+
+os_manager = OSManager()
 
 
 def _parse_args() -> argparse.Namespace:
@@ -38,7 +39,7 @@ def main() -> None:
     _download_and_run_installer()
     if args.restart:
         _restart_engine()
-    elif OSManager().is_windows():
+    elif os_manager.is_windows():
         # On Windows, the terminal prompt doesn't refresh after the update finishes.
         # This gives the appearance of the program hanging, but it is not.
         # This is a workaround to manually refresh the terminal.
@@ -64,7 +65,7 @@ def _restart_engine() -> None:
     """Restarts the engine."""
     console.print("[bold green]Restarting engine...[/bold green]")
     try:
-        os.execvp("griptape-nodes", ["griptape-nodes --no-update"])  # noqa: S606, S607
+        os_manager.replace_process(["griptape-nodes", "--no-update"])
     except subprocess.CalledProcessError as e:
         console.print(f"[bold red]Error during restart: {e}[/bold red]")
 

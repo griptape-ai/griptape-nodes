@@ -4,9 +4,7 @@
 import argparse
 import importlib.metadata
 import json
-import os
 import shutil
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -41,6 +39,7 @@ NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/
 
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
+os_manager = OSManager()
 
 
 def main() -> None:
@@ -302,11 +301,7 @@ def _update_self(*, restart_after_update: bool = False) -> None:
 
     args = ["--restart"] if restart_after_update else []
 
-    if OSManager().is_windows():
-        subprocess.Popen([sys.executable, "-m", "griptape_nodes.updater", *args])
-        sys.exit(0)
-    else:
-        os.execvp(sys.executable, [sys.executable, "-m", "griptape_nodes.updater", *args])  # noqa: S606
+    os_manager.replace_process([sys.executable, "-m", "griptape_nodes.updater", *args])
 
 
 def _update_assets() -> None:
@@ -403,7 +398,8 @@ def _uninstall_self() -> None:
 
     # Remove the executable
     console.print("[bold]Removing the executable...[/bold]")
-    os.execvp("uv", ["uv", "tool", "uninstall", "griptape-nodes"])  # noqa: S606
+    console.print("[bold yellow]When done, press Enter to exit.[/bold yellow]")
+    os_manager.replace_process(["uv", "tool", "uninstall", "griptape-nodes"])
 
 
 def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
