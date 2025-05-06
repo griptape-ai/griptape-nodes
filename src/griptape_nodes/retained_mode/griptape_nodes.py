@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import IO, TYPE_CHECKING, Any, ClassVar, TextIO
 
+from griptape_nodes.exe_types.core_types import ParameterGroup, Parameter
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.retained_mode.events.app_events import (
     AppGetSessionRequest,
@@ -22,7 +23,6 @@ from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, D
 from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeRequest, AlterParameterDetailsRequest
 
 if TYPE_CHECKING:
-    from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import ArbitraryCodeExecManager
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
@@ -304,38 +304,39 @@ def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tu
     """Handles the creation and saving of parameters for a node."""
     parameter_details = ""
     saved_properly = True
-    for parameter in node.parameters:
-        param_dict = parameter.to_dict()
-        # Create the parameter, or alter it on the existing node
-        if parameter.user_defined:
-            param_dict["node_name"] = node.name
-            param_dict["initial_setup"] = True
-            creation_request = AddParameterToNodeRequest.create(**param_dict)
-            code_string = f"GriptapeNodes.handle_request({creation_request})\n"
-            parameter_details += code_string
-        else:
-            base_node_obj = type(node)(name="test")
-            diff = manage_alter_details(parameter, base_node_obj)
-            relevant = False
-            for key in diff:
-                if key in AlterParameterDetailsRequest.relevant_parameters():
-                    relevant = True
-                    break
-            if relevant:
-                diff["node_name"] = node.name
-                diff["parameter_name"] = parameter.name
-                diff["initial_setup"] = True
-                creation_request = AlterParameterDetailsRequest.create(**diff)
+    for parameter in node.root_ui_element.children:
+        if isinstance(parameter, (Parameter, ParameterGroup)):
+            param_dict = parameter.to_dict()
+            # Create the parameter, or alter it on the existing node
+            if isinstance(parameter, Parameter) and parameter.user_defined:
+                param_dict["node_name"] = node.name
+                param_dict["initial_setup"] = True
+                creation_request = AddParameterToNodeRequest.create(**param_dict)
                 code_string = f"GriptapeNodes.handle_request({creation_request})\n"
                 parameter_details += code_string
-        if parameter.name in node.parameter_values or parameter.name in node.parameter_output_values:
-            # SetParameterValueRequest event
-            code_string = handle_parameter_value_saving(parameter, node, values_created)
-            if code_string:
-                code_string = code_string + "\n"
-                parameter_details += code_string
             else:
-                saved_properly = False
+                base_node_obj = type(node)(name="test")
+                diff = manage_alter_details(parameter, base_node_obj)
+                relevant = False
+                for key in diff:
+                    if key in AlterParameterDetailsRequest.relevant_parameters():
+                        relevant = True
+                        break
+                if relevant:
+                    diff["node_name"] = node.name
+                    diff["parameter_name"] = parameter.name if isinstance(parameter,Parameter) else parameter.group_name
+                    diff["initial_setup"] = True
+                    creation_request = AlterParameterDetailsRequest.create(**diff)
+                    code_string = f"GriptapeNodes.handle_request({creation_request})\n"
+                    parameter_details += code_string
+            if isinstance(parameter,Parameter) and (parameter.name in node.parameter_values or parameter.name in node.parameter_output_values):
+                # SetParameterValueRequest event
+                code_string = handle_parameter_value_saving(parameter, node, values_created)
+                if code_string:
+                    code_string = code_string + "\n"
+                    parameter_details += code_string
+                else:
+                    saved_properly = False
     return parameter_details, saved_properly
 
 
@@ -515,13 +516,20 @@ def _create_object_in_file(value: Any, var_name: str, imports: list) -> str:
     return ""
 
 
-def manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
+def manage_alter_details(parameter: Parameter|ParameterGroup, base_node_obj: BaseNode) -> dict:
     """Alters the details of a parameter based on the base node object."""
-    base_param = base_node_obj.get_parameter_by_name(parameter.name)
-    if base_param:
-        diff = base_param.equals(parameter)
+    if isinstance(parameter, Parameter):
+        base_param = base_node_obj.get_parameter_by_name(parameter.name)
+        if base_param is not None:
+            diff = base_param.equals(parameter)
+        else:
+            return vars(parameter)
     else:
-        return vars(parameter)
+        base_param_group = base_node_obj.get_group_by_name_or_element_id(parameter.group_name)
+        if base_param_group is not None:
+            diff = base_param_group.equals(parameter)
+        else:
+            return vars(parameter)
     return diff
 
 

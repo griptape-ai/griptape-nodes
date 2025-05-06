@@ -293,6 +293,24 @@ class ParameterGroup(BaseNodeElement):
         our_dict["ui_options"] = self.ui_options
         return our_dict
 
+    def equals(self, other:ParameterGroup) -> dict:
+        self_dict = self.to_dict().copy()
+        other_dict = other.to_dict().copy()
+        self_dict.pop("element_id", None)
+        other_dict.pop("element_id", None)
+        if self_dict == other_dict:
+            return {}
+        differences = {}
+        for key, self_value in self_dict.items():
+            other_value = other_dict.get(key, None)
+            # handle children here
+            if isinstance(self_value, BaseNodeElement) and isinstance(other_value, BaseNodeElement):
+                if self_value != other_value:
+                    differences[key] = other_value
+            elif self_value != other_value:
+                differences[key] = other_value
+        return differences
+
 
 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/856
 class ParameterBase(BaseNodeElement, ABC):
@@ -685,8 +703,8 @@ class Parameter(BaseNodeElement):
 
     # intentionally not overwriting __eq__ because I want to return a dict not true or false
     def equals(self, other: Parameter) -> dict:
-        self_dict = self.__dict__.copy()
-        other_dict = other.__dict__.copy()
+        self_dict = self.to_dict().copy()
+        other_dict = other.to_dict().copy()
         self_dict.pop("next", None)
         self_dict.pop("prev", None)
         self_dict.pop("element_id", None)
