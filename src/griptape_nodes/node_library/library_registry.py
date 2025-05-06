@@ -24,7 +24,7 @@ class Dependencies(BaseModel):
     be installed with pip.
     """
 
-    dependencies: list[str] | None = None
+    pip_dependencies: list[str] | None = None
     pip_install_flags: list[str] | None = None
 
 
