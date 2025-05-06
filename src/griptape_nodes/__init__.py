@@ -304,6 +304,7 @@ def _update_self(*, restart_after_update: bool = False) -> None:
 
     if OSManager().is_windows():
         subprocess.Popen([sys.executable, "-m", "griptape_nodes.updater", *args])
+        sys.exit(0)
     else:
         os.execvp(sys.executable, [sys.executable, "-m", "griptape_nodes.updater", *args])  # noqa: S606
 
