@@ -61,7 +61,7 @@ class OSManager:
             sys.exit(0)
         else:
             sys.stdout.flush()  # Recommended here https://docs.python.org/3/library/os.html#os.execvpe
-            os.execvp(os.path.realpath(args[0]), args)  # noqa: S606
+            os.execvp(args[0], args)  # noqa: S606
 
     def on_open_associated_file_request(self, request: OpenAssociatedFileRequest) -> ResultPayload:  # noqa: PLR0911
         # Sanitize and validate the file path
