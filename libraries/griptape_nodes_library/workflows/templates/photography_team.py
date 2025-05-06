@@ -143,7 +143,7 @@ cmd.set_value(
 cmd.set_value("Image_Generation_Specialist_asTool.off_prompt", False)
 cmd.set_value(
     "Orchestrator.prompt",
-    "Use all the tools at your disposal to create a spectacular image generation prompt about a teddy bear",
+    'Use all the tools at your disposal to create a spectacular image generation prompt about a "a skateboarding lion", that is no longer than 500 characters',
 )
 cmd.set_value("Orchestrator.model", "gpt-4.1")
 cmd.set_value("Orchestrator.include_details", False)
@@ -151,7 +151,7 @@ cmd.set_value("GenerateImage_1.enhance_prompt", False)
 cmd.set_value("Agent_Ruleset.name", "Agent Rules")
 cmd.set_value(
     "Agent_Ruleset.rules",
-    "You are creating a prompt for an image generation engine.\nYou have access to topic experts in their respective fields\nWork with the experts to get the results you need\nYou facilitate communication between them.\nIf they ask for feedback, you can provide it.\nAsk the Image_Generation_Specialist for the final prompt.\nOutput only the final image generation prompt. Do not wrap in markdown context.\nKeep your responses brief.",
+    "You are creating a prompt for an image generation engine.\nYou have access to topic experts in their respective fields\nWork with the experts to get the results you need\nYou facilitate communication between them.\nIf they ask for feedback, you can provide it.\nAsk the Image_Generation_Specialist for the final prompt.\nOutput only the final image generation prompt. Do not wrap in markdown context.\nKeep your responses brief.\nIMPORTANT: Always ensure image generation prompts are completely free of sexual, violent, hateful, or politically divisive content. When in doubt, err on the side of caution and choose wholesome, neutral themes that would be appropriate for all audiences.",
 )
 
 # --- Create connections ---

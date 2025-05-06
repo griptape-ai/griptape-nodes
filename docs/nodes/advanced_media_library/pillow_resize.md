@@ -1,9 +1,5 @@
 # PillowResize
 
-!!! warning "You need to perform setup steps to use Hugging Face nodes"
-
-    [This guide](hugging_face_install.md) will walk you through setting up a Hugging Face account, creating an access token, and installing the required models to make this node fully functional.
-
 ## What is it?
 
 The PillowResize node is used to resize images using the Pillow library. It allows you to scale images by a specified factor and choose from various resampling strategies to maintain image quality.
