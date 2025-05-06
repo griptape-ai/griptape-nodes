@@ -753,6 +753,11 @@ class WorkflowManager:
         Returns:
             bool: True if the workflow was successfully registered, False otherwise.
         """
+        # Presently, this will not fail if a workflow with that name is already registered. That failure happens with a later check.
+        # However, the table of WorkflowInfo DOES get updated in this request, which may present a confusing state of affairs to the user.
+        # On one hand, we want the user to know how a specific workflow fared, but also not let them think it was registered when it wasn't.
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/996
+
         # Attempt to extract the metadata out of the workflow.
         load_metadata_request = LoadWorkflowMetadata(file_name=str(workflow_to_register))
         load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
@@ -760,16 +765,14 @@ class WorkflowManager:
             # SKIP IT
             return False
 
-        try:
-            successful_metadata_result = cast("LoadWorkflowMetadataResultSuccess", load_metadata_result)
-        except Exception as err:
+        if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
             err_str = (
-                f"Error attempting to get info about workflow to register '{workflow_to_register}': {err}. SKIPPING IT."
+                f"Attempted to register workflow '{workflow_to_register}', but failed to extract metadata. SKIPPING IT."
             )
             logger.error(err_str)
             return False
 
-        workflow_metadata = successful_metadata_result.metadata
+        workflow_metadata = load_metadata_result.metadata
 
         # Prepend the image paths appropriately.
         if workflow_metadata.image is not None:
