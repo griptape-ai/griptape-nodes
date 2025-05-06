@@ -296,6 +296,15 @@
       }
     },
     {
+      "class_name": "GrokPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/grok_prompt.py",
+      "metadata": {
+        "category": "config/prompt",
+        "description": "Node for Grok Prompt Driver.",
+        "display_name": "Grok Prompt"
+      }
+    },
+    {
       "class_name": "OpenAiPrompt",
       "file_path": "griptape_nodes_library/config/prompt/openai_prompt.py",
       "metadata": {
