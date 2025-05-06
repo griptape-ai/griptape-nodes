@@ -8,7 +8,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
     CreateConnectionResultFailure,
@@ -741,7 +741,11 @@ class FlowManager:
                 # It removed it accurately
                 # Unresolve future nodes that depended on that value
                 source_flow.connections.unresolve_future_nodes(target_node)
-                target_node.make_node_unresolved()
+                target_node.make_node_unresolved(
+                    current_states_to_trigger_change_event=set(
+                        {NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+                    )
+                )
             except KeyError as e:
                 logger.warning(e)
 
