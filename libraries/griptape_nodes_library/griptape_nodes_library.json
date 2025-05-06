@@ -583,5 +583,11 @@
         "display_name": "Agent To Tool"
       }
     }
+  ],
+  "workflows": [
+    "workflows/templates/prompt_an_image.py",
+    "workflows/templates/coordinating_agents.py",
+    "workflows/templates/compare_prompts.py",
+    "workflows/templates/photography_team.py"
   ]
 }

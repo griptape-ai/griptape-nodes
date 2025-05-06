@@ -799,7 +799,20 @@ class LibraryManager:
                     continue
                 library_data = library.get_library_data()
                 if library_data.workflows:
-                    library_workflow_files_to_register.extend(library_data.workflows)
+                    # Prepend the library's JSON path to the list, as the workflows are stored
+                    # relative to it.
+                    # Find the library info with that name.
+                    for library_info in self._library_file_path_to_info.values():
+                        if library_info.library_name == library_name:
+                            library_path = Path(library_info.library_path)
+                            base_dir = library_path.parent.absolute()
+                            # Add the directory to the Python path to allow for relative imports.
+                            sys.path.insert(0, str(base_dir))
+                            for workflow in library_data.workflows:
+                                final_workflow_path = base_dir / workflow
+                                library_workflow_files_to_register.append(str(final_workflow_path))
+                            # WE DONE HERE (at least, for this library).
+                            break
 
         GriptapeNodes.WorkflowManager().register_list_of_workflows(library_workflow_files_to_register)
 

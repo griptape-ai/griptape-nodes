@@ -39,7 +39,7 @@ class WorkflowRegistry(SingletonMixin):
     def generate_new_workflow(cls, file_path: str, metadata: WorkflowMetadata) -> Workflow:
         instance = cls()
         if metadata.name in instance._workflows:
-            msg = f"Workflow with name {metadata.name} already registered."
+            msg = f"Workflow with name '{metadata.name}' already registered."
             raise KeyError(msg)
         workflow = Workflow(registry_key=instance._registry_key, file_path=file_path, metadata=metadata)
         instance._workflows[metadata.name] = workflow
