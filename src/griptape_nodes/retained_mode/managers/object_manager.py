@@ -114,12 +114,14 @@ class ObjectManager:
                     logger.error(details)
                     return ClearAllObjectStateResultFailure()
         context_mgr = GriptapeNodes.ContextManager()
-        while context_mgr.has_current_flow():
-            while context_mgr.has_current_node():
-                while context_mgr.has_current_element():
-                    context_mgr.pop_element()
-                context_mgr.pop_node()
-            context_mgr.pop_flow()
+        while context_mgr.has_current_workflow():
+            while context_mgr.has_current_flow():
+                while context_mgr.has_current_node():
+                    while context_mgr.has_current_element():
+                        context_mgr.pop_element()
+                    context_mgr.pop_node()
+                context_mgr.pop_flow()
+            context_mgr.pop_workflow()
 
         try:
             # Clear the existing flows, which will clear all nodes and connections.
