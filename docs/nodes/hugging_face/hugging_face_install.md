@@ -10,59 +10,57 @@ This guide will walk you through setting up a Hugging Face account, creating an 
 
 ### 1. Create a new account on Hugging Face
 
-1. Go to [https://huggingface.co/](https://huggingface.co/)
-1. Click **Sign Up** in the top-right corner
-1. Complete the verification step to prove you're not a robot
+  1. Go to [https://huggingface.co/](https://huggingface.co/)
+  1. Click **Sign Up** in the top-right corner
+  1. Complete the verification step to prove you're not a robot
 
-<p align="center">
-    <img src="../assets/00_HF_MainPage.png" alt="HF Site" width="500"/>
-  </p>
+  <p align="center">
+      <img src="../assets/00_HF_MainPage.png" alt="HF Site" width="500"/>
+    </p>
 
-<p align="center">
-    <img src="../assets/01_HF_signup.png" alt="Signup" width="300"/>
-  </p>
+  <p align="center">
+      <img src="../assets/01_HF_signup.png" alt="Signup" width="300"/>
+    </p>
 
 ### 2. Create an Access Token
 
-1. Access Your Account Settings
+  1. Log in to your Hugging Face account
 
-1. Log in to your Hugging Face account
+  1. Click on your profile icon in the top right corner
 
-1. Click on your profile icon in the top right corner
+  1. Select **Settings** from the dropdown menu (or go directly to [Settings](https://huggingface.co/settings/profile/))
 
-1. Select **Settings** from the dropdown menu (or go directly to [Settings](https://huggingface.co/settings/profile/))
+      <p align="center">
+      <img src="../assets/02_HF_Settings.png" alt="Settings" width="500"/>
+      </p>
+
+    !!! warning "Email Verification Required"
+
+        If you encounter issues during token creation, ensure you've verified your email address. Complete the verification process before continuing.
+
+  1. Navigate to **Access Tokens** in the settings menu
 
     <p align="center">
-    <img src="../assets/02_HF_Settings.png" alt="Settings" width="500"/>
+      <img src="../assets/03_HF_AccessTokens.png" alt="Access Tokens" width="500"/>
     </p>
 
-!!! warning "Email Verification Required"
+  1. Click **Create new token** in the top right area
 
-    If you encounter issues during token creation, ensure you've verified your email address. Complete the verification process before continuing.
+  1. Select **Read** as the token type for the access you'll need
 
-1. Navigate to **Access Tokens** in the settings menu
+    <p align="center">
+      <img src="../assets/04_HF_TokenRead.png" alt="Token Read" width="500"/>
+    </p>
 
-<p align="center">
-  <img src="../assets/03_HF_AccessTokens.png" alt="Access Tokens" width="500"/>
-</p>
+  1. Give your token a descriptive name (GriptapeNodes, for example)
+  1. Click **Create Token**. That will bring up a window with you new token in it. Read and understand the messages there; this really is the only time you'll be able to see or copy this key.
 
-1. Click **Create new token** in the top right area
+    <p align="center">
+      <img src="../assets/05_HF_SaveToken.png" alt="Save Token" width="400"/>
+    </p>
 
-1. Select **Read** as the token type for the access you'll need
-
-<p align="center">
-  <img src="../assets/04_HF_TokenRead.png" alt="Token Read" width="500"/>
-</p>
-
-1. Give your token a descriptive name (GriptapeNodes, for example)
-1. Click **Create Token**. That will bring up a window with you new token in it. Read and understand the messages there; this really is the only time you'll be able to see or copy this key.
-
-<p align="center">
-  <img src="../assets/05_HF_SaveToken.png" alt="Save Token" width="400"/>
-</p>
-
-1. Copy and securely store your token
-1. Click **Done** to close the token window.
+  1. Copy and securely store your token
+  1. Click **Done** to close the token window.
 
 !!! danger "Security Notice"
 
