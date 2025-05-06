@@ -16,11 +16,6 @@ cmd.create_node(
     metadata={"position": {"x": 5100, "y": 1500}, "size": {"width": 650, "height": 150}},
 )
 cmd.create_node(
-    node_type="Note",
-    node_name="ReadMe",
-    metadata={"position": {"x": -500, "y": -257}, "size": {"width": 1000, "height": 175}},
-)
-cmd.create_node(
     node_type="RulesetList", node_name="Cinematographer_RulesetList", metadata={"position": {"x": 500, "y": 0}}
 )
 cmd.create_node(node_type="Agent", node_name="Cinematographer", metadata={"position": {"x": 1000, "y": 0}})

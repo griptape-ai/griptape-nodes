@@ -30,6 +30,7 @@ fi
 echo ""
 cecho "$CYAN$BOLD" "Installing Griptape Nodes Engine..."
 echo ""
+~/.local/bin/uv tool update-shell
 ~/.local/bin/uv tool install --force --python python3.12 griptape-nodes >/dev/null
 
 cecho "$GREEN$BOLD" "**************************************"
