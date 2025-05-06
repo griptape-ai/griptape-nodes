@@ -293,21 +293,15 @@ class ParameterGroup(BaseNodeElement):
         our_dict["ui_options"] = self.ui_options
         return our_dict
 
-    def equals(self, other:ParameterGroup) -> dict:
-        self_dict = self.to_dict().copy()
-        other_dict = other.to_dict().copy()
-        self_dict.pop("element_id", None)
-        other_dict.pop("element_id", None)
+    def equals(self, other: ParameterGroup) -> dict:
+        self_dict = {"group_name": self.group_name, "ui_options": self.ui_options}
+        other_dict = {"group_name": other.group_name, "ui_options": other.ui_options}
         if self_dict == other_dict:
             return {}
         differences = {}
         for key, self_value in self_dict.items():
-            other_value = other_dict.get(key, None)
-            # handle children here
-            if isinstance(self_value, BaseNodeElement) and isinstance(other_value, BaseNodeElement):
-                if self_value != other_value:
-                    differences[key] = other_value
-            elif self_value != other_value:
+            other_value = other_dict.get(key)
+            if self_value != other_value:
                 differences[key] = other_value
         return differences
 
