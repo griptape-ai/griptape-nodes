@@ -2,13 +2,13 @@
 
 ## What is it?
 
-The GrokImage node sets up a connection to OpenAI's image generation service (DALL-E).
+The GrokImage node sets up a connection to Grok's image generation service (DALL-E).
 
 ## When would I use it?
 
 Use this node when you want to:
 
-- Generate images using OpenAI's DALL-E models
+- Generate images using Grok's DALL-E models
 - Create visual content from text descriptions
 - Connect image generation capabilities to your workflow
 
