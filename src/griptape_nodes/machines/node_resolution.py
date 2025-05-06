@@ -13,7 +13,10 @@ from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
-from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+from griptape_nodes.retained_mode.events.base_events import (
+    ExecutionEvent,
+    ExecutionGriptapeNodeEvent,
+)
 from griptape_nodes.retained_mode.events.execution_events import (
     CurrentDataNodeEvent,
     NodeFinishProcessEvent,
@@ -23,7 +26,10 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ParameterValueUpdateEvent,
     ResumeNodeProcessingEvent,
 )
-from griptape_nodes.retained_mode.events.parameter_events import GetParameterDetailsRequest, SetParameterValueRequest
+from griptape_nodes.retained_mode.events.parameter_events import (
+    AlterParameterEvent,
+    SetParameterValueRequest,
+)
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.flow import ControlFlow
@@ -193,8 +199,6 @@ class ExecuteNodeState(State):
 
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         current_node = context.focus_stack[-1].node
         # Clear all of the current output values
         ExecuteNodeState.clear_parameter_output_values(context)
@@ -209,11 +213,13 @@ class ExecuteNodeState(State):
                     if modified_parameters:
                         for modified_parameter_name in modified_parameters:
                             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
+                            modified_parameter = current_node.get_parameter_by_name(modified_parameter_name)
+                            if modified_parameter is not None:
+                                modified_request = AlterParameterEvent.create(modified_parameter)
+                                EventBus.publish_event(
+                                    ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request))
+                                )
 
-                            modified_request = GetParameterDetailsRequest(
-                                parameter_name=modified_parameter_name, node_name=current_node.name
-                            )
-                            GriptapeNodes.handle_request(modified_request)
             if parameter.name in current_node.parameter_values:
                 parameter_value = current_node.get_parameter_value(parameter.name)
                 data_type = parameter.type

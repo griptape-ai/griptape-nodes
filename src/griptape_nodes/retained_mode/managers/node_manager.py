@@ -1,6 +1,8 @@
 import logging
 from typing import Any, cast
 
+from griptape.events import EventBus
+
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     Parameter,
@@ -13,6 +15,8 @@ from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
+    ExecutionEvent,
+    ExecutionGriptapeNodeEvent,
     ResultPayload,
     ResultPayloadFailure,
 )
@@ -77,6 +81,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     AlterParameterDetailsRequest,
     AlterParameterDetailsResultFailure,
     AlterParameterDetailsResultSuccess,
+    AlterParameterEvent,
     GetCompatibleParametersRequest,
     GetCompatibleParametersResultFailure,
     GetCompatibleParametersResultSuccess,
@@ -1217,10 +1222,10 @@ class NodeManager:
         # If any parameters were dependent on that value, we're calling this details request to emit the result to the editor.
         if modified_parameters:
             for modified_parameter_name in modified_parameters:
-                modified_request = GetParameterDetailsRequest(
-                    parameter_name=modified_parameter_name, node_name=node.name
-                )
-                GriptapeNodes.handle_request(modified_request)
+                modified_parameter = node.get_parameter_by_name(modified_parameter_name)
+                if modified_parameter is not None:
+                    modified_request = AlterParameterEvent.create(modified_parameter)
+                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
         return finalized_value
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.

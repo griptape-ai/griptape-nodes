@@ -365,8 +365,12 @@ class BaseNode(ABC):
                 new_parent_value = handle_container_parameter(self, parent_parameter)
                 if new_parent_value is not None:
                     # set that new value if it exists.
-                    self.set_parameter_value(parameter.parent_container_name, new_parent_value)
-        # Return the complete set of modified parameters.
+                    modified_parameters_from_container = self.set_parameter_value(
+                        parameter.parent_container_name, new_parent_value
+                    )
+                    # Return the complete set of modified parameters.
+                    if modified_parameters_from_container:
+                        modified_parameters = modified_parameters + modified_parameters_from_container
         return modified_parameters
 
     def kill_parameter_children(self, parameter: Parameter) -> None:
