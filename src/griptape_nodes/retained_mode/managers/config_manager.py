@@ -60,7 +60,7 @@ class ConfigManager:
         Args:
             event_manager: The EventManager instance to use for event handling.
         """
-        self.load_user_config()
+        self.load_configs()
 
         self._set_log_level(self.merged_config.get("log_level", logging.INFO))
 
@@ -126,8 +126,11 @@ class ConfigManager:
 
         return [config_file for config_file in possible_config_files if config_file.exists()]
 
-    def load_user_config(self) -> None:
-        """Load user configuration from the config file."""
+    def load_configs(self) -> None:
+        """Load configs from the user config file and the workspace config file.
+
+        Sets the default_config, user_config, workspace_config, and merged_config attributes.
+        """
         # We need to load the user config file first so we can get the workspace directory which may contain a workspace config file.
         # Load the user config file to get the workspace directory.
         self.default_config = Settings().model_dump()
@@ -167,7 +170,7 @@ class ConfigManager:
     def reset_user_config(self) -> None:
         """Reset the user configuration to the default values."""
         USER_CONFIG_PATH.write_text(json.dumps({}, indent=2))
-        self.load_user_config()
+        self.load_configs()
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # We want to ensure that all environment variables from here are pre-filled in the secrets manager.
@@ -282,12 +285,10 @@ class ConfigManager:
         self.user_config = merge_dicts(self.merged_config, delta)
         self._write_user_config_delta(delta)
 
-        # If the key is workspace_directory, we need to fully reload the user config
-        # because the workspace changing may influence the config files we load.
-        # Also need to reload registered workflows.
+        # We need to fully reload the user config because we need to regenerate the merged config.
+        # Also eventually need to reload registered workflows.
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/437
-        if key == "workspace_directory":
-            self.load_user_config()
+        self.load_configs()
         logger.debug("Config value '%s' set to '%s'", key, value)
 
     def on_handle_get_config_category_request(self, request: GetConfigCategoryRequest) -> ResultPayload:
