@@ -3,6 +3,7 @@ import uuid
 
 from griptape.artifacts import UrlArtifact
 
+
 class VideoUrlArtifact(UrlArtifact):
     pass
 
