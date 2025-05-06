@@ -432,9 +432,9 @@ class LibraryManager:
                 pip_install_flags = library_data.metadata.dependencies.pip_install_flags
                 if pip_install_flags is None:
                     pip_install_flags = []
-                dependencies = library_data.metadata.dependencies.dependencies
-                if dependencies is None:
-                    dependencies = []
+                pip_dependencies = library_data.metadata.dependencies.pip_dependencies
+                if pip_dependencies is None:
+                    pip_dependencies = []
 
                 # Create a virtual environment for the library
                 python_version = platform.python_version()
@@ -467,7 +467,7 @@ class LibraryManager:
                         "uv",
                         "pip",
                         "install",
-                        *dependencies,
+                        *pip_dependencies,
                         *pip_install_flags,
                         "--python",
                         str(library_venv_python_path),

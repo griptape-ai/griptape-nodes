@@ -10,22 +10,24 @@
       "Griptape",
       "AI"
     ],
-    "dependencies": [
-      "accelerate>=1.6.0",
-      "diffusers>=0.33.1",
-      "numpy>=2.2.4",
-      "peft>=0.15.2",
-      "pillow>=11.2.1",
-      "protobuf>=6.30.2",
-      "sentencepiece>=0.2.0",
-      "spandrel>=0.4.1",
-      "torch>=2.7.0",
-      "transformers>=4.51.2"
-    ],
-    "pip_install_flags": [
-      "--preview",
-      "--torch-backend=auto"
-    ]
+    "dependencies": {
+      "pip_dependencies": [
+        "accelerate>=1.6.0",
+        "diffusers>=0.33.1",
+        "numpy>=2.2.4",
+        "peft>=0.15.2",
+        "pillow>=11.2.1",
+        "protobuf>=6.30.2",
+        "sentencepiece>=0.2.0",
+        "spandrel>=0.4.1",
+        "torch>=2.7.0",
+        "transformers>=4.51.2"
+      ],
+      "pip_install_flags": [
+        "--preview",
+        "--torch-backend=auto"
+      ]
+    }
   },
   "categories": [
   ],
