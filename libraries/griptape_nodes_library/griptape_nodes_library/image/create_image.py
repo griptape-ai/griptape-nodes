@@ -85,7 +85,8 @@ class GenerateImage(ControlNode):
                 type="Image Generation Driver",
                 tooltip="None",
                 default_value="",
-                allowed_modes={ParameterMode.INPUT},  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/877
+                allowed_modes={ParameterMode.INPUT},
+                ui_options={"hide": True},  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/877
             )
         )
 
