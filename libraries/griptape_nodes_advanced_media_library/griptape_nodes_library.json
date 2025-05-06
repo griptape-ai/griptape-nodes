@@ -13,9 +13,11 @@
     "dependencies": {
       "pip_dependencies": [
         "accelerate>=1.6.0",
+        "imageio-ffmpeg>=0.6.0",
+        "git+https://github.com/huggingface/diffusers",
         "controlnet-aux>=0.0.9",
         "imageio-ffmpeg>=0.6.0",
-        "diffusers>=0.33.1",
+        "matplotlib>=3.10.3",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
         "peft>=0.15.2",
@@ -33,11 +35,98 @@
     }
   },
   "categories": [
+    {
+      "video": {
+        "color": "border-purple-500",
+        "title": "Audio",
+        "description": "Audio related nodes.",
+        "icon": "Audio"
+      }
+    },
+    {
+      "video": {
+        "color": "border-purple-500",
+        "title": "Video",
+        "description": "Video related nodes.",
+        "icon": "Video"
+      }
+    },
+    {
+      "video": {
+        "color": "border-purple-500",
+        "title": "aux",
+        "description": "Auxiliary diffusion related nodes.",
+        "icon": "Ox"
+      }
+    }
   ],
   "nodes": [
     {
-      "class_name": "GrayscaleConvertImage",
-      "file_path": "pillow_nodes_library/grayscale_convert_image.py",
+      "class_name": "DetailDaemon",
+      "file_path": "another_nodes_library/detail_daemon.py",
+      "metadata": {
+        "category": "aux",
+        "description": "DetailDaemon node.",
+        "display_name": "Generate Video with Allegro"
+      }
+    },
+    {
+      "class_name": "AllegroPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/allegro/allegro_pipeline.py",
+      "metadata": {
+        "category": "video",
+        "description": "AllegroPipeline node.",
+        "display_name": "Generate Video with Allegro"
+      }
+    },
+    {
+      "class_name": "AmusedPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_pipeline.py",
+      "metadata": {
+        "category": "image",
+        "description": "AmusedPipeline node.",
+        "display_name": "Generate Image with Amused"
+      }
+    },
+    {
+      "class_name": "AmusedImg2ImgPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_img2img_pipeline.py",
+      "metadata": {
+        "category": "image",
+        "description": "AmusedImg2ImgPipeline node.",
+        "display_name": "Generate Image with AmusedImg2Img"
+      }
+    },
+    {
+      "class_name": "AmusedInpaintPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_inpaint_pipeline.py",
+      "metadata": {
+        "category": "image",
+        "description": "AmusedInpaintPipeline node.",
+        "display_name": "Generate Image with AmusedInpaint"
+      }
+    },
+    {
+      "class_name": "AnimateDiffPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/animate_diff/animate_diff_pipeline.py",
+      "metadata": {
+        "category": "video",
+        "description": "AnimateDiffPipeline node.",
+        "display_name": "Generate Image with AnimateDiff"
+      }
+    },
+    {
+      "class_name": "AudioLDMPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/audio_ldm/audio_ldm_pipeline.py",
+      "metadata": {
+        "category": "audio",
+        "description": "AudioLDMPipeline node.",
+        "display_name": "Generate Image with AudioLDM"
+      }
+    },
+    {
+        "class_name": "GrayscaleConvertImage",
+        "file_path": "pillow_nodes_library/grayscale_convert_image.py",
       "metadata": {
         "category": "image",
         "description": "GrayscaleConvertImage node.",
@@ -189,6 +278,15 @@
       }
     },
     {
+      "class_name": "HiDreamImagePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/hi_dream/hi_dream_image_pipeline.py",
+      "metadata": {
+        "category": "image",
+        "description": "HiDreamImagePipeline node.",
+        "display_name": "Generate Image with HiDream"
+      }
+    },
+    {
       "class_name": "RescaleImage",
       "file_path": "pillow_nodes_library/rescale_image.py",
       "metadata": {
@@ -197,7 +295,6 @@
         "display_name": "Rescale Image"
       }
     },
-    
     {
       "class_name": "TilingSPAN",
       "file_path": "spandrel_nodes_library/tiling_span.py",
