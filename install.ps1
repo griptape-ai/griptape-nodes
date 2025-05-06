@@ -24,12 +24,6 @@ ColorWrite "`nInstalling Griptape Nodes Engine...`n" 'Cyan'
 $localBin = Join-Path $env:USERPROFILE '.local\bin'
 $uvPath = Join-Path $localBin 'uv.exe'
 
-# Update user PATH in registry and session
-[Environment]::SetEnvironmentVariable("Path", "$env:Path;$localBin", 'User')
-& $uvPath tool update-shell
-$env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
-            [System.Environment]::GetEnvironmentVariable("PATH", "User")
-
 # Install griptape-nodes
 & $uvPath tool install --force --python python3.12 griptape-nodes > $null
 

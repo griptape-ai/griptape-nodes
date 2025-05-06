@@ -3,6 +3,9 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
+
+from rich.console import Console
 
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
@@ -12,6 +15,7 @@ from griptape_nodes.retained_mode.events.os_events import (
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
+console = Console()
 logger = logging.getLogger("griptape_nodes")
 
 
@@ -43,6 +47,21 @@ class OSManager:
     @staticmethod
     def is_linux() -> bool:
         return sys.platform.startswith("linux")
+
+    def replace_process(self, args: list[Any]) -> None:
+        """Replace the current process with a new one.
+
+        Args:
+            args: The command and arguments to execute.
+        """
+        if self.is_windows():
+            # excecvp is a nightmare on Windows, so we use subprocess.Popen instead
+            # https://stackoverflow.com/questions/7004687/os-exec-on-windows
+            subprocess.Popen(args)  # noqa: S603
+            sys.exit(0)
+        else:
+            sys.stdout.flush()  # Recommended here https://docs.python.org/3/library/os.html#os.execvpe
+            os.execvp(os.path.realpath(args[0]), args)  # noqa: S606
 
     def on_open_associated_file_request(self, request: OpenAssociatedFileRequest) -> ResultPayload:  # noqa: PLR0911
         # Sanitize and validate the file path
