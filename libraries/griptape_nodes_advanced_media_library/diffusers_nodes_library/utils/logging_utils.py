@@ -1,3 +1,4 @@
+import logging
 import sys
 from collections.abc import Callable
 from types import TracebackType
@@ -24,3 +25,36 @@ class StdoutCapture:
         self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None
     ) -> None:
         sys.stdout = self._original_stdout
+
+
+class CallbackHandler(logging.Handler):
+    def __init__(self, callback: Callable[[str], None]) -> None:
+        super().__init__(level=logging.INFO)
+        self.callback = callback
+        self.setFormatter(logging.Formatter("%(message)s\n"))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        message = self.format(record)
+        self.callback(message)
+
+
+class LoggerCapture:
+    def __init__(self, logger: logging.Logger, callback: Callable[[str], None], level: int | str = logging.INFO) -> None:
+        self.logger = logger
+        self.target_level = level
+        self._handler = CallbackHandler(callback)
+
+    def __enter__(self) -> "LoggerCapture":
+        self.original_level = self.logger.level
+        self.logger.setLevel(self.target_level)
+        self.logger.addHandler(self._handler)
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None
+    ) -> None:
+        self.logger.removeHandler(self._handler)
+        self.logger.setLevel(self.original_level)

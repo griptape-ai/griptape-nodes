@@ -30,8 +30,9 @@ def configure_flux_loras(node: ControlNode, pipe: diffusers.FluxPipeline, loras:
     loras_to_load = dict(lora_by_name)
     existing_adapter_names = {name for names in pipe.get_list_adapters().values() for name in names}
     for name in existing_adapter_names:
-        # Don't reload existing loras.
-        loras_to_load.pop(name)
+        if name in loras_to_load:
+            # Don't reload existing loras.
+            loras_to_load.pop(name)
 
     # Load the loras.
     for item in loras_to_load.values():

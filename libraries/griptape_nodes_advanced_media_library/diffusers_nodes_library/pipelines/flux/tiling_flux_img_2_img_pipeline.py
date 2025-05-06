@@ -1,3 +1,21 @@
+
+import logging
+from typing import Any
+
+import diffusers  # type: ignore[reportMissingImports]
+import torch  # type: ignore[reportMissingImports]
+from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.utils.parameter_utils import ( # type: ignore[reportMissingImports]
+    FluxPipelineParameters,  # type: ignore[reportMissingImports]
+    FluxLoraParameters,  # type: ignore[reportMissingImports]
+    LogParameter,  # type: ignore[reportMissingImports]
+)
+
+from diffusers_nodes_library.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.utils.torch_utils import optimize_flux_pipeline_memory_footprint # type: ignore[reportMissingImports]
+from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+
+
 import contextlib
 import logging
 from collections.abc import Iterator
@@ -14,9 +32,6 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     pil_to_image_artifact,  # type: ignore[reportMissingImports]
 )
 
-from diffusers_nodes_library.utils.huggingface_utils import (  # type: ignore[reportMissingImports]
-    list_repo_revisions_in_cache,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.utils.lora_utils import configure_flux_loras  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.utils.math_utils import (  # type: ignore[reportMissingImports]
@@ -26,7 +41,6 @@ from diffusers_nodes_library.utils.tiling_image_processor import (  # type: igno
     TilingImageProcessor,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.utils.torch_utils import (  # type: ignore[reportMissingImports]
-    get_best_device,  # type: ignore[reportMissingImports]
     optimize_flux_pipeline_memory_footprint,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
@@ -37,76 +51,13 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class TilingFluxImg2ImgPipeline(ControlNode):
-    _pipes: ClassVar[dict[str, diffusers.FluxImg2ImgPipeline]] = {}
-
-    @classmethod
-    def _get_pipe(cls, repo_id: str, revision: str) -> diffusers.FluxImg2ImgPipeline:
-        key = TilingFluxImg2ImgPipeline._repo_revision_to_key((repo_id, revision))
-        if key not in cls._pipes:
-            if repo_id not in ("black-forest-labs/FLUX.1-dev", "black-forest-labs/FLUX.1-schnell"):
-                logger.exception("Repo id %s not supported by %s", repo_id, cls.__name__)
-
-            pipe = diffusers.FluxImg2ImgPipeline.from_pretrained(
-                repo_id,
-                revision=revision,
-                torch_dtype=torch.bfloat16,
-                local_files_only=True,
-            )
-            optimize_flux_pipeline_memory_footprint(pipe)
-            cls._pipes[key] = pipe
-
-        return cls._pipes[key]
-
-    @classmethod
-    def _repo_revision_to_key(cls, repo_revision: tuple[str, str]) -> str:
-        return f"{repo_revision[0]} ({repo_revision[1]})"
-
-    @classmethod
-    def _key_to_repo_revision(cls, key: str) -> tuple[str, str]:
-        parts = key.rsplit(" (", maxsplit=1)
-        if len(parts) != 2 or parts[1][-1] != ")":  # noqa: PLR2004
-            logger.exception("Invalid key")
-        return parts[0], parts[1][:-1]
-
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
         self.category = "image/upscale"
         self.description = "Generates a new image given an image and text with tiling to support images of any size"
 
-        self.repo_revisions = [
-            *list_repo_revisions_in_cache("black-forest-labs/FLUX.1-schnell"),
-            *list_repo_revisions_in_cache("black-forest-labs/FLUX.1-dev"),
-        ]
-
-        self.add_parameter(
-            Parameter(
-                name="model",
-                default_value=(
-                    TilingFluxImg2ImgPipeline._repo_revision_to_key(self.repo_revisions[0])
-                    if self.repo_revisions
-                    else None
-                ),
-                input_types=["str"],
-                type="str",
-                traits={
-                    Options(
-                        choices=list(map(TilingFluxImg2ImgPipeline._repo_revision_to_key, self.repo_revisions)),
-                    )
-                },
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="model",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="loras",
-                input_types=["dict"],
-                type="dict",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="loras",
-            )
-        )
+        self.flux_params = FluxPipelineParameters(self)
         self.add_parameter(
             Parameter(
                 name="input_image",
@@ -116,64 +67,11 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                 tooltip="input_image",
             )
         )
-        self.add_parameter(
-            Parameter(
-                name="prompt",
-                default_value="",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="prompt",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="prompt_2",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional prompt_2 - defaults to prompt",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="negative_prompt",
-                default_value="",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="negative_prompt",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="negative_prompt_2",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional negative_prompt_2 - defaults to negative_prompt",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="true_cfg_scale",
-                default_value=1.0,
-                input_types=["float"],
-                type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="true_cfg_scale",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="num_inference_steps",
-                default_value=16,
-                input_types=["int"],
-                type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="num_inference_steps",
-            )
-        )
+        self.flux_lora_params = FluxLoraParameters(self)
+        self.log_params = LogParameter(self)
+        self.flux_params.add_input_parameters()
+        self.flux_lora_params.add_input_parameters()
+
         self.add_parameter(
             Parameter(
                 name="strength",
@@ -182,27 +80,6 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                 type="float",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="strength (basically denoise) -- 0.0 is original image 1.0 is a completely new image -- impacts effective steps",
-            )
-        )
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/841
-        self.add_parameter(
-            Parameter(
-                name="guidance_scale",
-                default_value=3.5,
-                input_types=["float"],
-                type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="guidance_scale",
-            )
-        )
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/842
-        self.add_parameter(
-            Parameter(
-                name="seed",
-                input_types=["int"],
-                type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional - random seed, default is random seed",
             )
         )
         self.add_parameter(
@@ -251,48 +128,18 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                 tooltip="tile_strategy",
             )
         )
-
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/843
-        self.add_parameter(
-            Parameter(
-                name="output_image",
-                output_type="ImageUrlArtifact",
-                tooltip="The output image",
-                allowed_modes={ParameterMode.OUTPUT},
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="logs",
-                output_type="str",
-                allowed_modes={ParameterMode.OUTPUT},
-                tooltip="logs",
-                ui_options={"multiline": True},
-            )
-        )
+        self.flux_params.add_output_parameters()
+        self.log_params.add_output_parameters()
 
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
     def _process(self) -> AsyncResult | None:  # noqa: PLR0915, C901
-        model = self.get_parameter_value("model")
-        if model is None:
-            logger.exception("No model specified")
-        loras = self.get_parameter_value("loras")
-        repo_id, revision = TilingFluxImg2ImgPipeline._key_to_repo_revision(model)
-        input_image_artifact = self.get_parameter_value("input_image")
-        prompt = self.get_parameter_value("prompt")
-        prompt_2 = self.parameter_values.get("prompt_2", prompt)
-        negative_prompt = self.get_parameter_value("negative_prompt")
-        negative_prompt_2 = self.parameter_values.get("negative_prompt_2", prompt)
-        true_cfg_scale = float(self.parameter_values["true_cfg_scale"])
         max_tile_size = int(self.get_parameter_value("max_tile_size"))
+        input_image_artifact = self.get_parameter_value("input_image")
         tile_overlap = int(self.get_parameter_value("tile_overlap"))
         tile_strategy = str(self.get_parameter_value("tile_strategy"))
-        num_inference_steps = int(self.parameter_values["num_inference_steps"])
         strength = float(self.get_parameter_value("strength"))
-        guidance_scale = float(self.parameter_values["guidance_scale"])
-        seed = int(self.parameter_values["seed"]) if ("seed" in self.parameter_values) else None
 
         if isinstance(input_image_artifact, ImageUrlArtifact):
             input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
@@ -322,13 +169,27 @@ class TilingFluxImg2ImgPipeline(ControlNode):
             self.set_parameter_value("output_image", pil_to_image_artifact(input_image_pil))
             return
 
-        seed = int(self.parameter_values["seed"]) if ("seed" in self.parameter_values) else None
+        self.flux_params.publish_output_image_preview_placeholder()
+        self.log_params.append_to_logs("Preparing models...\n")
+   
+        with self.log_params.append_profile_to_logs("Loading flux model metadata"):
+            base_repo_id, base_revision = self.flux_params.get_repo_revision()
+            pipe = model_cache.from_pretrained(
+                diffusers.FluxPipeline,
+                pretrained_model_name_or_path=base_repo_id,
+                revision=base_revision,
+                torch_dtype=torch.bfloat16,
+                local_files_only=True,
+            )
 
-        self.append_value_to_parameter("logs", "Preparing models...\n")
-        with self._append_stdout_to_logs():
-            pipe = self._get_pipe(repo_id, revision)
+        with self.log_params.append_profile_to_logs("Loading flux model"):
+            with self.log_params.append_logs_to_logs(logger):
+                optimize_flux_pipeline_memory_footprint(pipe)
 
-        configure_flux_loras(self, pipe, loras)
+        with self.log_params.append_profile_to_logs("Configuring flux loras"):
+            self.flux_lora_params.configure_loras(pipe)
+
+        num_inference_steps = self.flux_params.get_num_inference_steps()
 
         def wrapped_pipe(tile: Image, get_preview_image_with_partial_tile: Any) -> Image:
             def callback_on_step_end(pipe: diffusers.FluxPipeline, i: int, _t: Any, callback_kwargs: dict) -> dict:
@@ -356,20 +217,16 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                     )
                 return {}
 
+            flux_kwargs = self.flux_params.get_pipe_kwargs()
+            flux_kwargs.pop("width")
+            flux_kwargs.pop("height")
             return (
                 pipe(
+                    **flux_kwargs,
                     image=tile,
                     width=tile.width,
                     height=tile.height,
-                    prompt=prompt,
-                    prompt_2=prompt_2,
-                    negative_prompt=negative_prompt,
-                    negative_prompt_2=negative_prompt_2,
-                    true_cfg_scale=true_cfg_scale,
                     strength=strength,
-                    num_inference_steps=num_inference_steps,
-                    guidance_scale=guidance_scale,
-                    generator=generator,
                     output_type="pil",
                     callback_on_step_end=callback_on_step_end,
                 )
@@ -384,10 +241,6 @@ class TilingFluxImg2ImgPipeline(ControlNode):
             tile_strategy=tile_strategy,
         )
         num_tiles = tiling_image_processor.get_num_tiles(image=input_image_pil)
-        generator = torch.Generator(get_best_device())
-        if seed is not None:
-            generator = generator.manual_seed(seed)
-
         def callback_on_tile_end(i: int, preview_image_pil: Image) -> None:
             if i < num_tiles:
                 self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_image_pil))

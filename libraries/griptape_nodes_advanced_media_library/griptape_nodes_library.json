@@ -14,7 +14,9 @@
       "pip_dependencies": [
         "accelerate>=1.6.0",
         "diffusers>=0.33.1",
+        "controlnet-aux>=0.0.9",
         "numpy>=2.2.4",
+        "opencv-python>=4.11.0.86",
         "peft>=0.15.2",
         "pillow>=11.2.1",
         "protobuf>=6.30.2",
@@ -34,7 +36,7 @@
   "nodes": [
     {
       "class_name": "FluxPipeline",
-      "file_path": "diffusers_nodes_library/flux_pipeline.py",
+      "file_path": "diffusers_nodes_library/pipelines/flux/flux_pipeline.py",
       "metadata": {
         "category": "image",
         "description": "FluxPipeline node.",
@@ -42,12 +44,111 @@
       }
     },
     {
+      "class_name": "FluxControlNetPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/controlnet/flux_control_net_pipeline.py",
+      "metadata": {
+        "category": "image",
+        "description": "FluxControlNetPipeline node.",
+        "display_name": "Generate Image with Flux and a control net"
+      }
+    },
+    {
+      "class_name": "InstantXFLUX1devControlnetUnionFluxControlNetPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/controlnet/instant_xflux1dev_controlnet_union_flux_control_net_pipeline.py",
+      "metadata": {
+        "category": "image",
+        "description": "https://huggingface.co/InstantX/FLUX.1-dev-Controlnet-Union",
+        "display_name": "InstantX/FLUX.1-dev-Controlnet-Union"
+      }
+    },
+    {
+      "class_name": "ShakkerLabsFLUX1devControlNetUnionProFluxControlNetPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/controlnet/shakker_labs_flux1dev_control_net_union_pro_flux_control_net_pipeline.py",
+      "metadata": {
+        "category": "image",
+        "description": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro",
+        "display_name": "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro"
+      }
+    },
+    {
+      "class_name": "ShakkerLabsFLUX1devControlNetUnionProTwoFluxControlNetPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/controlnet/shakker_labs_flux1dev_control_net_union_pro_two_flux_control_net_pipeline.py",
+      "metadata": {
+        "category": "image",
+        "description": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0",
+        "display_name": "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0"
+      }
+    },
+    {
+      "class_name": "FluxLoraFromFile",
+      "file_path": "diffusers_nodes_library/pipelines/flux/lora/flux_lora_from_file.py",
+      "metadata": {
+        "category": "image",
+        "description": "FluxLoraFromFile",
+        "display_name": "FluxLoraFromFile"
+      }
+    },
+    {
+      "class_name": "ShakkerLabs_Lumatales_FL",
+      "file_path": "diffusers_nodes_library/pipelines/flux/lora/shakker_labs_lumatales_fl.py",
+      "metadata": {
+        "category": "image",
+        "description": "https://huggingface.co/Shakker-Labs/Lumatales-FL",
+        "display_name": "Shakker-Labs/Lumatales-FL"
+      }
+    },
+    {
+      "class_name": "ShakkerLabs_FLUX_1_dev_LoRA_Micro_landscape_on_Mobile_Phone",
+      "file_path": "diffusers_nodes_library/pipelines/flux/lora/shakker_labs_flux_1_dev_lora_micro_landscape_on_mobile_phone.py",
+      "metadata": {
+        "category": "image",
+        "description": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-Micro-landscape-on-Mobile-Phone",
+        "display_name": "Shakker-Labs/FLUX.1-dev-LoRA-Micro-landscape-on-Mobile-Phone"
+      }
+    },
+    {
+      "class_name": "ShakkerLabs_FLUX_1_dev__LoRA_Miniature_World",
+      "file_path": "diffusers_nodes_library/pipelines/flux/lora/shakkerlabs_flux_1_dev__lora_miniature_world.py",
+      "metadata": {
+        "category": "image",
+        "description": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-Miniature-World",
+        "display_name": "Shakker-Labs/FLUX.1-dev-LoRA-Miniature-World"
+      }
+    },
+    {
       "class_name": "TilingFluxImg2ImgPipeline",
-      "file_path": "diffusers_nodes_library/tiling_flux_img_2_img_pipeline.py",
+      "file_path": "diffusers_nodes_library/pipelines/flux/tiling_flux_img_2_img_pipeline.py",
       "metadata": {
         "category": "image/upscale",
         "description": "TilingFluxImg2ImgPipeline node. Useful as a 2nd pass when upscaling.",
         "display_name": "Generate Image Variation with Flux and Tiling"
+      }
+    },
+    {
+      "class_name": "CannyConvertImage",
+      "file_path": "opencv_nodes_library/canny_convert_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "CannyConvertImage node.",
+        "display_name": "Canny Convert Image"
+      }
+    },
+    {
+      "class_name": "AnylineDetector",
+      "file_path": "controlnet_aux_nodes_library/anyline_detector.py",
+      "metadata": {
+        "category": "image",
+        "description": "AnylineDetector node.",
+        "display_name": "AnylineDetector"
+      }
+    },
+    {
+      "class_name": "GrayscaleConvertImage",
+      "file_path": "pillow_nodes_library/grayscale_convert_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "GrayscaleConvertImage node.",
+        "display_name": "Grayscale Convert Image"
       }
     },
     {
@@ -60,12 +161,30 @@
       }
     },
     {
+      "class_name": "GaussianBlurImage",
+      "file_path": "pillow_nodes_library/gaussian_blur_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "GaussianBlurImage node",
+        "display_name": "GaussianBlurImage"
+      }
+    },
+    {
       "class_name": "TilingSPAN",
       "file_path": "spandrel_nodes_library/tiling_span.py",
       "metadata": {
         "category": "image/upscale",
         "description": "TilingSPAN node. Useful as a 1st pass with upscaling.",
         "display_name": "Upscale Image with SPAN and Tiling"
+      }
+    },
+    {
+      "class_name": "DepthAnythingForDepthEstimation",
+      "file_path": "transformers_nodes_library/depth_anything_for_depth_estimation.py",
+      "metadata": {
+        "category": "image",
+        "description": "DepthAnythingForDepthEstimation node.",
+        "display_name": "DepthAnythingForDepthEstimation"
       }
     }
   ]

@@ -99,8 +99,7 @@ def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffu
     if device == torch.device("mps"):
         # You must move the pipeline models to MPS if available to
         # use it (otherwise you'll get the CPU).
-        logger.info("Transferring model to MPS/GPU (slow because big)")
-        logger.info("Sorry bout the lack of a progress bar.")
+        logger.info("Transferring model to MPS/GPU - may take minutes")
         pipe.to(device)
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/847
 
