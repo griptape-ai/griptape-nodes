@@ -260,7 +260,12 @@ class ExecuteNodeState(State):
         except Exception as e:
             logger.exception("Error processing node '%s", current_node.name)
             msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
-            current_node.state = NodeResolutionState.UNRESOLVED
+            # Mark the node as unresolved, broadcasting to everyone.
+            current_node.make_node_unresolved(
+                current_states_to_trigger_change_event=set(
+                    {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+                )
+            )
             current_focus.process_generator = None
             current_focus.scheduled_value = None
             context.flow.cancel_flow_run()

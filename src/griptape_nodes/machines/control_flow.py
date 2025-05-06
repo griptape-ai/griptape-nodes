@@ -66,7 +66,14 @@ class ResolveNodeState(State):
         if context.current_node is None:
             # We don't have anything else to do. Move back to Complete State so it has to restart.
             return CompleteState
-        context.current_node.state = NodeResolutionState.UNRESOLVED
+
+        # Mark the node unresolved, and broadcast an event to the GUI.
+        context.current_node.make_node_unresolved(
+            current_states_to_trigger_change_event=set(
+                {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+            )
+        )
+        # Now broadcast that we have a current control node.
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=CurrentControlNodeEvent(node_name=context.current_node.name))

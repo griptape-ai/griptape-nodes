@@ -212,7 +212,7 @@ class ControlFlow:
 
     def unresolve_whole_flow(self) -> None:
         for node in self.nodes.values():
-            node.make_node_unresolved()
+            node.make_node_unresolved(current_states_to_trigger_change_event=None)
 
     def flow_state(self) -> CurrentNodes:
         if not self.check_for_existing_running_flow():
