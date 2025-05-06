@@ -26,7 +26,7 @@ Use this node when you want to:
 
 ### Outputs
 
-- **driver**: The configured OpenAI image driver that other nodes can use
+- **image_model_config**: The configured OpenAI image model configuration that other nodes can use
 
 ## Example
 
@@ -34,7 +34,7 @@ Imagine you want to create images using OpenAI's DALL-E:
 
 1. Add an OpenAiImage node to your workflow
 1. Configure any available settings
-1. Connect the "driver" output to a GenerateImage's "driver" input
+1. Connect the "image_model_config" output to a GenerateImage's "image_model_config" input
 
 ## Important Notes
 
