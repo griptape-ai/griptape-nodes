@@ -67,18 +67,6 @@ class NodeDefinition(BaseModel):
     metadata: NodeMetadata
 
 
-class WorkflowDefinition(BaseModel):
-    """Defines a workflow within a library, which will be automatically registered with the library. Metadata about the template is stored within the workflow itself."""
-
-    file_path: str
-
-
-class ScriptDefinition(BaseModel):
-    """Defines a script within a library, which will be installed with the library."""
-
-    file_path: str
-
-
 class LibrarySchema(BaseModel):
     """Schema for a library definition file.
 
@@ -92,8 +80,8 @@ class LibrarySchema(BaseModel):
     metadata: LibraryMetadata
     categories: list[dict[str, CategoryDefinition]]
     nodes: list[NodeDefinition]
-    workflows: list[WorkflowDefinition] | None = None
-    scripts: list[ScriptDefinition] | None = None
+    workflows: list[str] | None = None
+    scripts: list[str] | None = None
     is_default_library: bool = False
 
 

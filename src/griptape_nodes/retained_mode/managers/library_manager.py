@@ -799,9 +799,7 @@ class LibraryManager:
                     continue
                 library_data = library.get_library_data()
                 if library_data.workflows:
-                    for workflow in library_data.workflows:
-                        workflow_file_path = workflow.file_path
-                        library_workflow_files_to_register.append(workflow_file_path)
+                    library_workflow_files_to_register.extend(library_data.workflows)
 
         GriptapeNodes.WorkflowManager().register_list_of_workflows(library_workflow_files_to_register)
 
