@@ -32,7 +32,6 @@ When the example loads, you'll see a workflow with multiple nodes:
 
 This workflow contains:
 
-```
 - Two TextInput nodes
     - **basic_prompt**
     - **detail_prompt**
@@ -42,7 +41,6 @@ This workflow contains:
     - **enhanced_prompt_image**
     - **bespoke_prompt_image**
 - An agent node, **bespoke_prompt**
-```
 
 We'll run each part of the workflow individually to compare the results of different prompting techniques.
 
