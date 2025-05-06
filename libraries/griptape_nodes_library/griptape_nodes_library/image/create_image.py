@@ -152,7 +152,8 @@ Specify a specific depth of field, and time of day.
 Use dust in the air to create a sense of depth.
 Use a slight vignetting on the edges of the image.
 Use a color palette that is complementary to the subject.
-Focus on qualities that will make this the most professional looking photo in the world.""",
+Focus on qualities that will make this the most professional looking photo in the world.
+IMPORTANT: Always ensure image generation prompts are completely free of sexual, violent, hateful, or politically divisive content. When in doubt, err on the side of caution and choose wholesome, neutral themes that would be appropriate for all audiences.""",
                     prompt,
                 ]
             )
