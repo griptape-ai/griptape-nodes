@@ -344,8 +344,8 @@ wheels = [
 
 [[package]]
 name = "griptape"
-version = "1.6.0"
-source = { git = "https://github.com/griptape-ai/griptape.git?branch=main#b2a900a39f477e0a2de04d0a37c8e46a2723f22b" }
+version = "1.7.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
     { name = "filetype" },
@@ -365,6 +365,10 @@ dependencies = [
     { name = "urllib3" },
     { name = "wrapt" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/d2/60/975512f67e2234ca80fcf4c70c8c4649f92af449c8d3d3c713173085d472/griptape-1.7.0.tar.gz", hash = "sha256:6132997aa9173264907f22980bf6627a46603f15a8c95bd5f9dca0259277c6b7", size = 184874, upload-time = "2025-05-05T20:58:50.502Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/39/e5/b72e3eeafeb546acadfc83baa896257c82070e335bf973a2da5fc2c53774/griptape-1.7.0-py3-none-any.whl", hash = "sha256:eaf66456c76a61f3ffc7e678aac7562fe3be31096bc258b3570caf0cb3e4513e", size = 417368, upload-time = "2025-05-05T20:58:48.929Z" },
+]
 
 [package.optional-dependencies]
 drivers-prompt-amazon-bedrock = [
@@ -373,6 +377,9 @@ drivers-prompt-amazon-bedrock = [
 ]
 drivers-prompt-anthropic = [
     { name = "anthropic" },
+]
+drivers-prompt-cohere = [
+    { name = "cohere" },
 ]
 drivers-prompt-ollama = [
     { name = "ollama" },
@@ -389,13 +396,12 @@ loaders-image = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.28.1"
+version = "0.29.11"
 source = { editable = "." }
 dependencies = [
     { name = "cohere" },
-    { name = "dill" },
     { name = "fastapi" },
-    { name = "griptape", extra = ["drivers-prompt-amazon-bedrock", "drivers-prompt-anthropic", "drivers-prompt-ollama", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "loaders-image"] },
+    { name = "griptape", extra = ["drivers-prompt-amazon-bedrock", "drivers-prompt-anthropic", "drivers-prompt-cohere", "drivers-prompt-ollama", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "loaders-image"] },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -431,9 +437,8 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "cohere", specifier = ">=5.14.0" },
-    { name = "dill", specifier = ">=0.4.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "griptape", extras = ["drivers-prompt-anthropic", "drivers-prompt-ollama", "drivers-prompt-amazon-bedrock", "loaders-image", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo"], git = "https://github.com/griptape-ai/griptape.git?branch=main" },
+    { name = "griptape", extras = ["drivers-prompt-cohere", "drivers-prompt-anthropic", "drivers-prompt-ollama", "drivers-prompt-amazon-bedrock", "loaders-image", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo"], specifier = ">=1.7.0" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "python-dotenv", specifier = ">=1.0.1" },

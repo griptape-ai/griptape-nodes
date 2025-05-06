@@ -1175,7 +1175,12 @@ class NodeManager:
             return SetParameterValueResultFailure()
         # Mark node as unresolved
         if request.initial_setup is False and not request.is_output:
-            node.state = NodeResolutionState.UNRESOLVED
+            # Mark node as unresolved, broadcast an event
+            node.make_node_unresolved(
+                current_states_to_trigger_change_event=set(
+                    {NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+                )
+            )
             # Get the flow
             # Pass the value through!
             # Optional data_type parameter for internal handling!
@@ -1574,7 +1579,7 @@ class NodeManager:
                 logger.error(details)
                 return SerializeNodeToCommandsResultFailure()
 
-            library_version = library_metadata_result.metadata["library_version"]
+            library_version = library_metadata_result.metadata.library_version
             library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
 
             # Get the creation details.

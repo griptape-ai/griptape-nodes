@@ -250,17 +250,22 @@ class ExecuteNodeState(State):
                 wrapped_event=ExecutionEvent(payload=NodeStartProcessEvent(node_name=current_node.name))
             )
         )
-        logger.info("Node %s is processing.", current_node.name)
+        logger.info("Node '%s' is processing.", current_node.name)
 
         try:
             work_is_scheduled = ExecuteNodeState._process_node(current_focus)
             if work_is_scheduled:
-                logger.debug("Pausing Node %s to run background work", current_node.name)
+                logger.debug("Pausing Node '%s' to run background work", current_node.name)
                 return None
         except Exception as e:
             logger.exception("Error processing node '%s", current_node.name)
             msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
-            current_node.state = NodeResolutionState.UNRESOLVED
+            # Mark the node as unresolved, broadcasting to everyone.
+            current_node.make_node_unresolved(
+                current_states_to_trigger_change_event=set(
+                    {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+                )
+            )
             current_focus.process_generator = None
             current_focus.scheduled_value = None
             context.flow.cancel_flow_run()
@@ -272,7 +277,7 @@ class ExecuteNodeState(State):
             )
             raise RuntimeError(msg) from e
 
-        logger.info("Node %s finished processing.", current_node.name)
+        logger.info("Node '%s' finished processing.", current_node.name)
 
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
@@ -280,7 +285,7 @@ class ExecuteNodeState(State):
             )
         )
         current_node.state = NodeResolutionState.RESOLVED
-        details = f"{current_node.name} resolved."
+        details = f"'{current_node.name}' resolved."
 
         logger.info(details)
 
@@ -378,20 +383,20 @@ class ExecuteNodeState(State):
 
         current_node = current_focus.node
         # Only start the processing if we don't already have a generator
-        logger.debug("Node %s process generator: %s", current_node.name, current_focus.process_generator)
+        logger.debug("Node '%s' process generator: %s", current_node.name, current_focus.process_generator)
         if current_focus.process_generator is None:
             result = current_node.process()
 
             # If the process returned a generator, we need to store it for later
             if isinstance(result, Generator):
                 current_focus.process_generator = result
-                logger.debug("Node %s returned a generator.", current_node.name)
+                logger.debug("Node '%s' returned a generator.", current_node.name)
 
         # We now have a generator, so we need to run it
         if current_focus.process_generator is not None:
             try:
                 logger.debug(
-                    "Node %s has an active generator, sending scheduled value of type: %s",
+                    "Node '%s' has an active generator, sending scheduled value of type: %s",
                     current_node.name,
                     type(current_focus.scheduled_value),
                 )
@@ -405,16 +410,16 @@ class ExecuteNodeState(State):
                 future = ExecuteNodeState.executor.submit(with_contextvars(func))
                 future.add_done_callback(with_contextvars(on_future_done))
             except StopIteration:
-                logger.debug("Node %s generator is done.", current_node.name)
+                logger.debug("Node '%s' generator is done.", current_node.name)
                 # If that was the last generator, clear out the generator and indicate that there is no more work scheduled
                 current_focus.process_generator = None
                 current_focus.scheduled_value = None
                 return False
             else:
                 # If the generator is not done, indicate that there is work scheduled
-                logger.debug("Node %s generator is not done.", current_node.name)
+                logger.debug("Node '%s' generator is not done.", current_node.name)
                 return True
-        logger.debug("Node %s did not return a generator.", current_node.name)
+        logger.debug("Node '%s' did not return a generator.", current_node.name)
         return False
 
 

@@ -12,12 +12,11 @@ cmd.create_node(
 cmd.create_node(
     node_type="Note",
     node_name="NextStep",
-    metadata={"position": {"x": 0, "y": 450}, "size": {"width": 1000, "height": 200}},
+    metadata={"position": {"x": 500, "y": 450}, "size": {"width": 1000, "height": 200}},
 )
 cmd.create_node(
     node_type="GenerateImage",
     node_name="GenerateImage_1",
-    parent_flow_name="prompt_an_image",
     specific_library_name="Griptape Nodes Library",
     metadata={
         "position": {"x": 0, "y": 0},
@@ -46,10 +45,10 @@ The concepts covered are:
 )
 cmd.set_value(
     "NextStep.note",
-    """If you're following along with our Getting Started tutorials, check out the next workflow: Translator.
+    """If you're following along with our Getting Started tutorials, check out the next workflow: Coordinating Agents.
 
 Load the next tutorial page here:
-https://docs.griptapenodes.com/en/stable/ftue/02_translator/FTUE_02_translator/""",
+https://docs.griptapenodes.com/en/stable/ftue/02_coordinating_agents/FTUE_02_coordinating_agents/""",
 )
 cmd.set_value("GenerateImage_1.prompt", "A potato making an oil painting\n\n")
 cmd.set_value("GenerateImage_1.enhance_prompt", True)

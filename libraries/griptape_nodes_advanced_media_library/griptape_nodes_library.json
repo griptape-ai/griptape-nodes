@@ -1,31 +1,33 @@
 {
-  "name": "Griptape Nodes Advanced Image Library",
+  "name": "Griptape Nodes Advanced Media Library",
   "library_schema_version": "0.1.0",
   "metadata": {
     "author": "Griptape, Inc.",
-    "description": "Advanced image generation and manipulation nodes for Griptape Nodes.",
+    "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
     "library_version": "0.1.0",
     "engine_version": "0.1.0",
     "tags": [
       "Griptape",
       "AI"
     ],
-    "dependencies": [
-      "accelerate>=1.6.0",
-      "diffusers>=0.33.1",
-      "numpy>=2.2.4",
-      "peft>=0.15.2",
-      "pillow>=11.2.1",
-      "protobuf>=6.30.2",
-      "sentencepiece>=0.2.0",
-      "spandrel>=0.4.1",
-      "torch>=2.7.0",
-      "transformers>=4.51.2"
-    ],
-    "pip_install_flags": [
-      "--preview",
-      "--torch-backend=auto"
-    ]
+    "dependencies": {
+      "pip_dependencies": [
+        "accelerate>=1.6.0",
+        "diffusers>=0.33.1",
+        "numpy>=2.2.4",
+        "peft>=0.15.2",
+        "pillow>=11.2.1",
+        "protobuf>=6.30.2",
+        "sentencepiece>=0.2.0",
+        "spandrel>=0.4.1",
+        "torch>=2.7.0",
+        "transformers>=4.51.2"
+      ],
+      "pip_install_flags": [
+        "--preview",
+        "--torch-backend=auto"
+      ]
+    }
   },
   "categories": [
   ],

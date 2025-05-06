@@ -10,7 +10,7 @@ from typing import Any
 
 from griptape.artifacts import BaseArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.events import ActionChunkEvent, TextChunkEvent
+from griptape.events import ActionChunkEvent, FinishStructureRunEvent, StartStructureRunEvent, TextChunkEvent
 from griptape.structures import Structure
 from griptape.structures.agent import Agent as GtAgent
 from jinja2 import Template
@@ -490,15 +490,31 @@ class Agent(ControlNode):
         """
         include_details = self.get_parameter_value("include_details")
 
-        for event in agent.run_stream(prompt, event_types=[TextChunkEvent, ActionChunkEvent]):
-            # If the artifact is a TextChunkEvent, append it to the output parameter.
-            if isinstance(event, TextChunkEvent):
-                self.append_value_to_parameter("output", value=event.token)
-                if include_details:
-                    self.append_value_to_parameter("logs", value=event.token)
+        args = [prompt] if prompt else []
+        structure_id_stack = []
+        active_structure_id = None
+        for event in agent.run_stream(
+            *args, event_types=[StartStructureRunEvent, TextChunkEvent, ActionChunkEvent, FinishStructureRunEvent]
+        ):
+            if isinstance(event, StartStructureRunEvent):
+                active_structure_id = event.structure_id
+                structure_id_stack.append(active_structure_id)
+            if isinstance(event, FinishStructureRunEvent):
+                structure_id_stack.pop()
+                active_structure_id = structure_id_stack[-1] if structure_id_stack else None
 
-            # If the artifact is an ActionChunkEvent, append it to the logs parameter.
-            if include_details and isinstance(event, ActionChunkEvent) and event.name:
-                self.append_value_to_parameter("logs", f"\n[Using tool {event.name}: ({event.path})]\n")
+            # If an Agent uses other Agents (via `StructureRunTool`), we will receive those events too.
+            # We want to ignore those events and only show the events for this node's Agent.
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/984
+            if agent.id == active_structure_id:
+                # If the artifact is a TextChunkEvent, append it to the output parameter.
+                if isinstance(event, TextChunkEvent):
+                    self.append_value_to_parameter("output", value=event.token)
+                    if include_details:
+                        self.append_value_to_parameter("logs", value=event.token)
+
+                # If the artifact is an ActionChunkEvent, append it to the logs parameter.
+                if include_details and isinstance(event, ActionChunkEvent) and event.name:
+                    self.append_value_to_parameter("logs", f"\n[Using tool {event.name}: ({event.path})]\n")
 
         return agent

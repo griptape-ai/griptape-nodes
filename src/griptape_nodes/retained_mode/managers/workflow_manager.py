@@ -208,6 +208,31 @@ class WorkflowManager:
         )
         event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
 
+    def get_workflow_metadata(self, workflow_file_path: Path, block_name: str) -> list[re.Match[str]]:
+        """Get the workflow metadata for a given workflow file path.
+
+        Args:
+            workflow_file_path (Path): The path to the workflow file.
+            block_name (str): The name of the metadata block to search for.
+
+        Returns:
+            list[re.Match[str]]: A list of regex matches for the specified metadata block.
+
+        """
+        with workflow_file_path.open("r") as file:
+            workflow_content = file.read()
+
+        # Find the metadata block.
+        regex = r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
+        matches = list(
+            filter(
+                lambda m: m.group("type") == block_name,
+                re.finditer(regex, workflow_content),
+            )
+        )
+
+        return matches
+
     def print_workflow_load_status(self) -> None:
         workflow_file_paths = self.get_workflows_attempted_to_load()
         workflow_infos = []
@@ -496,19 +521,9 @@ class WorkflowManager:
             logger.error(details)
             return LoadWorkflowMetadataResultFailure()
 
-        # Open 'er up.
-        with complete_file_path.open("r") as file:
-            workflow_content = file.read()
-
         # Find the metadata block.
-        regex = r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
         block_name = "script"
-        matches = list(
-            filter(
-                lambda m: m.group("type") == block_name,
-                re.finditer(regex, workflow_content),
-            )
-        )
+        matches = self.get_workflow_metadata(complete_file_path, block_name=block_name)
         if len(matches) != 1:
             self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
                 status=WorkflowManager.WorkflowStatus.UNUSABLE,
@@ -637,27 +652,9 @@ class WorkflowManager:
                 # SKIP IT.
                 continue
 
-            # Is there a version string in the metadata?
-            library_metadata = library_metadata_result.metadata
-            version_key = "library_version"
-            if version_key not in library_metadata:
-                had_critical_error = True
-                problems.append(
-                    f"Library '{library_name}' has malformed metadata. Was unable to find required field '{version_key}'."
-                )
-                dependency_infos.append(
-                    WorkflowManager.WorkflowDependencyInfo(
-                        library_name=library_name,
-                        version_requested=desired_version_str,
-                        version_present=None,
-                        status=WorkflowManager.WorkflowDependencyStatus.MISSING,
-                    )
-                )
-                # SKIP IT.
-                continue
-
             # Attempt to parse out the version string.
-            library_version_str = library_metadata[version_key]
+            library_metadata = library_metadata_result.metadata
+            library_version_str = library_metadata.library_version
             library_version = Version.from_string(version_string=library_version_str)
             if library_version is None:
                 had_critical_error = True
@@ -870,7 +867,7 @@ class WorkflowManager:
                         return SaveWorkflowResultFailure()
                     try:
                         library_metadata_success = cast("GetLibraryMetadataResultSuccess", library_metadata_result)
-                        library_version = library_metadata_success.metadata["library_version"]
+                        library_version = library_metadata_success.metadata.library_version
                     except Exception as err:
                         details = f"Attempted to save workflow '{relative_file_path}', but failed to get library version from metadata for library '{library_used}': {err}."
                         logger.error(details)
