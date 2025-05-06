@@ -473,6 +473,39 @@ class FlowManager:
             logger.error(details)
             return CreateConnectionResultFailure()
 
+        # NEW CODE: Check if we're trying to connect a non-list to a list parameter
+        # If target parameter is a ParameterContainer (list) and source is not compatible with it
+        if isinstance(target_param, ParameterContainer) and not target_param.is_incoming_type_allowed(
+            source_param.output_type
+        ):
+            logger.info(f"Detected connection from non-list to list parameter container")
+
+            try:
+                # Add a new child parameter to the list
+                new_param = target_param.add_child_parameter()
+                logger.info(f"Added new child parameter: {new_param.name}")
+
+                # Update our request - modify target_parameter_name instead of creating a new request
+                # This avoids potential recursion issues
+                request.target_parameter_name = new_param.name
+
+                # Get the updated target parameter
+                target_param = target_node.get_parameter_by_name(new_param.name)
+                if target_param is None:
+                    details = f'Connection failed: New child parameter "{target_node_name}.{new_param.name}" not found'
+                    logger.error(details)
+                    return CreateConnectionResultFailure()
+
+                logger.info(
+                    f"Redirecting connection to list item: {source_node_name}.{request.source_parameter_name} -> {target_node_name}.{new_param.name}"
+                )
+
+                # Continue with the current request processing - no need to call handle_request again
+            except Exception as e:
+                details = f"Connection failed: Error creating child parameter: {e}"
+                logger.error(details)
+                return CreateConnectionResultFailure()
+
         # Validate that the data type from the source is allowed by the target.
         if not target_param.is_incoming_type_allowed(source_param.output_type):
             details = f'Connection failed on type mismatch "{source_node_name}.{request.source_parameter_name}" type({source_param.output_type}) to "{target_node_name}.{request.target_parameter_name}" types({target_param.input_types}) '
