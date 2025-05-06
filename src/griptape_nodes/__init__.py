@@ -317,7 +317,6 @@ def _update_assets() -> None:
 
     tar_url = NODES_TARBALL_URL.format(tag=tag)
     dest_nodes = DATA_DIR / "libraries"
-    dest_workflows = DATA_DIR / "workflows"
 
     with tempfile.TemporaryDirectory() as tmp:
         tar_path = Path(tmp) / "nodes.tar.gz"
@@ -339,10 +338,8 @@ def _update_assets() -> None:
 
         console.print("[yellow]Copying nodes directory…[/yellow]")
         shutil.copytree(extracted_root / "libraries", dest_nodes, dirs_exist_ok=True)
-        console.print("[yellow]Copying workflows directory…[/yellow]")
-        shutil.copytree(extracted_root / "workflows", dest_workflows, dirs_exist_ok=True)
 
-    console.print("[bold green]Nodes + Workflows updated.[/bold green]")
+    console.print("[bold green]Node Libraries updated.[/bold green]")
 
 
 def _print_current_version() -> None:

@@ -510,7 +510,7 @@ class WorkflowManager:
             return LoadWorkflowMetadataResultFailure()
 
         # Find the metadata block.
-        block_name = "script"
+        block_name = WorkflowManager.WORKFLOW_METADATA_HEADER
         matches = self.get_workflow_metadata(complete_file_path, block_name=block_name)
         if len(matches) != 1:
             self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
@@ -719,6 +719,81 @@ class WorkflowManager:
             problems=problems,
         )
         return LoadWorkflowMetadataResultSuccess(metadata=workflow_metadata)
+
+    def register_workflows_from_config(self, config_section: str) -> None:
+        workflows_to_register = GriptapeNodes.ConfigManager().get_config_value(config_section)
+        if workflows_to_register is not None:
+            self.register_list_of_workflows(workflows_to_register)
+
+    def register_list_of_workflows(self, workflows_to_register: list[str]) -> None:
+        for workflow_to_register in workflows_to_register:
+            path = Path(workflow_to_register)
+
+            if path.is_dir():
+                # If it's a directory, register all the workflows in it.
+                for workflow_file in path.glob("*.py"):
+                    # Check that the python file has script metadata
+                    metadata_blocks = self.get_workflow_metadata(
+                        workflow_file, block_name=WorkflowManager.WORKFLOW_METADATA_HEADER
+                    )
+                    if len(metadata_blocks) == 1:
+                        self._register_workflow(str(workflow_file))
+            else:
+                # If it's a file, register it directly.
+                self._register_workflow(str(path))
+
+    def _register_workflow(self, workflow_to_register: str) -> bool:
+        """Registers a workflow from a file.
+
+        Args:
+            config_mgr: The ConfigManager instance to use for path resolution.
+            workflow_mgr: The WorkflowManager instance to use for workflow registration.
+            workflow_to_register: The path to the workflow file to register.
+
+        Returns:
+            bool: True if the workflow was successfully registered, False otherwise.
+        """
+        # Presently, this will not fail if a workflow with that name is already registered. That failure happens with a later check.
+        # However, the table of WorkflowInfo DOES get updated in this request, which may present a confusing state of affairs to the user.
+        # On one hand, we want the user to know how a specific workflow fared, but also not let them think it was registered when it wasn't.
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/996
+
+        # Attempt to extract the metadata out of the workflow.
+        load_metadata_request = LoadWorkflowMetadata(file_name=str(workflow_to_register))
+        load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
+        if not load_metadata_result.succeeded():
+            # SKIP IT
+            return False
+
+        if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
+            err_str = (
+                f"Attempted to register workflow '{workflow_to_register}', but failed to extract metadata. SKIPPING IT."
+            )
+            logger.error(err_str)
+            return False
+
+        workflow_metadata = load_metadata_result.metadata
+
+        # Prepend the image paths appropriately.
+        if workflow_metadata.image is not None:
+            if workflow_metadata.is_griptape_provided:
+                workflow_metadata.image = workflow_metadata.image
+            else:
+                workflow_metadata.image = str(
+                    GriptapeNodes.ConfigManager().workspace_path.joinpath(workflow_metadata.image)
+                )
+
+        # Register it as a success.
+        workflow_register_request = RegisterWorkflowRequest(
+            metadata=workflow_metadata, file_name=str(workflow_to_register)
+        )
+        workflow_register_result = GriptapeNodes.handle_request(workflow_register_request)
+        if not isinstance(workflow_register_result, RegisterWorkflowResultSuccess):
+            err_str = f"Error attempting to register workflow '{workflow_to_register}': {workflow_register_result}. SKIPPING IT."
+            logger.error(err_str)
+            return False
+
+        return True
 
     def _gather_workflow_imports(self) -> list[str]:
         """Gathers all the imports for the saved workflow file, specifically for the events."""

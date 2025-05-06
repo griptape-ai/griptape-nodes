@@ -181,7 +181,7 @@ cmd.connect("Agent_RulesetList.rulesets", "Orchestrator.rulesets")
 # [tool.griptape-nodes]
 # name = "photography_team"
 # description = "A team of experts develop a prompt."
-# image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/workflows/templates/thumbnail_photography_team.webp"
+# image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/libraries/griptape_nodes_library/workflows/templates/thumbnail_photography_team.webp"
 # schema_version = "0.2.0"
 # engine_version_created_with = "0.23.2"
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
