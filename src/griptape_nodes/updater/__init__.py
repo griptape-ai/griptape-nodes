@@ -40,6 +40,7 @@ def _download_and_run_installer() -> None:
         console.print(f"[bold red]Error during update: {e}[/bold red]")
     else:
         console.print("[bold green]Finished updating self.[/bold green]")
+        console.print("[bold green]Run 'griptape-nodes' (or 'gtn') to restart the engine.[/bold green]")
 
 
 if __name__ == "__main__":

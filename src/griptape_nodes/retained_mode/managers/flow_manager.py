@@ -181,6 +181,12 @@ class FlowManager:
 
             return result
 
+        # We need to have a current workflow context to proceed.
+        if not GriptapeNodes.ContextManager().has_current_workflow():
+            details = "Attempted to create a Flow, but no Workflow was active in the Current Context."
+            logger.error(details)
+            return CreateFlowResultFailure()
+
         # Create it.
         final_flow_name = GriptapeNodes.ObjectManager().generate_name_for_object(
             type_name="ControlFlow", requested_name=request.flow_name
