@@ -598,5 +598,6 @@
     "workflows/templates/coordinating_agents.py",
     "workflows/templates/compare_prompts.py",
     "workflows/templates/photography_team.py"
-  ]
+  ],
+  "is_default_library": true
 }
