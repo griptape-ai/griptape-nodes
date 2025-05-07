@@ -143,7 +143,7 @@ cmd.set_value(
 cmd.set_value("Image_Generation_Specialist_asTool.off_prompt", False)
 cmd.set_value(
     "Orchestrator.prompt",
-    'Use all the tools at your disposal to create a spectacular image generation prompt about a "a skateboarding lion", that is no longer than 500 characters',
+    'Use all the tools at your disposal to create a spectacular image generation prompt about "a skateboarding lion", that is no longer than 500 characters',
 )
 cmd.set_value("Orchestrator.model", "gpt-4.1")
 cmd.set_value("Orchestrator.include_details", False)
