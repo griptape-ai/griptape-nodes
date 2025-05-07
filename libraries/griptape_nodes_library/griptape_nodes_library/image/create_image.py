@@ -200,7 +200,8 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             self._has_connection_to_prompt = True
             modified_parameters_set.add("prompt")
             # hey.. what if we just remove the property mode from the prompt parameter?
-            target_parameter.allowed_modes.remove(ParameterMode.PROPERTY)
+            if ParameterMode.PROPERTY in target_parameter.allowed_modes:
+                target_parameter.allowed_modes.remove(ParameterMode.PROPERTY)
 
     def after_incoming_connection_removed(
         self,

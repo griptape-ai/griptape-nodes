@@ -323,7 +323,9 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=None,
                 status=LibraryManager.LibraryStatus.MISSING,
-                problems=["Library could not be found."],
+                problems=[
+                    "Library could not be found at the file path specified. It will be removed from the configuration."
+                ],
             )
             details = f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
             logger.error(details)
@@ -834,6 +836,9 @@ class LibraryManager:
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         self._load_libraries_from_config_category(config_category=user_libraries_section, load_as_default_library=False)
 
+        # Remove any missing libraries
+        self._remove_missing_libraries_from_config(config_category=user_libraries_section)
+
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # App just got init'd. See if there are library JSONs to load!
         self.load_all_libraries_from_config()
@@ -867,17 +872,13 @@ class LibraryManager:
                                 library_workflow_files_to_register.append(str(final_workflow_path))
                             # WE DONE HERE (at least, for this library).
                             break
-
+        # This will (attempts to) load all workflows specified by LIBRARIES. User workflows are loaded later.
         GriptapeNodes.WorkflowManager().register_list_of_workflows(library_workflow_files_to_register)
 
-        # See if there are user workflow JSONs to load.
-        default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
-        GriptapeNodes.WorkflowManager().register_workflows_from_config(config_section=default_workflow_section)
+        # Go tell the Workflow Manager that it's turn is now.
+        GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
 
-        # Print it all out nicely.
-        GriptapeNodes.WorkflowManager().print_workflow_load_status()
-
-    def _load_libraries_from_config_category(self, config_category: str, load_as_default_library: bool) -> None:  # noqa: FBT001
+    def _load_libraries_from_config_category(self, config_category: str, *, load_as_default_library: bool) -> None:
         config_mgr = GriptapeNodes.ConfigManager()
         libraries_to_register_category = config_mgr.get_config_value(config_category)
 
@@ -891,3 +892,20 @@ class LibraryManager:
 
         # Print 'em all pretty
         self.print_library_load_status()
+
+    def _remove_missing_libraries_from_config(self, config_category: str) -> None:
+        # Now remove all libraries that were missing from the user's config.
+        config_mgr = GriptapeNodes.ConfigManager()
+        libraries_to_register_category = config_mgr.get_config_value(config_category)
+
+        paths_to_remove = set()
+        for library_path, library_info in self._library_file_path_to_info.items():
+            if library_info.status == LibraryManager.LibraryStatus.MISSING:
+                # Remove this file path from the config.
+                paths_to_remove.add(library_path.lower())
+
+        if paths_to_remove and libraries_to_register_category:
+            libraries_to_register_category = [
+                library for library in libraries_to_register_category if library.lower() not in paths_to_remove
+            ]
+            config_mgr.set_config_value(config_category, libraries_to_register_category)
