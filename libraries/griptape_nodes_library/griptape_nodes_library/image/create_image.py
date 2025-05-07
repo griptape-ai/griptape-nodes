@@ -192,11 +192,13 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,
+        modified_parameters_set: set[str],
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
         # Record a connection to the prompt Parameter so that node validation doesn't get aggro
         if target_parameter.name == "prompt":
             self._has_connection_to_prompt = True
+            modified_parameters_set.add("prompt")
             # hey.. what if we just remove the property mode from the prompt parameter?
             target_parameter.allowed_modes.remove(ParameterMode.PROPERTY)
 
@@ -205,11 +207,13 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,
+        modified_parameters_set: set[str],
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         # Remove the state maintenance of the connection to the prompt Parameter
         if target_parameter.name == "prompt":
             self._has_connection_to_prompt = False
+            modified_parameters_set.add("prompt")
             # If we have no connections to the prompt parameter, add the property mode back
             target_parameter.allowed_modes.add(ParameterMode.PROPERTY)
 

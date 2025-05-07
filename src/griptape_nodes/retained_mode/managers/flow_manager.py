@@ -3,12 +3,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
+from griptape.events import EventBus
+
 from griptape_nodes.exe_types.core_types import (
     ParameterContainer,
     ParameterMode,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
     CreateConnectionResultFailure,
@@ -77,6 +80,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     SerializeNodeToCommandsResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
+    AlterParameterEvent,
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.validation_events import (
@@ -583,18 +587,37 @@ class FlowManager:
             return CreateConnectionResultFailure()
 
         # Let the source make any internal handling decisions now that the Connection has been made.
+        modified_source_parameters = set()
         source_node.after_outgoing_connection(
             source_parameter=source_param,
             target_node=target_node,
             target_parameter=target_param,
+            modified_parameters_set=modified_source_parameters,
         )
 
         # And target.
+        modified_target_parameters = set()
         target_node.after_incoming_connection(
             source_node=source_node,
             source_parameter=source_param,
             target_parameter=target_param,
+            modified_parameters_set=modified_target_parameters,
         )
+
+        if modified_source_parameters:
+            for modified_parameter_name in modified_source_parameters:
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
+                modified_parameter = source_node.get_parameter_by_name(modified_parameter_name)
+                if modified_parameter is not None:
+                    modified_request = AlterParameterEvent.create(modified_parameter)
+                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
+        if modified_target_parameters:
+            for modified_parameter_name in modified_target_parameters:
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
+                modified_parameter = target_node.get_parameter_by_name(modified_parameter_name)
+                if modified_parameter is not None:
+                    modified_request = AlterParameterEvent.create(modified_parameter)
+                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
 
         details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
         logger.debug(details)
@@ -754,20 +777,37 @@ class FlowManager:
                 )
             except KeyError as e:
                 logger.warning(e)
-
+        modified_source_parameters = set()
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
         source_node.after_outgoing_connection_removed(
             source_parameter=source_param,
             target_node=target_node,
             target_parameter=target_param,
+            modified_parameters_set=modified_source_parameters,
         )
 
         # And target.
+        modified_target_parameters = set()
         target_node.after_incoming_connection_removed(
             source_node=source_node,
             source_parameter=source_param,
             target_parameter=target_param,
+            modified_parameters_set=modified_target_parameters,
         )
+        if modified_source_parameters:
+            for modified_parameter_name in modified_source_parameters:
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
+                modified_parameter = source_node.get_parameter_by_name(modified_parameter_name)
+                if modified_parameter is not None:
+                    modified_request = AlterParameterEvent.create(modified_parameter)
+                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
+        if modified_target_parameters:
+            for modified_parameter_name in modified_target_parameters:
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
+                modified_parameter = target_node.get_parameter_by_name(modified_parameter_name)
+                if modified_parameter is not None:
+                    modified_request = AlterParameterEvent.create(modified_parameter)
+                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
 
         details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" deleted.'
         logger.debug(details)
