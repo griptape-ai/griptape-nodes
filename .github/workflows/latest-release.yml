@@ -2,7 +2,8 @@ name: Create Latest Release
 
 on:
   schedule:
-    - cron: '0 11 * * *' # every day at 3:00 AM PT 
+    - cron: 30 17 * * *  # 10:30 AM PT
+    - cron: 30 22 * * *  # 3:30 PM PT
   workflow_dispatch:      # allows manual triggering too
 
 permissions:
