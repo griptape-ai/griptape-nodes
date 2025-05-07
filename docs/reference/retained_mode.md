@@ -10,16 +10,15 @@
 >
 > However, for convenience, in the script editor of the GUI, this import is already done for you automatically, so you can freely use `cmd.` directly.
 
-
 ## Flow Operations
 
 ### create_flow
+
 Creates a new flow within the Griptape system.
 
 ```python
 cmd.create_flow(flow_name=None, parent_flow_name=None)
 ```
-
 
 #### Arguments
 
