@@ -628,10 +628,11 @@ class FlowManager:
 
         # Now update the parameter values if it exists.
         # check if it's been resolved/has a value in parameter_output_values
-        if source_param.name in source_node.parameter_output_values:
-            value = source_node.parameter_output_values[source_param.name]
+        # I need to access the private method and check, because get could return a default value. We need to know if it's actually been set.
+        if source_param.name in source_node._parameter_output_values:
+            value = source_node.get_parameter_output_value(source_param.name)
         # if it doesn't let's use the one in parameter_values! that's the most updated.
-        elif source_param.name in source_node.parameter_values:
+        elif source_param.name in source_node._parameter_values:
             value = source_node.get_parameter_value(source_param.name)
         # if not even that.. then does it have a default value?
         elif source_param.default_value:

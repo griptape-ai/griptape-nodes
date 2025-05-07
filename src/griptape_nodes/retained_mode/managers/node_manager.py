@@ -1041,7 +1041,7 @@ class NodeManager:
         # This field requires the node as well
         if request.default_value is not None:
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/825
-            node.parameter_values[request.parameter_name] = request.default_value
+            node.set_parameter_value(request.parameter_name, request.default_value)
 
         details = f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{node_name}'."
         logger.debug(details)

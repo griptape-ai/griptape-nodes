@@ -57,8 +57,8 @@ class BaseNode(ABC):
     # Node Context Fields
     state: NodeResolutionState
     current_spotlight_parameter: Parameter | None = None
-    parameter_values: dict[str, Any]
-    parameter_output_values: dict[str, Any]
+    _parameter_values: dict[str, Any]
+    _parameter_output_values: dict[str, Any]
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
 
@@ -81,8 +81,8 @@ class BaseNode(ABC):
             self.metadata = {}
         else:
             self.metadata = metadata
-        self.parameter_values = {}
-        self.parameter_output_values = {}
+        self._parameter_values = {}
+        self._parameter_output_values = {}
         self.root_ui_element = BaseNodeElement()
         self.process_generator = None
 
@@ -118,6 +118,15 @@ class BaseNode(ABC):
         """Callback to confirm allowing a Connection going OUT of this Node."""
         return True
 
+    def before_incoming_connection(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002,
+        modified_parameters_set: set[str],  # noqa: ARG002
+    ) -> None:
+        return
+
     def after_incoming_connection(
         self,
         source_node: BaseNode,  # noqa: ARG002
@@ -126,6 +135,15 @@ class BaseNode(ABC):
         modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
+        return
+
+    def before_outgoing_connection(
+        self,
+        source_parameter: Parameter,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
+    ) -> None:
         return
 
     def after_outgoing_connection(
@@ -138,6 +156,15 @@ class BaseNode(ABC):
         """Callback after a Connection has been established OUT of this Node."""
         return
 
+    def before_incoming_connection_removed(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
+    ) -> None:
+        return
+
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,  # noqa: ARG002
@@ -146,6 +173,15 @@ class BaseNode(ABC):
         modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
+        return
+
+    def before_outgoing_connection_removed(
+        self,
+        source_parameter: Parameter,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
+    ) -> None:
         return
 
     def after_outgoing_connection_removed(
@@ -255,6 +291,14 @@ class BaseNode(ABC):
     def get_current_parameter(self) -> Parameter | None:
         return self.current_spotlight_parameter
 
+    def remove_parameter_by_name(self, parameter_name:str) -> None:
+        parameter = self.get_parameter_by_name(parameter_name)
+        if parameter:
+            self.remove_parameter(parameter)
+        else:
+            msg = f"Cannot remove parameter with name {parameter_name}. Parameter doesn't exist."
+            raise ValueError(msg)
+
     def initialize_spotlight(self) -> None:
         # Make a deep copy of all of the parameters and create the linked list.
         curr_param = None
@@ -351,7 +395,7 @@ class BaseNode(ABC):
             modified_parameters_set=modified_parameters,
         )
         # ACTUALLY SET THE NEW VALUE
-        self.parameter_values[param_name] = final_value
+        self._parameter_values[param_name] = final_value
         # If a parameter value has been set at the top level of a container, wipe all children.
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(
@@ -384,8 +428,8 @@ class BaseNode(ABC):
             GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(parameter_name=child.name, node_name=self.name))
 
     def get_parameter_value(self, param_name: str) -> Any:
-        if param_name in self.parameter_values:
-            return self.parameter_values[param_name]
+        if param_name in self._parameter_values:
+            return self._parameter_values[param_name]
         param = self.get_parameter_by_name(param_name)
         if param:
             value = handle_container_parameter(self, param)
@@ -398,11 +442,11 @@ class BaseNode(ABC):
         if parameter is None:
             err = f"Attempted to remove value for Parameter '{param_name}' but parameter doesn't exist."
             raise KeyError(err)
-        if param_name in self.parameter_values:
-            del self.parameter_values[param_name]
+        if param_name in self._parameter_values:
+            del self._parameter_values[param_name]
             # special handling if it's in a container.
-            if parameter.parent_container_name and parameter.parent_container_name in self.parameter_values:
-                del self.parameter_values[parameter.parent_container_name]
+            if parameter.parent_container_name and parameter.parent_container_name in self._parameter_values:
+                del self._parameter_values[parameter.parent_container_name]
                 new_val = self.get_parameter_value(parameter.parent_container_name)
                 if new_val is not None:
                     self.set_parameter_value(parameter.parent_container_name, new_val)
@@ -439,7 +483,7 @@ class BaseNode(ABC):
             msg = f"Parameter '{param_name}' not found"
             raise ValueError(msg)
 
-        value = self.parameter_values.get(param_name, None)
+        value = self._parameter_values.get(param_name, None)
         if value is not None:
             return value
 
@@ -479,7 +523,7 @@ class BaseNode(ABC):
     """
 
     def validate_empty_parameter(self, param: str, additional_msg: str = "") -> Exception | None:
-        param_value = self.parameter_values.get(param, None)
+        param_value = self._parameter_values.get(param, None)
         node_name = self.name
         if not param_value or param_value.isspace():
             msg = str(f"Parameter \"{param}\" was left blank for node '{node_name}'. {additional_msg}").strip()
@@ -501,26 +545,32 @@ class BaseNode(ABC):
         # set state to unresolved
         self.state = NodeResolutionState.UNRESOLVED
         # delete all output values potentially generated
-        self.parameter_output_values.clear()
+        self._parameter_output_values.clear()
         # Remove the current spotlight
         while self.current_spotlight_parameter is not None:
             temp = self.current_spotlight_parameter.next
             del self.current_spotlight_parameter
             self.current_spotlight_parameter = temp
 
+    def get_parameter_output_value(self, parameter_name: str) -> Any:
+        return self._parameter_output_values.get(parameter_name, None)
+
+    def set_parameter_output_value(self, parameter_name: str, value: Any) -> None:
+        self._parameter_output_values[parameter_name] = value
+
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
         # Add the value to the node
-        if parameter_name in self.parameter_output_values:
+        if parameter_name in self._parameter_output_values:
             try:
-                self.parameter_output_values[parameter_name] = self.parameter_output_values[parameter_name] + value
+                self._parameter_output_values[parameter_name] = self._parameter_output_values[parameter_name] + value
             except TypeError:
                 try:
-                    self.parameter_output_values[parameter_name].append(value)
+                    self._parameter_output_values[parameter_name].append(value)
                 except Exception as e:
                     msg = f"Value is not appendable to parameter '{parameter_name}' on {self.name}"
                     raise RuntimeError(msg) from e
         else:
-            self.parameter_output_values[parameter_name] = value
+            self._parameter_output_values[parameter_name] = value
         # Publish the event up!
         EventBus.publish_event(ProgressEvent(value=value, node_name=self.name, parameter_name=parameter_name))
 
@@ -528,7 +578,7 @@ class BaseNode(ABC):
         parameter = self.get_parameter_by_name(parameter_name)
         if parameter:
             data_type = parameter.type
-            self.parameter_output_values[parameter_name] = value
+            self._parameter_output_values[parameter_name] = value
             payload = ParameterValueUpdateEvent(
                 node_name=self.name,
                 parameter_name=parameter_name,

@@ -219,16 +219,20 @@ class FluxPipeline(ControlNode):
             logger.exception("No model specified")
         loras = self.get_parameter_value("loras")
         repo_id, revision = FluxPipeline._key_to_repo_revision(model)
-        prompt = self.parameter_values["prompt"]
-        prompt_2 = self.parameter_values.get("prompt_2", prompt)
-        negative_prompt = self.parameter_values["negative_prompt"]
-        negative_prompt_2 = self.parameter_values.get("negative_prompt_2", negative_prompt)
-        true_cfg_scale = float(self.parameter_values["true_cfg_scale"])
-        width = int(self.parameter_values["width"])
-        height = int(self.parameter_values["height"])
-        num_inference_steps = int(self.parameter_values["num_inference_steps"])
-        guidance_scale = float(self.parameter_values["guidance_scale"])
-        seed = int(self.parameter_values["seed"]) if ("seed" in self.parameter_values) else None
+        prompt = self.get_parameter_value("prompt")
+        prompt_2 = self.get_parameter_value("prompt_2")
+        if prompt_2 is None:
+            prompt_2 = prompt
+        negative_prompt = self.get_parameter_value("negative_prompt")
+        negative_prompt_2 = self.get_parameter_value("negative_prompt_2")
+        if negative_prompt_2 is None:
+            negative_prompt_2 = negative_prompt
+        true_cfg_scale = float(self.get_parameter_value("true_cfg_scale"))
+        width = int(self.get_parameter_value("width"))
+        height = int(self.get_parameter_value("height"))
+        num_inference_steps = int(self.get_parameter_value("num_inference_steps"))
+        guidance_scale = float(self.get_parameter_value("guidance_scale"))
+        seed = int(self.get_parameter_value("seed")) if self.get_parameter_value("seed") is not None else None
 
         # Immediately set a preview placeholder image to make it react quickly and adjust
         # the size of the image preview on the node.
@@ -282,7 +286,7 @@ class FluxPipeline(ControlNode):
             callback_on_step_end=callback_on_step_end,
         ).images[0]
         self.set_parameter_value("output_image", pil_to_image_artifact(output_image_pil))
-        self.parameter_output_values["output_image"] = pil_to_image_artifact(output_image_pil)
+        self.set_parameter_output_value("output_image", pil_to_image_artifact(output_image_pil))
         self.append_value_to_parameter(
             "logs", f"Finished inference step {num_inference_steps} of {num_inference_steps}.\n"
         )

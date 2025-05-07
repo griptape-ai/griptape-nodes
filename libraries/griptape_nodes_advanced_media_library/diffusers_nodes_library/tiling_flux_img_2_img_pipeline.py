@@ -282,17 +282,21 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         repo_id, revision = TilingFluxImg2ImgPipeline._key_to_repo_revision(model)
         input_image_artifact = self.get_parameter_value("input_image")
         prompt = self.get_parameter_value("prompt")
-        prompt_2 = self.parameter_values.get("prompt_2", prompt)
+        prompt_2 = self.get_parameter_value("prompt_2")
+        if prompt_2 is None:
+            prompt_2 = prompt
         negative_prompt = self.get_parameter_value("negative_prompt")
-        negative_prompt_2 = self.parameter_values.get("negative_prompt_2", prompt)
-        true_cfg_scale = float(self.parameter_values["true_cfg_scale"])
+        negative_prompt_2 = self.get_parameter_value("negative_prompt_2")
+        if negative_prompt_2 is None:
+            negative_prompt_2 = negative_prompt
+        true_cfg_scale = float(self.get_parameter_value("true_cfg_scale"))
         max_tile_size = int(self.get_parameter_value("max_tile_size"))
         tile_overlap = int(self.get_parameter_value("tile_overlap"))
         tile_strategy = str(self.get_parameter_value("tile_strategy"))
-        num_inference_steps = int(self.parameter_values["num_inference_steps"])
+        num_inference_steps = int(self.get_parameter_value("num_inference_steps"))
         strength = float(self.get_parameter_value("strength"))
-        guidance_scale = float(self.parameter_values["guidance_scale"])
-        seed = int(self.parameter_values["seed"]) if ("seed" in self.parameter_values) else None
+        guidance_scale = float(self.get_parameter_value("guidance_scale"))
+        seed = int(self.get_parameter_value("seed")) if self.get_parameter_value("seed") is not None else None
 
         if isinstance(input_image_artifact, ImageUrlArtifact):
             input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
@@ -322,7 +326,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
             self.set_parameter_value("output_image", pil_to_image_artifact(input_image_pil))
             return
 
-        seed = int(self.parameter_values["seed"]) if ("seed" in self.parameter_values) else None
+        seed = int(self.get_parameter_value("seed") if ("seed" in self.parameter_values)) else None
 
         self.append_value_to_parameter("logs", "Preparing models...\n")
         with self._append_stdout_to_logs():
