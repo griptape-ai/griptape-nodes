@@ -229,7 +229,7 @@ class Agent(ControlNode):
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set,
+        modified_parameters_set: set[str],
     ) -> None:
         """Handles UI updates after an incoming connection is made to this node.
 
@@ -282,7 +282,7 @@ class Agent(ControlNode):
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set,
+        modified_parameters_set: set[str],
     ) -> None:
         """Handles UI updates after an incoming connection to this node is removed.
 
