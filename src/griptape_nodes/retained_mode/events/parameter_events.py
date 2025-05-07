@@ -312,7 +312,7 @@ class AlterParameterEvent(ExecutionPayload):
     is_user_defined: bool
     ui_options: dict | None
 
-    # TODO(kate): Get known_attrs dynamically, instead of setting manually. https://github.com/griptape-ai/griptape-nodes/issues/1039
+    # TODO: Get known_attrs dynamically, instead of setting manually. https://github.com/griptape-ai/griptape-nodes/issues/1039
     @classmethod
     def create(cls, parameter: Parameter) -> AlterParameterEvent:
         known_attrs = {
