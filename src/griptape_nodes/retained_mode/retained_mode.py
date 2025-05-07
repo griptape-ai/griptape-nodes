@@ -1,3 +1,4 @@
+import inspect
 import logging
 from collections.abc import Callable
 from functools import wraps
@@ -171,6 +172,25 @@ class RetainedMode:
         parent_flow_name: str | None = None,
         metadata: dict[Any, Any] | None = None,
     ) -> ResultPayload:
+        """Creates a node of the specified type and adds it to the current or a specified parent flow.
+
+        Supports custom naming and metadata (e.g., UI position, display name, tags).
+
+        Args:
+            node_type (str): Type of node to create (e.g. "Agent", "Prompt", "MergeText").
+            specific_library_name (str, optional): Library to search for the node type.
+            node_name (str, optional): Custom name for the new node.
+            parent_flow_name (str, optional): Parent flow to insert the node into (defaults to current).
+            metadata (dict, optional): Extra node metadata such as {"position": {"x": 100, "y": 200"}}.
+
+        Returns:
+            ResultPayload – Contains the name of the created node if successful.
+
+        Example:
+            agent = cmd.create_node("Agent")
+            cmd.create_node("Prompt", node_name="intro_prompt")
+            cmd.create_node("Agent", metadata={"position": {"x": 100, "y": 200"}})
+        """
         request = CreateNodeRequest(
             node_name=node_name,
             node_type=node_type,
@@ -833,3 +853,72 @@ class RetainedMode:
         rsl = GriptapeNodes.ObjectManager()
         as_dict = rsl.get_filtered_subset(**kwargs)
         return list(as_dict.keys())
+
+    @classmethod
+    def help(cls, command_name: str | None = None) -> str:
+        """Returns help text for a specific command or all commands if none is provided."""
+        if command_name:
+            func = getattr(cls, command_name, None)
+            if not func or not callable(func):
+                return f"❌ No such command: {command_name}"
+
+            doc = inspect.getdoc(func) or "No documentation available."
+            sig_lines = _fancy_signature(func)
+
+            help_text = [f"Help for: {command_name}()", "", *doc.splitlines(), "", *sig_lines]
+            return "\n".join(help_text)
+
+        lines = ["📚 Available commands:\n"]
+        for name in dir(cls):
+            if not name.startswith("_"):
+                attr = getattr(cls, name)
+                if callable(attr):
+                    lines.append(f"- {name}")
+        lines.append("\nUse cmd.help('command_name') to get more info.")
+        return "\n".join(lines)
+
+
+def _fancy_signature(func: Callable) -> list[str]:
+    """Return a dev-friendly, neatly aligned function signature."""
+    import inspect
+    from typing import get_type_hints
+
+    sig = inspect.signature(func)
+    type_hints = get_type_hints(func)
+
+    def type_repr(tp) -> str:
+        if tp is inspect.Signature.empty:
+            return "Any"
+        if isinstance(tp, type):
+            return tp.__name__
+        tp_str = str(tp)
+        return tp_str.replace("typing.", "").replace("<class '", "").replace("'>", "").split(".")[-1]
+
+    params = []
+    max_name_len = 0
+    max_type_len = 0
+
+    for name, param in sig.parameters.items():
+        annotation = type_hints.get(name, param.annotation)
+        annotation_str = type_repr(annotation)
+        is_optional = param.default is not inspect.Parameter.empty
+        default = f"= {param.default!r}" if is_optional else ""
+        optional_flag = "[optional]" if is_optional else "[required]"
+
+        params.append((name, annotation_str, default, optional_flag))
+        max_name_len = max(max_name_len, len(name))
+        max_type_len = max(max_type_len, len(annotation_str))
+
+    lines = ["Function definition:"]
+    lines.append(f"    {func.__name__}(")
+
+    for name, annotation_str, default, flag in params:
+        lines.append(
+            f"        {name.ljust(max_name_len)}: {annotation_str.ljust(max_type_len)} {default.ljust(20)} {flag}"
+        )
+
+    lines.append("    )")
+
+    lines.append("")
+    lines.append("Parameters marked [optional] have default values.")
+    return lines
