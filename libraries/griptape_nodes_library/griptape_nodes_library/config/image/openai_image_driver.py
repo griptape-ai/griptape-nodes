@@ -95,22 +95,21 @@ class OpenAiImage(BaseImageDriver):
 
         self.add_parameter(
             Parameter(
+                name="output_format",
+                type="str",
+                default_value="png",
+                tooltip="Select the output format for image generation.",
+                traits={Options(choices=["png", "jpeg"])},
+            )
+        )
+        self.add_parameter(
+            Parameter(
                 name="output_compression",
                 type="int",
                 default_value=80,
                 tooltip="Select the output compression for image generation.",
                 traits={Slider(min_val=0, max_val=100)},
                 ui_options={"step": 10, "hide": True},
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="output_format",
-                type="str",
-                default_value="png",
-                tooltip="Select the output format for image generation.",
-                traits={Options(choices=["png", "jpeg"])},
             )
         )
 
@@ -144,31 +143,41 @@ class OpenAiImage(BaseImageDriver):
                 self.show_parameter_by_name("output_compression")
             else:
                 self.hide_parameter_by_name("output_compression")
+            modified_parameters_set.add("output_compression")
 
         if parameter.name == "model":
             # If the model is gpt-image-1, update the size options accordingly
             if value == "gpt-image-1":
                 self._update_option_choices(param="image_size", choices=GPT_IMAGE_SIZES, default=GPT_IMAGE_SIZES[0])
+                self._update_option_choices(param="quality", choices=GPT_IMAGE_QUALITY, default=GPT_IMAGE_QUALITY[0])
+                modified_parameters_set.update("image_size")
 
-                # show style and quality parameters
-                self.show_parameter_by_name(["style", "quality", "background", "moderation"])
+                # show gpt-image-1 specific parameters
+                param_list = ["style", "quality", "background", "moderation", "output_format"]
+                self.show_parameter_by_name(param_list)
+                modified_parameters_set.update(param_list)
 
                 if self.get_parameter_value("output_format") == "jpeg":
                     self.show_parameter_by_name("output_compression")
                 else:
                     self.hide_parameter_by_name("output_compression")
+                modified_parameters_set.add("output_compression")
             else:
-                self.hide_parameter_by_name(
-                    ["style", "background", "moderation", "output_compression", "output_format"]
-                )
+                param_list = ["style", "background", "moderation", "output_compression", "output_format"]
+                self.hide_parameter_by_name(param_list)
 
-            # If the model is DALL-E 2, update the size options accordingly
-            if value == "dall-e-2":
-                self._update_option_choices(param="image_size", choices=DALL_E_2_SIZES, default=DALL_E_2_SIZES[0])
-                self.hide_parameter_by_name("quality")
-            else:
-                self._update_option_choices(param="image_size", choices=DALL_E_3_SIZES, default=DALL_E_3_SIZES[0])
-                self.show_parameter_by_name("quality")
+                if value == "dall-e-3":
+                    self.show_parameter_by_name("quality")
+                    self._update_option_choices(param="image_size", choices=DALL_E_3_SIZES, default=DALL_E_3_SIZES[0])
+                    self._update_option_choices(param="quality", choices=DALL_E_3_QUALITY, default=DALL_E_3_QUALITY[0])
+
+                # If the model is DALL-E 2, update the size options accordingly
+                if value == "dall-e-2":
+                    self._update_option_choices(param="image_size", choices=DALL_E_2_SIZES, default=DALL_E_2_SIZES[0])
+                    self.hide_parameter_by_name("quality")
+
+                param_list.extend(["image_size", "quality"])
+                modified_parameters_set.update(param_list)
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
