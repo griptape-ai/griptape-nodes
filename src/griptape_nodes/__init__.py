@@ -33,6 +33,7 @@ CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 DATA_DIR = xdg_data_home() / "griptape_nodes"
 ENV_FILE = CONFIG_DIR / ".env"
 CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
+LATEST_TAG = "latest"
 PACKAGE_NAME = "griptape-nodes"
 NODES_APP_URL = "https://nodes.griptape.ai"
 NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/tags/{tag}.tar.gz"
@@ -289,7 +290,7 @@ def _get_latest_version(package: str, install_source: str) -> str:
                 return f"v{response.json()['info']['version']}"
     elif install_source == "git":
         # We only install auto updating from the 'latest' tag
-        revision = "latest"
+        revision = LATEST_TAG
         update_url = GITHUB_UPDATE_URL.format(package=package, revision=revision)
 
         with httpx.Client() as client:
@@ -339,14 +340,19 @@ def _update_self() -> None:
     os_manager.replace_process([sys.executable, "-m", "griptape_nodes.updater"])
 
 
-def _sync_assets(version: str | None = None) -> None:
+def _sync_assets() -> None:
     """Download and fully replace the Griptape Nodes assets directory."""
-    if version is None:
+    install_source = __get_install_source()
+    # Unless we're installed from PyPi, grab assets from the 'latest' tag
+    if install_source == "pypi":
         version = __get_current_version()
+    else:
+        version = LATEST_TAG
 
     console.print(f"[bold cyan]Fetching Griptape Nodes assets ({version})…[/bold cyan]")
 
     tar_url = NODES_TARBALL_URL.format(tag=version)
+    console.print(f"[green]Downloading from {tar_url}[/green]")
     dest_nodes = DATA_DIR / "libraries"
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -359,12 +365,13 @@ def _sync_assets(version: str | None = None) -> None:
             except httpx.HTTPStatusError as e:
                 console.print(f"[red]Error fetching assets: {e}[/red]")
                 return
-            task = progress.add_task("[green]downloading...", total=int(r.headers.get("Content-Length", 0)))
+            task = progress.add_task("[green]Downloading...", total=int(r.headers.get("Content-Length", 0)))
             with tar_path.open("wb") as f:
                 for chunk in r.iter_bytes():
                     f.write(chunk)
                     progress.update(task, advance=len(chunk))
 
+        console.print("[green]Extracting...[/green]")
         # Extract and locate extracted directory
         with tarfile.open(tar_path) as tar:
             tar.extractall(tmp, filter="data")
