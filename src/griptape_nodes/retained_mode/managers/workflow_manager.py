@@ -431,8 +431,13 @@ class WorkflowManager:
             execution_result = self.run_workflow(relative_file_path=relative_file_path)
 
             if not execution_result.execution_successful:
-                GriptapeNodes.ContextManager().pop_workflow()
                 logger.error(execution_result.execution_details)
+
+                # Attempt to clear everything out, as we modified the engine state getting here.
+                clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
+                clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+
+                # The clear-all above here wipes the ContextManager, so no need to do a pop_workflow().
                 return RunWorkflowFromRegistryResultFailure()
 
         # Success!
