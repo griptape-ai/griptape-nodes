@@ -297,6 +297,7 @@ class GetNodeElementDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 @dataclass
 @PayloadRegistry.register
 class AlterParameterEvent(ExecutionPayload):
+    node_name: str
     element_id: str
     type: str
     input_types: list[str]
@@ -314,8 +315,9 @@ class AlterParameterEvent(ExecutionPayload):
 
     # TODO: Get known_attrs dynamically, instead of setting manually. https://github.com/griptape-ai/griptape-nodes/issues/1039
     @classmethod
-    def create(cls, parameter: Parameter) -> AlterParameterEvent:
+    def create(cls, node_name: str, parameter: Parameter) -> AlterParameterEvent:
         known_attrs = {
+            "node_name": node_name,
             "element_id": parameter.element_id,
             "type": parameter.type,
             "input_types": parameter.input_types,
