@@ -4,7 +4,7 @@ While Griptape Nodes provides easy access to OpenAI models by default via your G
 
 ## Account and API Key Creation
 
-Before you can get API keys for your account, you'll need an account. To begin, head to [https://openai.com](https://openai.com)
+Before you can get API keys for your OpenAI account, you'll need an OpenAI account. To begin, head to [https://openai.com](https://openai.com)
 
 <p align="center">
         <img src="../assets/OAI_00_main_page.png" alt="Open AI" width="500"/>
