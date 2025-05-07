@@ -105,6 +105,8 @@ class ObjectManager:
             )
             return ClearAllObjectStateResultFailure()
         # Let's try and clear it all.
+
+        # Cancel any running flows.
         flows = self.get_filtered_subset(type=ControlFlow)
         for flow_name, flow in flows.items():
             if flow.check_for_existing_running_flow():
@@ -113,6 +115,16 @@ class ObjectManager:
                     details = f"Attempted to clear all object state and delete everything. Failed because running flow '{flow_name}' could not cancel."
                     logger.error(details)
                     return ClearAllObjectStateResultFailure()
+
+        try:
+            # Delete the existing flows, which will clear all nodes and connections.
+            GriptapeNodes.clear_data()
+        except Exception as e:
+            details = f"Attempted to clear all object state and delete everything. Failed with exception: {e}"
+            logger.error(details)
+            return ClearAllObjectStateResultFailure()
+
+        # Clare the current context.
         context_mgr = GriptapeNodes.ContextManager()
         while context_mgr.has_current_workflow():
             while context_mgr.has_current_flow():
@@ -122,14 +134,6 @@ class ObjectManager:
                     context_mgr.pop_node()
                 context_mgr.pop_flow()
             context_mgr.pop_workflow()
-
-        try:
-            # Clear the existing flows, which will clear all nodes and connections.
-            GriptapeNodes.clear_data()
-        except Exception as e:
-            details = f"Attempted to clear all object state and delete everything. Failed with exception: {e}"
-            logger.error(details)
-            return ClearAllObjectStateResultFailure()
 
         details = "Successfully cleared all object state (deleted everything)."
         logger.debug(details)

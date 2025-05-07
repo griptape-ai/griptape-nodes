@@ -25,7 +25,7 @@ Use this node when you want to:
 
 ### Outputs
 
-- **driver**: The configured Griptape Cloud image driver that other nodes can use
+- **image_model_config**: The configured Griptape Cloud image model configuration that other nodes can use
 
 ## Example
 
@@ -33,14 +33,14 @@ Imagine you want to create images using Griptape Cloud:
 
 1. Add a GriptapeCloudImage node to your workflow
 1. Set "size" to "1024x1792" for vertical images
-1. Connect the "driver" output to a GenerateImage's "driver" input
+1. Connect the "image_model_config" output to a GenerateImage's "image_model_config" input
 1. Now that node will generate images using Griptape Cloud with your settings
 
 ## Important Notes
 
 - You need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY` (this should be automagic with your being in Griptape Nodes at all!)
 - The node will automatically adjust image sizes based on model choice
-- It should be noted, this is the default driver for the GenerateImage node, and in fact should have no effect if plugged into that node.
+- It should be noted, this is the default image_model_config for the GenerateImage node, and in fact should have no effect if plugged into that node.
 
 ## Common Issues
 
