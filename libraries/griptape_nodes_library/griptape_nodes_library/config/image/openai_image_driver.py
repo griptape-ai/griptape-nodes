@@ -114,27 +114,30 @@ class OpenAiImage(BaseImageDriver):
             )
         )
 
-    def hide_parameter_by_name(self, name: str) -> None:
-        """Hides a parameter by name.
+    def _set_parameter_visibility(self, names: str | list[str], *, visible: bool) -> None:
+        """Sets the visibility of one or more parameters.
 
         Args:
-            name (str): The name of the parameter to hide.
+            names (str or list of str): The parameter name(s) to update.
+            visible (bool): Whether to show (True) or hide (False) the parameters.
         """
-        parameter = self.get_parameter_by_name(name)
-        if parameter is not None:
-            parameter._ui_options["hide"] = True
+        if isinstance(names, str):
+            names = [names]
 
-    def show_parameter_by_name(self, name: str) -> None:
-        """Shows a parameter by name.
+        for name in names:
+            parameter = self.get_parameter_by_name(name)
+            if parameter is not None:
+                parameter._ui_options["hide"] = not visible
 
-        Args:
-            name (str): The name of the parameter to show.
-        """
-        parameter = self.get_parameter_by_name(name)
-        if parameter is not None:
-            parameter._ui_options["hide"] = False
+    def hide_parameter_by_name(self, names: str | list[str]) -> None:
+        """Hides one or more parameters by name."""
+        self._set_parameter_visibility(names, visible=False)
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:  # noqa: C901, PLR0912
+    def show_parameter_by_name(self, names: str | list[str]) -> None:
+        """Shows one or more parameters by name."""
+        self._set_parameter_visibility(names, visible=True)
+
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         """Certain options are only available for certain models."""
         if parameter.name == "output_format":
             if value == "jpeg":
@@ -148,28 +151,24 @@ class OpenAiImage(BaseImageDriver):
                 self._update_option_choices(param="image_size", choices=GPT_IMAGE_SIZES, default=GPT_IMAGE_SIZES[0])
 
                 # show style and quality parameters
-                for param in ["style", "quality", "background", "moderation", "output_format"]:
-                    self.show_parameter_by_name(param)
+                self.show_parameter_by_name(["style", "quality", "background", "moderation"])
+
                 if self.get_parameter_value("output_format") == "jpeg":
                     self.show_parameter_by_name("output_compression")
                 else:
                     self.hide_parameter_by_name("output_compression")
             else:
-                for param in ["style", "background", "moderation", "output_compression", "output_format"]:
-                    self.hide_parameter_by_name(param)
+                self.hide_parameter_by_name(
+                    ["style", "background", "moderation", "output_compression", "output_format"]
+                )
 
             # If the model is DALL-E 2, update the size options accordingly
-            toggle_params = ["quality"]
             if value == "dall-e-2":
                 self._update_option_choices(param="image_size", choices=DALL_E_2_SIZES, default=DALL_E_2_SIZES[0])
-                # hide style and quality parameters
-                for param in toggle_params:
-                    self.hide_parameter_by_name(param)
+                self.hide_parameter_by_name("quality")
             else:
                 self._update_option_choices(param="image_size", choices=DALL_E_3_SIZES, default=DALL_E_3_SIZES[0])
-                # show  style and quality parameters
-                for param in toggle_params:
-                    self.show_parameter_by_name(param)
+                self.show_parameter_by_name("quality")
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
