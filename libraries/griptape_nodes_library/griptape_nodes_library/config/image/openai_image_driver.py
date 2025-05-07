@@ -150,7 +150,7 @@ class OpenAiImage(BaseImageDriver):
             if value == "gpt-image-1":
                 self._update_option_choices(param="image_size", choices=GPT_IMAGE_SIZES, default=GPT_IMAGE_SIZES[0])
                 self._update_option_choices(param="quality", choices=GPT_IMAGE_QUALITY, default=GPT_IMAGE_QUALITY[0])
-                modified_parameters_set.update("image_size")
+                modified_parameters_set.add("image_size")
 
                 # show gpt-image-1 specific parameters
                 param_list = ["style", "quality", "background", "moderation", "output_format"]
