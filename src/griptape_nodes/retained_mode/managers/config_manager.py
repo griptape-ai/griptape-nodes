@@ -176,12 +176,7 @@ class ConfigManager:
         # We want to ensure that all environment variables from here are pre-filled in the secrets manager.
         env_var_names = self.gather_env_var_names()
         for env_var_name in env_var_names:
-            # Lazy load to avoid circular import
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            if GriptapeNodes.SecretsManager().get_secret(env_var_name, should_error_on_not_found=False) is None:
-                # Set a blank one.
-                GriptapeNodes.SecretsManager().set_secret(env_var_name, "")
+            self._update_secret_from_env_var(env_var_name)
 
     def gather_env_var_names(self) -> list[str]:
         """Gather all environment variable names within the config."""
@@ -196,6 +191,14 @@ class ConfigManager:
             elif isinstance(value, str) and value.startswith("$"):
                 env_var_names.append(value[1:])
         return env_var_names
+
+    def _update_secret_from_env_var(self, env_var_name: str) -> None:
+        # Lazy load to avoid circular import
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        if GriptapeNodes.SecretsManager().get_secret(env_var_name, should_error_on_not_found=False) is None:
+            # Set a blank one.
+            GriptapeNodes.SecretsManager().set_secret(env_var_name, "")
 
     def save_user_workflow_json(self, workflow_file_name: str) -> None:
         config_loc = "app_events.on_app_initialization_complete.workflows_to_register"
@@ -330,6 +333,13 @@ class ConfigManager:
             return SetConfigCategoryResultSuccess()
 
         self.set_config_value(key=request.category, value=request.contents)
+
+        # Update any added env vars (this is dumb)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1022
+        after_env_vars_set = set(self.gather_env_var_names())
+        for after_env_var in after_env_vars_set:
+            self._update_secret_from_env_var(after_env_var)
+
         details = f"Successfully assigned the config dictionary for section '{request.category}'."
         logger.info(details)
         return SetConfigCategoryResultSuccess()
@@ -419,6 +429,12 @@ class ConfigManager:
 
         # Set the new value
         self.set_config_value(key=request.category_and_key, value=request.value)
+
+        # Update any added env vars (this is dumb)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1022
+        after_env_vars_set = set(self.gather_env_var_names())
+        for after_env_var in after_env_vars_set:
+            self._update_secret_from_env_var(after_env_var)
 
         # For container types, indicate the change with a diff
         if isinstance(request.value, (dict, list)):
