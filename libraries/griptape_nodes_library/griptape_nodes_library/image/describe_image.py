@@ -1,4 +1,5 @@
 from griptape.artifacts import ImageUrlArtifact
+from griptape.drivers.prompt.base_prompt_driver import BasePromptDriver
 from griptape.drivers.prompt.griptape_cloud_prompt_driver import GriptapeCloudPromptDriver
 from griptape.loaders import ImageLoader
 from griptape.structures import Structure
@@ -22,9 +23,9 @@ class DescribeImage(ControlNode):
 
         self.add_parameter(
             Parameter(
-                name="agent",
+                name="agent_or_config",
                 type="Agent",
-                input_types=["Agent", "dict"],
+                input_types=["Agent", "Prompt Model Config"],
                 output_type="Agent",
                 tooltip="None",
                 default_value=None,
@@ -83,19 +84,33 @@ class DescribeImage(ControlNode):
     def process(self) -> AsyncResult[Structure]:
         # Get the parameters from the node
         params = self.parameter_values
-        agent = params.get("agent", None)
+        agent_or_config = params.get("agent_or_config", None)
+        agent = None
         default_prompt_driver = GriptapeCloudPromptDriver(
             model="gpt-4o",
             api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
             stream=True,
         )
-        if not agent:
+
+        # If no agent_or_config is provided, create a new agent with the default prompt driver
+        # If an agent_or_config is provided, check if it's a valid agent or prompt_model_config
+        # If it's a prompt_model_config, create a new agent with it
+        # If it's an agent, make sure it has a PromptTask
+        # If it's neither, raise an error
+        if not agent_or_config:
             agent = Agent(prompt_driver=default_prompt_driver)
-        else:
-            agent = Agent.from_dict(agent)
+        elif isinstance(agent_or_config, BasePromptDriver):
+            # Create a new agent with the prompt_model_config
+            agent = Agent(prompt_driver=agent_or_config)
+        elif isinstance(agent_or_config, dict):
+            agent = Agent.from_dict(agent_or_config)
             # make sure the agent is using a PromptTask
             if not isinstance(agent.tasks[0], PromptTask):
                 agent.add_task(PromptTask(prompt_driver=default_prompt_driver))
+        else:
+            msg = "agent_or_config must be an Agent or a prompt_model_config"
+            raise TypeError(msg)
+
         prompt = params.get("prompt", "")
         if prompt == "":
             prompt = "Describe the image"
