@@ -419,37 +419,6 @@ class BaseNode(ABC):
                 return param
         return None
 
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/852
-    def valid_or_fallback(self, param_name: str, fallback: Any = None) -> Any:
-        """Get a parameter value if valid, otherwise use fallback.
-
-        Args:
-            param_name: The name of the parameter to check
-            fallback: The fallback value to use if the parameter value is invalid or empty
-
-        Returns:
-            The valid parameter value or fallback
-
-        Raises:
-            ValueError: If neither the parameter value nor fallback is valid
-        """
-        # Get parameter object and current value
-        param = self.get_parameter_by_name(param_name)
-        if not param:
-            msg = f"Parameter '{param_name}' not found"
-            raise ValueError(msg)
-
-        value = self.parameter_values.get(param_name, None)
-        if value is not None:
-            return value
-
-        # Try fallback if value is invalid or empty
-        if fallback is None:
-            return None
-        self.set_parameter_value(param_name, fallback)
-        # No valid options available
-        return fallback
-
     # Abstract method to process the node. Must be defined by the type
     # Must save the values of the output parameters in NodeContext.
     @abstractmethod
