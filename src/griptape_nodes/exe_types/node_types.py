@@ -341,7 +341,7 @@ class BaseNode(ABC):
             validator(parameter, candidate_value)
 
         # Keep track of which other parameters got modified as a result of any node-specific logic.
-        modified_parameters = set()
+        modified_parameters: set[str] = set()
 
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
@@ -374,7 +374,7 @@ class BaseNode(ABC):
                     )
                     # Return the complete set of modified parameters.
                     if modified_parameters_from_container:
-                        modified_parameters = modified_parameters + modified_parameters_from_container
+                        modified_parameters = modified_parameters | modified_parameters_from_container
         return modified_parameters
 
     def kill_parameter_children(self, parameter: Parameter) -> None:
