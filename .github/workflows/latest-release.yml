@@ -1,4 +1,4 @@
-name: Create Nightly release
+name: Create Latest Release
 
 on:
   schedule:
@@ -18,14 +18,14 @@ jobs:
       - name: Create Tag
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          tag: "nightly"
+          tag: "latest"
         run: |
           git tag "$tag" -f
           git push origin "$tag" -f --tags
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          tag: "nightly"
+          tag: "latest"
         run: |
           gh release edit "$tag" \
               --repo="$GITHUB_REPOSITORY" \
