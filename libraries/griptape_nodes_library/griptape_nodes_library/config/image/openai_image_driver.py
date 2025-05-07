@@ -48,10 +48,6 @@ class OpenAiImage(BaseImageDriver):
 
         # --- Customize Inherited Parameters ---
 
-        # Update the parameters  for OpenAI specifics.
-        self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
-        self._update_option_choices(param="image_size", choices=GPT_IMAGE_SIZES, default=DEFAULT_SIZE)
-
         # Add additional parameters specific to OpenAI
         self.add_parameter(
             Parameter(
@@ -112,6 +108,10 @@ class OpenAiImage(BaseImageDriver):
                 ui_options={"step": 10, "hide": True},
             )
         )
+
+        # Update the parameters  for OpenAI specifics.
+        self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
+        self._update_option_choices(param="image_size", choices=GPT_IMAGE_SIZES, default=DEFAULT_SIZE)
 
     def _set_parameter_visibility(self, names: str | list[str], *, visible: bool) -> None:
         """Sets the visibility of one or more parameters.
