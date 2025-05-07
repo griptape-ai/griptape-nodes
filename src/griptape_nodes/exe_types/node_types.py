@@ -113,7 +113,7 @@ class BaseNode(ABC):
         self,
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
-        target_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002,
     ) -> bool:
         """Callback to confirm allowing a Connection going OUT of this Node."""
         return True
@@ -122,7 +122,8 @@ class BaseNode(ABC):
         self,
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
-        target_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002,
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
         return
@@ -132,6 +133,7 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
         return
@@ -141,6 +143,7 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         return
@@ -150,6 +153,7 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
         return
@@ -337,7 +341,7 @@ class BaseNode(ABC):
             validator(parameter, candidate_value)
 
         # Keep track of which other parameters got modified as a result of any node-specific logic.
-        modified_parameters = set()
+        modified_parameters: set[str] = set()
 
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
@@ -365,8 +369,12 @@ class BaseNode(ABC):
                 new_parent_value = handle_container_parameter(self, parent_parameter)
                 if new_parent_value is not None:
                     # set that new value if it exists.
-                    self.set_parameter_value(parameter.parent_container_name, new_parent_value)
-        # Return the complete set of modified parameters.
+                    modified_parameters_from_container = self.set_parameter_value(
+                        parameter.parent_container_name, new_parent_value
+                    )
+                    # Return the complete set of modified parameters.
+                    if modified_parameters_from_container:
+                        modified_parameters = modified_parameters | modified_parameters_from_container
         return modified_parameters
 
     def kill_parameter_children(self, parameter: Parameter) -> None:
@@ -449,15 +457,20 @@ class BaseNode(ABC):
         pass
 
     # if not implemented, it will return no issues.
-    def validate_node(self) -> list[Exception] | None:
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        """Runs before the entire workflow is run."""
+        return None
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Runs before this node is run."""
         return None
 
     # It could be quite common to want to validate whether or not a parameter is empty.
-    # this helper function can be used within the `validate_node` method along with other validations
+    # this helper function can be used within the `validate_before_workflow_run` method along with other validations
     #
     # Example:
     """
-    def validate_node(self) -> list[Exception] | None:
+    def validate_before_workflow_run(self) -> list[Exception] | None:
         exceptions = []
         prompt_error = self.validate_empty_parameter(param="prompt", additional_msg="Please provide a prompt to generate an image.")
         if prompt_error:

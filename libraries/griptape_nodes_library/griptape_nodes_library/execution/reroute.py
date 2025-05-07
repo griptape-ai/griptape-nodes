@@ -27,6 +27,7 @@ class Reroute(DataNode):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
         # Add the connection.
@@ -37,6 +38,7 @@ class Reroute(DataNode):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         # Stop tracking it.
@@ -50,6 +52,7 @@ class Reroute(DataNode):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
         self.passthru.input_types = target_parameter.input_types
@@ -59,6 +62,7 @@ class Reroute(DataNode):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
         self.passthru.input_types = ["Any"]
