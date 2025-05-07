@@ -75,6 +75,7 @@ nav:
       - Making Custom Nodes: how_to/making_custom_nodes.md
       - Making Custom Scripts: how_to/making_custom_scripts.md
       - Setting Up External Resources:
+          - Get an OpenAI Key : how_to/openai_api_key.md
           - Hugging Face Installation: how_to/hugging_face_install.md
 
   - FAQ: faq.md
