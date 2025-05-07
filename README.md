@@ -16,8 +16,8 @@ Griptape Nodes provides a powerful, visual, node-based interface for building an
 **Learn More:**
 
 - **Full Documentation:** [docs.griptapenodes.com](https://docs.griptapenodes.com)
-- **Getting Started:** [docs.griptapenodes.com/setup/](https://docs.griptapenodes.com/en/latest/getting_started/)
-- **Engine Configuration:** [docs.griptapenodes.com/configuration/](https://docs.griptapenodes.com/en/latest/configuration/)
+- **Installation:** [docs.griptapenodes.com/en/latest/installation/](https://docs.griptapenodes.com/en/latest/installation/)
+- **Engine Configuration:** [docs.griptapenodes.com/en/latest/configuration/](https://docs.griptapenodes.com/en/latest/configuration/)
 
 ______________________________________________________________________
 
@@ -51,4 +51,4 @@ Follow these steps to get the Griptape Nodes engine running on your system:
 
 1. **Connect Workflow Editor:** Refresh the Griptape Nodes Workflow Editor page in your browser. It should now connect to your running engine.
 
-You're now ready to start building flows! For more detailed setup options and troubleshooting, see the full [Setup Guide](https://docs.griptapenodes.com/setup/).
+You're now ready to start building flows! For more detailed setup options and troubleshooting, see the full [Documentation](https://docs.griptapenodes.com/).
