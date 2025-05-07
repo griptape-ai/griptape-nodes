@@ -57,6 +57,8 @@ markdown_extensions:
   - pymdownx.superfences
   - tables
   - md_in_html
+  - toc:
+      toc_depth: 3
 
 nav:
   - Home:
