@@ -1,0 +1,33 @@
+name: Create Nightly release
+
+on:
+  schedule:
+    - cron: '0 11 * * *' # every day at 3:00 AM PT 
+  workflow_dispatch:      # allows manual triggering too
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release pushed tag
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout actions
+        uses: actions/checkout@v4
+      - name: Create Tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag: "nightly"
+        run: |
+          git tag "$tag" -f
+          git push origin "$tag" -f --tags
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag: "nightly"
+        run: |
+          gh release edit "$tag" \
+              --repo="$GITHUB_REPOSITORY" \
+              --title="${tag}-$(date -u +'%Y%m%d')" \
+              --prerelease
