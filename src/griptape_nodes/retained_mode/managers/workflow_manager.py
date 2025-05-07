@@ -196,6 +196,31 @@ class WorkflowManager:
         )
         event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
 
+    def on_libraries_initialization_complete(self) -> None:
+        # All of the libraries have loaded, and any workflows they came with have been registered.
+        # See if there are USER workflow JSONs to load.
+        default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
+        self.register_workflows_from_config(config_section=default_workflow_section)
+
+        # Print it all out nicely.
+        self.print_workflow_load_status()
+
+        # Now remove any workflows that were missing files.
+        paths_to_remove = set()
+        for workflow_path, workflow_info in self._workflow_file_path_to_info.items():
+            if workflow_info.status == WorkflowManager.WorkflowStatus.MISSING:
+                # Remove this file path from the config.
+                paths_to_remove.add(workflow_path.lower())
+
+        if paths_to_remove:
+            config_mgr = GriptapeNodes.ConfigManager()
+            workflows_to_register = config_mgr.get_config_value(default_workflow_section)
+            if workflows_to_register:
+                workflows_to_register = [
+                    workflow for workflow in workflows_to_register if workflow.lower() not in paths_to_remove
+                ]
+                config_mgr.set_config_value(default_workflow_section, workflows_to_register)
+
     def get_workflow_metadata(self, workflow_file_path: Path, block_name: str) -> list[re.Match[str]]:
         """Get the workflow metadata for a given workflow file path.
 
@@ -517,7 +542,9 @@ class WorkflowManager:
                 workflow_path=str_path,
                 workflow_name=None,
                 workflow_dependencies=[],
-                problems=["Workflow could not be found at the path specified."],
+                problems=[
+                    "Workflow could not be found at the file path specified. It will be removed from the configuration."
+                ],
             )
             details = f"Attempted to load workflow metadata for a file at '{complete_file_path}. Failed because no file could be found at that path."
             logger.error(details)

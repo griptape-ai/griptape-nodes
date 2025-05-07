@@ -317,7 +317,9 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=None,
                 status=LibraryManager.LibraryStatus.MISSING,
-                problems=["Library could not be found. It will be removed from the configuration."],
+                problems=[
+                    "Library could not be found at the file path specified. It will be removed from the configuration."
+                ],
             )
             details = f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
             logger.error(details)
@@ -858,15 +860,11 @@ class LibraryManager:
                                 library_workflow_files_to_register.append(str(final_workflow_path))
                             # WE DONE HERE (at least, for this library).
                             break
-
+        # This will (attempts to) load all workflows specified by LIBRARIES. User workflows are loaded later.
         GriptapeNodes.WorkflowManager().register_list_of_workflows(library_workflow_files_to_register)
 
-        # See if there are user workflow JSONs to load.
-        default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
-        GriptapeNodes.WorkflowManager().register_workflows_from_config(config_section=default_workflow_section)
-
-        # Print it all out nicely.
-        GriptapeNodes.WorkflowManager().print_workflow_load_status()
+        # Go tell the Workflow Manager that it's turn is now.
+        GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
 
     def _load_libraries_from_config_category(self, config_category: str, *, load_as_default_library: bool) -> None:
         config_mgr = GriptapeNodes.ConfigManager()
