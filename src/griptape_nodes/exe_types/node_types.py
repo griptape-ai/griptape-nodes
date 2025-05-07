@@ -457,15 +457,20 @@ class BaseNode(ABC):
         pass
 
     # if not implemented, it will return no issues.
-    def validate_node(self) -> list[Exception] | None:
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        """Runs before the entire workflow is run."""
+        return None
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Runs before this node is run."""
         return None
 
     # It could be quite common to want to validate whether or not a parameter is empty.
-    # this helper function can be used within the `validate_node` method along with other validations
+    # this helper function can be used within the `validate_before_workflow_run` method along with other validations
     #
     # Example:
     """
-    def validate_node(self) -> list[Exception] | None:
+    def validate_before_workflow_run(self) -> list[Exception] | None:
         exceptions = []
         prompt_error = self.validate_empty_parameter(param="prompt", additional_msg="Please provide a prompt to generate an image.")
         if prompt_error:

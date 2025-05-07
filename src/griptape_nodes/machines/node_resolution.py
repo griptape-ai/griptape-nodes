@@ -239,6 +239,7 @@ class ExecuteNodeState(State):
                     )
                 )
 
+        current_node.validate_before_node_run()
         if not context.paused:
             return ExecuteNodeState
         return None
