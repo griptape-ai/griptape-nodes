@@ -6,6 +6,7 @@ from griptape.drivers.image_generation.openai import (
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.traits.options import Options
+from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.config.image.base_image_driver import BaseImageDriver
 
 # --- Constants ---
@@ -13,11 +14,22 @@ from griptape_nodes_library.config.image.base_image_driver import BaseImageDrive
 SERVICE = "OpenAI"
 API_KEY_URL = "https://platform.openai.com/api-keys"
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
-MODEL_CHOICES = ["dall-e-3", "dall-e-2"]
+MODEL_CHOICES = ["gpt-image-1", "dall-e-3", "dall-e-2"]
+
+GPT_IMAGE_SIZES = ["1024x1024", "1536x1024", "1024x1536", "auto"]
 DALL_E_2_SIZES = ["256x256", "512x512", "1024x1024"]
 DALL_E_3_SIZES = ["1024x1024", "1024x1792", "1792x1024"]
+
+DALL_E_3_QUALITY = ["hd", "standard"]
+GPT_IMAGE_QUALITY = ["low", "medium", "high", "auto"]
+BACKGROUND_CHOICES = ["transparent", "opaque", "auto"]
+MODERATION_CHOICES = ["low", "auto"]
+
+DEFAULT_GPT_IMAGE_QUALITY = GPT_IMAGE_QUALITY[0]
 DEFAULT_MODEL = MODEL_CHOICES[0]
-DEFAULT_SIZE = DALL_E_3_SIZES[0]
+DEFAULT_SIZE = GPT_IMAGE_SIZES[0]
+DEFAULT_BACKGROUND = BACKGROUND_CHOICES[0]
+DEFAULT_MODERATION = MODERATION_CHOICES[0]
 
 
 class OpenAiImage(BaseImageDriver):
@@ -31,13 +43,11 @@ class OpenAiImage(BaseImageDriver):
 
         # --- Customize Inherited Parameters ---
 
-        # Update the 'model' parameter for Griptape Cloud specifics.
+        # Update the parameters  for OpenAI specifics.
         self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
-
-        # Update the 'size' parameter for Griptape Cloud specifics.
         self._update_option_choices(param="image_size", choices=DALL_E_3_SIZES, default=DEFAULT_SIZE)
 
-        # Add additional parameters specific to Griptape Cloud
+        # Add additional parameters specific to OpenAI
         self.add_parameter(
             Parameter(
                 name="style",
@@ -52,15 +62,70 @@ class OpenAiImage(BaseImageDriver):
             Parameter(
                 name="quality",
                 type="str",
-                default_value="hd",
+                default_value=DEFAULT_GPT_IMAGE_QUALITY,
                 tooltip="Select the quality for image generation.",
-                traits={Options(choices=["hd", "standard"])},
+                traits={Options(choices=GPT_IMAGE_QUALITY)},
             )
         )
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        self.add_parameter(
+            Parameter(
+                name="background",
+                type="str",
+                default_value=DEFAULT_BACKGROUND,
+                tooltip="Select the background for image generation.",
+                traits={Options(choices=BACKGROUND_CHOICES)},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="moderation",
+                type="str",
+                default_value=DEFAULT_MODERATION,
+                tooltip="Select the moderation level for image generation.",
+                traits={Options(choices=MODERATION_CHOICES)},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="output_compression",
+                type="int",
+                default_value=0,
+                tooltip="Select the output compression for image generation.",
+                traits={Slider(min_val=0, max_val=100)},
+                ui_options={"step": 10},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="output_format",
+                type="str",
+                default_value="png",
+                tooltip="Select the output format for image generation.",
+                traits={Options(choices=["png", "jpeg"])},
+            )
+        )
+
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:  # noqa: C901, PLR0912
         """Certain options are only available for certain models."""
         if parameter.name == "model":
+            # If the model is gpt-image-1, update the size options accordingly
+            if value == "gpt-image-1":
+                self._update_option_choices(param="image_size", choices=GPT_IMAGE_SIZES, default=GPT_IMAGE_SIZES[3])
+                # show style and quality parameters
+                for param in ["style", "quality", "background", "moderation", "output_compression", "output_format"]:
+                    toggle_param = self.get_parameter_by_name(param)
+                    if toggle_param is not None:
+                        toggle_param._ui_options["hide"] = False
+            else:
+                for param in ["background", "moderation", "output_compression", "output_format"]:
+                    toggle_param = self.get_parameter_by_name(param)
+                    if toggle_param is not None:
+                        toggle_param._ui_options["hide"] = True
+
             # If the model is DALL-E 2, update the size options accordingly
             toggle_params = ["style", "quality"]
             if value == "dall-e-2":
@@ -94,9 +159,19 @@ class OpenAiImage(BaseImageDriver):
         # Retrieve the mandatory API key.
         specific_args["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
 
-        if self.get_parameter_value("model") == "dall-e-3":
+        model = self.get_parameter_value("model")
+        specific_args["model"] = model
+
+        if model == "dall-e-3":
             specific_args["style"] = self.get_parameter_value("style")
             specific_args["quality"] = self.get_parameter_value("quality")
+        elif model == "gpt-image-1":
+            specific_args["style"] = self.get_parameter_value("style")
+            specific_args["quality"] = self.get_parameter_value("quality")
+            specific_args["background"] = self.get_parameter_value("background")
+            specific_args["moderation"] = self.get_parameter_value("moderation")
+            specific_args["output_compression"] = self.get_parameter_value("output_compression")
+            specific_args["output_format"] = self.get_parameter_value("output_format")
 
         all_kwargs = {**common_args, **specific_args}
 
