@@ -211,16 +211,20 @@ class Agent(ControlNode):
 
             """
             prompt_model_settings_param = self.get_parameter_by_name("prompt_model_config")
-            if value == CONNECTED_CHOICE and prompt_model_settings_param:
-                if prompt_model_settings_param._ui_options["hide"]:
-                    modified_parameters_set.add("prompt_model_config")
-                prompt_model_settings_param._ui_options["hide"] = False
-                return None
-            if value != CONNECTED_CHOICE and prompt_model_settings_param:
-                if not prompt_model_settings_param._ui_options["hide"]:
-                    modified_parameters_set.add("prompt_model_config")
-                prompt_model_settings_param._ui_options["hide"] = True
-                return None
+            if not (
+                "prompt_model_config" in self.parameter_values
+                and self.parameter_values["prompt_model_config"] is not None
+            ):
+                if value == CONNECTED_CHOICE and prompt_model_settings_param:
+                    if prompt_model_settings_param._ui_options["hide"]:
+                        modified_parameters_set.add("prompt_model_config")
+                    prompt_model_settings_param._ui_options["hide"] = False
+                    return None
+                if value != CONNECTED_CHOICE and prompt_model_settings_param:
+                    if not prompt_model_settings_param._ui_options["hide"]:
+                        modified_parameters_set.add("prompt_model_config")
+                    prompt_model_settings_param._ui_options["hide"] = True
+                    return None
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
