@@ -49,6 +49,7 @@ theme:
     - navigation.tabs
     - navigation.expand
     - navigation.top
+    - navigation.tabs.sticky
 
 markdown_extensions:
   - pymdownx.highlight
