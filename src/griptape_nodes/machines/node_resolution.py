@@ -198,7 +198,7 @@ class ExecuteNodeState(State):
         current_node.parameter_output_values.clear()
 
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:
+    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901
         current_node = context.focus_stack[-1].node
         # Clear all of the current output values
         ExecuteNodeState.clear_parameter_output_values(context)

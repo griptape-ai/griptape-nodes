@@ -113,7 +113,7 @@ class BaseNode(ABC):
         self,
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
-        target_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002,
     ) -> bool:
         """Callback to confirm allowing a Connection going OUT of this Node."""
         return True
@@ -122,7 +122,8 @@ class BaseNode(ABC):
         self,
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
-        target_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002,
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
         return
@@ -132,6 +133,7 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
         return
@@ -141,6 +143,7 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         return
@@ -150,6 +153,7 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
         return
