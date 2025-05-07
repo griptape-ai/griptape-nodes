@@ -25,6 +25,12 @@ from griptape_nodes.node_library.library_registry import LibraryRegistry, Librar
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
 )
+from griptape_nodes.retained_mode.events.config_events import (
+    GetConfigCategoryRequest,
+    GetConfigCategoryResultSuccess,
+    SetConfigCategoryRequest,
+    SetConfigCategoryResultSuccess,
+)
 from griptape_nodes.retained_mode.events.library_events import (
     GetAllInfoForAllLibrariesRequest,
     GetAllInfoForAllLibrariesResultFailure,
@@ -53,19 +59,12 @@ from griptape_nodes.retained_mode.events.library_events import (
     UnloadLibraryFromRegistryResultFailure,
     UnloadLibraryFromRegistryResultSuccess,
 )
-from griptape_nodes.retained_mode.events.workflow_events import (
-    LoadWorkflowMetadata,
-    LoadWorkflowMetadataResultSuccess,
-    RegisterWorkflowRequest,
-)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
-    from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
-    from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -208,6 +207,12 @@ class LibraryManager:
     def get_library_info_for_attempted_load(self, library_file_path: str) -> LibraryInfo:
         return self._library_file_path_to_info[library_file_path]
 
+    def get_library_info_by_library_name(self, library_name: str) -> LibraryInfo | None:
+        for library_info in self._library_file_path_to_info.values():
+            if library_info.library_name == library_name:
+                return library_info
+        return None
+
     def on_list_registered_libraries_request(self, _request: ListRegisteredLibrariesRequest) -> ResultPayload:
         # Make a COPY of the list
         snapshot_list = LibraryRegistry.list_libraries()
@@ -318,7 +323,9 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=None,
                 status=LibraryManager.LibraryStatus.MISSING,
-                problems=["Library could not be found."],
+                problems=[
+                    "Library could not be found at the file path specified. It will be removed from the configuration."
+                ],
             )
             details = f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
             logger.error(details)
@@ -500,8 +507,44 @@ class LibraryManager:
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
+        # We are at least potentially viable.
+        # Record all problems that occurred
         problems = []
-        any_successes = False
+
+        # Check the library's custom config settings.
+        if library_data.settings is not None:
+            # Assign them into the config space.
+            for library_data_setting in library_data.settings:
+                # Does the category exist?
+                get_category_request = GetConfigCategoryRequest(category=library_data_setting.category)
+                get_category_result = GriptapeNodes.handle_request(get_category_request)
+                if not isinstance(get_category_result, GetConfigCategoryResultSuccess):
+                    # That's OK, we'll invent it. Or at least we'll try.
+                    create_new_category_request = SetConfigCategoryRequest(
+                        category=library_data_setting.category, contents=library_data_setting.contents
+                    )
+                    create_new_category_result = GriptapeNodes.handle_request(create_new_category_request)
+                    if not isinstance(create_new_category_result, SetConfigCategoryResultSuccess):
+                        problems.append(f"Failed to create new config category '{library_data_setting.category}'.")
+                        details = f"Failed attempting to create new config category '{library_data_setting.category}' for library '{library_data.name}'."
+                        logger.error(details)
+                        continue  # SKIP IT
+                else:
+                    # We had an existing category. Union our changes into it (not replacing anything that matched).
+                    existing_category_contents = get_category_result.contents
+                    existing_category_contents.update(library_data_setting.contents)
+                    set_category_request = SetConfigCategoryRequest(
+                        category=library_data_setting.category, contents=existing_category_contents
+                    )
+                    set_category_result = GriptapeNodes.handle_request(set_category_request)
+                    if not isinstance(set_category_result, SetConfigCategoryResultSuccess):
+                        problems.append(f"Failed to update config category '{library_data_setting.category}'.")
+                        details = f"Failed attempting to update config category '{library_data_setting.category}' for library '{library_data.name}'."
+                        logger.error(details)
+                        continue  # SKIP IT
+
+        # Attempt to load nodes from the library.
+        any_nodes_loaded_successesfully = False
         # Process each node in the metadata
         for node_definition in library_data.nodes:
             # Resolve relative path to absolute path
@@ -534,9 +577,9 @@ class LibraryManager:
                 continue  # SKIP IT
 
             # If we got here, at least one node came in.
-            any_successes = True
+            any_nodes_loaded_successesfully = True
 
-        if not any_successes:
+        if not any_nodes_loaded_successesfully:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=library_data.name,
@@ -580,6 +623,12 @@ class LibraryManager:
             details = f"Attempted to unload library '{request.library_name}'. Failed due to {e}"
             logger.error(details)
             return UnloadLibraryFromRegistryResultFailure()
+
+        # Remove the library from our library info list. This prevents it from still showing
+        # up in the table of attempted library loads.
+        lib_info = self.get_library_info_by_library_name(request.library_name)
+        if lib_info:
+            del self._library_file_path_to_info[lib_info.library_path]
 
         details = f"Successfully unloaded (and unregistered) library '{request.library_name}'."
         logger.debug(details)
@@ -787,15 +836,49 @@ class LibraryManager:
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         self._load_libraries_from_config_category(config_category=user_libraries_section, load_as_default_library=False)
 
+        # Remove any missing libraries
+        self._remove_missing_libraries_from_config(config_category=user_libraries_section)
+
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # App just got init'd. See if there are library JSONs to load!
         self.load_all_libraries_from_config()
 
-        # See if there are workflow JSONs to load!
-        default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
-        self._register_workflows_from_config(config_section=default_workflow_section)
+        # We have to load all libraries before we attempt to load workflows.
 
-    def _load_libraries_from_config_category(self, config_category: str, load_as_default_library: bool) -> None:  # noqa: FBT001
+        # Load workflows specified by libraries.
+        library_workflow_files_to_register = []
+        library_result = self.on_list_registered_libraries_request(ListRegisteredLibrariesRequest())
+        if isinstance(library_result, ListRegisteredLibrariesResultSuccess):
+            for library_name in library_result.libraries:
+                try:
+                    library = LibraryRegistry.get_library(name=library_name)
+                except KeyError:
+                    # Skip it.
+                    logger.error("Could not find library '%s'", library_name)
+                    continue
+                library_data = library.get_library_data()
+                if library_data.workflows:
+                    # Prepend the library's JSON path to the list, as the workflows are stored
+                    # relative to it.
+                    # Find the library info with that name.
+                    for library_info in self._library_file_path_to_info.values():
+                        if library_info.library_name == library_name:
+                            library_path = Path(library_info.library_path)
+                            base_dir = library_path.parent.absolute()
+                            # Add the directory to the Python path to allow for relative imports.
+                            sys.path.insert(0, str(base_dir))
+                            for workflow in library_data.workflows:
+                                final_workflow_path = base_dir / workflow
+                                library_workflow_files_to_register.append(str(final_workflow_path))
+                            # WE DONE HERE (at least, for this library).
+                            break
+        # This will (attempts to) load all workflows specified by LIBRARIES. User workflows are loaded later.
+        GriptapeNodes.WorkflowManager().register_list_of_workflows(library_workflow_files_to_register)
+
+        # Go tell the Workflow Manager that it's turn is now.
+        GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
+
+    def _load_libraries_from_config_category(self, config_category: str, *, load_as_default_library: bool) -> None:
         config_mgr = GriptapeNodes.ConfigManager()
         libraries_to_register_category = config_mgr.get_config_value(config_category)
 
@@ -810,70 +893,19 @@ class LibraryManager:
         # Print 'em all pretty
         self.print_library_load_status()
 
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/867
-    def _register_workflows_from_config(self, config_section: str) -> None:
+    def _remove_missing_libraries_from_config(self, config_category: str) -> None:
+        # Now remove all libraries that were missing from the user's config.
         config_mgr = GriptapeNodes.ConfigManager()
-        workflow_mgr = GriptapeNodes.WorkflowManager()
-        workflows_to_register = config_mgr.get_config_value(config_section)
-        if workflows_to_register is not None:
-            for workflow_to_register in workflows_to_register:
-                path = Path(workflow_to_register)
+        libraries_to_register_category = config_mgr.get_config_value(config_category)
 
-                if path.is_dir():
-                    # If it's a directory, register all the workflows in it.
-                    for workflow_file in path.glob("*.py"):
-                        # Check that the python file has script metadata
-                        if len(workflow_mgr.get_workflow_metadata(workflow_file, block_name="script")) == 1:
-                            self.__register_workflow(config_mgr, workflow_mgr, str(workflow_file))
-                else:
-                    # If it's a file, register it directly.
-                    self.__register_workflow(config_mgr, workflow_mgr, str(path))
+        paths_to_remove = set()
+        for library_path, library_info in self._library_file_path_to_info.items():
+            if library_info.status == LibraryManager.LibraryStatus.MISSING:
+                # Remove this file path from the config.
+                paths_to_remove.add(library_path.lower())
 
-        # Print it all out nicely.
-        GriptapeNodes.WorkflowManager().print_workflow_load_status()
-
-    def __register_workflow(
-        self, config_mgr: ConfigManager, workflow_mgr: WorkflowManager, workflow_to_register: str
-    ) -> bool:
-        """Registers a workflow from a file.
-
-        Args:
-            config_mgr: The ConfigManager instance to use for path resolution.
-            workflow_mgr: The WorkflowManager instance to use for workflow registration.
-            workflow_to_register: The path to the workflow file to register.
-
-        Returns:
-            bool: True if the workflow was successfully registered, False otherwise.
-        """
-        # Attempt to extract the metadata out of the workflow.
-        load_metadata_request = LoadWorkflowMetadata(file_name=str(workflow_to_register))
-        load_metadata_result = workflow_mgr.on_load_workflow_metadata_request(load_metadata_request)
-        if not load_metadata_result.succeeded():
-            # SKIP IT
-            return False
-
-        try:
-            successful_metadata_result = cast("LoadWorkflowMetadataResultSuccess", load_metadata_result)
-        except Exception as err:
-            err_str = (
-                f"Error attempting to get info about workflow to register '{workflow_to_register}': {err}. SKIPPING IT."
-            )
-            logger.error(err_str)
-            return False
-
-        workflow_metadata = successful_metadata_result.metadata
-
-        # Prepend the image paths appropriately.
-        if workflow_metadata.image is not None:
-            if workflow_metadata.is_griptape_provided:
-                workflow_metadata.image = workflow_metadata.image
-            else:
-                workflow_metadata.image = str(config_mgr.workspace_path.joinpath(workflow_metadata.image))
-
-        # Register it as a success.
-        workflow_register_request = RegisterWorkflowRequest(
-            metadata=workflow_metadata, file_name=str(workflow_to_register)
-        )
-        GriptapeNodes.handle_request(workflow_register_request)
-
-        return True
+        if paths_to_remove and libraries_to_register_category:
+            libraries_to_register_category = [
+                library for library in libraries_to_register_category if library.lower() not in paths_to_remove
+            ]
+            config_mgr.set_config_value(config_category, libraries_to_register_category)

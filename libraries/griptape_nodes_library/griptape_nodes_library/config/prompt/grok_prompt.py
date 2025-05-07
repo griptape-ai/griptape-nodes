@@ -16,7 +16,7 @@ from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 SERVICE = "Grok"
 API_KEY_URL = "https://console.x.ai"
 API_KEY_ENV_VAR = "GROK_API_KEY"
-MODEL_CHOICES = ["grok-beta", "grok-vision-beta", "grok-2-latest", "grok-2-vision-latest"]
+MODEL_CHOICES = ["grok-3-beta", "grok-3-fast-beta", "grok-3-mini-beta", "grok-3-mini-fast-beta", "grok-2-vision-1212"]
 DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
@@ -69,7 +69,7 @@ class GrokPrompt(BasePrompt):
 
         Raises:
             KeyError: If the Grok API key is not found in the node configuration
-                      (though `validate_node` should prevent this during execution).
+                      (though `validate_before_workflow_run` should prevent this during execution).
         """
         # Retrieve all parameter values set on the node UI or via input connections.
         params = self.parameter_values
@@ -107,7 +107,7 @@ class GrokPrompt(BasePrompt):
         # Set the output parameter 'prompt_model_config'.
         self.parameter_output_values["prompt_model_config"] = driver
 
-    def validate_node(self) -> list[Exception] | None:
+    def validate_before_workflow_run(self) -> list[Exception] | None:
         """Validates that the Grok API key is configured correctly.
 
         Calls the base class helper `_validate_api_key` with Grok-specific

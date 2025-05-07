@@ -105,7 +105,7 @@ class CoherePrompt(BasePrompt):
         # Set the output parameter 'prompt_model_config'.
         self.parameter_output_values["prompt_model_config"] = driver
 
-    def validate_node(self) -> list[Exception] | None:
+    def validate_before_workflow_run(self) -> list[Exception] | None:
         """Validates that the Cohere API key is configured correctly.
 
         Calls the base class helper `_validate_api_key` with Cohere-specific

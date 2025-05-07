@@ -1,8 +1,9 @@
 import io
+import uuid
 
 import PIL.Image
 import PIL.ImageOps
-from griptape.artifacts import ImageArtifact
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL.Image import Image
 
 
@@ -11,18 +12,15 @@ def image_artifact_to_pil(image_artifact: ImageArtifact) -> Image:
     return PIL.Image.open(io.BytesIO(image_artifact.value))
 
 
-def pil_to_image_artifact(pil_image: Image) -> ImageArtifact:
+def pil_to_image_artifact(pil_image: Image) -> ImageUrlArtifact:
     """Converts Pillow Image to Griptape ImageArtifact."""
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
     image_io = io.BytesIO()
     pil_image.save(image_io, "PNG")
     image_bytes = image_io.getvalue()
-    width, height = pil_image.size
-    return ImageArtifact(
-        value=image_bytes,
-        format="image/png",
-        width=width,
-        height=height,
-    )
+    url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, f"{uuid.uuid4()}.png")
+    return ImageUrlArtifact(value=url)
 
 
 def pad_mirror(image: Image, target_size: tuple[int, int]) -> Image:

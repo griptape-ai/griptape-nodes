@@ -96,7 +96,7 @@ class GenerateImage(ControlNode):
 
         self.add_node_element(logs_group)
 
-    def validate_node(self) -> list[Exception] | None:
+    def validate_before_workflow_run(self) -> list[Exception] | None:
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/871
         exceptions = []
         api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
@@ -152,7 +152,8 @@ Specify a specific depth of field, and time of day.
 Use dust in the air to create a sense of depth.
 Use a slight vignetting on the edges of the image.
 Use a color palette that is complementary to the subject.
-Focus on qualities that will make this the most professional looking photo in the world.""",
+Focus on qualities that will make this the most professional looking photo in the world.
+IMPORTANT: Output must be a single, raw prompt string for an image generation model. Do not include any preamble, explanation, or conversational language.""",
                     prompt,
                 ]
             )
@@ -191,24 +192,29 @@ Focus on qualities that will make this the most professional looking photo in th
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,
+        modified_parameters_set: set[str],
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
         # Record a connection to the prompt Parameter so that node validation doesn't get aggro
         if target_parameter.name == "prompt":
             self._has_connection_to_prompt = True
+            modified_parameters_set.add("prompt")
             # hey.. what if we just remove the property mode from the prompt parameter?
-            target_parameter.allowed_modes.remove(ParameterMode.PROPERTY)
+            if ParameterMode.PROPERTY in target_parameter.allowed_modes:
+                target_parameter.allowed_modes.remove(ParameterMode.PROPERTY)
 
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,
+        modified_parameters_set: set[str],
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         # Remove the state maintenance of the connection to the prompt Parameter
         if target_parameter.name == "prompt":
             self._has_connection_to_prompt = False
+            modified_parameters_set.add("prompt")
             # If we have no connections to the prompt parameter, add the property mode back
             target_parameter.allowed_modes.add(ParameterMode.PROPERTY)
 

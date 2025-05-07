@@ -76,6 +76,16 @@ To point your local engine at a different API instance (e.g., a local Griptape N
 GRIPTAPE_NODES_API_BASE_URL=http://localhost:8001 uv run gtn
 ```
 
+**Connecting to a Different UI**
+
+> Internal Griptape Developers with access to UI project
+
+To point your local engine at a different UI instance (e.g., a local Griptape Nodes UI), set the `GRIPTAPE_NODES_UI_BASE_URL` environment variable:
+
+```shell
+GRIPTAPE_NODES_UI_BASE_URL=http://localhost:5173 uv run gtn
+```
+
 ## Configuration for Development
 
 Griptape Nodes uses a configuration loading system. For full details, see the [Configuration Documentation](docs/configuration.md). Here's what's crucial for development:

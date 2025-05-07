@@ -2,7 +2,7 @@
 
 !!! warning "You need to perform setup steps to use Hugging Face nodes"
 
-    [This guide](hugging_face_install.md) will walk you through setting up a Hugging Face account, creating an access token, and installing the required models to make this node fully functional.
+    [This guide](../../how_to/hugging_face_install.md) will walk you through setting up a Hugging Face account, creating an access token, and installing the required models to make this node fully functional.
 
 ## What is it?
 
@@ -53,5 +53,5 @@ Use this node when you need to:
 
 ## Common Issues
 
-- **Missing API Key**: Ensure the Hugging Face API token is set as `HUGGINGFACE_HUB_ACCESS_TOKEN`; instructions for that are in [this guide](hugging_face_install.md)
+- **Missing API Key**: Ensure the Hugging Face API token is set as `HUGGINGFACE_HUB_ACCESS_TOKEN`; instructions for that are in [this guide](../../how_to/hugging_face_install.md)
 - **Memory Constraints**: Large image dimensions or high inference steps may require significant memory resources

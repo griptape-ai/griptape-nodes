@@ -39,8 +39,8 @@ class NodesApiSocketManager:
             try:
                 self.socket.send(json.dumps(body))
                 sent = True
-            except WebSocketException:
-                logger.warning("Error sending event to Nodes API, attempting to reconnect.")
+            except WebSocketException as e:
+                logger.error("Error sending event to Nodes API, attempting to reconnect. %s", e)
                 self.socket = self._connect()
 
     def heartbeat(self, *, session_id: str | None, request: dict) -> None:

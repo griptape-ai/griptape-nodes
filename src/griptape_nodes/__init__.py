@@ -4,9 +4,7 @@
 import argparse
 import importlib.metadata
 import json
-import os
 import shutil
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -41,6 +39,7 @@ NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/
 
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
+os_manager = OSManager()
 
 
 def main() -> None:
@@ -293,20 +292,14 @@ def _auto_update_self() -> None:
 
         if update:
             _update_assets()
-            _update_self(restart_after_update=True)
+            _update_self()
 
 
-def _update_self(*, restart_after_update: bool = False) -> None:
+def _update_self() -> None:
     """Installs the latest release of the CLI *and* refreshes bundled assets."""
     console.print("[bold green]Starting updater...[/bold green]")
 
-    args = ["--restart"] if restart_after_update else []
-
-    if OSManager().is_windows():
-        subprocess.Popen([sys.executable, "-m", "griptape_nodes.updater", *args])
-        sys.exit(0)
-    else:
-        os.execvp(sys.executable, [sys.executable, "-m", "griptape_nodes.updater", *args])  # noqa: S606
+    os_manager.replace_process([sys.executable, "-m", "griptape_nodes.updater"])
 
 
 def _update_assets() -> None:
@@ -317,7 +310,6 @@ def _update_assets() -> None:
 
     tar_url = NODES_TARBALL_URL.format(tag=tag)
     dest_nodes = DATA_DIR / "libraries"
-    dest_workflows = DATA_DIR / "workflows"
 
     with tempfile.TemporaryDirectory() as tmp:
         tar_path = Path(tmp) / "nodes.tar.gz"
@@ -325,7 +317,7 @@ def _update_assets() -> None:
         # Streaming download with a tiny progress bar
         with httpx.stream("GET", tar_url, follow_redirects=True) as r, Progress() as progress:
             r.raise_for_status()
-            task = progress.add_task("[green]downloading…", total=int(r.headers.get("Content-Length", 0)))
+            task = progress.add_task("[green]downloading...", total=int(r.headers.get("Content-Length", 0)))
             with tar_path.open("wb") as f:
                 for chunk in r.iter_bytes():
                     f.write(chunk)
@@ -339,10 +331,8 @@ def _update_assets() -> None:
 
         console.print("[yellow]Copying nodes directory…[/yellow]")
         shutil.copytree(extracted_root / "libraries", dest_nodes, dirs_exist_ok=True)
-        console.print("[yellow]Copying workflows directory…[/yellow]")
-        shutil.copytree(extracted_root / "workflows", dest_workflows, dirs_exist_ok=True)
 
-    console.print("[bold green]Nodes + Workflows updated.[/bold green]")
+    console.print("[bold green]Node Libraries updated.[/bold green]")
 
 
 def _print_current_version() -> None:
@@ -406,7 +396,8 @@ def _uninstall_self() -> None:
 
     # Remove the executable
     console.print("[bold]Removing the executable...[/bold]")
-    os.execvp("uv", ["uv", "tool", "uninstall", "griptape-nodes"])  # noqa: S606
+    console.print("[bold yellow]When done, press Enter to exit.[/bold yellow]")
+    os_manager.replace_process(["uv", "tool", "uninstall", "griptape-nodes"])
 
 
 def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912

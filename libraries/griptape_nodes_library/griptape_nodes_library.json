@@ -251,6 +251,15 @@
       }
     },
     {
+      "class_name": "GrokImage",
+      "file_path": "griptape_nodes_library/config/image/grok_image_driver.py",
+      "metadata": {
+        "category": "config/image",
+        "description": "Node for Grok Image Generation Driver.",
+        "display_name": "Grok Image"
+      }
+    },
+    {
       "class_name": "OpenAiImage",
       "file_path": "griptape_nodes_library/config/image/openai_image_driver.py",
       "metadata": {
@@ -583,5 +592,12 @@
         "display_name": "Agent To Tool"
       }
     }
-  ]
+  ],
+  "workflows": [
+    "workflows/templates/prompt_an_image.py",
+    "workflows/templates/coordinating_agents.py",
+    "workflows/templates/compare_prompts.py",
+    "workflows/templates/photography_team.py"
+  ],
+  "is_default_library": true
 }

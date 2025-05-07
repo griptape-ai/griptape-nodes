@@ -75,7 +75,7 @@ nav:
       - Making Custom Nodes: how_to/making_custom_nodes.md
       - Making Custom Scripts: how_to/making_custom_scripts.md
       - Setting Up External Resources:
-        - Hugging Face Installation: nodes/hugging_face/hugging_face_install.md
+          - Hugging Face Installation: how_to/hugging_face_install.md
 
   - FAQ: faq.md
   - Reference:
@@ -97,6 +97,7 @@ nav:
               - Cohere Prompt: nodes/config/cohere_prompt_driver.md
               - Griptape Cloud Image: nodes/config/griptape_cloud_image_driver.md
               - Griptape Cloud Prompt: nodes/config/griptape_cloud_prompt_driver.md
+              - Grok Image: nodes/config/grok_image_driver.md
               - OpenAI Image: nodes/config/openai_image_driver.md
               - OpenAI Prompt: nodes/config/openai_prompt_driver.md
           - Dict:
@@ -104,12 +105,6 @@ nav:
               - Display Dict: nodes/dict/display_dict.md
               - Key Value Pair: nodes/dict/key_value_pair.md
               - Merge Key Value Pairs: nodes/dict/merge_key_value_pair.md
-          - Hugging Face:
-              - Hugging Face Installation: nodes/hugging_face/hugging_face_install.md
-              - Flux Pipeline: nodes/hugging_face/flux_pipeline.md
-              - Pillow Resize: nodes/hugging_face/pillow_resize.md
-              - Tiling Flux img2img: nodes/hugging_face/tiling_flux_img_2_img_pipeline.md
-              - Tiling Spandrel Pipeline: nodes/hugging_face/tiling_spandrel_pipeline.md
           - Image:
               - Load Image: nodes/image/load_image.md
               - Generate Image: nodes/image/create_image.md
@@ -134,3 +129,8 @@ nav:
               - Info Retriever: nodes/tools/rag_tool.md
               - Tool List: nodes/tools/tool_list.md
               - Web Scraper: nodes/tools/web_scraper_tool.md
+          - Advanced Media Library:
+              - Flux Pipeline: nodes/advanced_media_library/flux_pipeline.md
+              - Pillow Resize: nodes/advanced_media_library/pillow_resize.md
+              - Tiling Flux img2img: nodes/advanced_media_library/tiling_flux_img_2_img_pipeline.md
+              - Tiling Spandrel Pipeline: nodes/advanced_media_library/tiling_spandrel_pipeline.md

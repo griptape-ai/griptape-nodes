@@ -1,7 +1,7 @@
 from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd  # noqa: N813
 
 # Create flows
-cmd.create_flow(flow_name="prompt_an_image")
+cmd.create_flow()
 
 # Create nodes
 cmd.create_node(
@@ -77,7 +77,7 @@ cmd.set_value(
 # [tool.griptape-nodes]
 # name = "prompt_an_image"
 # description = "The simplest image generation workflow."
-# image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/workflows/templates/thumbnail_prompt_an_image.webp"
+# image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/libraries/griptape_nodes_library/workflows/templates/thumbnail_prompt_an_image.webp"
 # schema_version = "0.1.0"
 # engine_version_created_with = "0.14.1"
 # node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
