@@ -2,9 +2,9 @@
 
 Welcome to the fifth and final tutorial in our Griptape Nodes New-Users series! In this guide, we'll build on our prompt engineering concepts and introduce additional nodes that provide greater precision and control. We'll examine a sophisticated system of coordinated agents that collaborate like a team to generate spectacular image prompts, while also learning several important new nodes along the way.
 
-## What You'll Learn
+## What we'll cover
 
-In this tutorial, you will:
+In this tutorial, we will:
 
 - Learn about what rule sets are and what they do
 - Learn about tools
