@@ -277,7 +277,7 @@ class Agent(ControlNode):
             source_node, source_parameter, target_parameter, modified_parameters_set
         )
 
-    def after_incoming_connection_removed(
+    def after_incoming_connection_removed(  # noqa: C901
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
@@ -296,6 +296,7 @@ class Agent(ControlNode):
             source_node: The node that was connected.
             source_parameter: The parameter on the source node that was connected.
             target_parameter: The parameter on this node that was disconnected.
+            modified_parameters_set: The set of parameters that have changed
         """
         # If the agent connection is removed, show agent creation parameters.
         if target_parameter.name == "agent":

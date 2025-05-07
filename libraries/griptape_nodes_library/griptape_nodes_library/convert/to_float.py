@@ -40,7 +40,7 @@ class ToFloat(DataNode):
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str]
+        modified_parameters_set: set[str],
     ) -> None:
         pass
 
