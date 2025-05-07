@@ -489,6 +489,7 @@ def __get_install_source() -> Literal["git", "file", "pypi"]:
 
     direct_url_info = json.loads(direct_url_text)
     url = direct_url_info.get("url")
+    print(direct_url_info)
     if url.startswith("file://"):
         return "file"
     if "vcs_info" in direct_url_info:
