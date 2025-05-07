@@ -91,7 +91,7 @@ class LibrarySchema(BaseModel):
     workflows: list[str] | None = None
     scripts: list[str] | None = None
     settings: list[Setting] | None = None
-    is_default_library: bool = False
+    is_default_library: bool | None = None
 
 
 class LibraryRegistry(SingletonMixin):
@@ -145,7 +145,12 @@ class LibraryRegistry(SingletonMixin):
     @classmethod
     def list_libraries(cls) -> list[str]:
         instance = cls()
-        return list(instance._libraries.keys())
+
+        # Put the default libraries first.
+        default_libraries = [k for k, v in instance._libraries.items() if v.is_default_library()]
+        other_libraries = [k for k, v in instance._libraries.items() if not v.is_default_library()]
+        sorted_list = default_libraries + other_libraries
+        return sorted_list
 
     @classmethod
     def register_node_type_from_library(cls, library: Library, node_class_name: str) -> str | None:
@@ -222,8 +227,12 @@ class Library:
         is_default_library: bool = False,
     ) -> None:
         self._library_data = library_data
-        self._is_default_library = is_default_library
-        self._library_data.is_default_library = is_default_library
+
+        # If they didn't make it explicit, allow an override.
+        if self._library_data.is_default_library is None:
+            self._library_data.is_default_library = is_default_library
+
+        self._is_default_library = self._library_data.is_default_library
 
         self._node_types = {}
         self._node_metadata = {}
