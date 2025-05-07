@@ -1,7 +1,7 @@
 from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd  # noqa: N813
 
 # Create flows
-cmd.create_flow(flow_name="prompt_an_image")
+cmd.create_flow()
 
 # Create nodes
 cmd.create_node(

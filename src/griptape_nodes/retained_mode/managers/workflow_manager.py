@@ -390,6 +390,11 @@ class WorkflowManager:
             logger.error("Failed to get workflow from registry.")
             return RunWorkflowFromRegistryResultFailure()
 
+        # Update current context for workflow.
+        if GriptapeNodes.ContextManager().has_current_workflow():
+            details = f"Started a new workflow '{request.workflow_name}' but a workflow '{GriptapeNodes.ContextManager().get_current_workflow_name()}' was already in the Current Context. Replacing the old with the new."
+            logger.warning(details)
+
         # get file_path from workflow
         relative_file_path = workflow.file_path
 
@@ -420,15 +425,24 @@ class WorkflowManager:
                         logger.error(details)
                         return RunWorkflowFromRegistryResultFailure()
 
+            # Let's run under the assumption that this Workflow will become our Current Context; if we fail, it will revert.
+            GriptapeNodes.ContextManager().push_workflow(request.workflow_name)
             # run file
             execution_result = self.run_workflow(relative_file_path=relative_file_path)
 
-            if execution_result.execution_successful:
-                logger.debug(execution_result.execution_details)
-                return RunWorkflowFromRegistryResultSuccess()
+            if not execution_result.execution_successful:
+                logger.error(execution_result.execution_details)
 
-            logger.error(execution_result.execution_details)
-            return RunWorkflowFromRegistryResultFailure()
+                # Attempt to clear everything out, as we modified the engine state getting here.
+                clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
+                clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+
+                # The clear-all above here wipes the ContextManager, so no need to do a pop_workflow().
+                return RunWorkflowFromRegistryResultFailure()
+
+        # Success!
+        logger.debug(execution_result.execution_details)
+        return RunWorkflowFromRegistryResultSuccess()
 
     def on_register_workflow_request(self, request: RegisterWorkflowRequest) -> ResultPayload:
         try:
