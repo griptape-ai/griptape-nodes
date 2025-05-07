@@ -16,17 +16,22 @@ API_KEY_URL = "https://platform.openai.com/api-keys"
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
 MODEL_CHOICES = ["gpt-image-1", "dall-e-3", "dall-e-2"]
 
-GPT_IMAGE_SIZES = ["1024x1024", "1536x1024", "1024x1536", "auto"]
-DALL_E_2_SIZES = ["256x256", "512x512", "1024x1024"]
-DALL_E_3_SIZES = ["1024x1024", "1024x1792", "1792x1024"]
-
-DALL_E_3_QUALITY = ["hd", "standard"]
-GPT_IMAGE_QUALITY = ["low", "medium", "high", "auto"]
-BACKGROUND_CHOICES = ["transparent", "opaque", "auto"]
+# GPT_IMAGE_SPECIFICS
+GPT_IMAGE_SIZES = ["1024x1024", "1536x1024", "1024x1536"]
+GPT_IMAGE_QUALITY = ["low", "medium", "high"]
+BACKGROUND_CHOICES = ["opaque", "transparent"]
 MODERATION_CHOICES = ["low", "auto"]
 
-DEFAULT_GPT_IMAGE_QUALITY = GPT_IMAGE_QUALITY[0]
+# DALL_E_3_SPECIFICS
+DALL_E_3_SIZES = ["1024x1024", "1024x1792", "1792x1024"]
+DALL_E_3_QUALITY = ["hd", "standard"]
+
+# DALL_E_2_SPECIFICS
+DALL_E_2_SIZES = ["256x256", "512x512", "1024x1024"]
+
+# DEFAULTS
 DEFAULT_MODEL = MODEL_CHOICES[0]
+DEFAULT_GPT_IMAGE_QUALITY = GPT_IMAGE_QUALITY[0]
 DEFAULT_SIZE = GPT_IMAGE_SIZES[0]
 DEFAULT_BACKGROUND = BACKGROUND_CHOICES[0]
 DEFAULT_MODERATION = MODERATION_CHOICES[0]
@@ -45,7 +50,7 @@ class OpenAiImage(BaseImageDriver):
 
         # Update the parameters  for OpenAI specifics.
         self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
-        self._update_option_choices(param="image_size", choices=DALL_E_3_SIZES, default=DEFAULT_SIZE)
+        self._update_option_choices(param="image_size", choices=GPT_IMAGE_SIZES, default=DEFAULT_SIZE)
 
         # Add additional parameters specific to OpenAI
         self.add_parameter(
@@ -92,10 +97,10 @@ class OpenAiImage(BaseImageDriver):
             Parameter(
                 name="output_compression",
                 type="int",
-                default_value=0,
+                default_value=80,
                 tooltip="Select the output compression for image generation.",
                 traits={Slider(min_val=0, max_val=100)},
-                ui_options={"step": 10},
+                ui_options={"step": 10, "hide": True},
             )
         )
 
@@ -109,39 +114,62 @@ class OpenAiImage(BaseImageDriver):
             )
         )
 
+    def hide_parameter_by_name(self, name: str) -> None:
+        """Hides a parameter by name.
+
+        Args:
+            name (str): The name of the parameter to hide.
+        """
+        parameter = self.get_parameter_by_name(name)
+        if parameter is not None:
+            parameter._ui_options["hide"] = True
+
+    def show_parameter_by_name(self, name: str) -> None:
+        """Shows a parameter by name.
+
+        Args:
+            name (str): The name of the parameter to show.
+        """
+        parameter = self.get_parameter_by_name(name)
+        if parameter is not None:
+            parameter._ui_options["hide"] = False
+
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:  # noqa: C901, PLR0912
         """Certain options are only available for certain models."""
+        if parameter.name == "output_format":
+            if value == "jpeg":
+                self.show_parameter_by_name("output_compression")
+            else:
+                self.hide_parameter_by_name("output_compression")
+
         if parameter.name == "model":
             # If the model is gpt-image-1, update the size options accordingly
             if value == "gpt-image-1":
-                self._update_option_choices(param="image_size", choices=GPT_IMAGE_SIZES, default=GPT_IMAGE_SIZES[3])
+                self._update_option_choices(param="image_size", choices=GPT_IMAGE_SIZES, default=GPT_IMAGE_SIZES[0])
+
                 # show style and quality parameters
-                for param in ["style", "quality", "background", "moderation", "output_compression", "output_format"]:
-                    toggle_param = self.get_parameter_by_name(param)
-                    if toggle_param is not None:
-                        toggle_param._ui_options["hide"] = False
+                for param in ["style", "quality", "background", "moderation", "output_format"]:
+                    self.show_parameter_by_name(param)
+                if self.get_parameter_value("output_format") == "jpeg":
+                    self.show_parameter_by_name("output_compression")
+                else:
+                    self.hide_parameter_by_name("output_compression")
             else:
-                for param in ["background", "moderation", "output_compression", "output_format"]:
-                    toggle_param = self.get_parameter_by_name(param)
-                    if toggle_param is not None:
-                        toggle_param._ui_options["hide"] = True
+                for param in ["style", "background", "moderation", "output_compression", "output_format"]:
+                    self.hide_parameter_by_name(param)
 
             # If the model is DALL-E 2, update the size options accordingly
-            toggle_params = ["style", "quality"]
+            toggle_params = ["quality"]
             if value == "dall-e-2":
-                self._update_option_choices(param="image_size", choices=DALL_E_2_SIZES, default=DALL_E_2_SIZES[2])
+                self._update_option_choices(param="image_size", choices=DALL_E_2_SIZES, default=DALL_E_2_SIZES[0])
                 # hide style and quality parameters
                 for param in toggle_params:
-                    toggle_param = self.get_parameter_by_name(param)
-                    if toggle_param is not None:
-                        toggle_param._ui_options["hide"] = True
+                    self.hide_parameter_by_name(param)
             else:
                 self._update_option_choices(param="image_size", choices=DALL_E_3_SIZES, default=DALL_E_3_SIZES[0])
-                # hide style and quality parameters
+                # show  style and quality parameters
                 for param in toggle_params:
-                    toggle_param = self.get_parameter_by_name(param)
-                    if toggle_param is not None:
-                        toggle_param._ui_options["hide"] = False
+                    self.show_parameter_by_name(param)
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
@@ -170,8 +198,9 @@ class OpenAiImage(BaseImageDriver):
             specific_args["quality"] = self.get_parameter_value("quality")
             specific_args["background"] = self.get_parameter_value("background")
             specific_args["moderation"] = self.get_parameter_value("moderation")
-            specific_args["output_compression"] = self.get_parameter_value("output_compression")
             specific_args["output_format"] = self.get_parameter_value("output_format")
+            if specific_args["output_format"] == "jpeg":
+                specific_args["output_compression"] = self.get_parameter_value("output_compression")
 
         all_kwargs = {**common_args, **specific_args}
 
