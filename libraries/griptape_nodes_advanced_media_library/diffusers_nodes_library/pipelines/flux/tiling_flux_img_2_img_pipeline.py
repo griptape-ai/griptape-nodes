@@ -16,7 +16,6 @@ from diffusers_nodes_library.utils.torch_utils import optimize_flux_pipeline_mem
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 
 
-import contextlib
 import logging
 from collections.abc import Iterator
 from typing import Any, ClassVar
@@ -244,22 +243,14 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         def callback_on_tile_end(i: int, preview_image_pil: Image) -> None:
             if i < num_tiles:
                 self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_image_pil))
-                self.append_value_to_parameter("logs", f"Finished tile {i} of {num_tiles}.\n")
-                self.append_value_to_parameter("logs", f"Starting tile {i + 1} of {num_tiles}...\n")
+                self.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")
+                self.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")
 
-        self.append_value_to_parameter("logs", f"Starting tile 1 of {num_tiles}...\n")
+        self.log_params.append_to_logs(f"Starting tile 1 of {num_tiles}...\n")
         output_image_pil = tiling_image_processor.process(
             image=input_image_pil,
             callback_on_tile_end=callback_on_tile_end,
         )
-        self.append_value_to_parameter("logs", f"Finished tile {num_tiles} of {num_tiles}.\n")
+        self.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")
         self.set_parameter_value("output_image", pil_to_image_artifact(output_image_pil))
         self.parameter_output_values["output_image"] = pil_to_image_artifact(output_image_pil)
-
-    @contextlib.contextmanager
-    def _append_stdout_to_logs(self) -> Iterator[None]:
-        def callback(data: str) -> None:
-            self.append_value_to_parameter("logs", data)
-
-        with StdoutCapture(callback):
-            yield

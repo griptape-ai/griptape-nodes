@@ -13,7 +13,7 @@
     "dependencies": {
       "pip_dependencies": [
         "accelerate>=1.6.0",
-        "diffusers>=0.33.1",
+        "git+https://github.com/huggingface/diffusers",
         "controlnet-aux>=0.0.9",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
@@ -41,15 +41,6 @@
         "category": "image",
         "description": "FluxPipeline node.",
         "display_name": "Generate Image with Flux"
-      }
-    },
-    {
-      "class_name": "FluxControlNetPipeline",
-      "file_path": "diffusers_nodes_library/pipelines/flux/controlnet/flux_control_net_pipeline.py",
-      "metadata": {
-        "category": "image",
-        "description": "FluxControlNetPipeline node.",
-        "display_name": "Generate Image with Flux and a control net"
       }
     },
     {
@@ -122,6 +113,15 @@
         "category": "image/upscale",
         "description": "TilingFluxImg2ImgPipeline node. Useful as a 2nd pass when upscaling.",
         "display_name": "Generate Image Variation with Flux and Tiling"
+      }
+    },
+    {
+      "class_name": "HiDreamImagePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/hi_dream/hi_dream_image_pipeline.py",
+      "metadata": {
+        "category": "image",
+        "description": "HiDreamImagePipeline node.",
+        "display_name": "Generate Image with HiDream"
       }
     },
     {

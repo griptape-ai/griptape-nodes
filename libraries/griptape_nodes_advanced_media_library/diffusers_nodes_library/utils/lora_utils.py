@@ -39,7 +39,6 @@ def configure_flux_loras(node: ControlNode, pipe: diffusers.FluxPipeline, loras:
         lora_path = item["path"]
         msg = f"Loading lora weights: {lora_path}"
         logger.info(msg)
-        node.append_value_to_parameter("logs", f"{msg}\n")
         state_dict = safetensors.torch.load_file(lora_path)
         pipe.load_lora_weights(state_dict, adapter_name=item["name"])
 
@@ -69,6 +68,5 @@ def configure_flux_loras(node: ControlNode, pipe: diffusers.FluxPipeline, loras:
     adapter_weights = [v["weight"] for v in lora_by_name.values()]
     msg = f"Using adapter_names with weights:\n{adapter_names=}\n{adapter_weights=}"
     logger.info(msg)
-    node.append_value_to_parameter("logs", f"{msg}\n")
     pipe.set_adapters(adapter_names=adapter_names, adapter_weights=adapter_weights)
     pipe.enable_lora()

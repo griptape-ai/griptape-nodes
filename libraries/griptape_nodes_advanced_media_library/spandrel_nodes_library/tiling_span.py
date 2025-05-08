@@ -7,6 +7,11 @@ import PIL.Image
 from diffusers_nodes_library.utils.huggingface_utils import (
     list_repo_revisions_in_cache,  # type: ignore[reportMissingImports]
 )
+from diffusers_nodes_library.utils.parameter_utils import ( # type: ignore[reportMissingImports]
+    FluxPipelineParameters,  # type: ignore[reportMissingImports]
+    FluxLoraParameters,  # type: ignore[reportMissingImports]
+    LogParameter,  # type: ignore[reportMissingImports]
+)
 from diffusers_nodes_library.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
 
 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/829
@@ -79,6 +84,8 @@ class TilingSPAN(ControlNode):
         self.repo_revision_filenames = [
             (repo_revision[0], repo_revision[1], "4x-ClearRealityV1.pth") for repo_revision in repo_revisions
         ]
+
+        self.log_params = LogParameter(self)
 
         self.add_parameter(
             Parameter(
@@ -162,15 +169,7 @@ class TilingSPAN(ControlNode):
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
-        self.add_parameter(
-            Parameter(
-                name="logs",
-                output_type="str",
-                allowed_modes={ParameterMode.OUTPUT},
-                tooltip="logs",
-                ui_options={"multiline": True},
-            )
-        )
+        self.log_params.add_output_parameters()
 
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
@@ -202,7 +201,7 @@ class TilingSPAN(ControlNode):
         largest_reasonable_tile_size = max(input_image_pil.height, input_image_pil.width)
         tile_size = min(largest_reasonable_tile_size, max_tile_size)
 
-        self.append_value_to_parameter("logs", "Preparing models...\n")
+        self.log_params.append_to_logs("Preparing models...\n")
         with self._append_stdout_to_logs():
             pipe = self._get_pipe(repo, revision, filename)
 
@@ -220,23 +219,23 @@ class TilingSPAN(ControlNode):
         def callback_on_tile_end(i: int, preview_image_pil: Image) -> None:
             if i < num_tiles:
                 self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_image_pil))
-                self.append_value_to_parameter("logs", f"Finished tile {i} of {num_tiles}.\n")
-                self.append_value_to_parameter("logs", f"Starting tile {i + 1} of {num_tiles}...\n")
+                self.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")
+                self.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")
 
-        self.append_value_to_parameter("logs", f"Starting tile 1 of {num_tiles}...\n")
+        self.log_params.append_to_logs(f"Starting tile 1 of {num_tiles}...\n")
         output_image_pil = tiling_image_processor.process(
             image=input_image_pil,
             output_scale=output_scale,
             callback_on_tile_end=callback_on_tile_end,
         )
-        self.append_value_to_parameter("logs", f"Finished tile {num_tiles} of {num_tiles}.\n")
+        self.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")
         self.set_parameter_value("output_image", pil_to_image_artifact(output_image_pil))
         self.parameter_output_values["output_image"] = pil_to_image_artifact(output_image_pil)
 
     @contextlib.contextmanager
     def _append_stdout_to_logs(self) -> Iterator[None]:
         def callback(data: str) -> None:
-            self.append_value_to_parameter("logs", data)
+            self.log_params.append_to_logs(data)
 
         with StdoutCapture(callback):
             yield
