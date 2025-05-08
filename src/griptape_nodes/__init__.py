@@ -531,7 +531,3 @@ def __init_system_config() -> None:
         if not file_path.exists():
             with Path.open(file_path, "w") as file:
                 file.write(file_name[1])
-
-
-if __name__ == "__main__":
-    main()
