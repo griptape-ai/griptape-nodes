@@ -278,7 +278,6 @@ class ParameterGroup(BaseNodeElement):
 
     ui_options: dict = field(default_factory=dict)
 
-
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
 
@@ -319,7 +318,6 @@ class ParameterGroup(BaseNodeElement):
 
 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/856
 class ParameterBase(BaseNodeElement, ABC):
-
     @property
     @abstractmethod
     def tooltip(self) -> str | list[dict]:
