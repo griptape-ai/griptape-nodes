@@ -1,34 +1,85 @@
 name: Create Latest Release
 
 on:
-  schedule:
-    - cron: 30 17 * * *  # 10:30 AM PT
-    - cron: 30 22 * * *  # 3:30 PM PT
-  workflow_dispatch:      # allows manual triggering too
+  push:
+    tags:
+      - latest
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 permissions:
   contents: write
 
 jobs:
-  release:
-    name: Release pushed tag
+  build-linux:
+    name: Build on Linux
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout actions
+      - name: Checkout repo
         uses: actions/checkout@v4
-      - name: Create Tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          tag: "latest"
-        run: |
-          git tag "$tag" -f
-          git push origin "$tag" -f --tags
+
+      - name: Init environment
+        uses: ./.github/actions/init-environment
+
+      - name: Build artifacts
+        run: uvx hatch build -t binary
+
+      - name: Make executable
+        run: chmod +x -R ./dist
+        
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: ./dist/**
+
+  build-windows:
+    name: Build on Windows
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Init environment
+        uses: ./.github/actions/init-environment
+
+      - name: Build artifacts
+        run: uvx hatch build -t binary
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: ./dist/**
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-22.04
+    needs: [build-linux, build-windows]
+    steps:
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-artifacts
+          path: dist/linux
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-artifacts
+          path: dist/windows
+
       - name: Create release
+        uses: softprops/action-gh-release@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          tag: "latest"
-        run: |
-          gh release edit "$tag" \
-              --repo="$GITHUB_REPOSITORY" \
-              --title="${tag}-$(date -u +'%Y%m%d')" \
-              --prerelease
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+        with:
+          tag_name: latest
+          name: "latest"
+          generate_release_notes: false
+          prerelease: true
+          files: |
+            dist/linux/**
+            dist/windows/**
+
