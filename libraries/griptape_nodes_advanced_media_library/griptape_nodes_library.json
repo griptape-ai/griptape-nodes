@@ -15,6 +15,7 @@
         "accelerate>=1.6.0",
         "git+https://github.com/huggingface/diffusers",
         "controlnet-aux>=0.0.9",
+        "imageio-ffmpeg>=0.6.0",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
         "peft>=0.15.2",
@@ -32,8 +33,43 @@
     }
   },
   "categories": [
+    {
+      "video": {
+        "color": "border-purple-500",
+        "title": "Video",
+        "description": "Video related nodes.",
+        "icon": "Video"
+      }
+    }
   ],
   "nodes": [
+    {
+      "class_name": "AllegroPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/allegro/allegro_pipeline.py",
+      "metadata": {
+        "category": "video",
+        "description": "AllegroPipeline node.",
+        "display_name": "Generate Video with Allegro"
+      }
+    },
+    {
+      "class_name": "AmusedPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_pipeline.py",
+      "metadata": {
+        "category": "image",
+        "description": "AmusedPipeline node.",
+        "display_name": "Generate Image with Amused"
+      }
+    },
+    {
+      "class_name": "AmusedImg2ImgPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_img2img_pipeline.py",
+      "metadata": {
+        "category": "image",
+        "description": "AmusedImg2ImgPipeline node.",
+        "display_name": "Generate Image with AmusedImg2Img"
+      }
+    },
     {
       "class_name": "FluxPipeline",
       "file_path": "diffusers_nodes_library/pipelines/flux/flux_pipeline.py",

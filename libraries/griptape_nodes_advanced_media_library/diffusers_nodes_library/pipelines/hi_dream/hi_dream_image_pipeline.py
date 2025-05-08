@@ -3,13 +3,10 @@ from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import transformers  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.pipelines.hi_dream.hi_dream_image_pipeline_parameters import HiDreamImagePipelineParameters  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.utils.parameter_utils import ( # type: ignore[reportMissingImports]
-    HiDreamImagePipelineParameters,  # type: ignore[reportMissingImports]
-    # HiDreamImageLoraParameters,  # type: ignore[reportMissingImports]
-    LogParameter,  # type: ignore[reportMissingImports]
-)
+from diffusers_nodes_library.utils.parameter_utils import LogParameter # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.utils.torch_utils import optimize_hi_dream_pipeline_memory_footprint # type: ignore[reportMissingImports]

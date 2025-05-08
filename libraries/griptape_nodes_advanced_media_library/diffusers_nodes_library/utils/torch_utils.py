@@ -25,33 +25,43 @@ def human_readable_memory_footprint(model: torch.nn.Module) -> str:
     return to_human_readable_size(model.get_memory_footprint())
 
 
-def print_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline) -> None:
+def print_pipeline_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> None:
     """Print pipeline memory footprint."""
-    transformer_bytes = pipe.transformer.get_memory_footprint()
-    text_encoder_bytes = pipe.text_encoder.get_memory_footprint()
-    text_encoder_2_bytes = pipe.text_encoder_2.get_memory_footprint()
-    # pipe.tokenizer and pipe.tokenizer_2 aren't models?
-    # pipe.scheduler is not a model
-    vae_bytes = pipe.vae.get_memory_footprint()
 
-    component_bytes = [
-        transformer_bytes,
-        text_encoder_bytes,
-        text_encoder_2_bytes,
-        vae_bytes,
-    ]
+    bytes_per_component = {}
+    for name in component_names:
+        if hasattr(pipe, name):
+            component = getattr(pipe, name)
+            if hasattr(component, "get_memory_footprint"):
+                bytes_per_component[name] = component.get_memory_footprint()
+            else:
+                logger.warning("Component %s does not have get_memory_footprint method", name)
+        else:
+            logger.warning("Pipeline does not have component %s", name)
+
+    component_bytes = [bytes_per_component[name] for name in component_names]
     total_bytes = sum(component_bytes)
     max_bytes = max(component_bytes)
 
-    logger.info("Transformer: %s", to_human_readable_size(transformer_bytes))
-    logger.info("Text encoder: %s", to_human_readable_size(text_encoder_bytes))
-    logger.info("Text encoder 2: %s", to_human_readable_size(text_encoder_2_bytes))
-    logger.info("VAE: %s", to_human_readable_size(vae_bytes))
+    for name, bytes_ in bytes_per_component.items():
+        if bytes_ is None:
+            continue
+        logger.info("%s: %s", name, to_human_readable_size(bytes_))
     logger.info("-" * 30)
-
     logger.info("Total: %s", to_human_readable_size(total_bytes))
     logger.info("Max: %s", to_human_readable_size(max_bytes))
     logger.info("")
+
+def print_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline) -> None:
+    print_pipeline_memory_footprint(
+        pipe,
+        [
+            "transformer",
+            "text_encoder",
+            "text_encoder_2",
+            "vae",
+        ],
+    )
 
 
 def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline) -> None:

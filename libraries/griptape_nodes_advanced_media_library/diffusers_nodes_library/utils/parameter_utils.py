@@ -17,6 +17,7 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,  # type: ignore[reportMissingImports]
     pil_to_image_artifact,  # type: ignore[reportMissingImports]
 )
+from griptape.artifacts import ImageUrlArtifact, UrlArtifact
 
 from diffusers_nodes_library.utils.logging_utils import StdoutCapture, LoggerCapture  # type: ignore[reportMissingImports]
 
@@ -41,18 +42,16 @@ logger = logging.getLogger("diffusers_nodes_library")
 #     def get_parameter_value(self, parameter_name: str) -> Any:
 #         ...
 
-class FluxPipelineParameters:
-    def __init__(self, node: ControlNode):
-        self._node = node
-        self._base_model_repo_revisions = [
-            repo_revision
-            for repo_id in [
-                "black-forest-labs/FLUX.1-schnell",
-                "black-forest-labs/FLUX.1-dev",
-            ]
-            for repo_revision in list_repo_revisions_in_cache(repo_id)
-        ]
 
+# Re-use VideoUrlArtifact if it's in a shared utils or define locally if not.
+# Assuming it's defined in the other Kling files and can be imported or redefined.
+class VideoUrlArtifact(UrlArtifact):
+    """
+    Artifact that contains a URL to a video.
+    """
+    def __init__(self, url: str, name: str = "VideoUrlArtifact"):
+        super().__init__(value=url, name=name)
+class HuggingFaceRepoParameter:
     @classmethod
     def _repo_revision_to_key(cls, repo_revision: tuple[str, str]) -> str:
         return f"{repo_revision[0]} ({repo_revision[1]})"
@@ -63,408 +62,37 @@ class FluxPipelineParameters:
         if len(parts) != 2 or parts[1][-1] != ")":  # noqa: PLR2004
             logger.exception("Invalid key")
         return parts[0], parts[1][:-1]
-         
-    def add_input_parameters(self):
-        self._node.add_parameter(
-            Parameter(
-                name="model",
-                default_value=(
-                    self._repo_revision_to_key(self._base_model_repo_revisions[0])
-                    if self._base_model_repo_revisions
-                    else None
-                ),
-                input_types=["str"],
-                type="str",
-                traits={
-                    Options(
-                        choices=list(map(self._repo_revision_to_key, self._base_model_repo_revisions)),
-                    )
-                },
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="prompt",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="prompt",
-                default_value="",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="prompt",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="prompt_2",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional prompt_2 - defaults to prompt",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="negative_prompt",
-                default_value="",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional negative_prompt",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="negative_prompt_2",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional negative_prompt_2 - defaults to negative_prompt",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="true_cfg_scale",
-                default_value=1.0,
-                input_types=["float"],
-                type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="true_cfg_scale",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="width",
-                default_value=1024,
-                input_types=["int"],
-                type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="width",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="height",
-                default_value=1024,
-                input_types=["int"],
-                type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="height",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="num_inference_steps",
-                default_value=4,
-                input_types=["int"],
-                type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="num_inference_steps",
-            )
-        )
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/841
-        self._node.add_parameter(
-            Parameter(
-                name="guidance_scale",
-                default_value=3.5,
-                input_types=["float"],
-                type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="guidance_scale",
-            )
-        )
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/842
-        self._node.add_parameter(
-            Parameter(
-                name="seed",
-                input_types=["int"],
-                type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional - random seed, default is random seed",
-            )
-        )
 
-    def add_output_parameters(self):
-        self._node.add_parameter(
-            Parameter(
-                name="output_image",
-                output_type="ImageArtifact",
-                tooltip="The output image",
-                allowed_modes={ParameterMode.OUTPUT},
-            )
-        )
-
-    def get_repo_revision(self):
-        base_model = self._node.get_parameter_value("model")
-        if base_model is None:
-            logger.exception("No base model specified")
-        base_repo_id, base_revision = self._key_to_repo_revision(base_model)
-        return base_repo_id, base_revision
-
-    def publish_output_image_preview_placeholder(self):
-        width = int(self._node.parameter_values["width"])
-        height = int(self._node.parameter_values["height"])
-        # Immediately set a preview placeholder image to make it react quickly and adjust
-        # the size of the image preview on the node.
-        preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
-        self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
-
-
-    def get_pipe_kwargs(self) -> dict:
-        prompt = self._node.parameter_values["prompt"]
-        prompt_2 = self._node.parameter_values.get("prompt_2", prompt)
-        negative_prompt = self._node.parameter_values["negative_prompt"]
-        negative_prompt_2 = self._node.parameter_values.get("negative_prompt_2", negative_prompt)
-        true_cfg_scale = float(self._node.parameter_values["true_cfg_scale"])
-        width = int(self._node.parameter_values["width"])
-        height = int(self._node.parameter_values["height"])
-        num_inference_steps = int(self._node.parameter_values["num_inference_steps"])
-        guidance_scale = float(self._node.parameter_values["guidance_scale"])
-        seed = int(self._node.parameter_values["seed"]) if ("seed" in self._node.parameter_values) else None
-
-        generator = torch.Generator("cpu")
-        if seed is not None:
-            generator = generator.manual_seed(seed)
-
-        return {
-            "prompt": prompt,
-            "prompt_2": prompt_2,
-            "negative_prompt": negative_prompt,
-            "negative_prompt_2": negative_prompt_2,
-            "true_cfg_scale": true_cfg_scale,
-            "width": width,
-            "height": height,
-            "num_inference_steps": num_inference_steps,
-            "guidance_scale": guidance_scale,
-            "generator": generator,
-        }
-    
-    def latents_to_image_pil(self, pipe: diffusers.FluxPipeline | diffusers.FluxControlNetPipeline, latents: Any) -> Image:
-        width = int(self._node.parameter_values["width"])
-        height = int(self._node.parameter_values["height"])
-        latents = pipe._unpack_latents(latents, height, width, pipe.vae_scale_factor)
-        latents = (latents / pipe.vae.config.scaling_factor) + pipe.vae.config.shift_factor
-        image = pipe.vae.decode(latents, return_dict=False)[0]
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/845
-        intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
-        return intermediate_pil_image
-    
-
-    def publish_output_image_preview_latents(self, pipe: diffusers.FluxPipeline | diffusers.FluxControlNetPipeline, latents: Any):
-        preview_image_pil = self.latents_to_image_pil(pipe, latents)
-        preview_image_artifact = pil_to_image_artifact(preview_image_pil)
-        self._node.publish_update_to_parameter("output_image", preview_image_artifact)
-
-    def publish_output_image(self, output_image_pil: Image):
-        image_artifact = pil_to_image_artifact(output_image_pil)
-        self._node.set_parameter_value("output_image", image_artifact)
-        self._node.parameter_output_values["output_image"] = image_artifact
-    
-    def get_num_inference_steps(self):
-        return self._node.get_parameter_value("num_inference_steps")
-
-
-class HiDreamImagePipelineParameters:
-    def __init__(self, node: ControlNode):
+    def __init__(self, node: ControlNode, repo_ids: list[str], parameter_name: str = "model"):
         self._node = node
-        self._base_model_repo_revisions = [
+        self._parameter_name = parameter_name
+        self._repo_revisions = [
             repo_revision
-            for repo_id in [
-                "HiDream-ai/HiDream-I1-Fast",
-                "HiDream-ai/HiDream-I1-Full",
-                "HiDream-ai/HiDream-I1-Dev",
-            ]
+            for repo_id in repo_ids
             for repo_revision in list_repo_revisions_in_cache(repo_id)
         ]
 
-    @classmethod
-    def _repo_revision_to_key(cls, repo_revision: tuple[str, str]) -> str:
-        return f"{repo_revision[0]} ({repo_revision[1]})"
-
-    @classmethod
-    def _key_to_repo_revision(cls, key: str) -> tuple[str, str]:
-        parts = key.rsplit(" (", maxsplit=1)
-        if len(parts) != 2 or parts[1][-1] != ")":  # noqa: PLR2004
-            logger.exception("Invalid key")
-        return parts[0], parts[1][:-1]
-         
-    def add_input_parameters(self):
-
-        
+    def add_parameter(self):
         self._node.add_parameter(
             Parameter(
-                name="model",
+                name=self._parameter_name,
                 default_value=(
-                    self._repo_revision_to_key(self._base_model_repo_revisions[0])
-                    if self._base_model_repo_revisions
+                    self._repo_revision_to_key(self._repo_revisions[0])
+                    if self._repo_revisions
                     else None
                 ),
                 input_types=["str"],
                 type="str",
                 traits={
                     Options(
-                        choices=list(map(self._repo_revision_to_key, self._base_model_repo_revisions)),
+                        choices=list(map(self._repo_revision_to_key, self._repo_revisions)),
                     )
                 },
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="prompt",
-            )
-        )
-       
-        
-        self._node.add_parameter(
-            Parameter(
-                name="prompt",
-                default_value="",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="prompt",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="prompt_2",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional - defaults to prompt",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="prompt_3",
-                default_value="",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional - defaults to prompt",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="prompt_4",
-                default_value="",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional - defaults to prompt",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="height",
-                default_value=1024,
-                input_types=["int"],
-                type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="height",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="width",
-                default_value=1024,
-                input_types=["int"],
-                type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="width",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="num_inference_steps",
-                default_value=50,
-                input_types=["int"],
-                type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="num_inference_steps",
+                tooltip=self._parameter_name,
             )
         )
 
-        # sigmas: Optional[List[float]] = None,
-
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/841
-        self._node.add_parameter(
-            Parameter(
-                name="guidance_scale",
-                default_value=3.5,
-                input_types=["float"],
-                type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="guidance_scale",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="negative_prompt",
-                default_value="",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional negative_prompt",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="negative_prompt_2",
-                default_value="",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional - defaults to negative_prompt",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="negative_prompt_3",
-                default_value="",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional - defaults to negative_prompt",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="negative_prompt_4",
-                default_value="",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional - defaults to negative_prompt",
-            )
-        )
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/842
-        self._node.add_parameter(
-            Parameter(
-                name="seed",
-                input_types=["int"],
-                type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="optional - random seed, default is random seed",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="true_cfg_scale",
-                default_value=1.0,
-                input_types=["float"],
-                type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="true_cfg_scale",
-            )
-        )
-
-    def add_output_parameters(self):
-        self._node.add_parameter(
-            Parameter(
-                name="output_image",
-                output_type="ImageArtifact",
-                tooltip="The output image",
-                allowed_modes={ParameterMode.OUTPUT},
-            )
-        )
 
     def get_repo_revision(self):
         base_model = self._node.get_parameter_value("model")
@@ -472,70 +100,6 @@ class HiDreamImagePipelineParameters:
             logger.exception("No base model specified")
         base_repo_id, base_revision = self._key_to_repo_revision(base_model)
         return base_repo_id, base_revision
-
-    def publish_output_image_preview_placeholder(self):
-        width = int(self._node.parameter_values["width"])
-        height = int(self._node.parameter_values["height"])
-        # Immediately set a preview placeholder image to make it react quickly and adjust
-        # the size of the image preview on the node.
-        preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
-        self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
-
-
-    def get_pipe_kwargs(self) -> dict:
-        prompt = self._node.parameter_values["prompt"]
-        prompt_2 = self._node.parameter_values.get("prompt_2", prompt)
-        prompt_3 = self._node.parameter_values.get("prompt_3", prompt)
-        prompt_4 = self._node.parameter_values.get("prompt_4", prompt)
-        height = int(self._node.parameter_values["height"])
-        width = int(self._node.parameter_values["width"])
-        num_inference_steps = int(self._node.parameter_values["num_inference_steps"])
-        guidance_scale = float(self._node.parameter_values["guidance_scale"])
-        negative_prompt = self._node.parameter_values["negative_prompt"]
-        negative_prompt_2 = self._node.parameter_values.get("negative_prompt_2", negative_prompt)
-        negative_prompt_3 = self._node.parameter_values.get("negative_prompt_3", negative_prompt)
-        negative_prompt_4 = self._node.parameter_values.get("negative_prompt_4", negative_prompt)
-        seed = int(self._node.parameter_values["seed"]) if ("seed" in self._node.parameter_values) else None
-
-        generator = torch.Generator("cpu")
-        if seed is not None:
-            generator = generator.manual_seed(seed)
-
-        return {
-            "prompt": prompt,
-            "prompt_2": prompt_2,
-            "prompt_3": prompt_3,
-            "prompt_4": prompt_4,
-            "height": height,
-            "width": width,
-            "num_inference_steps": num_inference_steps,
-            "guidance_scale": guidance_scale,
-            "negative_prompt": negative_prompt,
-            "negative_prompt_2": negative_prompt_2,
-            "negative_prompt_3": negative_prompt_3,
-            "negative_prompt_4": negative_prompt_4,
-            "generator": generator,
-        }
-    
-    def latents_to_image_pil(self, pipe: diffusers.FluxPipeline | diffusers.FluxControlNetPipeline, latents: Any) -> Image:
-        latents = (latents / pipe.vae.config.scaling_factor) + pipe.vae.config.shift_factor
-        image = pipe.vae.decode(latents, return_dict=False)[0]
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/845
-        intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
-        return intermediate_pil_image
-
-    def publish_output_image_preview_latents(self, pipe: diffusers.FluxPipeline | diffusers.FluxControlNetPipeline, latents: Any):
-        preview_image_pil = self.latents_to_image_pil(pipe, latents)
-        preview_image_artifact = pil_to_image_artifact(preview_image_pil)
-        self._node.publish_update_to_parameter("output_image", preview_image_artifact)
-
-    def publish_output_image(self, output_image_pil: Image):
-        image_artifact = pil_to_image_artifact(output_image_pil)
-        self._node.set_parameter_value("output_image", image_artifact)
-        self._node.parameter_output_values["output_image"] = image_artifact
-    
-    def get_num_inference_steps(self):
-        return self._node.get_parameter_value("num_inference_steps")
 
 class FluxControlRepoRevisionParameters:
     @classmethod
