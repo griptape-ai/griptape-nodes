@@ -82,7 +82,7 @@ class EventManager:
                     result_payload.altered_workflow_state = False
 
                 retained_mode_str = None
-                if depth_manager.is_top_level():
+                if depth_manager.is_top_level() and request.request_id is not None:
                     retained_mode_str = depth_manager.request_retained_mode_translation(request)
 
                 # Some requests have fields marked as "omit_from_result" which should be removed from the request
