@@ -26,6 +26,9 @@ from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFr
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
+logging.basicConfig(
+    level=logging.INFO,
+)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -55,6 +58,16 @@ def _load_user_workflow(path_to_workflow: str) -> None:
 
     # Execute the module
     spec.loader.exec_module(module)
+
+
+def _load_flow_for_workflow() -> str:
+    context_manager = GriptapeNodes.ContextManager()
+    return context_manager.get_current_flow_name()
+
+
+def _set_workflow_context(workflow_name: str) -> None:
+    context_manager = GriptapeNodes.ContextManager()
+    context_manager.push_workflow(workflow_name=workflow_name)
 
 
 def _handle_event(event: BaseEvent) -> None:
@@ -169,14 +182,14 @@ def _get_output_for_flow(flow_name: str) -> dict:
     return output
 
 
-def run(flow_name: str, flow_input: Any) -> None:
+def run(workflow_name: str, flow_input: Any) -> None:
     """Executes a published workflow.
 
     Executes a workflow by setting up event listeners, registering libraries,
-    loading the user-defined workflow, and running the specified flow.
+    loading the user-defined workflow, and running the specified workflow.
 
     Parameters:
-        flow_name: The name of the flow to execute.
+        workflow_name: The name of the workflow to execute.
         flow_input: Input data for the flow, typically a dictionary.
 
     Returns:
@@ -200,8 +213,11 @@ def run(flow_name: str, flow_input: Any) -> None:
         msg = f"Failed to register library from {library_path}"
         raise ValueError(msg)
 
-    # Execute the customer's script to establish the layout of nodes, etc.
+    # Required to set the workflow_context before loading the workflow
+    # or nothing works. The name can be anything, but how about the workflow_name.
+    _set_workflow_context(workflow_name=workflow_name)
     _load_user_workflow("workflow.py")
+    flow_name = _load_flow_for_workflow()
     # Now let's set the input to the flow
     _set_input_for_flow(flow_name=flow_name, flow_input=flow_input)
 
@@ -210,7 +226,7 @@ def run(flow_name: str, flow_input: Any) -> None:
     start_flow_result = GriptapeNodes.handle_request(start_flow_request)
 
     if start_flow_result.failed():
-        msg = f"Failed to start flow {flow_name}"
+        msg = f"Failed to start flow {workflow_name}"
         raise ValueError(msg)
 
     logger.info("Workflow started!")
@@ -239,7 +255,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-n",
-        "--flow-name",
+        "--workflow-name",
         default=None,
         help="Set the Flow Name to run",
     )
@@ -251,7 +267,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    flow_name = args.flow_name
+    workflow_name = args.workflow_name
     flow_input = args.input
 
     try:
@@ -261,4 +277,4 @@ if __name__ == "__main__":
         logger.info(msg)
         raise
 
-    run(flow_name=flow_name, flow_input=flow_input)
+    run(workflow_name=workflow_name, flow_input=flow_input)

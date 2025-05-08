@@ -175,7 +175,7 @@ class PublishedWorkflow(ControlNode):
         modified_parameters_set = set()
         for param in self.parameters:
             if param.name not in valid_parameter_names:
-                self.remove_parameter(param)
+                self.remove_parameter_element(param)
                 modified_parameters_set.add(param.name)
         return modified_parameters_set
 
@@ -246,7 +246,7 @@ class PublishedWorkflow(ControlNode):
                 err_msg = f"Error fetching workflow: {e!s}"
                 raise ValueError(err_msg) from e
 
-    def validate_node(self) -> list[Exception] | None:
+    def validate_before_workflow_run(self) -> list[Exception] | None:
         # All env values are stored in the SecretsManager. Check if they exist using this method.
         exceptions = []
 
@@ -321,7 +321,7 @@ class PublishedWorkflow(ControlNode):
         response = self._get_workflow_run(workflow_id, workflow_run_id)
         run_status = response.json()["status"]
 
-        while run_status not in ["SUCCEEDED", "FAILED", "ERROR", "CANCELED"]:
+        while run_status not in ["SUCCEEDED", "FAILED", "ERROR", "CANCELLED"]:
             response = self._get_workflow_run(workflow_id, workflow_run_id)
             run_status = response.json()["status"]
             time.sleep(3)

@@ -28,6 +28,7 @@ from griptape_nodes.exe_types.node_types import BaseNode, EndNode, NodeResolutio
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import GetEngineVersionRequest, GetEngineVersionResultSuccess
+from griptape_nodes.retained_mode.events.flow_events import GetTopLevelFlowRequest, GetTopLevelFlowResultSuccess
 from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
     GetLibraryMetadataResultSuccess,
@@ -1097,9 +1098,20 @@ class WorkflowManager:
         as well as what values to expect back as output.
         """
         workflow_shape: dict[str, Any] = {"input": {}, "output": {}}
-        flow_manager = GriptapeNodes.get_instance()._flow_manager
 
-        control_flow = flow_manager.get_flow_by_name(workflow_name)
+        flow_manager = GriptapeNodes.FlowManager()
+        result = flow_manager.on_get_top_level_flow_request(GetTopLevelFlowRequest())
+        if result.failed():
+            details = f"Workflow '{workflow_name}' does not have a top-level flow."
+            logger.error(details)
+            raise ValueError(details)
+        flow_name = cast("GetTopLevelFlowResultSuccess", result).flow_name
+        if flow_name is None:
+            details = f"Workflow '{workflow_name}' does not have a top-level flow."
+            logger.error(details)
+            raise ValueError(details)
+
+        control_flow = flow_manager.get_flow_by_name(flow_name)
         nodes = control_flow.nodes
 
         start_nodes: list[StartNode] = []
