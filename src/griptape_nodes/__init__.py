@@ -37,7 +37,7 @@ PACKAGE_NAME = "griptape-nodes"
 NODES_APP_URL = "https://nodes.griptape.ai"
 NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/tags/{tag}.tar.gz"
 PYPI_UPDATE_URL = "https://pypi.org/project/{package}/json"
-GITHUB_UPDATE_URL = "https://api.github.com/repos/griptape-ai/{package}/releases/{revision}"
+GITHUB_UPDATE_URL = "https://api.github.com/repos/griptape-ai/{package}/git/refs/tags/{revision}"
 
 
 config_manager = ConfigManager()
@@ -300,24 +300,33 @@ def _get_latest_version(package: str, install_source: str) -> str:
                 console.print(f"[red]Error fetching latest version: {e}[/red]")
                 return __get_current_version()
             else:
-                return f"{response.json()['tag_name']}"
+                # Get the latest commit SHA for the tag, this effectively the latest version of the package
+                data = response.json()
+                if "object" in data and "sha" in data["object"]:
+                    return data["object"]["sha"][:7]
+                # Should not happen, but if it does, return the current version
+                return __get_current_version()
     else:
-        # If the package is installed from a file, just return the current version
+        # If the package is installed from a file, just return the current version since the user is likely managing it manually
         return __get_current_version()
 
 
 def _auto_update_self() -> None:
     """Automatically updates the script to the latest version if the user confirms."""
     console.print("[bold green]Checking for updates...[/bold green]")
+    source, commit_id = __get_install_source()
     current_version = __get_current_version()
-    install_source = __get_install_source()
-    latest_version = _get_latest_version(PACKAGE_NAME, install_source)
+    latest_version = _get_latest_version(PACKAGE_NAME, source)
 
-    if current_version < latest_version:
-        update = Confirm.ask(
-            f"Your current engine version, {current_version}, is behind the latest release, {latest_version}. Update now?",
-            default=True,
-        )
+    if source == "git" and commit_id is not None:
+        can_update = commit_id != latest_version
+        update_message = f"Your current engine version, {current_version} ({source} - {commit_id}), doesn't match the latest release, {latest_version}. Update now?"
+    else:
+        can_update = current_version < latest_version
+        update_message = f"Your current engine version, {current_version}, is behind the latest release, {latest_version}. Update now?"
+
+    if can_update:
+        update = Confirm.ask(update_message, default=True)
 
         if update:
             _update_self()
@@ -374,8 +383,11 @@ def _sync_assets(version: str | None = None) -> None:
 def _print_current_version() -> None:
     """Prints the current version of the script."""
     version = __get_current_version()
-    source = __get_install_source()
-    console.print(f"[bold green]{version} ({source})[/bold green]")
+    source, commit_id = __get_install_source()
+    if commit_id is None:
+        console.print(f"[bold green]{version} ({source})[/bold green]")
+    else:
+        console.print(f"[bold green]{version} ({source} - {commit_id})[/bold green]")
 
 
 def _print_user_config() -> None:
@@ -475,26 +487,26 @@ def __get_current_version() -> str:
     return f"v{version}"
 
 
-def __get_install_source() -> Literal["git", "file", "pypi"]:
+def __get_install_source() -> tuple[Literal["git", "file", "pypi"], str | None]:
     """Determines the install source of the Griptape Nodes package.
 
     Returns:
-        str: The install source of the package. Possible values are "git", "file", or "pypi".
+        tuple: A tuple containing the install source and commit ID (if applicable).
     """
     dist = importlib.metadata.distribution("griptape_nodes")
     direct_url_text = dist.read_text("direct_url.json")
     # installing from pypi doesn't have a direct_url.json file
     if direct_url_text is None:
-        return "pypi"
+        return "pypi", None
 
     direct_url_info = json.loads(direct_url_text)
     url = direct_url_info.get("url")
     if url.startswith("file://"):
-        return "file"
+        return "file", None
     if "vcs_info" in direct_url_info:
-        return "git"
+        return "git", direct_url_info["vcs_info"].get("commit_id")[:7]
     # Fall back to pypi if no other source is found
-    return "pypi"
+    return "pypi", None
 
 
 def __init_system_config() -> None:
