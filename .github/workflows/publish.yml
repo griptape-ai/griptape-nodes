@@ -7,6 +7,7 @@ on:
 jobs:
   publish-pypi:
     runs-on: ubuntu-latest
+    if: github.event.release.prerelease == false
     strategy:
       fail-fast: false
       matrix:
