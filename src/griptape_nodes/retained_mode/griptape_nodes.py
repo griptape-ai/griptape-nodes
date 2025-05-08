@@ -325,9 +325,7 @@ def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tu
                         break
                 if relevant:
                     diff["node_name"] = node.name
-                    diff["parameter_name"] = (
-                        parameter.group_name if isinstance(parameter, ParameterGroup) else parameter.name
-                    )
+                    diff["parameter_name"] = parameter.name
                     diff["initial_setup"] = True
                     creation_request = AlterParameterDetailsRequest.create(**diff)
                     code_string = f"GriptapeNodes.handle_request({creation_request})\n"
@@ -530,7 +528,7 @@ def manage_alter_details(parameter: Parameter | ParameterGroup, base_node_obj: B
         else:
             return vars(parameter)
     else:
-        base_param_group = base_node_obj.get_group_by_name_or_element_id(parameter.group_name)
+        base_param_group = base_node_obj.get_group_by_name_or_element_id(parameter.name)
         if base_param_group is not None:
             diff = base_param_group.equals(parameter)
         else:

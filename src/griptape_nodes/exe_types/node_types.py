@@ -224,25 +224,20 @@ class BaseNode(ABC):
             raise ValueError(msg)
         self.add_node_element(param)
 
-    def remove_parameter(self, param: Parameter) -> None:
-        for child in param.find_elements_by_type(Parameter):
+    def remove_parameter_element_by_name(self, element_name: str) -> None:
+        element = self.root_ui_element.find_element_by_name(element_name)
+        if element is not None:
+            self.remove_parameter_element(element)
+
+    def remove_parameter_element(self, param: BaseNodeElement) -> None:
+        for child in param.find_elements_by_type(BaseNodeElement):
             self.remove_node_element(child)
         self.remove_node_element(param)
-
-    def remove_group_by_name(self, group: str) -> bool:
-        group_items = self.root_ui_element.find_elements_by_type(ParameterGroup)
-        for group_item in group_items:
-            if group_item.group_name == group:
-                for child in group_item.find_elements_by_type(BaseNodeElement):
-                    self.remove_node_element(child)
-                self.remove_node_element(group_item)
-                return True
-        return False
 
     def get_group_by_name_or_element_id(self, group: str) -> ParameterGroup | None:
         group_items = self.root_ui_element.find_elements_by_type(ParameterGroup)
         for group_item in group_items:
-            if group in (group_item.group_name, group_item.element_id):
+            if group in (group_item.name, group_item.element_id):
                 return group_item
         return None
 

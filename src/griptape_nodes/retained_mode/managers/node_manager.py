@@ -759,7 +759,7 @@ class NodeManager:
         if parameter_group is not None:
             for child in parameter_group.find_elements_by_type(Parameter):
                 GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, node_name))
-            node.remove_group_by_name(request.parameter_name)
+            node.remove_parameter_element_by_name(request.parameter_name)
             return RemoveParameterFromNodeResultSuccess()
 
         # No tricky stuff, users!
@@ -816,7 +816,7 @@ class NodeManager:
 
         # Delete the Parameter itself.
         if parameter is not None:
-            node.remove_parameter(parameter)
+            node.remove_parameter_element(parameter)
         else:
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because parameter didn't exist."
             logger.error(details)
