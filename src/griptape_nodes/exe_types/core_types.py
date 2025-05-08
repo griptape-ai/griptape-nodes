@@ -161,6 +161,7 @@ class ParameterType:
 class BaseNodeElement:
     element_id: str = field(default_factory=lambda: str(uuid.uuid4().hex))
     element_type: str = field(default_factory=lambda: BaseNodeElement.__name__)
+    name: str = field(default_factory=lambda: str(f"{BaseNodeElement.__name__}_{uuid.uuid4().hex}"))
 
     _children: list[BaseNodeElement] = field(default_factory=list)
     _stack: ClassVar[list[BaseNodeElement]] = []
@@ -247,7 +248,7 @@ class BaseNodeElement:
 
     def find_element_by_name(self, element_name: str) -> BaseNodeElement | None:
         # Modified so ParameterGroups also just have name as a field.
-        if getattr(self, "name", None) == element_name:
+        if self.name == element_name:
             return self
         for child in self._children:
             found = child.find_element_by_name(element_name)
@@ -276,7 +277,7 @@ class ParameterGroup(BaseNodeElement):
     """UI element for a group of parameters."""
 
     ui_options: dict = field(default_factory=dict)
-    name: str
+
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
@@ -318,7 +319,6 @@ class ParameterGroup(BaseNodeElement):
 
 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/856
 class ParameterBase(BaseNodeElement, ABC):
-    name: str  # must be unique from other parameters in Node
 
     @property
     @abstractmethod
