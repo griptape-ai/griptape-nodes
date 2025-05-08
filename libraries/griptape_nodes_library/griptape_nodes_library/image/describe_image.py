@@ -35,21 +35,21 @@ class DescribeImage(ControlNode):
             Parameter(
                 name="agent",
                 type="Agent",
-                input_types=["Agent", "Prompt Model Config"],
                 output_type="Agent",
                 tooltip="None",
                 default_value=None,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
-                ui_options={"label": "[Optional] incoming Agent"},
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"label": "An outgoing agent"},
             )
         )
         self.add_parameter(
             Parameter(
                 name="model",
-                input_types=["str", "Prompt Model Config"],
+                input_types=["str", "Prompt Model Config", "Agent"],
                 type="str",
                 output_type="str",
                 default_value=DEFAULT_MODEL,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="Select the model you want to use from the available options, or provide a custom model config",
                 traits={Options(choices=MODEL_CHOICES)},
             )
@@ -110,23 +110,12 @@ class DescribeImage(ControlNode):
         target_parameter: Parameter,
         modified_parameters_set: set[str],
     ) -> None:
-        # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter
-        if target_parameter.name == "agent":
-            self.hide_parameter_by_name("model")
+        if target_parameter.name == "model" and source_parameter.name in ["prompt_model_config", "agent"]:
+            # Check and see if the incoming connection is from a prompt model config or an agent.
+            target_parameter._type = source_parameter.type
+            target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
+
             modified_parameters_set.add("model")
-
-        if target_parameter.name == "model":
-            self.hide_parameter_by_name("agent")
-            modified_parameters_set.add("agent")
-
-            # Check and see if the incoming connection is from a prompt model config
-            # If it is, we'll set the model parameter to the incoming connection
-            if source_parameter.name == "prompt_model_config":
-                logger.info(f"Incoming connection from {source_node.name} to {self.name}")
-                target_parameter._type = "Prompt Model Config"
-                target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
-
-                modified_parameters_set.add("model")
 
         return super().after_incoming_connection(
             source_node, source_parameter, target_parameter, modified_parameters_set
@@ -140,14 +129,7 @@ class DescribeImage(ControlNode):
         modified_parameters_set: set[str],
     ) -> None:
         # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter
-        if target_parameter.name == "agent":
-            self.show_parameter_by_name("model")
-            modified_parameters_set.add("model")
-
         if target_parameter.name == "model":
-            self.show_parameter_by_name("agent")
-            modified_parameters_set.add("agent")
-
             target_parameter._type = "str"
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             target_parameter.set_default_value(DEFAULT_MODEL)
