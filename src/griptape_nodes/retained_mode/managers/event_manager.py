@@ -82,6 +82,7 @@ class EventManager:
                     result_payload.altered_workflow_state = False
 
                 retained_mode_str = None
+                # If request_id exists, that means it's a direct request from the GUI (not internal), and should be echoed by retained mode.
                 if depth_manager.is_top_level() and request.request_id is not None:
                     retained_mode_str = depth_manager.request_retained_mode_translation(request)
 
