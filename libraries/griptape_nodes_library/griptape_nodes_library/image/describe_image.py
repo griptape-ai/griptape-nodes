@@ -27,15 +27,6 @@ MODEL_CHOICES = [
 DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
-def toggle_agent_model_visibility(target_param: str, show_fn: callable, hide_fn: callable, modified_set: set[str]):
-    if target_param == "agent":
-        hide_fn("model")
-        modified_set.add("model")
-    elif target_param == "model":
-        hide_fn("agent")
-        modified_set.add("agent")
-
-
 class DescribeImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -119,13 +110,6 @@ class DescribeImage(ControlNode):
         target_parameter: Parameter,
         modified_parameters_set: set[str],
     ) -> None:
-        toggle_agent_model_visibility(
-            target_parameter.name,
-            self.show_parameter_by_name,
-            self.hide_parameter_by_name,
-            modified_parameters_set,
-        )
-
         # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter
         if target_parameter.name == "agent":
             self.hide_parameter_by_name("model")
