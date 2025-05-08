@@ -52,6 +52,7 @@ class DescribeImage(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="Select the model you want to use from the available options, or provide a custom model config",
                 traits={Options(choices=MODEL_CHOICES)},
+                ui_options={"display_name": "foobidydo"},
             )
         )
         self.add_parameter(
@@ -114,7 +115,7 @@ class DescribeImage(ControlNode):
             # Check and see if the incoming connection is from a prompt model config or an agent.
             target_parameter._type = source_parameter.type
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
-
+            target_parameter._ui_options["display_name"] = source_parameter.name
             modified_parameters_set.add("model")
 
         return super().after_incoming_connection(
@@ -134,7 +135,9 @@ class DescribeImage(ControlNode):
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             target_parameter.set_default_value(DEFAULT_MODEL)
             target_parameter.default_value = DEFAULT_MODEL
+            target_parameter._ui_options["display_name"] = "model"
             self.set_parameter_value("model", DEFAULT_MODEL)
+
             modified_parameters_set.add("model")
         return super().after_incoming_connection_removed(
             source_node, source_parameter, target_parameter, modified_parameters_set
@@ -158,8 +161,7 @@ class DescribeImage(ControlNode):
         )
 
         if isinstance(agent_dict, dict):
-            logger.info(f"Agent dict: {agent_dict}")
-            agent = Agent.from_dict(agent_dict)
+            agent = Agent().from_dict(agent_dict)
 
             # make sure the agent is using a PromptTask
             if not isinstance(agent.tasks[0], PromptTask):
