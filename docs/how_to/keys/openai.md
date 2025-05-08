@@ -1,4 +1,4 @@
-# Obtaining an OpenAI Api Key
+# How to get and use an OpenAI API Key
 
 While Griptape Nodes provides easy access to OpenAI models by default via your Griptape Cloud account and it's key (this is all handled automatically during install), you might want to connect directly to your own OpenAI account. This gives you full control over your usage, settings, and permissions. If that's what you'd like to do, getting your OpenAI API key is the simple first step.
 
@@ -7,7 +7,7 @@ While Griptape Nodes provides easy access to OpenAI models by default via your G
 Before you can get API keys for your OpenAI account, you'll need an OpenAI account. To begin, head to [https://openai.com](https://openai.com)
 
 <p align="center">
-        <img src="../assets/OAI_00_main_page.png" alt="Open AI" width="500"/>
+        <img src="../assets/openai_00_main_page.png" alt="Open AI" width="500"/>
   </p>
 
 !!! info
@@ -21,7 +21,7 @@ Before you can get API keys for your OpenAI account, you'll need an OpenAI accou
 1. Complete the registration process
 
 <p align="center">
-      <img src="../assets/OAI_01_login_api_platform.png" alt="Login>Platform" width="300"/>
+      <img src="../assets/openai_01_login_api_platform.png" alt="Login>Platform" width="300"/>
   </p>
 
 ### 2. Create an API Key
@@ -31,13 +31,13 @@ Before you can get API keys for your OpenAI account, you'll need an OpenAI accou
 1. Go to the "Dashboard" area - look for it near the top of the page after logging in.
 
 <p align="center">
-      <img src="../assets/OAI_02_dashboard.png" alt="Dashboard" width="400"/>
+      <img src="../assets/openai_02_dashboard.png" alt="Dashboard" width="400"/>
   </p>
 
 1. Navigate to the **API Keys** section - look for it on the left after opening the dashboard.
 
     <p align="center">
-    <img src="../assets/OAI_03_api_keys.png" alt="API Keys" width="200"/>
+    <img src="../assets/openai_03_api_keys.png" alt="API Keys" width="200"/>
     </p>
 
     !!! warning "Account Verification Required"
@@ -47,13 +47,13 @@ Before you can get API keys for your OpenAI account, you'll need an OpenAI accou
     That should present you a screen, that towards the top right looks like this:
 
     <p align="center">
-    <img src="../assets/OAI_04_create_new_secret_key_button.png" alt="Create New Secret Key Button" width="500"/>
+    <img src="../assets/openai_04_create_new_secret_key_button.png" alt="Create New Secret Key Button" width="500"/>
     </p>
 
 1. Click **Create New Secret Key**, which should take you to a model like this:
 
     <p align="center">
-    <img src="../assets/OAI_05_create_new_secret_key_modal.png" alt="Create New Secret Key Modal" width="400"/>
+    <img src="../assets/openai_05_create_new_secret_key_modal.png" alt="Create New Secret Key Modal" width="400"/>
     </p>
 
 1. Set the key permissions to "Read-Only" (feel free to research other options, this is recommended merely for expedience here)
@@ -96,7 +96,7 @@ Before you can get API keys for your OpenAI account, you'll need an OpenAI accou
 1. Close the Configuration Editor to automatically save your settings
 
 <p align="center">
-    <img src="../assets/OAI_06_gtn_settings.png" alt="Open AI Secret Key in Settings" width="500"/>
+    <img src="../assets/openai_06_gtn_settings.png" alt="Open AI Secret Key in Settings" width="500"/>
   </p>
 
 !!! success "Setup Complete"
