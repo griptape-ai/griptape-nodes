@@ -143,7 +143,7 @@ class Agent(ControlNode):
         )
 
         # Group for less commonly used configuration options.
-        with ParameterGroup(group_name="Advanced options") as advanced_group:
+        with ParameterGroup(name="Advanced options") as advanced_group:
             ParameterList(
                 name="tools",
                 input_types=["Tool"],
@@ -175,7 +175,7 @@ class Agent(ControlNode):
         )
 
         # Group for logging information.
-        with ParameterGroup(group_name="Logs") as logs_group:
+        with ParameterGroup(name="Logs") as logs_group:
             Parameter(name="include_details", type="bool", default_value=False, tooltip="Include extra details.")
 
             Parameter(
@@ -248,11 +248,11 @@ class Agent(ControlNode):
         # If an existing agent is connected, hide parameters related to creating a new one.
         if target_parameter.name == "agent":
             groups_to_toggle = ["Advanced options"]
-            for group_name in groups_to_toggle:
-                group = self.get_group_by_name_or_element_id(group_name)
+            for name in groups_to_toggle:
+                group = self.get_group_by_name_or_element_id(name)
                 if group:
                     group.ui_options["hide"] = True
-                    modified_parameters_set.add(group_name)
+                    modified_parameters_set.add(name)
 
             params_to_toggle = ["model", "tools", "rulesets", "prompt_model_config"]
             for param_name in params_to_toggle:
@@ -302,11 +302,11 @@ class Agent(ControlNode):
         # If the agent connection is removed, show agent creation parameters.
         if target_parameter.name == "agent":
             groups_to_toggle = ["Advanced options"]
-            for group_name in groups_to_toggle:
-                group = self.get_group_by_name_or_element_id(group_name)
+            for name in groups_to_toggle:
+                group = self.get_group_by_name_or_element_id(name)
                 if group:
                     group.ui_options["hide"] = False
-                    modified_parameters_set.add(group.group_name)
+                    modified_parameters_set.add(group.name)
 
             params_to_toggle = ["model", "tools", "rulesets", "prompt_model_config"]
             for param_name in params_to_toggle:

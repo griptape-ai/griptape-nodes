@@ -263,7 +263,7 @@ class ConfigManager:
 
         if value is None:
             msg = f"Config key '{key}' not found in config file."
-            logger.error(msg)
+            logger.warning(msg)
             return None
 
         if should_load_env_var_if_detected and isinstance(value, str) and value.startswith("$"):
@@ -273,12 +273,13 @@ class ConfigManager:
 
         return value
 
-    def set_config_value(self, key: str, value: Any) -> None:
+    def set_config_value(self, key: str, value: Any, *, should_set_env_var_if_detected: bool = True) -> None:
         """Set a value in the configuration.
 
         Args:
             key: The configuration key to set. Can use dot notation for nested keys (e.g., 'category.subcategory.key').
             value: The value to associate with the key.
+            should_set_env_var_if_detected: If True, and the value starts with a $, it will be set in the environment variables.
         """
         delta = set_dot_value({}, key, value)
         if key == "log_level":
@@ -287,6 +288,11 @@ class ConfigManager:
             self.workspace_path = value
         self.user_config = merge_dicts(self.merged_config, delta)
         self._write_user_config_delta(delta)
+
+        if should_set_env_var_if_detected and isinstance(value, str) and value.startswith("$"):
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            value = GriptapeNodes.SecretsManager().set_secret(value[1:], "")
 
         # We need to fully reload the user config because we need to regenerate the merged config.
         # Also eventually need to reload registered workflows.

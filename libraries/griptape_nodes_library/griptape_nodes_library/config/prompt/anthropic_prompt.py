@@ -58,7 +58,7 @@ class AnthropicPrompt(BasePrompt):
         )
 
         # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.
-        self.remove_parameter_by_name("seed")
+        self.remove_parameter_element_by_name("seed")
 
     def process(self) -> None:
         """Processes the node configuration to create an AnthropicPromptDriver.

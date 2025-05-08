@@ -15,11 +15,11 @@ This guide will walk you through setting up a Hugging Face account, creating an 
 1. Complete the verification step to prove you're not a robot
 
 <p align="center">
-    <img src="../assets/00_HF_MainPage.png" alt="HF Site" width="500"/>
+    <img src="../assets/huggingface_00_MainPage.png" alt="HF Site" width="500"/>
   </p>
 
 <p align="center">
-    <img src="../assets/01_HF_signup.png" alt="Signup" width="300"/>
+    <img src="../assets/huggingface_01_signup.png" alt="Signup" width="300"/>
   </p>
 
 ### 2. Create an Access Token
@@ -33,7 +33,7 @@ This guide will walk you through setting up a Hugging Face account, creating an 
 1. Select **Settings** from the dropdown menu (or go directly to [Settings](https://huggingface.co/settings/profile/))
 
     <p align="center">
-    <img src="../assets/02_HF_Settings.png" alt="Settings" width="500"/>
+    <img src="../assets/huggingface_02_Settings.png" alt="Settings" width="500"/>
     </p>
 
 !!! warning "Email Verification Required"
@@ -43,7 +43,7 @@ This guide will walk you through setting up a Hugging Face account, creating an 
 1. Navigate to **Access Tokens** in the settings menu
 
 <p align="center">
-  <img src="../assets/03_HF_AccessTokens.png" alt="Access Tokens" width="500"/>
+  <img src="../assets/huggingface_03_AccessTokens.png" alt="Access Tokens" width="500"/>
 </p>
 
 1. Click **Create new token** in the top right area
@@ -51,14 +51,14 @@ This guide will walk you through setting up a Hugging Face account, creating an 
 1. Select **Read** as the token type for the access you'll need
 
 <p align="center">
-  <img src="../assets/04_HF_TokenRead.png" alt="Token Read" width="500"/>
+  <img src="../assets/huggingface_04_TokenRead.png" alt="Token Read" width="500"/>
 </p>
 
 1. Give your token a descriptive name (GriptapeNodes, for example)
 1. Click **Create Token**. That will bring up a window with you new token in it. Read and understand the messages there; this really is the only time you'll be able to see or copy this key.
 
 <p align="center">
-  <img src="../assets/05_HF_SaveToken.png" alt="Save Token" width="400"/>
+  <img src="../assets/huggingface_05_SaveToken.png" alt="Save Token" width="400"/>
 </p>
 
 1. Copy and securely store your token
@@ -173,7 +173,7 @@ huggingface-cli download black-forest-labs/FLUX.1-dev
     Visit [https://huggingface.co/black-forest-labs/FLUX.1-schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell) to ask for access. When that is successful you should see a message about being granted access, and you can try to download again.
 
     <p align="center">
-      <img src="../assets/gated_model.png" alt="Gated model" width="350"/>
+      <img src="../assets/huggingface_06_gated_model.png" alt="Gated model" width="350"/>
     </p>
 
 ## Add Your Token to Griptape Nodes settings
@@ -189,7 +189,7 @@ huggingface-cli download black-forest-labs/FLUX.1-dev
 1. Click on **Settings** to open the configuration options
 
 <p align="center">
-  <img src="../assets/06_GN_Settings.png" alt="Settings Menu" width="500"/>
+  <img src="../assets/huggingface_07_GN_Settings.png" alt="Settings Menu" width="500"/>
 </p>
 
 ### 2. Add your Hugging Face Token in API Keys & Secrets
@@ -201,7 +201,7 @@ huggingface-cli download black-forest-labs/FLUX.1-dev
 1. Close the Configuration Editor to automatically save your settings
 
 <p align="center">
-  <img src="../assets/07_GN_HFToken.png" alt="Token Configuration" width="500"/>
+  <img src="../assets/huggingface_08_GN_HFToken.png" alt="Token Configuration" width="500"/>
 </p>
 
 !!! success "Setup Complete"
