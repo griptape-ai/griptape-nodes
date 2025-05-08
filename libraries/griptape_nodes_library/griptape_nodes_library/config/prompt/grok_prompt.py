@@ -52,8 +52,8 @@ class GrokPrompt(BasePrompt):
         self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
 
         # Remove `top_k` parameter as it's not used by Grok.
-        self.remove_parameter_by_name("seed")
-        self.remove_parameter_by_name("top_k")
+        self.remove_parameter_element_by_name("seed")
+        self.remove_parameter_element_by_name("top_k")
 
         # Replace `min_p` with `top_p` for Grok.
         self._replace_param_by_name(param_name="min_p", new_param_name="top_p", default_value=0.9)

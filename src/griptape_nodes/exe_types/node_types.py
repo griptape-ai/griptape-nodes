@@ -224,25 +224,20 @@ class BaseNode(ABC):
             raise ValueError(msg)
         self.add_node_element(param)
 
-    def remove_parameter(self, param: Parameter) -> None:
-        for child in param.find_elements_by_type(Parameter):
+    def remove_parameter_element_by_name(self, element_name: str) -> None:
+        element = self.root_ui_element.find_element_by_name(element_name)
+        if element is not None:
+            self.remove_parameter_element(element)
+
+    def remove_parameter_element(self, param: BaseNodeElement) -> None:
+        for child in param.find_elements_by_type(BaseNodeElement):
             self.remove_node_element(child)
         self.remove_node_element(param)
-
-    def remove_group_by_name(self, group: str) -> bool:
-        group_items = self.root_ui_element.find_elements_by_type(ParameterGroup)
-        for group_item in group_items:
-            if group_item.group_name == group:
-                for child in group_item.find_elements_by_type(BaseNodeElement):
-                    self.remove_node_element(child)
-                self.remove_node_element(group_item)
-                return True
-        return False
 
     def get_group_by_name_or_element_id(self, group: str) -> ParameterGroup | None:
         group_items = self.root_ui_element.find_elements_by_type(ParameterGroup)
         for group_item in group_items:
-            if group in (group_item.group_name, group_item.element_id):
+            if group in (group_item.name, group_item.element_id):
                 return group_item
         return None
 
@@ -418,37 +413,6 @@ class BaseNode(ABC):
             ):
                 return param
         return None
-
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/852
-    def valid_or_fallback(self, param_name: str, fallback: Any = None) -> Any:
-        """Get a parameter value if valid, otherwise use fallback.
-
-        Args:
-            param_name: The name of the parameter to check
-            fallback: The fallback value to use if the parameter value is invalid or empty
-
-        Returns:
-            The valid parameter value or fallback
-
-        Raises:
-            ValueError: If neither the parameter value nor fallback is valid
-        """
-        # Get parameter object and current value
-        param = self.get_parameter_by_name(param_name)
-        if not param:
-            msg = f"Parameter '{param_name}' not found"
-            raise ValueError(msg)
-
-        value = self.parameter_values.get(param_name, None)
-        if value is not None:
-            return value
-
-        # Try fallback if value is invalid or empty
-        if fallback is None:
-            return None
-        self.set_parameter_value(param_name, fallback)
-        # No valid options available
-        return fallback
 
     # Abstract method to process the node. Must be defined by the type
     # Must save the values of the output parameters in NodeContext.

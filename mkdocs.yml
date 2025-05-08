@@ -49,6 +49,8 @@ theme:
     - navigation.tabs
     - navigation.expand
     - navigation.top
+    - navigation.tabs.sticky
+    - navigation.sections
 
 markdown_extensions:
   - pymdownx.highlight
@@ -57,6 +59,8 @@ markdown_extensions:
   - pymdownx.superfences
   - tables
   - md_in_html
+  - toc:
+      toc_depth: 3
 
 nav:
   - Home:

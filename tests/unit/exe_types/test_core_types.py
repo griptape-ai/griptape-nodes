@@ -11,7 +11,7 @@ class TestBaseNodeElement:
         with BaseNodeElement() as root:
             with BaseNodeElement():
                 BaseNodeElement()
-                with ParameterGroup(group_name="group1"):
+                with ParameterGroup(name="group1"):
                     BaseNodeElement(element_id="leaf1")
             with BaseNodeElement():
                 BaseNodeElement(element_id="leaf2")
@@ -54,7 +54,7 @@ class TestBaseNodeElement:
                         {
                             "element_id": ANY,
                             "element_type": "ParameterGroup",
-                            "group_name": "group1",
+                            "name": "group1",
                             "ui_options": {},
                             "children": [{"element_id": "leaf1", "element_type": "BaseNodeElement", "children": []}],
                         },
@@ -109,7 +109,7 @@ class TestBaseNodeElement:
                         {
                             "element_id": ANY,
                             "element_type": "ParameterGroup",
-                            "group_name": "group1",
+                            "name": "group1",
                             "ui_options": {},
                             "children": [
                                 {
@@ -188,7 +188,7 @@ class TestBaseNodeElement:
                         {
                             "element_id": ANY,
                             "element_type": "ParameterGroup",
-                            "group_name": "group1",
+                            "name": "group1",
                             "ui_options": {},
                             "children": [],
                         },
@@ -235,7 +235,7 @@ class TestBaseNodeElement:
 
 class TestParameterGroup:
     def test_init(self) -> None:
-        assert ParameterGroup(group_name="test")
+        assert ParameterGroup(name="test")
 
 
 class TestParameter:

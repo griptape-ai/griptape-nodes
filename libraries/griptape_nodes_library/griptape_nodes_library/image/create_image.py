@@ -82,7 +82,7 @@ class GenerateImage(ControlNode):
             )
         )
         # Group for logging information.
-        with ParameterGroup(group_name="Logs") as logs_group:
+        with ParameterGroup(name="Logs") as logs_group:
             Parameter(name="include_details", type="bool", default_value=False, tooltip="Include extra details.")
 
             Parameter(

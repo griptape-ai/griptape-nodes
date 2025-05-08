@@ -1,4 +1,4 @@
-name: Create release
+name: Create Stable Release
 
 on:
   push:
@@ -21,4 +21,5 @@ jobs:
           gh release create "$tag" \
               --repo="$GITHUB_REPOSITORY" \
               --title="${tag}" \
-              --generate-notes
+              --generate-notes \
+              --latest

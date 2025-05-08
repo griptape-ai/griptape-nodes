@@ -10,6 +10,7 @@ import tarfile
 import tempfile
 import webbrowser
 from pathlib import Path
+from typing import Literal
 
 import httpx
 from dotenv import load_dotenv
@@ -32,9 +33,12 @@ CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 DATA_DIR = xdg_data_home() / "griptape_nodes"
 ENV_FILE = CONFIG_DIR / ".env"
 CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
+LATEST_TAG = "latest"
 PACKAGE_NAME = "griptape-nodes"
 NODES_APP_URL = "https://nodes.griptape.ai"
 NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/tags/{tag}.tar.gz"
+PYPI_UPDATE_URL = "https://pypi.org/project/{package}/json"
+GITHUB_UPDATE_URL = "https://api.github.com/repos/griptape-ai/{package}/git/refs/tags/{revision}"
 
 
 config_manager = ConfigManager()
@@ -64,7 +68,7 @@ def _run_init(
     _prompt_for_workspace(workspace_directory_arg=workspace_directory)
     _prompt_for_api_key(api_key=api_key)
     _prompt_for_libraries_to_register(register_advanced_library=register_advanced_library)
-    _update_assets()
+    _sync_assets()
     console.print("[bold green]Initialization complete![/bold green]")
 
 
@@ -156,7 +160,7 @@ def _get_args() -> argparse.Namespace:
         metavar="SUBCOMMAND",
         required=True,
     )
-    assets_subparsers.add_parser("update", help="Update bundled assets.")
+    assets_subparsers.add_parser("sync", help="Sync assets with your current engine version.")
 
     args = parser.parse_args()
 
@@ -262,36 +266,70 @@ def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None 
     config_manager.set_config_value("app_events.on_app_initialization_complete.libraries_to_register", merged_libraries)
 
 
-def _get_latest_version(package: str) -> str:
+def _get_latest_version(package: str, install_source: str) -> str:
     """Fetches the latest release tag from PyPI.
 
     Args:
         package: The name of the package to fetch the latest version for.
+        install_source: The source from which the package is installed (e.g., "pypi", "git", "file").
 
     Returns:
         str: Latest release tag (e.g., "v0.31.4")
     """
-    url = f"https://pypi.org/pypi/{package}/json"
-    with httpx.Client() as client:
-        response = client.get(url)
-        response.raise_for_status()
-        return f"v{response.json()['info']['version']}"
+    if install_source == "pypi":
+        update_url = PYPI_UPDATE_URL.format(package=package)
+
+        with httpx.Client() as client:
+            response = client.get(update_url)
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                console.print(f"[red]Error fetching latest version: {e}[/red]")
+                return __get_current_version()
+            else:
+                return f"v{response.json()['info']['version']}"
+    elif install_source == "git":
+        # We only install auto updating from the 'latest' tag
+        revision = LATEST_TAG
+        update_url = GITHUB_UPDATE_URL.format(package=package, revision=revision)
+
+        with httpx.Client() as client:
+            response = client.get(update_url)
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                console.print(f"[red]Error fetching latest version: {e}[/red]")
+                return __get_current_version()
+            else:
+                # Get the latest commit SHA for the tag, this effectively the latest version of the package
+                data = response.json()
+                if "object" in data and "sha" in data["object"]:
+                    return data["object"]["sha"][:7]
+                # Should not happen, but if it does, return the current version
+                return __get_current_version()
+    else:
+        # If the package is installed from a file, just return the current version since the user is likely managing it manually
+        return __get_current_version()
 
 
 def _auto_update_self() -> None:
     """Automatically updates the script to the latest version if the user confirms."""
     console.print("[bold green]Checking for updates...[/bold green]")
+    source, commit_id = __get_install_source()
     current_version = __get_current_version()
-    latest_version = _get_latest_version(PACKAGE_NAME)
+    latest_version = _get_latest_version(PACKAGE_NAME, source)
 
-    if current_version < latest_version:
-        update = Confirm.ask(
-            f"Your current engine version, {current_version}, is behind the latest release, {latest_version}. Update now?",
-            default=True,
-        )
+    if source == "git" and commit_id is not None:
+        can_update = commit_id != latest_version
+        update_message = f"Your current engine version, {current_version} ({source} - {commit_id}), doesn't match the latest release, {latest_version}. Update now?"
+    else:
+        can_update = current_version < latest_version
+        update_message = f"Your current engine version, {current_version}, is behind the latest release, {latest_version}. Update now?"
+
+    if can_update:
+        update = Confirm.ask(update_message, default=True)
 
         if update:
-            _update_assets()
             _update_self()
 
 
@@ -302,13 +340,19 @@ def _update_self() -> None:
     os_manager.replace_process([sys.executable, "-m", "griptape_nodes.updater"])
 
 
-def _update_assets() -> None:
-    """Download the release tarball identified."""
-    tag = _get_latest_version(PACKAGE_NAME)
+def _sync_assets() -> None:
+    """Download and fully replace the Griptape Nodes assets directory."""
+    install_source = __get_install_source()
+    # Unless we're installed from PyPi, grab assets from the 'latest' tag
+    if install_source == "pypi":
+        version = __get_current_version()
+    else:
+        version = LATEST_TAG
 
-    console.print(f"[bold cyan]Fetching Griptape Nodes assets ({tag})…[/bold cyan]")
+    console.print(f"[bold cyan]Fetching Griptape Nodes assets ({version})…[/bold cyan]")
 
-    tar_url = NODES_TARBALL_URL.format(tag=tag)
+    tar_url = NODES_TARBALL_URL.format(tag=version)
+    console.print(f"[green]Downloading from {tar_url}[/green]")
     dest_nodes = DATA_DIR / "libraries"
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -316,21 +360,29 @@ def _update_assets() -> None:
 
         # Streaming download with a tiny progress bar
         with httpx.stream("GET", tar_url, follow_redirects=True) as r, Progress() as progress:
-            r.raise_for_status()
-            task = progress.add_task("[green]downloading...", total=int(r.headers.get("Content-Length", 0)))
+            try:
+                r.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                console.print(f"[red]Error fetching assets: {e}[/red]")
+                return
+            task = progress.add_task("[green]Downloading...", total=int(r.headers.get("Content-Length", 0)))
             with tar_path.open("wb") as f:
                 for chunk in r.iter_bytes():
                     f.write(chunk)
                     progress.update(task, advance=len(chunk))
 
-        # Extract and copy
+        console.print("[green]Extracting...[/green]")
+        # Extract and locate extracted directory
         with tarfile.open(tar_path) as tar:
             tar.extractall(tmp, filter="data")
 
         extracted_root = next(Path(tmp).glob("griptape-nodes-*"))
+        extracted_libs = extracted_root / "libraries"
 
-        console.print("[yellow]Copying nodes directory…[/yellow]")
-        shutil.copytree(extracted_root / "libraries", dest_nodes, dirs_exist_ok=True)
+        # Fully replace the destination directory
+        if dest_nodes.exists():
+            shutil.rmtree(dest_nodes)
+        shutil.copytree(extracted_libs, dest_nodes)
 
     console.print("[bold green]Node Libraries updated.[/bold green]")
 
@@ -338,7 +390,11 @@ def _update_assets() -> None:
 def _print_current_version() -> None:
     """Prints the current version of the script."""
     version = __get_current_version()
-    console.print(f"[bold green]{version}[/bold green]")
+    source, commit_id = __get_install_source()
+    if commit_id is None:
+        console.print(f"[bold green]{version} ({source})[/bold green]")
+    else:
+        console.print(f"[bold green]{version} ({source} - {commit_id})[/bold green]")
 
 
 def _print_user_config() -> None:
@@ -424,8 +480,8 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
         elif args.subcommand == "version":
             _print_current_version()
     elif args.command == "assets":
-        if args.subcommand == "update":
-            _update_assets()
+        if args.subcommand == "sync":
+            _sync_assets()
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)
@@ -436,6 +492,28 @@ def __get_current_version() -> str:
     version = importlib.metadata.version("griptape_nodes")
 
     return f"v{version}"
+
+
+def __get_install_source() -> tuple[Literal["git", "file", "pypi"], str | None]:
+    """Determines the install source of the Griptape Nodes package.
+
+    Returns:
+        tuple: A tuple containing the install source and commit ID (if applicable).
+    """
+    dist = importlib.metadata.distribution("griptape_nodes")
+    direct_url_text = dist.read_text("direct_url.json")
+    # installing from pypi doesn't have a direct_url.json file
+    if direct_url_text is None:
+        return "pypi", None
+
+    direct_url_info = json.loads(direct_url_text)
+    url = direct_url_info.get("url")
+    if url.startswith("file://"):
+        return "file", None
+    if "vcs_info" in direct_url_info:
+        return "git", direct_url_info["vcs_info"].get("commit_id")[:7]
+    # Fall back to pypi if no other source is found
+    return "pypi", None
 
 
 def __init_system_config() -> None:

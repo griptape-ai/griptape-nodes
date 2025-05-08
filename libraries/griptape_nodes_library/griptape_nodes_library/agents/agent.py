@@ -143,7 +143,7 @@ class Agent(ControlNode):
         )
 
         # Group for less commonly used configuration options.
-        with ParameterGroup(group_name="Advanced options") as advanced_group:
+        with ParameterGroup(name="Advanced options") as advanced_group:
             ParameterList(
                 name="tools",
                 input_types=["Tool"],
@@ -175,7 +175,7 @@ class Agent(ControlNode):
         )
 
         # Group for logging information.
-        with ParameterGroup(group_name="Logs") as logs_group:
+        with ParameterGroup(name="Logs") as logs_group:
             Parameter(name="include_details", type="bool", default_value=False, tooltip="Include extra details.")
 
             Parameter(
@@ -211,16 +211,17 @@ class Agent(ControlNode):
 
             """
             prompt_model_settings_param = self.get_parameter_by_name("prompt_model_config")
-            if value == CONNECTED_CHOICE and prompt_model_settings_param:
-                if prompt_model_settings_param._ui_options["hide"]:
-                    modified_parameters_set.add("prompt_model_config")
-                prompt_model_settings_param._ui_options["hide"] = False
-                return None
-            if value != CONNECTED_CHOICE and prompt_model_settings_param:
-                if not prompt_model_settings_param._ui_options["hide"]:
-                    modified_parameters_set.add("prompt_model_config")
-                prompt_model_settings_param._ui_options["hide"] = True
-                return None
+            if self.parameter_values.get("prompt_model_config") is None:
+                if value == CONNECTED_CHOICE and prompt_model_settings_param:
+                    if prompt_model_settings_param._ui_options["hide"]:
+                        modified_parameters_set.add("prompt_model_config")
+                    prompt_model_settings_param._ui_options["hide"] = False
+                    return None
+                if value != CONNECTED_CHOICE and prompt_model_settings_param:
+                    if not prompt_model_settings_param._ui_options["hide"]:
+                        modified_parameters_set.add("prompt_model_config")
+                    prompt_model_settings_param._ui_options["hide"] = True
+                    return None
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
@@ -247,11 +248,11 @@ class Agent(ControlNode):
         # If an existing agent is connected, hide parameters related to creating a new one.
         if target_parameter.name == "agent":
             groups_to_toggle = ["Advanced options"]
-            for group_name in groups_to_toggle:
-                group = self.get_group_by_name_or_element_id(group_name)
+            for name in groups_to_toggle:
+                group = self.get_group_by_name_or_element_id(name)
                 if group:
                     group.ui_options["hide"] = True
-                    modified_parameters_set.add(group_name)
+                    modified_parameters_set.add(name)
 
             params_to_toggle = ["model", "tools", "rulesets", "prompt_model_config"]
             for param_name in params_to_toggle:
@@ -301,11 +302,11 @@ class Agent(ControlNode):
         # If the agent connection is removed, show agent creation parameters.
         if target_parameter.name == "agent":
             groups_to_toggle = ["Advanced options"]
-            for group_name in groups_to_toggle:
-                group = self.get_group_by_name_or_element_id(group_name)
+            for name in groups_to_toggle:
+                group = self.get_group_by_name_or_element_id(name)
                 if group:
                     group.ui_options["hide"] = False
-                    modified_parameters_set.add(group.group_name)
+                    modified_parameters_set.add(group.name)
 
             params_to_toggle = ["model", "tools", "rulesets", "prompt_model_config"]
             for param_name in params_to_toggle:
@@ -442,13 +443,13 @@ class Agent(ControlNode):
 
         # Get any tools
         # tools = self.get_parameter_value("tools")  # noqa: ERA001
-        tools = params.get("tools", [])
+        tools = [tool for tool in params.get("tools", []) if tool]
         if include_details and tools:
             self.append_value_to_parameter("logs", f"[Tools]: {', '.join([tool.name for tool in tools])}\n")
 
         # Get any rulesets
         # rulesets = self.get_parameter_value("rulesets")  # noqa: ERA001
-        rulesets = params.get("rulesets", [])
+        rulesets = [ruleset for ruleset in params.get("rulesets", []) if ruleset]
         if include_details and rulesets:
             self.append_value_to_parameter(
                 "logs", f"\n[Rulesets]: {', '.join([ruleset.name for ruleset in rulesets])}\n"

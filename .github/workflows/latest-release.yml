@@ -1,0 +1,34 @@
+name: Create Latest Release
+
+on:
+  schedule:
+    - cron: 30 17 * * *  # 10:30 AM PT
+    - cron: 30 22 * * *  # 3:30 PM PT
+  workflow_dispatch:      # allows manual triggering too
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release pushed tag
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout actions
+        uses: actions/checkout@v4
+      - name: Create Tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag: "latest"
+        run: |
+          git tag "$tag" -f
+          git push origin "$tag" -f --tags
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag: "latest"
+        run: |
+          gh release edit "$tag" \
+              --repo="$GITHUB_REPOSITORY" \
+              --title="${tag}-$(date -u +'%Y%m%d')" \
+              --prerelease
