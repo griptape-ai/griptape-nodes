@@ -34,7 +34,7 @@ class WaitText(ControlNode):
         return
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-            if parameter.name == "text":
-                self.wait=False
-                flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
-                GriptapeNodes().handle_request(SingleExecutionStepRequest(flow_name=flow_name))
+        if parameter.name == "text":
+            self.wait=False
+            flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
+            GriptapeNodes().handle_request(SingleExecutionStepRequest(flow_name=flow_name))
