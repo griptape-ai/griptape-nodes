@@ -51,7 +51,6 @@ class DescribeImage(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="Select the model you want to use from the available options, or provide a custom model config",
                 traits={Options(choices=MODEL_CHOICES)},
-                ui_options={"display_name": "foobidydo"},
             )
         )
         self.add_parameter(
