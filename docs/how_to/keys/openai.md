@@ -81,12 +81,14 @@ Before you can get API keys for your OpenAI account, you'll need an OpenAI accou
 ### 1. Open the Griptape Nodes Settings Menu
 
 1. Launch Griptape Nodes
+
 1. Look for the **Settings** menu located in the top menu bar (just to the right of File and Edit)
+
 1. Click on **Settings** to open the configuration options
 
-<p align="center">
-    <img src="../assets/06_GN_Settings.png" alt="Settings Menu" width="500"/>
-  </p>
+    <p align="center">
+    <img src="../assets/gtn_settings_menu.png" alt="Settings Menu" width="500"/>
+    </p>
 
 ### 2. Add your OpenAI Secret Key in API Keys & Secrets
 
@@ -96,7 +98,7 @@ Before you can get API keys for your OpenAI account, you'll need an OpenAI accou
 1. Close the Configuration Editor to automatically save your settings
 
 <p align="center">
-    <img src="../assets/openai_06_gtn_settings.png" alt="Open AI Secret Key in Settings" width="500"/>
+    <img src="../assets/openai_06_gtn_settings.png" alt="Open AI Secret Key in Settings" width="600"/>
   </p>
 
 !!! success "Setup Complete"
