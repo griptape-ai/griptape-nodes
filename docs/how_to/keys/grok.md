@@ -1,6 +1,6 @@
 # How to get and use a Grok.ai API Key
 
-Grok is a service that provides models that you can use via the GrokPrompt config node.  To make use of these, however, you'll need to have a Grok account, and generate an API key.  It's worth noting as well, that Grok is a paid service, and to make use of it, you'll need to set up billing details on their website.
+Grok is a service that provides models that you can use via the GrokPrompt config node. To make use of these, however, you'll need to have a Grok account, and generate an API key. It's worth noting as well, that Grok is a paid service, and to make use of it, you'll need to set up billing details on their website.
 
 ## Account and API Key Creation
 
@@ -17,14 +17,16 @@ Before you can get API keys for your Grok.ai account, you'll _need_ a Grok.ai ac
 ### 1. Create a Grok account
 
 1. Click on the console login option, or navigate to [https://accounts.x.ai/sign-up](https://accounts.x.ai/sign-up)
+
     <p align="center">
-        <img src="../assets/grok_01_console_login.png" alt="Console Login" width="500"/>
+    <img src="../assets/grok_01_console_login.png" alt="Console Login" width="500"/>
     </p>
+
 1. Complete the signup process, it is extremely straightforward.
 
-<p align="center">
+    <p align="center">
     <img src="../assets/grok_02_signup.png" alt="Signup" width="500"/>
-</p>
+    </p>
 
 ### 2. Set Up Billing
 
@@ -41,17 +43,21 @@ Before you can get API keys for your Grok.ai account, you'll _need_ a Grok.ai ac
 ### 3. Generate an API Key
 
 1. Navigate to the API keys section; there are multiple links to take you there.
+
     <p align="center">
-        <img src="../assets/grok_04_key_links.png" alt="API Key links" width="600"/>
+    <img src="../assets/grok_04_key_links.png" alt="API Key links" width="600"/>
     </p>
+
 1. Click on "Create API Key"
+
     <p align="center">
-        <img src="../assets/grok_05_create_api_key_button.png" alt="Create API Key Button" width="500"/>
+    <img src="../assets/grok_05_create_api_key_button.png" alt="Create API Key Button" width="500"/>
     </p>
 
 1. Name your API key (suggested name: GriptapeNodes!)
+
     <p align="center">
-        <img src="../assets/grok_06_create_api_key_page.png" alt="Create API Key Page" width="500"/>
+    <img src="../assets/grok_06_create_api_key_page.png" alt="Create API Key Page" width="500"/>
     </p>
 
 1. Click **save**
@@ -66,7 +72,6 @@ Before you can get API keys for your Grok.ai account, you'll _need_ a Grok.ai ac
 
         Treat it like you would a credit card number.
 
-
 ## Add Your API Key to Griptape Nodes Settings
 
 !!! info "Overview"
@@ -76,11 +81,13 @@ Before you can get API keys for your Grok.ai account, you'll _need_ a Grok.ai ac
 ### 1. Open the Griptape Nodes Settings Menu
 
 1. Launch Griptape Nodes
+
 1. Look for the **Settings** menu located in the top menu bar (just to the right of File and Edit)
+
 1. Click on **Settings** to open the configuration options
 
     <p align="center">
-        <img src="../assets/gtn_settings_menu.png" alt="Settings Menu" width="500"/>
+    <img src="../assets/gtn_settings_menu.png" alt="Settings Menu" width="500"/>
     </p>
 
 ### 2. Add your Grok.ai API Key in API Keys & Secrets
