@@ -5,7 +5,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
-from griptape_nodes.retained_mode.events.execution_events import StartFlowRequest
+from griptape_nodes.retained_mode.events.execution_events import SingleExecutionStepRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
@@ -28,11 +28,11 @@ class WaitText(ControlNode):
 
     def process(self) -> None:
         if not self.get_parameter_value("text"):
-            self.stop_flow = True
+            self.wait = True
             return
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         if parameter.name == "text":
+            self.wait=False
             flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
-            GriptapeNodes().handle_request(StartFlowRequest(flow_name=flow_name))
-        return super().after_value_set(parameter, value, modified_parameters_set)
+            GriptapeNodes().handle_request(SingleExecutionStepRequest(flow_name=flow_name))
