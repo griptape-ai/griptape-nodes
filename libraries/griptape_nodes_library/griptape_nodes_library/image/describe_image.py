@@ -49,6 +49,7 @@ class DescribeImage(ControlNode):
                 tooltip="The image you would like to describe",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"clickable_file_browser": True, "expander": True},
             )
         )
         self.add_parameter(
