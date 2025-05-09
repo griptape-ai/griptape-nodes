@@ -8,7 +8,6 @@ from griptape.tasks import PromptTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
@@ -31,17 +30,17 @@ class DescribeImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self.add_parameter(
-            Parameter(
-                name="agent",
-                type="Agent",
-                output_type="Agent",
-                tooltip="None",
-                default_value=None,
-                allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"label": "An outgoing agent"},
-            )
-        )
+        # self.add_parameter(
+        #     Parameter(
+        #         name="agent",
+        #         type="Agent",
+        #         output_type="Agent",
+        #         tooltip="None",
+        #         default_value=None,
+        #         allowed_modes={ParameterMode.OUTPUT},
+        #         ui_options={"label": "An outgoing agent"},
+        #     )
+        # )
         self.add_parameter(
             Parameter(
                 name="model",
@@ -146,9 +145,8 @@ class DescribeImage(ControlNode):
     def process(self) -> AsyncResult[Structure]:
         # Get the parameters from the node
         params = self.parameter_values
-        agent_dict = self.get_parameter_value("agent")
-        model = self.get_parameter_value("model")
-
+        model_input = self.get_parameter_value("model")
+        agent = None
         # If an agent is provided, we'll use that.
         # If a prompt model config is provided to the _agent_ parameter, we'll create an agent and use that.
         # If nothing is connected to an agent, check and see if a prompt model config is connected to the model parameter
@@ -160,27 +158,24 @@ class DescribeImage(ControlNode):
             stream=True,
         )
 
-        if isinstance(agent_dict, dict):
-            agent = Agent().from_dict(agent_dict)
+        if isinstance(model_input, dict):
+            agent = Agent().from_dict(model_input)
 
             # make sure the agent is using a PromptTask
             if not isinstance(agent.tasks[0], PromptTask):
                 agent.add_task(PromptTask(prompt_driver=default_prompt_driver))
-        elif isinstance(agent_dict, BasePromptDriver):
-            agent = Agent(prompt_driver=agent_dict)
-        else:
-            if isinstance(model, str):
-                logger.info(f"Model is a string: {model}")
-                prompt_driver = GriptapeCloudPromptDriver(
-                    model=model,
-                    api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
-                    stream=True,
-                )
-            else:
-                logger.info(f"Model is from a prompt driver: {model}")
-                prompt_driver = model
-
+        elif isinstance(model_input, BasePromptDriver):
+            agent = Agent(prompt_driver=model_input)
+        elif isinstance(model_input, str):
+            prompt_driver = GriptapeCloudPromptDriver(
+                model=model_input,
+                api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
+                stream=True,
+            )
             agent = Agent(prompt_driver=prompt_driver)
+        else:
+            # If the agent is not provided, we'll create a new one with a default prompt driver
+            agent = Agent(prompt_driver=default_prompt_driver)
 
         prompt = params.get("prompt", "")
         if prompt == "":
