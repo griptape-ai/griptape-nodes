@@ -60,6 +60,7 @@ class BaseNode(ABC):
     parameter_values: dict[str, Any]
     parameter_output_values: dict[str, Any]
     stop_flow: bool = False
+    wait: bool = False
     root_ui_element: BaseNodeElement
 
     @property

@@ -293,6 +293,9 @@ class ExecuteNodeState(State):
                 wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
             )
         )
+        # If the node wants you to wait and rerun, don't do this:
+        if current_node.wait:
+            return None
         current_node.state = NodeResolutionState.RESOLVED
         details = f"'{current_node.name}' resolved."
 
