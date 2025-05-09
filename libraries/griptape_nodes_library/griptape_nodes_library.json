@@ -51,7 +51,7 @@
     },
     {
       "audio": {
-        "color": "border-purple-500",
+        "color": "border-sky-500",
         "title": "Audio",
         "description": "Audio related nodes.",
         "icon": "SpeakerWave"
@@ -154,6 +154,15 @@
         "category": "agents",
         "description": "Agent node.",
         "display_name": "Agent"
+      }
+    },
+    {
+      "class_name": "LoadAudio",
+      "file_path": "griptape_nodes_library/audio/load_audio.py",
+      "metadata": {
+        "category": "audio",
+        "description": "LoadAudio node.",
+        "display_name": "Load Audio"
       }
     },
     {
