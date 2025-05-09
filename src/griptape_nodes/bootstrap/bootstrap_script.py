@@ -93,7 +93,6 @@ def __handle_node_event(event: GriptapeNodeEvent) -> None:
     event_json = result_event.json()
     event_log = f"GriptapeNodeEvent: {event_json}"
     logger.info(event_log)
-    queue.put(event)
 
 
 def __handle_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
@@ -127,13 +126,11 @@ def __handle_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
 def __handle_progress_event(gt_event: ProgressEvent) -> None:
     event_log = f"ProgressEvent: {gt_event}"
     logger.info(event_log)
-    queue.put(gt_event)
 
 
 def __handle_app_event(event: AppEvent) -> None:
     event_log = f"AppEvent: {event.payload}"
     logger.info(event_log)
-    queue.put(event)
 
 
 def _submit_output(output: dict) -> None:

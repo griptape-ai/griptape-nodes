@@ -1079,6 +1079,12 @@ class WorkflowManager:
         """
         for node in nodes:
             for param in node.parameters:
+                # The user_defined flag is utilized here since the StartFlow and EndFlow Nodes make use of
+                # ParameterLists, which enable Workflow authors to define their own Parameters as children, and
+                # by default the user_defined flag is set to True for the children. Filtering on that flag keeps
+                # the workflow shape clean and only includes the Parameters that are actually defined/usable by the
+                # Published Workflow.
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1090
                 if param.user_defined:
                     if node.name in workflow_shape[workflow_shape_type]:
                         cast("dict", workflow_shape[workflow_shape_type][node.name])[param.name] = (
