@@ -580,6 +580,15 @@
       }
     },
     {
+      "class_name": "WaitText",
+      "file_path": "griptape_nodes_library/execution/wait_text.py",
+      "metadata": {
+        "category": "execution",
+        "description": "WaitText node.",
+        "display_name": "Wait Text"
+      }
+    },
+    {
       "class_name": "Reroute",
       "file_path": "griptape_nodes_library/execution/reroute.py",
       "metadata": {
