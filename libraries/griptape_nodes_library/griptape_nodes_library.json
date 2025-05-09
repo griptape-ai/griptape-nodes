@@ -6,10 +6,7 @@
     "description": "Default nodes for Griptape Nodes.",
     "library_version": "0.1.0",
     "engine_version": "0.1.0",
-    "tags": [
-      "Griptape",
-      "AI"
-    ]
+    "tags": ["Griptape", "AI"]
   },
   "categories": [
     {
@@ -138,6 +135,14 @@
         "title": "Utility",
         "description": "Utility nodes like save, etc., etc.",
         "icon": "Cog"
+      }
+    },
+    {
+      "workflows": {
+        "color": "border-gray-500",
+        "title": "Workflows",
+        "description": "Nodes for executing Workflows.",
+        "icon": "Workflow"
       }
     }
   ],
@@ -590,6 +595,15 @@
         "category": "convert",
         "description": "AgentToTool node.",
         "display_name": "Agent To Tool"
+      }
+    },
+    {
+      "class_name": "PublishedWorkflow",
+      "file_path": "griptape_nodes_library/workflows/published_workflow.py",
+      "metadata": {
+        "category": "workflows",
+        "description": "PublishedWorkflow node.",
+        "display_name": "Published Workflow"
       }
     }
   ],
