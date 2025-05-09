@@ -341,7 +341,7 @@ def _update_self() -> None:
 
 def _sync_assets() -> None:
     """Download and fully replace the Griptape Nodes assets directory."""
-    install_source = __get_install_source()
+    install_source, _ = __get_install_source()
     # Unless we're installed from PyPi, grab assets from the 'latest' tag
     if install_source == "pypi":
         version = __get_current_version()
