@@ -13,6 +13,7 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import ActionChunkEvent, FinishStructureRunEvent, StartStructureRunEvent, TextChunkEvent
 from griptape.structures import Structure
 from griptape.structures.agent import Agent as GtAgent
+from griptape.tools.base_tool import BaseTool
 from jinja2 import Template
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
@@ -445,10 +446,20 @@ class Agent(ControlNode):
             self.append_value_to_parameter("logs", f"[Model config]: {prompt_model_settings}\n")
 
         # Get any tools
+        # Get any tools
         # tools = self.get_parameter_value("tools")  # noqa: ERA001
-        tools = [tool for tool in params.get("tools", []) if tool]
-        if include_details and tools:
-            self.append_value_to_parameter("logs", f"[Tools]: {', '.join([tool.name for tool in tools])}\n")
+        tool_list = self.get_parameter_value("tools")
+        tools = []
+        if tool_list:
+            for tool in tool_list:
+                if isinstance(tool, dict):
+                    logger.info(f"Tool is a dict: {tool}")
+                    tools.append(BaseTool.from_dict(tool))
+                if isinstance(tool, BaseTool):
+                    tools.append(tool)
+        # tools = [tool for tool in params.get("tools", []) if tool]
+        # if include_details and tools:
+        #     self.append_value_to_parameter("logs", f"[Tools]: {', '.join([tool.name for tool in tools])}\n")
 
         # Get any rulesets
         # rulesets = self.get_parameter_value("rulesets")  # noqa: ERA001
