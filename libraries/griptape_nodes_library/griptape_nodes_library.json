@@ -6,7 +6,10 @@
     "description": "Default nodes for Griptape Nodes.",
     "library_version": "0.1.0",
     "engine_version": "0.1.0",
-    "tags": ["Griptape", "AI"]
+    "tags": [
+      "Griptape",
+      "AI"
+    ]
   },
   "categories": [
     {
@@ -328,15 +331,6 @@
       }
     },
     {
-      "class_name": "DuckDuckGo",
-      "file_path": "griptape_nodes_library/config/web_search/web_search_drivers.py",
-      "metadata": {
-        "category": "config/web_search",
-        "description": "DuckDuckGo node.",
-        "display_name": "Duck Duck Go"
-      }
-    },
-    {
       "class_name": "GenerateImage",
       "file_path": "griptape_nodes_library/image/create_image.py",
       "metadata": {
@@ -541,15 +535,6 @@
         "category": "tools",
         "description": "Combine tools to give an agent a more complex set of tools.",
         "display_name": "Tool List"
-      }
-    },
-    {
-      "class_name": "WebSearch",
-      "file_path": "griptape_nodes_library/tools/web_search_tool.py",
-      "metadata": {
-        "category": "tools",
-        "description": "WebSearch node.",
-        "display_name": "Web Search"
       }
     },
     {
