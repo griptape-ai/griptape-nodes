@@ -127,6 +127,24 @@ class FluxPipelineParameters:
                 tooltip="num_inference_steps",
             )
         )
+        # self._node.add_parameter(
+        #     Parameter(
+        #         name="sigmas",
+        #         input_types=["list[float]", "None"],
+        #         type="list[float]",
+        #         allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
+        #         tooltip="sigmas",
+        #     )
+        # )
+        self._node.add_parameter(
+            Parameter(
+                name="sigmas",
+                input_types=["str", "list[float]", "None"],
+                type="str",
+                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
+                tooltip="sigmas",
+            )
+        )
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/841
         self._node.add_parameter(
             Parameter(
@@ -171,6 +189,13 @@ class FluxPipelineParameters:
         self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
 
+    def get_sigmas(self) -> list[float] | None:
+        sigmas = self._node.get_parameter_value("sigmas")
+        if isinstance(sigmas, str):
+            return [float(sigma) for sigma in sigmas.split(",")]
+        return sigmas
+
+
     def get_pipe_kwargs(self) -> dict:
         prompt = self._node.parameter_values["prompt"]
         prompt_2 = self._node.parameter_values.get("prompt_2", prompt)
@@ -187,6 +212,33 @@ class FluxPipelineParameters:
         if seed is not None:
             generator = generator.manual_seed(seed)
 
+        sigmas = self.get_sigmas()
+        num_inference_steps = num_inference_steps if sigmas is None else len(sigmas)
+
+
+        # num_inference_steps = 4, sigmas = None -- (input)
+        # sigmas: [1.   0.75 0.5  0.25]
+        # mu: 1.15
+        # timesteps: tensor([1000.,  750.,  500.,  250.], device='mps:0')
+
+        # num_inference_steps = 4, sigmas = 1,0.75,0.5,0.25 -- (input)
+        # sigmas: [1.   0.75 0.5  0.25]
+        # mu: 1.15
+        # timesteps: tensor([1000.,  750.,  500.,  250.], device='mps:0')
+
+        # num_inference_steps = 4, sigmas = 1,0.9,0.3,0.15 -- (input)
+        # sigmas: [1.0, 0.9, 0.3, 0.15]
+        # mu: 1.15
+        # timesteps: tensor([1000.,  900.,  300.,  150.], device='mps:0')
+
+        # sigmas: [1.0, 0.9, 0.8, 0.7]
+        # mu: 1.15
+        # timesteps: tensor([1000.,  900.,  800.,  700.], device='mps:0')
+        # num_inference_steps: 4
+
+
+
+
         return {
             "prompt": prompt,
             "prompt_2": prompt_2,
@@ -196,6 +248,7 @@ class FluxPipelineParameters:
             "width": width,
             "height": height,
             "num_inference_steps": num_inference_steps,
+            "sigmas": sigmas,
             "guidance_scale": guidance_scale,
             "generator": generator,
         }

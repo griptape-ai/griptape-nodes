@@ -200,7 +200,7 @@ class TilingSPAN(ControlNode):
         tile_size = min(largest_reasonable_tile_size, max_tile_size)
 
         self.log_params.append_to_logs("Preparing models...\n")
-        with self._append_stdout_to_logs():
+        with self.log_params.append_logs_to_logs(logger):
             pipe = self._get_pipe(repo, revision, filename)
 
         def wrapped_pipe(tile: Image, *_) -> Image:
@@ -227,13 +227,4 @@ class TilingSPAN(ControlNode):
             callback_on_tile_end=callback_on_tile_end,
         )
         self.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")
-        self.set_parameter_value("output_image", pil_to_image_artifact(output_image_pil))
         self.parameter_output_values["output_image"] = pil_to_image_artifact(output_image_pil)
-
-    @contextlib.contextmanager
-    def _append_stdout_to_logs(self) -> Iterator[None]:
-        def callback(data: str) -> None:
-            self.log_params.append_to_logs(data)
-
-        with StdoutCapture(callback):
-            yield
