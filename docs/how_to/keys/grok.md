@@ -1,10 +1,10 @@
-# How to get and use a Grok.ai API Key
+# How to get and use an xAI Grok API key
 
-Grok is a service that provides models that you can use via the GrokPrompt config node. To make use of these, however, you'll need to have a Grok account, and generate an API key. It's worth noting as well, that Grok is a paid service, and to make use of it, you'll need to set up billing details on their website.
+Grok is a family of Large Language Models (LLMs) developed by xAI. You can access these models via the GrokPrompt config node. To make use of these, however, you'll need to have an XAI account, and generate an API key. It's worth noting as well, that xAI is a paid service, and to make use of it, you'll need to set up billing details on their website.
 
 ## Account and API Key Creation
 
-Before you can get API keys for your Grok.ai account, you'll _need_ a Grok.ai account. To begin, head to [https://grok.ai](https://grok.ai)
+Before you can get API keys for your xAI account, you'll _need_ a xAI account. To begin, head to [https://x.ai](https://x.ai)
 
 <p align="center">
     <img src="../assets/grok_00_main_page.png" alt="Grok AI" width="500"/>
@@ -14,7 +14,7 @@ Before you can get API keys for your Grok.ai account, you'll _need_ a Grok.ai ac
 
     If you already have an account, go ahead and skip ahead to [Step 2](#2-set-up-billing)
 
-### 1. Create a Grok account
+### 1. Create a xAI account
 
 1. Click on the console login option, or navigate to [https://accounts.x.ai/sign-up](https://accounts.x.ai/sign-up)
 
@@ -32,9 +32,9 @@ Before you can get API keys for your Grok.ai account, you'll _need_ a Grok.ai ac
 
 !!! warning "Billing Required"
 
-    Before using Grok models with Griptape Nodes, be aware that Grok.ai _requires_ billing information to be set up. Without this step, the models won't be available for use in your Nodes.
+    Before using xAI models with Griptape Nodes, be aware that xAI _requires_ billing information to be set up. Without this step, the models won't be available for use in your Nodes.
 
-    If you attempt to run Nodes using Grok without completing this billing setup, your workflows will fail as the service will reject the account credentials.
+    If you attempt to run Nodes using xAI without completing this billing setup, your workflows will fail as the service will reject the account credentials.
 
 <p align="center">
     <img src="../assets/grok_03_billing.png" alt="Billing" width="600"/>
@@ -76,7 +76,7 @@ Before you can get API keys for your Grok.ai account, you'll _need_ a Grok.ai ac
 
 !!! info "Overview"
 
-    Now that you've set up your Grok account, you need to configure Griptape Nodes to use your API key. This process is straightforward.
+    Now that you've set up your xAI account, you need to configure Griptape Nodes to use your API key. This process is straightforward.
 
 ### 1. Open the Griptape Nodes Settings Menu
 
@@ -90,7 +90,7 @@ Before you can get API keys for your Grok.ai account, you'll _need_ a Grok.ai ac
     <img src="../assets/gtn_settings_menu.png" alt="Settings Menu" width="500"/>
     </p>
 
-### 2. Add your Grok.ai API Key in API Keys & Secrets
+### 2. Add your xAI API Key in API Keys & Secrets
 
 1. In the Configuration Editor, click on **API Keys and Secrets** on the left
 1. Scroll down to the **GROK_API_KEY** field
