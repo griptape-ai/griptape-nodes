@@ -159,6 +159,8 @@ class CompleteState(State):
                 )
             )
         logger.info("Flow is complete.")
+        # Set the end node. This is useful for us later.
+        context.flow.end_node = context.current_node
         return None
 
     @staticmethod

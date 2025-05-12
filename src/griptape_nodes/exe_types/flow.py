@@ -35,6 +35,8 @@ class ControlFlow:
     control_flow_machine: ControlFlowMachine
     single_node_resolution: bool
     flow_queue: Queue[BaseNode]
+    start_node: BaseNode | None
+    end_node: BaseNode | None
 
     def __init__(self) -> None:
         self.connections = Connections()
@@ -42,6 +44,8 @@ class ControlFlow:
         self.control_flow_machine = ControlFlowMachine(self)
         self.single_node_resolution = False
         self.flow_queue = Queue()
+        self.start_node = None
+        self.end_node = None
 
     def add_node(self, node: BaseNode) -> None:
         self.nodes[node.name] = node
@@ -96,7 +100,8 @@ class ControlFlow:
                 errormsg = "No Flow exists. You must create at least one control connection."
                 raise RuntimeError(errormsg)
             start_node = self.flow_queue.get()
-
+        #Set the start node. Useful for later.
+        self.start_node = start_node
         try:
             self.control_flow_machine.start_flow(start_node, debug_mode)
             self.flow_queue.task_done()
