@@ -27,7 +27,6 @@ Use this node when you want to:
 
 - **model**: The model to use. Default is "grok-3-beta", choices are "grok-3-beta", "grok-3-fast-beta", "grok-3-mini-beta", "grok-3-mini-fast-beta", "grok-2-vision-1212"
 - **top_p**: Controls diversity of outputs (default: 0.9)
-- **model**: The model to use (default is "claude-3-7-sonnet-latest")
 - **stream**: Whether to receive responses as they're generated (true) or all at once (false)
 - **temperature**: Controls randomness in responses (higher values = more creative, lower = more focused)
 - **max_attempts_on_fail**: How many times to retry if there's an error
