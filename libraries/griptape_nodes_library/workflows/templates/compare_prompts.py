@@ -1,17 +1,5 @@
 from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd  # noqa: N813
 
-# BOOTSTRAP BEGIN
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileRequest
-
-load_lib_request = RegisterLibraryFromFileRequest(
-    file_path="/Users/jasonosipa/.local/share/griptape_nodes/libraries/griptape_nodes_library/griptape_nodes_library.json",
-    load_as_default_library=True,
-)
-load_lib_result = GriptapeNodes.handle_request(load_lib_request)
-GriptapeNodes.ContextManager().push_workflow("compare_prompts")
-# BOOTSTRAP END
-
 # Create flows
 cmd.create_flow(flow_name="compare_prompts")
 
@@ -31,8 +19,6 @@ cmd.create_node(
     node_name="detail_prompt",
     metadata={"position": {"x": -650, "y": 600}, "size": {"width": 650, "height": 330}},
 )
-
-
 cmd.create_node(node_type="TextInput", node_name="basic_prompt", metadata={"position": {"x": -500, "y": 300}})
 cmd.create_node(node_type="MergeTexts", node_name="assemble_prompt", metadata={"position": {"x": 100, "y": 600}})
 cmd.create_node(node_type="GenerateImage", node_name="basic_image", metadata={"position": {"x": 100, "y": -50}})
