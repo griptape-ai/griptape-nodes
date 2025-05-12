@@ -23,7 +23,7 @@ class IfElse(BaseNode):
         self.add_parameter(
             Parameter(
                 name="evaluate",
-                tooltip="Evalutes where to go",
+                tooltip="Evaluates where to go",
                 input_types=["bool", "int", "str"],
                 output_type="bool",
                 type="bool",
