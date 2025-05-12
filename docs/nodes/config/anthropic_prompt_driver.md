@@ -27,12 +27,12 @@ Use this node when you want to:
 - **max_attempts_on_fail**: How many times to retry if there's an error
 - **use_native_tools**: Whether to use Anthropic's built-in tools
 - **max_tokens**: Maximum length of responses
-- **min_p**: Controls diversity of outputs (similar to temperature)
+- **top_p**: Controls diversity of outputs (similar to temperature)
 - **top_k**: Controls focus on most likely tokens
 
 ### Outputs
 
-- **driver**: The configured Anthropic driver that other nodes can use
+- **prompt_model_config**: The configured Anthropic driver that other nodes can use
 
 ## Example
 
