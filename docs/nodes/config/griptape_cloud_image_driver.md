@@ -20,8 +20,10 @@ Use this node when you want to:
 
 ### Parameters
 
-- **image_generation_model**: The model to use (default is "dall-e-3")
-- **size**: The size of images to generate (default is "1024x1024")
+- **model**: The model to use (default is "dall-e-3")
+- **image_size**: The size of images to generate (default is "1024x1024")
+- **style**: natural or vivid. Natural creates photorealistic images with natural lighting and textures, while vivid creates images with enhanced colors, contrast, and more dramatic compositions
+- **quality**: Select the quality for image generation. Standard or HD.
 
 ### Outputs
 
@@ -41,8 +43,3 @@ Imagine you want to create images using Griptape Cloud:
 - You need a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY` (this should be automagic with your being in Griptape Nodes at all!)
 - The node will automatically adjust image sizes based on model choice
 - It should be noted, this is the default image_model_config for the GenerateImage node, and in fact should have no effect if plugged into that node.
-
-## Common Issues
-
-- **Connection Errors**: Check your internet connection and API key validity
-- **Invalid Size**: The node will adjust sizes to what the model supports, but it's best to select a compatible size
