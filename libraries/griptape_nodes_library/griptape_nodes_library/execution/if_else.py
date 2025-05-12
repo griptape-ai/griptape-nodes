@@ -29,7 +29,7 @@ class IfElse(BaseNode):
                 input_types=["bool", "int", "str"],
                 output_type="bool",
                 type="bool",
-                default_value=True,
+                default_value=False,
             )
         )
 
