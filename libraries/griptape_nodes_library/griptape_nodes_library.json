@@ -610,6 +610,15 @@
       }
     },
     {
+      "class_name": "OutputSelector",
+      "file_path": "griptape_nodes_library/execution/select_output.py",
+      "metadata": {
+        "category": "execution",
+        "description": "OutputSelector node.",
+        "display_name": "OutputSelector"
+      }
+    },
+    {
       "class_name": "AgentToTool",
       "file_path": "griptape_nodes_library/convert/agent_to_tool.py",
       "metadata": {
