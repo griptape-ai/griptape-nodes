@@ -24,11 +24,10 @@ Use this node when you want to:
 - **model**: The model to use (default is "dall-e-3")
 - **image_size**: The size of images to generate (default is "1024x1024")
 - **style**: natural or vivid. Natural creates photorealistic images with natural lighting and textures, while vivid creates images with enhanced colors, contrast, and more dramatic compositions
-- **quality**: Select the quality for image generation.  Standard or HD.
+- **quality**: Select the quality for image generation. Standard or HD.
 - **background**: Select the background for image generation
 - **moderation**: Standard or strict, regarding filtering for harmful or offensice content
 - **output_format**: png, jpeg
-
 
 ### Outputs
 

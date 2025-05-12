@@ -52,9 +52,3 @@ Things to try:
 - The default model is "gpt-4o"
 - The min_p parameter is converted to top_p internally (top_p = 1 - min_p)
 - Unlike some other drivers, OpenAI doesn't support the top_k parameter
-
-## Common Issues
-
-- **Missing API Key**: Make sure your OpenAI API key is properly set up
-- **Connection Errors**: Check your internet connection and API key validity
-- **Invalid Model**: Make sure you're using a model name that OpenAI supports
