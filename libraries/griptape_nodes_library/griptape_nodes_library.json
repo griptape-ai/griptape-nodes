@@ -6,7 +6,10 @@
     "description": "Default nodes for Griptape Nodes.",
     "library_version": "0.1.0",
     "engine_version": "0.1.0",
-    "tags": ["Griptape", "AI"]
+    "tags": [
+      "Griptape",
+      "AI"
+    ]
   },
   "categories": [
     {
@@ -595,6 +598,15 @@
         "category": "execution",
         "description": "Reroute node.",
         "display_name": "Reroute"
+      }
+    },
+    {
+      "class_name": "IfElse",
+      "file_path": "griptape_nodes_library/execution/if_else.py",
+      "metadata": {
+        "category": "execution",
+        "description": "IfElse node.",
+        "display_name": "IfElse"
       }
     },
     {
