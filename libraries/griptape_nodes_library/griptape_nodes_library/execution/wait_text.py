@@ -5,7 +5,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import ControlNode, NodeResolutionState
-from griptape_nodes.retained_mode.events.execution_events import ContinueExecutionStepRequest, SingleExecutionStepRequest
+from griptape_nodes.retained_mode.events.execution_events import SingleExecutionStepRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
