@@ -1,32 +1,32 @@
 """Griptape Nodes package."""
-
 # ruff: noqa: S603, S607
-import argparse
-import importlib.metadata
-import json
-import shutil
-import sys
-import tarfile
-import tempfile
-import webbrowser
-from pathlib import Path
-from typing import Literal
 
-import httpx
-from dotenv import load_dotenv
 from rich.console import Console
-from rich.panel import Panel
-from rich.progress import Progress
-from rich.prompt import Confirm, Prompt
-from xdg_base_dirs import xdg_config_home, xdg_data_home
-
-from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 console = Console()
 
 with console.status("Loading Griptape Nodes...") as status:
+    import argparse
+    import importlib.metadata
+    import json
+    import shutil
+    import sys
+    import tarfile
+    import tempfile
+    import webbrowser
+    from pathlib import Path
+    from typing import Literal
+
+    import httpx
+    from dotenv import load_dotenv
+    from rich.panel import Panel
+    from rich.progress import Progress
+    from rich.prompt import Confirm, Prompt
+    from xdg_base_dirs import xdg_config_home, xdg_data_home
+
     from griptape_nodes.app import start_app
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+    from griptape_nodes.retained_mode.managers.os_manager import OSManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
