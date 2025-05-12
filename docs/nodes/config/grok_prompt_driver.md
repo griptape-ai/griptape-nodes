@@ -1,12 +1,12 @@
 # GrokPrompt
 
-!!! warning "Billing Required for Grok API Usage"
+!!! warning "Billing Required for xAI API Usage"
 
-    Grok requires billing information to be set up before API keys will work. Without completing the billing setup, any nodes using Grok will fail, even with a valid API key. See [this guide](../../how_to/keys/grok.md) for instructions on setting up a Grok account with billing.
+    The GrokPrompt node requires an xAI account and billing information to be set up before xAI API keys will work. Without completing the billing setup, any nodes using xAI will fail, even with a valid API key. See [this guide](../../how_to/keys/grok.md) for instructions on setting up a xAI account with billing.
 
 ## What is it?
 
-The GrokPrompt node sets up a connection to Grok's AI models.
+The GrokPrompt node sets up a connection to xAI's Grok models.
 
 ## When would I use it?
 
@@ -25,7 +25,7 @@ Use this node when you want to:
 
 ### Parameters
 
-- **model**: The model to use (choices: "grok-3-beta", "grok-3-fast-beta", "grok-3-mini-beta", "grok-3-mini-fast-beta", "grok-2-vision-1212")
+- **model**: The model to use. Default is "grok-3-beta", choices are "grok-3-beta", "grok-3-fast-beta", "grok-3-mini-beta", "grok-3-mini-fast-beta", "grok-2-vision-1212"
 - **top_p**: Controls diversity of outputs (default: 0.9)
 - **model**: The model to use (default is "claude-3-7-sonnet-latest")
 - **stream**: Whether to receive responses as they're generated (true) or all at once (false)
@@ -43,7 +43,7 @@ Use this node when you want to:
 To create an agent that uses Grok models with specific settings:
 
 1. Add a GrokPrompt to your workflow
-1. Connect the "driver" output to an Agent's "prompt_driver" input
+1. Connect the **prompt_model_config** output to an Agent's **prompt_model_config** input
 1. Now that agent will use Grok with your custom settings
 
 Things to try:
