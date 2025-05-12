@@ -83,5 +83,8 @@ class OutputSelector(ControlNode):
         if source_parameter != self.get_parameter_by_name("exec_out"):
             self.my_list.input_types = ["Any"]
 
+    # Overloading the BaseNode method. Normally, initialize spotlight creates a linked list of Parameters to traverse down
+    # when evaluating dependencies. However, we don't want this node to traverse backwards if it's receiving one output
+    # from one of two flows (since this would start both connected sets of nodes.) So we return None.
     def initialize_spotlight(self) -> None:
         return None

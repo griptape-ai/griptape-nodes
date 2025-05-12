@@ -7,17 +7,19 @@ from griptape_nodes.exe_types.node_types import BaseNode
 class IfElse(BaseNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
-        self.add_parameter(ControlParameterOutput(tooltip="If-else connection", name="True"))
         self.add_parameter(
-            ControlParameterOutput(
-                tooltip="If-else connection",
-                name="False",
+            ControlParameterInput(
+                tooltip="If-Else Control Input",
+                name="exec_in",
             )
         )
         self.add_parameter(
-            ControlParameterInput(
-                tooltip="If-else connection",
-                name="exec_in",
+            ControlParameterOutput(tooltip="If-else connection to go down if condition is met.", name="Then")
+        )
+        self.add_parameter(
+            ControlParameterOutput(
+                tooltip="If-else connection to go down if condition is not met.",
+                name="Else",
             )
         )
         self.add_parameter(
@@ -38,7 +40,8 @@ class IfElse(BaseNode):
     # Override this method.
     def get_next_control_output(self) -> Parameter | None:
         if "evaluate" not in self.parameter_output_values:
-            return self.get_parameter_by_name("False")
+            self.stop_flow = True
+            return None
         if self.parameter_output_values["evaluate"]:
-            return self.get_parameter_by_name("True")
-        return self.get_parameter_by_name("False")
+            return self.get_parameter_by_name("Then")
+        return self.get_parameter_by_name("Else")
