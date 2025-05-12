@@ -139,12 +139,11 @@ class GriptapeCloudPrompt(BasePrompt):
         response = requests.get(
             CHAT_MODELS_URL,
             headers={"Authorization": f"Bearer {self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)}"},
+            timeout=10,
         )
-        if response.status_code == 200:
+        if response.status_code == 200:  # noqa: PLR2004
             models = response.json()["models"]
-            return [model["model_name"] for model in models], list(filter(lambda x: x["default"], models))[0][
-                "model_name"
-            ]
-        else:
-            # If the request fails, return the default list of models.
-            return MODEL_CHOICES, DEFAULT_MODEL
+            return [model["model_name"] for model in models], next(filter(lambda x: x["default"], models))["model_name"]
+
+        # If the request fails, return the default list of models.
+        return MODEL_CHOICES, DEFAULT_MODEL
