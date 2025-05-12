@@ -30,7 +30,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+          tag: "latest"
         with:
+          tag_name: "$tag"
           generate_release_notes: false
           make_latest: false
           prerelease: true
