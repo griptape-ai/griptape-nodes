@@ -78,6 +78,7 @@ nav:
   - How-To:
       - Making Custom Nodes: how_to/making_custom_nodes.md
       - Making Custom Scripts: how_to/making_custom_scripts.md
+      - Debug Workflows w/Bootstrapper: how_to/debug_workflows_w_bootstrapper.md
       - External Resources:
           - Keys:
               - OpenAI : how_to/keys/openai.md
