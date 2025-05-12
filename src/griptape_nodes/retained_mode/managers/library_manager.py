@@ -637,7 +637,7 @@ class LibraryManager:
 
         package_name = Requirement(request.requirement_specifier).name
 
-        library_path = str(files(package_name).joinpath("griptape_nodes_library.json"))
+        library_path = str(files(package_name).joinpath(request.library_config_name))
 
         register_result = GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(file_path=library_path))
         if isinstance(register_result, RegisterLibraryFromFileResultFailure):

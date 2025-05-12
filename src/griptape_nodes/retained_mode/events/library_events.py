@@ -89,6 +89,7 @@ class RegisterLibraryFromFileResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class RegisterLibraryFromRequirementSpecifierRequest(RequestPayload):
     requirement_specifier: str
+    library_config_name: str = "griptape_nodes_library.json"
 
 
 @dataclass
