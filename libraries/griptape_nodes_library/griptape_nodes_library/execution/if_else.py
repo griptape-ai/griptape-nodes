@@ -14,21 +14,17 @@ class IfElse(BaseNode):
             )
         )
         then_param = ControlParameterOutput(
-                tooltip="If-else connection to go down if condition is met.",
-                name="Then",
-            )
-        then_param.ui_options={"display_name":"Then"}
-        self.add_parameter(
-            then_param
+            tooltip="If-else connection to go down if condition is met.",
+            name="Then",
         )
+        then_param.ui_options = {"display_name": "Then"}
+        self.add_parameter(then_param)
         else_param = ControlParameterOutput(
-                tooltip="If-else connection to go down if condition is not met.",
-                name="Else",
-            )
-        else_param._ui_options={"display_name":"Else"}
-        self.add_parameter(
-            else_param
+            tooltip="If-else connection to go down if condition is not met.",
+            name="Else",
         )
+        else_param._ui_options = {"display_name": "Else"}
+        self.add_parameter(else_param)
         self.add_parameter(
             Parameter(
                 name="evaluate",
