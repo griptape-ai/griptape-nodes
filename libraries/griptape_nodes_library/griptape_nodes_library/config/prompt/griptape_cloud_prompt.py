@@ -19,8 +19,6 @@ BASE_URL = "https://cloud.griptape.ai"
 API_KEY_URL = f"{BASE_URL}/configuration/api-keys"
 CHAT_MODELS_URL = f"{BASE_URL}/api/models?model_type=chat"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
-MODEL_CHOICES = ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4.5-preview", "o1", "o1-mini", "o3-mini"]
-DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
 class GriptapeCloudPrompt(BasePrompt):
