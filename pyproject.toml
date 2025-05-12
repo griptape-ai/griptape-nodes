@@ -12,10 +12,11 @@ dependencies = [
   "httpx>=0.28.0,<1.0.0",
   "websockets>=15.0.1,<16.0.0",
   "tomlkit>=0.13.2",
-  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/833 
+  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/833
   "uv>=0.6.16",
   "fastapi>=0.115.12",
   "uvicorn>=0.34.2",
+  "packaging>=25.0",
 ]
 
 [dependency-groups]
