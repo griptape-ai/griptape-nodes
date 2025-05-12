@@ -122,6 +122,14 @@
       }
     },
     {
+      "config/structure": {
+        "color": "border-lime-500",
+        "title": "Structure",
+        "description": "Structure Run Drivers for Griptape Agents.",
+        "icon": "Truck"
+      }
+    },
+    {
       "config/web_search": {
         "color": "border-lime-500",
         "title": "Drivers",
@@ -334,6 +342,24 @@
         "category": "config/prompt",
         "description": "Node for OpenAi Prompt Driver.",
         "display_name": "Open Ai Prompt"
+      }
+    },
+    {
+      "class_name": "GriptapeCloudStructureRun",
+      "file_path": "griptape_nodes_library/config/structure/griptape_cloud_structure_run_driver.py",
+      "metadata": {
+        "category": "config/structure",
+        "description": "Node for Griptape Cloud Structure Run Driver.",
+        "display_name": "Griptape Cloud Structure Run"
+      }
+    },
+    {
+      "class_name": "LocalStructureRun",
+      "file_path": "griptape_nodes_library/config/structure/local_structure_run_driver.py",
+      "metadata": {
+        "category": "config/structure",
+        "description": "Node for Local Structure Run Driver.",
+        "display_name": "Local Structure Run"
       }
     },
     {
@@ -604,6 +630,15 @@
         "category": "convert",
         "description": "AgentToTool node.",
         "display_name": "Agent To Tool"
+      }
+    },
+    {
+      "class_name": "StructureRun",
+      "file_path": "griptape_nodes_library/tools/structure_run_tool.py",
+      "metadata": {
+        "category": "tools",
+        "description": "StructureRunTool node.",
+        "display_name": "Structure Run Tool"
       }
     },
     {
