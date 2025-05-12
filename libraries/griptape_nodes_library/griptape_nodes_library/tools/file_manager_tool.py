@@ -20,12 +20,12 @@ class FileManager(BaseTool):
         off_prompt = self.parameter_values.get("off_prompt", True)
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        # TODO(jason): Get the workspace directory better
+        # TODO(jason): Get the workspace directory better after https://github.com/griptape-ai/griptape-nodes/issues/1109
         workdir = GriptapeNodes.ConfigManager().get_config_value("workspace_directory")  # noqa: F841
         # Create the tool
         tool = GtFileManagerTool(
             off_prompt=off_prompt,
-            # TODO(jason): Add support for file manager driver
+            # TODO(jason): Add support for file manager driver https://github.com/griptape-ai/griptape-nodes/issues/1106
             # file_manager_driver=LocalFileManagerDriver(workdir=workdir),  # noqa: ERA001
         )
 
