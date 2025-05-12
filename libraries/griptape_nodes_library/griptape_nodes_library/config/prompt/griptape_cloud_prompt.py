@@ -141,10 +141,8 @@ class GriptapeCloudPrompt(BasePrompt):
             headers={"Authorization": f"Bearer {self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)}"},
             timeout=10,
         )
-        try:
-            response.raise_for_status()
-            models = response.json()["models"]
-            return [model["model_name"] for model in models], next(filter(lambda x: x["default"], models))["model_name"]
-
-        except requests.HTTPError:
-            return MODEL_CHOICES, DEFAULT_MODEL
+        response.raise_for_status()
+        models_data = response.json()["models"]
+        models = [model["model_name"] for model in models_data]
+        default_model = next(filter(lambda x: x["default"], models_data))["model_name"]
+        return models, default_model
