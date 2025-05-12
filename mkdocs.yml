@@ -81,6 +81,7 @@ nav:
       - External Resources:
           - Keys:
               - OpenAI : how_to/keys/openai.md
+              - Grok : how_to/keys/grok.md
           - Installs:
               - Hugging Face: how_to/installs/hugging_face.md
 
