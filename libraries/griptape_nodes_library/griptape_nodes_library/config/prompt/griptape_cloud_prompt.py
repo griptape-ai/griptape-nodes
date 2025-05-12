@@ -7,6 +7,7 @@ Griptape Cloud specific model options, requires a Griptape Cloud API key via
 node configuration, and instantiates the `GriptapeCloudPromptDriver`.
 """
 
+import requests
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver as GtGriptapeCloudPromptDriver
 
 from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
@@ -14,7 +15,9 @@ from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 # --- Constants ---
 
 SERVICE = "Griptape"
-API_KEY_URL = "https://cloud.griptape.ai/configuration/api-keys"
+BASE_URL = "https://cloud.griptape.ai"
+API_KEY_URL = f"{BASE_URL}/configuration/api-keys"
+CHAT_MODELS_URL = f"{BASE_URL}/api/models?model_type=chat"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 MODEL_CHOICES = ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4.5-preview", "o1", "o1-mini", "o3-mini"]
 DEFAULT_MODEL = MODEL_CHOICES[0]
@@ -49,7 +52,8 @@ class GriptapeCloudPrompt(BasePrompt):
         # --- Customize Inherited Parameters ---
 
         # Update the 'model' parameter for Griptape Cloud specifics.
-        self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
+        models, default_model = self._list_models()
+        self._update_option_choices(param="model", choices=models, default=default_model)
 
         # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.
         self.remove_parameter_element_by_name("seed")
@@ -120,3 +124,27 @@ class GriptapeCloudPrompt(BasePrompt):
             api_key_env_var=API_KEY_ENV_VAR,
             api_key_url=API_KEY_URL,
         )
+
+    def _list_models(self) -> tuple[list[str], str]:
+        """Returns the list of available models from Griptape Cloud, and the default model.
+
+        This method fetches the list of models from the Griptape Cloud API and
+        returns them. If the API call fails, it falls back to the default list
+        of models defined in the `MODEL_CHOICES` constant.
+
+        Returns:
+            tuple: A tuple containing a list of available model names and the default model name.
+        """
+        # Fetch the list of available models from the Griptape Cloud API.
+        response = requests.get(
+            CHAT_MODELS_URL,
+            headers={"Authorization": f"Bearer {self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)}"},
+        )
+        if response.status_code == 200:
+            models = response.json()["models"]
+            return [model["model_name"] for model in models], list(filter(lambda x: x["default"], models))[0][
+                "model_name"
+            ]
+        else:
+            # If the request fails, return the default list of models.
+            return MODEL_CHOICES, DEFAULT_MODEL
