@@ -69,6 +69,46 @@
       }
     },
     {
+      "image/depth": {
+        "color": "border-purple-500",
+        "title": "image/depth",
+        "description": "",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/edge": {
+        "color": "border-purple-500",
+        "title": "image/edge",
+        "description": "",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/flux": {
+        "color": "border-purple-500",
+        "title": "image/flux",
+        "description": "",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/flux/controlnet": {
+        "color": "border-purple-500",
+        "title": "image/flux/controlnet",
+        "description": "",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/flux/loras": {
+        "color": "border-purple-500",
+        "title": "image/flux/loras",
+        "description": "",
+        "icon": "Image"
+      }
+    },
+    {
       "image/upscale": {
         "color": "border-purple-500",
         "title": "Image/Upscale",
