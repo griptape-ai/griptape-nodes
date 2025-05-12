@@ -6,10 +6,7 @@
     "description": "Default nodes for Griptape Nodes.",
     "library_version": "0.1.0",
     "engine_version": "0.1.0",
-    "tags": [
-      "Griptape",
-      "AI"
-    ]
+    "tags": ["Griptape", "AI"]
   },
   "categories": [
     {
@@ -54,7 +51,7 @@
     },
     {
       "audio": {
-        "color": "border-purple-500",
+        "color": "border-sky-500",
         "title": "Audio",
         "description": "Audio related nodes.",
         "icon": "SpeakerWave"
@@ -139,6 +136,14 @@
         "description": "Utility nodes like save, etc., etc.",
         "icon": "Cog"
       }
+    },
+    {
+      "workflows": {
+        "color": "border-gray-500",
+        "title": "Workflows",
+        "description": "Nodes for executing Workflows.",
+        "icon": "Workflow"
+      }
     }
   ],
   "nodes": [
@@ -149,6 +154,15 @@
         "category": "agents",
         "description": "Agent node.",
         "display_name": "Agent"
+      }
+    },
+    {
+      "class_name": "LoadAudio",
+      "file_path": "griptape_nodes_library/audio/load_audio.py",
+      "metadata": {
+        "category": "audio",
+        "description": "LoadAudio node.",
+        "display_name": "Load Audio"
       }
     },
     {
@@ -590,6 +604,15 @@
         "category": "convert",
         "description": "AgentToTool node.",
         "display_name": "Agent To Tool"
+      }
+    },
+    {
+      "class_name": "PublishedWorkflow",
+      "file_path": "griptape_nodes_library/workflows/published_workflow.py",
+      "metadata": {
+        "category": "workflows",
+        "description": "PublishedWorkflow node.",
+        "display_name": "Published Workflow"
       }
     }
   ],

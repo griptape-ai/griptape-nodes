@@ -22,18 +22,16 @@ Use this node when you want to:
 ### Parameters
 
 - **model**: The OpenAI model to use (default is "gpt-4o")
-- **response_format**: How you want responses formatted (options include "json_object")
-- **seed**: A value to make responses more consistent between runs
 - **stream**: Whether to receive responses as they're generated (true) or all at once (false)
 - **temperature**: Controls randomness in responses (higher values = more creative, lower = more focused)
 - **use_native_tools**: Whether to use OpenAI's built-in tools
 - **max_tokens**: Maximum length of responses
 - **max_attempts_on_fail**: How many times to retry if there's an error
-- **min_p**: Controls diversity of outputs (converted to top_p internally)
+- **top_p**: Controls diversity of outputs (converted to top_p internally)
 
 ### Outputs
 
-- **driver**: The configured OpenAI driver that other nodes can use
+- **prompt_model_config**: The configured OpenAI driver that other nodes can use
 
 ## Example
 
@@ -54,9 +52,3 @@ Things to try:
 - The default model is "gpt-4o"
 - The min_p parameter is converted to top_p internally (top_p = 1 - min_p)
 - Unlike some other drivers, OpenAI doesn't support the top_k parameter
-
-## Common Issues
-
-- **Missing API Key**: Make sure your OpenAI API key is properly set up
-- **Connection Errors**: Check your internet connection and API key validity
-- **Invalid Model**: Make sure you're using a model name that OpenAI supports

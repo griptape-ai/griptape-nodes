@@ -37,7 +37,7 @@ LATEST_TAG = "latest"
 PACKAGE_NAME = "griptape-nodes"
 NODES_APP_URL = "https://nodes.griptape.ai"
 NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/tags/{tag}.tar.gz"
-PYPI_UPDATE_URL = "https://pypi.org/project/{package}/json"
+PYPI_UPDATE_URL = "https://pypi.org/pypi/{package}/json"
 GITHUB_UPDATE_URL = "https://api.github.com/repos/griptape-ai/{package}/git/refs/tags/{revision}"
 
 
@@ -283,11 +283,11 @@ def _get_latest_version(package: str, install_source: str) -> str:
             response = client.get(update_url)
             try:
                 response.raise_for_status()
+                data = response.json()
+                return f"v{data['info']['version']}"
             except httpx.HTTPStatusError as e:
                 console.print(f"[red]Error fetching latest version: {e}[/red]")
                 return __get_current_version()
-            else:
-                return f"v{response.json()['info']['version']}"
     elif install_source == "git":
         # We only install auto updating from the 'latest' tag
         revision = LATEST_TAG
@@ -297,15 +297,14 @@ def _get_latest_version(package: str, install_source: str) -> str:
             response = client.get(update_url)
             try:
                 response.raise_for_status()
-            except httpx.HTTPStatusError as e:
-                console.print(f"[red]Error fetching latest version: {e}[/red]")
-                return __get_current_version()
-            else:
                 # Get the latest commit SHA for the tag, this effectively the latest version of the package
                 data = response.json()
                 if "object" in data and "sha" in data["object"]:
                     return data["object"]["sha"][:7]
                 # Should not happen, but if it does, return the current version
+                return __get_current_version()
+            except httpx.HTTPStatusError as e:
+                console.print(f"[red]Error fetching latest version: {e}[/red]")
                 return __get_current_version()
     else:
         # If the package is installed from a file, just return the current version since the user is likely managing it manually
@@ -342,7 +341,7 @@ def _update_self() -> None:
 
 def _sync_assets() -> None:
     """Download and fully replace the Griptape Nodes assets directory."""
-    install_source = __get_install_source()
+    install_source, _ = __get_install_source()
     # Unless we're installed from PyPi, grab assets from the 'latest' tag
     if install_source == "pypi":
         version = __get_current_version()

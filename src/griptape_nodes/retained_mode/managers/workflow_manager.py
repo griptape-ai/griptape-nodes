@@ -1,31 +1,34 @@
 from __future__ import annotations
 
+import json
 import logging
+import os
 import pkgutil
 import re
+import shutil
+import tempfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, NamedTuple, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
+from urllib.parse import urljoin
 
+import httpx
 import tomlkit
+from dotenv import get_key
 from rich.box import HEAVY_EDGE
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from xdg_base_dirs import xdg_config_home
 
-from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import BaseNode, EndNode, NodeResolutionState, StartNode
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
-from griptape_nodes.node_library.workflow_registry import (
-    WorkflowMetadata,
-    WorkflowRegistry,
-)
-from griptape_nodes.retained_mode.events.app_events import (
-    GetEngineVersionRequest,
-    GetEngineVersionResultSuccess,
-)
+from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowRegistry
+from griptape_nodes.retained_mode.events.app_events import GetEngineVersionRequest, GetEngineVersionResultSuccess
+from griptape_nodes.retained_mode.events.flow_events import GetTopLevelFlowRequest, GetTopLevelFlowResultSuccess
 from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
     GetLibraryMetadataResultSuccess,
@@ -33,12 +36,8 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListRegisteredLibrariesResultSuccess,
     UnloadLibraryFromRegistryRequest,
 )
-from griptape_nodes.retained_mode.events.node_events import (
-    CreateNodeRequest,
-)
-from griptape_nodes.retained_mode.events.object_events import (
-    ClearAllObjectStateRequest,
-)
+from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
+from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
     DeleteWorkflowResultFailure,
@@ -49,6 +48,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     LoadWorkflowMetadata,
     LoadWorkflowMetadataResultFailure,
     LoadWorkflowMetadataResultSuccess,
+    PublishWorkflowRequest,
+    PublishWorkflowResultFailure,
+    PublishWorkflowResultSuccess,
     RegisterWorkflowRequest,
     RegisterWorkflowResultFailure,
     RegisterWorkflowResultSuccess,
@@ -76,8 +78,10 @@ from griptape_nodes.retained_mode.griptape_nodes import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from types import TracebackType
 
+    from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -195,6 +199,10 @@ class WorkflowManager:
             self.on_save_workflow_request,
         )
         event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
+        event_manager.assign_manager_to_request_type(
+            PublishWorkflowRequest,
+            self.on_publish_workflow_request,
+        )
 
     def on_libraries_initialization_complete(self) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
@@ -1035,3 +1043,244 @@ class WorkflowManager:
         details = f"Successfully saved workflow to: {file_path}"
         logger.info(details)
         return SaveWorkflowResultSuccess(file_path=str(file_path))
+
+    def _convert_parameter_to_minimal_dict(self, parameter: Parameter) -> dict[str, Any]:
+        """Converts a parameter to a minimal dictionary for loading up a dynamic, black-box Node."""
+        param_dict = parameter.to_dict()
+        fields_to_include = [
+            "name",
+            "tooltip",
+            "type",
+            "input_types",
+            "output_type",
+            "default_value",
+            "tooltip_as_input",
+            "tooltip_as_property",
+            "tooltip_as_output",
+            "allowed_modes",
+            "converters",
+            "validators",
+            "traits",
+            "ui_options",
+            "settable",
+            "user_defined",
+        ]
+        minimal_dict = {key: param_dict[key] for key in fields_to_include if key in param_dict}
+        return minimal_dict
+
+    def _create_workflow_shape_from_nodes(
+        self, nodes: Sequence[BaseNode], workflow_shape: dict[str, Any], workflow_shape_type: str
+    ) -> dict[str, Any]:
+        """Creates a workflow shape from the nodes.
+
+        This method iterates over a sequence of a certain Node type (input or output)
+        and creates a dictionary representation of the workflow shape. This informs which
+        Parameters can be set for input, and which Parameters are expected as output.
+        """
+        for node in nodes:
+            for param in node.parameters:
+                # The user_defined flag is utilized here since the StartFlow and EndFlow Nodes make use of
+                # ParameterLists, which enable Workflow authors to define their own Parameters as children, and
+                # by default the user_defined flag is set to True for the children. Filtering on that flag keeps
+                # the workflow shape clean and only includes the Parameters that are actually defined/usable by the
+                # Published Workflow.
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1090
+                if param.user_defined:
+                    if node.name in workflow_shape[workflow_shape_type]:
+                        cast("dict", workflow_shape[workflow_shape_type][node.name])[param.name] = (
+                            self._convert_parameter_to_minimal_dict(param)
+                        )
+                    else:
+                        workflow_shape[workflow_shape_type][node.name] = {
+                            param.name: self._convert_parameter_to_minimal_dict(param)
+                        }
+        return workflow_shape
+
+    def _validate_workflow_shape_for_publish(self, workflow_name: str) -> dict[str, Any]:
+        """Validates the workflow shape for publishing.
+
+        Here we gather information about the Workflow's exposed input and output Parameters
+        such that a client invoking the Workflow can understand what values to provide
+        as well as what values to expect back as output.
+        """
+        workflow_shape: dict[str, Any] = {"input": {}, "output": {}}
+
+        flow_manager = GriptapeNodes.FlowManager()
+        result = flow_manager.on_get_top_level_flow_request(GetTopLevelFlowRequest())
+        if result.failed():
+            details = f"Workflow '{workflow_name}' does not have a top-level flow."
+            logger.error(details)
+            raise ValueError(details)
+        flow_name = cast("GetTopLevelFlowResultSuccess", result).flow_name
+        if flow_name is None:
+            details = f"Workflow '{workflow_name}' does not have a top-level flow."
+            logger.error(details)
+            raise ValueError(details)
+
+        control_flow = flow_manager.get_flow_by_name(flow_name)
+        nodes = control_flow.nodes
+
+        start_nodes: list[StartNode] = []
+        end_nodes: list[EndNode] = []
+
+        # First, validate that there are at least one StartNode and one EndNode
+        for node in nodes.values():
+            if isinstance(node, StartNode):
+                start_nodes.append(node)
+            elif isinstance(node, EndNode):
+                end_nodes.append(node)
+        if len(start_nodes) < 1:
+            details = f"Workflow '{workflow_name}' does not have a StartNode."
+            logger.error(details)
+            raise ValueError(details)
+        if len(end_nodes) < 1:
+            details = f"Workflow '{workflow_name}' does not have an EndNode."
+            logger.error(details)
+            raise ValueError(details)
+
+        # Now, we need to gather the input and output parameters for each node type.
+        workflow_shape = self._create_workflow_shape_from_nodes(
+            nodes=start_nodes, workflow_shape=workflow_shape, workflow_shape_type="input"
+        )
+        workflow_shape = self._create_workflow_shape_from_nodes(
+            nodes=end_nodes, workflow_shape=workflow_shape, workflow_shape_type="output"
+        )
+
+        return workflow_shape
+
+    def _package_workflow(self, workflow_name: str) -> str:
+        config_manager = GriptapeNodes.get_instance()._config_manager
+        workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
+
+        engine_version: str = ""
+        engine_version_request = GetEngineVersionRequest()
+        engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
+        if not engine_version_result.succeeded():
+            details = (
+                f"Attempted to publish workflow '{workflow.metadata.name}', but failed getting the engine version."
+            )
+            logger.error(details)
+            raise ValueError(details)
+        engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
+        engine_version = (
+            f"v{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
+        )
+
+        # TODO (https://github.com/griptape-ai/griptape-nodes/issues/951): Libraries
+
+        # Gather the paths to the files we need to copy.
+        root_path = Path(__file__).parent.parent.parent.parent.parent
+        libraries_path = root_path / "libraries"
+        structure_file_path = root_path / "src" / "griptape_nodes" / "bootstrap" / "bootstrap_script.py"
+        structure_config_file_path = root_path / "src" / "griptape_nodes" / "bootstrap" / "structure_config.yaml"
+        env_file_path = config_manager.workspace_path / ".env"
+
+        config = config_manager.user_config
+        config["workspace_directory"] = "/structure"
+
+        # Create a temporary directory to perform the packaging
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_dir_path = Path(tmp_dir)
+            temp_workflow_file_path = tmp_dir_path / "workflow.py"
+            temp_structure_path = tmp_dir_path / "structure.py"
+            config_file_path = tmp_dir_path / "GriptapeNodes" / "griptape_nodes_config.json"
+            init_file_path = tmp_dir_path / "src" / "griptape_nodes" / "__init__.py"
+
+            try:
+                # Copy the workflow file, libraries, and structure files to the temporary directory
+                shutil.copyfile(workflow.file_path, temp_workflow_file_path)
+                shutil.copytree(libraries_path, tmp_dir_path / "libraries")
+                shutil.copyfile(structure_file_path, temp_structure_path)
+                shutil.copyfile(structure_config_file_path, tmp_dir_path / "structure_config.yaml")
+                shutil.copyfile(env_file_path, tmp_dir_path / ".env")
+
+                config_file_path.parent.mkdir(parents=True, exist_ok=True)
+                with config_file_path.open("w") as config_file:
+                    config_file.write(json.dumps(config, indent=4))
+
+                init_file_path.parent.mkdir(parents=True, exist_ok=True)
+                with init_file_path.open("w") as init_file:
+                    init_file.write('"""This is a temporary __init__.py file for the structure."""\n')
+
+                shutil.copyfile(config_file_path, tmp_dir_path / "griptape_nodes_config.json")
+
+            except Exception as e:
+                details = f"Failed to copy files to temporary directory. Error: {e}"
+                logger.error(details)
+                raise
+
+            # Create the requirements.txt file using the correct engine version
+            requirements_file_path = tmp_dir_path / "requirements.txt"
+            with requirements_file_path.open("w") as requirements_file:
+                requirements_file.write(
+                    f"griptape-nodes @ git+https://github.com/griptape-ai/griptape-nodes.git@{engine_version}\n"
+                )
+
+            archive_base_name = config_manager.workspace_path / workflow_name
+            shutil.make_archive(str(archive_base_name), "zip", tmp_dir)
+            return str(archive_base_name) + ".zip"
+
+    def _deploy_workflow_to_cloud(self, package_path: str, input_data: dict) -> Any:
+        # Create http request to upload the package
+        endpoint = urljoin(
+            os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"),
+            "/api/workflows",
+        )
+        api_key = get_key(xdg_config_home() / "griptape_nodes" / ".env", "GT_CLOUD_API_KEY")
+        if not api_key:
+            details = "Failed to get API key from environment variables."
+            logger.error(details)
+            raise ValueError(details)
+
+        with Path(package_path).open("rb") as file:
+            parts = {
+                "publish_workflow_input": (None, json.dumps(input_data)),
+                "file": ("workflow.zip", file.read()),
+            }
+
+        request: httpx.Request = httpx.Request(
+            method="post",
+            url=endpoint,
+            files=parts,
+        )
+        request.headers["Authorization"] = f"Bearer {api_key}"
+        request.headers["Accept"] = "application/json"
+
+        response = None
+        with httpx.Client() as client:
+            try:
+                response = client.send(request)
+                response.raise_for_status()
+                return response.json()
+            except Exception:
+                status_code = response.status_code if response else "Unknown"
+                response_text = response.text if response else "No response text"
+                details = f"Failed to publish workflow. Status code: {status_code}, Response: {response_text}"
+                logger.error(details)
+                raise
+
+    def on_publish_workflow_request(self, request: PublishWorkflowRequest) -> ResultPayload:
+        try:
+            # Get the workflow shape
+            workflow_shape = self._validate_workflow_shape_for_publish(request.workflow_name)
+            logger.info("Workflow shape: %s", workflow_shape)
+
+            # Package the workflow
+            package_path = self._package_workflow(request.workflow_name)
+            logger.info("Workflow packaged to path: %s", package_path)
+
+            # Publish the workflow to the cloud
+            input_data = {
+                "name": request.workflow_name,
+            }
+            input_data.update(workflow_shape)
+            response = self._deploy_workflow_to_cloud(package_path, input_data)
+            logger.info("Workflow '%s' published successfully: %s", request.workflow_name, response)
+
+            return PublishWorkflowResultSuccess(
+                workflow_id=response["id"],
+            )
+        except Exception as e:
+            details = f"Failed to publish workflow '{request.workflow_name}'. Error: {e}"
+            logger.error(details)
+            return PublishWorkflowResultFailure()
