@@ -57,13 +57,14 @@ class GenerateImage(ControlNode):
         )
         self.add_parameter(
             Parameter(
-                name="model",
+                name="image_model",
                 input_types=["str", "Image Generation Driver"],
                 type="str",
                 default_value=DEFAULT_MODEL,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="Select the model you want to use from the available options.",
                 traits={Options(choices=MODEL_CHOICES)},
+                ui_options={"display_name": "image model"},
             )
         )
         self.add_parameter(
@@ -184,7 +185,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
         kwargs = {}
 
         # Driver
-        model_input = self.get_parameter_value("model")
+        model_input = self.get_parameter_value("image_model")
         driver = None
         if isinstance(model_input, BaseImageGenerationDriver):
             driver = model_input
@@ -232,14 +233,14 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             if ParameterMode.PROPERTY in target_parameter.allowed_modes:
                 target_parameter.allowed_modes.remove(ParameterMode.PROPERTY)
 
-        if target_parameter.name == "model" and source_parameter.name in ["image_model_config"]:
+        if target_parameter.name == "image_model" and source_parameter.name in ["image_model_config"]:
             # Check and see if the incoming connection is from a image model config.
             target_parameter._type = source_parameter.type
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
             target_parameter._ui_options["display_name"] = source_parameter.name
 
             self.hide_parameter_by_name("image_size")
-            modified_parameters_set.add("model")
+            modified_parameters_set.add("image_model")
             modified_parameters_set.add("image_size")
 
         return super().after_incoming_connection(
@@ -262,16 +263,16 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             target_parameter.allowed_modes.add(ParameterMode.PROPERTY)
 
         # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter
-        if target_parameter.name == "model":
+        if target_parameter.name == "image_model":
             target_parameter._type = "str"
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             target_parameter.set_default_value(DEFAULT_MODEL)
             target_parameter.default_value = DEFAULT_MODEL
-            target_parameter._ui_options["display_name"] = "model"
-            self.set_parameter_value("model", DEFAULT_MODEL)
+            target_parameter._ui_options["display_name"] = "image_model"
+            self.set_parameter_value("image_model", DEFAULT_MODEL)
             self.show_parameter_by_name("image_size")
 
-            modified_parameters_set.add("model")
+            modified_parameters_set.add("image_model")
             modified_parameters_set.add("image_size")
         return super().after_incoming_connection_removed(
             source_node, source_parameter, target_parameter, modified_parameters_set

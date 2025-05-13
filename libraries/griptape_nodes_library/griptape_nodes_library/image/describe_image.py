@@ -32,17 +32,6 @@ class DescribeImage(ControlNode):
 
         self.add_parameter(
             Parameter(
-                name="agent",
-                type="Agent",
-                output_type="Agent",
-                tooltip="None",
-                default_value=None,
-                allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"label": "An outgoing agent"},
-            )
-        )
-        self.add_parameter(
-            Parameter(
                 name="image",
                 input_types=["ImageUrlArtifact"],
                 type="ImageArtifact",
@@ -64,13 +53,14 @@ class DescribeImage(ControlNode):
                 ui_options={
                     "placeholder_text": "Explain the various aspects of the image you want to describe.",
                     "multiline": True,
-                    "display_name": "Description prompt",
+                    "display_name": "description prompt",
                 },
             ),
         )
+
         self.add_parameter(
             Parameter(
-                name="model",
+                name="prompt_model",
                 input_types=["str", "Prompt Model Config", "Agent"],
                 type="str",
                 output_type="str",
@@ -93,8 +83,19 @@ class DescribeImage(ControlNode):
                 ui_options={
                     "placeholder_text": "The description of the image",
                     "multiline": True,
-                    "display_name": "Image description",
+                    "display_name": "image description",
                 },
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="agent",
+                type="Agent",
+                output_type="Agent",
+                tooltip="None",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"label": "An outgoing agent"},
             )
         )
 
@@ -118,14 +119,14 @@ class DescribeImage(ControlNode):
         target_parameter: Parameter,
         modified_parameters_set: set[str],
     ) -> None:
-        if target_parameter.name == "model" and source_parameter.name in ["prompt_model_config", "agent"]:
+        if target_parameter.name == "prompt_model" and source_parameter.name in ["prompt_model_config", "agent"]:
             # Check and see if the incoming connection is from a prompt model config or an agent.
             target_parameter._type = source_parameter.type
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
             target_parameter._ui_options["display_name"] = source_parameter.ui_options.get(
                 "display_name", source_parameter.name
             )
-            modified_parameters_set.add("model")
+            modified_parameters_set.add("prompt_model")
 
         return super().after_incoming_connection(
             source_node, source_parameter, target_parameter, modified_parameters_set
@@ -139,15 +140,15 @@ class DescribeImage(ControlNode):
         modified_parameters_set: set[str],
     ) -> None:
         # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter
-        if target_parameter.name == "model":
+        if target_parameter.name == "prompt_model":
             target_parameter._type = "str"
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             target_parameter.set_default_value(DEFAULT_MODEL)
             target_parameter.default_value = DEFAULT_MODEL
             target_parameter._ui_options["display_name"] = "prompt model"
-            self.set_parameter_value("model", DEFAULT_MODEL)
+            self.set_parameter_value("prompt_model", DEFAULT_MODEL)
 
-            modified_parameters_set.add("model")
+            modified_parameters_set.add("prompt_model")
         return super().after_incoming_connection_removed(
             source_node, source_parameter, target_parameter, modified_parameters_set
         )
@@ -155,7 +156,7 @@ class DescribeImage(ControlNode):
     def process(self) -> AsyncResult[Structure]:
         # Get the parameters from the node
         params = self.parameter_values
-        model_input = self.get_parameter_value("model")
+        model_input = self.get_parameter_value("prompt_model")
         agent = None
         # If the model input is an Agent, use that.
         #   - Check and make sure the agent is using a PromptTask - if not, we'll swap it
