@@ -619,6 +619,15 @@
       }
     },
     {
+      "class_name": "RepeatNode",
+      "file_path": "griptape_nodes_library/execution/for_loop.py",
+      "metadata": {
+        "category": "execution",
+        "description": "ForLoop node.",
+        "display_name": "ForLoop"
+      }
+    },
+    {
       "class_name": "AgentToTool",
       "file_path": "griptape_nodes_library/convert/agent_to_tool.py",
       "metadata": {
