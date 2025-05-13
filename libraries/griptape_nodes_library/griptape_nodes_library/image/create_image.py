@@ -139,7 +139,8 @@ class GenerateImage(ControlNode):
         params = self.parameter_values
 
         # Validate that we have a prompt.
-        prompt = self.get_parameter_value("prompt")
+        orig_prompt = self.get_parameter_value("prompt")
+
         exception = self.validate_empty_parameter(param="prompt")
         if exception:
             raise exception
@@ -155,6 +156,14 @@ class GenerateImage(ControlNode):
             logger.info(f"Agent Conversation Memory: {agent}")
             agent = GtAgent.from_dict(agent)
 
+        # add some context to the prompt
+        agent.build_context()
+        if agent._context:
+            prompt = f"Previous Context: {agent._context['conversation_memory']}\n{orig_prompt}"
+        else:
+            prompt = orig_prompt
+
+        logger.info(f"Prompt: {prompt}")
         # Check if we have a connection to the prompt parameter
         enhance_prompt = params.get("enhance_prompt", False)
 
@@ -209,8 +218,6 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
         # Set new Image Generation Task
         agent.swap_task(PromptImageGenerationTask(**kwargs))
-        logger.info("New Image Generation Task set.")
-        logger.info(f"Agent: {agent}")
         # Run the agent asynchronously
         self.append_value_to_parameter("logs", "Starting processing image..\n")
         yield lambda: self._create_image(agent, prompt)
@@ -218,7 +225,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
         # Create a false memory for the agent
         agent.insert_false_memory(
-            prompt=prompt, output="I created an image based on your prompt.", tool="GenerateImageTool"
+            prompt=orig_prompt, output="I created an image based on your prompt.", tool="GenerateImageTool"
         )
 
         # Restore the task
