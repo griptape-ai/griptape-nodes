@@ -157,7 +157,7 @@ class GenerateImage(ControlNode):
         # add some context to the prompt
         agent.build_context()
         if agent._context:
-            prompt = f"Previous Conversation: {agent._context['conversation_memory']}\n{orig_prompt}"
+            prompt = f"Previous Conversation: {agent._context['conversation_memory']}\n\nUser: {orig_prompt}"
         else:
             prompt = orig_prompt
 
