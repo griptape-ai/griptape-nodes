@@ -41,7 +41,7 @@ class DescribeImage(ControlNode):
         )
         self.add_parameter(
             Parameter(
-                name="prompt_model",
+                name="model",
                 input_types=["str", "Prompt Model Config"],
                 type="str",
                 output_type="str",
@@ -117,17 +117,17 @@ class DescribeImage(ControlNode):
         modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "agent":
-            self.hide_parameter_by_name("prompt_model")
-            modified_parameters_set.add("prompt_model")
+            self.hide_parameter_by_name("model")
+            modified_parameters_set.add("model")
 
-        if target_parameter.name == "prompt_model" and source_parameter.name in ["prompt_model_config"]:
+        if target_parameter.name == "model" and source_parameter.name in ["prompt_model_config"]:
             # Check and see if the incoming connection is from a prompt model config or an agent.
             target_parameter._type = source_parameter.type
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
             target_parameter._ui_options["display_name"] = source_parameter.ui_options.get(
                 "display_name", source_parameter.name
             )
-            modified_parameters_set.add("prompt_model")
+            modified_parameters_set.add("model")
 
         return super().after_incoming_connection(
             source_node, source_parameter, target_parameter, modified_parameters_set
@@ -141,18 +141,18 @@ class DescribeImage(ControlNode):
         modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "agent":
-            self.show_parameter_by_name("prompt_model")
-            modified_parameters_set.add("prompt_model")
+            self.show_parameter_by_name("model")
+            modified_parameters_set.add("model")
         # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter
-        if target_parameter.name == "prompt_model":
+        if target_parameter.name == "model":
             target_parameter._type = "str"
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             target_parameter.set_default_value(DEFAULT_MODEL)
             target_parameter.default_value = DEFAULT_MODEL
             target_parameter._ui_options["display_name"] = "prompt model"
-            self.set_parameter_value("prompt_model", DEFAULT_MODEL)
+            self.set_parameter_value("model", DEFAULT_MODEL)
 
-            modified_parameters_set.add("prompt_model")
+            modified_parameters_set.add("model")
         return super().after_incoming_connection_removed(
             source_node, source_parameter, target_parameter, modified_parameters_set
         )
@@ -160,7 +160,7 @@ class DescribeImage(ControlNode):
     def process(self) -> AsyncResult[Structure]:
         # Get the parameters from the node
         params = self.parameter_values
-        model_input = self.get_parameter_value("prompt_model")
+        model_input = self.get_parameter_value("model")
         agent = None
         # If the model input is an Agent, use that.
         #   - Check and make sure the agent is using a PromptTask - if not, we'll swap it

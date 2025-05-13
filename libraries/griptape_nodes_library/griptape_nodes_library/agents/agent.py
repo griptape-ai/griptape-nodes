@@ -89,7 +89,7 @@ class Agent(ControlNode):
         # Selection for the Griptape Cloud model.
         self.add_parameter(
             Parameter(
-                name="prompt_model",
+                name="model",
                 input_types=["str", "Prompt Model Config"],
                 default_value=DEFAULT_MODEL,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -187,19 +187,19 @@ class Agent(ControlNode):
     ) -> None:
         # If an existing agent is connected, hide parameters related to creating a new one.
         if target_parameter.name == "agent":
-            params_to_toggle = ["prompt_model", "tools", "rulesets"]
+            params_to_toggle = ["model", "tools", "rulesets"]
             self.hide_parameter_by_name(params_to_toggle)
             for param_name in params_to_toggle:
                 modified_parameters_set.add(param_name)
 
-        if target_parameter.name == "prompt_model" and source_parameter.name in ["prompt_model_config"]:
+        if target_parameter.name == "model" and source_parameter.name in ["prompt_model_config"]:
             # Check and see if the incoming connection is from a prompt model config or an agent.
             target_parameter._type = source_parameter.type
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
             target_parameter._ui_options["display_name"] = source_parameter.ui_options.get(
                 "display_name", source_parameter.name
             )
-            modified_parameters_set.add("prompt_model")
+            modified_parameters_set.add("model")
 
         # If additional context is connected, prevent editing via property panel.
         # NOTE: This is a workaround. Ideally this is done automatically.
@@ -220,19 +220,19 @@ class Agent(ControlNode):
     ) -> None:
         # If the agent connection is removed, show agent creation parameters.
         if target_parameter.name == "agent":
-            params_to_toggle = ["prompt_model", "tools", "rulesets"]
+            params_to_toggle = ["model", "tools", "rulesets"]
             self.show_parameter_by_name(params_to_toggle)
             for param_name in params_to_toggle:
                 modified_parameters_set.add(param_name)
 
-        if target_parameter.name == "prompt_model":
+        if target_parameter.name == "model":
             target_parameter._type = "str"
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             target_parameter.set_default_value(DEFAULT_MODEL)
             target_parameter.default_value = DEFAULT_MODEL
             target_parameter._ui_options["display_name"] = "prompt model"
-            self.set_parameter_value("prompt_model", DEFAULT_MODEL)
-            modified_parameters_set.add("prompt_model")
+            self.set_parameter_value("model", DEFAULT_MODEL)
+            modified_parameters_set.add("model")
 
         # If the additional context connection is removed, make it editable again.
         # NOTE: This is a workaround. Ideally this is done automatically.
@@ -321,7 +321,7 @@ class Agent(ControlNode):
         """
         # Get the parameters from the node
         params = self.parameter_values
-        model_input = self.get_parameter_value("prompt_model")
+        model_input = self.get_parameter_value("model")
         agent = None
         include_details = self.get_parameter_value("include_details")
 
