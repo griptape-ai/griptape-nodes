@@ -229,7 +229,8 @@ def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None 
     explainer = """[bold cyan]Advanced Media Library[/bold cyan]
     Would you like to install the Griptape Nodes Advanced Media Library?
     This node library makes advanced media generation and manipulation nodes available.
-    Installing this library requires additional dependencies to download and install, which can take several minutes.
+    For example, nodes are available for Flux AI image upscaling, or to leverage CUDA for GPU-accelerated image generation.
+    CAVEAT: Installing this library requires additional dependencies to download and install, which can take several minutes.
     The Griptape Nodes Advanced Media Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
     """
     console.print(Panel(explainer, expand=False))
