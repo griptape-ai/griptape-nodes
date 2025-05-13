@@ -16,10 +16,8 @@ def get_error_message(error: str) -> str:
             if isinstance(error_dict, dict) and "error" in error_dict:
                 if "message" in error_dict["error"]:
                     return str(error_dict["error"]["message"])
-                else:
-                    return str(error_dict["error"])
-            else:
-                return str(error_dict)
+                return str(error_dict["error"])
+            return str(error_dict)
     except (SyntaxError, ValueError, KeyError):
         pass
     return error
