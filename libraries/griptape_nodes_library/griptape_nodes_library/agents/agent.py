@@ -13,13 +13,13 @@ from griptape.drivers.prompt.base_prompt_driver import BasePromptDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import ActionChunkEvent, FinishStructureRunEvent, StartStructureRunEvent, TextChunkEvent
 from griptape.structures import Structure
-from griptape.structures.agent import Agent as GtAgent
 from jinja2 import Template
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 # --- Constants ---
@@ -157,7 +157,7 @@ class Agent(ControlNode):
                 default_value="",
                 tooltip="The final text response from the agent.",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"multiline": True, "placeholder_text": "Agent response"},
+                ui_options={"multiline": True, "placeholder_text": "Agent response", "markdown": True},
             )
         )
 
@@ -378,6 +378,8 @@ class Agent(ControlNode):
         if not agent_dict:
             agent = GtAgent(prompt_driver=prompt_driver, tools=tools, rulesets=rulesets)
         else:
+            logger.info(f"[Agent]: {agent_dict}")
+            # If the agent is a dictionary, we want to convert it to an Agent object.
             agent = GtAgent.from_dict(agent_dict)
 
         if prompt and not prompt.isspace():

@@ -4,13 +4,13 @@ from griptape.artifacts import BaseArtifact, ImageUrlArtifact
 from griptape.drivers.image_generation.base_image_generation_driver import BaseImageGenerationDriver
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -147,12 +147,11 @@ class GenerateImage(ControlNode):
         agent = self.get_parameter_value("agent")
         if not agent:
             prompt_driver = GriptapeCloudPromptDriver(
-                model="gpt-4o",
-                api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
+                model="gpt-4o", api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
             )
-            agent = Agent(prompt_driver=prompt_driver)
+            agent = GtAgent(prompt_driver=prompt_driver)
         else:
-            agent = Agent.from_dict(agent)
+            agent = GtAgent.from_dict(agent)
 
         # Check if we have a connection to the prompt parameter
         enhance_prompt = params.get("enhance_prompt", False)
@@ -206,16 +205,24 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
         kwargs["image_generation_driver"] = driver
 
-        # Add the actual image gen *task
-        agent.add_task(PromptImageGenerationTask(**kwargs))
+        # Set new Image Generation Task
+        agent.swap_task(PromptImageGenerationTask(**kwargs))
 
         # Run the agent asynchronously
         self.append_value_to_parameter("logs", "Starting processing image..\n")
         yield lambda: self._create_image(agent, prompt)
         self.append_value_to_parameter("logs", "Finished processing image.\n")
 
-        # Reset the agent
-        agent._tasks = []
+        # Create a false memory for the agent
+        agent.insert_false_memory(
+            prompt="prompt", output="I created an image based on your prompt.", tool="GenerateImageTool"
+        )
+
+        # Restore the task
+        agent.restore_task()
+
+        # Output the agent
+        self.parameter_output_values["agent"] = agent.to_dict()
 
     def after_incoming_connection(
         self,
@@ -278,7 +285,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             source_node, source_parameter, target_parameter, modified_parameters_set
         )
 
-    def _create_image(self, agent: Agent, prompt: BaseArtifact | str) -> None:
+    def _create_image(self, agent: GtAgent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)
         static_url = GriptapeNodes.StaticFilesManager().save_static_file(agent.output.to_bytes(), f"{uuid.uuid4()}.png")
         url_artifact = ImageUrlArtifact(value=static_url)
