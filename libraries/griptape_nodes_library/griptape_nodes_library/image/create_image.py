@@ -218,6 +218,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
         # Set new Image Generation Task
         agent.swap_task(PromptImageGenerationTask(**kwargs))
+
         # Run the agent asynchronously
         self.append_value_to_parameter("logs", "Starting processing image..\n")
         yield lambda: self._create_image(agent, prompt)
