@@ -2,7 +2,6 @@ from griptape.artifacts import TextArtifact
 from griptape.memory.structure import Run
 from griptape.structures import Agent
 from griptape.tasks import BaseTask
-from griptape.tools import BaseTool
 
 
 class GriptapeNodesAgent(Agent):
@@ -21,17 +20,6 @@ class GriptapeNodesAgent(Agent):
                 conversation_memory.append(f"Assistant: {run.output.value}")
         self._context = {"conversation_memory": conversation_memory}
         return self._context
-
-    def swap_tool(self, tool: BaseTool) -> None:
-        # swap the tool with a new one
-        self._orig_tools = self.tools
-        # Replace the task with the new one
-        self.tools = [tool]
-
-    def restore_tool(self) -> None:
-        # restore the original tool
-        if self._orig_tools:
-            self.tools = self._orig_tools
 
     def swap_task(self, task: BaseTask) -> None:
         # swap the task with a new one
