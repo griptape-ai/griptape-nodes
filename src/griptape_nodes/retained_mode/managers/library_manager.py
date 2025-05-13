@@ -9,9 +9,12 @@ import sys
 import sysconfig
 from dataclasses import dataclass, field
 from enum import StrEnum
+from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+import uv
+from packaging.requirements import Requirement
 from pydantic import ValidationError
 from rich.box import HEAVY_EDGE
 from rich.console import Console
@@ -55,6 +58,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromFileResultFailure,
     RegisterLibraryFromFileResultSuccess,
+    RegisterLibraryFromRequirementSpecifierRequest,
+    RegisterLibraryFromRequirementSpecifierResultFailure,
+    RegisterLibraryFromRequirementSpecifierResultSuccess,
     UnloadLibraryFromRegistryRequest,
     UnloadLibraryFromRegistryResultFailure,
     UnloadLibraryFromRegistryResultSuccess,
@@ -109,6 +115,9 @@ class LibraryManager:
         event_manager.assign_manager_to_request_type(
             RegisterLibraryFromFileRequest,
             self.register_library_from_file_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            RegisterLibraryFromRequirementSpecifierRequest, self.register_library_from_requirement_specifier_request
         )
         event_manager.assign_manager_to_request_type(
             ListCategoriesInLibraryRequest,
@@ -616,6 +625,28 @@ class LibraryManager:
 
         return RegisterLibraryFromFileResultSuccess(library_name=library_data.name)
 
+    def register_library_from_requirement_specifier_request(
+        self, request: RegisterLibraryFromRequirementSpecifierRequest
+    ) -> ResultPayload:
+        try:
+            subprocess.run([uv.find_uv_bin(), "pip", "install", request.requirement_specifier], check=True, text=True)  # noqa: S603
+        except subprocess.CalledProcessError as e:
+            details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to {e}"
+            logger.error(details)
+            return RegisterLibraryFromRequirementSpecifierResultFailure()
+
+        package_name = Requirement(request.requirement_specifier).name
+
+        library_path = str(files(package_name).joinpath(request.library_config_name))
+
+        register_result = GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(file_path=library_path))
+        if isinstance(register_result, RegisterLibraryFromFileResultFailure):
+            details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to {register_result}"
+            logger.error(details)
+            return RegisterLibraryFromRequirementSpecifierResultFailure()
+
+        return RegisterLibraryFromRequirementSpecifierResultSuccess(library_name=request.requirement_specifier)
+
     def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
         try:
             LibraryRegistry.unregister_library(library_name=request.library_name)
@@ -880,14 +911,19 @@ class LibraryManager:
 
     def _load_libraries_from_config_category(self, config_category: str, *, load_as_default_library: bool) -> None:
         config_mgr = GriptapeNodes.ConfigManager()
-        libraries_to_register_category = config_mgr.get_config_value(config_category)
+        libraries_to_register_category: list[str] = config_mgr.get_config_value(config_category)
 
         if libraries_to_register_category is not None:
             for library_to_register in libraries_to_register_category:
-                library_load_request = RegisterLibraryFromFileRequest(
-                    file_path=library_to_register,
-                    load_as_default_library=load_as_default_library,
-                )
+                if library_to_register.endswith(".json"):
+                    library_load_request = RegisterLibraryFromFileRequest(
+                        file_path=library_to_register,
+                        load_as_default_library=load_as_default_library,
+                    )
+                else:
+                    library_load_request = RegisterLibraryFromRequirementSpecifierRequest(
+                        requirement_specifier=library_to_register
+                    )
                 GriptapeNodes.handle_request(library_load_request)
 
         # Print 'em all pretty
