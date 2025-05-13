@@ -30,21 +30,21 @@ class DescribeImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        # self.add_parameter(
-        #     Parameter(
-        #         name="agent",
-        #         type="Agent",
-        #         output_type="Agent",
-        #         tooltip="None",
-        #         default_value=None,
-        #         allowed_modes={ParameterMode.OUTPUT},
-        #         ui_options={"label": "An outgoing agent"},
-        #     )
-        # )
+        self.add_parameter(
+            Parameter(
+                name="agent",
+                type="Agent",
+                output_type="Agent",
+                tooltip="None",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"label": "An outgoing agent"},
+            )
+        )
         self.add_parameter(
             Parameter(
                 name="image",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                input_types=["ImageUrlArtifact"],
                 type="ImageArtifact",
                 tooltip="The image you would like to describe",
                 default_value=None,
@@ -122,7 +122,9 @@ class DescribeImage(ControlNode):
             # Check and see if the incoming connection is from a prompt model config or an agent.
             target_parameter._type = source_parameter.type
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
-            target_parameter._ui_options["display_name"] = source_parameter.ui_options["display_name"]
+            target_parameter._ui_options["display_name"] = source_parameter.ui_options.get(
+                "display_name", source_parameter.name
+            )
             modified_parameters_set.add("model")
 
         return super().after_incoming_connection(
@@ -202,3 +204,6 @@ class DescribeImage(ControlNode):
         yield lambda: agent.run([prompt, image_artifact])
         self.parameter_output_values["output"] = agent.output.value
         try_throw_error(agent.output)
+
+        # Set the output value for the agent
+        self.parameter_output_values["agent"] = agent

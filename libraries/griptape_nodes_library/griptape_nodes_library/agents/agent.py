@@ -81,7 +81,7 @@ class Agent(ControlNode):
             Parameter(
                 name="agent",
                 type="Agent",
-                input_types=["Agent", "dict"],
+                input_types=["Agent"],
                 output_type="Agent",
                 tooltip="Create a new agent, or continue a chat with an existing agent.",
                 default_value=None,
