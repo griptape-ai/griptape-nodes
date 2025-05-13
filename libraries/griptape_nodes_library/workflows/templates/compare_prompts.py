@@ -7,27 +7,27 @@ cmd.create_flow(flow_name="compare_prompts")
 cmd.create_node(
     node_type="Note",
     node_name="ReadMe",
-    metadata={"position": {"x": -700, "y": -500}, "size": {"width": 1200, "height": 400}},
+    metadata={"position": {"x": -650, "y": -700}, "size": {"width": 1200, "height": 400}},
 )
 cmd.create_node(
     node_type="Note",
     node_name="NextStep",
-    metadata={"position": {"x": 2400, "y": 650}, "size": {"width": 1100, "height": 200}},
+    metadata={"position": {"x": 1900, "y": 950}, "size": {"width": 1100, "height": 200}},
 )
 cmd.create_node(
     node_type="TextInput",
     node_name="detail_prompt",
-    metadata={"position": {"x": -650, "y": 600}, "size": {"width": 650, "height": 330}},
+    metadata={"position": {"x": -650, "y": 550}, "size": {"width": 650, "height": 330}},
 )
-cmd.create_node(node_type="TextInput", node_name="basic_prompt", metadata={"position": {"x": -500, "y": 300}})
-cmd.create_node(node_type="MergeTexts", node_name="assemble_prompt", metadata={"position": {"x": 100, "y": 600}})
-cmd.create_node(node_type="GenerateImage", node_name="basic_image", metadata={"position": {"x": 100, "y": -50}})
+cmd.create_node(node_type="TextInput", node_name="basic_prompt", metadata={"position": {"x": -650, "y": 200}})
+cmd.create_node(node_type="MergeTexts", node_name="assemble_prompt", metadata={"position": {"x": 100, "y": 550}})
+cmd.create_node(node_type="GenerateImage", node_name="basic_image", metadata={"position": {"x": 1350, "y": -700}})
 cmd.create_node(
-    node_type="GenerateImage", node_name="enhanced_prompt_image", metadata={"position": {"x": 700, "y": 200}}
+    node_type="GenerateImage", node_name="enhanced_prompt_image", metadata={"position": {"x": 1350, "y": 100}}
 )
-cmd.create_node(node_type="Agent", node_name="bespoke_prompt", metadata={"position": {"x": 1300, "y": 200}})
+cmd.create_node(node_type="Agent", node_name="bespoke_prompt", metadata={"position": {"x": 650, "y": 700}})
 cmd.create_node(
-    node_type="GenerateImage", node_name="bespoke_prompt_image", metadata={"position": {"x": 1900, "y": 200}}
+    node_type="GenerateImage", node_name="bespoke_prompt_image", metadata={"position": {"x": 1350, "y": 900}}
 )
 
 # --- Set parameter values ---

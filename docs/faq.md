@@ -38,6 +38,28 @@ If you prefer working in the command line, you can also use:
 gtn config show
 ```
 
+## How do I install the Advanced Media Library after Initial Setup?
+
+If you initially declined to install the Advanced Media Library during setup but now want to add it, you can do so by running:
+
+```bash
+gtn init
+```
+
+This will restart the configuration process. You can press Enter to keep your existing workspace and Griptape Cloud API Key settings. When prompted with:
+
+```
+Register Advanced Media Library? [y/n] (n):
+```
+
+Simply type **y** and press Enter to install the Advanced Media Library.
+
+!!! note
+
+    Some nodes in the Advanced Media Library require specific models to function properly. You will need to install these models separately.
+
+    Refer to each node's documentation to determine which nodes need which models; they each have links to specific requirements.
+
 ## How do I uninstall Griptape Nodes?
 
 Need to part ways with Griptape Nodes? It's a simple goodbye with a single command:

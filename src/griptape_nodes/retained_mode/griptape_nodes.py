@@ -17,14 +17,29 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionResultFailure,
     GetEngineVersionResultSuccess,
 )
-from griptape_nodes.retained_mode.events.base_events import AppPayload, BaseEvent, RequestPayload, ResultPayload
-from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
-from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, DeleteFlowRequest
-from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeRequest, AlterParameterDetailsRequest
+from griptape_nodes.retained_mode.events.base_events import (
+    AppPayload,
+    BaseEvent,
+    RequestPayload,
+    ResultPayload,
+)
+from griptape_nodes.retained_mode.events.connection_events import (
+    CreateConnectionRequest,
+)
+from griptape_nodes.retained_mode.events.flow_events import (
+    CreateFlowRequest,
+    DeleteFlowRequest,
+)
+from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterToNodeRequest,
+    AlterParameterDetailsRequest,
+)
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
-    from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import ArbitraryCodeExecManager
+    from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
+        ArbitraryCodeExecManager,
+    )
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.context_manager import ContextManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -32,10 +47,14 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
     from griptape_nodes.retained_mode.managers.node_manager import NodeManager
     from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
-    from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
+    from griptape_nodes.retained_mode.managers.operation_manager import (
+        OperationDepthManager,
+    )
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-    from griptape_nodes.retained_mode.managers.static_files_manager import StaticFilesManager
+    from griptape_nodes.retained_mode.managers.static_files_manager import (
+        StaticFilesManager,
+    )
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 
@@ -85,7 +104,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _static_files_manager: StaticFilesManager
 
     def __init__(self) -> None:
-        from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import ArbitraryCodeExecManager
+        from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
+            ArbitraryCodeExecManager,
+        )
         from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
         from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -93,11 +114,17 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
         from griptape_nodes.retained_mode.managers.node_manager import NodeManager
         from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
-        from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
+        from griptape_nodes.retained_mode.managers.operation_manager import (
+            OperationDepthManager,
+        )
         from griptape_nodes.retained_mode.managers.os_manager import OSManager
         from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-        from griptape_nodes.retained_mode.managers.static_files_manager import StaticFilesManager
-        from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+        from griptape_nodes.retained_mode.managers.static_files_manager import (
+            StaticFilesManager,
+        )
+        from griptape_nodes.retained_mode.managers.workflow_manager import (
+            WorkflowManager,
+        )
 
         # Initialize only if our managers haven't been created yet
         if not hasattr(self, "_event_manager"):
@@ -134,7 +161,11 @@ class GriptapeNodes(metaclass=SingletonMeta):
         event_mgr = GriptapeNodes.EventManager()
         obj_depth_mgr = GriptapeNodes.OperationDepthManager()
         workflow_mgr = GriptapeNodes.WorkflowManager()
-        return event_mgr.handle_request(request=request, operation_depth_mgr=obj_depth_mgr, workflow_mgr=workflow_mgr)
+        return event_mgr.handle_request(
+            request=request,
+            operation_depth_mgr=obj_depth_mgr,
+            workflow_mgr=workflow_mgr,
+        )
 
     @classmethod
     def broadcast_app_event(cls, app_event: AppPayload) -> None:
@@ -225,7 +256,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
             engine_ver = Version.from_string(engine_version_str)
             if engine_ver:
                 return GetEngineVersionResultSuccess(
-                    major=engine_ver.major, minor=engine_ver.minor, patch=engine_ver.patch
+                    major=engine_ver.major,
+                    minor=engine_ver.minor,
+                    patch=engine_ver.patch,
                 )
             details = f"Attempted to get engine version. Failed because version string '{engine_version_str}' wasn't in expected major.minor.patch format."
             logger.error(details)

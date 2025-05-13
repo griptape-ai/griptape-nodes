@@ -96,7 +96,10 @@ class Agent(ControlNode):
                 tooltip="The main text prompt to send to the agent.",
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True, "placeholder_text": "Talk with the Agent."},
+                ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Talk with the Agent.",
+                },
                 converters=[strip_whitespace],
             )
         )
@@ -452,7 +455,8 @@ class Agent(ControlNode):
         rulesets = [ruleset for ruleset in params.get("rulesets", []) if ruleset]
         if include_details and rulesets:
             self.append_value_to_parameter(
-                "logs", f"\n[Rulesets]: {', '.join([ruleset.name for ruleset in rulesets])}\n"
+                "logs",
+                f"\n[Rulesets]: {', '.join([ruleset.name for ruleset in rulesets])}\n",
             )
 
         # Get the prompt

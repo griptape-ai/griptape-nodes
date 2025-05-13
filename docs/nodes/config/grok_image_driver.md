@@ -21,7 +21,7 @@ Use this node when you want to:
 
 ### Parameters
 
-- **image_generation_model**: The model to use (default is "grok-2-image-1212")
+- **model**: The model to use (default is "grok-2-image-1212")
 
 ### Outputs
 
