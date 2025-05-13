@@ -86,6 +86,18 @@ class Agent(ControlNode):
                 default_value=None,
             )
         )
+        # Selection for the Griptape Cloud model.
+        self.add_parameter(
+            Parameter(
+                name="prompt_model",
+                input_types=["str", "Prompt Model Config"],
+                default_value=DEFAULT_MODEL,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                tooltip="Choose a model, or connect a Prompt Model Configuration",
+                traits={Options(choices=MODEL_CHOICES)},
+                ui_options={"display_name": "prompt model"},
+            )
+        )
         # Main prompt input for the agent.
         self.add_parameter(
             Parameter(
@@ -118,18 +130,6 @@ class Agent(ControlNode):
             )
         )
 
-        # Selection for the Griptape Cloud model.
-        self.add_parameter(
-            Parameter(
-                name="prompt_model",
-                input_types=["str", "Prompt Model Config"],
-                default_value=DEFAULT_MODEL,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                tooltip="Choose a model, or connect a Prompt Model Configuration",
-                traits={Options(choices=MODEL_CHOICES)},
-                ui_options={"display_name": "prompt model"},
-            )
-        )
         self.add_parameter(
             ParameterList(
                 name="tools",

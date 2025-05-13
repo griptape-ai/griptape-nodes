@@ -36,23 +36,11 @@ class GenerateImage(ControlNode):
             Parameter(
                 name="agent",
                 type="Agent",
-                input_types=["Agent", "dict"],
+                input_types=["Agent"],
                 output_type="Agent",
                 tooltip="None",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="prompt",
-                input_types=["str"],
-                output_type="str",
-                type="str",
-                tooltip="None",
-                default_value="",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True, "placeholder_text": "Enter your image generation prompt here."},
             )
         )
         self.add_parameter(
@@ -65,6 +53,18 @@ class GenerateImage(ControlNode):
                 tooltip="Select the model you want to use from the available options.",
                 traits={Options(choices=MODEL_CHOICES)},
                 ui_options={"display_name": "image model"},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="prompt",
+                input_types=["str"],
+                output_type="str",
+                type="str",
+                tooltip="None",
+                default_value="",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"multiline": True, "placeholder_text": "Enter your image generation prompt here."},
             )
         )
         self.add_parameter(

@@ -32,6 +32,28 @@ class DescribeImage(ControlNode):
 
         self.add_parameter(
             Parameter(
+                name="agent",
+                type="Agent",
+                output_type="Agent",
+                tooltip="An agent that can be used to describe the image.",
+                default_value=None,
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="prompt_model",
+                input_types=["str", "Prompt Model Config"],
+                type="str",
+                output_type="str",
+                default_value=DEFAULT_MODEL,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                tooltip="Choose a model, or connect a Prompt Model Configuration or an Agent",
+                traits={Options(choices=MODEL_CHOICES)},
+                ui_options={"display_name": "prompt model"},
+            )
+        )
+        self.add_parameter(
+            Parameter(
                 name="image",
                 input_types=["ImageUrlArtifact"],
                 type="ImageArtifact",
@@ -60,20 +82,6 @@ class DescribeImage(ControlNode):
 
         self.add_parameter(
             Parameter(
-                name="prompt_model",
-                input_types=["str", "Prompt Model Config", "Agent"],
-                type="str",
-                output_type="str",
-                default_value=DEFAULT_MODEL,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                tooltip="Choose a model, or connect a Prompt Model Configuration or an Agent",
-                traits={Options(choices=MODEL_CHOICES)},
-                ui_options={"display_name": "prompt model"},
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
                 name="output",
                 output_type="str",
                 type="str",
@@ -85,17 +93,6 @@ class DescribeImage(ControlNode):
                     "multiline": True,
                     "display_name": "image description",
                 },
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="agent",
-                type="Agent",
-                output_type="Agent",
-                tooltip="None",
-                default_value=None,
-                allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"label": "An outgoing agent"},
             )
         )
 
@@ -119,7 +116,11 @@ class DescribeImage(ControlNode):
         target_parameter: Parameter,
         modified_parameters_set: set[str],
     ) -> None:
-        if target_parameter.name == "prompt_model" and source_parameter.name in ["prompt_model_config", "agent"]:
+        if target_parameter.name == "agent":
+            self.hide_parameter_by_name("prompt_model")
+            modified_parameters_set.add("prompt_model")
+
+        if target_parameter.name == "prompt_model" and source_parameter.name in ["prompt_model_config"]:
             # Check and see if the incoming connection is from a prompt model config or an agent.
             target_parameter._type = source_parameter.type
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
@@ -139,6 +140,9 @@ class DescribeImage(ControlNode):
         target_parameter: Parameter,
         modified_parameters_set: set[str],
     ) -> None:
+        if target_parameter.name == "agent":
+            self.show_parameter_by_name("prompt_model")
+            modified_parameters_set.add("prompt_model")
         # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter
         if target_parameter.name == "prompt_model":
             target_parameter._type = "str"
@@ -171,8 +175,13 @@ class DescribeImage(ControlNode):
             api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
             stream=True,
         )
-
-        if isinstance(model_input, str):
+        agent = self.get_parameter_value("agent")
+        if isinstance(agent, dict):
+            agent = Agent().from_dict(agent)
+            # make sure the agent is using a PromptTask
+            if not isinstance(agent.tasks[0], PromptTask):
+                agent.add_task(PromptTask(prompt_driver=default_prompt_driver))
+        elif isinstance(model_input, str):
             prompt_driver = GriptapeCloudPromptDriver(
                 model=model_input,
                 api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
