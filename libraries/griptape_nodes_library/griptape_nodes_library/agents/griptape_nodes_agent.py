@@ -20,6 +20,7 @@ class GriptapeNodesAgent(Agent):
         # restore the original task
         if self._orig_tasks:
             self.add_tasks(self._orig_tasks)  # type: ignore  # noqa: PGH003
+            self._tasks[0].prompt_driver.stream = True  # type: ignore  # noqa: PGH003
 
     def insert_false_memory(self, prompt: str, output: str, tool: str | None = None) -> None:
         if tool:

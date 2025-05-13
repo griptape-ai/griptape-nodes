@@ -215,7 +215,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
         # Create a false memory for the agent
         agent.insert_false_memory(
-            prompt="prompt", output="I created an image based on your prompt.", tool="GenerateImageTool"
+            prompt=prompt, output="I created an image based on your prompt.", tool="GenerateImageTool"
         )
 
         # Restore the task
