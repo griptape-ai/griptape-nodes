@@ -8,7 +8,7 @@ from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
@@ -152,23 +152,19 @@ class GenerateImage(ControlNode):
             )
             agent = GtAgent(prompt_driver=prompt_driver)
         else:
-            logger.info("Agent provided.")
-            logger.info(f"Agent Conversation Memory: {agent}")
             agent = GtAgent.from_dict(agent)
 
         # add some context to the prompt
         agent.build_context()
         if agent._context:
-            prompt = f"Previous Context: {agent._context['conversation_memory']}\n{orig_prompt}"
+            prompt = f"Previous Conversation: {agent._context['conversation_memory']}\n{orig_prompt}"
         else:
             prompt = orig_prompt
 
-        logger.info(f"Prompt: {prompt}")
         # Check if we have a connection to the prompt parameter
         enhance_prompt = params.get("enhance_prompt", False)
 
         if enhance_prompt:
-            logger.info("Enhancing prompt...")
             self.append_value_to_parameter("logs", "Enhancing prompt...\n")
             # agent.run is a blocking operation that will hold up the rest of the engine.
             # By using `yield lambda`, the engine can run this in the background and resume when it's done.
@@ -189,7 +185,6 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             self.append_value_to_parameter("logs", "Finished enhancing prompt...\n")
             prompt = result.output
         else:
-            logger.info("Prompt enhancement disabled.")
             self.append_value_to_parameter("logs", "Prompt enhancement disabled.\n")
         # Initialize driver kwargs with required parameters
         kwargs = {}
