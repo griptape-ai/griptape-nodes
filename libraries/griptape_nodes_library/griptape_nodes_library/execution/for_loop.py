@@ -14,16 +14,19 @@ from griptape_nodes.retained_mode.events.execution_events import StartFlowReques
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
-class RepeatNode(BaseNode):
-    times: int
+class ForEach(BaseNode):
+    index: int
     sub_flow: ControlFlow | None
+    flow: ControlFlow
     def __init__(
         self,
         name: str,
         metadata: dict[Any, Any] | None = None,
     ) -> None:
         super().__init__(name, metadata)
+        # Set the sub_flow if it exists later
         self.sub_flow = None
+        # This will determine how many times we loop
         self.add_parameter(
             ParameterList(
                 name="for_each",
@@ -33,6 +36,7 @@ class RepeatNode(BaseNode):
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
             )
         )
+        # This is where the output is going to be set
         self.add_parameter(
             ParameterList(
                 name="output",
@@ -43,6 +47,7 @@ class RepeatNode(BaseNode):
                 settable=True
             )
         )
+        # This is the control parameter that loops back to the input control parameter
         self.repeat_parameter = ControlParameterOutput(
                 name="repeat",
                 tooltip="Continue iteration",
@@ -51,67 +56,54 @@ class RepeatNode(BaseNode):
         self.add_parameter(
             self.repeat_parameter
         )
+        # This is the input control parameter that is going to allow an output connection
         self.special_subflow = ControlParameter(
             name="SubFlow_Connection",
             tooltip="Connect to a subflow",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT}
         )
         self.add_parameter(
             self.special_subflow
         )
+        # This is the parameter that finally continues the flow.
         self.continue_parameter = ControlParameterOutput(
             name="Continue_On",
-            tooltip="Continue down flow"
+            tooltip="Continue Flow"
         )
         self.add_parameter(self.continue_parameter)
+        # state for how many times it should be looped.
         self.times = 0
+        # Creates a connection between the input exec_in and the repeat out.
+        #TODO: ask if this works properly in the way I am intending.
+        flow_name = GriptapeNodes.ContextManager().get_current_flow_name()
+        flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+        self.flow = flow
+        self.flow.add_connection(self,self.repeat_parameter,self, self.special_subflow)
+
+        # TODO: Change to be based on list
+        self.index = 0
 
     def process(self) -> None:
-        flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
-        flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
-        exec_in = self.get_parameter_by_name("exec_in")
-        if exec_in is not None and flow is not None:
-            flow.add_connection(self,self.iterate_more,self,exec_in)
-        loop = self.get_parameter_value("looped_input")
-        self.loop = len(loop)
-        # Get the list we are going to loop over. ForEach Loop
-        flow = self.get_parameter_value("flow")
-        if flow is not None:
-            flow = cast("ControlFlow", flow)
-            self.parameter_output_values["list_output"] = []
-            for prompt in loop:
-                start_node_queue = flow.get_start_node_queue()
-                start_node = start_node_queue.queue[0] if start_node_queue is not None and not start_node_queue.empty() else None
-                if start_node is not None:
-                    start_node = cast("ControlNode", start_node)
-                    start_node.set_parameter_value("prompt",prompt)
-                    #yield lambda: self._process(flow=flow)
-                    flow.start_flow(start_node)
-                    while flow.check_for_existing_running_flow():
-                        time.sleep(0.1)
-                    self.loop = self.loop - 1
-                    end_node = flow.end_node
-                    if end_node is not None:
-                        self.parameter_output_values["list_output"].append(end_node.parameter_output_values["output"])
+        # Gets the list of prompts to iterate on!
+        items_to_iterate = self.get_parameter_value("for_each")
+        prompt = items_to_iterate[self.index]
+
+        self.parameter_output_values["list_output"] = []
 
 
+    # Define get_next_control_output to allow for a loop of connections.
     def get_next_control_output(self) -> Parameter | None:
-        while self.times > 0:
+        while self.index < len(self.get_parameter_value("for_each")):
             # Set the state to unresolved so it will run again.
             self.state = NodeResolutionState.UNRESOLVED
             if self.sub_flow:
                 self.sub_flow.unresolve_whole_flow()
+            # Return parameter that links back to itself.
             return self.repeat_parameter
         # Continue on in the main flow
-        return self.get_parameter_by_name("exec_out")
+        # If it's gone through everything, no more loops needed
+        # Reset the index.
+        self.index = 0
+        return self.continue_parameter
 
-
-    # def _process(self, flow:ControlFlow) -> ControlFlow:
-    #     GriptapeNodes.handle_request(StartFlowRequest("SubFlow_1"))
-    #         # Flow then executes. Hooray!
-    #     while flow.check_for_existing_running_flow():
-    #         time.sleep(0.1)
-    #     end_node = flow.end_node
-    #     if end_node is not None:
-    #         self.parameter_output_values["list_output"].append(end_node.parameter_output_values["output"])
-    #     return flow
 

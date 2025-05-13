@@ -619,12 +619,21 @@
       }
     },
     {
-      "class_name": "RepeatNode",
+      "class_name": "Repeat",
+      "file_path": "griptape_nodes_library/execution/repeat.py",
+      "metadata": {
+        "category": "execution",
+        "description": "Repeat node.",
+        "display_name": "Repeat"
+      }
+    },
+    {
+      "class_name": "ForEach",
       "file_path": "griptape_nodes_library/execution/for_loop.py",
       "metadata": {
         "category": "execution",
-        "description": "ForLoop node.",
-        "display_name": "ForLoop"
+        "description": "ForEach node.",
+        "display_name": "ForEach"
       }
     },
     {
