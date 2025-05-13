@@ -27,7 +27,10 @@ from xdg_base_dirs import xdg_config_home
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, NodeResolutionState, StartNode
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowRegistry
-from griptape_nodes.retained_mode.events.app_events import GetEngineVersionRequest, GetEngineVersionResultSuccess
+from griptape_nodes.retained_mode.events.app_events import (
+    GetEngineVersionRequest,
+    GetEngineVersionResultSuccess,
+)
 from griptape_nodes.retained_mode.events.flow_events import GetTopLevelFlowRequest, GetTopLevelFlowResultSuccess
 from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
@@ -999,6 +1002,7 @@ class WorkflowManager:
                     node_libraries_referenced=list(node_libraries_used),
                     creation_date=creation_date,
                     last_modified_date=datetime.now(tz=local_tz),
+                    published_workflow_id=prior_workflow.metadata.published_workflow_id if prior_workflow else None,
                 )
 
                 try:
@@ -1220,28 +1224,83 @@ class WorkflowManager:
             shutil.make_archive(str(archive_base_name), "zip", tmp_dir)
             return str(archive_base_name) + ".zip"
 
-    def _deploy_workflow_to_cloud(self, package_path: str, input_data: dict) -> Any:
-        # Create http request to upload the package
+    def _get_publish_workflow_request(self, base_url: str, files: httpx._types.RequestFiles) -> httpx.Request:
         endpoint = urljoin(
-            os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"),
+            base_url,
             "/api/workflows",
         )
+        return httpx.Request(
+            method="post",
+            url=endpoint,
+            files=files,
+        )
+
+    def _get_update_workflow_request(
+        self, base_url: str, files: httpx._types.RequestFiles, workflow_id: str
+    ) -> httpx.Request:
+        endpoint = urljoin(
+            base_url,
+            f"/api/workflows/{workflow_id}",
+        )
+        return httpx.Request(
+            method="patch",
+            url=endpoint,
+            files=files,
+        )
+
+    def _does_published_workflow_exist(self, api_key: str, base_url: str, workflow_id: str) -> bool:
+        endpoint = urljoin(
+            base_url,
+            f"/api/workflows/{workflow_id}",
+        )
+        request = httpx.Request(
+            method="get",
+            url=endpoint,
+        )
+        request.headers["Authorization"] = f"Bearer {api_key}"
+        request.headers["Accept"] = "application/json"
+
+        with httpx.Client() as client:
+            try:
+                response = client.send(request)
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == httpx.codes.NOT_FOUND:
+                    return False
+                raise
+            else:
+                return True
+
+    def _deploy_workflow_to_cloud(self, workflow_name: str, package_path: str, input_data: dict) -> Any:
+        workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
+        workflow_id: str | None = workflow.metadata.published_workflow_id
+
+        # Create http request to upload the package
+        base_url = os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai")
         api_key = get_key(xdg_config_home() / "griptape_nodes" / ".env", "GT_CLOUD_API_KEY")
         if not api_key:
             details = "Failed to get API key from environment variables."
             logger.error(details)
             raise ValueError(details)
 
+        input_key = "publish_workflow_input" if workflow_id is None else "update_workflow_input"
         with Path(package_path).open("rb") as file:
             parts = {
-                "publish_workflow_input": (None, json.dumps(input_data)),
+                input_key: (None, json.dumps(input_data)),
                 "file": ("workflow.zip", file.read()),
             }
 
-        request: httpx.Request = httpx.Request(
-            method="post",
-            url=endpoint,
-            files=parts,
+        request: httpx.Request = (
+            self._get_update_workflow_request(
+                base_url=base_url,
+                files=parts,
+                workflow_id=workflow_id,
+            )
+            if workflow_id and self._does_published_workflow_exist(api_key, base_url, workflow_id)
+            else self._get_publish_workflow_request(
+                base_url=base_url,
+                files=parts,
+            )
         )
         request.headers["Authorization"] = f"Bearer {api_key}"
         request.headers["Accept"] = "application/json"
@@ -1259,6 +1318,20 @@ class WorkflowManager:
                 logger.error(details)
                 raise
 
+    def _update_workflow_metadata_with_published_id(self, workflow_name: str, published_workflow_id: str) -> None:
+        workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
+        if workflow.metadata.published_workflow_id != published_workflow_id:
+            workflow.metadata.published_workflow_id = published_workflow_id
+
+            file_name = Path(workflow.file_path).name
+            file_name = file_name.replace(".py", "") if workflow.file_path.endswith(".py") else workflow.file_path
+            save_workflow_request = SaveWorkflowRequest(file_name=file_name)
+            save_workflow_result = self.on_save_workflow_request(save_workflow_request)
+            if save_workflow_result.failed():
+                details = f"Failed to update workflow metadata with published ID for workflow '{workflow_name}'."
+                logger.error(details)
+                raise ValueError(details)
+
     def on_publish_workflow_request(self, request: PublishWorkflowRequest) -> ResultPayload:
         try:
             # Get the workflow shape
@@ -1269,13 +1342,21 @@ class WorkflowManager:
             package_path = self._package_workflow(request.workflow_name)
             logger.info("Workflow packaged to path: %s", package_path)
 
-            # Publish the workflow to the cloud
             input_data = {
                 "name": request.workflow_name,
             }
+            session_id = GriptapeNodes.get_session_id()
+            if session_id is not None:
+                input_data["session_id"] = session_id
             input_data.update(workflow_shape)
-            response = self._deploy_workflow_to_cloud(package_path, input_data)
+            response = self._deploy_workflow_to_cloud(request.workflow_name, package_path, input_data)
             logger.info("Workflow '%s' published successfully: %s", request.workflow_name, response)
+
+            self._update_workflow_metadata_with_published_id(
+                workflow_name=request.workflow_name,
+                published_workflow_id=response["id"],
+            )
+            logger.info("Workflow '%s' metadata updated with published ID: %s", request.workflow_name, response["id"])
 
             return PublishWorkflowResultSuccess(
                 workflow_id=response["id"],
