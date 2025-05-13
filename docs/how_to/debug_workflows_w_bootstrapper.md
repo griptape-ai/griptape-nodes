@@ -43,12 +43,12 @@ Update two critical parts of the script:
 
 1. **Set the library path**:
 
-    - In the boostrapping script replace `FILE_PATH = "<library path here>"` with the actual path from your configuration editor
+    - In the bootstrapping script replace `FILE_PATH = "<library path here>"` with the actual path from your configuration editor
     - Example: `FILE_PATH = "/Users/<yourname>/.local/share/griptape_nodes/libraries/griptape_nodes_library/griptape_nodes_library.json"`
 
 1. **Set the flow name**:
 
-    - In the boostrapping script replace `"<flow name from your workflow>"` with the actual flow name from your workflow file
+    - In the bootstrapping script replace `"<flow name from your workflow>"` with the actual flow name from your workflow file
 
     - Look for the flow name in lines near the top that contain `CreateFlowRequest` or `cmd.create_flow`
 
