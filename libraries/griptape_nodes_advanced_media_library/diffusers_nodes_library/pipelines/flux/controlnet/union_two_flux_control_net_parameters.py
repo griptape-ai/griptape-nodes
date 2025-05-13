@@ -4,11 +4,11 @@ from PIL.Image import Image
 from pillow_nodes_library.utils import image_artifact_to_pil
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import BaseNode
 
 
 class UnionTwoFluxControlNetParameters:
-    def __init__(self, node: ControlNode):
+    def __init__(self, node: BaseNode):
         self._node = node
 
     def add_input_parameters(self) -> None:

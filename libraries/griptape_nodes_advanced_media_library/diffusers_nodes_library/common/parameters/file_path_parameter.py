@@ -1,11 +1,11 @@
 from pathlib import Path
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import BaseNode
 
 
 class FilePathParameter:
-    def __init__(self, node: ControlNode, parameter_name: str = "file_path"):
+    def __init__(self, node: BaseNode, parameter_name: str = "file_path"):
         self._node = node
         self._parameter_name = parameter_name
 

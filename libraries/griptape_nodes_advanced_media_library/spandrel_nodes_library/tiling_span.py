@@ -31,8 +31,7 @@ logger = logging.getLogger("spandrel_nodes_library")
 class TilingSPAN(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.category = "image/upscale"
-        self.description = "TilingSPAN node."
+
         repo_file = self.get_repo_id(), self.get_filename()
         self._huggingface_repo_file_parameter = HuggingFaceRepoFileParameter(
             self, repo_files=[repo_file], parameter_name="lora_model"

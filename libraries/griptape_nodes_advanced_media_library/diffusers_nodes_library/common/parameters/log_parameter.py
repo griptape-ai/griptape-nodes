@@ -5,11 +5,11 @@ from collections.abc import Iterator
 
 from diffusers_nodes_library.common.utils.logging_utils import LoggerCapture, StdoutCapture, seconds_to_human_readable
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import BaseNode
 
 
 class LogParameter:
-    def __init__(self, node: ControlNode):
+    def __init__(self, node: BaseNode):
         self._node = node
 
     def add_output_parameters(self) -> None:

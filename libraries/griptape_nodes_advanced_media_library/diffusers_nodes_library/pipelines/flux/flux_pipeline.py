@@ -23,8 +23,6 @@ logger = logging.getLogger("diffusers_nodes_library")
 class FluxPipeline(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.category = "image"
-        self.description = self.__class__.__name__
         self.pipe_params = FluxPipelineParameters(self)
         self.loras_params = FluxLorasParameter(self)
         self.log_params = LogParameter(self)

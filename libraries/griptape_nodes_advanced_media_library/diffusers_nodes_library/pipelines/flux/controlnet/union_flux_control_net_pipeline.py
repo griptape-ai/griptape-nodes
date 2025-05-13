@@ -31,8 +31,6 @@ logger = logging.getLogger("diffusers_nodes_library")
 class UnionFluxControlNetPipeline(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.category = "image"
-        self.description = self.__class__.__name__
         self.flux_params = FluxPipelineParameters(self)
         self.controlnet_revisions_params = HuggingFaceRepoParameter(
             self, ["InstantX/FLUX.1-dev-Controlnet-Union"], "controlnet_model"

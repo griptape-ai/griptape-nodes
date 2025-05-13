@@ -9,13 +9,13 @@ from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[rep
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
 class FluxPipelineParameters:
-    def __init__(self, node: ControlNode):
+    def __init__(self, node: BaseNode):
         self._node = node
         self._huggingface_repo_parameter = HuggingFaceRepoParameter(
             node,

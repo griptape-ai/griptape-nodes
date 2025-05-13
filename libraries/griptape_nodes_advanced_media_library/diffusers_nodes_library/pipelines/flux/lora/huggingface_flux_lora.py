@@ -21,8 +21,6 @@ logger = logging.getLogger("diffusers_nodes_library")
 class HuggingFaceFluxLora(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.category = "image"
-        self.description = self.__class__.__name__
         self.flux_params = FluxPipelineParameters(self)
         repo_file = self.get_repo_id(), self.get_filename()
         self.lora_revisions_params = HuggingFaceRepoFileParameter(

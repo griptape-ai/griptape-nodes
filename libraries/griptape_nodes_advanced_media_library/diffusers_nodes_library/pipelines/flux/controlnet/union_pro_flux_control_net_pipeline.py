@@ -27,8 +27,6 @@ logger = logging.getLogger("diffusers_nodes_library")
 class UnionProFluxControlNetPipeline(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.category = "image"
-        self.description = self.__class__.__name__
         self.flux_params = FluxPipelineParameters(self)
         self.controlnet_revisions_params = HuggingFaceRepoParameter(
             self, ["Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro"], "controlnet_model"

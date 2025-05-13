@@ -38,9 +38,6 @@ class TilingFluxImg2ImgPipeline(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self.category = "image/upscale"
-        self.description = "Generates a new image given an image and text with tiling to support images of any size"
-
         self.flux_params = FluxPipelineParameters(self)
         self.add_parameter(
             Parameter(

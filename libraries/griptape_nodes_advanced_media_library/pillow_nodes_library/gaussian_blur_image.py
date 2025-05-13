@@ -18,9 +18,6 @@ class GaussianBlurImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self.category = "image"
-        self.description = "GaussianBlurImage node."
-
         self.add_parameter(
             Parameter(
                 name="input_image",

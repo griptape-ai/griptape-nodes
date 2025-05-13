@@ -97,9 +97,6 @@ class DepthAnythingForDepthEstimation(ControlNode):
             repo_revision for repo_id in REPO_IDS for repo_revision in list_repo_revisions_in_cache(repo_id)
         ]
 
-        self.category = "image"
-        self.description = "DepthAnythingForDepthEstimation"
-
         self.add_parameter(
             Parameter(
                 name="model",

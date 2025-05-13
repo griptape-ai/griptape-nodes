@@ -15,8 +15,6 @@ logger = logging.getLogger("diffusers_nodes_library")
 class FluxLoraFromFile(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.category = "image"
-        self.description = self.__class__.__name__
         self.flux_params = FluxPipelineParameters(self)
         self.lora_file_path_params = FilePathParameter(self)
         self.lora_weight_and_output_params = FluxLoraParameters(self)

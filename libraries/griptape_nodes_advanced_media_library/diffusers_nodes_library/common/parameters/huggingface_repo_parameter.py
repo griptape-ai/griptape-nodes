@@ -2,7 +2,7 @@ import logging
 
 from diffusers_nodes_library.common.utils.huggingface_utils import list_repo_revisions_in_cache
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -20,7 +20,7 @@ class HuggingFaceRepoParameter:
             logger.exception("Invalid key")
         return parts[0], parts[1][:-1]
 
-    def __init__(self, node: ControlNode, repo_ids: list[str], parameter_name: str = "model"):
+    def __init__(self, node: BaseNode, repo_ids: list[str], parameter_name: str = "model"):
         self._node = node
         self._parameter_name = parameter_name
         self._repo_ids = repo_ids
