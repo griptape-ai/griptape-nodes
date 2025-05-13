@@ -18,9 +18,7 @@ class UnionOneFluxControlNetParameters:
         self._control_mode_by_name["tile"] = 1
         self._control_mode_by_name["depth"] = 2
         self._control_mode_by_name["blur"] = 3
-        self._control_mode_by_name["pose"] = 4
         self._control_mode_by_name["gray"] = 5
-        self._control_mode_by_name["lq"] = 6
 
     def add_input_parameters(self) -> None:
         self._node.add_parameter(
