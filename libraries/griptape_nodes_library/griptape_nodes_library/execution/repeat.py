@@ -84,6 +84,8 @@ class Repeat(BaseNode):
     def get_next_control_output(self) -> Parameter | None:
         while self.index < len(self.get_parameter_value("Prompts")):
             # Return parameter that links back to itself.
+            self.state = NodeResolutionState.RESOLVING
+            #self.make_node_unresolved({NodeResolutionState.RESOLVING, NodeResolutionState.RESOLVED})
             return self.repeat_parameter
         # Continue on in the main flow
         # If it's gone through everything, no more loops needed
