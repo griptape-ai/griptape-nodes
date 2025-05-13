@@ -69,5 +69,5 @@ class FluxControlNetParameters:
             "control_image": [control_image_pil],
             "controlnet_conditioning_scale": [controlnet_conditioning_scale],
             "control_guidance_end": [control_guidance_end],
-            "control_mode": control_mode,  # [control_mode],
+            "control_mode": control_mode,
         }
