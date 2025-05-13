@@ -151,6 +151,8 @@ class GenerateImage(ControlNode):
             )
             agent = GtAgent(prompt_driver=prompt_driver)
         else:
+            logger.info("Agent provided.")
+            logger.info(f"Agent Conversation Memory: {agent}")
             agent = GtAgent.from_dict(agent)
 
         # Check if we have a connection to the prompt parameter
@@ -207,7 +209,8 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
         # Set new Image Generation Task
         agent.swap_task(PromptImageGenerationTask(**kwargs))
-
+        logger.info("New Image Generation Task set.")
+        logger.info(f"Agent: {agent}")
         # Run the agent asynchronously
         self.append_value_to_parameter("logs", "Starting processing image..\n")
         yield lambda: self._create_image(agent, prompt)
