@@ -182,10 +182,9 @@ def _listen_for_api_events() -> None:
     init = False
     endpoint = urljoin(os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/engines/stream")
     nodes_app_url = os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai")
+    logger.info("Listening for events from Nodes API at %s", endpoint)
     while True:
         try:
-            logger.info("Listening for events from Nodes API at %s", endpoint)
-
             with httpx.stream("get", endpoint, auth=__build_authorized_request, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout
                 __check_api_key_validity(response)
 
@@ -212,9 +211,10 @@ def _listen_for_api_events() -> None:
                             except Exception:
                                 logger.exception("Error processing event, skipping.")
 
+        except httpx.RemoteProtocolError as e:
+            logger.debug("Server closed connection, this is expected. Reconnecting... %s", e)
         except Exception as e:
-            details = f"Error while listening for events. Retrying in 2 seconds.: {e}"
-            logger.error(details)
+            logger.error("Error while listening for events. Retrying in 2 seconds... %s", e)
             sleep(2)
 
 
