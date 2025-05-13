@@ -60,7 +60,7 @@ class ConfigManager:
         Args:
             event_manager: The EventManager instance to use for event handling.
         """
-        self.load_user_config()
+        self.load_configs()
 
         self._set_log_level(self.merged_config.get("log_level", logging.INFO))
 
@@ -126,8 +126,11 @@ class ConfigManager:
 
         return [config_file for config_file in possible_config_files if config_file.exists()]
 
-    def load_user_config(self) -> None:
-        """Load user configuration from the config file."""
+    def load_configs(self) -> None:
+        """Load configs from the user config file and the workspace config file.
+
+        Sets the default_config, user_config, workspace_config, and merged_config attributes.
+        """
         # We need to load the user config file first so we can get the workspace directory which may contain a workspace config file.
         # Load the user config file to get the workspace directory.
         self.default_config = Settings().model_dump()
@@ -167,18 +170,13 @@ class ConfigManager:
     def reset_user_config(self) -> None:
         """Reset the user configuration to the default values."""
         USER_CONFIG_PATH.write_text(json.dumps({}, indent=2))
-        self.load_user_config()
+        self.load_configs()
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # We want to ensure that all environment variables from here are pre-filled in the secrets manager.
         env_var_names = self.gather_env_var_names()
         for env_var_name in env_var_names:
-            # Lazy load to avoid circular import
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            if GriptapeNodes.SecretsManager().get_secret(env_var_name, should_error_on_not_found=False) is None:
-                # Set a blank one.
-                GriptapeNodes.SecretsManager().set_secret(env_var_name, "")
+            self._update_secret_from_env_var(env_var_name)
 
     def gather_env_var_names(self) -> list[str]:
         """Gather all environment variable names within the config."""
@@ -193,6 +191,14 @@ class ConfigManager:
             elif isinstance(value, str) and value.startswith("$"):
                 env_var_names.append(value[1:])
         return env_var_names
+
+    def _update_secret_from_env_var(self, env_var_name: str) -> None:
+        # Lazy load to avoid circular import
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        if GriptapeNodes.SecretsManager().get_secret(env_var_name, should_error_on_not_found=False) is None:
+            # Set a blank one.
+            GriptapeNodes.SecretsManager().set_secret(env_var_name, "")
 
     def save_user_workflow_json(self, workflow_file_name: str) -> None:
         config_loc = "app_events.on_app_initialization_complete.workflows_to_register"
@@ -257,7 +263,7 @@ class ConfigManager:
 
         if value is None:
             msg = f"Config key '{key}' not found in config file."
-            logger.error(msg)
+            logger.warning(msg)
             return None
 
         if should_load_env_var_if_detected and isinstance(value, str) and value.startswith("$"):
@@ -267,12 +273,13 @@ class ConfigManager:
 
         return value
 
-    def set_config_value(self, key: str, value: Any) -> None:
+    def set_config_value(self, key: str, value: Any, *, should_set_env_var_if_detected: bool = True) -> None:
         """Set a value in the configuration.
 
         Args:
             key: The configuration key to set. Can use dot notation for nested keys (e.g., 'category.subcategory.key').
             value: The value to associate with the key.
+            should_set_env_var_if_detected: If True, and the value starts with a $, it will be set in the environment variables.
         """
         delta = set_dot_value({}, key, value)
         if key == "log_level":
@@ -282,12 +289,15 @@ class ConfigManager:
         self.user_config = merge_dicts(self.merged_config, delta)
         self._write_user_config_delta(delta)
 
-        # If the key is workspace_directory, we need to fully reload the user config
-        # because the workspace changing may influence the config files we load.
-        # Also need to reload registered workflows.
+        if should_set_env_var_if_detected and isinstance(value, str) and value.startswith("$"):
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            value = GriptapeNodes.SecretsManager().set_secret(value[1:], "")
+
+        # We need to fully reload the user config because we need to regenerate the merged config.
+        # Also eventually need to reload registered workflows.
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/437
-        if key == "workspace_directory":
-            self.load_user_config()
+        self.load_configs()
         logger.debug("Config value '%s' set to '%s'", key, value)
 
     def on_handle_get_config_category_request(self, request: GetConfigCategoryRequest) -> ResultPayload:
@@ -329,6 +339,13 @@ class ConfigManager:
             return SetConfigCategoryResultSuccess()
 
         self.set_config_value(key=request.category, value=request.contents)
+
+        # Update any added env vars (this is dumb)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1022
+        after_env_vars_set = set(self.gather_env_var_names())
+        for after_env_var in after_env_vars_set:
+            self._update_secret_from_env_var(after_env_var)
+
         details = f"Successfully assigned the config dictionary for section '{request.category}'."
         logger.info(details)
         return SetConfigCategoryResultSuccess()
@@ -418,6 +435,12 @@ class ConfigManager:
 
         # Set the new value
         self.set_config_value(key=request.category_and_key, value=request.value)
+
+        # Update any added env vars (this is dumb)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1022
+        after_env_vars_set = set(self.gather_env_var_names())
+        for after_env_var in after_env_vars_set:
+            self._update_secret_from_env_var(after_env_var)
 
         # For container types, indicate the change with a diff
         if isinstance(request.value, (dict, list)):

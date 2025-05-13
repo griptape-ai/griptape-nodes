@@ -161,6 +161,7 @@ class ParameterType:
 class BaseNodeElement:
     element_id: str = field(default_factory=lambda: str(uuid.uuid4().hex))
     element_type: str = field(default_factory=lambda: BaseNodeElement.__name__)
+    name: str = field(default_factory=lambda: str(f"{BaseNodeElement.__name__}_{uuid.uuid4().hex}"))
 
     _children: list[BaseNodeElement] = field(default_factory=list)
     _stack: ClassVar[list[BaseNodeElement]] = []
@@ -203,7 +204,7 @@ class BaseNodeElement:
             {
               "element_id": "container-1",
               "element_type": "ParameterGroup",
-              "group_name": "Group 1",
+              "name": "Group 1",
               "children": [
                 {
                     "element_id": "A",
@@ -245,6 +246,16 @@ class BaseNodeElement:
                 return found
         return None
 
+    def find_element_by_name(self, element_name: str) -> BaseNodeElement | None:
+        # Modified so ParameterGroups also just have name as a field.
+        if self.name == element_name:
+            return self
+        for child in self._children:
+            found = child.find_element_by_name(element_name)
+            if found is not None:
+                return found
+        return None
+
     def find_elements_by_type(self, element_type: type[N], *, find_recursively: bool = True) -> list[N]:
         """Returns a list of child elements that are instances of type specified. Optionally do this recursively."""
         elements: list[N] = []
@@ -266,7 +277,6 @@ class ParameterGroup(BaseNodeElement):
     """UI element for a group of parameters."""
 
     ui_options: dict = field(default_factory=dict)
-    group_name: str
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
@@ -275,7 +285,7 @@ class ParameterGroup(BaseNodeElement):
             {
               "element_id": "container-1",
               "element_type": "ParameterGroup",
-              "group_name": "Group 1",
+              "name": "Group 1",
               "children": [
                 {
                     "element_id": "A",
@@ -289,15 +299,25 @@ class ParameterGroup(BaseNodeElement):
         # Get the parent's version first.
         our_dict = super().to_dict()
         # Add in our deltas.
-        our_dict["group_name"] = self.group_name
+        our_dict["name"] = self.name
         our_dict["ui_options"] = self.ui_options
         return our_dict
+
+    def equals(self, other: ParameterGroup) -> dict:
+        self_dict = {"name": self.name, "ui_options": self.ui_options}
+        other_dict = {"name": other.name, "ui_options": other.ui_options}
+        if self_dict == other_dict:
+            return {}
+        differences = {}
+        for key, self_value in self_dict.items():
+            other_value = other_dict.get(key)
+            if self_value != other_value:
+                differences[key] = other_value
+        return differences
 
 
 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/856
 class ParameterBase(BaseNodeElement, ABC):
-    name: str  # must be unique from other parameters in Node
-
     @property
     @abstractmethod
     def tooltip(self) -> str | list[dict]:
@@ -685,8 +705,8 @@ class Parameter(BaseNodeElement):
 
     # intentionally not overwriting __eq__ because I want to return a dict not true or false
     def equals(self, other: Parameter) -> dict:
-        self_dict = self.__dict__.copy()
-        other_dict = other.__dict__.copy()
+        self_dict = self.to_dict().copy()
+        other_dict = other.to_dict().copy()
         self_dict.pop("next", None)
         self_dict.pop("prev", None)
         self_dict.pop("element_id", None)

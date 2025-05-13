@@ -58,7 +58,7 @@ class AnthropicPrompt(BasePrompt):
         )
 
         # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.
-        self.remove_parameter_by_name("seed")
+        self.remove_parameter_element_by_name("seed")
 
     def process(self) -> None:
         """Processes the node configuration to create an AnthropicPromptDriver.
@@ -108,7 +108,7 @@ class AnthropicPrompt(BasePrompt):
         # Set the output parameter 'prompt_model_config'.
         self.parameter_output_values["prompt_model_config"] = driver
 
-    def validate_node(self) -> list[Exception] | None:
+    def validate_before_workflow_run(self) -> list[Exception] | None:
         """Validates that the Anthropic API key is configured correctly.
 
         Calls the base class helper `_validate_api_key` with Anthropic-specific

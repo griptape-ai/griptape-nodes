@@ -54,7 +54,7 @@
     },
     {
       "audio": {
-        "color": "border-purple-500",
+        "color": "border-sky-500",
         "title": "Audio",
         "description": "Audio related nodes.",
         "icon": "SpeakerWave"
@@ -139,6 +139,14 @@
         "description": "Utility nodes like save, etc., etc.",
         "icon": "Cog"
       }
+    },
+    {
+      "workflows": {
+        "color": "border-gray-500",
+        "title": "Workflows",
+        "description": "Nodes for executing Workflows.",
+        "icon": "Workflow"
+      }
     }
   ],
   "nodes": [
@@ -149,6 +157,15 @@
         "category": "agents",
         "description": "Agent node.",
         "display_name": "Agent"
+      }
+    },
+    {
+      "class_name": "LoadAudio",
+      "file_path": "griptape_nodes_library/audio/load_audio.py",
+      "metadata": {
+        "category": "audio",
+        "description": "LoadAudio node.",
+        "display_name": "Load Audio"
       }
     },
     {
@@ -248,6 +265,15 @@
         "category": "config/image",
         "description": "Node for Griptape Cloud Image Generation Driver.",
         "display_name": "Griptape Cloud Image"
+      }
+    },
+    {
+      "class_name": "GrokImage",
+      "file_path": "griptape_nodes_library/config/image/grok_image_driver.py",
+      "metadata": {
+        "category": "config/image",
+        "description": "Node for Grok Image Generation Driver.",
+        "display_name": "Grok Image"
       }
     },
     {
@@ -575,6 +601,24 @@
       }
     },
     {
+      "class_name": "IfElse",
+      "file_path": "griptape_nodes_library/execution/if_else.py",
+      "metadata": {
+        "category": "execution",
+        "description": "IfElse node.",
+        "display_name": "IfElse"
+      }
+    },
+    {
+      "class_name": "OutputSelector",
+      "file_path": "griptape_nodes_library/execution/select_output.py",
+      "metadata": {
+        "category": "execution",
+        "description": "OutputSelector node.",
+        "display_name": "OutputSelector"
+      }
+    },
+    {
       "class_name": "AgentToTool",
       "file_path": "griptape_nodes_library/convert/agent_to_tool.py",
       "metadata": {
@@ -582,6 +626,22 @@
         "description": "AgentToTool node.",
         "display_name": "Agent To Tool"
       }
+    },
+    {
+      "class_name": "PublishedWorkflow",
+      "file_path": "griptape_nodes_library/workflows/published_workflow.py",
+      "metadata": {
+        "category": "workflows",
+        "description": "PublishedWorkflow node.",
+        "display_name": "Published Workflow"
+      }
     }
-  ]
+  ],
+  "workflows": [
+    "workflows/templates/prompt_an_image.py",
+    "workflows/templates/coordinating_agents.py",
+    "workflows/templates/compare_prompts.py",
+    "workflows/templates/photography_team.py"
+  ],
+  "is_default_library": true
 }

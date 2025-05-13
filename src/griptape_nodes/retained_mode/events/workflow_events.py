@@ -174,3 +174,21 @@ class LoadWorkflowMetadataResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSu
 @PayloadRegistry.register
 class LoadWorkflowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
+
+
+@dataclass
+@PayloadRegistry.register
+class PublishWorkflowRequest(RequestPayload):
+    workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class PublishWorkflowResultSuccess(ResultPayloadSuccess):
+    workflow_id: str
+
+
+@dataclass
+@PayloadRegistry.register
+class PublishWorkflowResultFailure(ResultPayloadFailure):
+    pass

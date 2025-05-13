@@ -14,7 +14,10 @@ def get_error_message(error: str) -> str:
             # ast.literal_eval can safely parse Python literal structures
             error_dict = ast.literal_eval(error_dict)
             if isinstance(error_dict, dict) and "error" in error_dict:
-                return error_dict["error"]["message"]
+                if "message" in error_dict["error"]:
+                    return str(error_dict["error"]["message"])
+                return str(error_dict["error"])
+            return str(error_dict)
     except (SyntaxError, ValueError, KeyError):
         pass
     return error

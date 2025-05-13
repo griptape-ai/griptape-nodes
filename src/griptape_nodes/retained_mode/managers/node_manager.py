@@ -1,6 +1,8 @@
 import logging
 from typing import Any, cast
 
+from griptape.events import EventBus
+
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     Parameter,
@@ -13,6 +15,8 @@ from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
+    ExecutionEvent,
+    ExecutionGriptapeNodeEvent,
     ResultPayload,
     ResultPayloadFailure,
 )
@@ -77,6 +81,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     AlterParameterDetailsRequest,
     AlterParameterDetailsResultFailure,
     AlterParameterDetailsResultSuccess,
+    AlterParameterEvent,
     GetCompatibleParametersRequest,
     GetCompatibleParametersResultFailure,
     GetCompatibleParametersResultSuccess,
@@ -754,7 +759,7 @@ class NodeManager:
         if parameter_group is not None:
             for child in parameter_group.find_elements_by_type(Parameter):
                 GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, node_name))
-            node.remove_group_by_name(request.parameter_name)
+            node.remove_parameter_element_by_name(request.parameter_name)
             return RemoveParameterFromNodeResultSuccess()
 
         # No tricky stuff, users!
@@ -811,7 +816,7 @@ class NodeManager:
 
         # Delete the Parameter itself.
         if parameter is not None:
-            node.remove_parameter(parameter)
+            node.remove_parameter_element(parameter)
         else:
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because parameter didn't exist."
             logger.error(details)
@@ -1217,10 +1222,10 @@ class NodeManager:
         # If any parameters were dependent on that value, we're calling this details request to emit the result to the editor.
         if modified_parameters:
             for modified_parameter_name in modified_parameters:
-                modified_request = GetParameterDetailsRequest(
-                    parameter_name=modified_parameter_name, node_name=node.name
-                )
-                GriptapeNodes.handle_request(modified_request)
+                modified_parameter = node.get_parameter_by_name(modified_parameter_name)
+                if modified_parameter is not None:
+                    modified_request = AlterParameterEvent.create(node_name=node.name, parameter=modified_parameter)
+                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
         return finalized_value
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
@@ -1543,7 +1548,7 @@ class NodeManager:
         nodes = flow.get_node_dependencies(node)
         all_exceptions = []
         for dependent_node in nodes:
-            exceptions = dependent_node.validate_node()
+            exceptions = dependent_node.validate_before_workflow_run()
             if exceptions:
                 all_exceptions = all_exceptions + exceptions
         return ValidateNodeDependenciesResultSuccess(

@@ -1,0 +1,37 @@
+name: Create Latest Release
+
+on:
+  schedule:
+    - cron: 20 17 * * *  # 10:20 AM PT
+    - cron: 20 22 * * *  # 3:20 PM PT
+  workflow_dispatch:      # allows manual triggering too
+
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create release
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout actions
+        uses: actions/checkout@v4
+      - name: Init environment
+        uses: ./.github/actions/init-environment
+      - name: Create latest tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+          tag: "latest"
+        run: |
+          git tag "$tag" -f
+          git push origin "$tag" -f --tags
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+        with:
+          tag_name: latest
+          generate_release_notes: false
+          make_latest: false
+          prerelease: true

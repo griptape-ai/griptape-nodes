@@ -67,16 +67,12 @@ class NodeDefinition(BaseModel):
     metadata: NodeMetadata
 
 
-class WorkflowDefinition(BaseModel):
-    """Defines a workflow within a library, which will be automatically registered with the library. Metadata about the template is stored within the workflow itself."""
+class Setting(BaseModel):
+    """Defines a library-specific setting, which will automatically be injected into the user's Configuration."""
 
-    file_path: str
-
-
-class ScriptDefinition(BaseModel):
-    """Defines a script within a library, which will be installed with the library."""
-
-    file_path: str
+    category: str  # Name of the category in the config
+    contents: dict[str, Any]  # The actual settings content
+    description: str | None = None  # Optional description for the setting
 
 
 class LibrarySchema(BaseModel):
@@ -92,9 +88,10 @@ class LibrarySchema(BaseModel):
     metadata: LibraryMetadata
     categories: list[dict[str, CategoryDefinition]]
     nodes: list[NodeDefinition]
-    workflows: list[WorkflowDefinition] | None = None
-    scripts: list[ScriptDefinition] | None = None
-    is_default_library: bool = False
+    workflows: list[str] | None = None
+    scripts: list[str] | None = None
+    settings: list[Setting] | None = None
+    is_default_library: bool | None = None
 
 
 class LibraryRegistry(SingletonMixin):
@@ -148,7 +145,12 @@ class LibraryRegistry(SingletonMixin):
     @classmethod
     def list_libraries(cls) -> list[str]:
         instance = cls()
-        return list(instance._libraries.keys())
+
+        # Put the default libraries first.
+        default_libraries = [k for k, v in instance._libraries.items() if v.is_default_library()]
+        other_libraries = [k for k, v in instance._libraries.items() if not v.is_default_library()]
+        sorted_list = default_libraries + other_libraries
+        return sorted_list
 
     @classmethod
     def register_node_type_from_library(cls, library: Library, node_class_name: str) -> str | None:
@@ -225,8 +227,12 @@ class Library:
         is_default_library: bool = False,
     ) -> None:
         self._library_data = library_data
-        self._is_default_library = is_default_library
-        self._library_data.is_default_library = is_default_library
+
+        # If they didn't make it explicit, allow an override.
+        if self._library_data.is_default_library is None:
+            self._library_data.is_default_library = is_default_library
+
+        self._is_default_library = self._library_data.is_default_library
 
         self._node_types = {}
         self._node_metadata = {}

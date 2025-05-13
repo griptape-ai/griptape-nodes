@@ -1,5 +1,6 @@
 from collections import defaultdict
 from collections.abc import Callable
+from dataclasses import fields
 from typing import TYPE_CHECKING
 
 from griptape.events import EventBus
@@ -81,8 +82,14 @@ class EventManager:
                     result_payload.altered_workflow_state = False
 
                 retained_mode_str = None
-                if depth_manager.is_top_level():
+                # If request_id exists, that means it's a direct request from the GUI (not internal), and should be echoed by retained mode.
+                if depth_manager.is_top_level() and request.request_id is not None:
                     retained_mode_str = depth_manager.request_retained_mode_translation(request)
+
+                # Some requests have fields marked as "omit_from_result" which should be removed from the request
+                for field in fields(request):
+                    if field.metadata.get("omit_from_result", False):
+                        setattr(request, field.name, None)
                 if result_payload.succeeded():
                     result_event = EventResultSuccess(
                         request=request,
