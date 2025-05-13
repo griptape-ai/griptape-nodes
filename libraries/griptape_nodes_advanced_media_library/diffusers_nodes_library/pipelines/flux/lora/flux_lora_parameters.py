@@ -1,9 +1,9 @@
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import BaseNode
 
 
 class FluxLoraParameters:
-    def __init__(self, node: ControlNode):
+    def __init__(self, node: BaseNode):
         self._node = node
 
     def add_input_parameters(self) -> None:

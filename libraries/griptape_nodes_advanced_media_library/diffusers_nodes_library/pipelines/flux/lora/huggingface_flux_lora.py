@@ -28,7 +28,6 @@ class HuggingFaceFluxLora(ControlNode):
         )
         self.lora_weight_and_output_params = FluxLoraParameters(self)
 
-        self.lora_revisions_params.add_message_parameters()
         self.lora_revisions_params.add_input_parameters()
         self.lora_weight_and_output_params.add_input_parameters()
 
