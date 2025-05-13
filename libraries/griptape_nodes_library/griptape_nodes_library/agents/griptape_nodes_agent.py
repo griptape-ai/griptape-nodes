@@ -54,4 +54,3 @@ class GriptapeNodesAgent(Agent):
             input=TextArtifact(value=prompt),
             output=TextArtifact(value=output),
         )
-        self._rulesets[0].rules
