@@ -24,12 +24,14 @@ Use this node when you want to:
 - **max_attempts_on_fail**: How many times to retry if there's an error
 - **use_native_tools**: Whether to use Cohere's built-in tools
 - **max_tokens**: Maximum length of responses
-- **min_p**: Controls diversity of outputs (similar to temperature)
-- **top_k**: Controls focus on most likely tokens
+- **p**: Controls diversity of outputs (similar to temperature)
+- **k**: Controls focus on most likely tokens
+- **temperature**: Controls randomness in responses (higher values = more creative, lower = more focused)
+- **stream**: Whether to receive responses as they're generated (true) or all at once (false)
 
 ### Outputs
 
-- **driver**: The configured Cohere driver that other nodes can use
+- **prompt_model_config**: The configured Cohere driver that other nodes can use
 
 ## Example
 

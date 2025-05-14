@@ -2,13 +2,10 @@
 
 Usage:
     python -m griptape_nodes.updater            # update only
-    python -m griptape_nodes.updater --restart  # update and restart the engine
 """
 
 from __future__ import annotations
 
-import argparse
-import os
 import subprocess
 
 from rich.console import Console
@@ -17,32 +14,24 @@ from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 console = Console()
 
-
-def _parse_args() -> argparse.Namespace:
-    """Parse commandline arguments."""
-    parser = argparse.ArgumentParser(
-        prog="griptape-nodes-updater",
-        description="Update griptape-nodes and optionally restart the engine.",
-    )
-    parser.add_argument(
-        "--restart",
-        action="store_true",
-        help="Restart the engine after updating.",
-    )
-    return parser.parse_args()
+os_manager = OSManager()
 
 
 def main() -> None:
     """Entry point for the updater CLI."""
-    args = _parse_args()
-    _download_and_run_installer()
-    if args.restart:
-        _restart_engine()
-    elif OSManager().is_windows():
-        # On Windows, the terminal prompt doesn't refresh after the update finishes.
-        # This gives the appearance of the program hanging, but it is not.
-        # This is a workaround to manually refresh the terminal.
-        console.print("[bold yellow]Please press Enter to exit updater...[/bold yellow]")
+    try:
+        _download_and_run_installer()
+        _sync_assets()
+    except subprocess.CalledProcessError:
+        console.print("[red]Error during update process.[/red]")
+    else:
+        console.print("[green]Finished updating self.[/green]")
+        console.print("[green]Run 'griptape-nodes' (or 'gtn') to restart the engine.[/green]")
+        if os_manager.is_windows():
+            # On Windows, the terminal prompt doesn't refresh after the update finishes.
+            # This gives the appearance of the program hanging, but it is not.
+            # This is a workaround to manually refresh the terminal.
+            console.print("[yellow]Please press Enter to exit updater...[/yellow]")
 
 
 def _download_and_run_installer() -> None:
@@ -55,18 +44,26 @@ def _download_and_run_installer() -> None:
             check=True,
         )
     except subprocess.CalledProcessError as e:
-        console.print(f"[bold red]Error during update: {e}[/bold red]")
+        console.print(f"[red]Error during update: {e}[/red]")
+        raise
     else:
-        console.print("[bold green]Finished updating self.[/bold green]")
+        console.print("[green]Finished updating self.[/green]")
 
 
-def _restart_engine() -> None:
-    """Restarts the engine."""
-    console.print("[bold green]Restarting engine...[/bold green]")
+def _sync_assets() -> None:
+    """Syncs the assets for the engine."""
+    console.print("[bold green]Syncing assets...[/bold green]")
     try:
-        os.execvp("griptape-nodes", ["griptape-nodes --no-update"])  # noqa: S606, S607
+        subprocess.run(  # noqa: S603
+            ["griptape-nodes", "assets", "sync"],  # noqa: S607
+            text=True,
+            check=True,
+        )
     except subprocess.CalledProcessError as e:
-        console.print(f"[bold red]Error during restart: {e}[/bold red]")
+        console.print(f"[red]Error during asset sync: {e}[/red]")
+        raise
+    else:
+        console.print("[green]Finished syncing assets.[/green]")
 
 
 if __name__ == "__main__":

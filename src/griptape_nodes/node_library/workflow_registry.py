@@ -25,6 +25,7 @@ class WorkflowMetadata(BaseModel):
     is_template: bool | None = False
     creation_date: datetime | None = Field(default=None)
     last_modified_date: datetime | None = Field(default=None)
+    published_workflow_id: str | None = Field(default=None)
 
 
 class WorkflowRegistry(SingletonMixin):
@@ -39,7 +40,7 @@ class WorkflowRegistry(SingletonMixin):
     def generate_new_workflow(cls, file_path: str, metadata: WorkflowMetadata) -> Workflow:
         instance = cls()
         if metadata.name in instance._workflows:
-            msg = f"Workflow with name {metadata.name} already registered."
+            msg = f"Workflow with name '{metadata.name}' already registered."
             raise KeyError(msg)
         workflow = Workflow(registry_key=instance._registry_key, file_path=file_path, metadata=metadata)
         instance._workflows[metadata.name] = workflow

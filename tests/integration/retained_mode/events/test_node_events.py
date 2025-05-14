@@ -230,7 +230,7 @@ class TestNodeEvents:
                         {
                             "element_id": ANY,
                             "element_type": "ParameterGroup",
-                            "group_name": "Agent Config",
+                            "name": "Agent Config",
                             "children": [
                                 {
                                     "element_id": ANY,
@@ -252,7 +252,7 @@ class TestNodeEvents:
                         {
                             "element_id": ANY,
                             "element_type": "ParameterGroup",
-                            "group_name": "Agent Tools",
+                            "name": "Agent Tools",
                             "children": [
                                 {
                                     "element_id": ANY,

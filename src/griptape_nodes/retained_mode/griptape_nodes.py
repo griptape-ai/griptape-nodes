@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import IO, TYPE_CHECKING, Any, ClassVar, TextIO
 
+from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, ParameterContainer, ParameterGroup
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.retained_mode.events.app_events import (
     AppGetSessionRequest,
@@ -16,15 +17,29 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionResultFailure,
     GetEngineVersionResultSuccess,
 )
-from griptape_nodes.retained_mode.events.base_events import AppPayload, BaseEvent, RequestPayload, ResultPayload
-from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
-from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, DeleteFlowRequest
-from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeRequest, AlterParameterDetailsRequest
+from griptape_nodes.retained_mode.events.base_events import (
+    AppPayload,
+    BaseEvent,
+    RequestPayload,
+    ResultPayload,
+)
+from griptape_nodes.retained_mode.events.connection_events import (
+    CreateConnectionRequest,
+)
+from griptape_nodes.retained_mode.events.flow_events import (
+    CreateFlowRequest,
+    DeleteFlowRequest,
+)
+from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterToNodeRequest,
+    AlterParameterDetailsRequest,
+)
 
 if TYPE_CHECKING:
-    from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.node_types import BaseNode
-    from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import ArbitraryCodeExecManager
+    from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
+        ArbitraryCodeExecManager,
+    )
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.context_manager import ContextManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -32,10 +47,14 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
     from griptape_nodes.retained_mode.managers.node_manager import NodeManager
     from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
-    from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
+    from griptape_nodes.retained_mode.managers.operation_manager import (
+        OperationDepthManager,
+    )
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-    from griptape_nodes.retained_mode.managers.static_files_manager import StaticFilesManager
+    from griptape_nodes.retained_mode.managers.static_files_manager import (
+        StaticFilesManager,
+    )
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 
@@ -85,7 +104,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _static_files_manager: StaticFilesManager
 
     def __init__(self) -> None:
-        from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import ArbitraryCodeExecManager
+        from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
+            ArbitraryCodeExecManager,
+        )
         from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
         from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -93,11 +114,17 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
         from griptape_nodes.retained_mode.managers.node_manager import NodeManager
         from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
-        from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
+        from griptape_nodes.retained_mode.managers.operation_manager import (
+            OperationDepthManager,
+        )
         from griptape_nodes.retained_mode.managers.os_manager import OSManager
         from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-        from griptape_nodes.retained_mode.managers.static_files_manager import StaticFilesManager
-        from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+        from griptape_nodes.retained_mode.managers.static_files_manager import (
+            StaticFilesManager,
+        )
+        from griptape_nodes.retained_mode.managers.workflow_manager import (
+            WorkflowManager,
+        )
 
         # Initialize only if our managers haven't been created yet
         if not hasattr(self, "_event_manager"):
@@ -134,7 +161,11 @@ class GriptapeNodes(metaclass=SingletonMeta):
         event_mgr = GriptapeNodes.EventManager()
         obj_depth_mgr = GriptapeNodes.OperationDepthManager()
         workflow_mgr = GriptapeNodes.WorkflowManager()
-        return event_mgr.handle_request(request=request, operation_depth_mgr=obj_depth_mgr, workflow_mgr=workflow_mgr)
+        return event_mgr.handle_request(
+            request=request,
+            operation_depth_mgr=obj_depth_mgr,
+            workflow_mgr=workflow_mgr,
+        )
 
     @classmethod
     def broadcast_app_event(cls, app_event: AppPayload) -> None:
@@ -225,7 +256,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
             engine_ver = Version.from_string(engine_version_str)
             if engine_ver:
                 return GetEngineVersionResultSuccess(
-                    major=engine_ver.major, minor=engine_ver.minor, patch=engine_ver.patch
+                    major=engine_ver.major,
+                    minor=engine_ver.minor,
+                    patch=engine_ver.patch,
                 )
             details = f"Attempted to get engine version. Failed because version string '{engine_version_str}' wasn't in expected major.minor.patch format."
             logger.error(details)
@@ -304,38 +337,42 @@ def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tu
     """Handles the creation and saving of parameters for a node."""
     parameter_details = ""
     saved_properly = True
-    for parameter in node.parameters:
-        param_dict = parameter.to_dict()
-        # Create the parameter, or alter it on the existing node
-        if parameter.user_defined:
-            param_dict["node_name"] = node.name
-            param_dict["initial_setup"] = True
-            creation_request = AddParameterToNodeRequest.create(**param_dict)
-            code_string = f"GriptapeNodes.handle_request({creation_request})\n"
-            parameter_details += code_string
-        else:
-            base_node_obj = type(node)(name="test")
-            diff = manage_alter_details(parameter, base_node_obj)
-            relevant = False
-            for key in diff:
-                if key in AlterParameterDetailsRequest.relevant_parameters():
-                    relevant = True
-                    break
-            if relevant:
-                diff["node_name"] = node.name
-                diff["parameter_name"] = parameter.name
-                diff["initial_setup"] = True
-                creation_request = AlterParameterDetailsRequest.create(**diff)
+    # Get all parameters, even ones that aren't direct children.
+    for parameter in node.root_ui_element.find_elements_by_type(BaseNodeElement):
+        if isinstance(parameter, (Parameter, ParameterGroup, ParameterContainer)):
+            param_dict = parameter.to_dict()
+            # Create the parameter, or alter it on the existing node
+            if isinstance(parameter, Parameter) and parameter.user_defined:
+                param_dict["node_name"] = node.name
+                param_dict["initial_setup"] = True
+                creation_request = AddParameterToNodeRequest.create(**param_dict)
                 code_string = f"GriptapeNodes.handle_request({creation_request})\n"
                 parameter_details += code_string
-        if parameter.name in node.parameter_values or parameter.name in node.parameter_output_values:
-            # SetParameterValueRequest event
-            code_string = handle_parameter_value_saving(parameter, node, values_created)
-            if code_string:
-                code_string = code_string + "\n"
-                parameter_details += code_string
             else:
-                saved_properly = False
+                base_node_obj = type(node)(name="test")
+                diff = manage_alter_details(parameter, base_node_obj)
+                relevant = False
+                for key in diff:
+                    if key in AlterParameterDetailsRequest.relevant_parameters():
+                        relevant = True
+                        break
+                if relevant:
+                    diff["node_name"] = node.name
+                    diff["parameter_name"] = parameter.name
+                    diff["initial_setup"] = True
+                    creation_request = AlterParameterDetailsRequest.create(**diff)
+                    code_string = f"GriptapeNodes.handle_request({creation_request})\n"
+                    parameter_details += code_string
+            if not isinstance(parameter, ParameterGroup) and (
+                parameter.name in node.parameter_values or parameter.name in node.parameter_output_values
+            ):
+                # SetParameterValueRequest event
+                code_string = handle_parameter_value_saving(parameter, node, values_created)
+                if code_string:
+                    code_string = code_string + "\n"
+                    parameter_details += code_string
+                else:
+                    saved_properly = False
     return parameter_details, saved_properly
 
 
@@ -515,13 +552,20 @@ def _create_object_in_file(value: Any, var_name: str, imports: list) -> str:
     return ""
 
 
-def manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
+def manage_alter_details(parameter: Parameter | ParameterGroup, base_node_obj: BaseNode) -> dict:
     """Alters the details of a parameter based on the base node object."""
-    base_param = base_node_obj.get_parameter_by_name(parameter.name)
-    if base_param:
-        diff = base_param.equals(parameter)
+    if isinstance(parameter, Parameter):
+        base_param = base_node_obj.get_parameter_by_name(parameter.name)
+        if base_param is not None:
+            diff = base_param.equals(parameter)
+        else:
+            return vars(parameter)
     else:
-        return vars(parameter)
+        base_param_group = base_node_obj.get_group_by_name_or_element_id(parameter.name)
+        if base_param_group is not None:
+            diff = base_param_group.equals(parameter)
+        else:
+            return vars(parameter)
     return diff
 
 

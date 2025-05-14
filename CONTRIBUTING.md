@@ -19,7 +19,11 @@ We welcome contributions to the Griptape Nodes project! Whether it's bug fixes, 
 
     ```shell
     uv sync --all-groups --all-extras
-    # or
+    ```
+
+    Or use the Makefile shortcut:
+
+    ```shell
     make install
     ```
 
@@ -32,37 +36,80 @@ When developing, you typically want to run the engine using your local source co
 **Key Development Commands:**
 
 - **Run the Engine:** Use `uv run` to execute the engine script (`gtn` or `griptape-nodes`) within the virtual environment managed by `uv`.
+
     ```shell
     uv run gtn
-    # or
+    ```
+
+    Or use the Makefile shortcut:
+
+    ```shell
     uv run griptape-nodes engine
     ```
+
+- **Run the Engine In Watch Mode:** This command will automatically restart the engine when you make changes to the source code. This is useful for rapid development and testing.
+
+    ```shell
+    uv run src/griptape_nodes/app/watch.py
+    ```
+
+    Or use the Makefile shortcut:
+
+    ```shell
+    make run/watch
+    ```
+
 - **Run Initialization:** To trigger the initial setup prompts (API Key, Workspace Directory) using the local code:
+
     ```shell
     uv run gtn init
     ```
+
 - **Run Tests:**
+
     ```shell
     uv run pytest
-    # or use the Makefile shortcut
+    ```
+
+    Or use the Makefile shortcut:
+
+    ```shell
     make test/unit
     ```
+
 - **Check Code (Linting & Formatting):**
+
     ```shell
     uv run ruff check . && uv run ruff format . --check && uv run pyright
-    # or use the Makefile shortcut
+    ```
+
+    Or use the Makefile shortcut:
+
+    ```shell
     make check
     ```
+
 - **Format Code:**
+
     ```shell
     uv run ruff format .
-    # or use the Makefile shortcut
+    ```
+
+    Or use the Makefile shortcut:
+
+    ```shell
     make format
     ```
+
 - **Fix Code Automatically (Format + Lint):**
+
     ```shell
     uv run ruff check . --fix && uv run ruff format .
-    # or use the Makefile shortcut
+    ```
+
+    Or use the Makefile shortcut:
+
+    ```shell
     make fix
     ```
 
@@ -74,6 +121,16 @@ To point your local engine at a different API instance (e.g., a local Griptape N
 
 ```shell
 GRIPTAPE_NODES_API_BASE_URL=http://localhost:8001 uv run gtn
+```
+
+**Connecting to a Different UI**
+
+> Internal Griptape Developers with access to UI project
+
+To point your local engine at a different UI instance (e.g., a local Griptape Nodes UI), set the `GRIPTAPE_NODES_UI_BASE_URL` environment variable:
+
+```shell
+GRIPTAPE_NODES_UI_BASE_URL=http://localhost:5173 uv run gtn
 ```
 
 ## Configuration for Development

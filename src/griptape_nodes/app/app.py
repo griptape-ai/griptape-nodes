@@ -14,7 +14,7 @@ from urllib.parse import urljoin
 import httpx
 import uvicorn
 from dotenv import get_key
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from griptape.events import (
@@ -123,11 +123,12 @@ def _serve_static_server() -> None:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
-            "https://nodes.griptape.ai",
-            "http://localhost",
+            os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai"),
+            "https://nodes-staging.griptape.ai",
+            "http://localhost:5173",
         ],
         allow_credentials=True,
-        allow_methods=["GET"],
+        allow_methods=["OPTIONS", "GET", "POST"],
         allow_headers=["*"],
     )
 
@@ -136,6 +137,12 @@ def _serve_static_server() -> None:
         StaticFiles(directory=static_dir),
         name="static",
     )
+
+    @app.post("/engines/request")
+    async def create_event(request: Request) -> None:
+        body = await request.json()
+        if "payload" in body:
+            __process_api_event(body["payload"])
 
     logging.getLogger("uvicorn").addHandler(
         RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)
@@ -177,13 +184,11 @@ def _init_event_listeners() -> None:
 def _listen_for_api_events() -> None:
     """Listen for events from the Nodes API and process them."""
     init = False
+    endpoint = urljoin(os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/engines/stream")
+    nodes_app_url = os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai")
+    logger.info("Listening for events from Nodes API at %s", endpoint)
     while True:
         try:
-            endpoint = urljoin(
-                os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/engines/stream"
-            )
-            nodes_app_url = os.getenv("GRIPTAPE_NODES_APP_URL", "https://nodes.griptape.ai")
-
             with httpx.stream("get", endpoint, auth=__build_authorized_request, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout
                 __check_api_key_validity(response)
 
@@ -210,11 +215,11 @@ def _listen_for_api_events() -> None:
                             except Exception:
                                 logger.exception("Error processing event, skipping.")
 
+        except httpx.RemoteProtocolError as e:
+            logger.debug("Server closed connection, this is expected. Reconnecting... %s", e)
         except Exception as e:
-            details = f"Error while listening for events. Retrying in 2 seconds.: {e}"
-            logger.error(details)
+            logger.error("Error while listening for events. Retrying in 2 seconds... %s", e)
             sleep(2)
-            init = False
 
 
 def __process_node_event(event: GriptapeNodeEvent) -> None:

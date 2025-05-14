@@ -96,7 +96,10 @@ class Agent(ControlNode):
                 tooltip="The main text prompt to send to the agent.",
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True, "placeholder_text": "Talk with the Agent."},
+                ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Talk with the Agent.",
+                },
                 converters=[strip_whitespace],
             )
         )
@@ -143,7 +146,7 @@ class Agent(ControlNode):
         )
 
         # Group for less commonly used configuration options.
-        with ParameterGroup(group_name="Advanced options") as advanced_group:
+        with ParameterGroup(name="Advanced options") as advanced_group:
             ParameterList(
                 name="tools",
                 input_types=["Tool"],
@@ -175,7 +178,7 @@ class Agent(ControlNode):
         )
 
         # Group for logging information.
-        with ParameterGroup(group_name="Logs") as logs_group:
+        with ParameterGroup(name="Logs") as logs_group:
             Parameter(name="include_details", type="bool", default_value=False, tooltip="Include extra details.")
 
             Parameter(
@@ -209,23 +212,28 @@ class Agent(ControlNode):
             """
             TODO: https://github.com/griptape-ai/griptape-nodes/issues/878
 
-            # Find the prompt_model_settings parameter and hide it
-            prompt_model_settings_param = self.get_parameter_by_name("prompt_model_config")
-            if value == CONNECTED_CHOICE and prompt_model_settings_param:
-                prompt_model_settings_param._ui_options["hide"] = False
-            elif value != CONNECTED_CHOICE and prompt_model_settings_param:
-                prompt_model_settings_param._ui_options["hide"] = True
-
-            # Add this to the modified parameters set so we can cascade the change.
-            modified_parameters_set.add("prompt_model_config")
-
             """
-            pass  # noqa: PIE790
+            prompt_model_settings_param = self.get_parameter_by_name("prompt_model_config")
+            if self.parameter_values.get("prompt_model_config") is None:
+                if value == CONNECTED_CHOICE and prompt_model_settings_param:
+                    if prompt_model_settings_param._ui_options["hide"]:
+                        modified_parameters_set.add("prompt_model_config")
+                    prompt_model_settings_param._ui_options["hide"] = False
+                    return None
+                if value != CONNECTED_CHOICE and prompt_model_settings_param:
+                    if not prompt_model_settings_param._ui_options["hide"]:
+                        modified_parameters_set.add("prompt_model_config")
+                    prompt_model_settings_param._ui_options["hide"] = True
+                    return None
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
     def after_incoming_connection(
-        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+        modified_parameters_set: set[str],
     ) -> None:
         """Handles UI updates after an incoming connection is made to this node.
 
@@ -238,39 +246,47 @@ class Agent(ControlNode):
             source_node: The node connecting to this node.
             source_parameter: The parameter on the source node providing the connection.
             target_parameter: The parameter on this node receiving the connection.
+            modified_parameters_set: The set of parameters that have changed
         """
         # If an existing agent is connected, hide parameters related to creating a new one.
         if target_parameter.name == "agent":
             groups_to_toggle = ["Advanced options"]
-            for group_name in groups_to_toggle:
-                group = self.get_group_by_name_or_element_id(group_name)
+            for name in groups_to_toggle:
+                group = self.get_group_by_name_or_element_id(name)
                 if group:
                     group.ui_options["hide"] = True
+                    modified_parameters_set.add(name)
 
             params_to_toggle = ["model", "tools", "rulesets", "prompt_model_config"]
             for param_name in params_to_toggle:
                 param = self.get_parameter_by_name(param_name)
                 if param:
                     param._ui_options["hide"] = True
+                    modified_parameters_set.add(param_name)
 
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/878
         # If a prompt_model_config is connected, hide the manual model selector.
-        """
         if target_parameter.name == "prompt_model_config":
             model_param = self.get_parameter_by_name("model")
             if model_param:
                 model_param._ui_options["hide"] = True
-        """
-
+                modified_parameters_set.add("model")
         # If additional context is connected, prevent editing via property panel.
         # NOTE: This is a workaround. Ideally this is done automatically.
         if target_parameter.name == "additional_context":
             target_parameter.allowed_modes = {ParameterMode.INPUT}
+            modified_parameters_set.add("additional_context")
 
-        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
+        return super().after_incoming_connection(
+            source_node, source_parameter, target_parameter, modified_parameters_set
+        )
 
-    def after_incoming_connection_removed(
-        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
+    def after_incoming_connection_removed(  # noqa: C901
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+        modified_parameters_set: set[str],
     ) -> None:
         """Handles UI updates after an incoming connection to this node is removed.
 
@@ -284,14 +300,16 @@ class Agent(ControlNode):
             source_node: The node that was connected.
             source_parameter: The parameter on the source node that was connected.
             target_parameter: The parameter on this node that was disconnected.
+            modified_parameters_set: The set of parameters that have changed
         """
         # If the agent connection is removed, show agent creation parameters.
         if target_parameter.name == "agent":
             groups_to_toggle = ["Advanced options"]
-            for group_name in groups_to_toggle:
-                group = self.get_group_by_name_or_element_id(group_name)
+            for name in groups_to_toggle:
+                group = self.get_group_by_name_or_element_id(name)
                 if group:
                     group.ui_options["hide"] = False
+                    modified_parameters_set.add(group.name)
 
             params_to_toggle = ["model", "tools", "rulesets", "prompt_model_config"]
             for param_name in params_to_toggle:
@@ -304,27 +322,30 @@ class Agent(ControlNode):
                             continue  # Keep it hidden if model isn't set to use connection
 
                     param._ui_options["hide"] = False
+                    modified_parameters_set.add(param.name)
 
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/878
         # If the prompt_model_config connection is removed, show the model dropdown,
-        """
         if target_parameter.name == "prompt_model_config":
             # Find the model parameter and hide it
             model_param = self.get_parameter_by_name("model")
             if model_param:
                 model_param._ui_options["hide"] = False
-        """
+                modified_parameters_set.add(model_param.name)
 
         # If the additional context connection is removed, make it editable again.
         # NOTE: This is a workaround. Ideally this is done automatically.
         if target_parameter.name == "additional_context":
             target_parameter.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY}
+            modified_parameters_set.add(target_parameter.name)
 
-        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
+        return super().after_incoming_connection_removed(
+            source_node, source_parameter, target_parameter, modified_parameters_set
+        )
 
     # --- Validation ---
 
-    def validate_node(self) -> list[Exception] | None:
+    def validate_before_workflow_run(self) -> list[Exception] | None:
         """Performs pre-run validation checks for the node.
 
         Currently checks if the Griptape Cloud API key is configured if the default
@@ -425,16 +446,17 @@ class Agent(ControlNode):
 
         # Get any tools
         # tools = self.get_parameter_value("tools")  # noqa: ERA001
-        tools = params.get("tools", [])
+        tools = [tool for tool in params.get("tools", []) if tool]
         if include_details and tools:
             self.append_value_to_parameter("logs", f"[Tools]: {', '.join([tool.name for tool in tools])}\n")
 
         # Get any rulesets
         # rulesets = self.get_parameter_value("rulesets")  # noqa: ERA001
-        rulesets = params.get("rulesets", [])
+        rulesets = [ruleset for ruleset in params.get("rulesets", []) if ruleset]
         if include_details and rulesets:
             self.append_value_to_parameter(
-                "logs", f"\n[Rulesets]: {', '.join([ruleset.name for ruleset in rulesets])}\n"
+                "logs",
+                f"\n[Rulesets]: {', '.join([ruleset.name for ruleset in rulesets])}\n",
             )
 
         # Get the prompt

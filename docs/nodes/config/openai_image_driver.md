@@ -21,12 +21,17 @@ Use this node when you want to:
 
 ### Parameters
 
-- **image_generation_model**: The model to use (default is "dall-e-3")
-- **size**: The size of images to generate (default is "1024x1024")
+- **model**: The model to use (default is "dall-e-3")
+- **image_size**: The size of images to generate (default is "1024x1024")
+- **style**: natural or vivid. Natural creates photorealistic images with natural lighting and textures, while vivid creates images with enhanced colors, contrast, and more dramatic compositions
+- **quality**: Select the quality for image generation. Standard or HD.
+- **background**: Select the background for image generation
+- **moderation**: Standard or strict, regarding filtering for harmful or offensice content
+- **output_format**: png, jpeg
 
 ### Outputs
 
-- **driver**: The configured OpenAI image driver that other nodes can use
+- **image_model_config**: The configured OpenAI image model configuration that other nodes can use
 
 ## Example
 
@@ -34,7 +39,7 @@ Imagine you want to create images using OpenAI's DALL-E:
 
 1. Add an OpenAiImage node to your workflow
 1. Configure any available settings
-1. Connect the "driver" output to a GenerateImage's "driver" input
+1. Connect the "image_model_config" output to a GenerateImage's "image_model_config" input
 
 ## Important Notes
 

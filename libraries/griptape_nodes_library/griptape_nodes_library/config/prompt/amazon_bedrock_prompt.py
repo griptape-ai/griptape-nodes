@@ -69,9 +69,9 @@ class AmazonBedrockPrompt(BasePrompt):
             param.default_value = MODEL_CHOICES[0]
 
         # Remove unused parameters for Amazon Bedrock
-        self.remove_parameter_by_name("seed")
-        self.remove_parameter_by_name("min_p")
-        self.remove_parameter_by_name("top_k")
+        self.remove_parameter_element_by_name("seed")
+        self.remove_parameter_element_by_name("min_p")
+        self.remove_parameter_element_by_name("top_k")
 
         # Amazon Bedrock tends to fail if max_tokens isn't set
         self.set_parameter_value("max_tokens", 100)
@@ -103,7 +103,7 @@ class AmazonBedrockPrompt(BasePrompt):
 
         Raises:
             KeyError: If the Amazon Bedrock API key is not found in the node configuration
-                      (though `validate_node` should prevent this during execution).
+                      (though `validate_before_workflow_run` should prevent this during execution).
         """
         # Retrieve all parameter values set on the node UI or via input connections.
         params = self.parameter_values
@@ -132,7 +132,7 @@ class AmazonBedrockPrompt(BasePrompt):
         # Set the output parameter 'prompt_model_config'.
         self.parameter_output_values["prompt_model_config"] = driver
 
-    def validate_node(self) -> list[Exception] | None:
+    def validate_before_workflow_run(self) -> list[Exception] | None:
         """Validates that the Amazon Bedrock API keys are configured correctly.
 
         Calls the base class helper `_validate_api_key` with Amazon Bedrock-specific
