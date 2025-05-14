@@ -154,12 +154,12 @@ class GenerateImage(ControlNode):
         else:
             agent = GtAgent.from_dict(agent)
 
-        # add some context to the prompt
-        agent.build_context()
-        if agent._context:
-            prompt = f"Previous Conversation: {agent._context['conversation_memory']}\n\nUser: {orig_prompt}"
-        else:
-            prompt = orig_prompt
+        # Add some context to the prompt
+        prompt = agent.build_context(prompt=orig_prompt)
+        # if agent._context:
+        #     prompt = f"Previous Conversation: {agent._context['conversation_memory']}\n\nUser: {orig_prompt}"
+        # else:
+        #     prompt = orig_prompt
 
         # Check if we have a connection to the prompt parameter
         enhance_prompt = params.get("enhance_prompt", False)

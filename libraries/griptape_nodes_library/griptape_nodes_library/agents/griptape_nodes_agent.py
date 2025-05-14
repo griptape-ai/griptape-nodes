@@ -8,18 +8,25 @@ class GriptapeNodesAgent(Agent):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.orig_tasks = None
-        self._context = {}
+        self._context = None
 
-    def build_context(self) -> str | dict:
+    def build_context(self, prompt=str | None) -> str:  # noqa: ANN001
         conversation_memory = []
-        # Build the context from the conversation memory
-        for run in self.conversation_memory.runs:  # type: ignore  # noqa: PGH003
-            if run.input:
-                conversation_memory.append(f"User: {run.input.value}")
-            if run.output:
-                conversation_memory.append(f"Assistant: {run.output.value}")
-        self._context = {"conversation_memory": conversation_memory}
-        return self._context
+        context = ""
+        if len(self.conversation_memory.runs) > 0:  # type: ignore  # noqa: PGH003
+            # Build the context from the conversation memory
+            for run in self.conversation_memory.runs:  # type: ignore  # noqa: PGH003
+                if run.input:
+                    conversation_memory.append(f"User: {run.input.value}")
+                if run.output:
+                    conversation_memory.append(f"Assistant: {run.output.value}")
+            context = "\n".join(conversation_memory)
+            context = f"<Conversation History>\n{context}</Conversation History>\n"
+        if prompt:
+            # Add the prompt to the context
+            context = f"{context}\nUser:\n{prompt}\n"
+        self._context = context
+        return context
 
     def swap_task(self, task: BaseTask) -> None:
         # swap the task with a new one
