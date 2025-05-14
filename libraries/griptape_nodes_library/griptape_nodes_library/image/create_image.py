@@ -249,9 +249,9 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             if ParameterMode.PROPERTY in target_parameter.allowed_modes:
                 target_parameter.allowed_modes.remove(ParameterMode.PROPERTY)
 
-        if target_parameter.name == "model" and source_parameter.name in ["image_model_config"]:
+        if target_parameter.name == "model" and source_parameter.name == "image_model_config":
             # Check and see if the incoming connection is from a image model config.
-            target_parameter._type = source_parameter.type
+            target_parameter.type = source_parameter.type
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
             target_parameter._ui_options["display_name"] = source_parameter.name
 
@@ -280,7 +280,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
         # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter
         if target_parameter.name == "model":
-            target_parameter._type = "str"
+            target_parameter.type = "str"
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             target_parameter.set_default_value(DEFAULT_MODEL)
             target_parameter.default_value = DEFAULT_MODEL

@@ -193,10 +193,11 @@ class Agent(ControlNode):
             for param_name in params_to_toggle:
                 modified_parameters_set.add(param_name)
 
-        if target_parameter.name == "model" and source_parameter.name in ["prompt_model_config"]:
+        if target_parameter.name == "model" and source_parameter.name == "prompt_model_config":
             # Check and see if the incoming connection is from a prompt model config or an agent.
-            target_parameter._type = source_parameter.type
+            target_parameter.type = source_parameter.type
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
+
             target_parameter._ui_options["display_name"] = source_parameter.ui_options.get(
                 "display_name", source_parameter.name
             )
@@ -227,7 +228,7 @@ class Agent(ControlNode):
                 modified_parameters_set.add(param_name)
 
         if target_parameter.name == "model":
-            target_parameter._type = "str"
+            target_parameter.type = "str"
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             # Sometimes the value is not set to the default value - these are all attemnpts to get it to work.
             target_parameter.set_default_value(DEFAULT_MODEL)
