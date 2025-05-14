@@ -15,13 +15,13 @@ class CompareNumbers(BaseNode):
             )
         )
         true_param = ControlParameterOutput(
-            tooltip="Compare to go down if condition is True.",
+            tooltip="Flow to take when condition is True.",
             name="True",
         )
         true_param.ui_options = {"display_name": "True"}
         self.add_parameter(true_param)
         false_param = ControlParameterOutput(
-            tooltip="Compare to go down if condition is not met.",
+            tooltip="Flow to take when condition is False.",
             name="False",
         )
         false_param._ui_options = {"display_name": "False"}
