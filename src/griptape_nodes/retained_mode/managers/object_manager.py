@@ -37,11 +37,9 @@ logger = logging.getLogger("griptape_nodes")
 
 class ObjectManager:
     _name_to_objects: dict[str, object]
-    _selected_objects: list[object]
 
     def __init__(self, _event_manager: EventManager) -> None:
         self._name_to_objects = {}
-        self._selected_objects = []
         _event_manager.assign_manager_to_request_type(
             request_type=RenameObjectRequest, callback=self.on_rename_object_request
         )
@@ -107,8 +105,6 @@ class ObjectManager:
             )
             return ClearAllObjectStateResultFailure()
         # Let's try and clear it all.
-        # Clear selected objects
-        self._selected_objects.clear()
         # Cancel any running flows.
         flows = self.get_filtered_subset(type=ControlFlow)
         for flow_name, flow in flows.items():
@@ -266,5 +262,3 @@ class ObjectManager:
                     return
         del self._name_to_objects[name]
 
-    def clear_selected_objects(self) -> None:
-        self._selected_objects.clear()

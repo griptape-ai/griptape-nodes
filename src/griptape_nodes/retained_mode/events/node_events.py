@@ -11,7 +11,8 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
-from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeResultSuccess
+from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest, ListConnectionsForNodeResultSuccess
+from griptape_nodes.retained_mode.events.flow_events import IndirectConnectionSerialization, SerializedFlowCommands
 from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterDetailsResultSuccess,
     GetParameterValueResultSuccess,
@@ -214,6 +215,11 @@ class SerializedNodeCommands:
     node_library_details: LibraryNameAndVersion
     node_uuid: NodeUUID = field(default_factory=lambda: SerializedNodeCommands.NodeUUID(str(uuid4())))
 
+@dataclass
+class SerializedSelectedNodeCommands:
+    node_commands: list[SerializedNodeCommands]
+    # Has the UUIDs for Nodes and for Parameters
+    connection_commands: list[IndirectConnectionSerialization]
 
 @dataclass
 @PayloadRegistry.register
@@ -263,6 +269,19 @@ class SerializeNodeToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 @dataclass
 @PayloadRegistry.register
 class SerializeSelectedNodestoCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
+    # They will be passed with node_name, timestamp
+    nodes_to_serialize:tuple[str,str]
+
+@dataclass
+@PayloadRegistry.register
+class SerializeSelectedNodestoCommandsSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    # They will be passed with node_name, timestamp
+    # Could be a flow command if it's all nodes in a flow.
+    serialized_node_commands: SerializedNodeCommands | SerializedFlowCommands
+
+@dataclass
+@PayloadRegistry.register
+class SerializeSelectedNodestoCommandsFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 @dataclass

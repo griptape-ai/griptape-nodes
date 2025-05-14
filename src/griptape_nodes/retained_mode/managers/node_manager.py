@@ -482,9 +482,6 @@ class NodeManager:
             return result
         # We can't completely overwrite metadata.
         for key, value in request.metadata.items():
-            if key.lower() == "selected" and value:
-                # Add this to the selected objects list. in ORDER!
-                GriptapeNodes.ObjectManager()._selected_objects.append(node)
             node.metadata[key] = value
         details = f"Successfully set metadata for a Node '{node_name}'."
         logger.debug(details)
@@ -1681,9 +1678,22 @@ class NodeManager:
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)
 
     def on_serialize_selected_nodes_to_commands(self, request: SerializeSelectedNodestoCommandsRequest) -> ResultPayload:
+        """This will take the selected nodes in the Object manager and serialize them into commands."""
         # TODO: If this is all of the nodes in a flow, should it just serialize the whole flow?
-        # This should serialize connections bt the nodes as well. 
-        """This will take the selected nodes in the Object manager and serialize them into commands"""
+        nodes_to_serialize = request.nodes_to_serialize
+        # Sorts tuples in order based on the timestamp
+        sorted_nodes = sorted(nodes_to_serialize, key=lambda x: x[1])
+        node_commands = []
+        for node_name, _ in sorted_nodes:
+            result = self.on_serialize_node_to_commands(SerializeNodeToCommandsRequest(node_name=node_name))
+            if not result.succeeded():
+                return SerializeSelectedNodesToTcommandsFailure()
+        return result
+            # now we have all of our node commands. we need connections as well.
+
+
+
+        
 
 
     @staticmethod
