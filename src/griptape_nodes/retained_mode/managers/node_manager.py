@@ -67,6 +67,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
+    SerializeSelectedNodestoCommandsRequest,
     SerializedNodeCommands,
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultFailure,
@@ -158,6 +159,7 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(
             DeserializeNodeFromCommandsRequest, self.on_deserialize_node_from_commands
         )
+        event_manager.assign_manager_to_request_type(SerializeSelectedNodestoCommandsRequest, self.on_serialize_selected_nodes_to_commands)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old node name and its parent.
@@ -480,6 +482,9 @@ class NodeManager:
             return result
         # We can't completely overwrite metadata.
         for key, value in request.metadata.items():
+            if key.lower() == "selected" and value:
+                # Add this to the selected objects list. in ORDER!
+                GriptapeNodes.ObjectManager()._selected_objects.append(node)
             node.metadata[key] = value
         details = f"Successfully set metadata for a Node '{node_name}'."
         logger.debug(details)
@@ -1674,6 +1679,12 @@ class NodeManager:
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         logger.debug(details)
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)
+
+    def on_serialize_selected_nodes_to_commands(self, request: SerializeSelectedNodestoCommandsRequest) -> ResultPayload:
+        # TODO: If this is all of the nodes in a flow, should it just serialize the whole flow?
+        # This should serialize connections bt the nodes as well. 
+        """This will take the selected nodes in the Object manager and serialize them into commands"""
+
 
     @staticmethod
     def _manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:

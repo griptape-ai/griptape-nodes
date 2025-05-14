@@ -262,6 +262,11 @@ class SerializeNodeToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 
 @dataclass
 @PayloadRegistry.register
+class SerializeSelectedNodestoCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
+    pass
+
+@dataclass
+@PayloadRegistry.register
 class DeserializeNodeFromCommandsRequest(RequestPayload):
     serialized_node_commands: SerializedNodeCommands
 
