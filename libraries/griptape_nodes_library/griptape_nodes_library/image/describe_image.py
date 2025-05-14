@@ -3,12 +3,12 @@ from griptape.drivers.prompt.base_prompt_driver import BasePromptDriver
 from griptape.drivers.prompt.griptape_cloud_prompt_driver import GriptapeCloudPromptDriver
 from griptape.loaders import ImageLoader
 from griptape.structures import Structure
-from griptape.structures.agent import Agent
 from griptape.tasks import PromptTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 SERVICE = "Griptape"
@@ -55,12 +55,12 @@ class DescribeImage(ControlNode):
         self.add_parameter(
             Parameter(
                 name="image",
-                input_types=["ImageUrlArtifact"],
+                input_types=["ImageUrlArtifact", "ImageArtifact"],
                 type="ImageArtifact",
                 tooltip="The image you would like to describe",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"clickable_file_browser": True, "expander": True},
+                ui_options={"expander": True},
             )
         )
         self.add_parameter(
@@ -162,42 +162,33 @@ class DescribeImage(ControlNode):
         params = self.parameter_values
         model_input = self.get_parameter_value("model")
         agent = None
-        # If the model input is an Agent, use that.
-        #   - Check and make sure the agent is using a PromptTask - if not, we'll swap it
-        # Else if model input i
-        #   - If a prompt model config is provided, create an Agent and use that
-        # Else if the model
-        # If nothing is connected to an agent, check and see if a prompt model config is connected to the model parameter
-        # If it is, we'll create an agent and use that.
-        # If nothing is connected to the agent or model parameter, we'll create a new agent with a default prompt driver
+
         default_prompt_driver = GriptapeCloudPromptDriver(
-            model=DEFAULT_MODEL,
-            api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
-            stream=True,
+            model=DEFAULT_MODEL, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
         )
+
+        # If an agent is provided, we'll use and ensure it's using a PromptTask
+        # If a prompt_driver is provided, we'll use that
+        # If neither are provided, we'll create a new one with the selected model.
+        # Otherwise, we'll just use the default model
         agent = self.get_parameter_value("agent")
         if isinstance(agent, dict):
-            agent = Agent().from_dict(agent)
-            # make sure the agent is using a PromptTask
-            if not isinstance(agent.tasks[0], PromptTask):
-                agent.add_task(PromptTask(prompt_driver=default_prompt_driver))
-        elif isinstance(model_input, str):
-            prompt_driver = GriptapeCloudPromptDriver(
-                model=model_input,
-                api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
-                stream=True,
-            )
-            agent = Agent(prompt_driver=prompt_driver)
-        elif isinstance(model_input, dict):
-            agent = Agent().from_dict(model_input)
+            agent = GtAgent().from_dict(agent)
             # make sure the agent is using a PromptTask
             if not isinstance(agent.tasks[0], PromptTask):
                 agent.add_task(PromptTask(prompt_driver=default_prompt_driver))
         elif isinstance(model_input, BasePromptDriver):
-            agent = Agent(prompt_driver=model_input)
+            agent = GtAgent(prompt_driver=model_input)
+        elif isinstance(model_input, str):
+            if model_input not in MODEL_CHOICES:
+                model_input = DEFAULT_MODEL
+            prompt_driver = GriptapeCloudPromptDriver(
+                model=model_input, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
+            )
+            agent = GtAgent(prompt_driver=prompt_driver)
         else:
             # If the agent is not provided, we'll create a new one with a default prompt driver
-            agent = Agent(prompt_driver=default_prompt_driver)
+            agent = GtAgent(prompt_driver=default_prompt_driver)
 
         prompt = params.get("prompt", "")
         if prompt == "":
@@ -216,4 +207,4 @@ class DescribeImage(ControlNode):
         try_throw_error(agent.output)
 
         # Set the output value for the agent
-        self.parameter_output_values["agent"] = agent
+        self.parameter_output_values["agent"] = agent.to_dict()

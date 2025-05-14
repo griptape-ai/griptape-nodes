@@ -228,10 +228,13 @@ class Agent(ControlNode):
         if target_parameter.name == "model":
             target_parameter._type = "str"
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
+            # Sometimes the value is not set to the default value - these are all attemnpts to get it to work.
             target_parameter.set_default_value(DEFAULT_MODEL)
             target_parameter.default_value = DEFAULT_MODEL
-            target_parameter._ui_options["display_name"] = "prompt model"
             self.set_parameter_value("model", DEFAULT_MODEL)
+
+            target_parameter._ui_options["display_name"] = "prompt model"
+
             modified_parameters_set.add("model")
 
         # If the additional context connection is removed, make it editable again.
@@ -304,7 +307,6 @@ class Agent(ControlNode):
         return prompt
 
     # --- Processing ---
-
     def process(self) -> AsyncResult[Structure]:
         """Executes the main logic of the node asynchronously.
 
@@ -337,9 +339,7 @@ class Agent(ControlNode):
                 # If the model input is not a valid choice, we'll use the default model.
                 model_input = DEFAULT_MODEL
             prompt_driver = GriptapeCloudPromptDriver(
-                model=model_input,
-                api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
-                stream=True,
+                model=model_input, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
             )
 
         if include_details:
@@ -378,7 +378,6 @@ class Agent(ControlNode):
         if not agent_dict:
             agent = GtAgent(prompt_driver=prompt_driver, tools=tools, rulesets=rulesets)
         else:
-            logger.info(f"[Agent]: {agent_dict}")
             # If the agent is a dictionary, we want to convert it to an Agent object.
             agent = GtAgent.from_dict(agent_dict)
 
