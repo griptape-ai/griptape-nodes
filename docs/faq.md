@@ -2,7 +2,18 @@
 
 ## Where is my workspace (where do my files save)?
 
-Run this command and it will report back your workspace location:
+Files such as saved workflows, etc., are saved in a the Workspace Directory.
+
+The path for the Workspace Directory can be found in the Griptape Nodes Editor:
+
+1. Open the Griptape Nodes Editor.
+1. Open an existing workflow or create a blank one.
+1. Click "Settings".
+1. Select "Configuration Editor".
+1. Click "Griptape Nodes Settings" on the leftmost column, if not already selected.
+1. The path is listed under "Workspace Directory".
+
+If you are not running the Editor, run this command and it will report back your Workspace Directory:
 
 ```bash
 gtn config show | grep workspace
@@ -10,7 +21,7 @@ gtn config show | grep workspace
 
 ## Can I run the Engine on a different machine than the Editor?
 
-Absolutely! The Engine and Editor can run on completely separate machines. Just remember that any files you save or libraries you register will be stored on the machine where the Engine is running. So if you're looking for your files and can't find them right away, double-check which machine the Engine is running on.
+The Engine and Editor can run on completely separate machines. Remember that any files you save or libraries you register will be stored on the machine where the Engine is running. So if you're looking for your files and can't find them right away, double-check which machine the Engine is running on.
 
 ## Where is Griptape Nodes installed?
 
@@ -30,7 +41,7 @@ $(Split-Path -Parent (Split-Path -Parent (Get-Command griptape-nodes | Select-Ob
 
 ## Can I see or edit my config file?
 
-You can! To get a path to the file, go to the top Settings menu in the Editor, and select **Copy Path to Settings**. That will copy the config file path to your clipboard.
+To get a path to the file, go to the top Settings menu in the Editor, and select **Copy Path to Settings**. That will copy the config file path to your clipboard.
 
 If you prefer working in the command line, you can also use:
 
@@ -52,7 +63,7 @@ This will restart the configuration process. You can press Enter to keep your ex
 Register Advanced Media Library? [y/n] (n):
 ```
 
-Simply type **y** and press Enter to install the Advanced Media Library.
+Press **y** to install the Advanced Media Library, or **n** to skip installation.
 
 !!! note
 
@@ -62,13 +73,11 @@ Simply type **y** and press Enter to install the Advanced Media Library.
 
 ## How do I uninstall Griptape Nodes?
 
-Need to part ways with Griptape Nodes? It's a simple goodbye with a single command:
-
 ```bash
 griptape-nodes self uninstall
 ```
 
-When regret inevitably washes over you, have no fear. Open arms await; just revisit [installation](installation.md)
+To reinstall, follow the instructions on the [installation](installation.md) page.
 
 ## How do I update Griptape Nodes?
 
@@ -88,15 +97,23 @@ gtn self update
 gtn assets update
 ```
 
-## I'm seeing "failed to locate pyvenv.cfg: The system cannot find the file specified." - What should I do?
+## I'm seeing `failed to locate pyvenv.cfg: The system cannot find the file specified.` - What should I do?
 
 It is possible, that during a previous uninstall things were not _fully_ uninstalled. Simply perform an uninstall again, and then [re-install](installation.md).
 
-## I'm seeing "Attempted to create a Flow with a parent 'None', but no parent with that name could be found." - What should I do?
+## I'm seeing `Attempted to create a Flow with a parent 'None', but no parent with that name could be found.` - What should I do?
 
 The good news is, this is usually harmless, and you can usually disregard it. If you're getting it in a way that stops work, please restart your engine, and that should take care of it.
 
 That said, we apologize for this elusive bug. We're working to catch and fix it as soon as possible. If you are so inclined, we'd be grateful if you wanted to [log a bug](https://github.com/griptape-ai/griptape-nodes/issues/new?template=bug_report.yml&title=Attempted%20to%20create%20flow%20with%20a%20parent%20%27None%27) and provide any context around what may have led to the issue when you see it!
+
+## I'm receiving an error when trying to run Griptape Nodes: `ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1000)` - What should I do?
+
+The Python installation on your machine may not have access to verified SSL certificates. To remedy:
+
+1. Reinstall Python using the python.org installer. As of this writing, Griptape Nodes requires Python 3.12.
+1. At the end of the installation, select to "Install Certificates".
+    1. If not available in the installer, run `/Applications/Python\ 3.12/Install\ Certificates.command`
 
 ## Where can I provide feedback or ask questions?
 
