@@ -3,8 +3,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, NamedTuple, Self, cast
 
-from griptape.mixins.singleton_mixin import SingletonMixin
 from pydantic import BaseModel
+
+from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
@@ -94,7 +95,7 @@ class LibrarySchema(BaseModel):
     is_default_library: bool | None = None
 
 
-class LibraryRegistry(SingletonMixin):
+class LibraryRegistry(metaclass=SingletonMeta):
     """Singleton registry to manage many libraries."""
 
     _libraries: dict[str, Library]
