@@ -91,7 +91,7 @@ class DescribeImage(ControlNode):
                 ui_options={
                     "placeholder_text": "The description of the image",
                     "multiline": True,
-                    "display_name": "image description",
+                    "display_name": "output",
                 },
             )
         )
