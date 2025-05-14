@@ -220,7 +220,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
         self.append_value_to_parameter("logs", "Finished processing image.\n")
 
         # Create a false memory for the agent
-        # This is becasue the agent will have the base64 image in its memory, which is huge.
+        # This is because the agent will have the base64 image in its memory, which is huge.
         # So we replace it with a simple, false memory - but tell it is used a tool.
         agent.insert_false_memory(
             prompt=orig_prompt, output="I created an image based on your prompt.", tool="GenerateImageTool"
