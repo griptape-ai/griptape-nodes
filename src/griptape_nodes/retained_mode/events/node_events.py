@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any, NewType
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from griptape_nodes.exe_types.node_types import NodeResolutionState
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
