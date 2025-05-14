@@ -4,12 +4,12 @@ from datetime import datetime  # noqa: TC003 (can't put into type checking block
 from pathlib import Path
 from typing import ClassVar
 
-from griptape.mixins.singleton_mixin import SingletonMixin
 from pydantic import BaseModel, Field
 
 from griptape_nodes.node_library.library_registry import (
     LibraryNameAndVersion,  # noqa: TC001 (putting this into type checking causes it to not be defined)
 )
+from griptape_nodes.utils.metaclasses import SingletonMeta
 
 
 class WorkflowMetadata(BaseModel):
@@ -28,7 +28,7 @@ class WorkflowMetadata(BaseModel):
     published_workflow_id: str | None = Field(default=None)
 
 
-class WorkflowRegistry(SingletonMixin):
+class WorkflowRegistry(metaclass=SingletonMeta):
     class _RegistryKey:
         """Private class for workflow construction."""
 
