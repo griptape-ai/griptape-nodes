@@ -308,7 +308,7 @@ class Agent(ControlNode):
         return prompt
 
     # --- Processing ---
-    def process(self) -> AsyncResult[Structure]:
+    def process(self) -> AsyncResult[Structure]:  # noqa: C901
         """Executes the main logic of the node asynchronously.
 
         Sets up the Griptape Agent (either new or from input), configures the
