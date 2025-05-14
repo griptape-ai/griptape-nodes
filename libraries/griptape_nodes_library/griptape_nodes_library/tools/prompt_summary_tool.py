@@ -35,4 +35,4 @@ class PromptSummary(BaseTool):
         tool = GtPromptSummaryTool(prompt_summary_engine=engine)
 
         # Store the tool as a dictionary in the output parameters for later use
-        self.parameter_output_values["tool"] = tool
+        self.parameter_output_values["tool"] = tool.to_dict()

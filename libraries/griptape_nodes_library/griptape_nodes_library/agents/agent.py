@@ -13,6 +13,7 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import ActionChunkEvent, FinishStructureRunEvent, StartStructureRunEvent, TextChunkEvent
 from griptape.structures import Structure
 from griptape.structures.agent import Agent as GtAgent
+from griptape.tools.base_tool import BaseTool
 from jinja2 import Template
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
@@ -156,7 +157,7 @@ class Agent(ControlNode):
             )
             ParameterList(
                 name="rulesets",
-                input_types=["Ruleset", "List[Ruleset]"],
+                input_types=["Ruleset"],
                 tooltip="Rulesets to apply to the agent to control its behavior.",
                 default_value=[],
                 allowed_modes={ParameterMode.INPUT},
@@ -403,6 +404,19 @@ class Agent(ControlNode):
         return prompt
 
     # --- Processing ---
+    def _get_tools(self) -> list:
+        tool_list = self.get_parameter_value("tools")
+        tools = []
+        if tool_list:
+            for tool in tool_list:
+                if isinstance(tool, dict):
+                    logger.debug(f"Tool is a dict: {tool}")
+                    tools.append(BaseTool.from_dict(tool))
+                if isinstance(tool, BaseTool):
+                    logger.debug(f"Tool is a BaseTool: {tool}")
+                    tools.append(tool)
+
+        return tools
 
     def process(self) -> AsyncResult[Structure]:
         """Executes the main logic of the node asynchronously.
@@ -445,10 +459,7 @@ class Agent(ControlNode):
             self.append_value_to_parameter("logs", f"[Model config]: {prompt_model_settings}\n")
 
         # Get any tools
-        # tools = self.get_parameter_value("tools")  # noqa: ERA001
-        tools = [tool for tool in params.get("tools", []) if tool]
-        if include_details and tools:
-            self.append_value_to_parameter("logs", f"[Tools]: {', '.join([tool.name for tool in tools])}\n")
+        tools = self._get_tools()
 
         # Get any rulesets
         # rulesets = self.get_parameter_value("rulesets")  # noqa: ERA001

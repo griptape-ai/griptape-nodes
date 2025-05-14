@@ -11,4 +11,4 @@ class Calculator(BaseTool):
         tool = GtCalculatorTool(off_prompt=off_prompt)
 
         # Set the output
-        self.parameter_output_values["tool"] = tool
+        self.parameter_output_values["tool"] = tool.to_dict()
