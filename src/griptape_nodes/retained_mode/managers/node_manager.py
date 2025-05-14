@@ -1687,8 +1687,9 @@ class NodeManager:
         for node_name, _ in sorted_nodes:
             result = self.on_serialize_node_to_commands(SerializeNodeToCommandsRequest(node_name=node_name))
             if not result.succeeded():
-                return SerializeSelectedNodesToTcommandsFailure()
-        return result
+                return SerializeNodeToCommandsResultFailure()
+            node_commands.append(result)
+        return SerializeNodeToCommandsResultSuccess(serialized_node_commands=node_commands)
             # now we have all of our node commands. we need connections as well.
 
 

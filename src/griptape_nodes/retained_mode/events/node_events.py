@@ -218,8 +218,6 @@ class SerializedNodeCommands:
 @dataclass
 class SerializedSelectedNodeCommands:
     node_commands: list[SerializedNodeCommands]
-    # Has the UUIDs for Nodes and for Parameters
-    connection_commands: list[IndirectConnectionSerialization]
 
 @dataclass
 @PayloadRegistry.register
@@ -270,14 +268,16 @@ class SerializeNodeToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 @PayloadRegistry.register
 class SerializeSelectedNodestoCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
     # They will be passed with node_name, timestamp
-    nodes_to_serialize:tuple[str,str]
+    nodes_to_serialize:list[tuple[str,str]]
 
 @dataclass
 @PayloadRegistry.register
 class SerializeSelectedNodestoCommandsSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     # They will be passed with node_name, timestamp
     # Could be a flow command if it's all nodes in a flow.
-    serialized_node_commands: SerializedNodeCommands | SerializedFlowCommands
+    serialized_node_commands: SerializedSelectedNodeCommands | SerializedFlowCommands
+    # Connection commands are None if it's a Serialized Flow Commands
+    serialized_connection_commands: list[IndirectConnectionSerialization] | None
 
 @dataclass
 @PayloadRegistry.register
