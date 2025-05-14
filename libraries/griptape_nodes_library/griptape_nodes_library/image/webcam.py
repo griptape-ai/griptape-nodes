@@ -7,9 +7,6 @@ class Webcam(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        # Need to define the category
-        self.category = "Image"
-        self.description = "Capture an image"
         image_parameter = Parameter(
             name="image",
             input_types=["ImageArtifact", "ImageUrlArtifact"],
