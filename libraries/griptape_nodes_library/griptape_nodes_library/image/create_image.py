@@ -154,12 +154,11 @@ class GenerateImage(ControlNode):
         else:
             agent = GtAgent.from_dict(agent)
 
-        # Add some context to the prompt
+        # Add some context to the prompt based on the agent's conversation memory.
+        # We use this because otherwise the agent will not have the context of the prompt.
+        # This is due to the fact that when you temporarily swap the task from a prompt_task to an image generation task,
+        # the context is lost.
         prompt = agent.build_context(prompt=orig_prompt)
-        # if agent._context:
-        #     prompt = f"Previous Conversation: {agent._context['conversation_memory']}\n\nUser: {orig_prompt}"
-        # else:
-        #     prompt = orig_prompt
 
         # Check if we have a connection to the prompt parameter
         enhance_prompt = params.get("enhance_prompt", False)
@@ -212,6 +211,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
         kwargs["image_generation_driver"] = driver
 
         # Set new Image Generation Task
+        # Cool trick to swap the task of the agent from PromptTask to ImageGenerationTask
         agent.swap_task(PromptImageGenerationTask(**kwargs))
 
         # Run the agent asynchronously
@@ -220,11 +220,14 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
         self.append_value_to_parameter("logs", "Finished processing image.\n")
 
         # Create a false memory for the agent
+        # This is becasue the agent will have the base64 image in its memory, which is huge.
+        # So we replace it with a simple, false memory - but tell it is used a tool.
         agent.insert_false_memory(
             prompt=orig_prompt, output="I created an image based on your prompt.", tool="GenerateImageTool"
         )
 
         # Restore the task
+        # Now restore the original prompt task for the agent.
         agent.restore_task()
 
         # Output the agent
