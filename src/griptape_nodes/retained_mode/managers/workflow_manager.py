@@ -1123,6 +1123,15 @@ class WorkflowManager:
         )
         ast_container.nodes.extend(connection_asts)
 
+        # Now generate all the set parameter value code.
+        set_parameter_value_asts = WorkflowManager._generate_set_parameter_value_code(
+            set_parameter_value_commands=serialized_flow_commands.set_parameter_value_commands,
+            unique_parameter_uuid_to_values=serialized_flow_commands.unique_parameter_uuid_to_values,
+            node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+            import_recorder=import_recorder,
+        )
+        ast_container.nodes.extend(set_parameter_value_asts)
+
         # Generate final code from ASTContainer
         ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
         import_output = import_recorder.generate_imports()
@@ -1612,6 +1621,114 @@ class WorkflowManager:
             connection_asts.append(create_connection_call)
 
         return connection_asts
+
+    @staticmethod
+    def _generate_set_parameter_value_code(
+        set_parameter_value_commands: dict[
+            SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
+        ],
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
+        import_recorder: ImportRecorder,
+    ) -> list[ast.stmt]:
+        parameter_value_asts = []
+        for node_uuid, commands in set_parameter_value_commands.items():
+            node_variable_name = node_uuid_to_node_variable_name[node_uuid]
+            parameter_value_asts.extend(
+                WorkflowManager._generate_set_parameter_value_for_node(
+                    node_variable_name, commands, unique_parameter_uuid_to_values, import_recorder
+                )
+            )
+        return parameter_value_asts
+
+    @staticmethod
+    def _generate_set_parameter_value_for_node(
+        node_variable_name: str,
+        commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand],
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        import_recorder: ImportRecorder,
+    ) -> list[ast.stmt]:
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.parameter_events", "SetParameterValueRequest"
+        )
+
+        set_parameter_value_asts = []
+        with_node_context = ast.With(
+            items=[
+                ast.withitem(
+                    context_expr=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="ContextManager().node",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[ast.Name(id=node_variable_name, ctx=ast.Load(), lineno=1, col_offset=0)],
+                        keywords=[],
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    optional_vars=None,
+                )
+            ],
+            body=[],
+            lineno=1,
+            col_offset=0,
+        )
+
+        for command in commands:
+            value = unique_parameter_uuid_to_values[command.unique_value_uuid]
+            set_parameter_value_request_call = ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                        attr="handle_request",
+                        ctx=ast.Load(),
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    args=[
+                        ast.Call(
+                            func=ast.Name(id="SetParameterValueRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                            args=[],
+                            keywords=[
+                                ast.keyword(
+                                    arg="parameter_name",
+                                    value=ast.Constant(
+                                        value=command.set_parameter_value_command.parameter_name, lineno=1, col_offset=0
+                                    ),
+                                ),
+                                ast.keyword(
+                                    arg="node_name",
+                                    value=ast.Name(id=node_variable_name, ctx=ast.Load(), lineno=1, col_offset=0),
+                                ),
+                                ast.keyword(arg="value", value=ast.Constant(value=value, lineno=1, col_offset=0)),
+                                ast.keyword(
+                                    arg="initial_setup", value=ast.Constant(value=True, lineno=1, col_offset=0)
+                                ),
+                                ast.keyword(
+                                    arg="is_output",
+                                    value=ast.Constant(
+                                        value=command.set_parameter_value_command.is_output, lineno=1, col_offset=0
+                                    ),
+                                ),
+                            ],
+                            lineno=1,
+                            col_offset=0,
+                        )
+                    ],
+                    keywords=[],
+                    lineno=1,
+                    col_offset=0,
+                ),
+                lineno=1,
+                col_offset=0,
+            )
+            with_node_context.body.append(set_parameter_value_request_call)
+
+        set_parameter_value_asts.append(with_node_context)
+        return set_parameter_value_asts
 
     def _convert_parameter_to_minimal_dict(self, parameter: Parameter) -> dict[str, Any]:
         """Converts a parameter to a minimal dictionary for loading up a dynamic, black-box Node."""
