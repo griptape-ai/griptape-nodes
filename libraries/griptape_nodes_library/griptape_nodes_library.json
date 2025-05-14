@@ -659,6 +659,15 @@
       }
     },
     {
+      "class_name": "CompareStrings",
+      "file_path": "griptape_nodes_library/execution/compare_strings.py",
+      "metadata": {
+        "category": "execution",
+        "description": "Compare strings node",
+        "display_name": "Compare Strings"
+      }
+    },
+    {
       "class_name": "OutputSelector",
       "file_path": "griptape_nodes_library/execution/select_output.py",
       "metadata": {
