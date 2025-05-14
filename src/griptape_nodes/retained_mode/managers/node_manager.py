@@ -1,4 +1,5 @@
 import logging
+import pickle
 from typing import Any, cast
 from uuid import uuid4
 
@@ -1698,7 +1699,7 @@ class NodeManager:
         1. Retrieves the parameter value from the node's parameter values or output values
         2. Checks if the value has already been created in our map of unique values
         3. If so, it records the unique value UUID for later correlation.
-        4. If not, it adds the value to the uniques map and records the new UUID.
+        4. If not, confirm that the value will serialize reliably. If so,it adds the value to the uniques map and records the new UUID.
         5. Creates a SetParameterValueRequest to reconstruct this for the node
 
         Args:
@@ -1741,7 +1742,19 @@ class NodeManager:
             # We have a match on this value. We're all good.
             unique_uuid = value_hash_to_unique_value_uuid[value_id]
         else:
-            # This one is new for us. Add it to the map of uniques.
+            # This value is new for us.
+
+            # Confirm that the author wants this parameter and/or class to be serialized.
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1179 ID a method for classes and/or parameters to be flagged for NOT serializability.
+
+            # Check if we can serialize it.
+            try:
+                pickle.dumps(value)
+            except Exception as err:
+                details = f"Attempted to serialize parameter '{parameter.name}' on node '{node.name}'. The value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable. Error: {err}."
+                logger.warning(details)
+                return None
+            # The value should be serialized. Add it to the map of uniques.
             unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
             value_hash_to_unique_value_uuid[value_id] = unique_uuid
             unique_parameter_uuid_to_values[unique_uuid] = value
@@ -1753,8 +1766,8 @@ class NodeManager:
             is_output=is_output,
             initial_setup=True,
         )
-        indexed_set_value_command = SerializedNodeCommands.IndirectSetParameterValueCommand(
+        indirect_set_value_command = SerializedNodeCommands.IndirectSetParameterValueCommand(
             set_parameter_value_command=set_value_command,
             unique_value_uuid=unique_uuid,
         )
-        return indexed_set_value_command
+        return indirect_set_value_command
