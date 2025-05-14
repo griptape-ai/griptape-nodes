@@ -250,6 +250,29 @@ class BaseNode(ABC):
     def get_current_parameter(self) -> Parameter | None:
         return self.current_spotlight_parameter
 
+    def _set_parameter_visibility(self, names: str | list[str], *, visible: bool) -> None:
+        """Sets the visibility of one or more parameters.
+
+        Args:
+            names (str or list of str): The parameter name(s) to update.
+            visible (bool): Whether to show (True) or hide (False) the parameters.
+        """
+        if isinstance(names, str):
+            names = [names]
+
+        for name in names:
+            parameter = self.get_parameter_by_name(name)
+            if parameter is not None:
+                parameter._ui_options["hide"] = not visible
+
+    def hide_parameter_by_name(self, names: str | list[str]) -> None:
+        """Hides one or more parameters by name."""
+        self._set_parameter_visibility(names, visible=False)
+
+    def show_parameter_by_name(self, names: str | list[str]) -> None:
+        """Shows one or more parameters by name."""
+        self._set_parameter_visibility(names, visible=True)
+
     def initialize_spotlight(self) -> None:
         # Make a deep copy of all of the parameters and create the linked list.
         curr_param = None
