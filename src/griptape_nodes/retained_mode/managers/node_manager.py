@@ -68,6 +68,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
     SerializeSelectedNodestoCommandsRequest,
+    SerializeSelectedNodestoCommandsSuccess,
     SerializedNodeCommands,
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultFailure,
@@ -1684,12 +1685,23 @@ class NodeManager:
         # Sorts tuples in order based on the timestamp
         sorted_nodes = sorted(nodes_to_serialize, key=lambda x: x[1])
         node_commands = []
+        parameter_commands = []
         for node_name, _ in sorted_nodes:
             result = self.on_serialize_node_to_commands(SerializeNodeToCommandsRequest(node_name=node_name))
             if not result.succeeded():
+                # TODO : create error 
                 return SerializeNodeToCommandsResultFailure()
-            node_commands.append(result)
-        return SerializeNodeToCommandsResultSuccess(serialized_node_commands=node_commands)
+            result = cast("SerializeNodeToCommandsResultSuccess",result)
+            node_commands.append(result.serialized_node_commands)
+            parameter_commands.extend(result.set_parameter_value_commands)
+            flow_name = self.get_node_parent_flow_by_name(node_name)
+            flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+            if flow is None:
+                # TODO: Creat error
+                return SerializeNodeToCommandsResultFailure()
+            # Set up Connections with Node name and parameter UUID
+        # Now we have the node and parameter commands. Get Connections
+        return SerializeSelectedNodestoCommandsSuccess(serialized_node_commands=node_commands)
             # now we have all of our node commands. we need connections as well.
 
 
