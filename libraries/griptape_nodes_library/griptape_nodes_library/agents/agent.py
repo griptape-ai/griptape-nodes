@@ -9,22 +9,23 @@ for tools, rulesets, prompts, and streams output back to the user interface.
 from typing import Any
 
 from griptape.artifacts import BaseArtifact
+from griptape.drivers.prompt.base_prompt_driver import BasePromptDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import ActionChunkEvent, FinishStructureRunEvent, StartStructureRunEvent, TextChunkEvent
 from griptape.structures import Structure
-from griptape.structures.agent import Agent as GtAgent
+from griptape.tasks import PromptTask
 from jinja2 import Template
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 # --- Constants ---
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
-CONNECTED_CHOICE = "use incoming config"
 MODEL_CHOICES = [
     "gpt-4.1",
     "gpt-4.1-mini",
@@ -33,7 +34,6 @@ MODEL_CHOICES = [
     "o1",
     "o1-mini",
     "o3-mini",
-    CONNECTED_CHOICE,
 ]
 DEFAULT_MODEL = MODEL_CHOICES[0]
 
@@ -81,10 +81,22 @@ class Agent(ControlNode):
             Parameter(
                 name="agent",
                 type="Agent",
-                input_types=["Agent", "dict"],
+                input_types=["Agent"],
                 output_type="Agent",
                 tooltip="Create a new agent, or continue a chat with an existing agent.",
                 default_value=None,
+            )
+        )
+        # Selection for the Griptape Cloud model.
+        self.add_parameter(
+            Parameter(
+                name="model",
+                input_types=["str", "Prompt Model Config"],
+                default_value=DEFAULT_MODEL,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                tooltip="Choose a model, or connect a Prompt Model Configuration",
+                traits={Options(choices=MODEL_CHOICES)},
+                ui_options={"display_name": "prompt model"},
             )
         )
         # Main prompt input for the agent.
@@ -96,7 +108,10 @@ class Agent(ControlNode):
                 tooltip="The main text prompt to send to the agent.",
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True, "placeholder_text": "Talk with the Agent."},
+                ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Talk with the Agent.",
+                },
                 converters=[strip_whitespace],
             )
         )
@@ -116,34 +131,7 @@ class Agent(ControlNode):
             )
         )
 
-        # Selection for the Griptape Cloud model.
         self.add_parameter(
-            Parameter(
-                name="model",
-                type="str",
-                input_types=["str"],
-                tooltip="Models to choose from.",
-                default_value=DEFAULT_MODEL,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=MODEL_CHOICES)},
-            )
-        )
-
-        # Input for a pre-configured prompt model driver/config.
-        self.add_parameter(
-            Parameter(
-                name="prompt_model_config",
-                input_types=["Prompt Model Config"],
-                type="Prompt Model Config",
-                tooltip="Connect prompt_model_config. If not supplied, we will use the Griptape Cloud Prompt Model.",
-                default_value=None,
-                allowed_modes={ParameterMode.INPUT},
-                ui_options={"hide": False},  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/877
-            )
-        )
-
-        # Group for less commonly used configuration options.
-        with ParameterGroup(group_name="Advanced options") as advanced_group:
             ParameterList(
                 name="tools",
                 input_types=["Tool"],
@@ -151,6 +139,8 @@ class Agent(ControlNode):
                 tooltip="Connect Griptape Tools for the agent to use.\nOr connect individual tools.",
                 allowed_modes={ParameterMode.INPUT},
             )
+        )
+        self.add_parameter(
             ParameterList(
                 name="rulesets",
                 input_types=["Ruleset", "List[Ruleset]"],
@@ -158,9 +148,7 @@ class Agent(ControlNode):
                 default_value=[],
                 allowed_modes={ParameterMode.INPUT},
             )
-
-        advanced_group.ui_options = {"hide": True}  # Hide the advanced group by default.
-        self.add_node_element(advanced_group)
+        )
 
         # Parameter for the agent's final text output.
         self.add_parameter(
@@ -170,12 +158,12 @@ class Agent(ControlNode):
                 default_value="",
                 tooltip="The final text response from the agent.",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"multiline": True, "placeholder_text": "Agent response"},
+                ui_options={"multiline": True, "placeholder_text": "Agent response", "markdown": True},
             )
         )
 
         # Group for logging information.
-        with ParameterGroup(group_name="Logs") as logs_group:
+        with ParameterGroup(name="Logs") as logs_group:
             Parameter(name="include_details", type="bool", default_value=False, tooltip="Include extra details.")
 
             Parameter(
@@ -191,40 +179,6 @@ class Agent(ControlNode):
 
     # --- UI Interaction Hooks ---
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        """Handles UI updates after a parameter's value is changed via the property panel.
-
-        Specifically, it shows/hides the 'prompt_model_config' input based on
-        whether the 'model' dropdown is set to use an incoming configuration.
-
-        Args:
-            parameter: The Parameter whose value was changed.
-            value: The new value assigned to the parameter.
-            modified_parameters_set: A set to which names of parameters whose UI state
-                                     might have changed should be added. This helps the
-                                     UI framework know what needs updating.
-        """
-        # Show 'prompt_model_config' input only if 'model' is set to CONNECTED_CHOICE.
-        if parameter.name == "model":
-            """
-            TODO: https://github.com/griptape-ai/griptape-nodes/issues/878
-
-            """
-            prompt_model_settings_param = self.get_parameter_by_name("prompt_model_config")
-            if self.parameter_values.get("prompt_model_config") is None:
-                if value == CONNECTED_CHOICE and prompt_model_settings_param:
-                    if prompt_model_settings_param._ui_options["hide"]:
-                        modified_parameters_set.add("prompt_model_config")
-                    prompt_model_settings_param._ui_options["hide"] = False
-                    return None
-                if value != CONNECTED_CHOICE and prompt_model_settings_param:
-                    if not prompt_model_settings_param._ui_options["hide"]:
-                        modified_parameters_set.add("prompt_model_config")
-                    prompt_model_settings_param._ui_options["hide"] = True
-                    return None
-
-        return super().after_value_set(parameter, value, modified_parameters_set)
-
     def after_incoming_connection(
         self,
         source_node: BaseNode,
@@ -232,42 +186,23 @@ class Agent(ControlNode):
         target_parameter: Parameter,
         modified_parameters_set: set[str],
     ) -> None:
-        """Handles UI updates after an incoming connection is made to this node.
-
-        - Hides agent creation parameters (model, tools, rulesets, advanced group)
-          if an existing agent is connected.
-        - Hides the 'model' dropdown if a 'prompt_model_config' is connected.
-        - Makes 'additional context' read-only if connected (value comes from input).
-
-        Args:
-            source_node: The node connecting to this node.
-            source_parameter: The parameter on the source node providing the connection.
-            target_parameter: The parameter on this node receiving the connection.
-            modified_parameters_set: The set of parameters that have changed
-        """
         # If an existing agent is connected, hide parameters related to creating a new one.
         if target_parameter.name == "agent":
-            groups_to_toggle = ["Advanced options"]
-            for group_name in groups_to_toggle:
-                group = self.get_group_by_name_or_element_id(group_name)
-                if group:
-                    group.ui_options["hide"] = True
-                    modified_parameters_set.add(group_name)
-
-            params_to_toggle = ["model", "tools", "rulesets", "prompt_model_config"]
+            params_to_toggle = ["model", "tools", "rulesets"]
+            self.hide_parameter_by_name(params_to_toggle)
             for param_name in params_to_toggle:
-                param = self.get_parameter_by_name(param_name)
-                if param:
-                    param._ui_options["hide"] = True
-                    modified_parameters_set.add(param_name)
+                modified_parameters_set.add(param_name)
 
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/878
-        # If a prompt_model_config is connected, hide the manual model selector.
-        if target_parameter.name == "prompt_model_config":
-            model_param = self.get_parameter_by_name("model")
-            if model_param:
-                model_param._ui_options["hide"] = True
-                modified_parameters_set.add("model")
+        if target_parameter.name == "model" and source_parameter.name == "prompt_model_config":
+            # Check and see if the incoming connection is from a prompt model config or an agent.
+            target_parameter.type = source_parameter.type
+            target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
+
+            target_parameter._ui_options["display_name"] = source_parameter.ui_options.get(
+                "display_name", source_parameter.name
+            )
+            modified_parameters_set.add("model")
+
         # If additional context is connected, prevent editing via property panel.
         # NOTE: This is a workaround. Ideally this is done automatically.
         if target_parameter.name == "additional_context":
@@ -278,57 +213,31 @@ class Agent(ControlNode):
             source_node, source_parameter, target_parameter, modified_parameters_set
         )
 
-    def after_incoming_connection_removed(  # noqa: C901
+    def after_incoming_connection_removed(
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
         modified_parameters_set: set[str],
     ) -> None:
-        """Handles UI updates after an incoming connection to this node is removed.
-
-        Reverses the logic of `after_incoming_connection`:
-        - Shows agent creation parameters if the agent connection is removed.
-        - Shows the 'model' dropdown if the 'prompt_model_config' connection is removed
-          (unless an agent is still connected).
-        - Makes 'additional context' editable again if its connection is removed.
-
-        Args:
-            source_node: The node that was connected.
-            source_parameter: The parameter on the source node that was connected.
-            target_parameter: The parameter on this node that was disconnected.
-            modified_parameters_set: The set of parameters that have changed
-        """
         # If the agent connection is removed, show agent creation parameters.
         if target_parameter.name == "agent":
-            groups_to_toggle = ["Advanced options"]
-            for group_name in groups_to_toggle:
-                group = self.get_group_by_name_or_element_id(group_name)
-                if group:
-                    group.ui_options["hide"] = False
-                    modified_parameters_set.add(group.group_name)
-
-            params_to_toggle = ["model", "tools", "rulesets", "prompt_model_config"]
+            params_to_toggle = ["model", "tools", "rulesets"]
+            self.show_parameter_by_name(params_to_toggle)
             for param_name in params_to_toggle:
-                param = self.get_parameter_by_name(param_name)
-                if param:
-                    # Special case: Don't unhide 'prompt_model_config' if model is not CONNECTED_CHOICE
-                    if param_name == "prompt_model_config":
-                        model_value = self.get_parameter_value("model")
-                        if model_value != CONNECTED_CHOICE:
-                            continue  # Keep it hidden if model isn't set to use connection
+                modified_parameters_set.add(param_name)
 
-                    param._ui_options["hide"] = False
-                    modified_parameters_set.add(param.name)
+        if target_parameter.name == "model":
+            target_parameter.type = "str"
+            target_parameter.add_trait(Options(choices=MODEL_CHOICES))
+            # Sometimes the value is not set to the default value - these are all attemnpts to get it to work.
+            target_parameter.set_default_value(DEFAULT_MODEL)
+            target_parameter.default_value = DEFAULT_MODEL
+            self.set_parameter_value("model", DEFAULT_MODEL)
 
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/878
-        # If the prompt_model_config connection is removed, show the model dropdown,
-        if target_parameter.name == "prompt_model_config":
-            # Find the model parameter and hide it
-            model_param = self.get_parameter_by_name("model")
-            if model_param:
-                model_param._ui_options["hide"] = False
-                modified_parameters_set.add(model_param.name)
+            target_parameter._ui_options["display_name"] = "prompt model"
+
+            modified_parameters_set.add("model")
 
         # If the additional context connection is removed, make it editable again.
         # NOTE: This is a workaround. Ideally this is done automatically.
@@ -400,8 +309,7 @@ class Agent(ControlNode):
         return prompt
 
     # --- Processing ---
-
-    def process(self) -> AsyncResult[Structure]:
+    def process(self) -> AsyncResult[Structure]:  # noqa: C901
         """Executes the main logic of the node asynchronously.
 
         Sets up the Griptape Agent (either new or from input), configures the
@@ -417,29 +325,15 @@ class Agent(ControlNode):
         """
         # Get the parameters from the node
         params = self.parameter_values
-        # Grab toggles for logging events
+        model_input = self.get_parameter_value("model")
+        agent = None
         include_details = self.get_parameter_value("include_details")
+        default_prompt_driver = GriptapeCloudPromptDriver(
+            model=DEFAULT_MODEL, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
+        )
 
         # Initialize the logs parameter
         self.append_value_to_parameter("logs", "[Processing..]\n")
-
-        # For this node, we'll going use the GriptapeCloudPromptDriver if no driver is provided.
-        # If a driver is provided, we'll use that.
-        prompt_model_settings = self.get_parameter_value("prompt_model_config")
-        if not prompt_model_settings:
-            # Grab the appropriate parameters
-            model = self.get_parameter_value("model")
-            if include_details:
-                self.append_value_to_parameter("logs", f"[Model]: {model}\n")
-
-            prompt_model_settings = GriptapeCloudPromptDriver(
-                model=model,
-                api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
-                stream=True,
-            )
-
-        if include_details:
-            self.append_value_to_parameter("logs", f"[Model config]: {prompt_model_settings}\n")
 
         # Get any tools
         # tools = self.get_parameter_value("tools")  # noqa: ERA001
@@ -452,7 +346,8 @@ class Agent(ControlNode):
         rulesets = [ruleset for ruleset in params.get("rulesets", []) if ruleset]
         if include_details and rulesets:
             self.append_value_to_parameter(
-                "logs", f"\n[Rulesets]: {', '.join([ruleset.name for ruleset in rulesets])}\n"
+                "logs",
+                f"\n[Rulesets]: {', '.join([ruleset.name for ruleset in rulesets])}\n",
             )
 
         # Get the prompt
@@ -467,13 +362,26 @@ class Agent(ControlNode):
         if include_details and prompt:
             self.append_value_to_parameter("logs", f"[Prompt]:\n{prompt}\n")
 
-        # Create the agent
-        agent = None
-        agent_dict = self.get_parameter_value("agent")
-        if not agent_dict:
-            agent = GtAgent(prompt_driver=prompt_model_settings, tools=tools, rulesets=rulesets)
-        else:
-            agent = GtAgent.from_dict(agent_dict)
+        # If an agent is provided, we'll use and ensure it's using a PromptTask
+        # If a prompt_driver is provided, we'll use that
+        # If neither are provided, we'll create a new one with the selected model.
+        # Otherwise, we'll just use the default model
+        agent = self.get_parameter_value("agent")
+        if isinstance(agent, dict):
+            # The agent is connected. We'll use that.
+            agent = GtAgent().from_dict(agent)
+            # make sure the agent is using a PromptTask
+            if not isinstance(agent.tasks[0], PromptTask):
+                agent.add_task(PromptTask(prompt_driver=default_prompt_driver))
+        elif isinstance(model_input, BasePromptDriver):
+            agent = GtAgent(prompt_driver=model_input, tools=tools, rulesets=rulesets)
+        elif isinstance(model_input, str):
+            if model_input not in MODEL_CHOICES:
+                model_input = DEFAULT_MODEL
+            prompt_driver = GriptapeCloudPromptDriver(
+                model=model_input, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
+            )
+            agent = GtAgent(prompt_driver=prompt_driver, tools=tools, rulesets=rulesets)
 
         if prompt and not prompt.isspace():
             # Run the agent asynchronously

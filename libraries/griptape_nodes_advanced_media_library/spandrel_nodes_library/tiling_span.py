@@ -1,17 +1,16 @@
-import contextlib
 import logging
-from collections.abc import Iterator
-from typing import ClassVar
 
 import PIL.Image
-from diffusers_nodes_library.utils.huggingface_utils import (
-    list_repo_revisions_in_cache,  # type: ignore[reportMissingImports]
-)
-from diffusers_nodes_library.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
 
 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/829
-from diffusers_nodes_library.utils.tiling_image_processor import (
+from diffusers_nodes_library.common.misc.tiling_image_processor import (
     TilingImageProcessor,  # type: ignore[reportMissingImports]
+)
+from diffusers_nodes_library.common.parameters.huggingface_repo_file_parameter import (
+    HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
+)
+from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
+    LogParameter,  # type: ignore[reportMissingImports]
 )
 from griptape.artifacts import ImageUrlArtifact
 from griptape.loaders import ImageLoader
@@ -30,75 +29,17 @@ logger = logging.getLogger("spandrel_nodes_library")
 
 
 class TilingSPAN(ControlNode):
-    _pipes: ClassVar[dict[str, SpandrelPipeline]] = {}
-
-    @classmethod
-    def _get_pipe(cls, repo_id: str, revision: str, filename: str) -> SpandrelPipeline:
-        key = TilingSPAN._repo_revision_filename_to_key((repo_id, revision, filename))
-        if key not in cls._pipes:
-            pipe = SpandrelPipeline.from_hf_file(repo_id=repo_id, revision=revision, filename=filename)
-
-            # Putting this on a device other than cpu is overkill I think.
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/830
-            # device = get_best_device() # noqa: ERA001
-
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/831
-            # optimize_pipe_memory_footprint(pipe) # noqa: ERA001
-
-            cls._pipes[key] = pipe
-
-        return cls._pipes[key]
-
-    @classmethod
-    def _repo_revision_filename_to_key(cls, repo_revision_filename: tuple[str, str, str]) -> str:
-        return f"{repo_revision_filename[2]} ({repo_revision_filename[0]}, {repo_revision_filename[1]})"
-
-    @classmethod
-    def _key_to_repo_revision_filename(cls, key: str) -> tuple[str, str, str]:
-        parts = key.rsplit(" (", maxsplit=1)
-        if len(parts) != 2:  # noqa: PLR2004
-            logger.exception("Invalid key")
-        filename = parts[0]
-        repo_revision = parts[1][:-1]
-        parts = repo_revision.split(", ", maxsplit=1)
-        if len(parts) != 2:  # noqa: PLR2004
-            logger.exception("Invalid key")
-        repo, revision = parts[0], parts[1]
-        return repo, revision, filename
-
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self.category = "image/upscale"
-        self.description = "TilingSPAN node."
-
-        repo_revisions = [
-            *list_repo_revisions_in_cache("skbhadra/ClearRealityV1"),
-        ]
-
-        self.repo_revision_filenames = [
-            (repo_revision[0], repo_revision[1], "4x-ClearRealityV1.pth") for repo_revision in repo_revisions
-        ]
-
-        self.add_parameter(
-            Parameter(
-                name="model",
-                default_value=(
-                    TilingSPAN._repo_revision_filename_to_key(self.repo_revision_filenames[0])
-                    if self.repo_revision_filenames
-                    else None
-                ),
-                input_types=["str"],
-                type="str",
-                traits={
-                    Options(
-                        choices=list(map(TilingSPAN._repo_revision_filename_to_key, self.repo_revision_filenames)),
-                    )
-                },
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-                tooltip="model",
-            )
+        repo_file = self.get_repo_id(), self.get_filename()
+        self._huggingface_repo_file_parameter = HuggingFaceRepoFileParameter(
+            self, repo_files=[repo_file], parameter_name="lora_model"
         )
+
+        self.log_params = LogParameter(self)
+
+        self._huggingface_repo_file_parameter.add_input_parameters()
         self.add_parameter(
             Parameter(
                 name="input_image",
@@ -162,22 +103,22 @@ class TilingSPAN(ControlNode):
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
-        self.add_parameter(
-            Parameter(
-                name="logs",
-                output_type="str",
-                allowed_modes={ParameterMode.OUTPUT},
-                tooltip="logs",
-                ui_options={"multiline": True},
-            )
-        )
+        self.log_params.add_output_parameters()
+
+    def get_repo_id(self) -> str:
+        return "skbhadra/ClearRealityV1"
+
+    def get_filename(self) -> str:
+        return "4x-ClearRealityV1.pth"
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        errors = self._huggingface_repo_file_parameter.validate_before_node_run()
+        return errors or None
 
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
     def _process(self) -> AsyncResult | None:
-        model = self.get_parameter_value("model")
-        repo, revision, filename = TilingSPAN._key_to_repo_revision_filename(model)
         input_image_artifact = self.get_parameter_value("input_image")
 
         max_tile_size = int(self.get_parameter_value("max_tile_size"))
@@ -187,6 +128,7 @@ class TilingSPAN(ControlNode):
         if isinstance(input_image_artifact, ImageUrlArtifact):
             input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
         input_image_pil = image_artifact_to_pil(input_image_artifact)
+        input_image_pil = input_image_pil.convert("RGB")
 
         output_scale = 4  # THIS IS SPECIFIC TO 4x-ClearRealityV1 - TODO(dylan): Make per-model configurable
 
@@ -202,15 +144,12 @@ class TilingSPAN(ControlNode):
         largest_reasonable_tile_size = max(input_image_pil.height, input_image_pil.width)
         tile_size = min(largest_reasonable_tile_size, max_tile_size)
 
-        self.append_value_to_parameter("logs", "Preparing models...\n")
-        with self._append_stdout_to_logs():
-            pipe = self._get_pipe(repo, revision, filename)
-
-        def wrapped_pipe(tile: Image, *_) -> Image:
-            return pipe(tile)
+        with self.log_params.append_profile_to_logs("Loading model metadata"):
+            repo, revision = self._huggingface_repo_file_parameter.get_repo_revision()
+            pipe = SpandrelPipeline.from_hf_file(repo_id=repo, revision=revision, filename=self.get_filename())
 
         tiling_image_processor = TilingImageProcessor(
-            pipe=wrapped_pipe,
+            pipe=pipe,
             tile_size=tile_size,
             tile_overlap=tile_overlap,
             tile_strategy=tile_strategy,
@@ -220,23 +159,14 @@ class TilingSPAN(ControlNode):
         def callback_on_tile_end(i: int, preview_image_pil: Image) -> None:
             if i < num_tiles:
                 self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_image_pil))
-                self.append_value_to_parameter("logs", f"Finished tile {i} of {num_tiles}.\n")
-                self.append_value_to_parameter("logs", f"Starting tile {i + 1} of {num_tiles}...\n")
+                self.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")
+                self.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")
 
-        self.append_value_to_parameter("logs", f"Starting tile 1 of {num_tiles}...\n")
+        self.log_params.append_to_logs(f"Starting tile 1 of {num_tiles}...\n")
         output_image_pil = tiling_image_processor.process(
             image=input_image_pil,
             output_scale=output_scale,
             callback_on_tile_end=callback_on_tile_end,
         )
-        self.append_value_to_parameter("logs", f"Finished tile {num_tiles} of {num_tiles}.\n")
-        self.set_parameter_value("output_image", pil_to_image_artifact(output_image_pil))
+        self.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")
         self.parameter_output_values["output_image"] = pil_to_image_artifact(output_image_pil)
-
-    @contextlib.contextmanager
-    def _append_stdout_to_logs(self) -> Iterator[None]:
-        def callback(data: str) -> None:
-            self.append_value_to_parameter("logs", data)
-
-        with StdoutCapture(callback):
-            yield

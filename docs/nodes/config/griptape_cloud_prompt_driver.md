@@ -21,18 +21,16 @@ Use this node when you want to:
 ### Parameters
 
 - **model**: The AI model to use (default is "gpt-4o")
-- **response_format**: How you want responses formatted (options include "json_object")
-- **seed**: A value to make responses more consistent between runs
 - **stream**: Whether to receive responses as they're generated (true) or all at once (false)
 - **temperature**: Controls randomness in responses (higher values = more creative, lower = more focused)
 - **max_attempts_on_fail**: How many times to retry if there's an error
 - **use_native_tools**: Whether to use the model's built-in tools
 - **max_tokens**: Maximum length of responses
-- **min_p**: Controls diversity of outputs (converted to top_p internally)
+- **top_p**: Controls diversity of outputs (converted to top_p internally)
 
 ### Outputs
 
-- **driver**: The configured Griptape Cloud driver that other nodes can use
+- **prompt_model_config**: The configured Griptape Cloud driver that other nodes can use
 
 ## Example
 

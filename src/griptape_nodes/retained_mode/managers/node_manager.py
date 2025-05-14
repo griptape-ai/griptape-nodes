@@ -1,5 +1,6 @@
 import logging
 from typing import Any, cast
+from uuid import uuid4
 
 from griptape.events import EventBus
 
@@ -759,7 +760,7 @@ class NodeManager:
         if parameter_group is not None:
             for child in parameter_group.find_elements_by_type(Parameter):
                 GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, node_name))
-            node.remove_group_by_name(request.parameter_name)
+            node.remove_parameter_element_by_name(request.parameter_name)
             return RemoveParameterFromNodeResultSuccess()
 
         # No tricky stuff, users!
@@ -816,7 +817,7 @@ class NodeManager:
 
         # Delete the Parameter itself.
         if parameter is not None:
-            node.remove_parameter(parameter)
+            node.remove_parameter_element(parameter)
         else:
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because parameter didn't exist."
             logger.error(details)
@@ -1631,8 +1632,8 @@ class NodeManager:
                 set_param_value_request = NodeManager._handle_parameter_value_saving(
                     parameter=parameter,
                     node=node,
-                    value_hash_to_unique_value_index=request.value_hash_to_unique_value_index,
-                    unique_values=request.unique_parameter_values_list,
+                    unique_parameter_uuid_to_values=request.unique_parameter_uuid_to_values,
+                    value_hash_to_unique_value_uuid=request.value_hash_to_unique_value_uuid,
                 )
                 if set_param_value_request is not None:
                     set_value_commands.append(set_param_value_request)
@@ -1687,27 +1688,27 @@ class NodeManager:
     def _handle_parameter_value_saving(
         parameter: Parameter,
         node: BaseNode,
-        value_hash_to_unique_value_index: dict[Any, int],
-        unique_values: list[Any],
-    ) -> SerializedNodeCommands.IndexedSetParameterValueCommand | None:
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        value_hash_to_unique_value_uuid: dict[Any, SerializedNodeCommands.UniqueParameterValueUUID],
+    ) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:
         """Generates code to save a parameter value for a node in a Griptape workflow.
 
         This function handles the process of creating commands that will reconstruct and set
         parameter values for nodes. It performs the following steps:
         1. Retrieves the parameter value from the node's parameter values or output values
-        2. Checks if the value has already been created in our list of unique values
-        3. If so, it records the index for later correlation.
-        4. If not, it adds the value to the uniques list and records the new index.
+        2. Checks if the value has already been created in our map of unique values
+        3. If so, it records the unique value UUID for later correlation.
+        4. If not, it adds the value to the uniques map and records the new UUID.
         5. Creates a SetParameterValueRequest to reconstruct this for the node
 
         Args:
             parameter (Parameter): The parameter object containing metadata
             node (BaseNode): The node object that contains the parameter
-            value_hash_to_unique_value_index (dict[Any, int]): Dictionary mapping value hashes to indices in unique_values list
-            unique_values (list[Any]): List of unique values
+            unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Dictionary mapping unique value UUIDs to values
+            value_hash_to_unique_value_uuid (dict[Any, SerializedNodeCommands.UniqueParameterValueUUID]): Dictionary mapping value hashes to unique value UUIDs
 
         Returns:
-            None (if no value to be serialized) or an IndexedSetParameterValueCommand linking the value to the unique value list
+            None (if no value to be serialized) or an IndirectSetParameterValueCommand linking the value to the unique value map
 
         Notes:
             - Parameter output values take precedence over regular parameter values
@@ -1736,14 +1737,14 @@ class NodeManager:
             # Couldn't get a hash. Use the object's ID
             value_id = id(value)
 
-        if value_id in value_hash_to_unique_value_index:
+        if value_id in value_hash_to_unique_value_uuid:
             # We have a match on this value. We're all good.
-            unique_index = value_hash_to_unique_value_index[value_id]
+            unique_uuid = value_hash_to_unique_value_uuid[value_id]
         else:
-            # This one is new for us. Append it to the list of uniques.
-            unique_index = len(unique_values)
-            value_hash_to_unique_value_index[value_id] = unique_index
-            unique_values.append(value)
+            # This one is new for us. Add it to the map of uniques.
+            unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
+            value_hash_to_unique_value_uuid[value_id] = unique_uuid
+            unique_parameter_uuid_to_values[unique_uuid] = value
 
         # Serialize it
         set_value_command = SetParameterValueRequest(
@@ -1752,8 +1753,8 @@ class NodeManager:
             is_output=is_output,
             initial_setup=True,
         )
-        indexed_set_value_command = SerializedNodeCommands.IndexedSetParameterValueCommand(
+        indexed_set_value_command = SerializedNodeCommands.IndirectSetParameterValueCommand(
             set_parameter_value_command=set_value_command,
-            unique_value_index=unique_index,
+            unique_value_uuid=unique_uuid,
         )
         return indexed_set_value_command

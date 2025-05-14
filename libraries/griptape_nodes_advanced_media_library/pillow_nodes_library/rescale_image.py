@@ -19,9 +19,6 @@ class RescaleImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self.category = "image/upscale"
-        self.description = "RescaleImage node."
-
         self.add_parameter(
             Parameter(
                 name="input_image",

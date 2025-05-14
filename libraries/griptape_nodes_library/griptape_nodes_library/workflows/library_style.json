@@ -1,0 +1,6 @@
+{
+  "color": "border-gray-500",
+  "title": "Workflows",
+  "description": "Nodes for executing Workflows.",
+  "icon": "Workflow"
+}

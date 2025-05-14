@@ -20,7 +20,7 @@ def pil_to_image_artifact(pil_image: Image) -> ImageUrlArtifact:
     pil_image.save(image_io, "PNG")
     image_bytes = image_io.getvalue()
     url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, f"{uuid.uuid4()}.png")
-    return ImageUrlArtifact(value=url)
+    return ImageUrlArtifact(url)
 
 
 def pad_mirror(image: Image, target_size: tuple[int, int]) -> Image:

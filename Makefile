@@ -31,13 +31,17 @@ version/commit: ## Commit version.
 .PHONY: version/publish
 version/publish: ## Create and push git tags.
 	@git tag v$$(make version/get)
-	@git tag latest -f
+	@git tag stable -f
 	@git push -f --tags
 	@git push
 	
 .PHONY: run
 run: ## Run the project.
 	uv run griptape-nodes --no-update
+	
+.PHONY: run/watch
+run/watch: ## Run the project in watch mode.
+	uv run src/griptape_nodes/app/watch.py
 	
 .PHONY: install
 install: ## Install all dependencies.

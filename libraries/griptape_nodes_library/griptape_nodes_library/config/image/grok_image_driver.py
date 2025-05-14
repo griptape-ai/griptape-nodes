@@ -28,7 +28,7 @@ class GrokImage(BaseImageDriver):
         self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
 
         # remove the 'size' parameter
-        self.remove_parameter_by_name("image_size")
+        self.remove_parameter_element_by_name("image_size")
 
     def process(self) -> None:
         # Get the parameters from the node

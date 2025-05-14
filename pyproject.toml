@@ -1,21 +1,22 @@
 [project]
 name = "griptape-nodes"
-version = "0.31.0"
+version = "0.33.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = "~=3.12"
 dependencies = [
-  "griptape[drivers-prompt-cohere,drivers-prompt-anthropic,drivers-prompt-ollama,drivers-prompt-amazon-bedrock,loaders-image,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo]>=1.7.0",
+  "griptape[drivers-prompt-cohere,drivers-prompt-anthropic,drivers-prompt-ollama,drivers-prompt-amazon-bedrock,loaders-image,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo]>=1.7.1",
   "pydantic>=2.10.6",
   "python-dotenv>=1.0.1",
   "xdg-base-dirs>=6.0.2",
   "httpx>=0.28.0,<1.0.0",
   "websockets>=15.0.1,<16.0.0",
   "tomlkit>=0.13.2",
-  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/833 
+  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/833
   "uv>=0.6.16",
   "fastapi>=0.115.12",
   "uvicorn>=0.34.2",
+  "packaging>=25.0",
 ]
 
 [dependency-groups]
@@ -28,6 +29,7 @@ dev = [
   "pyright>=1.1.396",
   "ruff>=0.11.0",
   "typos>=1.30.2",
+  "watchdog>=6.0.0",
 ]
 docs = [
   "mkdocs-material>=9.6.9",

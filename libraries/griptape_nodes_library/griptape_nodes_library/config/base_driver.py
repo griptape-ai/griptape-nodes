@@ -36,6 +36,7 @@ class BaseDriver(DataNode):
                 default_value=None,
                 tooltip="",
                 allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"display_name": "model config"},
             )
         )
 
@@ -76,24 +77,6 @@ class BaseDriver(DataNode):
     # -----------------------------------------------------------------------------
     # Public API Methods
     # -----------------------------------------------------------------------------
-
-    def remove_parameter_by_name(self, name: str) -> None:
-        """Removes a parameter by its name from the node.
-
-        This method will hopefully be elevated to the base class in the future.
-
-        Args:
-            name: The name of the parameter to remove.
-
-        """
-        try:
-            param = self.get_parameter_by_name(name)
-            if param is not None:
-                self.remove_parameter(param)
-        except Exception as e:
-            # Handle the case where the parameter is not found or cannot be removed
-            msg = f"Error removing parameter '{name}'."
-            raise ValueError(msg) from e
 
     def params_to_sparse_dict(
         self,

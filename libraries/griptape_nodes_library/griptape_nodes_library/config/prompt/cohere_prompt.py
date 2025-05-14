@@ -53,8 +53,8 @@ class CoherePrompt(BasePrompt):
         self._replace_param_by_name(param_name="top_k", new_param_name="k")
 
         # Remove the 'seed' parameter as it's not directly used by Cohere.
-        self.remove_parameter_by_name("seed")
-        self.remove_parameter_by_name("response_format")
+        self.remove_parameter_element_by_name("seed")
+        self.remove_parameter_element_by_name("response_format")
 
     def process(self) -> None:
         """Processes the node configuration to create a CoherePromptDriver.

@@ -31,7 +31,6 @@ class BasePrompt(BaseDriver):
     - Defines common LLM parameters accessible via `self.parameter_values`.
     - Provides `_get_common_driver_args` to easily collect arguments for drivers based on base parameters.
     - Provides `_validate_api_key` to standardize API key validation logic.
-    - Provides `remove_parameter_by_name` to remove unsupported base parameters.
     - Provides `_update_option_choices` to set driver-specific model lists for the 'model' parameter.
     Note: The `process` method in this base class creates a `DummyPromptDriver`
     primarily to establish the output socket type. It does not utilize the
@@ -55,6 +54,7 @@ class BasePrompt(BaseDriver):
         if driver_parameter is not None:
             driver_parameter.name = "prompt_model_config"
             driver_parameter.output_type = "Prompt Model Config"
+            driver_parameter._ui_options = {"display_name": "prompt model config"}
 
         # --- Common Prompt Driver Parameters ---
         # These parameters represent settings frequently used by LLM prompt drivers.

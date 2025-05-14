@@ -1,21 +1,28 @@
 import uuid
 
 from griptape.artifacts import BaseArtifact, ImageUrlArtifact
+from griptape.drivers.image_generation.base_image_generation_driver import BaseImageGenerationDriver
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.structures.agent import Agent
 from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.traits.options import Options
+from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
-DEFAULT_MODEL = "dall-e-3"
+MODEL_CHOICES = [
+    "dall-e-3",
+]
+DEFAULT_MODEL = MODEL_CHOICES[0]
 DEFAULT_QUALITY = "hd"
 DEFAULT_STYLE = "natural"
+AVAILABLE_SIZES = ["1024x1024", "1024x1792", "1792x1024"]
+DEFAULT_SIZE = AVAILABLE_SIZES[0]
 
 
 class GenerateImage(ControlNode):
@@ -29,7 +36,7 @@ class GenerateImage(ControlNode):
             Parameter(
                 name="agent",
                 type="Agent",
-                input_types=["Agent", "dict"],
+                input_types=["Agent"],
                 output_type="Agent",
                 tooltip="None",
                 default_value=None,
@@ -38,15 +45,16 @@ class GenerateImage(ControlNode):
         )
         self.add_parameter(
             Parameter(
-                name="image_model_config",
-                input_types=["Image Generation Driver"],
-                output_type="Image Generation Driver",
-                type="Image Generation Driver",
-                tooltip="None",
-                default_value="",
+                name="model",
+                input_types=["str", "Image Generation Driver"],
+                type="str",
+                default_value=DEFAULT_MODEL,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                tooltip="Select the model you want to use from the available options.",
+                traits={Options(choices=MODEL_CHOICES)},
+                ui_options={"display_name": "image model"},
             )
         )
-
         self.add_parameter(
             Parameter(
                 name="prompt",
@@ -59,6 +67,17 @@ class GenerateImage(ControlNode):
                 ui_options={"multiline": True, "placeholder_text": "Enter your image generation prompt here."},
             )
         )
+        self.add_parameter(
+            Parameter(
+                name="image_size",
+                type="str",
+                default_value=DEFAULT_SIZE,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                tooltip="Select the size of the generated image.",
+                traits={Options(choices=AVAILABLE_SIZES)},
+            )
+        )
+
         self.add_parameter(
             Parameter(
                 name="enhance_prompt",
@@ -82,7 +101,7 @@ class GenerateImage(ControlNode):
             )
         )
         # Group for logging information.
-        with ParameterGroup(group_name="Logs") as logs_group:
+        with ParameterGroup(name="Logs") as logs_group:
             Parameter(name="include_details", type="bool", default_value=False, tooltip="Include extra details.")
 
             Parameter(
@@ -120,26 +139,31 @@ class GenerateImage(ControlNode):
         params = self.parameter_values
 
         # Validate that we have a prompt.
-        prompt = self.get_parameter_value("prompt")
+        orig_prompt = self.get_parameter_value("prompt")
+
         exception = self.validate_empty_parameter(param="prompt")
         if exception:
             raise exception
 
-        agent = params.get("agent", None)
+        agent = self.get_parameter_value("agent")
         if not agent:
             prompt_driver = GriptapeCloudPromptDriver(
-                model="gpt-4o",
-                api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR),
+                model="gpt-4o", api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
             )
-            agent = Agent(prompt_driver=prompt_driver)
+            agent = GtAgent(prompt_driver=prompt_driver)
         else:
-            agent = Agent.from_dict(agent)
+            agent = GtAgent.from_dict(agent)
+
+        # Add some context to the prompt based on the agent's conversation memory.
+        # We use this because otherwise the agent will not have the context of the prompt.
+        # This is due to the fact that when you temporarily swap the task from a prompt_task to an image generation task,
+        # the context is lost.
+        prompt = agent.build_context(prompt=orig_prompt)
 
         # Check if we have a connection to the prompt parameter
         enhance_prompt = params.get("enhance_prompt", False)
 
         if enhance_prompt:
-            logger.info("Enhancing prompt...")
             self.append_value_to_parameter("logs", "Enhancing prompt...\n")
             # agent.run is a blocking operation that will hold up the rest of the engine.
             # By using `yield lambda`, the engine can run this in the background and resume when it's done.
@@ -160,37 +184,59 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             self.append_value_to_parameter("logs", "Finished enhancing prompt...\n")
             prompt = result.output
         else:
-            logger.info("Prompt enhancement disabled.")
             self.append_value_to_parameter("logs", "Prompt enhancement disabled.\n")
         # Initialize driver kwargs with required parameters
         kwargs = {}
 
         # Driver
-        driver_val = params.get("image_model_config", None)
-        if driver_val:
-            driver = driver_val
-        else:
+        model_input = self.get_parameter_value("model")
+        driver = None
+        if isinstance(model_input, BaseImageGenerationDriver):
+            driver = model_input
+        elif isinstance(model_input, str):
+            if model_input not in MODEL_CHOICES:
+                model_input = DEFAULT_MODEL
             driver = GriptapeCloudImageGenerationDriver(
-                model=params.get("model", DEFAULT_MODEL),
+                model=model_input,
+                image_size=self.get_parameter_value("image_size"),
                 api_key=self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
             )
+        else:
+            driver = GriptapeCloudImageGenerationDriver(
+                model=DEFAULT_MODEL,
+                image_size=self.get_parameter_value("image_size"),
+                api_key=self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
+            )
+
         kwargs["image_generation_driver"] = driver
 
-        # Add the actual image gen *task
-        agent.add_task(PromptImageGenerationTask(**kwargs))
+        # Set new Image Generation Task
+        # Cool trick to swap the task of the agent from PromptTask to ImageGenerationTask
+        agent.swap_task(PromptImageGenerationTask(**kwargs))
 
         # Run the agent asynchronously
         self.append_value_to_parameter("logs", "Starting processing image..\n")
         yield lambda: self._create_image(agent, prompt)
         self.append_value_to_parameter("logs", "Finished processing image.\n")
 
-        # Reset the agent
-        agent._tasks = []
+        # Create a false memory for the agent
+        # This is because the agent will have the base64 image in its memory, which is huge.
+        # So we replace it with a simple, false memory - but tell it is used a tool.
+        agent.insert_false_memory(
+            prompt=orig_prompt, output="I created an image based on your prompt.", tool="GenerateImageTool"
+        )
+
+        # Restore the task
+        # Now restore the original prompt task for the agent.
+        agent.restore_task()
+
+        # Output the agent
+        self.parameter_output_values["agent"] = agent.to_dict()
 
     def after_incoming_connection(
         self,
-        source_node: BaseNode,  # noqa: ARG002
-        source_parameter: Parameter,  # noqa: ARG002
+        source_node: BaseNode,
+        source_parameter: Parameter,
         target_parameter: Parameter,
         modified_parameters_set: set[str],
     ) -> None:
@@ -203,10 +249,24 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             if ParameterMode.PROPERTY in target_parameter.allowed_modes:
                 target_parameter.allowed_modes.remove(ParameterMode.PROPERTY)
 
+        if target_parameter.name == "model" and source_parameter.name == "image_model_config":
+            # Check and see if the incoming connection is from a image model config.
+            target_parameter.type = source_parameter.type
+            target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
+            target_parameter._ui_options["display_name"] = source_parameter.name
+
+            self.hide_parameter_by_name("image_size")
+            modified_parameters_set.add("model")
+            modified_parameters_set.add("image_size")
+
+        return super().after_incoming_connection(
+            source_node, source_parameter, target_parameter, modified_parameters_set
+        )
+
     def after_incoming_connection_removed(
         self,
-        source_node: BaseNode,  # noqa: ARG002
-        source_parameter: Parameter,  # noqa: ARG002
+        source_node: BaseNode,
+        source_parameter: Parameter,
         target_parameter: Parameter,
         modified_parameters_set: set[str],
     ) -> None:
@@ -218,7 +278,23 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             # If we have no connections to the prompt parameter, add the property mode back
             target_parameter.allowed_modes.add(ParameterMode.PROPERTY)
 
-    def _create_image(self, agent: Agent, prompt: BaseArtifact | str) -> None:
+        # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter
+        if target_parameter.name == "model":
+            target_parameter.type = "str"
+            target_parameter.add_trait(Options(choices=MODEL_CHOICES))
+            target_parameter.set_default_value(DEFAULT_MODEL)
+            target_parameter.default_value = DEFAULT_MODEL
+            target_parameter._ui_options["display_name"] = "model"
+            self.set_parameter_value("model", DEFAULT_MODEL)
+            self.show_parameter_by_name("image_size")
+
+            modified_parameters_set.add("model")
+            modified_parameters_set.add("image_size")
+        return super().after_incoming_connection_removed(
+            source_node, source_parameter, target_parameter, modified_parameters_set
+        )
+
+    def _create_image(self, agent: GtAgent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)
         static_url = GriptapeNodes.StaticFilesManager().save_static_file(agent.output.to_bytes(), f"{uuid.uuid4()}.png")
         url_artifact = ImageUrlArtifact(value=static_url)

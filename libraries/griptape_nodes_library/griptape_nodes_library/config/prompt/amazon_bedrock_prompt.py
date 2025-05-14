@@ -69,9 +69,9 @@ class AmazonBedrockPrompt(BasePrompt):
             param.default_value = MODEL_CHOICES[0]
 
         # Remove unused parameters for Amazon Bedrock
-        self.remove_parameter_by_name("seed")
-        self.remove_parameter_by_name("min_p")
-        self.remove_parameter_by_name("top_k")
+        self.remove_parameter_element_by_name("seed")
+        self.remove_parameter_element_by_name("min_p")
+        self.remove_parameter_element_by_name("top_k")
 
         # Amazon Bedrock tends to fail if max_tokens isn't set
         self.set_parameter_value("max_tokens", 100)
