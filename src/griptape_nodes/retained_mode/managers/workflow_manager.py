@@ -1059,6 +1059,10 @@ class WorkflowManager:
         logger.info(details)
 
         # Now let's try all this with the serialized flow.
+
+        # Keep track of all of the nodes we create and the generated variable names for them.
+        node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str] = {}
+
         top_level_flow_request = GetTopLevelFlowRequest()
         top_level_flow_result = GriptapeNodes.handle_request(top_level_flow_request)
         if not isinstance(top_level_flow_result, GetTopLevelFlowResultSuccess):
@@ -1080,7 +1084,6 @@ class WorkflowManager:
 
         import_recorder = WorkflowManager.ImportRecorder()
         import_recorder.add_from_import("griptape_nodes.retained_mode.griptape_nodes", "GriptapeNodes")
-        import_recorder.add_from_import("griptape_nodes.retained_mode.managers.context_manager", "ContextManager")
 
         ast_container = WorkflowManager.ASTContainer()
 
@@ -1104,14 +1107,21 @@ class WorkflowManager:
         assign_flow_context_node = WorkflowManager._generate_assign_flow_context(create_flow_command, import_recorder)
 
         # Generate nodes in flow AST node. This will create the node and apply all element modifiers.
-        nodes_in_flow = WorkflowManager._generate_nodes_in_flow(serialized_flow_commands, import_recorder)
+        nodes_in_flow = WorkflowManager._generate_nodes_in_flow(
+            serialized_flow_commands, import_recorder, node_uuid_to_node_variable_name
+        )
 
         # Add the nodes to the body of the Current Context flow's "with" statement
         assign_flow_context_node.body.extend(nodes_in_flow)
         ast_container.add_node(assign_flow_context_node)
 
         # Now generate the connection code.
-        # TODO
+        connection_asts = WorkflowManager._generate_connections_code(
+            serialized_connections=serialized_flow_commands.serialized_connections,
+            node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+            import_recorder=import_recorder,
+        )
+        ast_container.nodes.extend(connection_asts)
 
         # Generate final code from ASTContainer
         ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
@@ -1376,24 +1386,38 @@ class WorkflowManager:
 
     @staticmethod
     def _generate_nodes_in_flow(
-        serialized_flow_commands: SerializedFlowCommands, import_recorder: ImportRecorder
+        serialized_flow_commands: SerializedFlowCommands,
+        import_recorder: ImportRecorder,
+        node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
     ) -> list[ast.stmt]:
         # Generate node creation code and add it to the flow context
         node_creation_asts = []
         for node_index, serialized_node_command in enumerate(serialized_flow_commands.serialized_node_commands):
             node_creation_ast = WorkflowManager._generate_node_creation_code(
-                serialized_node_command, node_index, import_recorder
+                serialized_node_command,
+                node_index,
+                import_recorder,
+                node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
             )
             node_creation_asts.extend(node_creation_ast)
         return node_creation_asts
 
     @staticmethod
     def _generate_node_creation_code(
-        serialized_node_command: SerializedNodeCommands, node_index: int, import_recorder: ImportRecorder
+        serialized_node_command: SerializedNodeCommands,
+        node_index: int,
+        import_recorder: ImportRecorder,
+        node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
     ) -> list[ast.stmt]:
         # Ensure necessary imports are recorded
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "AddParameterToNodeRequest")
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeRequest")
-        import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeResultSuccess")
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.parameter_events", "AlterParameterDetailsRequest"
+        )
+
+        # Generate the VARIABLE name that codegen will use for this node.
+        node_variable_name = f"node{node_index}_name"
 
         # Construct AST for the function body
         node_creation_ast = []
@@ -1412,7 +1436,7 @@ class WorkflowManager:
 
         # Handle the create node command and assign to node name
         create_node_call_ast = ast.Assign(
-            targets=[ast.Name(id=f"node{node_index}_name", ctx=ast.Store(), lineno=1, col_offset=0)],
+            targets=[ast.Name(id=node_variable_name, ctx=ast.Store(), lineno=1, col_offset=0)],
             value=ast.Attribute(
                 value=ast.Call(
                     func=ast.Attribute(
@@ -1532,7 +1556,62 @@ class WorkflowManager:
 
             node_creation_ast.append(with_stmt)
 
+        # Populate the dictionary with the node VARIABLE name and the node's UUID.
+        node_uuid_to_node_variable_name[serialized_node_command.node_uuid] = node_variable_name
+
         return node_creation_ast
+
+    @staticmethod
+    def _generate_connections_code(
+        serialized_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],
+        node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
+        import_recorder: ImportRecorder,
+    ) -> list[ast.stmt]:
+        # Ensure necessary imports are recorded
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.connection_events", "CreateConnectionRequest"
+        )
+
+        connection_asts = []
+
+        for connection in serialized_connections:
+            # Match the connection's node UUID back to its variable name.
+            source_node_variable_name = node_uuid_to_node_variable_name[connection.source_node_uuid]
+            target_node_variable_name = node_uuid_to_node_variable_name[connection.target_node_uuid]
+
+            create_connection_request_args = [
+                ast.keyword(
+                    arg="source_node_name",
+                    value=ast.Name(id=source_node_variable_name, ctx=ast.Load()),
+                ),
+                ast.keyword(arg="source_parameter_name", value=ast.Constant(value=connection.source_parameter_name)),
+                ast.keyword(
+                    arg="target_node_name",
+                    value=ast.Name(id=target_node_variable_name, ctx=ast.Load()),
+                ),
+                ast.keyword(arg="target_parameter_name", value=ast.Constant(value=connection.target_parameter_name)),
+                ast.keyword(arg="initial_setup", value=ast.Constant(value=True)),
+            ]
+
+            create_connection_call = ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load()), attr="handle_request", ctx=ast.Load()
+                    ),
+                    args=[
+                        ast.Call(
+                            func=ast.Name(id="CreateConnectionRequest", ctx=ast.Load()),
+                            args=[],
+                            keywords=create_connection_request_args,
+                        )
+                    ],
+                    keywords=[],
+                )
+            )
+
+            connection_asts.append(create_connection_call)
+
+        return connection_asts
 
     def _convert_parameter_to_minimal_dict(self, parameter: Parameter) -> dict[str, Any]:
         """Converts a parameter to a minimal dictionary for loading up a dynamic, black-box Node."""
