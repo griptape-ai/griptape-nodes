@@ -184,7 +184,7 @@ class RetainedMode:
             metadata (dict, optional): Extra node metadata such as {"position": {"x": 100, "y": 200"}}.
 
         Returns:
-            ResultPayload – Contains the name of the created node if successful.
+            ResultPayload: Contains the name of the created node if successful.
 
         Example:
             agent = cmd.create_node("Agent")
@@ -886,7 +886,7 @@ def _fancy_signature(func: Callable) -> list[str]:
     sig = inspect.signature(func)
     type_hints = get_type_hints(func)
 
-    def type_repr(tp) -> str:
+    def type_repr(tp) -> str:  # noqa: ANN001
         if tp is inspect.Signature.empty:
             return "Any"
         if isinstance(tp, type):
