@@ -142,38 +142,40 @@ class SerializedFlowCommands:
         serialized_node_commands (list[SerializedNodeCommands]): List of serialized commands for nodes.
             Handles creating all of the nodes themselves, along with configuring them. Does NOT set Parameter values,
             which is done as a separate step.
-        serialized_connections (list[SerializedFlowCommands.IndexedConnectionSerialization]): List of serialized connections.
+        serialized_connections (list[SerializedFlowCommands.IndirectConnectionSerialization]): List of serialized connections.
             Creates the connections between Nodes.
-        unique_parameter_values (list[Any]): Records the unique Parameter values used by the Flow.
-        set_parameter_value_commands (list[list[SerializedNodeCommands.IndexedSetParameterValueCommand]]): List of commands
-            to set parameter values, indexed by node, during deserialization.
+        unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Records the unique Parameter values used by the Flow.
+        set_parameter_value_commands (dict[SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]]): List of commands
+            to set parameter values, keyed by node UUID, during deserialization.
         sub_flows_commands (list["SerializedFlowCommands"]): List of sub-flow commands. Cascades into sub-flows within this serialization.
     """
 
     @dataclass
-    class IndexedConnectionSerialization:
-        """Companion class to create connections from node indices, since we can't predict the names.
+    class IndirectConnectionSerialization:
+        """Companion class to create connections from node IDs in a serialization, since we can't predict the names.
 
-        These are indices into the serialized_node_commands list we maintain.
+        These are UUIDs referencing into the serialized_node_commands we maintain.
 
         Attributes:
-            source_node_index (int): Index of the source node.
+            source_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the source node, as stored within the serialization.
             source_parameter_name (str): Name of the source parameter.
-            target_node_index (int): Index of the target node.
+            target_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the target node.
             target_parameter_name (str): Name of the target parameter.
         """
 
-        source_node_index: int
+        source_node_uuid: SerializedNodeCommands.NodeUUID
         source_parameter_name: str
-        target_node_index: int
+        target_node_uuid: SerializedNodeCommands.NodeUUID
         target_parameter_name: str
 
     node_libraries_used: set[LibraryNameAndVersion]
     create_flow_command: CreateFlowRequest | None
     serialized_node_commands: list[SerializedNodeCommands]
-    serialized_connections: list[IndexedConnectionSerialization]
-    unique_parameter_values: list[Any]
-    set_parameter_value_commands: list[list[SerializedNodeCommands.IndexedSetParameterValueCommand]]
+    serialized_connections: list[IndirectConnectionSerialization]
+    unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]
+    set_parameter_value_commands: dict[
+        SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
+    ]
     sub_flows_commands: list["SerializedFlowCommands"]
 
 
