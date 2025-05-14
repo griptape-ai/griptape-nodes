@@ -192,8 +192,9 @@ class SerializedNodeCommands:
             as during copy/paste or duplicate.
     """
 
-    NodeUUID = NewType("NodeUUID", UUID)
-    UniqueParameterValueUUID = NewType("UniqueParameterValueUUID", UUID)
+    # Have to use str instead of the UUID class because it's not JSON serializable >:-/
+    NodeUUID = NewType("NodeUUID", str)
+    UniqueParameterValueUUID = NewType("UniqueParameterValueUUID", str)
 
     @dataclass
     class IndirectSetParameterValueCommand:
@@ -211,7 +212,7 @@ class SerializedNodeCommands:
     create_node_command: CreateNodeRequest
     element_modification_commands: list[RequestPayload]
     node_library_details: LibraryNameAndVersion
-    node_uuid: NodeUUID = field(default_factory=lambda: SerializedNodeCommands.NodeUUID(uuid4()))
+    node_uuid: NodeUUID = field(default_factory=lambda: SerializedNodeCommands.NodeUUID(str(uuid4())))
 
 
 @dataclass

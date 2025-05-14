@@ -1742,7 +1742,7 @@ class NodeManager:
             unique_uuid = value_hash_to_unique_value_uuid[value_id]
         else:
             # This one is new for us. Add it to the map of uniques.
-            unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(uuid4())
+            unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
             value_hash_to_unique_value_uuid[value_id] = unique_uuid
             unique_parameter_uuid_to_values[unique_uuid] = value
 
