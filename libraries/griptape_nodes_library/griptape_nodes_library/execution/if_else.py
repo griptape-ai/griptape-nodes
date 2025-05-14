@@ -40,12 +40,28 @@ class IfElse(BaseNode):
         value = self.get_parameter_value("evaluate")
         if isinstance(value, str):
             value_lower = value.lower().strip()
-            if value_lower in ["true", "t", "yes", "y", "positive", "on", "1"]:
-                return True
-            if value_lower in ["false", "f", "no", "n", "negative", "off", "0", ""]:
-                return False
-            msg = f"Invalid string value for evaluate: {value}. Expected true/false, t/f, yes/no, positive/negative, on/off, 1/0."
-            raise ValueError(msg)
+            false_values = [
+                "false",
+                "falsey",
+                "f",
+                "no",
+                "n",
+                "negative",
+                "off",
+                "zero",
+                "0.0",
+                "0",
+                "",
+                "nope",
+                "nah",
+                "none",
+                "null",
+                "nyet",
+                "nein",
+                "disabled",
+            ]
+            return value_lower not in false_values
+
         if isinstance(value, int):
             return bool(value)
         if isinstance(value, bool):
