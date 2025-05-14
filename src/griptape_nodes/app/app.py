@@ -122,9 +122,13 @@ def _serve_static_server() -> None:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai"), "http://localhost:5173"],
+        allow_origins=[
+            os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai"),
+            "https://nodes-staging.griptape.ai",
+            "http://localhost:5173",
+        ],
         allow_credentials=True,
-        allow_methods=["GET", "POST"],
+        allow_methods=["OPTIONS", "GET", "POST"],
         allow_headers=["*"],
     )
 
