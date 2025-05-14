@@ -13,6 +13,7 @@ from griptape.drivers.prompt.base_prompt_driver import BasePromptDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import ActionChunkEvent, FinishStructureRunEvent, StartStructureRunEvent, TextChunkEvent
 from griptape.structures import Structure
+from griptape.tasks import PromptTask
 from jinja2 import Template
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
@@ -326,24 +327,12 @@ class Agent(ControlNode):
         model_input = self.get_parameter_value("model")
         agent = None
         include_details = self.get_parameter_value("include_details")
+        default_prompt_driver = GriptapeCloudPromptDriver(
+            model=DEFAULT_MODEL, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
+        )
 
         # Initialize the logs parameter
         self.append_value_to_parameter("logs", "[Processing..]\n")
-
-        # For this node, we'll going use the GriptapeCloudPromptDriver if no driver is provided.
-        # If a driver is provided, we'll use that.
-        if isinstance(model_input, BasePromptDriver):
-            prompt_driver = model_input
-        else:
-            if model_input not in MODEL_CHOICES:
-                # If the model input is not a valid choice, we'll use the default model.
-                model_input = DEFAULT_MODEL
-            prompt_driver = GriptapeCloudPromptDriver(
-                model=model_input, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
-            )
-
-        if include_details:
-            self.append_value_to_parameter("logs", f"[Model config]: {prompt_driver}\n")
 
         # Get any tools
         # tools = self.get_parameter_value("tools")  # noqa: ERA001
@@ -372,14 +361,26 @@ class Agent(ControlNode):
         if include_details and prompt:
             self.append_value_to_parameter("logs", f"[Prompt]:\n{prompt}\n")
 
-        # Create the agent
-        agent = None
-        agent_dict = self.get_parameter_value("agent")
-        if not agent_dict:
+        # If an agent is provided, we'll use and ensure it's using a PromptTask
+        # If a prompt_driver is provided, we'll use that
+        # If neither are provided, we'll create a new one with the selected model.
+        # Otherwise, we'll just use the default model
+        agent = self.get_parameter_value("agent")
+        if isinstance(agent, dict):
+            # The agent is connected. We'll use that.
+            agent = GtAgent().from_dict(agent)
+            # make sure the agent is using a PromptTask
+            if not isinstance(agent.tasks[0], PromptTask):
+                agent.add_task(PromptTask(prompt_driver=default_prompt_driver))
+        elif isinstance(model_input, BasePromptDriver):
+            agent = GtAgent(prompt_driver=model_input, tools=tools, rulesets=rulesets)
+        elif isinstance(model_input, str):
+            if model_input not in MODEL_CHOICES:
+                model_input = DEFAULT_MODEL
+            prompt_driver = GriptapeCloudPromptDriver(
+                model=model_input, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
+            )
             agent = GtAgent(prompt_driver=prompt_driver, tools=tools, rulesets=rulesets)
-        else:
-            # If the agent is a dictionary, we want to convert it to an Agent object.
-            agent = GtAgent.from_dict(agent_dict)
 
         if prompt and not prompt.isspace():
             # Run the agent asynchronously
