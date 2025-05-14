@@ -3,8 +3,8 @@ from __future__ import annotations
 import ast
 import json
 import logging
-import pickle
 import os
+import pickle
 import pkgutil
 import re
 import shutil
@@ -13,7 +13,7 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Any, ClassVar, NamedTuple, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
 from urllib.parse import urljoin
 
 import httpx
@@ -43,7 +43,6 @@ from griptape_nodes.retained_mode.events.flow_events import (
     SerializeFlowToCommandsResultFailure,
     SerializeFlowToCommandsResultSuccess,
 )
-from griptape_nodes.retained_mode.events.flow_events import GetTopLevelFlowRequest, GetTopLevelFlowResultSuccess
 from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
     GetLibraryMetadataResultSuccess,
@@ -1193,22 +1192,22 @@ class WorkflowManager:
         import_recorder: ImportRecorder,
     ) -> ast.AST:
         if len(unique_parameter_uuid_to_values) == 0:
-            return ast.Pass()
+            return ast.Module(body=[], type_ignores=[])
 
         import_recorder.add_import("pickle")
 
         # Serialize the unique values as pickled strings.
-        unique_parameter_byte_strs = []
-        for unique_parameter_value in unique_parameter_uuid_to_values.values():
+        unique_parameter_dict = {}
+        for uuid, unique_parameter_value in unique_parameter_uuid_to_values.items():
             unique_parameter_bytes = pickle.dumps(unique_parameter_value)
             # Encode the bytes as a string using latin1
             unique_parameter_byte_str = unique_parameter_bytes.decode("latin1")
-            unique_parameter_byte_strs.append(unique_parameter_byte_str)
+            unique_parameter_dict[uuid] = unique_parameter_byte_str
 
         # Generate a comment explaining what we're doing:
         comment_text = (
             "\n"
-            "1. We've collated all of the unique parameter values into a list so that we do not have to duplicate them.\n"
+            "1. We've collated all of the unique parameter values into a dictionary so that we do not have to duplicate them.\n"
             "   This minimizes the size of the code, especially for large objects like serialized image files.\n"
             "2. We're using a prefix so that it's clear which Flow these values are associated with.\n"
             "3. The values are serialized using pickle, which is a binary format. This makes them harder to read, but makes\n"
@@ -1216,12 +1215,13 @@ class WorkflowManager:
             "   would be difficult to serialize.\n"
         )
 
-        # Generate the list of unique values
-        unique_values_list_name = f"{prefix}_unique_values_list"
+        # Generate the dictionary of unique values
+        unique_values_dict_name = f"{prefix}_unique_values_dict"
         unique_values_ast = ast.Assign(
-            targets=[ast.Name(id=unique_values_list_name, ctx=ast.Store(), lineno=1, col_offset=0)],
-            value=ast.List(
-                elts=[
+            targets=[ast.Name(id=unique_values_dict_name, ctx=ast.Store(), lineno=1, col_offset=0)],
+            value=ast.Dict(
+                keys=[ast.Constant(value=str(uuid), lineno=1, col_offset=0) for uuid in unique_parameter_dict],
+                values=[
                     ast.Call(
                         func=ast.Attribute(
                             value=ast.Name(id="pickle", ctx=ast.Load(), lineno=1, col_offset=0),
@@ -1235,9 +1235,8 @@ class WorkflowManager:
                         lineno=1,
                         col_offset=0,
                     )
-                    for byte_str in unique_parameter_byte_strs
+                    for byte_str in unique_parameter_dict.values()
                 ],
-                ctx=ast.Load(),
                 lineno=1,
                 col_offset=0,
             ),
