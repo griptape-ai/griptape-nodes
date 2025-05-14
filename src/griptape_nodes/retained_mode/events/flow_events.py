@@ -127,25 +127,6 @@ class GetTopLevelFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess
     flow_name: str | None
 
 
-@dataclass
-class IndirectConnectionSerialization:
-    """Companion class to create connections from node IDs in a serialization, since we can't predict the names.
-
-    These are UUIDs referencing into the serialized_node_commands we maintain.
-
-    Attributes:
-        source_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the source node, as stored within the serialization.
-        source_parameter_name (str): Name of the source parameter.
-        target_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the target node.
-        target_parameter_name (str): Name of the target parameter.
-    """
-
-    source_node_uuid: SerializedNodeCommands.NodeUUID
-    source_parameter_name: str
-    target_node_uuid: SerializedNodeCommands.NodeUUID
-    target_parameter_name: str
-
-
 # A Flow's state can be serialized into a sequence of commands that the engine then runs.
 @dataclass
 class SerializedFlowCommands:
@@ -169,6 +150,24 @@ class SerializedFlowCommands:
         sub_flows_commands (list["SerializedFlowCommands"]): List of sub-flow commands. Cascades into sub-flows within this serialization.
     """
 
+    @dataclass
+    class IndirectConnectionSerialization:
+        """Companion class to create connections from node IDs in a serialization, since we can't predict the names.
+
+        These are UUIDs referencing into the serialized_node_commands we maintain.
+
+        Attributes:
+            source_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the source node, as stored within the serialization.
+            source_parameter_name (str): Name of the source parameter.
+            target_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the target node.
+            target_parameter_name (str): Name of the target parameter.
+        """
+
+        source_node_uuid: SerializedNodeCommands.NodeUUID
+        source_parameter_name: str
+        target_node_uuid: SerializedNodeCommands.NodeUUID
+        target_parameter_name: str
+
     node_libraries_used: set[LibraryNameAndVersion]
     create_flow_command: CreateFlowRequest | None
     serialized_node_commands: list[SerializedNodeCommands]
@@ -178,7 +177,6 @@ class SerializedFlowCommands:
         SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
     ]
     sub_flows_commands: list["SerializedFlowCommands"]
-
 
 
 @dataclass

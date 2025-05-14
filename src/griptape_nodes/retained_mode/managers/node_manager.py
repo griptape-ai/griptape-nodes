@@ -68,7 +68,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
     SerializeSelectedNodestoCommandsRequest,
-    SerializeSelectedNodestoCommandsSuccess,
+    SerializeSelectedNodestoCommandsResultSuccess,
     SerializedNodeCommands,
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultFailure,
@@ -1697,11 +1697,12 @@ class NodeManager:
             flow_name = self.get_node_parent_flow_by_name(node_name)
             flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
             if flow is None:
-                # TODO: Creat error
+                # TODO: Create error
                 return SerializeNodeToCommandsResultFailure()
+            # Get outgoing connections
             # Set up Connections with Node name and parameter UUID
         # Now we have the node and parameter commands. Get Connections
-        return SerializeSelectedNodestoCommandsSuccess(serialized_node_commands=node_commands)
+        return SerializeSelectedNodestoCommandsResultSuccess(serialized_node_commands=node_commands, serialized_connection_commands=[])
             # now we have all of our node commands. we need connections as well.
 
 

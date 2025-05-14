@@ -11,8 +11,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
-from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest, ListConnectionsForNodeResultSuccess
-from griptape_nodes.retained_mode.events.flow_events import IndirectConnectionSerialization, SerializedFlowCommands
+from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeResultSuccess
 from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterDetailsResultSuccess,
     GetParameterValueResultSuccess,
@@ -272,16 +271,34 @@ class SerializeSelectedNodestoCommandsRequest(WorkflowNotAlteredMixin, RequestPa
 
 @dataclass
 @PayloadRegistry.register
-class SerializeSelectedNodestoCommandsSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+class SerializeSelectedNodestoCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     # They will be passed with node_name, timestamp
     # Could be a flow command if it's all nodes in a flow.
-    serialized_node_commands: SerializedSelectedNodeCommands | SerializedFlowCommands
+    @dataclass
+    class IndirectConnectionSerialization:
+        """Companion class to create connections from node IDs in a serialization, since we can't predict the names.
+
+        These are UUIDs referencing into the serialized_node_commands we maintain.
+
+        Attributes:
+            source_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the source node, as stored within the serialization.
+            source_parameter_name (str): Name of the source parameter.
+            target_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the target node.
+            target_parameter_name (str): Name of the target parameter.
+        """
+
+        source_node_uuid: SerializedNodeCommands.NodeUUID
+        source_parameter_name: str
+        target_node_uuid: SerializedNodeCommands.NodeUUID
+        target_parameter_name: str
+
+    serialized_node_commands: SerializedSelectedNodeCommands
     # Connection commands are None if it's a Serialized Flow Commands
     serialized_connection_commands: list[IndirectConnectionSerialization] | None
 
 @dataclass
 @PayloadRegistry.register
-class SerializeSelectedNodestoCommandsFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+class SerializeSelectedNodestoCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 @dataclass
