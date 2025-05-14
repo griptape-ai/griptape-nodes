@@ -8,7 +8,7 @@ import PIL.Image
 from PIL.Image import Image
 from pillow_nodes_library.utils import pad_mirror  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.utils.math_utils import (  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.utils.math_utils import (  # type: ignore[reportMissingImports]
     next_multiple_ge,  # type: ignore[reportMissingImports]
 )
 

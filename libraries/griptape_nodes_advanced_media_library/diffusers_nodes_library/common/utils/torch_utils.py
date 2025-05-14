@@ -25,95 +25,44 @@ def human_readable_memory_footprint(model: torch.nn.Module) -> str:
     return to_human_readable_size(model.get_memory_footprint())
 
 
-def print_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline) -> None:
+def print_pipeline_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> None:
     """Print pipeline memory footprint."""
-    transformer_bytes = pipe.transformer.get_memory_footprint()
-    text_encoder_bytes = pipe.text_encoder.get_memory_footprint()
-    text_encoder_2_bytes = pipe.text_encoder_2.get_memory_footprint()
-    # pipe.tokenizer and pipe.tokenizer_2 aren't models?
-    # pipe.scheduler is not a model
-    vae_bytes = pipe.vae.get_memory_footprint()
+    bytes_per_component = {}
+    for name in component_names:
+        if hasattr(pipe, name):
+            component = getattr(pipe, name)
+            if hasattr(component, "get_memory_footprint"):
+                bytes_per_component[name] = component.get_memory_footprint()
+            else:
+                logger.warning("Component %s does not have get_memory_footprint method", name)
+        else:
+            logger.warning("Pipeline does not have component %s", name)
 
-    component_bytes = [
-        transformer_bytes,
-        text_encoder_bytes,
-        text_encoder_2_bytes,
-        vae_bytes,
-    ]
+    component_bytes = [bytes_per_component[name] for name in component_names]
     total_bytes = sum(component_bytes)
     max_bytes = max(component_bytes)
 
-    logger.info("Transformer: %s", to_human_readable_size(transformer_bytes))
-    logger.info("Text encoder: %s", to_human_readable_size(text_encoder_bytes))
-    logger.info("Text encoder 2: %s", to_human_readable_size(text_encoder_2_bytes))
-    logger.info("VAE: %s", to_human_readable_size(vae_bytes))
+    for name, bytes_ in bytes_per_component.items():
+        if bytes_ is None:
+            continue
+        logger.info("%s: %s", name, to_human_readable_size(bytes_))
     logger.info("-" * 30)
-
     logger.info("Total: %s", to_human_readable_size(total_bytes))
     logger.info("Max: %s", to_human_readable_size(max_bytes))
     logger.info("")
 
 
-def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline) -> None:
-    """Optimize pipeline memory footprint."""
-    device = get_best_device()
-
-    if device == torch.device("cuda"):
-        # We specifically do not call pipe.to(device) for gpus
-        # because it would move ALL the models in the pipe to the
-        # gpus, potentially causing us to exhaust available VRAM,
-        # and essentially undo all of the following VRAM pressure
-        # reducing optimizations in vain.
-        #
-        # TL;DR - DONT CALL `pipe.to(device)` FOR GPUS!
-        # (unless you checked pipe is small enough!)
-
-        if hasattr(pipe, "transformer"):
-            # This fp8 layerwise caching is important for lower VRAM
-            # gpus (say 25GB or lower). Not important if not on a gpu.
-            # We only do this for the transformer, because its the biggest.
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
-            logger.info("Enabling fp8 layerwise caching for transformer")
-            pipe.transformer.enable_layerwise_casting(
-                storage_dtype=torch.float8_e4m3fn,
-                compute_dtype=torch.bfloat16,
-            )
-        # Sequential cpu offload only makes sense for gpus (VRAM <-> RAM).
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
-        logger.info("Enabling sequential cpu offload")
-        pipe.enable_sequential_cpu_offload()
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
-    logger.info("Enabling attention slicing")
-    pipe.enable_attention_slicing()
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
-    if hasattr(pipe, "enable_vae_slicing"):
-        logger.info("Enabling vae slicing")
-        pipe.enable_vae_slicing()
-    elif hasattr(pipe, "vae"):
-        logger.info("Enabling vae slicing")
-        pipe.vae.enable_slicing()
-
-    logger.info("Final memory footprint:")
-    print_flux_pipeline_memory_footprint(pipe)
-
-    if device == torch.device("mps"):
-        # You must move the pipeline models to MPS if available to
-        # use it (otherwise you'll get the CPU).
-        logger.info("Transferring model to MPS/GPU (slow because big)")
-        logger.info("Sorry bout the lack of a progress bar.")
-        pipe.to(device)
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/847
-
-    if device == torch.device("cuda"):
-        # We specifically do not call pipe.to(device) for gpus
-        # because it would move ALL the models in the pipe to the
-        # gpus, potentially causing us to exhaust available VRAM,
-        # and essentially undo all of the following VRAM pressure
-        # reducing optimizations in vain.
-        #
-        # TL;DR - DONT CALL `pipe.to(device)` FOR GPUS!
-        # (unless you checked pipe is small enough!)
-        pass
+def print_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline) -> None:
+    """Print pipeline memory footprint."""
+    print_pipeline_memory_footprint(
+        pipe,
+        [
+            "transformer",
+            "text_encoder",
+            "text_encoder_2",
+            "vae",
+        ],
+    )
 
 
 def get_best_device(*, quiet: bool = False) -> torch.device:  # noqa: C901 PLR0911 PLR0912
