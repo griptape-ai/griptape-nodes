@@ -410,9 +410,10 @@ class Agent(ControlNode):
         if tool_list:
             for tool in tool_list:
                 if isinstance(tool, dict):
-                    logger.info(f"Tool is a dict: {tool}")
+                    logger.debug(f"Tool is a dict: {tool}")
                     tools.append(BaseTool.from_dict(tool))
                 if isinstance(tool, BaseTool):
+                    logger.debug(f"Tool is a BaseTool: {tool}")
                     tools.append(tool)
 
         return tools
