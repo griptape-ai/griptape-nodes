@@ -1087,7 +1087,7 @@ class WorkflowManager:
 
         # Generate unique values code AST node.
         unique_values_node = WorkflowManager._generate_unique_values_code(
-            unique_parameter_values=serialized_flow_commands.unique_parameter_values,
+            unique_parameter_uuid_to_values=serialized_flow_commands.unique_parameter_uuid_to_values,
             prefix="top_level",
             import_recorder=import_recorder,
         )
@@ -1188,13 +1188,18 @@ class WorkflowManager:
 
     @staticmethod
     def _generate_unique_values_code(
-        unique_parameter_values: list[Any], prefix: str, import_recorder: ImportRecorder
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        prefix: str,
+        import_recorder: ImportRecorder,
     ) -> ast.AST:
+        if len(unique_parameter_uuid_to_values) == 0:
+            return ast.Pass()
+
         import_recorder.add_import("pickle")
 
         # Serialize the unique values as pickled strings.
         unique_parameter_byte_strs = []
-        for unique_parameter_value in unique_parameter_values:
+        for unique_parameter_value in unique_parameter_uuid_to_values.values():
             unique_parameter_bytes = pickle.dumps(unique_parameter_value)
             # Encode the bytes as a string using latin1
             unique_parameter_byte_str = unique_parameter_bytes.decode("latin1")
