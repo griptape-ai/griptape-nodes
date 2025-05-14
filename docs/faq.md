@@ -5,6 +5,7 @@
 Files such as saved workflows, etc., are saved in a the Workspace Directory.
 
 The path for the Workspace Directory can be found in the Griptape Nodes Editor:
+
 1. Open the Griptape Nodes Editor.
 1. Open an existing workflow or create a blank one.
 1. Click "Settings".
@@ -17,7 +18,6 @@ If you are not running the Editor, run this command and it will report back your
 ```bash
 gtn config show | grep workspace
 ```
-
 
 ## Can I run the Engine on a different machine than the Editor?
 
@@ -112,7 +112,7 @@ That said, we apologize for this elusive bug. We're working to catch and fix it 
 The Python installation on your machine may not have access to verified SSL certificates. To remedy:
 
 1. Reinstall Python using the python.org installer. As of this writing, Griptape Nodes requires Python 3.12.
-1. At the end of the installation, select to "Install Certificates". 
+1. At the end of the installation, select to "Install Certificates".
     1. If not available in the installer, run `/Applications/Python\ 3.12/Install\ Certificates.command`
 
 ## Where can I provide feedback or ask questions?
