@@ -17,7 +17,7 @@ class Webcam(DataNode):
             output_type="ImageUrlArtifact",
             ui_options={"webcam_capture_image": True, "expander": True},
             tooltip="The image that has been captured.",
-            allowed_modes={ParameterMode.OUTPUT}
+            allowed_modes={ParameterMode.OUTPUT},
         )
         self.add_parameter(image_parameter)
 
