@@ -1,62 +1,43 @@
-if (Get-Process griptape-nodes -ErrorAction SilentlyContinue) {
-    Write-Host "Error: an instance of 'griptape-nodes' is currently running. Please close it before continuing."
-    exit
-}
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
-if (Get-Process gtn -ErrorAction SilentlyContinue) {
-    Write-Host "Error: an instance of 'gtn' is currently running. Please close it before continuing."
-    exit
+# --------- styling helpers ---------
+Function ColorWrite {
+    param(
+        [string]$Text,
+        [ConsoleColor]$Color = 'White'
+    )
+    Write-Host $Text -ForegroundColor $Color
 }
+# -----------------------------------
 
-Write-Host "`nInstalling uv...`n"
+ColorWrite "`nInstalling uv...`n" 'Cyan'
 try {
-    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+    powershell -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | iex" > $null
 } catch {
-    Write-Host "Failed to install uv with the default method. You may need to install it manually."
-    exit 
-}
-
-# Verify uv is on the user's PATH
-if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    Write-Host "Error: Griptape Nodes dependency 'uv' was installed but requires the terminal instance to be restarted to be run."
-    Write-Host "Please close this terminal instance, open a new terminal instance, and then re-run the install command you performed earlier."
+    ColorWrite "Failed to install uv with the default method. You may need to install it manually." 'Red'
     exit 1
 }
+ColorWrite "uv installed successfully." 'Green'
 
-Write-Host "`nInstalling Griptape Nodes Engine...`n"
-uv tool install --force --python python3.13 --from "git+https://github.com/griptape-ai/griptape-nodes.git@latest" griptape_nodes
+ColorWrite "`nInstalling Griptape Nodes Engine...`n" 'Cyan'
+$localBin = Join-Path $env:USERPROFILE '.local\bin'
+$uvPath = Join-Path $localBin 'uv.exe'
 
-# --- Install Griptape Nodes Library and Workflows ---
-if (-not $Env:XDG_DATA_HOME) {
-    $Env:XDG_DATA_HOME = Join-Path $HOME ".local\share"
+# Install griptape-nodes
+& $uvPath tool install --force --python python3.12 griptape-nodes > $null
+
+if (-not (Get-Command griptape-nodes -ErrorAction SilentlyContinue)) {
+    ColorWrite "**************************************" 'Green'
+    ColorWrite "*      Installation complete!        *" 'Green'
+    ColorWrite "*  Restart your terminal and run     *" 'Green'
+    ColorWrite "*  'griptape-nodes' (or 'gtn')       *" 'Green'
+    ColorWrite "*      to start the engine.          *" 'Green'
+    ColorWrite "**************************************" 'Green'
+} else {
+    ColorWrite "**************************************" 'Green'
+    ColorWrite "*      Installation complete!        *" 'Green'
+    ColorWrite "*  Run 'griptape-nodes' (or 'gtn')   *" 'Green'
+    ColorWrite "*      to start the engine.          *" 'Green'
+    ColorWrite "**************************************" 'Green'
 }
-
-Write-Host "`nInstalling Griptape Nodes Library...`n"
-$RepoName = "griptape-nodes"
-$TmpDir = New-TemporaryFile
-Remove-Item $TmpDir
-New-Item -ItemType Directory -Path $TmpDir | Out-Null
-
-Push-Location $TmpDir
-
-git clone --depth 1 --branch latest https://github.com/griptape-ai/griptape-nodes.git $RepoName
-
-$DestDir = Join-Path $Env:XDG_DATA_HOME "griptape_nodes"
-if (!(Test-Path $DestDir)) {
-    New-Item -ItemType Directory -Path $DestDir | Out-Null
-}
-
-# Copy the nodes/ directory
-Copy-Item -Path (Join-Path $RepoName "nodes") -Destination $DestDir -Recurse -Force
-
-# Copy the workflows/ directory
-Copy-Item -Path (Join-Path $RepoName "workflows") -Destination $DestDir -Recurse -Force
-
-Pop-Location
-Remove-Item -Recurse -Force $TmpDir
-
-Write-Host "**************************************"
-Write-Host "*      Installation complete!        *"
-Write-Host "*  Run 'griptape-nodes' (or 'gtn')   *"
-Write-Host "*      to start the engine.          *"
-Write-Host "**************************************"

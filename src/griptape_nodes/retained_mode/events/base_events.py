@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 from griptape.artifacts import BaseArtifact
 from griptape.events import BaseEvent as GtBaseEvent
+from griptape.mixins.serializable_mixin import SerializableMixin
 from griptape.structures import Structure
 from griptape.tools import BaseTool
 from pydantic import BaseModel, Field
@@ -26,9 +27,13 @@ class RequestPayload(Payload, ABC):
     request_id: int | None = None
 
 
-# Result payload base class with abstract succeeded method
+# Result payload base class with abstract succeeded/failed methods, and indicator whether the current workflow was altered.
 class ResultPayload(Payload, ABC):
     """Base class for all result payloads."""
+
+    """When set to True, alerts clients that this result made changes to the workflow state.
+    Editors can use this to determine if the workflow is dirty and needs to be re-saved, for example."""
+    altered_workflow_state: bool = False
 
     @abstractmethod
     def succeeded(self) -> bool:
@@ -40,6 +45,20 @@ class ResultPayload(Payload, ABC):
 
     def failed(self) -> bool:
         return not self.succeeded()
+
+
+@dataclass
+class WorkflowAlteredMixin:
+    """Mixin for a ResultPayload that guarantees that a workflow was altered."""
+
+    altered_workflow_state: bool = field(default=True, init=False)
+
+
+@dataclass
+class WorkflowNotAlteredMixin:
+    """Mixin for a ResultPayload that guarantees that a workflow was NOT altered."""
+
+    altered_workflow_state: bool = field(default=False, init=False)
 
 
 # Success result payload abstract base class
@@ -87,7 +106,7 @@ class BaseEvent(BaseModel, ABC):
     """Abstract base class for all events."""
 
     # Keeping here instead of in GriptapeNodes to avoid circular import hell.
-    # TODO(griptape): Move this to the singleton
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/848
     _session_id: ClassVar[str | None] = None
 
     # Instance variable with a default_factory that references the class variable
@@ -95,6 +114,8 @@ class BaseEvent(BaseModel, ABC):
 
     # Custom JSON encoder for the payload
     class Config:
+        """Pydantic configuration for the BaseEvent class."""
+
         arbitrary_types_allowed = True
         json_encoders: ClassVar[dict] = {
             # Use to_dict() methods for Griptape objects
@@ -119,7 +140,32 @@ class BaseEvent(BaseModel, ABC):
 
     def json(self, **kwargs) -> str:
         """Serialize to JSON string."""
-        return json.dumps(self.dict(), default=str, **kwargs)
+
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/906
+        def default_encoder(obj: Any) -> Any:
+            """Custom JSON encoder for various object types.
+
+            Attempts the following encodings in order:
+            1. If the object is a SerializableMixin, call to_dict()
+            2. If the object is a Pydantic model, call model_dump()
+            3. Attempt to use the default JSON encoder
+            4. If all else fails, return the string representation of the object
+
+            Args:
+                obj: The object to encode
+
+
+            """
+            if isinstance(obj, SerializableMixin):
+                return obj.to_dict()
+            if isinstance(obj, BaseModel):
+                return obj.model_dump()
+            try:
+                return json.JSONEncoder().default(obj)
+            except TypeError:
+                return str(obj)
+
+        return json.dumps(self.dict(), default=default_encoder, **kwargs)
 
     @abstractmethod
     def get_request(self) -> Payload:
@@ -323,7 +369,7 @@ class EventResultFailure(EventResult[P, R]):
 
 
 # Helper function to deserialize event from JSON
-def deserialize_event(json_data) -> BaseEvent:
+def deserialize_event(json_data: str | dict | Any) -> BaseEvent:
     """Deserialize an event from JSON or dict, using the payload type information embedded in the data.
 
     Args:
@@ -504,3 +550,10 @@ class GriptapeNodeEvent(GtBaseEvent):
 @dataclass
 class ExecutionGriptapeNodeEvent(GtBaseEvent):
     wrapped_event: ExecutionEvent = field()
+
+
+@dataclass
+class ProgressEvent(GtBaseEvent):
+    value: Any = field()
+    node_name: str = field()
+    parameter_name: str = field()

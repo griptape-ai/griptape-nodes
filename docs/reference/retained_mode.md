@@ -1,6 +1,6 @@
-# Griptape [nodes] Scripting
+# Griptape Nodes Scripting
 
-"Retained Mode" is a Python scripting interface to interact with Griptape [nodes]. These methods allow users to create, modify, and manage nodes, parameters, connections, and flows through a simplified Python API.
+"Retained Mode" is a Python scripting interface to interact with Griptape Nodes. These methods allow users to create, modify, and manage nodes, parameters, connections, and flows through a simplified Python API.
 
 > **Note:** The actual import command for RetainedMode is:
 >
@@ -10,17 +10,15 @@
 >
 > However, for convenience, in the script editor of the GUI, this import is already done for you automatically, so you can freely use `cmd.` directly.
 
-## Go to: [Flow Operations](#flow-operations) · [Node Operations](#node-operations) · [Parameter Operations](#parameter-operations) · [Connection Operations](#connection-operations) · [Library Operations](#library-operations) · [Config Operations](#config-operations) · [Utility Operations](#utility-operations)
-
 ## Flow Operations
 
 ### create_flow
 
+Creates a new flow within the Griptape system.
+
 ```python
 cmd.create_flow(flow_name=None, parent_flow_name=None)
 ```
-
-Creates a new flow within the Griptape system.
 
 #### Arguments
 

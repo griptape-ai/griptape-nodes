@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
-from enum import Enum, auto
-from typing import Any, Self, TypeVar
+from enum import StrEnum, auto
+from typing import Any, TypeVar
 
-from griptape.events import BaseEvent
+from griptape.events import BaseEvent, EventBus
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
@@ -13,11 +15,24 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterContainer,
     ParameterDictionary,
+    ParameterGroup,
     ParameterList,
     ParameterMode,
     ParameterTypeBuiltin,
 )
-from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
+from griptape_nodes.exe_types.type_validator import TypeValidator
+from griptape_nodes.retained_mode.events.base_events import (
+    ExecutionEvent,
+    ExecutionGriptapeNodeEvent,
+    ProgressEvent,
+)
+from griptape_nodes.retained_mode.events.execution_events import (
+    NodeUnresolvedEvent,
+    ParameterValueUpdateEvent,
+)
+from griptape_nodes.retained_mode.events.parameter_events import (
+    RemoveParameterFromNodeRequest,
+)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -26,7 +41,7 @@ T = TypeVar("T")
 AsyncResult = Generator[Callable[[], T], T]
 
 
-class NodeResolutionState(Enum):
+class NodeResolutionState(StrEnum):
     """Possible states for a node during resolution."""
 
     UNRESOLVED = auto()
@@ -46,7 +61,6 @@ class BaseNode(ABC):
     parameter_output_values: dict[str, Any]
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
-    process_generator: Generator | None
 
     @property
     def parameters(self) -> list[Parameter]:
@@ -61,8 +75,6 @@ class BaseNode(ABC):
         metadata: dict[Any, Any] | None = None,
         state: NodeResolutionState = NodeResolutionState.UNRESOLVED,
     ) -> None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         self.name = name
         self.state = state
         if metadata is None:
@@ -72,15 +84,25 @@ class BaseNode(ABC):
         self.parameter_values = {}
         self.parameter_output_values = {}
         self.root_ui_element = BaseNodeElement()
-        self.config_manager = GriptapeNodes.ConfigManager()
         self.process_generator = None
 
-    def make_node_unresolved(self) -> None:
+    # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
+    # https://github.com/griptape-ai/griptape-nodes/issues/994
+    def make_node_unresolved(self, current_states_to_trigger_change_event: set[NodeResolutionState] | None) -> None:
+        # See if the current state is in the set of states to trigger a change event.
+        if current_states_to_trigger_change_event is not None and self.state in current_states_to_trigger_change_event:
+            # Trigger the change event.
+            # Send an event to the GUI so it knows this node has changed resolution state.
+            EventBus.publish_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=NodeUnresolvedEvent(node_name=self.name))
+                )
+            )
         self.state = NodeResolutionState.UNRESOLVED
 
     def allow_incoming_connection(
         self,
-        source_node: Self,  # noqa: ARG002
+        source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
     ) -> bool:
@@ -90,17 +112,18 @@ class BaseNode(ABC):
     def allow_outgoing_connection(
         self,
         source_parameter: Parameter,  # noqa: ARG002
-        target_node: Self,  # noqa: ARG002
-        target_parameter: Parameter,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002,
     ) -> bool:
         """Callback to confirm allowing a Connection going OUT of this Node."""
         return True
 
     def after_incoming_connection(
         self,
-        source_node: Self,  # noqa: ARG002
+        source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
-        target_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002,
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
         return
@@ -108,17 +131,19 @@ class BaseNode(ABC):
     def after_outgoing_connection(
         self,
         source_parameter: Parameter,  # noqa: ARG002
-        target_node: Self,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
         return
 
     def after_incoming_connection_removed(
         self,
-        source_node: Self,  # noqa: ARG002
+        source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         return
@@ -126,8 +151,9 @@ class BaseNode(ABC):
     def after_outgoing_connection_removed(
         self,
         source_parameter: Parameter,  # noqa: ARG002
-        target_node: Self,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
         return
@@ -190,13 +216,30 @@ class BaseNode(ABC):
 
     def add_parameter(self, param: Parameter) -> None:
         """Adds a Parameter to the Node. Control and Data Parameters are all treated equally."""
+        if any(char.isspace() for char in param.name):
+            msg = f"Failed to add Parameter `{param.name}`. Parameter names cannot currently any whitespace characters. Please see https://github.com/griptape-ai/griptape-nodes/issues/714 to check the status on a remedy for this issue."
+            raise ValueError(msg)
         if self.does_name_exist(param.name):
             msg = "Cannot have duplicate names on parameters."
             raise ValueError(msg)
         self.add_node_element(param)
 
-    def remove_parameter(self, param: Parameter) -> None:
+    def remove_parameter_element_by_name(self, element_name: str) -> None:
+        element = self.root_ui_element.find_element_by_name(element_name)
+        if element is not None:
+            self.remove_parameter_element(element)
+
+    def remove_parameter_element(self, param: BaseNodeElement) -> None:
+        for child in param.find_elements_by_type(BaseNodeElement):
+            self.remove_node_element(child)
         self.remove_node_element(param)
+
+    def get_group_by_name_or_element_id(self, group: str) -> ParameterGroup | None:
+        group_items = self.root_ui_element.find_elements_by_type(ParameterGroup)
+        for group_item in group_items:
+            if group in (group_item.name, group_item.element_id):
+                return group_item
+        return None
 
     def add_node_element(self, ui_element: BaseNodeElement) -> None:
         self.root_ui_element.add_child(ui_element)
@@ -206,6 +249,29 @@ class BaseNode(ABC):
 
     def get_current_parameter(self) -> Parameter | None:
         return self.current_spotlight_parameter
+
+    def _set_parameter_visibility(self, names: str | list[str], *, visible: bool) -> None:
+        """Sets the visibility of one or more parameters.
+
+        Args:
+            names (str or list of str): The parameter name(s) to update.
+            visible (bool): Whether to show (True) or hide (False) the parameters.
+        """
+        if isinstance(names, str):
+            names = [names]
+
+        for name in names:
+            parameter = self.get_parameter_by_name(name)
+            if parameter is not None:
+                parameter._ui_options["hide"] = not visible
+
+    def hide_parameter_by_name(self, names: str | list[str]) -> None:
+        """Hides one or more parameters by name."""
+        self._set_parameter_visibility(names, visible=False)
+
+    def show_parameter_by_name(self, names: str | list[str]) -> None:
+        """Shows one or more parameters by name."""
+        self._set_parameter_visibility(names, visible=True)
 
     def initialize_spotlight(self) -> None:
         # Make a deep copy of all of the parameters and create the linked list.
@@ -231,7 +297,7 @@ class BaseNode(ABC):
 
     # Advance the current index to the next index
     def advance_parameter(self) -> bool:
-        if self.current_spotlight_parameter and self.current_spotlight_parameter.next is not None:
+        if self.current_spotlight_parameter is not None and self.current_spotlight_parameter.next is not None:
             self.current_spotlight_parameter = self.current_spotlight_parameter.next
             return True
         self.current_spotlight_parameter = None
@@ -293,20 +359,40 @@ class BaseNode(ABC):
             validator(parameter, candidate_value)
 
         # Keep track of which other parameters got modified as a result of any node-specific logic.
-        modified_parameters = set()
+        modified_parameters: set[str] = set()
 
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
         final_value = self.before_value_set(
-            parameter=parameter, value=candidate_value, modified_parameters_set=modified_parameters
+            parameter=parameter,
+            value=candidate_value,
+            modified_parameters_set=modified_parameters,
         )
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
         # If a parameter value has been set at the top level of a container, wipe all children.
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
-        self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=modified_parameters)
-
-        # Return the complete set of modified parameters.
+        self.after_value_set(
+            parameter=parameter,
+            value=final_value,
+            modified_parameters_set=modified_parameters,
+        )
+        # handle with container parameters
+        if parameter.parent_container_name is not None:
+            # Does it have a parent container
+            parent_parameter = self.get_parameter_by_name(parameter.parent_container_name)
+            # Does the parent container exist
+            if parent_parameter is not None:
+                # Get it's new value dependent on it's children
+                new_parent_value = handle_container_parameter(self, parent_parameter)
+                if new_parent_value is not None:
+                    # set that new value if it exists.
+                    modified_parameters_from_container = self.set_parameter_value(
+                        parameter.parent_container_name, new_parent_value
+                    )
+                    # Return the complete set of modified parameters.
+                    if modified_parameters_from_container:
+                        modified_parameters = modified_parameters | modified_parameters_from_container
         return modified_parameters
 
     def kill_parameter_children(self, parameter: Parameter) -> None:
@@ -326,8 +412,18 @@ class BaseNode(ABC):
         return param.default_value if param else None
 
     def remove_parameter_value(self, param_name: str) -> None:
+        parameter = self.get_parameter_by_name(param_name)
+        if parameter is None:
+            err = f"Attempted to remove value for Parameter '{param_name}' but parameter doesn't exist."
+            raise KeyError(err)
         if param_name in self.parameter_values:
             del self.parameter_values[param_name]
+            # special handling if it's in a container.
+            if parameter.parent_container_name and parameter.parent_container_name in self.parameter_values:
+                del self.parameter_values[parameter.parent_container_name]
+                new_val = self.get_parameter_value(parameter.parent_container_name)
+                if new_val is not None:
+                    self.set_parameter_value(parameter.parent_container_name, new_val)
         else:
             err = f"Attempted to remove value for Parameter '{param_name}' but no value was set."
             raise KeyError(err)
@@ -341,37 +437,6 @@ class BaseNode(ABC):
                 return param
         return None
 
-    # TODO(kate): can we remove this or change to default value?
-    def valid_or_fallback(self, param_name: str, fallback: Any = None) -> Any:
-        """Get a parameter value if valid, otherwise use fallback.
-
-        Args:
-            param_name: The name of the parameter to check
-            fallback: The fallback value to use if the parameter value is invalid or empty
-
-        Returns:
-            The valid parameter value or fallback
-
-        Raises:
-            ValueError: If neither the parameter value nor fallback is valid
-        """
-        # Get parameter object and current value
-        param = self.get_parameter_by_name(param_name)
-        if not param:
-            msg = f"Parameter '{param_name}' not found"
-            raise ValueError(msg)
-
-        value = self.parameter_values.get(param_name, None)
-        if value is not None:
-            return value
-
-        # Try fallback if value is invalid or empty
-        if fallback is None:
-            return None
-        self.set_parameter_value(param_name, fallback)
-        # No valid options available
-        return fallback
-
     # Abstract method to process the node. Must be defined by the type
     # Must save the values of the output parameters in NodeContext.
     @abstractmethod
@@ -379,15 +444,88 @@ class BaseNode(ABC):
         pass
 
     # if not implemented, it will return no issues.
-    def validate_node(self) -> list[Exception] | None:
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        """Runs before the entire workflow is run."""
+        return None
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Runs before this node is run."""
+        return None
+
+    # It could be quite common to want to validate whether or not a parameter is empty.
+    # this helper function can be used within the `validate_before_workflow_run` method along with other validations
+    #
+    # Example:
+    """
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        exceptions = []
+        prompt_error = self.validate_empty_parameter(param="prompt", additional_msg="Please provide a prompt to generate an image.")
+        if prompt_error:
+            exceptions.append(prompt_error)
+        return exceptions if exceptions else None
+    """
+
+    def validate_empty_parameter(self, param: str, additional_msg: str = "") -> Exception | None:
+        param_value = self.parameter_values.get(param, None)
+        node_name = self.name
+        if not param_value or param_value.isspace():
+            msg = str(f"Parameter \"{param}\" was left blank for node '{node_name}'. {additional_msg}").strip()
+            return ValueError(msg)
         return None
 
     def get_config_value(self, service: str, value: str) -> str:
-        config_value = self.config_manager.get_config_value(f"nodes.{service}.{value}")
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        config_value = GriptapeNodes.ConfigManager().get_config_value(f"nodes.{service}.{value}")
         return config_value
 
     def set_config_value(self, service: str, value: str, new_value: str) -> None:
-        self.config_manager.set_config_value(f"nodes.{service}.{value}", new_value)
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        GriptapeNodes.ConfigManager().set_config_value(f"nodes.{service}.{value}", new_value)
+
+    def clear_node(self) -> None:
+        # set state to unresolved
+        self.state = NodeResolutionState.UNRESOLVED
+        # delete all output values potentially generated
+        self.parameter_output_values.clear()
+        # Remove the current spotlight
+        while self.current_spotlight_parameter is not None:
+            temp = self.current_spotlight_parameter.next
+            del self.current_spotlight_parameter
+            self.current_spotlight_parameter = temp
+
+    def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
+        # Add the value to the node
+        if parameter_name in self.parameter_output_values:
+            try:
+                self.parameter_output_values[parameter_name] = self.parameter_output_values[parameter_name] + value
+            except TypeError:
+                try:
+                    self.parameter_output_values[parameter_name].append(value)
+                except Exception as e:
+                    msg = f"Value is not appendable to parameter '{parameter_name}' on {self.name}"
+                    raise RuntimeError(msg) from e
+        else:
+            self.parameter_output_values[parameter_name] = value
+        # Publish the event up!
+        EventBus.publish_event(ProgressEvent(value=value, node_name=self.name, parameter_name=parameter_name))
+
+    def publish_update_to_parameter(self, parameter_name: str, value: Any) -> None:
+        parameter = self.get_parameter_by_name(parameter_name)
+        if parameter:
+            data_type = parameter.type
+            self.parameter_output_values[parameter_name] = value
+            payload = ParameterValueUpdateEvent(
+                node_name=self.name,
+                parameter_name=parameter_name,
+                data_type=data_type,
+                value=TypeValidator.safe_serialize(value),
+            )
+            EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
+        else:
+            msg = f"Parameter '{parameter_name} doesn't exist on {self.name}'"
+            raise RuntimeError(msg)
 
 
 class ControlNode(BaseNode):
@@ -418,12 +556,14 @@ class DataNode(BaseNode):
 class StartNode(BaseNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
+        self.add_parameter(ControlParameterOutput())
 
 
-class EndNode(ControlNode):
-    # TODO(griptape): Anything else for an EndNode?
+class EndNode(BaseNode):
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/854
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
+        self.add_parameter(ControlParameterInput())
 
 
 class Connection:
@@ -452,6 +592,19 @@ class Connection:
 
 
 def handle_container_parameter(current_node: BaseNode, parameter: Parameter) -> Any:
+    """Process container parameters and build appropriate data structures.
+
+    This function handles ParameterContainer objects by collecting values from their child
+    parameters and constructing either a list or dictionary based on the container type.
+
+    Args:
+        current_node: The node containing parameter values
+        parameter: The parameter to process, which may be a container
+
+    Returns:
+        A list of parameter values if parameter is a ParameterContainer,
+        or None if the parameter is not a container
+    """
     # if it's a container and it's value isn't already set.
     if isinstance(parameter, ParameterContainer):
         children = parameter.find_elements_by_type(Parameter, find_recursively=False)
@@ -462,6 +615,7 @@ def handle_container_parameter(current_node: BaseNode, parameter: Parameter) -> 
         build_parameter_value = []
         for child in children:
             value = current_node.get_parameter_value(child.name)
-            build_parameter_value.append(value)
+            if value is not None:
+                build_parameter_value.append(value)
         return build_parameter_value
     return None

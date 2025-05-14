@@ -186,3 +186,7 @@ GriptapeNodes/
 
 # Generated Output
 request_payload_schemas.json
+
+# JetBrains
+.idea/
+

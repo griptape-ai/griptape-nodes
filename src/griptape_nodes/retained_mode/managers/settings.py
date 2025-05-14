@@ -1,59 +1,20 @@
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
-from pydantic_settings import (
-    BaseSettings,
-    JsonConfigSettingsSource,
-    PydanticBaseSettingsSource,
-    TomlConfigSettingsSource,
-    YamlConfigSettingsSource,
-)
-from xdg_base_dirs import xdg_config_dirs, xdg_config_home, xdg_data_home
-
-
-def _find_config_files(filename: str, extension: str) -> list[Path]:
-    config_files = []
-
-    # Recursively search parent directories up to HOME
-    current_path = Path.cwd()
-    while current_path not in (Path.home(), current_path.parent) and current_path != current_path.parent:
-        config_files.append(current_path / f"{filename}.{extension}")
-        current_path = current_path.parent
-
-    # Search `GriptapeNodes/` inside home directory (a frequently installed location)
-    config_files.append(Path.home() / "GriptapeNodes" / f"{filename}.{extension}")
-
-    # Search `GriptapeNodes/` inside current working directory (this is the implicit default)
-    config_files.append(Path.cwd() / "GriptapeNodes" / f"{filename}.{extension}")
-
-    # Search XDG_CONFIG_HOME (e.g., `~/.config/griptape_nodes/griptape_nodes_config.yaml`)
-    config_files.append(xdg_config_home() / "griptape_nodes" / f"{filename}.{extension}")
-
-    # Search XDG_CONFIG_DIRS (e.g., `/etc/xdg/griptape_nodes/gt_nodes.yaml`)
-    config_files.extend([Path(xdg_dir) / "griptape_nodes" / f"{filename}.{extension}" for xdg_dir in xdg_config_dirs()])
-
-    # Reverse the list so that the most specific paths are checked first
-    config_files.reverse()
-
-    return config_files
-
-
-@dataclass
-class WorkflowSettingsDetail:
-    """Griptape-provided workflows are pathed differently and display in the GUI in a different section."""
-
-    file_name: str
-    is_griptape_provided: bool
+from pydantic import BaseModel, ConfigDict, Field
+from xdg_base_dirs import xdg_data_home
 
 
 class AppInitializationComplete(BaseModel):
     libraries_to_register: list[str] = Field(
-        default_factory=lambda: [str(xdg_data_home() / "griptape_nodes/nodes/griptape_nodes_library.json")]
+        default_factory=lambda: [
+            str(xdg_data_home() / "griptape_nodes/libraries/griptape_nodes_library/griptape_nodes_library.json")
+        ]
     )
-    workflows_to_register: list[WorkflowSettingsDetail] = Field(
-        default_factory=lambda: []  # noqa: PIE807 (leaving as a lambda for list for when we are ready to re-populate)
+    workflows_to_register: list[str] = Field(
+        default_factory=lambda: [
+            str(xdg_data_home() / "griptape_nodes/workflows/templates/"),
+        ]
     )
 
 
@@ -85,9 +46,15 @@ class AppEvents(BaseModel):
     )
 
 
-class Settings(BaseSettings):
+class Settings(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     workspace_directory: str = Field(default=str(Path().cwd() / "GriptapeNodes"))
     ui_settings: dict[str, Any] = Field(default_factory=lambda: {"zoom slider": True, "minimap": False})
+    static_files_directory: str = Field(
+        default="staticfiles",
+        description="Path to the static files directory, relative to the workspace directory.",
+    )
     app_events: AppEvents = Field(default_factory=AppEvents)
     nodes: dict[str, Any] = Field(
         default_factory=lambda: {
@@ -126,24 +93,3 @@ class Settings(BaseSettings):
         }
     )
     log_level: str = Field(default="INFO")
-
-    class Config:
-        json_file = _find_config_files("griptape_nodes_config", "json")
-        toml_file = _find_config_files("griptape_nodes_config", "toml")
-        yaml_file = _find_config_files("griptape_nodes_config", "yaml")
-        extra = "allow"
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,  # noqa: ARG003
-        env_settings: PydanticBaseSettingsSource,  # noqa: ARG003
-        dotenv_settings: PydanticBaseSettingsSource,  # noqa: ARG003
-        file_secret_settings: PydanticBaseSettingsSource,  # noqa: ARG003
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        return (
-            JsonConfigSettingsSource(settings_cls),
-            YamlConfigSettingsSource(settings_cls),
-            TomlConfigSettingsSource(settings_cls),
-        )

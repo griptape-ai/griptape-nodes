@@ -17,7 +17,7 @@ class TypeValidator(SingletonMixin):
     """
 
     @classmethod
-    def safe_serialize(cls, obj: Any) -> Any:  # noqa: PLR0911 TODO(griptape): resolve
+    def safe_serialize(cls, obj: Any) -> Any:  # noqa: PLR0911
         if obj is None:
             return None
         if isinstance(obj, dict):
@@ -26,12 +26,10 @@ class TypeValidator(SingletonMixin):
             return [cls.safe_serialize(item) for item in list(obj)]
         if isinstance(obj, (str, int, float, bool, list, dict, type(None))):
             return obj
-        try:
-            obj_dict = obj.to_dict()
-        except Exception:
-            logger.warning("Error serializing object: Going to use type name.")
-        else:
-            return obj_dict
+        if hasattr(obj, "to_dict"):
+            return obj.to_dict()
+        if hasattr(obj, "__dict__"):
+            return obj.__dict__
         if hasattr(obj, "id"):
             return {f"{type(obj).__name__} Object: {obj.id}"}
         return f"{type(obj).__name__} Object"

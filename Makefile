@@ -1,24 +1,47 @@
 .PHONY: version/get
-version/get: ## Set version.
-	@uvx --from=toml-cli toml get --toml-path=pyproject.toml project.version
+version/get: ## Get version.
+	@uv version | awk '{print $$2}'
 	
 .PHONY: version/set
 version/set: ## Set version.
-	@uvx --from=toml-cli toml set --toml-path=pyproject.toml project.version ${v}
+	@uv version $(v)
+	@make version/commit
+
+.PHONY: version/patch
+version/patch: ## Bump patch version.
+	@uv version --bump patch
+	@make version/commit
+
+.PHONY: version/minor
+version/minor: ## Bump minor version.
+	@uv version --bump minor
+	@make version/commit
+
+.PHONY: version/major
+version/major: ## Bump major version.
+	@uv version --bump major
+	@make version/commit
+
+.PHONY: version/commit
+version/commit: ## Commit version.
 	@uv lock
 	@git add pyproject.toml uv.lock
 	@git commit -m "chore: bump v$$(make version/get)"
 
 .PHONY: version/publish
-version/publish: ## Push git tag and publish version to PyPI.
+version/publish: ## Create and push git tags.
 	@git tag v$$(make version/get)
-	@git tag latest -f
+	@git tag stable -f
 	@git push -f --tags
 	@git push
 	
 .PHONY: run
 run: ## Run the project.
 	uv run griptape-nodes --no-update
+	
+.PHONY: run/watch
+run/watch: ## Run the project in watch mode.
+	uv run src/griptape_nodes/app/watch.py
 	
 .PHONY: install
 install: ## Install all dependencies.
@@ -52,7 +75,7 @@ format: ## Format project.
 .PHONY: fix
 fix: ## Fix project.
 	@make format
-	@uv run ruff check --fix --unsafe-fixes
+	@uv run ruff check --fix --unsafe-fixes --exclude "libraries/**/tests/**/*"
 
 .PHONY: check
 check: check/format check/lint check/types check/spell ## Run all checks.
@@ -60,11 +83,11 @@ check: check/format check/lint check/types check/spell ## Run all checks.
 .PHONY: check/format
 check/format:
 	@uv run ruff format --check
-	@uv run mdformat --check . --exclude .venv/**/*.md
+	@uv run mdformat --check .github docs libraries src tests *.md
 
 .PHONY: check/lint
 check/lint:
-	@uv run ruff check
+	@uv run ruff check --exclude "libraries/**/tests/**/*"
 
 .PHONY: check/types
 check/types:
@@ -80,12 +103,12 @@ test: test/unit test/integration
 .PHONY: test/unit
 test/unit: ## Run unit tests.
 	@uv run pytest -n auto tests/unit
-	@uv run pytest -n auto nodes/tests/unit
+	@uv run pytest -n auto libraries/griptape_nodes_library/tests/unit
 
 .PHONY: test/integration
 test/integration: ## Run integration tests.
 	@uv run pytest -n auto tests/integration
-	@uv run pytest -n auto nodes/tests/integration
+	@uv run pytest -n auto libraries/griptape_nodes_library/tests/integration
 
 .PHONY: docs
 docs: ## Build documentation.

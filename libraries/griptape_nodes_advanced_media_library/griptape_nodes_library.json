@@ -1,0 +1,184 @@
+{
+  "name": "Griptape Nodes Advanced Media Library",
+  "library_schema_version": "0.1.0",
+  "metadata": {
+    "author": "Griptape, Inc.",
+    "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
+    "library_version": "0.1.0",
+    "engine_version": "0.1.0",
+    "tags": [
+      "Griptape",
+      "AI"
+    ],
+    "dependencies": {
+      "pip_dependencies": [
+        "accelerate>=1.6.0",
+        "controlnet-aux>=0.0.9",
+        "imageio-ffmpeg>=0.6.0",
+        "diffusers>=0.33.1",
+        "numpy>=2.2.4",
+        "opencv-python>=4.11.0.86",
+        "peft>=0.15.2",
+        "pillow>=11.2.1",
+        "protobuf>=6.30.2",
+        "sentencepiece>=0.2.0",
+        "spandrel>=0.4.1",
+        "torch>=2.7.0",
+        "transformers>=4.51.2"
+      ],
+      "pip_install_flags": [
+        "--preview",
+        "--torch-backend=auto"
+      ]
+    }
+  },
+  "categories": [
+  ],
+  "nodes": [
+    {
+      "class_name": "GrayscaleConvertImage",
+      "file_path": "pillow_nodes_library/grayscale_convert_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "GrayscaleConvertImage node.",
+        "display_name": "Grayscale Convert Image"
+      }
+    },
+    {
+      "class_name": "GaussianBlurImage",
+      "file_path": "pillow_nodes_library/gaussian_blur_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "GaussianBlurImage node",
+        "display_name": "GaussianBlurImage"
+      }
+    },
+    {
+      "class_name": "DepthAnythingForDepthEstimation",
+      "file_path": "transformers_nodes_library/depth_anything_for_depth_estimation.py",
+      "metadata": {
+        "category": "image/depth",
+        "description": "DepthAnythingForDepthEstimation node.",
+        "display_name": "DepthAnythingForDepthEstimation"
+      }
+    },
+    {
+      "class_name": "CannyConvertImage",
+      "file_path": "opencv_nodes_library/canny_convert_image.py",
+      "metadata": {
+        "category": "image/edge",
+        "description": "CannyConvertImage node.",
+        "display_name": "Canny Convert Image"
+      }
+    },
+    {
+      "class_name": "AnylineDetector",
+      "file_path": "controlnet_aux_nodes_library/anyline_detector.py",
+      "metadata": {
+        "category": "image/edge",
+        "description": "AnylineDetector node.",
+        "display_name": "AnylineDetector"
+      }
+    },
+    {
+      "class_name": "FluxPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/flux_pipeline.py",
+      "metadata": {
+        "category": "image/flux",
+        "description": "FluxPipeline node.",
+        "display_name": "Generate Image with Flux"
+      }
+    },
+    {
+      "class_name": "UnionFluxControlNetPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/controlnet/union_flux_control_net_pipeline.py",
+      "metadata": {
+        "category": "image/flux/controlnet",
+        "description": "https://huggingface.co/InstantX/FLUX.1-dev-Controlnet-Union",
+        "display_name": "InstantX/FLUX.1-dev-Controlnet-Union"
+      }
+    },
+    {
+      "class_name": "UnionProFluxControlNetPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/controlnet/union_pro_flux_control_net_pipeline.py",
+      "metadata": {
+        "category": "image/flux/controlnet",
+        "description": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro",
+        "display_name": "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro"
+      }
+    },
+    {
+      "class_name": "UnionProTwoFluxControlNetPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/controlnet/union_pro_two_flux_control_net_pipeline.py",
+      "metadata": {
+        "category": "image/flux/controlnet",
+        "description": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0",
+        "display_name": "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0"
+      }
+    },
+    {
+      "class_name": "FluxLoraFromFile",
+      "file_path": "diffusers_nodes_library/pipelines/flux/lora/flux_lora_from_file.py",
+      "metadata": {
+        "category": "image/flux/loras",
+        "description": "FluxLoraFromFile",
+        "display_name": "FluxLoraFromFile"
+      }
+    },
+    {
+      "class_name": "LumatalesFluxLora",
+      "file_path": "diffusers_nodes_library/pipelines/flux/lora/lumatales_flux_lora.py",
+      "metadata": {
+        "category": "image/flux/loras",
+        "description": "https://huggingface.co/Shakker-Labs/Lumatales-FL",
+        "display_name": "Shakker-Labs/Lumatales-FL"
+      }
+    },
+    {
+      "class_name": "MicroLandscapeOnPhoneFluxLora",
+      "file_path": "diffusers_nodes_library/pipelines/flux/lora/micro_landscape_on_phone_flux_lora.py",
+      "metadata": {
+        "category": "image/flux/loras",
+        "description": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-Micro-landscape-on-Mobile-Phone",
+        "display_name": "Shakker-Labs/FLUX.1-dev-LoRA-Micro-landscape-on-Mobile-Phone"
+      }
+    },
+    {
+      "class_name": "MiniatureWorldFluxLora",
+      "file_path": "diffusers_nodes_library/pipelines/flux/lora/miniature_world_flux_lora.py",
+      "metadata": {
+        "category": "image/flux/loras",
+        "description": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-Miniature-World",
+        "display_name": "Shakker-Labs/FLUX.1-dev-LoRA-Miniature-World"
+      }
+    },
+    {
+      "class_name": "TilingFluxImg2ImgPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/tiling_flux_img_2_img_pipeline.py",
+      "metadata": {
+        "category": "image/upscale",
+        "description": "TilingFluxImg2ImgPipeline node. Useful as a 2nd pass when upscaling.",
+        "display_name": "Generate Image Variation with Flux and Tiling"
+      }
+    },
+    {
+      "class_name": "RescaleImage",
+      "file_path": "pillow_nodes_library/rescale_image.py",
+      "metadata": {
+        "category": "image/upscale",
+        "description": "RescaleImage node. Useful to select resampling strategy when upscaling.",
+        "display_name": "Rescale Image"
+      }
+    },
+    
+    {
+      "class_name": "TilingSPAN",
+      "file_path": "spandrel_nodes_library/tiling_span.py",
+      "metadata": {
+        "category": "image/upscale",
+        "description": "TilingSPAN node. Useful as a 1st pass with upscaling.",
+        "display_name": "Upscale Image with SPAN and Tiling"
+      }
+    }
+  ]
+}

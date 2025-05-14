@@ -1,19 +1,19 @@
 from __future__ import annotations
 
+from datetime import datetime  # noqa: TC003 (can't put into type checking block as Pydantic model relies on it)
 from pathlib import Path
-from typing import ClassVar, NamedTuple
+from typing import ClassVar
 
 from griptape.mixins.singleton_mixin import SingletonMixin
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-
-class LibraryNameAndVersion(NamedTuple):
-    library_name: str
-    library_version: str
+from griptape_nodes.node_library.library_registry import (
+    LibraryNameAndVersion,  # noqa: TC001 (putting this into type checking causes it to not be defined)
+)
 
 
 class WorkflowMetadata(BaseModel):
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.1.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.0"
 
     name: str
     schema_version: str
@@ -21,6 +21,11 @@ class WorkflowMetadata(BaseModel):
     node_libraries_referenced: list[LibraryNameAndVersion]
     description: str | None = None
     image: str | None = None
+    is_griptape_provided: bool | None = False
+    is_template: bool | None = False
+    creation_date: datetime | None = Field(default=None)
+    last_modified_date: datetime | None = Field(default=None)
+    published_workflow_id: str | None = Field(default=None)
 
 
 class WorkflowRegistry(SingletonMixin):
@@ -35,7 +40,7 @@ class WorkflowRegistry(SingletonMixin):
     def generate_new_workflow(cls, file_path: str, metadata: WorkflowMetadata) -> Workflow:
         instance = cls()
         if metadata.name in instance._workflows:
-            msg = f"Workflow with name {metadata.name} already registered."
+            msg = f"Workflow with name '{metadata.name}' already registered."
             raise KeyError(msg)
         workflow = Workflow(registry_key=instance._registry_key, file_path=file_path, metadata=metadata)
         instance._workflows[metadata.name] = workflow
@@ -48,6 +53,11 @@ class WorkflowRegistry(SingletonMixin):
             msg = f"Failed to get Workflow. Workflow with name '{name}' has not been registered."
             raise KeyError(msg)
         return instance._workflows[name]
+
+    @classmethod
+    def has_workflow_with_name(cls, name: str) -> bool:
+        instance = cls()
+        return name in instance._workflows
 
     @classmethod
     def list_workflows(cls) -> dict[str, dict]:
@@ -93,12 +103,10 @@ class Workflow:
             raise ValueError(msg)
 
     def get_workflow_metadata(self) -> dict:
-        # TODO(griptape): either convert the Pydantic schema to a dict or use it directly.
-        return {
-            "name": self.metadata.name,
-            "file_path": self.file_path,
-            "description": self.metadata.description,
-            "image": self.metadata.image,
-            "engine_version_created_with": self.metadata.engine_version_created_with,
-            "node_libraries_referenced": self.metadata.node_libraries_referenced,
-        }
+        # Convert from the Pydantic schema.
+        ret_val = {**self.metadata.model_dump()}
+
+        # The schema doesn't have the file path in it, because it is baked into the file itself.
+        # Customers of this function need that, so let's stuff it in.
+        ret_val["file_path"] = self.file_path
+        return ret_val

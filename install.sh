@@ -1,44 +1,40 @@
 #!/bin/sh
+set -e
+
+# --------- styling helpers ---------
+if [ -t 1 ]; then
+  BOLD="\033[1m"
+  CYAN="\033[36m"
+  GREEN="\033[32m"
+  RED="\033[31m"
+  RESET="\033[0m"
+else
+  BOLD="" CYAN="" GREEN="" RED="" RESET=""
+fi
+cecho() { printf "%b%s%b\n" "$1" "$2" "$RESET"; } # colour echo
+# -----------------------------------
 
 echo ""
-echo "Installing uv..."
+cecho "$CYAN$BOLD" "Installing uv..."
 echo ""
-curl -LsSf https://astral.sh/uv/install.sh | sh
+curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null
+cecho "$GREEN$BOLD" "uv installed successfully!"
 
 # Verify uv is on the user's PATH
 if ! command -v uv >/dev/null 2>&1; then
-  echo "Error: Griptape Nodes dependency 'uv' was installed but requires the terminal instance to be restarted to be run."
-  echo "Please close this terminal instance, open a new terminal instance, and then run the install command you performed earlier."
+  cecho "$RED" "Error: Griptape Nodes dependency 'uv' was installed but requires the terminal instance to be restarted to be run."
+  cecho "$RED" "Please close this terminal instance, open a new terminal instance, and then run the install command you performed earlier."
   exit 1
 fi
 
 echo ""
-echo "Installing Griptape Nodes Engine..."
+cecho "$CYAN$BOLD" "Installing Griptape Nodes Engine..."
 echo ""
-uv tool install --force --python python3.13 --from git+https://github.com/griptape-ai/griptape-nodes.git@latest griptape_nodes
+~/.local/bin/uv tool update-shell
+~/.local/bin/uv tool install --force --python python3.12 griptape-nodes >/dev/null
 
-# Install Griptape Nodes Library + Workflows
-: "${XDG_DATA_HOME:="$HOME/.local/share"}"
-REPO_NAME="griptape-nodes"
-
-TMP_DIR="$(mktemp -d)"
-cd "$TMP_DIR"
-
-echo ""
-echo "Installing Griptape Nodes Library..."
-echo ""
-git clone --depth 1 --branch latest https://github.com/griptape-ai/griptape-nodes.git
-
-mkdir -p "$XDG_DATA_HOME/griptape_nodes"
-
-cp -R $REPO_NAME/nodes/ "$XDG_DATA_HOME/griptape_nodes/nodes"
-cp -R $REPO_NAME/workflows/ "$XDG_DATA_HOME/griptape_nodes/workflows"
-
-cd - >/dev/null
-rm -rf "$TMP_DIR"
-
-echo "**************************************"
-echo "*      Installation complete!        *"
-echo "*  Run 'griptape-nodes' (or 'gtn')   *"
-echo "*      to start the engine.          *"
-echo "**************************************"
+cecho "$GREEN$BOLD" "**************************************"
+cecho "$GREEN$BOLD" "*      Installation complete!        *"
+cecho "$GREEN$BOLD" "*  Run 'griptape-nodes' (or 'gtn')   *"
+cecho "$GREEN$BOLD" "*      to start the engine.          *"
+cecho "$GREEN$BOLD" "**************************************"

@@ -39,8 +39,8 @@ class NodesApiSocketManager:
             try:
                 self.socket.send(json.dumps(body))
                 sent = True
-            except WebSocketException:
-                logger.warning("Error sending event to Nodes API, attempting to reconnect.")
+            except WebSocketException as e:
+                logger.error("Error sending event to Nodes API, attempting to reconnect. %s", e)
                 self.socket = self._connect()
 
     def heartbeat(self, *, session_id: str | None, request: dict) -> None:
@@ -56,6 +56,9 @@ class NodesApiSocketManager:
                     **({"session_id": session_id} if session_id is not None else {}),
                 }
             ),
+        )
+        logger.debug(
+            "Responded to heartbeat request with session: %s and request: %s", session_id, request.get("request_id")
         )
 
     def run(self, *args, **kwargs) -> None:
@@ -87,7 +90,7 @@ class NodesApiSocketManager:
                         os.getenv("GRIPTAPE_NODES_API_BASE_URL", "wss://api.nodes.griptape.ai")
                         .replace("http", "ws")
                         .replace("https", "wss"),
-                        "/api/editors/ws",  # TODO(matt): this is the destination path for events. reevaluate if we do bi-directional communication
+                        "/api/editors/ws",  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/866
                     ),
                     additional_headers={"Authorization": f"Bearer {api_key}"},
                     ping_timeout=None,
@@ -97,16 +100,18 @@ class NodesApiSocketManager:
                 logger.debug("Error: ", exc_info=True)
                 sleep(5)
             except InvalidStatus as e:
-                if e.response.status_code in {401, 403}:
-                    message = Panel(
-                        Align.center(
-                            "[bold red]Nodes API key is invalid, please re-run [code]gtn init[/code] with a valid key: [/bold red]"
-                            "[code]gtn init --api-key <your key>[/code]\n"
-                            "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
-                        ),
-                        title="🔑 ❌ Invalid Nodes API Key",
-                        border_style="red",
-                        padding=(1, 4),
-                    )
-                    console.print(message)
-                    sys.exit(1)
+                message = Panel(
+                    Align.center(
+                        f"[bold red]Nodes API key is invalid ({e.response.status_code}), please re-run [code]gtn init[/code] with a valid key: [/bold red]"
+                        "[code]gtn init --api-key <your key>[/code]\n"
+                        "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
+                    ),
+                    title="🔑 ❌ Invalid Nodes API Key",
+                    border_style="red",
+                    padding=(1, 4),
+                )
+                console.print(message)
+                sys.exit(1)
+            except Exception:
+                logger.exception("Unexpected error while connecting to Nodes API")
+                sys.exit(1)

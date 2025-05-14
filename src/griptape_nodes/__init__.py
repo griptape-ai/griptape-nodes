@@ -1,47 +1,54 @@
 """Griptape Nodes package."""
-
 # ruff: noqa: S603, S607
 
-import argparse
-import importlib.metadata
-import json
-import shutil
-import subprocess
-import sys
-from pathlib import Path
-
-import httpx
-from dotenv import load_dotenv, set_key
-from dotenv.main import DotEnv
 from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
-from xdg_base_dirs import xdg_config_home, xdg_data_home
 
-from griptape_nodes.app import start_app
-from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
-from griptape_nodes.retained_mode.managers.os_manager import OSManager
-from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+console = Console()
 
-GH_INSTALL_SCRIPT_SH = "/repos/griptape-ai/griptape-nodes/contents/install.sh?ref=main"
-GH_INSTALL_SCRIPT_PS = "/repos/griptape-ai/griptape-nodes/contents/install.ps1?ref=main"
-INSTALL_SCRIPT_SH = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.sh"
-INSTALL_SCRIPT_PS = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/install.ps1"
+with console.status("Loading Griptape Nodes...") as status:
+    import argparse
+    import importlib.metadata
+    import json
+    import shutil
+    import sys
+    import tarfile
+    import tempfile
+    import webbrowser
+    from pathlib import Path
+    from typing import Literal
+
+    import httpx
+    from dotenv import load_dotenv
+    from rich.panel import Panel
+    from rich.progress import Progress
+    from rich.prompt import Confirm, Prompt
+    from xdg_base_dirs import xdg_config_home, xdg_data_home
+
+    from griptape_nodes.app import start_app
+    from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+    from griptape_nodes.retained_mode.managers.os_manager import OSManager
+    from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 DATA_DIR = xdg_data_home() / "griptape_nodes"
 ENV_FILE = CONFIG_DIR / ".env"
 CONFIG_FILE = CONFIG_DIR / "griptape_nodes_config.json"
-REPO_NAME = "griptape-ai/griptape-nodes"
+LATEST_TAG = "latest"
+PACKAGE_NAME = "griptape-nodes"
 NODES_APP_URL = "https://nodes.griptape.ai"
+NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/tags/{tag}.tar.gz"
+PYPI_UPDATE_URL = "https://pypi.org/pypi/{package}/json"
+GITHUB_UPDATE_URL = "https://api.github.com/repos/griptape-ai/{package}/git/refs/tags/{revision}"
 
 
-console = Console()
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
+os_manager = OSManager()
 
 
 def main() -> None:
-    load_dotenv(ENV_FILE)
+    """Main entry point for the Griptape Nodes CLI."""
+    load_dotenv(ENV_FILE, override=True)
 
     # Hack to make paths "just work". # noqa: FIX004
     # Without this, packages like `nodes` don't properly import.
@@ -53,77 +60,115 @@ def main() -> None:
     _process_args(args)
 
 
-def _run_init(api_key: str | None = None, workspace_directory: str | None = None) -> None:
+def _run_init(
+    *, api_key: str | None = None, workspace_directory: str | None = None, register_advanced_library: bool | None = None
+) -> None:
     """Runs through the engine init steps, optionally skipping prompts if the user provided `--api-key`."""
-    _prompt_for_workspace(workspace_directory)
-    _prompt_for_api_key(api_key)
+    __init_system_config()
+    _prompt_for_workspace(workspace_directory_arg=workspace_directory)
+    _prompt_for_api_key(api_key=api_key)
+    _prompt_for_libraries_to_register(register_advanced_library=register_advanced_library)
+    _sync_assets()
+    console.print("[bold green]Initialization complete![/bold green]")
+
+
+def _start_engine(*, no_update: bool) -> None:
+    """Starts the Griptape Nodes engine.
+
+    Args:
+        no_update: If True, skips the auto-update check.
+    """
+    if not CONFIG_DIR.exists():
+        # Default init flow if there is no config directory
+        console.print("[bold green]Config directory not found. Initializing...[/bold green]")
+        _run_init()
+        webbrowser.open(NODES_APP_URL)
+
+    # Confusing double negation -- If `no_update` is set, we want to skip the update
+    if not no_update:
+        _auto_update_self()
+
+    console.print("[bold green]Starting Griptape Nodes engine...[/bold green]")
+    start_app()
 
 
 def _get_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="griptape-nodes", description="Griptape Nodes Engine.")
-
-    parser.add_argument(
-        "command",
-        help="Command to run",
-        nargs="?",
-        choices=["init", "engine", "config", "update", "uninstall", "version"],
-        default="engine",
+    """Parse CLI arguments for the *griptape-nodes* entry-point."""
+    parser = argparse.ArgumentParser(
+        prog="griptape-nodes",
+        description="Griptape Nodes Engine.",
     )
 
-    # Optional subcommand for 'config' (e.g., config list)
-    parser.add_argument(
-        "config_subcommand",
-        help="Subcommand for 'config'",
-        nargs="?",
-        choices=["list"],
-        default=None,
-    )
-
-    # Optionally allow setting the API key or workspace directory directly for the init command
-    parser.add_argument(
-        "--api-key",
-        help="Override the Griptape Nodes API key when running 'init'.",
-        required=False,
-    )
-    parser.add_argument(
-        "--workspace-directory",
-        help="Override the Griptape Nodes workspace directory when running 'init'.",
-        required=False,
-    )
+    # Global options (apply to every command)
     parser.add_argument(
         "--no-update",
         action="store_true",
         help="Skip the auto-update check.",
+    )
+
+    subparsers = parser.add_subparsers(
+        dest="command",
+        metavar="COMMAND",
         required=False,
     )
 
-    return parser.parse_args()
+    init_parser = subparsers.add_parser("init", help="Initialize engine configuration.")
+    init_parser.add_argument(
+        "--api-key",
+        help="Set the Griptape Nodes API key.",
+    )
+    init_parser.add_argument(
+        "--workspace-directory",
+        help="Set the Griptape Nodes workspace directory.",
+    )
+    init_parser.add_argument(
+        "--register-advanced-library",
+        action="store_true",
+        default=None,
+        help="Install the Griptape Nodes Advanced Image Library.",
+    )
 
+    # engine
+    subparsers.add_parser("engine", help="Run the Griptape Nodes engine.")
 
-def _init_system_config() -> bool:
-    """Initializes the system config directory if it doesn't exist.
+    # config
+    config_parser = subparsers.add_parser("config", help="Manage configuration.")
+    config_subparsers = config_parser.add_subparsers(
+        dest="subcommand",
+        metavar="SUBCOMMAND",
+        required=True,
+    )
+    config_subparsers.add_parser("show", help="Show configuration values.")
+    config_subparsers.add_parser("list", help="List configuration values.")
+    config_subparsers.add_parser("reset", help="Reset configuration to defaults.")
 
-    Returns:
-        bool: True if the system config directory was created, False otherwise.
+    # self
+    self_parser = subparsers.add_parser("self", help="Manage this CLI installation.")
+    self_subparsers = self_parser.add_subparsers(
+        dest="subcommand",
+        metavar="SUBCOMMAND",
+        required=True,
+    )
+    self_subparsers.add_parser("update", help="Update the CLI.")
+    self_subparsers.add_parser("uninstall", help="Uninstall the CLI.")
+    self_subparsers.add_parser("version", help="Print the CLI version.")
 
-    """
-    is_first_init = False
-    if not CONFIG_DIR.exists():
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        is_first_init = True
+    # assets
+    assets_parser = subparsers.add_parser("assets", help="Manage local assets (libraries, workflows, etc.).")
+    assets_subparsers = assets_parser.add_subparsers(
+        dest="subcommand",
+        metavar="SUBCOMMAND",
+        required=True,
+    )
+    assets_subparsers.add_parser("sync", help="Sync assets with your current engine version.")
 
-    files_to_create = [
-        (ENV_FILE, ""),
-        (CONFIG_FILE, "{}"),
-    ]
+    args = parser.parse_args()
 
-    for file_name in files_to_create:
-        file_path = CONFIG_DIR / file_name[0]
-        if not file_path.exists():
-            with Path.open(file_path, "w") as file:
-                file.write(file_name[1])
+    # Default to the `engine` command when none is given.
+    if args.command is None:
+        args.command = "engine"
 
-    return is_first_init
+    return args
 
 
 def _prompt_for_api_key(api_key: str | None = None) -> None:
@@ -137,7 +182,7 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
         Once the key is generated, copy and paste its value here to proceed."""
         console.print(Panel(explainer, expand=False))
 
-    default_key = api_key or DotEnv(ENV_FILE, verbose=False).get("GT_CLOUD_API_KEY")
+    default_key = api_key or secrets_manager.get_secret("GT_CLOUD_API_KEY", should_error_on_not_found=False)
     # If api_key is provided via --api-key, we don't want to prompt for it
     current_key = api_key
     while current_key is None:
@@ -147,31 +192,18 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
             show_default=True,
         )
 
-    set_key(ENV_FILE, "GT_CLOUD_API_KEY", current_key)
-    config_manager.set_config_value("nodes.Griptape.GT_CLOUD_API_KEY", "$GT_CLOUD_API_KEY")
     secrets_manager.set_secret("GT_CLOUD_API_KEY", current_key)
-    console.print(f"[bold green]API Key set to: {current_key}[/bold green]")
 
 
-def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
+def _prompt_for_workspace(*, workspace_directory_arg: str | None) -> None:
     """Prompts the user for their workspace directory and stores it in config directory."""
-    if workspace_directory_arg is not None:
-        try:
-            workspace_path = Path(workspace_directory_arg).expanduser().resolve()
-        except OSError as e:
-            console.print(f"[bold red]Invalid workspace directory argument: {e}[/bold red]")
-        else:
-            config_manager.workspace_path = str(workspace_path)
-            console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
-            return
-
     explainer = """[bold cyan]Workspace Directory[/bold cyan]
-    Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows, configuration data, and secrets.
+    Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows.
     You may enter a custom directory or press Return to accept the default workspace directory"""
     console.print(Panel(explainer, expand=False))
 
     valid_workspace = False
-    default_workspace_directory = config_manager.get_config_value("workspace_directory")
+    default_workspace_directory = workspace_directory_arg or config_manager.get_config_value("workspace_directory")
     while not valid_workspace:
         try:
             workspace_directory = Prompt.ask(
@@ -179,257 +211,326 @@ def _prompt_for_workspace(workspace_directory_arg: str | None) -> None:
                 default=default_workspace_directory,
                 show_default=True,
             )
-            config_manager.workspace_path = str(Path(workspace_directory).expanduser().resolve())
+            workspace_path = Path(workspace_directory).expanduser().resolve()
+
+            config_manager.workspace_path = workspace_path
+            config_manager.set_config_value("workspace_directory", str(workspace_path))
+
             valid_workspace = True
         except OSError as e:
             console.print(f"[bold red]Invalid workspace directory: {e}[/bold red]")
+        except json.JSONDecodeError as e:
+            console.print(f"[bold red]Error reading config file: {e}[/bold red]")
     console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
 
 
-def _get_latest_version(repo: str) -> str:
-    """Fetches the latest release tag from a GitHub repository using httpx.
+def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None = None) -> None:
+    """Prompts the user for the libraries to register and stores them in config directory."""
+    explainer = """[bold cyan]Advanced Media Library[/bold cyan]
+    Would you like to install the Griptape Nodes Advanced Media Library?
+    This node library makes advanced media generation and manipulation nodes available.
+    For example, nodes are available for Flux AI image upscaling, or to leverage CUDA for GPU-accelerated image generation.
+    CAVEAT: Installing this library requires additional dependencies to download and install, which can take several minutes.
+    The Griptape Nodes Advanced Media Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
+    """
+    console.print(Panel(explainer, expand=False))
+
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/929
+    key = "app_events.on_app_initialization_complete.libraries_to_register"
+    current_libraries = config_manager.get_config_value(
+        key,
+        config_source="user_config",
+        default=config_manager.get_config_value(key, config_source="default_config", default=[]),
+    )
+    default_library = str(
+        xdg_data_home() / "griptape_nodes/libraries/griptape_nodes_library/griptape_nodes_library.json"
+    )
+    extra_libraries = [
+        str(
+            xdg_data_home()
+            / "griptape_nodes/libraries/griptape_nodes_advanced_media_library/griptape_nodes_library.json"
+        )
+    ]
+    libraries_to_merge = [default_library]
+
+    if register_advanced_library is None:
+        register_extras = Confirm.ask("Register Advanced Media Library?", default=False)
+    else:
+        register_extras = register_advanced_library
+
+    if register_extras:
+        libraries_to_merge.extend(extra_libraries)
+
+    # Remove duplicates
+    merged_libraries = list(set(current_libraries + libraries_to_merge))
+
+    config_manager.set_config_value("app_events.on_app_initialization_complete.libraries_to_register", merged_libraries)
+
+
+def _get_latest_version(package: str, install_source: str) -> str:
+    """Fetches the latest release tag from PyPI.
 
     Args:
-        repo (str): Repository name in the format "owner/repo"
+        package: The name of the package to fetch the latest version for.
+        install_source: The source from which the package is installed (e.g., "pypi", "git", "file").
 
     Returns:
         str: Latest release tag (e.g., "v0.31.4")
     """
-    url = f"https://api.github.com/repos/{repo}/releases/latest"
-    with httpx.Client() as client:
-        response = client.get(url)
-        response.raise_for_status()
-        return response.json()["tag_name"]
+    if install_source == "pypi":
+        update_url = PYPI_UPDATE_URL.format(package=package)
+
+        with httpx.Client() as client:
+            response = client.get(update_url)
+            try:
+                response.raise_for_status()
+                data = response.json()
+                return f"v{data['info']['version']}"
+            except httpx.HTTPStatusError as e:
+                console.print(f"[red]Error fetching latest version: {e}[/red]")
+                return __get_current_version()
+    elif install_source == "git":
+        # We only install auto updating from the 'latest' tag
+        revision = LATEST_TAG
+        update_url = GITHUB_UPDATE_URL.format(package=package, revision=revision)
+
+        with httpx.Client() as client:
+            response = client.get(update_url)
+            try:
+                response.raise_for_status()
+                # Get the latest commit SHA for the tag, this effectively the latest version of the package
+                data = response.json()
+                if "object" in data and "sha" in data["object"]:
+                    return data["object"]["sha"][:7]
+                # Should not happen, but if it does, return the current version
+                return __get_current_version()
+            except httpx.HTTPStatusError as e:
+                console.print(f"[red]Error fetching latest version: {e}[/red]")
+                return __get_current_version()
+    else:
+        # If the package is installed from a file, just return the current version since the user is likely managing it manually
+        return __get_current_version()
 
 
-def _auto_update() -> None:
+def _auto_update_self() -> None:
     """Automatically updates the script to the latest version if the user confirms."""
-    current_version = _get_current_version()
-    latest_version = _get_latest_version(REPO_NAME)
+    console.print("[bold green]Checking for updates...[/bold green]")
+    source, commit_id = __get_install_source()
+    current_version = __get_current_version()
+    latest_version = _get_latest_version(PACKAGE_NAME, source)
 
-    if current_version < latest_version:
-        update = Confirm.ask(
-            f"Your current engine version, {current_version}, is behind the latest release, {latest_version}. Update now?",
-            default=True,
-        )
+    if source == "git" and commit_id is not None:
+        can_update = commit_id != latest_version
+        update_message = f"Your current engine version, {current_version} ({source} - {commit_id}), doesn't match the latest release, {latest_version}. Update now?"
+    else:
+        can_update = current_version < latest_version
+        update_message = f"Your current engine version, {current_version}, is behind the latest release, {latest_version}. Update now?"
+
+    if can_update:
+        update = Confirm.ask(update_message, default=True)
 
         if update:
-            _install_latest_release()
+            _update_self()
 
 
-def _install_latest_release() -> None:
-    """Installs the latest release of the script. Prefers GitHub CLI if available."""
-    console.print("[bold green]Starting update...[/bold green]")
-    console.print("[bold yellow]Checking for GitHub CLI...[/bold yellow]")
+def _update_self() -> None:
+    """Installs the latest release of the CLI *and* refreshes bundled assets."""
+    console.print("[bold green]Starting updater...[/bold green]")
 
-    try:
-        __download_and_run_installer()
-    except subprocess.CalledProcessError as e:
-        console.print(f"[bold red]Error during update: {e}[/bold red]")
-        sys.exit(1)
-
-    console.print(
-        "[bold green]Update complete! Restart the engine by running 'griptape-nodes' (or just 'gtn').[/bold green]"
-    )
-    sys.exit(0)
+    os_manager.replace_process([sys.executable, "-m", "griptape_nodes.updater"])
 
 
-def __download_and_run_installer() -> None:
-    """Runs the update commands for the engine."""
-    gh_cli = shutil.which("gh")
-    if gh_cli:
-        console.print("[bold green]Found GitHub CLI. Using gh to fetch install script...[/bold green]")
-
-        if OSManager.is_windows():
-            # Fetch install.ps1 contents using gh
-            ps_content = subprocess.check_output(
-                [
-                    gh_cli,
-                    "api",
-                    "-H",
-                    "Accept: application/vnd.github.v3.raw",
-                    GH_INSTALL_SCRIPT_PS,
-                ],
-                text=True,
-            )
-            # Run the PowerShell script from stdin
-            subprocess.run(
-                ["powershell", "-ExecutionPolicy", "ByPass", "-Command", "-"],
-                input=ps_content,
-                text=True,
-                check=True,
-            )
-        else:
-            # macOS or Linux
-            bash_content = subprocess.check_output(
-                [
-                    gh_cli,
-                    "api",
-                    "-H",
-                    "Accept: application/vnd.github.v3.raw",
-                    GH_INSTALL_SCRIPT_SH,
-                ],
-                text=True,
-            )
-            # Run the Bash script from stdin
-            subprocess.run(
-                ["bash"],
-                input=bash_content,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+def _sync_assets() -> None:
+    """Download and fully replace the Griptape Nodes assets directory."""
+    install_source, _ = __get_install_source()
+    # Unless we're installed from PyPi, grab assets from the 'latest' tag
+    if install_source == "pypi":
+        version = __get_current_version()
     else:
-        console.print("[bold yellow]GitHub CLI not found. Falling back to direct download...[/bold yellow]")
+        version = LATEST_TAG
 
-        if OSManager.is_windows():
-            subprocess.run(
-                [
-                    "powershell",
-                    "-ExecutionPolicy",
-                    "ByPass",
-                    "-c",
-                    f"irm {INSTALL_SCRIPT_PS} | iex",
-                ],
-                check=True,
-                text=True,
-            )
-        else:
-            curl_process = subprocess.run(
-                [
-                    "curl",
-                    "-LsSf",
-                    INSTALL_SCRIPT_SH,
-                ],
-                capture_output=True,
-                check=False,
-                text=True,
-            )
-            curl_process.check_returncode()
-            subprocess.run(
-                ["bash"],
-                input=curl_process.stdout,
-                capture_output=True,
-                check=True,
-                text=True,
-            )
+    console.print(f"[bold cyan]Fetching Griptape Nodes assets ({version})…[/bold cyan]")
 
+    tar_url = NODES_TARBALL_URL.format(tag=version)
+    console.print(f"[green]Downloading from {tar_url}[/green]")
+    dest_nodes = DATA_DIR / "libraries"
 
-def _get_current_version() -> str:
-    """Fetches the current version of the script.
+    with tempfile.TemporaryDirectory() as tmp:
+        tar_path = Path(tmp) / "nodes.tar.gz"
 
-    Returns:
-        str: Current version (e.g., "v0.31.4")
-    """
-    return f"v{importlib.metadata.version('griptape_nodes')}"
+        # Streaming download with a tiny progress bar
+        with httpx.stream("GET", tar_url, follow_redirects=True) as r, Progress() as progress:
+            try:
+                r.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                console.print(f"[red]Error fetching assets: {e}[/red]")
+                return
+            task = progress.add_task("[green]Downloading...", total=int(r.headers.get("Content-Length", 0)))
+            with tar_path.open("wb") as f:
+                for chunk in r.iter_bytes():
+                    f.write(chunk)
+                    progress.update(task, advance=len(chunk))
+
+        console.print("[green]Extracting...[/green]")
+        # Extract and locate extracted directory
+        with tarfile.open(tar_path) as tar:
+            tar.extractall(tmp, filter="data")
+
+        extracted_root = next(Path(tmp).glob("griptape-nodes-*"))
+        extracted_libs = extracted_root / "libraries"
+
+        # Fully replace the destination directory
+        if dest_nodes.exists():
+            shutil.rmtree(dest_nodes)
+        shutil.copytree(extracted_libs, dest_nodes)
+
+    console.print("[bold green]Node Libraries updated.[/bold green]")
 
 
-def _get_user_config() -> dict:
-    """Fetches the user configuration from the config file.
+def _print_current_version() -> None:
+    """Prints the current version of the script."""
+    version = __get_current_version()
+    source, commit_id = __get_install_source()
+    if commit_id is None:
+        console.print(f"[bold green]{version} ({source})[/bold green]")
+    else:
+        console.print(f"[bold green]{version} ({source} - {commit_id})[/bold green]")
 
-    Returns:
-        dict: User configuration.
-    """
-    return config_manager.user_config
+
+def _print_user_config() -> None:
+    """Prints the user configuration from the config file."""
+    config = config_manager.merged_config
+    sys.stdout.write(json.dumps(config, indent=2))
 
 
 def _list_user_configs() -> None:
-    """Lists the user configuration files."""
-    for config in config_manager.config_files:
-        console.print(f"[bold green]{config}[/bold green]")
+    """Lists user configuration files in ascending precedence."""
+    num_config_files = len(config_manager.config_files)
+    console.print(
+        f"[bold]User Configuration Files (lowest precedence (1.) ⟶ highest precedence ({num_config_files}.)):[/bold]"
+    )
+    for idx, config in enumerate(config_manager.config_files):
+        console.print(f"[green]{idx + 1}. {config}[/green]")
+
+
+def _reset_user_config() -> None:
+    """Resets the user configuration to the default values."""
+    console.print("[bold]Resetting user configuration to default values...[/bold]")
+    config_manager.reset_user_config()
+    console.print("[bold green]User configuration reset complete![/bold green]")
 
 
 def _uninstall_self() -> None:
     """Uninstalls itself by removing config/data directories and the executable."""
     console.print("[bold]Uninstalling Griptape Nodes...[/bold]")
 
-    # Remove config directory
-    if CONFIG_DIR.exists():
-        console.print(f"Removing config directory '{CONFIG_DIR}'...")
-        try:
-            shutil.rmtree(CONFIG_DIR)
-        except OSError as exc:
-            console.print(f"[bold red]Error removing config directory '{CONFIG_DIR}': {exc}[/bold red]")
-    else:
-        console.print(f"[yellow]Config directory '{CONFIG_DIR}' does not exist; skipping.[/yellow]")
+    # Remove config and data directories
+    console.print("[bold]Removing config and data directories...[/bold]")
+    dirs = [(CONFIG_DIR, "Config Dir"), (DATA_DIR, "Data Dir")]
+    for dir_path, dir_name in dirs:
+        if dir_path.exists():
+            console.print(f"[bold]Removing {dir_name} '{dir_path}'...[/bold]")
+            try:
+                shutil.rmtree(dir_path)
+            except OSError as exc:
+                console.print(f"[red]Error removing {dir_name} '{dir_path}': {exc}[/red]")
+        else:
+            console.print(f"[yellow]{dir_name} '{dir_path}' does not exist; skipping.[/yellow]")
 
-    # Remove data directory
-    if DATA_DIR.exists():
-        console.print(f"Removing data directory '{DATA_DIR}'...")
-        try:
-            shutil.rmtree(DATA_DIR)
-        except OSError as exc:
-            console.print(f"[bold red]Error removing data directory '{DATA_DIR}': {exc}[/bold red]")
-    else:
-        console.print(f"[yellow]Data directory '{DATA_DIR}' does not exist; skipping.[/yellow]")
-
-    # Remove the executable/tool
-    executable_path = shutil.which("griptape-nodes")
-    executable_removed = False
-    if executable_path:
-        console.print(f"Removing Griptape Nodes executable ({executable_path})...")
-        try:
-            subprocess.run(
-                ["uv", "tool", "uninstall", "griptape-nodes"],
-                check=True,
-                text=True,
-            )
-            executable_removed = True
-        except subprocess.CalledProcessError:
-            executable_removed = False
-    else:
-        console.print("[yellow]Griptape Nodes executable not found; skipping removal.[/yellow]")
-
-    console.print("[bold green]Uninstall complete![/bold green]\n")
-
-    console.print("[bold]Caveats:[/bold]")
+    caveats = []
     # Handle any remaining config files not removed by design
     remaining_config_files = config_manager.config_files
     if remaining_config_files:
-        console.print("- Some config files were intentionally not removed:")
-        for file in remaining_config_files:
-            console.print(f"\t[yellow]- {file}[/yellow]")
+        caveats.append("- Some config files were intentionally not removed:")
+        caveats.extend(f"\t[yellow]- {file}[/yellow]" for file in remaining_config_files)
 
-    if not executable_removed:
-        console.print(
-            "- The uninstaller was not able to remove the 'griptape-nodes' executable. "
-            "Please remove the executable manually by running '[bold]uv tool uninstall griptape-nodes[/bold]'."
-        )
+    # If there were any caveats to the uninstallation process, print them
+    if caveats:
+        console.print("[bold]Caveats:[/bold]")
+        for line in caveats:
+            console.print(line)
 
-    # Exit the process
-    sys.exit(0)
+    # Remove the executable
+    console.print("[bold]Removing the executable...[/bold]")
+    console.print("[bold yellow]When done, press Enter to exit.[/bold yellow]")
+    os_manager.replace_process(["uv", "tool", "uninstall", "griptape-nodes"])
 
 
-def _process_args(args: argparse.Namespace) -> None:
-    is_first_init = _init_system_config()
-
+def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
     if args.command == "init":
-        _run_init(api_key=args.api_key, workspace_directory=args.workspace_directory)
-        console.print("Initialization complete! You can now run the engine with 'griptape-nodes' (or just 'gtn').")
+        _run_init(
+            api_key=args.api_key,
+            workspace_directory=args.workspace_directory,
+            register_advanced_library=args.register_advanced_library,
+        )
     elif args.command == "engine":
-        if is_first_init:
-            # Default init flow if it's truly the first time
-            _run_init()
-
-        # Confusing double negation -- If `no_update` is set, we want to skip the update
-        if not args.no_update:
-            _auto_update()
-        start_app()
+        _start_engine(no_update=args.no_update)
     elif args.command == "config":
-        if args.config_subcommand == "list":
+        if args.subcommand == "list":
             _list_user_configs()
-        else:
-            sys.stdout.write(json.dumps(_get_user_config(), indent=2))
-    elif args.command == "update":
-        _install_latest_release()
-    elif args.command == "uninstall":
-        _uninstall_self()
-    elif args.command == "version":
-        version = _get_current_version()
-        console.print(f"[bold green]{version}[/bold green]")
+        elif args.subcommand == "reset":
+            _reset_user_config()
+        elif args.subcommand == "show":
+            _print_user_config()
+    elif args.command == "self":
+        if args.subcommand == "update":
+            _update_self()
+        elif args.subcommand == "uninstall":
+            _uninstall_self()
+        elif args.subcommand == "version":
+            _print_current_version()
+    elif args.command == "assets":
+        if args.subcommand == "sync":
+            _sync_assets()
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)
+
+
+def __get_current_version() -> str:
+    """Returns the current version of the Griptape Nodes package."""
+    version = importlib.metadata.version("griptape_nodes")
+
+    return f"v{version}"
+
+
+def __get_install_source() -> tuple[Literal["git", "file", "pypi"], str | None]:
+    """Determines the install source of the Griptape Nodes package.
+
+    Returns:
+        tuple: A tuple containing the install source and commit ID (if applicable).
+    """
+    dist = importlib.metadata.distribution("griptape_nodes")
+    direct_url_text = dist.read_text("direct_url.json")
+    # installing from pypi doesn't have a direct_url.json file
+    if direct_url_text is None:
+        return "pypi", None
+
+    direct_url_info = json.loads(direct_url_text)
+    url = direct_url_info.get("url")
+    if url.startswith("file://"):
+        return "file", None
+    if "vcs_info" in direct_url_info:
+        return "git", direct_url_info["vcs_info"].get("commit_id")[:7]
+    # Fall back to pypi if no other source is found
+    return "pypi", None
+
+
+def __init_system_config() -> None:
+    """Initializes the system config directory if it doesn't exist."""
+    if not CONFIG_DIR.exists():
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    files_to_create = [
+        (ENV_FILE, ""),
+        (CONFIG_FILE, "{}"),
+    ]
+
+    for file_name in files_to_create:
+        file_path = CONFIG_DIR / file_name[0]
+        if not file_path.exists():
+            with Path.open(file_path, "w") as file:
+                file.write(file_name[1])
 
 
 if __name__ == "__main__":

@@ -1,35 +1,103 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, NamedTuple, Self, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, Self, cast
 
 from griptape.mixins.singleton_mixin import SingletonMixin
+from pydantic import BaseModel
 
-from griptape_nodes.exe_types.node_types import BaseNode
+if TYPE_CHECKING:
+    from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("griptape_nodes")
 
 
-class LibraryNodeIdentifier(NamedTuple):
-    """Unique identifier for a node type."""
+class LibraryNameAndVersion(NamedTuple):
+    library_name: str
+    library_version: str
 
-    library: str
-    node_name: str
+
+class Dependencies(BaseModel):
+    """Dependencies for the library.
+
+    This can include other libraries, as well as external packages that need to
+    be installed with pip.
+    """
+
+    pip_dependencies: list[str] | None = None
+    pip_install_flags: list[str] | None = None
+
+
+class LibraryMetadata(BaseModel):
+    """Metadata that explains details about the library, including versioning and search details."""
+
+    author: str
+    description: str
+    library_version: str
+    engine_version: str
+    tags: list[str]
+    dependencies: Dependencies | None = None
+    # If True, this library will be surfaced to Griptape Nodes customers when listing Node Libraries available to them.
+    is_griptape_nodes_searchable: bool = True
+
+
+class NodeMetadata(BaseModel):
+    """Metadata about each node within the library, which informs where in the hierarchy it sits, details on usage, and tags to assist search."""
+
+    category: str
+    description: str
+    display_name: str
+    tags: list[str] | None = None
+
+
+class CategoryDefinition(BaseModel):
+    """Defines categories within a library, which influences how nodes are organized within an editor."""
+
+    title: str
+    description: str
+    color: str
+    icon: str
+
+
+class NodeDefinition(BaseModel):
+    """Defines a node within a library, including class name and file name and metadata about the node."""
+
+    class_name: str
+    file_path: str
+    metadata: NodeMetadata
+
+
+class Setting(BaseModel):
+    """Defines a library-specific setting, which will automatically be injected into the user's Configuration."""
+
+    category: str  # Name of the category in the config
+    contents: dict[str, Any]  # The actual settings content
+    description: str | None = None  # Optional description for the setting
+
+
+class LibrarySchema(BaseModel):
+    """Schema for a library definition file.
+
+    The schema that defines the structure of a Griptape Nodes library,
+    including the nodes and workflows it contains, as well as metadata about the
+    library itself.
+    """
+
+    name: str
+    library_schema_version: str
+    metadata: LibraryMetadata
+    categories: list[dict[str, CategoryDefinition]]
+    nodes: list[NodeDefinition]
+    workflows: list[str] | None = None
+    scripts: list[str] | None = None
+    settings: list[Setting] | None = None
+    is_default_library: bool | None = None
 
 
 class LibraryRegistry(SingletonMixin):
     """Singleton registry to manage many libraries."""
 
     _libraries: dict[str, Library]
-
-    # Keep a list of Node names to the Library it belongs to.
-    # This means the user doesn't have to specify the library as long as there are no collisions.
-    # Names that collide are NOT included in the aliases list, but rather a separate table.
-    _node_aliases: dict[str, str]
-
-    # If there are collisions between node names between libraries, store them here.
-    # These will need to be specified using explicit library + node name.
-    _collision_node_names_to_library_names: dict[str, set[str]]
 
     def __new__(cls) -> Self:
         if cls._instance is None:
@@ -42,17 +110,17 @@ class LibraryRegistry(SingletonMixin):
     @classmethod
     def generate_new_library(
         cls,
-        name: str,
-        mark_as_default_library: bool = False,  # noqa: FBT001, FBT002
-        categories: list[dict] | None = None,
+        library_data: LibrarySchema,
+        *,
+        mark_as_default_library: bool = False,
     ) -> Library:
         instance = cls()
 
-        if name in instance._libraries:
-            msg = f"Library type '{name}' already registered."
+        if library_data.name in instance._libraries:
+            msg = f"Library '{library_data.name}' already registered."
             raise KeyError(msg)
-        library = Library(name=name, is_default_library=mark_as_default_library, categories=categories)
-        instance._libraries[name] = library
+        library = Library(library_data=library_data, is_default_library=mark_as_default_library)
+        instance._libraries[library_data.name] = library
         return library
 
     @classmethod
@@ -62,33 +130,6 @@ class LibraryRegistry(SingletonMixin):
         if library_name not in instance._libraries:
             msg = f"Library '{library_name}' was requested to be unregistered, but it wasn't registered in the first place."
             raise KeyError(msg)
-
-        # See which nodes in the collision table were attached to this library.
-        # A previous collision may get "promoted" back to being an alias when this library goes away.
-        collisions_to_delete = []  # Track separately so we can delete after the iter loop.
-        for collision_node_name, library_name_set in instance._collision_node_names_to_library_names.items():
-            if library_name in library_name_set:
-                # Remove it, then see if we've "un-collisioned" this name.
-                library_name_set.remove(library_name)
-                if len(library_name_set) == 1:
-                    # No longer a collision. Promote back to the alias table and mark this collision for delete.
-                    lone_library = library_name_set.pop()
-                    instance._node_aliases[collision_node_name] = lone_library
-                    collisions_to_delete.append(collision_node_name)
-
-        # Actually delete any collisions outside of the iteration loop.
-        for collision_to_delete in collisions_to_delete:
-            del instance._collision_node_names_to_library_names[collision_to_delete]
-
-        # Now walk the alias table and delete anything that matches this library.
-        aliases_to_delete = []
-        for alias_node_name, alias_library_name in instance._node_aliases.items():
-            if alias_library_name == library_name:
-                aliases_to_delete.append(alias_node_name)
-
-        # Actually delete the aliases.
-        for alias_node_to_delete in aliases_to_delete:
-            del instance._node_aliases[alias_node_to_delete]
 
         # Now delete the library from the registry.
         del instance._libraries[library_name]
@@ -104,64 +145,39 @@ class LibraryRegistry(SingletonMixin):
     @classmethod
     def list_libraries(cls) -> list[str]:
         instance = cls()
-        return list(instance._libraries.keys())
+
+        # Put the default libraries first.
+        default_libraries = [k for k, v in instance._libraries.items() if v.is_default_library()]
+        other_libraries = [k for k, v in instance._libraries.items() if not v.is_default_library()]
+        sorted_list = default_libraries + other_libraries
+        return sorted_list
 
     @classmethod
-    def register_node_type_from_library(cls, library: Library, node_class_name: str) -> None:
+    def register_node_type_from_library(cls, library: Library, node_class_name: str) -> str | None:
+        """Register a node type from a library. Returns an error string for forensics."""
+        # Does a node class of this name already exist?
+        library_collisions = LibraryRegistry.get_libraries_with_node_type(node_class_name)
+        if library_collisions:
+            library_data = library.get_library_data()
+            if library_data.name in library_collisions:
+                details = f"Attempted to register Node class '{node_class_name}' from Library '{library_data.name}', but a Node with that name from that Library was already registered. Check to ensure you aren't re-adding the same libraries multiple times."
+                logger.error(details)
+                return details
+
+            details = f"When registering Node class '{node_class_name}', Nodes with the same class name were already registered from the following Libraries: '{library_collisions}'. This is a collision. If you want to use this Node, you will need to specify the Library name in addition to the Node class name so that it can be disambiguated."
+            logger.warning(details)
+            return details
+
+        return None
+
+    @classmethod
+    def get_libraries_with_node_type(cls, node_type: str) -> list[str]:
         instance = cls()
-        # Does a node class of this name already have a collision established?
-        if node_class_name in instance._collision_node_names_to_library_names:
-            collision_set = instance._collision_node_names_to_library_names[node_class_name]
-            # Make sure we're not re-adding the same node/library combo.
-            if library.name in collision_set:
-                logger.info(
-                    "Attempted to register Node class '%s' from Library '%s', but a Node with that name from that Library was already registered. Check to ensure you aren't re-adding the same libraries multiple times.",
-                    node_class_name,
-                    library.name,
-                )
-                return
-
-            # Append it to the set.
-            logger.info(
-                "When registering Node class '%s', Nodes with the same class name were already registered from the following Libraries: %s, you will need to specify the Library name in addition to the Node class name so that it can be disambiguated.",
-                node_class_name,
-                collision_set,
-            )
-            collision_set.add(library.name)
-            return
-
-        # See if there's a collision with the aliases.
-        if node_class_name in instance._node_aliases:
-            collision_library_name = instance._node_aliases[node_class_name]
-            # Make sure we're not trying to register the same node/library combo.
-            if library.name == collision_library_name:
-                logger.info(
-                    "Attempted to register Node class '%s' from Library '%s', but a Node with that name from that Library was already registered. Check to ensure you aren't re-adding the same libraries multiple times.",
-                    node_class_name,
-                    library.name,
-                )
-                return
-            # OK, legit collision. Move from the aliases table to the collision table.
-            logger.warning(
-                "Attempted to register a Node class '%s' from Library '%s', but a Node of that class name already existed from Library '%s'. In order to create these types of node, you will need to specify the Library name in addition to the Node class name so that it can be disambiguated.",
-                node_class_name,
-                library.name,
-                collision_library_name,
-            )
-
-            collision_set = set()
-            collision_set.add(collision_library_name)
-            collision_set.add(library.name)
-
-            # Add to the collision table.
-            instance._collision_node_names_to_library_names[node_class_name] = collision_set
-
-            # Remove from the aliases table.
-            del instance._node_aliases[node_class_name]
-            return
-
-        # Hunky-dory to add it as an alias.
-        instance._node_aliases[node_class_name] = library.name
+        libraries = []
+        for library_name, library in instance._libraries.items():
+            if library.has_node_type(node_type):
+                libraries.append(library_name)
+        return libraries
 
     @classmethod
     def create_node(
@@ -173,14 +189,13 @@ class LibraryRegistry(SingletonMixin):
     ) -> BaseNode:
         instance = cls()
         if specific_library_name is None:
-            # Does this node class exist in our aliases table?
-            if node_type in instance._node_aliases:
-                dest_library_name = instance._node_aliases[node_type]
-                dest_library = instance.get_library(dest_library_name)
-            # Maybe it is a collision?
-            elif node_type in instance._collision_node_names_to_library_names:
-                collision_set = instance._collision_node_names_to_library_names[node_type]
-                msg = f"Attempted to create a node of type '{node_type}', with no library name specified. The following libraries have nodes in them with the same name: {collision_set}. In order to disambiguate, specify the library this node should come from."
+            # Find its library.
+            libraries_with_node_type = LibraryRegistry.get_libraries_with_node_type(node_type)
+            if len(libraries_with_node_type) == 1:
+                specific_library_name = libraries_with_node_type[0]
+                dest_library = instance.get_library(specific_library_name)
+            elif len(libraries_with_node_type) > 1:
+                msg = f"Attempted to create a node of type '{node_type}' with no library name specified. The following libraries have nodes in them with the same name: {libraries_with_node_type}. In order to disambiguate, specify the library this node should come from."
                 raise KeyError(msg)
             else:
                 msg = f"No node type '{node_type}' could be found in any of the libraries registered."
@@ -199,49 +214,45 @@ class Library:
     Handles registration and creation of nodes.
     """
 
-    name: str
-    _metadata: dict | None
-    _node_types: dict[str, type[BaseNode]]
-    _node_metadata: dict[str, dict]
-    _categories: list[dict] | None
+    _library_data: LibrarySchema
     _is_default_library: bool
+    # Maintain fast lookups for node class name to class and to its metadata.
+    _node_types: dict[str, type[BaseNode]]
+    _node_metadata: dict[str, NodeMetadata]
 
     def __init__(
         self,
-        name: str,
-        metadata: dict | None = None,
-        categories: list[dict] | None = None,
-        is_default_library: bool = False,  # noqa: FBT001, FBT002
+        library_data: LibrarySchema,
+        *,
+        is_default_library: bool = False,
     ) -> None:
-        self.name = name
-        if metadata is None:
-            self._metadata = {}
-        else:
-            self._metadata = metadata
+        self._library_data = library_data
+
+        # If they didn't make it explicit, allow an override.
+        if self._library_data.is_default_library is None:
+            self._library_data.is_default_library = is_default_library
+
+        self._is_default_library = self._library_data.is_default_library
+
         self._node_types = {}
         self._node_metadata = {}
-        if categories is None:
-            self._categories = []
-        else:
-            self._categories = categories
-        self._is_default_library = is_default_library
-        self._metadata["is_default_library"] = self._is_default_library
 
-    def register_new_node_type(self, node_class: type[BaseNode], metadata: dict | None = None) -> None:
-        """Register a new node type in this library."""
-        if not issubclass(node_class, BaseNode):
-            msg = f"{node_class.__name__} must inherit from BaseNode"
-            raise TypeError(msg)
+    def register_new_node_type(self, node_class: type[BaseNode], metadata: NodeMetadata) -> str | None:
+        """Register a new node type in this library. Returns an error string for forensics, or None if all clear."""
         # We only need to register the name of the node within the library.
         node_class_as_str = node_class.__name__
-        self._node_types[node_class_as_str] = node_class
-        if metadata is None:
-            self._node_metadata[node_class_as_str] = {}
-        else:
-            self._node_metadata[node_class_as_str] = metadata
 
         # Let the registry know.
-        LibraryRegistry.register_node_type_from_library(library=self, node_class_name=node_class_as_str)
+        registry_details = LibraryRegistry.register_node_type_from_library(
+            library=self, node_class_name=node_class_as_str
+        )
+
+        self._node_types[node_class_as_str] = node_class
+        self._node_metadata[node_class_as_str] = metadata
+        return registry_details
+
+    def get_library_data(self) -> LibrarySchema:
+        return self._library_data
 
     def create_node(
         self,
@@ -252,14 +263,14 @@ class Library:
         """Create a new node instance of the specified type."""
         node_class = self._node_types.get(node_type)
         if not node_class:
-            raise KeyError(self.name, node_type)
+            raise KeyError(self._library_data.name, node_type)
         # Inject the metadata ABOUT the node from the Library
         # into the node's metadata blob.
         if metadata is None:
             metadata = {}
         library_node_metadata = self._node_metadata.get(node_type, {})
         metadata["library_node_metadata"] = library_node_metadata
-        metadata["library"] = self.name
+        metadata["library"] = self._library_data.name
         metadata["node_type"] = node_type
         node = node_class(name=name, metadata=metadata)
         return node
@@ -268,20 +279,19 @@ class Library:
         """Get a list of all registered node types."""
         return list(self._node_types.keys())
 
-    def get_node_metadata(self, node_type: str) -> dict:
+    def has_node_type(self, node_type: str) -> bool:
+        return node_type in self._node_types
+
+    def get_node_metadata(self, node_type: str) -> NodeMetadata:
         if node_type not in self._node_metadata:
-            raise KeyError(self.name, node_type)
+            raise KeyError(self._library_data.name, node_type)
         return self._node_metadata[node_type]
 
-    def get_categories(self) -> list[dict]:
-        if self._categories is None:
-            return []
-        return self._categories
+    def get_categories(self) -> list[dict[str, CategoryDefinition]]:
+        return self._library_data.categories
 
     def is_default_library(self) -> bool:
         return self._is_default_library
 
-    def get_metadata(self) -> dict:
-        if self._metadata is None:
-            return {}
-        return self._metadata
+    def get_metadata(self) -> LibraryMetadata:
+        return self._library_data.metadata

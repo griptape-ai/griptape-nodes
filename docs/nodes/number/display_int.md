@@ -1,24 +1,44 @@
-# DisplayInt
+# DisplayInteger
 
 ## What is it?
 
-The DisplayInt node simply displays an int parameter.
+The DisplayInteger node simply displays an integer parameter.
 
 ## When would I use it?
 
-When you want to inspect an int value in your graph
+Use this node/class when you want to:
+
+- When you want to inspect an integer value in your graph
 
 ## How to use it
 
 ### Basic Setup
 
-1. Add the DisplayInt to your workspace
-1. Connect any other node's intt output to this input
+1. Add the DisplayInteger to your workflow
+1. Connect any other node's integer output to this input
 
 ### Parameters
 
-- **float**: A single int parameter that is displayed by this node
+- **integer**: A single integer value that is displayed by this node (default is 0)
 
 ### Outputs
 
 - **None**
+
+## Example
+
+Imagine you want to visualize the token count used in your workflow:
+
+1. Add a DisplayInteger to your workflow
+1. Connect the "token_count" output from another node to the DisplayInteger's input
+1. The DisplayInteger will now show the current token count in your graph
+
+## Important Notes
+
+- This node is for visualization purposes only
+- It doesn't modify the value, just displays it
+- Useful for debugging and monitoring your workflow
+
+## Common Issues
+
+- None

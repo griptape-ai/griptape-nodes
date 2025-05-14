@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from types import TracebackType
 
 T = TypeVar("T", bound="Parameter")
 N = TypeVar("N", bound="BaseNodeElement")
@@ -29,10 +30,18 @@ class ParameterTypeBuiltin(Enum):
     ANY = "any"
     NONE = "none"
     CONTROL_TYPE = "parametercontroltype"
+    ALL = "all"
 
 
 class ParameterType:
     class KeyValueTypePair(NamedTuple):
+        """A named tuple for storing a pair of types for key-value parameters.
+
+        Fields:
+            key_type: The type of the key
+            value_type: The type of the value
+        """
+
         key_type: str
         value_type: str
 
@@ -46,6 +55,7 @@ class ParameterType:
         "any": ParameterTypeBuiltin.ANY,
         "none": ParameterTypeBuiltin.NONE,
         "parametercontroltype": ParameterTypeBuiltin.CONTROL_TYPE,
+        "all": ParameterTypeBuiltin.ALL,
     }
 
     @staticmethod
@@ -151,9 +161,11 @@ class ParameterType:
 class BaseNodeElement:
     element_id: str = field(default_factory=lambda: str(uuid.uuid4().hex))
     element_type: str = field(default_factory=lambda: BaseNodeElement.__name__)
+    name: str = field(default_factory=lambda: str(f"{BaseNodeElement.__name__}_{uuid.uuid4().hex}"))
 
     _children: list[BaseNodeElement] = field(default_factory=list)
     _stack: ClassVar[list[BaseNodeElement]] = []
+    _parent: BaseNodeElement | None = field(default=None)
 
     @property
     def children(self) -> list[BaseNodeElement]:
@@ -170,7 +182,12 @@ class BaseNodeElement:
         BaseNodeElement._stack.append(self)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        exc_traceback: TracebackType | None,
+    ) -> None:
         # Pop this element off the global stack
         popped = BaseNodeElement._stack.pop()
         if popped is not self:
@@ -187,7 +204,7 @@ class BaseNodeElement:
             {
               "element_id": "container-1",
               "element_type": "ParameterGroup",
-              "group_name": "Group 1",
+              "name": "Group 1",
               "children": [
                 {
                     "element_id": "A",
@@ -205,12 +222,16 @@ class BaseNodeElement:
         }
 
     def add_child(self, child: BaseNodeElement) -> None:
+        if child._parent is not None:
+            child._parent.remove_child(child)
+        child._parent = self
         self._children.append(child)
 
     def remove_child(self, child: BaseNodeElement | str) -> None:
         ui_elements: list[BaseNodeElement] = [self]
         for ui_element in ui_elements:
             if child in ui_element._children:
+                child._parent = None
                 ui_element._children.remove(child)
                 break
             ui_elements.extend(ui_element._children)
@@ -221,6 +242,16 @@ class BaseNodeElement:
 
         for child in self._children:
             found = child.find_element_by_id(element_id)
+            if found is not None:
+                return found
+        return None
+
+    def find_element_by_name(self, element_name: str) -> BaseNodeElement | None:
+        # Modified so ParameterGroups also just have name as a field.
+        if self.name == element_name:
+            return self
+        for child in self._children:
+            found = child.find_element_by_name(element_name)
             if found is not None:
                 return found
         return None
@@ -245,7 +276,7 @@ class BaseNodeElement:
 class ParameterGroup(BaseNodeElement):
     """UI element for a group of parameters."""
 
-    group_name: str
+    ui_options: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
@@ -254,7 +285,7 @@ class ParameterGroup(BaseNodeElement):
             {
               "element_id": "container-1",
               "element_type": "ParameterGroup",
-              "group_name": "Group 1",
+              "name": "Group 1",
               "children": [
                 {
                     "element_id": "A",
@@ -268,14 +299,25 @@ class ParameterGroup(BaseNodeElement):
         # Get the parent's version first.
         our_dict = super().to_dict()
         # Add in our deltas.
-        our_dict["group_name"] = self.group_name
+        our_dict["name"] = self.name
+        our_dict["ui_options"] = self.ui_options
         return our_dict
 
+    def equals(self, other: ParameterGroup) -> dict:
+        self_dict = {"name": self.name, "ui_options": self.ui_options}
+        other_dict = {"name": other.name, "ui_options": other.ui_options}
+        if self_dict == other_dict:
+            return {}
+        differences = {}
+        for key, self_value in self_dict.items():
+            other_value = other_dict.get(key)
+            if self_value != other_value:
+                differences[key] = other_value
+        return differences
 
-# TODO(james): revisit this if we want to do flyweight Parameters
+
+# TODO: https://github.com/griptape-ai/griptape-nodes/issues/856
 class ParameterBase(BaseNodeElement, ABC):
-    name: str  # must be unique from other parameters in Node
-
     @property
     @abstractmethod
     def tooltip(self) -> str | list[dict]:
@@ -316,7 +358,7 @@ class ParameterBase(BaseNodeElement, ABC):
 
     @abstractmethod
     def get_type(self) -> str | None:
-        pass  # TODO(griptape): add docstrings everywhere after this works
+        pass
 
     @abstractmethod
     def get_tooltip_as_input(self) -> str | list[dict] | None:
@@ -443,6 +485,7 @@ class Parameter(BaseNodeElement):
         our_dict["mode_allowed_input"] = allows_input
         our_dict["mode_allowed_property"] = allows_property
         our_dict["mode_allowed_output"] = allows_output
+        our_dict["parent_container_name"] = self.parent_container_name
 
         return our_dict
 
@@ -488,9 +531,7 @@ class Parameter(BaseNodeElement):
     @property
     def validators(self) -> list[Callable[[Parameter, Any], None]]:
         validators = []
-        traits = self.find_elements_by_type(
-            Trait
-        )  # TODO(kate): Should these be ordered? does this return them in order?
+        traits = self.find_elements_by_type(Trait)  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/857
         for trait in traits:
             validators += trait.validators_for_trait()
         validators += self._validators
@@ -503,11 +544,12 @@ class Parameter(BaseNodeElement):
         for trait in traits:
             ui_options = ui_options | trait.ui_options_for_trait()
         ui_options = ui_options | self._ui_options
+        if self._parent is not None and isinstance(self._parent, ParameterGroup):
+            ui_options = ui_options | self._parent.ui_options
         return ui_options
 
     @ui_options.setter
     def ui_options(self, value: dict) -> None:
-        # Here you can validate the input if needed
         self._ui_options = value
 
     @property
@@ -592,6 +634,9 @@ class Parameter(BaseNodeElement):
         if incoming_type is None:
             return False
 
+        if incoming_type.lower() == ParameterTypeBuiltin.ALL.value:
+            return True
+
         ret_val = False
 
         if self.input_types:
@@ -660,8 +705,8 @@ class Parameter(BaseNodeElement):
 
     # intentionally not overwriting __eq__ because I want to return a dict not true or false
     def equals(self, other: Parameter) -> dict:
-        self_dict = self.__dict__.copy()
-        other_dict = other.__dict__.copy()
+        self_dict = self.to_dict().copy()
+        other_dict = other.to_dict().copy()
         self_dict.pop("next", None)
         self_dict.pop("prev", None)
         self_dict.pop("element_id", None)
@@ -1059,7 +1104,7 @@ class ParameterKeyValuePair(Parameter):
         )
         self.add_child(value_param)
 
-    def _custom_setter_for_property_type(self, value) -> None:
+    def _custom_setter_for_property_type(self, value: Any) -> None:
         # Set it as normal.
         super()._custom_setter_for_property_type(value)
 
@@ -1159,7 +1204,7 @@ class ParameterDictionary(ParameterContainer):
         result = f"list[{base_type}]"
         return result
 
-    def _custom_setter_for_property_type(self, value) -> None:
+    def _custom_setter_for_property_type(self, value: Any) -> None:
         # Set it as normal.
         super()._custom_setter_for_property_type(value)
 
@@ -1236,7 +1281,7 @@ class ParameterDictionary(ParameterContainer):
         return param
 
 
-# TODO(kate): What do we want traits to have? there will probably be more..
+# TODO: https://github.com/griptape-ai/griptape-nodes/issues/858
 
 
 @dataclass(eq=False)

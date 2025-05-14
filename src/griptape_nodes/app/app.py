@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import sys
 import threading
 from queue import Queue
@@ -11,16 +12,18 @@ from typing import Any, cast
 from urllib.parse import urljoin
 
 import httpx
+import uvicorn
 from dotenv import get_key
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from griptape.events import (
-    BaseEvent,
     EventBus,
     EventListener,
-    FinishStructureRunEvent,
-    TextChunkEvent,
 )
 from rich.align import Align
 from rich.console import Console
+from rich.logging import RichHandler
 from rich.panel import Panel
 from xdg_base_dirs import xdg_config_home
 
@@ -36,6 +39,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     GriptapeNodeEvent,
+    ProgressEvent,
     deserialize_event,
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
@@ -44,6 +48,17 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 # This is a global event queue that will be used to pass events between threads
 event_queue = Queue()
 
+# Whether to enable the static server
+STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
+# Host of the static server
+STATIC_SERVER_HOST = os.getenv("STATIC_SERVER_HOST", "localhost")
+# Port of the static server
+STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8124"))
+# URL path for the static server
+STATIC_SERVER_URL = os.getenv("STATIC_SERVER_URL", "/static")
+# Log level for the static server
+STATIC_SERVER_LOG_LEVEL = os.getenv("STATIC_SERVER_LOG_LEVEL", "info").lower()
+
 
 class EventLogHandler(logging.Handler):
     """Custom logging handler that emits log messages as AppEvents.
@@ -51,7 +66,7 @@ class EventLogHandler(logging.Handler):
     This is used to forward log messages to the event queue so they can be sent to the GUI.
     """
 
-    def emit(self, record) -> None:
+    def emit(self, record: logging.LogRecord) -> None:
         event_queue.put(
             AppEvent(
                 payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)
@@ -59,8 +74,12 @@ class EventLogHandler(logging.Handler):
         )
 
 
+griptape_nodes_logger = logging.getLogger("griptape_nodes")
 # When running as an app, we want to forward all log messages to the event queue so they can be sent to the GUI
-logging.getLogger("griptape_nodes").addHandler(EventLogHandler())
+griptape_nodes_logger.addHandler(EventLogHandler())
+griptape_nodes_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
+griptape_nodes_logger.setLevel(logging.INFO)
+
 # Logger for this module. Important that this is not the same as the griptape_nodes logger or else we'll have infinite log events.
 logger = logging.getLogger(__name__)
 console = Console()
@@ -71,19 +90,67 @@ def start_app() -> None:
 
     Starts the event loop and listens for events from the Nodes API.
     """
-    global socket  # noqa: PLW0603 # Need to initialize the socket lazily here to avoid auth-ing too early
+    global socket_manager  # noqa: PLW0603 # Need to initialize the socket lazily here to avoid auth-ing too early
 
     # Listen for SSE events from the Nodes API in a separate thread
-    socket = NodesApiSocketManager()
-    sse_thread = threading.Thread(target=_listen_for_api_events, daemon=True)
-    sse_thread.start()
+    socket_manager = NodesApiSocketManager()
 
     _init_event_listeners()
 
-    try:
-        _process_event_queue()
-    except KeyboardInterrupt:
-        sys.exit(0)
+    # Listen for any signals to exit the app
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: sys.exit(0))
+
+    # SSE subscription pushes events into event_queue
+    threading.Thread(target=_listen_for_api_events, daemon=True).start()
+
+    if STATIC_SERVER_ENABLED:
+        threading.Thread(target=_serve_static_server, daemon=True).start()
+
+    _process_event_queue()
+
+
+def _serve_static_server() -> None:
+    """Run FastAPI with Uvicorn in order to serve static files produced by nodes."""
+    config_manager = GriptapeNodes.ConfigManager()
+    app = FastAPI()
+
+    static_dir = config_manager.workspace_path / config_manager.merged_config["static_files_directory"]
+
+    if not static_dir.exists():
+        static_dir.mkdir(parents=True, exist_ok=True)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai"),
+            "https://nodes-staging.griptape.ai",
+            "http://localhost:5173",
+        ],
+        allow_credentials=True,
+        allow_methods=["OPTIONS", "GET", "POST"],
+        allow_headers=["*"],
+    )
+
+    app.mount(
+        STATIC_SERVER_URL,
+        StaticFiles(directory=static_dir),
+        name="static",
+    )
+
+    @app.post("/engines/request")
+    async def create_event(request: Request) -> None:
+        body = await request.json()
+        if "payload" in body:
+            __process_api_event(body["payload"])
+
+    logging.getLogger("uvicorn").addHandler(
+        RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)
+    )
+
+    uvicorn.run(
+        app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL, log_config=None
+    )
 
 
 def _init_event_listeners() -> None:
@@ -101,15 +168,15 @@ def _init_event_listeners() -> None:
 
     EventBus.add_event_listener(
         event_listener=EventListener(
-            on_event=__process_griptape_event,
-            event_types=[FinishStructureRunEvent, TextChunkEvent],
+            on_event=__process_progress_event,
+            event_types=[ProgressEvent],
         )
     )
 
     EventBus.add_event_listener(
         event_listener=EventListener(
-            on_event=__process_app_event,  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
-            event_types=[AppEvent],  # pyright: ignore[reportArgumentType] TODO(collin): need to restructure Event class hierarchy
+            on_event=__process_app_event,  # pyright: ignore[reportArgumentType] TODO: https://github.com/griptape-ai/griptape-nodes/issues/868
+            event_types=[AppEvent],  # pyright: ignore[reportArgumentType] TODO: https://github.com/griptape-ai/griptape-nodes/issues/868
         )
     )
 
@@ -117,13 +184,11 @@ def _init_event_listeners() -> None:
 def _listen_for_api_events() -> None:
     """Listen for events from the Nodes API and process them."""
     init = False
+    endpoint = urljoin(os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/engines/stream")
+    nodes_app_url = os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai")
+    logger.info("Listening for events from Nodes API at %s", endpoint)
     while True:
         try:
-            endpoint = urljoin(
-                os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/engines/stream"
-            )
-            nodes_app_url = os.getenv("GRIPTAPE_NODES_APP_URL", "https://nodes.griptape.ai")
-
             with httpx.stream("get", endpoint, auth=__build_authorized_request, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout
                 __check_api_key_validity(response)
 
@@ -144,16 +209,17 @@ def _listen_for_api_events() -> None:
                                 # but we don't have a proper EventRequest for it yet.
                                 if event.get("request_type") == "Heartbeat":
                                     session_id = GriptapeNodes.get_session_id()
-                                    socket.heartbeat(session_id=session_id, request=event)
+                                    socket_manager.heartbeat(session_id=session_id, request=event["request"])
                                 else:
                                     __process_api_event(event)
                             except Exception:
                                 logger.exception("Error processing event, skipping.")
 
-        except Exception:
-            logger.error("Error while listening for events. Retrying in 2 seconds.")
+        except httpx.RemoteProtocolError as e:
+            logger.debug("Server closed connection, this is expected. Reconnecting... %s", e)
+        except Exception as e:
+            logger.error("Error while listening for events. Retrying in 2 seconds... %s", e)
             sleep(2)
-            init = False
 
 
 def __process_node_event(event: GriptapeNodeEvent) -> None:
@@ -168,46 +234,44 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."
         raise TypeError(msg) from None
 
+    # Don't send events over the wire that don't have a request_id set (e.g. engine-internal events)
     event_json = result_event.json()
-    socket.emit(dest_socket, event_json)
+    socket_manager.emit(dest_socket, event_json)
 
 
 def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
     """Process ExecutionGriptapeNodeEvents and send them to the API."""
     result_event = event.wrapped_event
     if type(result_event.payload).__name__ == "NodeStartProcessEvent":
-        GriptapeNodes.get_instance().EventManager().current_active_node = result_event.payload.node_name
+        GriptapeNodes.EventManager().current_active_node = result_event.payload.node_name
     event_json = result_event.json()
 
     if type(result_event.payload).__name__ == "ResumeNodeProcessingEvent":
         node_name = result_event.payload.node_name
-        logger.info("Resuming Node %s", node_name)
+        logger.info("Resuming Node '%s'", node_name)
         flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
-        # TODO(collin, kate): https://github.com/griptape-ai/griptape-nodes/issues/391
-        event_queue.put(EventRequest(request=execution_events.ContinueExecutionStepRequest(flow_name=flow_name)))
+        request = EventRequest(request=execution_events.SingleExecutionStepRequest(flow_name=flow_name))
+        event_queue.put(request)
 
     if type(result_event.payload).__name__ == "NodeFinishProcessEvent":
-        if result_event.payload.node_name != GriptapeNodes.get_instance().EventManager().current_active_node:
+        if result_event.payload.node_name != GriptapeNodes.EventManager().current_active_node:
             msg = "Node start and finish do not match."
             raise KeyError(msg) from None
-        GriptapeNodes.get_instance().EventManager().current_active_node = None
+        GriptapeNodes.EventManager().current_active_node = None
     # Set the node name here so I am not double importing
-    socket.emit("execution_event", event_json)
+    socket_manager.emit("execution_event", event_json)
 
 
-def __process_griptape_event(gt_event: BaseEvent) -> None:
+def __process_progress_event(gt_event: ProgressEvent) -> None:
     """Process Griptape framework events and send them to the API."""
-    node_name = GriptapeNodes.get_instance().EventManager().current_active_node
+    node_name = gt_event.node_name
     if node_name:
-        if isinstance(gt_event, FinishStructureRunEvent):
-            value = gt_event.to_dict()["output_task_output"]["value"]
-        elif isinstance(gt_event, TextChunkEvent):
-            value = gt_event.to_dict()["token"]
-        else:
-            value = gt_event.to_dict()
-        payload = execution_events.GriptapeEvent(node_name=node_name, type=type(gt_event).__name__, value=value)
+        value = gt_event.value
+        payload = execution_events.GriptapeEvent(
+            node_name=node_name, parameter_name=gt_event.parameter_name, type=type(gt_event).__name__, value=value
+        )
         event_to_emit = ExecutionEvent(payload=payload)
-        socket.emit("execution_event", event_to_emit.json())
+        socket_manager.emit("execution_event", event_to_emit.json())
 
 
 def __process_app_event(event: AppEvent) -> None:
@@ -215,7 +279,7 @@ def __process_app_event(event: AppEvent) -> None:
     # Let Griptape Nodes broadcast it.
     GriptapeNodes.broadcast_app_event(event.payload)
 
-    socket.emit("app_event", event.json())
+    socket_manager.emit("app_event", event.json())
 
 
 def _process_event_queue() -> None:
@@ -300,7 +364,7 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
     message = Panel(
         Align.center(
             f"[bold green]Engine is ready to receive events[/bold green]\n"
-            f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link][/bold blue] to access the IDE",
+            f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link] to access the Workflow Editor[/bold blue]",
             vertical="middle",
         ),
         title="🚀 Griptape Nodes Engine Started",
@@ -317,23 +381,23 @@ def __process_api_event(data: Any) -> None:
         data["request"]
     except KeyError:
         msg = "Error: 'request' was expected but not found."
-        raise Exception(msg) from None
+        raise RuntimeError(msg) from None
 
     try:
         event_type = data["event_type"]
         if event_type != "EventRequest":
             msg = "Error: 'event_type' was found on request, but did not match 'EventRequest' as expected."
-            raise Exception(msg) from None
+            raise RuntimeError(msg) from None
     except KeyError:
         msg = "Error: 'event_type' not found in request."
-        raise Exception(msg) from None
+        raise RuntimeError(msg) from None
 
     # Now attempt to convert it into an EventRequest.
     try:
         request_event: EventRequest = cast("EventRequest", deserialize_event(json_data=data))
     except Exception as e:
         msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{e}'"
-        raise Exception(msg) from None
+        raise RuntimeError(msg) from None
 
     # Add a request_id to the payload
     request_id = request_event.request.request_id

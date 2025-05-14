@@ -1,19 +1,22 @@
 [project]
-name = "griptape_nodes"
-version = "0.14.1"
+name = "griptape-nodes"
+version = "0.33.1"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = "~=3.12"
 dependencies = [
-  "griptape[drivers-prompt-anthropic,drivers-prompt-ollama,loaders-image,drivers-web-scraper-trafilatura]>=1.5.0",
+  "griptape[drivers-prompt-cohere,drivers-prompt-anthropic,drivers-prompt-ollama,drivers-prompt-amazon-bedrock,loaders-image,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo]>=1.7.1",
   "pydantic>=2.10.6",
   "python-dotenv>=1.0.1",
   "xdg-base-dirs>=6.0.2",
-  "pydantic-settings>=2.8.1",
   "httpx>=0.28.0,<1.0.0",
-  "cohere>=5.14.0",
   "websockets>=15.0.1,<16.0.0",
   "tomlkit>=0.13.2",
+  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/833
+  "uv>=0.6.16",
+  "fastapi>=0.115.12",
+  "uvicorn>=0.34.2",
+  "packaging>=25.0",
 ]
 
 [dependency-groups]
@@ -26,6 +29,7 @@ dev = [
   "pyright>=1.1.396",
   "ruff>=0.11.0",
   "typos>=1.30.2",
+  "watchdog>=6.0.0",
 ]
 docs = [
   "mkdocs-material>=9.6.9",
@@ -45,42 +49,37 @@ build-backend = "hatchling.build"
 [tool.ruff]
 line-length = 120
 
-[tool.uv.sources]
-griptape = { git = "https://github.com/griptape-ai/griptape.git", branch = "main" }
-
 [tool.ruff.format]
 exclude = [".venv"]
 
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-  "TD003",  # Intentional
+  "TD002",  # Intentional
   "FIX002", # Intentional
   "D101",   # Intentional
   "D102",   # Intentional
-  "D103",   # Too hard
-  "D106",   # Too hard
   "D107",   # Intentional
-  "A004",   # Intentional
-  "ANN001", # TODO(griptape): add type annotations to function arguments
   "ANN002", # Intentional
   "ANN003", # Intentional
   "ANN401", # Intentional
   "COM812", # Intentional
-  "E501",   # TODO(griptape): break up long strings
-  "D100",   # TODO(griptape): document public modules
-  "BLE001", # TODO(griptape): too hard
-  "B026",   # TODO(griptape): discuss with team
-  "SLF001", # TODO(griptape): discuss with team
+  "E501",   # TODO: https://github.com/griptape-ai/griptape-nodes/issues/834 
+  "D100",   # TODO: https://github.com/griptape-ai/griptape-nodes/issues/835 
+  "BLE001", # TODO: https://github.com/griptape-ai/griptape-nodes/issues/839
+  "B026",   # TODO: https://github.com/griptape-ai/griptape-nodes/issues/836 
+  "SLF001", # TODO :https://github.com/griptape-ai/griptape-nodes/issues/838 
   "SIM108", # Intentional
   "SIM110", # Intentional
   "D105",   # Intentional
-  "N802",   # TODO(griptape): discuss with team
+  "N802",   # TODO: https://github.com/griptape-ai/griptape-nodes/issues/840
   "TRY400", # Intentional
-  "TRY002", # TODO(griptape): discuss with team
   "FBT003", # Intentional
   "RET504", # Intentional
 ]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"nodes.griptape_nodes_library".msg = "Import from griptape_nodes_library instead of nodes.griptape_nodes_library"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "D104"]
@@ -96,4 +95,4 @@ convention = "google"
 venvPath = "."
 venv = ".venv"
 include = ["."]
-pythonVersion = "3.13"
+pythonVersion = "3.12"

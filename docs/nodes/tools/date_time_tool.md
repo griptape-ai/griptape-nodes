@@ -1,8 +1,8 @@
-# DateTimeTool
+# DateTime
 
 ## What is it?
 
-The DateTimeTool is a building block that provides date and time capabilities to your workflows. Think of it as a digital calendar and clock that your agents can use to format, manipulate, and work with dates and times.
+The DateTime tool provides date and time capabilities to your workflows. It can figure out and write dates and times in all kinds of formats, calculate dates by adding and subtracting stretches of time, and even provide countdowns and days-since type things.
 
 ## When would I use it?
 
@@ -17,9 +17,8 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the DateTimeTool to your workspace
-1. Connect it to your flow
-1. Connect its output to nodes that need date/time capabilities (like an Agent)
+1. Add the DateTime node to your workflow
+1. Connect its output to nodes that can make use of date/time capabilities (like an Agent)
 
 ### Parameters
 
@@ -33,6 +32,6 @@ Use this node when you want to:
 
 Imagine you want to create an agent that can work with dates and times:
 
-1. Add a DateTimeTool to your workflow
+1. Add a DateTime node to your workflow
 1. Connect the "tool" output to an Agent's "tools" input
 1. Now that agent can perform operations like getting the current date, formatting dates, or calculating date differences

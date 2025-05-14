@@ -1,10 +1,10 @@
-# Griptape [nodes] Glossary for Artists
+# Griptape Nodes Glossary for Artists
 
-## What is Griptape [nodes]?
+## What is Griptape Nodes?
 
-Griptape [nodes] is a creative toolkit (built with Python) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create art, generate images, process text, or even build other workhorse applications.
+Griptape Nodes is a creative toolkit (built with Python) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create art, generate images, process text, or even build other workhorse applications.
 
-### The Big Ones in the Griptape [nodes] world
+### The Big Ones in the Griptape Nodes world
 
 - **Workflow**: A document containing nodes, connections, and values. While technically a Workflow is also a Script, avoid calling them Scripts, so that the term Script can communicate a clearly different thing than the term Workflow. This is also what we call the saved file.
 
@@ -66,9 +66,16 @@ Griptape [nodes] is a creative toolkit (built with Python) that helps artists an
 - **Parameter**: A setting or value you can adjust on a node. Parameters are like the knobs and sliders in a music synthesizer — they let you fine-tune how things work.
 
     - **ParameterMode**: Describes if a parameter is for input, output, internal, or any combination.
+
     - **ParameterValue**: The "internal" value for a parameter (this is the data the node works with internally)
+
     - **ParameterOutputValues**: The results or "output" value for your parameters (this is the data that results from what the node did)
+
     - **ParameterUIOptions**: Settings for how parameters appear in the user interface.
+
+    - **Port**: The circular indicators displayed on the left and/or right sides of a parameter. Ports on the left side indicate the parameter can accept incoming connections, while ports on the right side indicate the parameter supports outgoing connections.
+
+    - **Pin**: Interchangeable with "Port"
 
 - **Default Value**: The pre-set value a parameter has before you change it. This is like the factory settings on a device.
 
@@ -106,22 +113,22 @@ Griptape [nodes] is a creative toolkit (built with Python) that helps artists an
 
 - **API Key**: A special password that grants your project access to external services like AI image generators. Think of it like a membership card that lets you use specific online services.
 
-<a id="Secret Keys"></a>
+<a id="secret-keys"></a>
 
 - **Secret Keys**: Private credentials such as API tokens, passwords, and access keys that need to be kept secure but are required for certain operations.
-- **SecretsManager**: This is the actual mechanism by which your secret keys are handled so that they *stay* secret.
+- **Secrets Manager**: This is the actual mechanism by which your secret keys are handled so that they *stay* secret.
 
-<a id="Configuration Settings"></a>
+<a id="configuration-settings"></a>
 
-- **Configuration Settings**: Parameters and options that control how the Griptape [nodes] engine and its components operate.
+- **Configuration Settings**: Parameters and options that control how the Griptape Nodes engine and its components operate.
 
-<a id="Project Files"></a>
+<a id="project-files"></a>
 
 - **Project Files**: Documents, scripts, and other resources that make up a Griptape project.
 
-<a id="Generated Assets"></a>
+<a id="generated-assets"></a>
 
-- **Generated Assets**: Files and data produced by the Griptape [nodes] engine during execution, such as outputs, reports, or visualizations.
+- **Generated Assets**: Files and data produced by the Griptape Nodes engine during execution, such as outputs, reports, or visualizations.
 
 <a id=".env"></a>
 
@@ -236,6 +243,6 @@ Griptape [nodes] is a creative toolkit (built with Python) that helps artists an
 
 - **CSV (Comma-Separated Values)**: A simple file format used to store tabular data, such as spreadsheet data. Each line represents a row, and commas separate the values in each column.
 
-- **UI (User Interface)**: The visual elements and controls that allow users to interact with software. This includes buttons, sliders, text fields, and other interactive elements. In Griptape [nodes], we call our UI the "Editor"
+- **UI (User Interface)**: The visual elements and controls that allow users to interact with software. This includes buttons, sliders, text fields, and other interactive elements. In Griptape Nodes, we call our UI the "Editor"
 
 - **Framework**: A pre-built set of code that provides structure and functionality to build applications more easily. Frameworks are like art supply kits that come with the basic materials and tools you need.

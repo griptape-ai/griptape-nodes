@@ -1,6 +1,7 @@
-from typing import ClassVar, TypeVar
+from typing import ClassVar
 
 from griptape.mixins.singleton_mixin import SingletonMixin
+from typing_extensions import TypeVar
 
 from griptape_nodes.retained_mode.events.base_events import Payload
 
@@ -28,7 +29,7 @@ class PayloadRegistry(SingletonMixin):
         return payload_class
 
     @classmethod
-    def get_type(cls, type_name) -> type[Payload] | None:
+    def get_type(cls, type_name: str) -> type[Payload] | None:
         """Get a payload type by name.
 
         Args:
