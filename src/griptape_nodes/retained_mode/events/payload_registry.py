@@ -1,14 +1,14 @@
 from typing import ClassVar
 
+from griptape.mixins.singleton_mixin import SingletonMixin
 from typing_extensions import TypeVar
 
 from griptape_nodes.retained_mode.events.base_events import Payload
-from griptape_nodes.utils.metaclasses import SingletonMeta
 
 T = TypeVar("T", bound=Payload, default=Payload)
 
 
-class PayloadRegistry(metaclass=SingletonMeta):
+class PayloadRegistry(SingletonMixin):
     """Registry for payload types."""
 
     _registry: ClassVar[dict[str, type[Payload]]] = {}

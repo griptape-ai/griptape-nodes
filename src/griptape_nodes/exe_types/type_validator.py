@@ -3,14 +3,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from griptape_nodes.utils.metaclasses import SingletonMeta
+from griptape.mixins.singleton_mixin import SingletonMixin
 
 logger = logging.getLogger(__name__)
 
 ALLOWED_NUM_ARGS = 2
 
 
-class TypeValidator(metaclass=SingletonMeta):
+class TypeValidator(SingletonMixin):
     """A type string validator that checks against known types.
 
     Implemented as a singleton to ensure consistent behavior across an application.
