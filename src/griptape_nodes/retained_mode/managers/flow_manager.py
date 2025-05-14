@@ -1129,10 +1129,10 @@ class FlowManager:
         # Track all node libraries that were in use by these Nodes
         node_libraries_in_use = set()
 
-        # Track all parameter values that were in use by these Nodes
-        unique_parameter_values = []
-        # And track how values map into that list.
-        value_hash_to_unique_value_index = {}
+        # Track all parameter values that were in use by these Nodes (maps UUID to Parameter value)
+        unique_parameter_uuid_to_values = {}
+        # And track how values map into that map.
+        value_hash_to_unique_value_uuid = {}
 
         with GriptapeNodes.ContextManager().flow(flow_name):
             # The base flow creation, if desired.
@@ -1142,10 +1142,10 @@ class FlowManager:
                 create_flow_request = None
 
             serialized_node_commands = []
-            set_parameter_value_commands_per_node = []  # We're actually a list of lists.
+            set_parameter_value_commands_per_node = {}  # Maps a node UUID to a list of set parameter value commands
 
             # Now each of the child nodes in the flow.
-            node_name_to_index = {}
+            node_name_to_uuid = {}
             nodes_in_flow_request = ListNodesInFlowRequest()
             nodes_in_flow_result = GriptapeNodes().handle_request(nodes_in_flow_request)
             if not isinstance(nodes_in_flow_result, ListNodesInFlowResultSuccess):
@@ -1156,15 +1156,13 @@ class FlowManager:
                 return SerializeFlowToCommandsResultFailure()
 
             # Serialize each node
-            for node_index, node_name in enumerate(nodes_in_flow_result.node_names):
-                node_name_to_index[node_name] = node_index
-
+            for node_name in nodes_in_flow_result.node_names:
                 with GriptapeNodes.ContextManager().node(node_name):
                     # Note: the parameter value stuff is pass-by-reference, and we expect the values to be modified in place.
                     # This might be dangerous if done over the wire.
                     serialize_node_request = SerializeNodeToCommandsRequest(
-                        unique_parameter_values_list=unique_parameter_values,  # Unique values
-                        value_hash_to_unique_value_index=value_hash_to_unique_value_index,  # Mapping values to indices
+                        unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,  # Unique values
+                        value_hash_to_unique_value_uuid=value_hash_to_unique_value_uuid,  # Mapping values to UUIDs
                     )
                     serialize_node_result = GriptapeNodes().handle_request(serialize_node_request)
                     if not isinstance(serialize_node_result, SerializeNodeToCommandsResultSuccess):
@@ -1173,23 +1171,27 @@ class FlowManager:
                         return SerializeFlowToCommandsResultFailure()
 
                     serialized_node = serialize_node_result.serialized_node_commands
+
+                    # Store the serialized node's UUID for correlation to connections and setting parameter values later.
+                    node_name_to_uuid[node_name] = serialized_node.node_uuid
+
                     serialized_node_commands.append(serialized_node)
                     node_libraries_in_use.add(serialized_node.node_library_details)
                     # Get the list of set value commands for THIS node.
                     set_value_commands_list = serialize_node_result.set_parameter_value_commands
-                    set_parameter_value_commands_per_node.append(set_value_commands_list)
+                    set_parameter_value_commands_per_node[serialized_node.node_uuid] = set_value_commands_list
 
             # We'll have to do a patch-up of all the connections, since we can't predict all of the node names being accurate
             # when we're restored.
             # Create all of the connections
             create_connection_commands = []
             for connection in flow.connections.connections.values():
-                source_node_index = node_name_to_index[connection.source_node.name]
-                target_node_index = node_name_to_index[connection.target_node.name]
-                create_connection_command = SerializedFlowCommands.IndexedConnectionSerialization(
-                    source_node_index=source_node_index,
+                source_node_uuid = node_name_to_uuid[connection.source_node.name]
+                target_node_uuid = node_name_to_uuid[connection.target_node.name]
+                create_connection_command = SerializedFlowCommands.IndirectConnectionSerialization(
+                    source_node_uuid=source_node_uuid,
                     source_parameter_name=connection.source_parameter.name,
-                    target_node_index=target_node_index,
+                    target_node_uuid=target_node_uuid,
                     target_parameter_name=connection.target_parameter.name,
                 )
                 create_connection_commands.append(create_connection_command)
@@ -1222,7 +1224,7 @@ class FlowManager:
             create_flow_command=create_flow_request,
             serialized_node_commands=serialized_node_commands,
             serialized_connections=create_connection_commands,
-            unique_parameter_values=unique_parameter_values,
+            unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
             set_parameter_value_commands=set_parameter_value_commands_per_node,
             sub_flows_commands=sub_flow_commands,
             node_libraries_used=node_libraries_in_use,
@@ -1256,8 +1258,8 @@ class FlowManager:
         # Deserializing a flow goes in a specific order.
 
         # Create the nodes.
-        # Preserve the indices because we will need to tie these back together with the Connections later.
-        deserialized_node_results = []
+        # Preserve the node UUIDs because we will need to tie these back together with the Connections later.
+        node_uuid_to_deserialized_node_result = {}
         for serialized_node in request.serialized_flow_commands.serialized_node_commands:
             deserialize_node_request = DeserializeNodeFromCommandsRequest(serialized_node_commands=serialized_node)
             deserialized_node_result = GriptapeNodes.handle_request(deserialize_node_request)
@@ -1267,55 +1269,65 @@ class FlowManager:
                 )
                 logger.error(details)
                 return DeserializeFlowFromCommandsResultFailure()
-            deserialized_node_results.append(deserialized_node_result)
+            node_uuid_to_deserialized_node_result[serialized_node.node_uuid] = deserialized_node_result
 
         # Now apply the connections.
-        # We didn't know the exact name that would be used for the nodes, but we knew the indices.
-        # Tie the indices back to the node names.
-        for indexed_connection in request.serialized_flow_commands.serialized_connections:
-            source_node_result = deserialized_node_results[indexed_connection.source_node_index]
+        # We didn't know the exact name that would be used for the nodes, but we knew the node's creation UUID.
+        # Tie the UUID back to the node names.
+        for indirect_connection in request.serialized_flow_commands.serialized_connections:
+            # Validate the source and target node UUIDs.
+            source_node_uuid = indirect_connection.source_node_uuid
+            if source_node_uuid not in node_uuid_to_deserialized_node_result:
+                details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while attempting to create a Connection for a source node that did not exist within the flow."
+                logger.error(details)
+                return DeserializeFlowFromCommandsResultFailure()
+            target_node_uuid = indirect_connection.target_node_uuid
+            if target_node_uuid not in node_uuid_to_deserialized_node_result:
+                details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while attempting to create a Connection for a target node that did not exist within the flow."
+                logger.error(details)
+                return DeserializeFlowFromCommandsResultFailure()
+
+            source_node_result = node_uuid_to_deserialized_node_result[source_node_uuid]
             source_node_name = source_node_result.node_name
-            target_node_result = deserialized_node_results[indexed_connection.target_node_index]
+            target_node_result = node_uuid_to_deserialized_node_result[indirect_connection.target_node_uuid]
             target_node_name = target_node_result.node_name
 
             create_connection_request = CreateConnectionRequest(
                 source_node_name=source_node_name,
-                source_parameter_name=indexed_connection.source_parameter_name,
+                source_parameter_name=indirect_connection.source_parameter_name,
                 target_node_name=target_node_name,
-                target_parameter_name=indexed_connection.target_parameter_name,
+                target_parameter_name=indirect_connection.target_parameter_name,
             )
             create_connection_result = GriptapeNodes.handle_request(create_connection_request)
             if create_connection_result.failed():
-                details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a Connection from '{source_node_name}.{indexed_connection.source_parameter_name}' to '{target_node_name}.{indexed_connection.target_parameter_name}' within the flow."
+                details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a Connection from '{source_node_name}.{indirect_connection.source_parameter_name}' to '{target_node_name}.{indirect_connection.target_parameter_name}' within the flow."
                 logger.error(details)
                 return DeserializeFlowFromCommandsResultFailure()
 
         # Now assign the values.
         # This is the same issue that we handle for Connections:
-        # we don't know the exact node name that would be used, but know the indices.
-        # Similarly, we need to wire up the value indices back to the unique values.
-        # We maintain one list of set value commands per node in the Flow.
-        for node_index, set_value_command_list in enumerate(
-            request.serialized_flow_commands.set_parameter_value_commands
-        ):
-            node_name = deserialized_node_results[node_index].node_name
+        # we don't know the exact node name that would be used, but we do know the UUIDs.
+        # Similarly, we need to wire up the value UUIDs back to the unique values.
+        # We maintain one map of set value commands per node in the Flow.
+        for node_uuid, set_value_command_list in request.serialized_flow_commands.set_parameter_value_commands.items():
+            node_name = node_uuid_to_deserialized_node_result[node_uuid].node_name
             # Make this node the current context.
             with GriptapeNodes.ContextManager().node(node_name=node_name):
                 # Iterate through each set value command in the list for this node.
-                for indexed_set_value_command in set_value_command_list:
-                    parameter_name = indexed_set_value_command.set_parameter_value_command.parameter_name
-                    unique_value_index = indexed_set_value_command.unique_value_index
+                for indirect_set_value_command in set_value_command_list:
+                    parameter_name = indirect_set_value_command.set_parameter_value_command.parameter_name
+                    unique_value_uuid = indirect_set_value_command.unique_value_uuid
                     try:
-                        value = request.serialized_flow_commands.unique_parameter_values[unique_value_index]
+                        value = request.serialized_flow_commands.unique_parameter_uuid_to_values[unique_value_uuid]
                     except IndexError as err:
                         details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a value assignment for node '{node_name}.{parameter_name}': {err}"
                         logger.error(details)
                         return DeserializeFlowFromCommandsResultFailure()
 
                     # Call the SetParameterValueRequest, subbing in the value from our unique value list.
-                    indexed_set_value_command.set_parameter_value_command.value = value
+                    indirect_set_value_command.set_parameter_value_command.value = value
                     set_parameter_value_result = GriptapeNodes.handle_request(
-                        indexed_set_value_command.set_parameter_value_command
+                        indirect_set_value_command.set_parameter_value_command
                     )
                     if set_parameter_value_result.failed():
                         details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a value assignment for node '{node_name}.{parameter_name}'."
