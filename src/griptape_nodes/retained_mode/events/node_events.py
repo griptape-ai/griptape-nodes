@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, NewType
+from uuid import UUID, uuid4
 
 from griptape_nodes.exe_types.node_types import NodeResolutionState
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
@@ -185,24 +186,32 @@ class SerializedNodeCommands:
         create_node_command (CreateNodeRequest): The command to create the node.
         element_modification_commands (list[RequestPayload]): A list of commands to create or modify the elements (including Parameters) of the node.
         node_library_details (LibraryNameAndVersion): Details of the library and version used by the node.
+        node_uuid (NodeUUID): The UUID of this particular node. During deserialization, this UUID will be used to correlate this node's instance
+            with the connections and parameter values necessary. We cannot use node name because Griptape Nodes enforces unique names, and we cannot
+            predict the name that will be selected upon instantiation. Similarly, the same serialized node may be deserialized multiple times, such
+            as during copy/paste or duplicate.
     """
 
+    NodeUUID = NewType("NodeUUID", UUID)
+    UniqueParameterValueUUID = NewType("UniqueParameterValueUUID", UUID)
+
     @dataclass
-    class IndexedSetParameterValueCommand:
-        """Companion class to assign parameter values from our unique values list into node indices, since we can't predict the names.
+    class IndirectSetParameterValueCommand:
+        """Companion class to assign parameter values from our unique values collection, since we can't predict the names.
 
         Attributes:
             set_parameter_value_command (SetParameterValueRequest): The base set parameter command.
-            unique_value_index (int): The index into the unique values list that must be provided when serializing/deserializing,
-                used to assign values upon deserialization.
+            unique_value_uuid (SerializedNodeCommands.UniqueParameterValue.UniqueParameterValueUUID): The UUID into the
+                unique values dictionary that must be provided when serializing/deserializing, used to assign values upon deserialization.
         """
 
         set_parameter_value_command: SetParameterValueRequest
-        unique_value_index: int
+        unique_value_uuid: "SerializedNodeCommands.UniqueParameterValueUUID"
 
     create_node_command: CreateNodeRequest
     element_modification_commands: list[RequestPayload]
     node_library_details: LibraryNameAndVersion
+    node_uuid: NodeUUID = field(default_factory=lambda: SerializedNodeCommands.NodeUUID(uuid4()))
 
 
 @dataclass
@@ -212,15 +221,21 @@ class SerializeNodeToCommandsRequest(RequestPayload):
 
     Attributes:
         node_name (str | None): The name of the node to serialize. If None, the node in the current context is used.
-        unique_parameter_values_list (list[Any]): List of unique parameter values. Serialization will check a
-            parameter's value against these, appending new values if necessary. NOTE that it modifies the list in-place.
-        value_hash_to_unique_value_index (dict[Any, int]): Mapping of hash values to unique parameter value indices.
-            If serialization adds new unique values, they are added to this map. NOTE that it modifies the list in-place.
+        unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Mapping of
+            UUIDs to unique parameter values. Serialization will check a parameter's value against these, inserting
+            new values if necessary. NOTE that it modifies the dict in-place.
+        value_hash_to_unique_value_uuid (dict[Any, SerializedNodeCommands.UniqueParameterValueUUID]): Mapping of hash
+            values to unique parameter value UUIDs. If serialization adds new unique values, they are added to this map.
+            NOTE that it modifies the dict in-place.
     """
 
     node_name: str | None = None
-    unique_parameter_values_list: list[Any] = field(default_factory=list)
-    value_hash_to_unique_value_index: dict[Any, int] = field(default_factory=dict)
+    unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] = field(
+        default_factory=dict
+    )
+    value_hash_to_unique_value_uuid: dict[Any, SerializedNodeCommands.UniqueParameterValueUUID] = field(
+        default_factory=dict
+    )
 
 
 @dataclass
@@ -230,12 +245,12 @@ class SerializeNodeToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloa
 
     Attributes:
         serialized_node_commands (SerializedNodeCommands): The serialized commands representing the node.
-        set_parameter_value_commands (list[SerializedNodeCommands.IndexedSetParameterValueCommand]): A list of
-            commands to set parameter values, indexed into the unique values list.
+        set_parameter_value_commands (list[SerializedNodeCommands.IndirectSetParameterValueCommand]): A list of
+            commands to set parameter values, keyed into the unique values dictionary.
     """
 
     serialized_node_commands: SerializedNodeCommands
-    set_parameter_value_commands: list[SerializedNodeCommands.IndexedSetParameterValueCommand]
+    set_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand]
 
 
 @dataclass
