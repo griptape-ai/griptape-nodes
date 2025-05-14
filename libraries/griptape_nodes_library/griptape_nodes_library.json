@@ -610,6 +610,15 @@
       }
     },
     {
+      "class_name": "CompareNumbers",
+      "file_path": "griptape_nodes_library/execution/compare_numbers.py",
+      "metadata": {
+        "category": "execution",
+        "description": "Compare Numbers node.",
+        "display_name": "Compare Numbers"
+      }
+    },
+    {
       "class_name": "OutputSelector",
       "file_path": "griptape_nodes_library/execution/select_output.py",
       "metadata": {
