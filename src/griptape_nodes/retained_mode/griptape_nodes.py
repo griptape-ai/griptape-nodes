@@ -4,7 +4,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import IO, TYPE_CHECKING, Any, ClassVar, TextIO
+from typing import IO, TYPE_CHECKING, Any, TextIO
 
 from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, ParameterContainer, ParameterGroup
 from griptape_nodes.exe_types.flow import ControlFlow
@@ -34,6 +34,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     AlterParameterDetailsRequest,
 )
+from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
@@ -77,15 +78,6 @@ class Version:
 
     def __str__(self) -> str:
         return f"{self.major}.{self.minor}.{self.patch}"
-
-
-class SingletonMeta(type):
-    _instances: ClassVar[dict] = {}
-
-    def __call__(cls, *args, **kwargs) -> Any:
-        if cls not in cls._instances:
-            cls._instances[cls] = super().__call__(*args, **kwargs)
-        return cls._instances[cls]
 
 
 class GriptapeNodes(metaclass=SingletonMeta):
