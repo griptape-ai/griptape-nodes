@@ -1758,7 +1758,6 @@ class NodeManager:
         # Set everything in the clipboard!
         GriptapeNodes.ContextManager().clipboard.node_commands = final_result
         GriptapeNodes.ContextManager().clipboard.parameter_uuid_to_values = unique_uuid_to_values
-        self.on_deserialize_selected_nodes_from_commands(DeserializeSelectedNodesFromCommandsRequest())
         return SerializeSelectedNodestoCommandsResultSuccess(final_result)
 
     def on_deserialize_selected_nodes_from_commands(
@@ -1767,7 +1766,7 @@ class NodeManager:
     ) -> ResultPayload:
         commands = GriptapeNodes.ContextManager().clipboard.node_commands
         if commands is None:
-            return DeserializeNodeFromCommandsResultFailure()
+            return DeserializeSelectedNodesFromCommandsResultFailure()
         connections = commands.serialized_connection_commands
         node_uuid_to_name = {}
         for node_command, parameter_commands in commands.serialized_node_commands:
