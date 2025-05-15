@@ -9,7 +9,7 @@ class Microphone(DataNode):
 
         audio_parameter = Parameter(
             name="audio",
-            input_types=["AudioArtifact", "AudioUrlArtifact"],
+            input_types=["AudioArtifact", "AudioUrlArtifact", "dict"],
             type="AudioArtifact",
             output_type="AudioUrlArtifact",
             ui_options={"microphone_capture_audio": True},
@@ -19,7 +19,7 @@ class Microphone(DataNode):
         self.add_parameter(audio_parameter)
 
     def process(self) -> None:
-        audio = self.parameter_values["audio"]
+        audio = self.get_parameter_value("audio")
 
         if isinstance(audio, dict):
             audio_artifact = dict_to_audio_url_artifact(audio)
