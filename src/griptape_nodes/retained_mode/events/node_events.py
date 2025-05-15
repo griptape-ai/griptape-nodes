@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, NewType, NamedTuple
+from typing import Any, NamedTuple, NewType
 from uuid import uuid4
 
 from griptape_nodes.exe_types.node_types import NodeResolutionState
@@ -18,6 +18,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
 
 @dataclass
 @PayloadRegistry.register
@@ -258,6 +259,7 @@ class SerializeNodeToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloa
 class SerializeNodeToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
+
 @dataclass
 class SerializedSelectedNodesCommands:
     @dataclass
@@ -284,15 +286,18 @@ class SerializedSelectedNodesCommands:
     ]
     serialized_connection_commands: list[IndirectConnectionSerialization]
 
+
 class NodeToTimestamp(NamedTuple):
     """A named tuple for storing the node_name and the timestamp passed on selection.
 
-        Fields:
-            node_name: The name of the node selected
-            timestamp: The time the node was selected
-        """
-    node_name:str
-    timestamp:str
+    Fields:
+        node_name: The name of the node selected
+        timestamp: The time the node was selected
+    """
+
+    node_name: str
+    timestamp: str
+
 
 @dataclass
 @PayloadRegistry.register
