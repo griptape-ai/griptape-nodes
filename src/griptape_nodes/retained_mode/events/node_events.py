@@ -311,7 +311,7 @@ class DeserializeSelectedNodesFromCommandsRequest(WorkflowAlteredMixin, RequestP
 @dataclass
 @PayloadRegistry.register
 class DeserializeSelectedNodesFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    pass
+    node_names: list[str]
 
 @dataclass
 @PayloadRegistry.register

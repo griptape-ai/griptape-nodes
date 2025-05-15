@@ -56,6 +56,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     DeserializeNodeFromCommandsResultFailure,
     DeserializeNodeFromCommandsResultSuccess,
     DeserializeSelectedNodesFromCommandsRequest,
+    DeserializeSelectedNodesFromCommandsResultFailure,
     DeserializeSelectedNodesFromCommandsResultSuccess,
     GetAllNodeInfoRequest,
     GetAllNodeInfoResultFailure,
@@ -1738,13 +1739,20 @@ class NodeManager:
     def on_deserialize_selected_nodes_from_commands(self, request:DeserializeSelectedNodesFromCommandsRequest) -> ResultPayload:
         serialized_node_commands = request.serialized_node_commands
         connections = request.serialzed_connection_commands
+        node_uuid_to_name = {}
         for node_command in serialized_node_commands.node_commands:
             result = self.on_deserialize_node_from_commands(DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command))
+            if not result.succeeded():
+                return DeserializeSelectedNodesFromCommandsResultFailure()
+            result = cast("DeserializeNodeFromCommandsResultSuccess",result)
+            node_uuid_to_name[node_command.node_uuid] = result.node_name
         for parameter_command in serialized_node_commands.parameter_commands:
-            pass
+            param_request = parameter_command.set_parameter_value_command
+            param_request.node_name = node_uuid_to_name[parameter_command.unique_value_uuid]
+            set_parameter_result = GriptapeNodes.handle_request(parameter_command.set_parameter_value_command)
         for connection_command in connections:
             pass
-        return DeserializeSelectedNodesFromCommandsResultSuccess()
+        return DeserializeSelectedNodesFromCommandsResultSuccess(node_names=list(node_uuid_to_name.values()))
 
 
     @staticmethod
