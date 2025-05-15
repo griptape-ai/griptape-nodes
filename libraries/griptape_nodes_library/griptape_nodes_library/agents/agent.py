@@ -335,13 +335,11 @@ class Agent(ControlNode):
         # Get any tools
         # tools = self.get_parameter_value("tools")  # noqa: ERA001
         tools = self.get_parameter_list_value("tools")
-        logger.info(f"Tools: {tools}")
         if include_details and tools:
             self.append_value_to_parameter("logs", f"[Tools]: {', '.join([tool.name for tool in tools])}\n")
 
         # Get any rulesets
         rulesets = self.get_parameter_list_value("rulesets")
-        logger.info(f"Rulesets: {rulesets}")
         if include_details and rulesets:
             self.append_value_to_parameter(
                 "logs",
