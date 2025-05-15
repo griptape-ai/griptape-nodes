@@ -22,6 +22,5 @@ class KeyValuePair(DataNode):
 
     def process(self) -> None:
         """Process the node by creating a key-value pair dictionary."""
-
         # Set output value
         self.parameter_output_values["dictionary"] = self.parameter_values.get("dictionary", {})
