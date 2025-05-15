@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from griptape_nodes.retained_mode.events.context_events import (
     GetWorkflowContextRequest,
@@ -10,6 +10,8 @@ from griptape_nodes.retained_mode.events.context_events import (
     SetWorkflowContextRequest,
     SetWorkflowContextSuccess,
 )
+from griptape_nodes.retained_mode.events.flow_events import SerializedFlowCommands
+from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands, SerializedSelectedNodesCommands
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -235,6 +237,14 @@ class ContextManager:
             exc_traceback: TracebackType | None,
         ) -> None:
             self._manager.pop_element()
+
+    class ClipBoard:
+        """Keeps Commands for Copying or Pasting."""
+        # Contains flow, node, parameter, connections
+        flow_commands: SerializedFlowCommands | None
+        # Contains node and Parameter and relevant connections
+        node_commands: SerializedSelectedNodesCommands | None
+        parameter_uuid_to_values : dict[str, Any] | None
 
     def __init__(self, event_manager: EventManager) -> None:
         """Initialize the context manager with empty workflow and flow stacks."""

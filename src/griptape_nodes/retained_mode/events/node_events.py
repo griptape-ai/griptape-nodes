@@ -260,16 +260,7 @@ class SerializeNodeToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloa
     pass
 
 @dataclass
-@PayloadRegistry.register
-class SerializeSelectedNodestoCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
-    # They will be passed with node_name, timestamp
-    nodes_to_serialize:list[tuple[str,str]]
-
-@dataclass
-@PayloadRegistry.register
-class SerializeSelectedNodestoCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    # They will be passed with node_name, timestamp
-    # Could be a flow command if it's all nodes in a flow.
+class SerializedSelectedNodesCommands:
     @dataclass
     class IndirectConnectionSerialization:
         """Companion class to create connections from node IDs in a serialization, since we can't predict the names.
@@ -288,9 +279,21 @@ class SerializeSelectedNodestoCommandsResultSuccess(WorkflowNotAlteredMixin, Res
         target_node_uuid: SerializedNodeCommands.NodeUUID
         target_parameter_name: str
 
-    serialized_node_commands: list[SerializeNodeToCommandsResultSuccess]
-    # Connection commands are None if it's a Serialized Flow Commands
-    serialized_connection_commands: list[IndirectConnectionSerialization] | None
+    serialized_node_commands: list[tuple[SerializedNodeCommands, list[SerializedNodeCommands.IndirectSetParameterValueCommand]]]
+    serialized_connection_commands: list[IndirectConnectionSerialization]
+
+@dataclass
+@PayloadRegistry.register
+class SerializeSelectedNodestoCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
+    # They will be passed with node_name, timestamp
+    nodes_to_serialize:list[tuple[str,str]]
+
+@dataclass
+@PayloadRegistry.register
+class SerializeSelectedNodestoCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    # They will be passed with node_name, timestamp
+    # Could be a flow command if it's all nodes in a flow.
+    serialized_selected_node_commands: SerializedSelectedNodeCommands
 
 @dataclass
 @PayloadRegistry.register
@@ -300,8 +303,7 @@ class SerializeSelectedNodestoCommandsResultFailure(WorkflowNotAlteredMixin, Res
 @dataclass
 @PayloadRegistry.register
 class DeserializeSelectedNodesFromCommandsRequest(WorkflowAlteredMixin, RequestPayload):
-    serialized_node_commands: list[SerializeNodeToCommandsResultSuccess]
-    serialized_connection_commands: list[SerializeSelectedNodestoCommandsResultSuccess.IndirectConnectionSerialization]
+    pass
 
 @dataclass
 @PayloadRegistry.register
