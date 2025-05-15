@@ -55,6 +55,8 @@ from griptape_nodes.retained_mode.events.node_events import (
     DeserializeNodeFromCommandsRequest,
     DeserializeNodeFromCommandsResultFailure,
     DeserializeNodeFromCommandsResultSuccess,
+    DeserializeSelectedNodesFromCommandsRequest,
+    DeserializeSelectedNodesFromCommandsResultSuccess,
     GetAllNodeInfoRequest,
     GetAllNodeInfoResultFailure,
     GetAllNodeInfoResultSuccess,
@@ -162,6 +164,7 @@ class NodeManager:
             DeserializeNodeFromCommandsRequest, self.on_deserialize_node_from_commands
         )
         event_manager.assign_manager_to_request_type(SerializeSelectedNodestoCommandsRequest, self.on_serialize_selected_nodes_to_commands)
+        event_manager.assign_manager_to_request_type(DeserializeSelectedNodesFromCommandsRequest, self.on_deserialize_selected_nodes_from_commands)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old node name and its parent.
@@ -1732,9 +1735,16 @@ class NodeManager:
         return SerializeSelectedNodestoCommandsResultSuccess(serialized_node_commands=final_result, serialized_connection_commands=serialized_connections)
             # now we have all of our node commands. we need connections as well.
 
-
-
-        
+    def on_deserialize_selected_nodes_from_commands(self, request:DeserializeSelectedNodesFromCommandsRequest) -> ResultPayload:
+        serialized_node_commands = request.serialized_node_commands
+        connections = request.serialzed_connection_commands
+        for node_command in serialized_node_commands.node_commands:
+            result = self.on_deserialize_node_from_commands(DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command))
+        for parameter_command in serialized_node_commands.parameter_commands:
+            pass
+        for connection_command in connections:
+            pass
+        return DeserializeSelectedNodesFromCommandsResultSuccess()
 
 
     @staticmethod
