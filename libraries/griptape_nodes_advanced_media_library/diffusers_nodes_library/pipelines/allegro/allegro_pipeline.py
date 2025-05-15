@@ -34,8 +34,13 @@ class AllegroPipeline(ControlNode):
 
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        print(f"parameter: {parameter.name}, value: {value}")
         if parameter.name == "output_format":
             modified_parameters_set.update(self.pipe_params.set_output_format(value))
+            return
+        
+        if parameter.name == "model":
+            modified_parameters_set.update(self.pipe_params.set_model(value))
             return
 
     def process(self) -> AsyncResult | None:

@@ -54,16 +54,16 @@ def optimize_allegro_pipeline_memory_footprint(pipe: diffusers.AllegroPipeline) 
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
         logger.info("Enabling sequential cpu offload")
         pipe.enable_sequential_cpu_offload()
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
-    logger.info("Enabling attention slicing")
-    pipe.enable_attention_slicing()
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
-    if hasattr(pipe, "enable_vae_slicing"):
-        logger.info("Enabling vae slicing")
-        pipe.enable_vae_slicing()
-    elif hasattr(pipe, "vae"):
-        logger.info("Enabling vae slicing")
-        pipe.vae.enable_slicing()
+    # # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
+    # logger.info("Enabling attention slicing")
+    # pipe.enable_attention_slicing()
+    # # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
+    # if hasattr(pipe, "enable_vae_slicing"):
+    #     logger.info("Enabling vae slicing")
+    #     pipe.enable_vae_slicing()
+    # elif hasattr(pipe, "vae"):
+    #     logger.info("Enabling vae slicing")
+    #     pipe.vae.enable_slicing()
 
     logger.info("Final memory footprint:")
     print_allegro_pipeline_memory_footprint(pipe)

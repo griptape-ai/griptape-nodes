@@ -34,7 +34,10 @@ class AllegroPipelineParameters:
 
     def __init__(self, node: ControlNode):
         self._node = node
-        self._huggingface_repo_parameter = HuggingFaceRepoParameter(node, ["rhymes-ai/Allegro"])
+        self._huggingface_repo_parameter = HuggingFaceRepoParameter(node, [
+            "rhymes-ai/Allegro-T2V-40x360P",
+            "rhymes-ai/Allegro-T2V-40x720P",
+            "rhymes-ai/Allegro"])
 
     def add_input_parameters(self) -> None:
         self._huggingface_repo_parameter.add_input_parameters()
@@ -81,10 +84,10 @@ class AllegroPipelineParameters:
         self._node.add_parameter(
             Parameter(
                 name="num_frames",
-                default_value=88,
+                default_value=40,
                 input_types=["int"],
                 type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
+                allowed_modes={ParameterMode.PROPERTY},
                 tooltip="num_frames",
             )
         )
@@ -93,7 +96,7 @@ class AllegroPipelineParameters:
                 name="height",
                 default_value=None,
                 input_types=["int", "None"],
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
+                allowed_modes={ParameterMode.PROPERTY},
                 tooltip="height",
             )
         )
@@ -102,7 +105,7 @@ class AllegroPipelineParameters:
                 name="width",
                 default_value=None,
                 input_types=["int", "None"],
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
+                allowed_modes={ParameterMode.PROPERTY},
                 tooltip="width",
             )
         )
@@ -172,6 +175,22 @@ class AllegroPipelineParameters:
         # 2. Do not hide output_video if output_format is a video format.
         update_ui_option_hide(self._node, "output_video", hide=not is_video_format)
         return {"output_video", "output_image"}
+    
+    def set_model(self, model: str) -> set[str]:
+        if "rhymes-ai/Allegro-T2V-40x360P" in model:
+            self._node.set_parameter_value("num_frames", 40)
+            self._node.set_parameter_value("width", 640)
+            self._node.set_parameter_value("height", 368)
+        elif "rhymes-ai/Allegro-T2V-40x720P" in model:
+            self._node.set_parameter_value("num_frames", 40)
+            self._node.set_parameter_value("width", 1280)
+            self._node.set_parameter_value("height", 720)
+        else: # must be "rhymes-ai/Allegro"
+            self._node.set_parameter_value("num_frames", 88)
+            self._node.set_parameter_value("width", 1280)
+            self._node.set_parameter_value("height", 720)
+
+        return {"num_frames", "width", "height"}
 
     def get_repo_revision(self) -> tuple[str, str]:
         return self._huggingface_repo_parameter.get_repo_revision()
@@ -226,6 +245,7 @@ class AllegroPipelineParameters:
             "guidance_scale": self.get_guidance_scale(),
             "num_frames": self.get_num_frames(),
             "eta": self.get_eta(),
+            "max_sequence_length": 512,
             "generator": self.get_generator(),
         }
 
