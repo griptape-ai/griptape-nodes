@@ -1705,20 +1705,21 @@ class NodeManager:
             if flow is None:
                 # TODO: Create error
                 return SerializeNodeToCommandsResultFailure()
-            node_connections = [
-                flow.connections.connections[connection_id]
-                for category_dict in flow.connections.outgoing_index[node_name].values()
-                for connection_id in category_dict
-            ]
-            for connection in node_connections:
-                if connection.target_node.name not in sorted_nodes:
-                    continue
-                connections_to_serialize.append(connection)
+            if node_name in flow.connections.outgoing_index:
+                node_connections = [
+                    flow.connections.connections[connection_id]
+                    for category_dict in flow.connections.outgoing_index[node_name].values()
+                    for connection_id in category_dict
+                ]
+                for connection in node_connections:
+                    if connection.target_node.name not in [values[0] for values in sorted_nodes]:
+                        continue
+                    connections_to_serialize.append(connection)
         serialized_connections = []
         for connection in connections_to_serialize:
             connection = cast("Connection",connection)
-            source_node_uuid = node_commands[connection.get_source_node().name].node_uuid
-            target_node_uuid = node_commands[connection.get_target_node().name].node_uuid
+            source_node_uuid = node_commands[connection.get_source_node().name].serialized_node_commands.node_uuid
+            target_node_uuid = node_commands[connection.get_target_node().name].serialized_node_commands.node_uuid
             serialized_connections.append(
                 SerializeSelectedNodestoCommandsResultSuccess.IndirectConnectionSerialization(
                     source_node_uuid=source_node_uuid,
