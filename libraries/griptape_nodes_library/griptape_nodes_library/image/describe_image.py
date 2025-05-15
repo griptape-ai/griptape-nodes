@@ -59,7 +59,6 @@ class DescribeImage(ControlNode):
                 type="ImageArtifact",
                 tooltip="The image you would like to describe",
                 default_value=None,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"expander": True},
             )
         )
