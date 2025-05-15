@@ -322,8 +322,6 @@ class Agent(ControlNode):
         Returns:
             An AsyncResult indicating the structure being processed (the agent).
         """
-        # Get the parameters from the node
-        params = self.parameter_values
         model_input = self.get_parameter_value("model")
         agent = None
         include_details = self.get_parameter_value("include_details")
