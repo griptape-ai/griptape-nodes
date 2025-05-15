@@ -23,6 +23,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayloadFailure,
 )
 from griptape_nodes.retained_mode.events.connection_events import (
+    CreateConnectionRequest,
     DeleteConnectionRequest,
     DeleteConnectionResultFailure,
     IncomingConnection,
@@ -1732,8 +1733,11 @@ class NodeManager:
         final_result = list(node_commands.values())
 
         # Now we have the node and parameter commands. Get Connections
-        return SerializeSelectedNodestoCommandsResultSuccess(serialized_node_commands=final_result, serialized_connection_commands=serialized_connections)
+        yay =  SerializeSelectedNodestoCommandsResultSuccess(serialized_node_commands=final_result, serialized_connection_commands=serialized_connections)
+        # testing
+        #self.on_deserialize_selected_nodes_from_commands(request=DeserializeSelectedNodesFromCommandsRequest(serialized_node_commands=final_result, serialzed_connection_commands=serialized_connections))
             # now we have all of our node commands. we need connections as well.
+        return yay
 
     def on_deserialize_selected_nodes_from_commands(self, request:DeserializeSelectedNodesFromCommandsRequest) -> ResultPayload:
         serialized_node_commands = request.serialized_node_commands
@@ -1752,8 +1756,15 @@ class NodeManager:
                     param_request.node_name = result.node_name
                     set_parameter_result = GriptapeNodes.handle_request(parameter_command.set_parameter_value_command)
                     # TODO: What do i need to do to finish this off
+        # create Connections
         for connection_command in connections:
-            pass
+            connection_request = CreateConnectionRequest(
+                source_node_name=node_uuid_to_name[connection_command.source_node_uuid],
+                source_parameter_name=connection_command.source_parameter_name,
+                target_node_name=node_uuid_to_name[connection_command.target_node_uuid],
+                target_parameter_name=connection_command.target_parameter_name
+            )
+            result = GriptapeNodes.handle_request(connection_request)
         return DeserializeSelectedNodesFromCommandsResultSuccess(node_names=list(node_uuid_to_name.values()))
 
 
