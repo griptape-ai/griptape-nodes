@@ -217,6 +217,7 @@ class SerializedNodeCommands:
 @dataclass
 class SerializedSelectedNodeCommands:
     node_commands: list[SerializedNodeCommands]
+    parameter_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand]
 
 @dataclass
 @PayloadRegistry.register

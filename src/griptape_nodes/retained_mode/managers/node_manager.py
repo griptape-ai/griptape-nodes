@@ -73,6 +73,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultFailure,
     SerializeNodeToCommandsResultSuccess,
+    SerializedSelectedNodeCommands,
     SetNodeMetadataRequest,
     SetNodeMetadataResultFailure,
     SetNodeMetadataResultSuccess,
@@ -1709,9 +1710,11 @@ class NodeManager:
                 if connection.target_node.name not in sorted_nodes:
                     continue
                 connections_to_serialize.append(connection)
+        # Final result for serialized node commands
+        final_result = SerializedSelectedNodeCommands(node_commands=node_commands, parameter_commands=parameter_commands)
 
         # Now we have the node and parameter commands. Get Connections
-        return SerializeSelectedNodestoCommandsResultSuccess(serialized_node_commands=node_commands, serialized_connection_commands=[])
+        return SerializeSelectedNodestoCommandsResultSuccess(serialized_node_commands=final_result, serialized_connection_commands=[])
             # now we have all of our node commands. we need connections as well.
 
 
