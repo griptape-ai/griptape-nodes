@@ -9,7 +9,7 @@ class Webcam(DataNode):
 
         image_parameter = Parameter(
             name="image",
-            input_types=["ImageArtifact", "ImageUrlArtifact"],
+            input_types=["ImageArtifact", "ImageUrlArtifact", "dict"],
             type="ImageArtifact",
             output_type="ImageUrlArtifact",
             ui_options={"webcam_capture_image": True, "expander": True},
