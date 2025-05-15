@@ -1058,6 +1058,57 @@ class WorkflowManager:
         logger.info(details)
 
         # Now let's try all this with the serialized flow.
+        serialized_flow_result = self.on_save_workflow_request_as_serialized_flow(request=request)
+        if serialized_flow_result.failed():
+            details = "Attempted to save workflow with the serialized flow commands. Failed."
+            logger.error(details)
+            # Don't error out here, it's a problem with the serialized flow code.
+
+        return SaveWorkflowResultSuccess(file_path=str(file_path))
+
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1189  matriculate this to be the main save function after vetting it.
+    def on_save_workflow_request_as_serialized_flow(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+        local_tz = datetime.now().astimezone().tzinfo
+
+        # Start with the file name provided; we may change it.
+        file_name = request.file_name
+
+        # See if we had an existing workflow for this.
+        prior_workflow = None
+        creation_date = None
+        if file_name and WorkflowRegistry.has_workflow_with_name(file_name):
+            # Get the metadata.
+            prior_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
+            # We'll use its creation date.
+            creation_date = prior_workflow.metadata.creation_date
+
+        if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
+            # Either a new workflow, or a backcompat situation.
+            creation_date = datetime.now(tz=local_tz)
+
+        # Let's see if this is a template file; if so, re-route it as a copy in the customer's workflow directory.
+        if prior_workflow and prior_workflow.metadata.is_template:
+            # Aha! User is attempting to save a template. Create a differently-named file in their workspace.
+            # Find the first available file name that doesn't conflict.
+            curr_idx = 1
+            free_file_found = False
+            while not free_file_found:
+                # Composite a new candidate file name to test.
+                new_file_name = f"{file_name}_{curr_idx}"
+                new_file_name_with_extension = f"{new_file_name}.py"
+                new_file_full_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(new_file_name_with_extension)
+                if new_file_full_path.exists():
+                    # Keep going.
+                    curr_idx += 1
+                else:
+                    free_file_found = True
+                    file_name = new_file_name
+
+        # Get file name stuff prepped.
+        if not file_name:
+            file_name = datetime.now(tz=local_tz).strftime("%d.%m_%H.%M")
+        relative_file_path = f"{file_name}.py"
+        file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
 
         # Get the engine version.
         engine_version_request = GetEngineVersionRequest()
@@ -1182,19 +1233,29 @@ class WorkflowManager:
             )
             ast_container.nodes.extend(set_parameter_value_asts)
 
-            # TODO: do child workflows
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1190 do child workflows
 
         # Generate final code from ASTContainer
         ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
         import_output = import_recorder.generate_imports()
         final_code_output = f"{metadata_block}\n\n{import_output}\n\n{ast_output}"
 
+        # Create the pathing and write the file
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
         relative_serialized_file_path = f"{file_name}_serialize_test.py"
-        serialized_file_path = config_manager.workspace_path.joinpath(relative_serialized_file_path)
+        serialized_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_serialized_file_path)
         with serialized_file_path.open("w") as file:
             file.write(final_code_output)
 
-        return SaveWorkflowResultSuccess(file_path=str(file_path))
+        # save the created workflow as an entry in the JSON config file.
+        registered_workflows = WorkflowRegistry.list_workflows()
+        if file_name not in registered_workflows:
+            GriptapeNodes.ConfigManager().save_user_workflow_json(str(file_path))
+            WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
+        details = f"Successfully saved workflow to: {serialized_file_path}"
+        logger.info(details)
+        return SaveWorkflowResultSuccess(file_path=str(serialized_file_path))
 
     class ASTContainer:
         """ASTContainer is a helper class to keep track of AST nodes and generate final code from them."""
