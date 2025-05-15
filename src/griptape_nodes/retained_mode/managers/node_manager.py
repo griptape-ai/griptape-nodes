@@ -12,7 +12,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
@@ -1714,16 +1714,22 @@ class NodeManager:
                 connections_to_serialize.append(connection)
         serialized_connections = []
         for connection in connections_to_serialize:
+            connection = cast("Connection",connection)
+            source_node_uuid = node_commands[connection.get_source_node().name].node_uuid
+            target_node_uuid = node_commands[connection.get_target_node().name].node_uuid
             serialized_connections.append(
                 SerializeSelectedNodestoCommandsResultSuccess.IndirectConnectionSerialization(
-                    source_node_uuid=
+                    source_node_uuid=source_node_uuid,
+                    source_parameter_name=connection.source_parameter.name,
+                    target_node_uuid=target_node_uuid,
+                    target_parameter_name=connection.target_parameter.name
                 )
             )
         # Final result for serialized node commands
-        final_result = SerializedSelectedNodeCommands(node_commands=node_commands, parameter_commands=parameter_commands)
+        final_result = SerializedSelectedNodeCommands(node_commands=list(node_commands.values()), parameter_commands=parameter_commands)
 
         # Now we have the node and parameter commands. Get Connections
-        return SerializeSelectedNodestoCommandsResultSuccess(serialized_node_commands=final_result, serialized_connection_commands=[])
+        return SerializeSelectedNodestoCommandsResultSuccess(serialized_node_commands=final_result, serialized_connection_commands=serialized_connections)
             # now we have all of our node commands. we need connections as well.
 
 
