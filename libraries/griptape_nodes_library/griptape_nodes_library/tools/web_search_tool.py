@@ -20,9 +20,11 @@ class WebSearch(BaseTool):
         )
 
     def process(self) -> None:
-        off_prompt = self.parameter_values.get("off_prompt", False)
+        off_prompt = self.get_parameter_value("off_prompt")
 
-        driver = self.parameter_values.get("web_search_config", DuckDuckGoWebSearchDriver())
+        driver = self.get_parameter_value("web_search_config")
+        if not driver:
+            driver = DuckDuckGoWebSearchDriver()
 
         # Create the tool
         tool = GtWebSearchTool(off_prompt=off_prompt, web_search_driver=driver)
