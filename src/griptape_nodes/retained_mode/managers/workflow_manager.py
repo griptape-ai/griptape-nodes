@@ -1079,6 +1079,10 @@ class WorkflowManager:
         # Keep track of all of the nodes we create and the generated variable names for them.
         node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str] = {}
 
+        # Keep track of each flow and node index we've created.
+        flow_creation_index = 0
+
+        # Serialize from the top.
         top_level_flow_request = GetTopLevelFlowRequest()
         top_level_flow_result = GriptapeNodes.handle_request(top_level_flow_request)
         if not isinstance(top_level_flow_result, GetTopLevelFlowResultSuccess):
@@ -1135,7 +1139,9 @@ class WorkflowManager:
 
         if create_flow_command is not None:
             # Generate create flow context AST node
-            create_flow_context_node = WorkflowManager._generate_create_flow(create_flow_command, import_recorder)
+            create_flow_context_node = WorkflowManager._generate_create_flow(
+                create_flow_command, import_recorder, flow_creation_index
+            )
             ast_container.add_node(create_flow_context_node)
 
         # Generate assign flow context AST node, if we have any children commands.
@@ -1145,7 +1151,10 @@ class WorkflowManager:
             or len(serialized_flow_commands.set_parameter_value_commands) > 0
             or len(serialized_flow_commands.sub_flows_commands) > 0
         ):
-            assign_flow_context_node = WorkflowManager._generate_assign_flow_context(create_flow_command)
+            # Create the "with..." statement
+            assign_flow_context_node = WorkflowManager._generate_assign_flow_context(
+                create_flow_command=create_flow_command, flow_creation_index=flow_creation_index
+            )
 
             # Generate nodes in flow AST node. This will create the node and apply all element modifiers.
             nodes_in_flow = WorkflowManager._generate_nodes_in_flow(
@@ -1367,7 +1376,9 @@ class WorkflowManager:
         return full_ast
 
     @staticmethod
-    def _generate_create_flow(create_flow_command: CreateFlowRequest, import_recorder: ImportRecorder) -> ast.AST:
+    def _generate_create_flow(
+        create_flow_command: CreateFlowRequest, import_recorder: ImportRecorder, flow_creation_index: int
+    ) -> ast.AST:
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.flow_events", "CreateFlowRequest")
 
         # Prepare arguments for CreateFlowRequest
@@ -1383,26 +1394,33 @@ class WorkflowManager:
                     )
 
         # Construct the AST for creating the flow
+        flow_variable_name = f"flow{flow_creation_index}_name"
         create_flow_result = ast.Assign(
-            targets=[ast.Name(id="create_flow_result", ctx=ast.Store(), lineno=1, col_offset=0)],
-            value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
-                    attr="handle_request",
-                    ctx=ast.Load(),
+            targets=[ast.Name(id=flow_variable_name, ctx=ast.Store(), lineno=1, col_offset=0)],
+            value=ast.Attribute(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                        attr="handle_request",
+                        ctx=ast.Load(),
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    args=[
+                        ast.Call(
+                            func=ast.Name(id="CreateFlowRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                            args=[],
+                            keywords=create_flow_request_args,
+                            lineno=1,
+                            col_offset=0,
+                        )
+                    ],
+                    keywords=[],
                     lineno=1,
                     col_offset=0,
                 ),
-                args=[
-                    ast.Call(
-                        func=ast.Name(id="CreateFlowRequest", ctx=ast.Load(), lineno=1, col_offset=0),
-                        args=[],
-                        keywords=create_flow_request_args,
-                        lineno=1,
-                        col_offset=0,
-                    )
-                ],
-                keywords=[],
+                attr="flow_name",
+                ctx=ast.Load(),
                 lineno=1,
                 col_offset=0,
             ),
@@ -1413,7 +1431,9 @@ class WorkflowManager:
         return create_flow_result
 
     @staticmethod
-    def _generate_assign_flow_context(create_flow_command: CreateFlowRequest | None) -> ast.With:
+    def _generate_assign_flow_context(
+        create_flow_command: CreateFlowRequest | None, flow_creation_index: int
+    ) -> ast.With:
         context_manager = ast.Attribute(
             value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
             attr="ContextManager",
@@ -1452,7 +1472,8 @@ class WorkflowManager:
                 col_offset=0,
             )
         else:
-            # Construct AST for "GriptapeNodes.ContextManager().flow(create_flow_result.flow_name)"
+            # Construct AST for "GriptapeNodes.ContextManager().flow(flow{flow_creation_index}_name)"
+            flow_variable_name = f"flow{flow_creation_index}_name"
             flow_call = ast.Call(
                 func=ast.Attribute(
                     value=ast.Call(func=context_manager, args=[], keywords=[], lineno=1, col_offset=0),
@@ -1461,15 +1482,7 @@ class WorkflowManager:
                     lineno=1,
                     col_offset=0,
                 ),
-                args=[
-                    ast.Attribute(
-                        value=ast.Name(id="create_flow_result", ctx=ast.Load(), lineno=1, col_offset=0),
-                        attr="flow_name",
-                        ctx=ast.Load(),
-                        lineno=1,
-                        col_offset=0,
-                    )
-                ],
+                args=[ast.Name(id=flow_variable_name, ctx=ast.Load(), lineno=1, col_offset=0)],
                 keywords=[],
                 lineno=1,
                 col_offset=0,
