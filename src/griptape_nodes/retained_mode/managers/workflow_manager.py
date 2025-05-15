@@ -26,8 +26,8 @@ from rich.table import Table
 from rich.text import Text
 from xdg_base_dirs import xdg_config_home
 
-from griptape_nodes.exe_types.node_types import BaseNode, EndNode, NodeResolutionState, StartNode
-from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion  # noqa: TC001
 from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
@@ -49,7 +49,6 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListRegisteredLibrariesResultSuccess,
     UnloadLibraryFromRegistryRequest,
 )
-from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
@@ -86,8 +85,6 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
     Version,
-    handle_flow_saving,
-    handle_parameter_creation_saving,
 )
 
 if TYPE_CHECKING:
@@ -872,202 +869,7 @@ class WorkflowManager:
 
         return import_statements
 
-    def on_save_workflow_request(  # noqa: C901, PLR0911, PLR0912, PLR0915
-        self, request: SaveWorkflowRequest
-    ) -> ResultPayload:
-        obj_manager = GriptapeNodes.ObjectManager()
-        node_manager = GriptapeNodes.NodeManager()
-        config_manager = GriptapeNodes.ConfigManager()
-
-        local_tz = datetime.now().astimezone().tzinfo
-
-        # Start with the file name provided; we may change it.
-        file_name = request.file_name
-
-        # See if we had an existing workflow for this.
-        prior_workflow = None
-        creation_date = None
-        if file_name and WorkflowRegistry.has_workflow_with_name(file_name):
-            # Get the metadata.
-            prior_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
-            # We'll use its creation date.
-            creation_date = prior_workflow.metadata.creation_date
-
-        if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
-            # Either a new workflow, or a backcompat situation.
-            creation_date = datetime.now(tz=local_tz)
-
-        # Let's see if this is a template file; if so, re-route it as a copy in the customer's workflow directory.
-        if prior_workflow and prior_workflow.metadata.is_template:
-            # Aha! User is attempting to save a template. Create a differently-named file in their workspace.
-            # Find the first available file name that doesn't conflict.
-            curr_idx = 1
-            free_file_found = False
-            while not free_file_found:
-                # Composite a new candidate file name to test.
-                new_file_name = f"{file_name}_{curr_idx}"
-                new_file_name_with_extension = f"{new_file_name}.py"
-                new_file_full_path = config_manager.workspace_path.joinpath(new_file_name_with_extension)
-                if new_file_full_path.exists():
-                    # Keep going.
-                    curr_idx += 1
-                else:
-                    free_file_found = True
-                    file_name = new_file_name
-
-        # open my file
-        if not file_name:
-            file_name = datetime.now(tz=local_tz).strftime("%d.%m_%H.%M")
-        relative_file_path = f"{file_name}.py"
-        file_path = config_manager.workspace_path.joinpath(relative_file_path)
-        created_flows = []
-        node_libraries_used = set()
-
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Get the engine version.
-        engine_version_request = GetEngineVersionRequest()
-        engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
-        if not engine_version_result.succeeded():
-            details = f"Attempted to save workflow '{relative_file_path}', but failed getting the engine version."
-            logger.error(details)
-            return SaveWorkflowResultFailure()
-        try:
-            engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
-            engine_version = (
-                f"{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
-            )
-        except Exception as err:
-            details = f"Attempted to save workflow '{relative_file_path}', but failed getting the engine version: {err}"
-            logger.error(details)
-            return SaveWorkflowResultFailure()
-
-        try:
-            with file_path.open("w") as file:
-                # Now the critical import.
-                file.write("from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes\n")
-                # Now the event imports.
-                for import_statement in self._gather_workflow_imports():
-                    file.write(import_statement + "\n")
-                # Write all flows to a file, get back the strings for connections
-                connection_request_workflows = handle_flow_saving(file, obj_manager, created_flows)
-                # Now all of the flows have been created.
-                values_created = {}
-                for node in obj_manager.get_filtered_subset(type=BaseNode).values():
-                    flow_name = node_manager.get_node_parent_flow_by_name(node.name)
-                    # Save the parameters
-                    try:
-                        parameter_string, saved_properly = handle_parameter_creation_saving(node, values_created)
-                    except Exception as e:
-                        details = f"Failed to save workflow because failed to save parameter creation for node '{node.name}'. Error: {e}"
-                        logger.error(details)
-                        return SaveWorkflowResultFailure()
-                    if saved_properly:
-                        resolution = node.state.value
-                    else:
-                        resolution = NodeResolutionState.UNRESOLVED.value
-                    creation_request = CreateNodeRequest(
-                        node_type=node.__class__.__name__,
-                        node_name=node.name,
-                        metadata=node.metadata,
-                        override_parent_flow_name=flow_name,
-                        resolution=resolution,  # Unresolved if something failed to save or create
-                        initial_setup=True,
-                    )
-                    code_string = f"GriptapeNodes.handle_request({creation_request})"
-                    file.write(code_string + "\n")
-                    # Add all parameter deetails now
-                    file.write(parameter_string)
-
-                    # See if this node uses a library we need to know about.
-                    library_used = node.metadata["library"]
-                    # Get the library metadata so we can get the version.
-                    library_metadata_request = GetLibraryMetadataRequest(library=library_used)
-                    library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
-                        library_metadata_request
-                    )
-                    if not library_metadata_result.succeeded():
-                        details = f"Attempted to save workflow '{relative_file_path}', but failed to get library metadata for library '{library_used}'."
-                        logger.error(details)
-                        return SaveWorkflowResultFailure()
-                    try:
-                        library_metadata_success = cast("GetLibraryMetadataResultSuccess", library_metadata_result)
-                        library_version = library_metadata_success.metadata.library_version
-                    except Exception as err:
-                        details = f"Attempted to save workflow '{relative_file_path}', but failed to get library version from metadata for library '{library_used}': {err}."
-                        logger.error(details)
-                        return SaveWorkflowResultFailure()
-                    library_and_version = LibraryNameAndVersion(
-                        library_name=library_used, library_version=library_version
-                    )
-                    node_libraries_used.add(library_and_version)
-                # Now all nodes AND parameters have been created
-                file.write(connection_request_workflows)
-
-                # Now that we have the info about what's actually being used, save out the workflow metadata.
-                workflow_metadata = WorkflowMetadata(
-                    name=str(file_name),
-                    schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
-                    engine_version_created_with=engine_version,
-                    node_libraries_referenced=list(node_libraries_used),
-                    creation_date=creation_date,
-                    last_modified_date=datetime.now(tz=local_tz),
-                    published_workflow_id=prior_workflow.metadata.published_workflow_id if prior_workflow else None,
-                )
-
-                try:
-                    toml_doc = tomlkit.document()
-                    toml_doc.add("dependencies", tomlkit.item([]))
-                    griptape_tool_table = tomlkit.table()
-                    metadata_dict = workflow_metadata.model_dump()
-                    for key, value in metadata_dict.items():
-                        # Strip out the Nones since TOML doesn't like those.
-                        if value is not None:
-                            griptape_tool_table.add(key=key, value=value)
-                    toml_doc["tool"] = tomlkit.table()
-                    toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
-                except Exception as err:
-                    details = f"Attempted to save workflow '{relative_file_path}', but failed to get metadata into TOML format: {err}."
-                    logger.error(details)
-                    return SaveWorkflowResultFailure()
-
-                # Format the metadata block with comment markers for each line
-                toml_lines = tomlkit.dumps(toml_doc).split("\n")
-                commented_toml_lines = ["# " + line for line in toml_lines]
-
-                # Create the complete metadata block
-                header = f"# /// {WorkflowManager.WORKFLOW_METADATA_HEADER}"
-                metadata_lines = [header]
-                metadata_lines.extend(commented_toml_lines)
-                metadata_lines.append("# ///")
-                metadata_lines.append("\n\n")
-                metadata_block = "\n".join(metadata_lines)
-
-                file.write(metadata_block)
-        except Exception as e:
-            details = f"Failed to save workflow, exception: {e}"
-            logger.error(details)
-            return SaveWorkflowResultFailure()
-
-        # save the created workflow to a personal json file
-        registered_workflows = WorkflowRegistry.list_workflows()
-        if file_name not in registered_workflows:
-            config_manager.save_user_workflow_json(str(file_path))
-            WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
-        details = f"Successfully saved workflow to: {file_path}"
-        logger.info(details)
-
-        # Now let's try all this with the serialized flow.
-        serialized_flow_result = self.on_save_workflow_request_as_serialized_flow(request=request)
-        if serialized_flow_result.failed():
-            details = "Attempted to save workflow with the serialized flow commands. Failed."
-            logger.error(details)
-            # Don't error out here, it's a problem with the serialized flow code.
-
-        return SaveWorkflowResultSuccess(file_path=str(file_path))
-
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1189  matriculate this to be the main save function after vetting it.
-    def on_save_workflow_request_as_serialized_flow(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         local_tz = datetime.now().astimezone().tzinfo
 
         # Start with the file name provided; we may change it.
@@ -1243,8 +1045,7 @@ class WorkflowManager:
         # Create the pathing and write the file
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1189  matriculate this to be the main save function after vetting it.
-        relative_serialized_file_path = f"{file_name}_serialize_test.py"
+        relative_serialized_file_path = f"{file_name}.py"
         serialized_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_serialized_file_path)
         with serialized_file_path.open("w") as file:
             file.write(final_code_output)
