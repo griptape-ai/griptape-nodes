@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterable
 from enum import StrEnum, auto
 from typing import Any, TypeVar
 
@@ -410,6 +410,26 @@ class BaseNode(ABC):
             if value:
                 return value
         return param.default_value if param else None
+
+    def get_parameter_list_value(self, param: str) -> list:
+        """Flattens the given param from self.params into a single list.
+
+        Args:
+            param (str): Name of the param key in self.params.
+
+        Returns:
+            list: Flattened list of items from the param.
+        """
+
+        def _flatten(items: Iterable[Any]) -> Generator[Any, None, None]:
+            for item in items:
+                if isinstance(item, Iterable) and not isinstance(item, (str, bytes)):
+                    yield from _flatten(item)
+                elif item:
+                    yield item
+
+        raw = self.get_parameter_value(param) or []  # ← Fallback for None
+        return list(_flatten(raw))
 
     def remove_parameter_value(self, param_name: str) -> None:
         parameter = self.get_parameter_by_name(param_name)
