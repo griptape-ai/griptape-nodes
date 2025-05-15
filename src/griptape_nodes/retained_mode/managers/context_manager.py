@@ -10,13 +10,13 @@ from griptape_nodes.retained_mode.events.context_events import (
     SetWorkflowContextRequest,
     SetWorkflowContextSuccess,
 )
-from griptape_nodes.retained_mode.events.flow_events import SerializedFlowCommands
-from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands, SerializedSelectedNodesCommands
 
 if TYPE_CHECKING:
     from types import TracebackType
 
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
+    from griptape_nodes.retained_mode.events.flow_events import SerializedFlowCommands
+    from griptape_nodes.retained_mode.events.node_events import SerializedSelectedNodesCommands
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -240,11 +240,25 @@ class ContextManager:
 
     class ClipBoard:
         """Keeps Commands for Copying or Pasting."""
+
         # Contains flow, node, parameter, connections
         flow_commands: SerializedFlowCommands | None
         # Contains node and Parameter and relevant connections
         node_commands: SerializedSelectedNodesCommands | None
-        parameter_uuid_to_values : dict[str, Any] | None
+        parameter_uuid_to_values: dict[str, Any] | None
+
+        def __init__(self) -> None:
+            self.flow_commands = None
+            self.node_commands = None
+            self.parameter_uuid_to_values = None
+
+        def clear(self) -> None:
+            del self.flow_commands
+            self.flow_commands = None
+            del self.node_commands
+            self.node_commands = None
+            if self.parameter_uuid_to_values is not None:
+                self.parameter_uuid_to_values.clear()
 
     def __init__(self, event_manager: EventManager) -> None:
         """Initialize the context manager with empty workflow and flow stacks."""

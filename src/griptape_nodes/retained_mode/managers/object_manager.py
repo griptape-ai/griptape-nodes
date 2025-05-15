@@ -261,4 +261,3 @@ class ObjectManager:
                     GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, obj.name))
                     return
         del self._name_to_objects[name]
-
