@@ -250,7 +250,6 @@ class Agent(ControlNode):
         )
 
     # --- Validation ---
-
     def validate_before_workflow_run(self) -> list[Exception] | None:
         """Performs pre-run validation checks for the node.
 
@@ -337,13 +336,14 @@ class Agent(ControlNode):
 
         # Get any tools
         # tools = self.get_parameter_value("tools")  # noqa: ERA001
-        tools = [tool for tool in params.get("tools", []) if tool]
+        tools = self.get_parameter_list_value("tools")
+        logger.info(f"Tools: {tools}")
         if include_details and tools:
             self.append_value_to_parameter("logs", f"[Tools]: {', '.join([tool.name for tool in tools])}\n")
 
         # Get any rulesets
-        # rulesets = self.get_parameter_value("rulesets")  # noqa: ERA001
-        rulesets = [ruleset for ruleset in params.get("rulesets", []) if ruleset]
+        rulesets = self.get_parameter_list_value("rulesets")
+        logger.info(f"Rulesets: {rulesets}")
         if include_details and rulesets:
             self.append_value_to_parameter(
                 "logs",
