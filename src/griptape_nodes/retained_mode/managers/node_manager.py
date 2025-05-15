@@ -1793,7 +1793,13 @@ class NodeManager:
                     # Set the new value
                     table = GriptapeNodes.ContextManager().clipboard.parameter_uuid_to_values
                     if table and parameter_command.unique_value_uuid in table:
-                        param_request.value = table[parameter_command.unique_value_uuid]
+                        value = table[parameter_command.unique_value_uuid]
+                        # Using try-except-pass instead of contextlib.suppress because it's clearer.
+                        try:  # noqa: SIM105
+                            # If we're pasting multiple times - we need to create a new copy for each paste so they don't all have the same reference.
+                            value = value.copy()
+                        except Exception:  # noqa: S110
+                            pass
                         set_parameter_result = GriptapeNodes.handle_request(
                             parameter_command.set_parameter_value_command
                         )
