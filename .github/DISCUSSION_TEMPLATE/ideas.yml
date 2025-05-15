@@ -5,7 +5,7 @@ body:
     attributes:
       value: |
         ## 🧠 Title Tip
-        When filling in the titlew, consider using a helpful prefix based on your selection. Here are some examples:
+        When filling in the title, consider using a helpful prefix based on your selection. Here are some examples:
         - `[New Node] An image diff node`
         - `[New Feature] Make it run 500x faster`
         - `[New Library] I'd love a node library for image processing`
