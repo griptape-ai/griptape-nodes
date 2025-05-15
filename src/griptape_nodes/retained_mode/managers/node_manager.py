@@ -1741,7 +1741,7 @@ class NodeManager:
 
     def on_deserialize_selected_nodes_from_commands(self, request:DeserializeSelectedNodesFromCommandsRequest) -> ResultPayload:
         serialized_node_commands = request.serialized_node_commands
-        connections = request.serialzed_connection_commands
+        connections = request.serialized_connection_commands
         node_uuid_to_name = {}
         for node_command in serialized_node_commands:
             node_serialization = node_command.serialized_node_commands
