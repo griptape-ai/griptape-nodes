@@ -95,10 +95,13 @@ class DiptychFluxFillPipelineParameters:
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._huggingface_repo_parameter.validate_before_node_run() or []
+        return errors or None
+
+    def validate_before_node_process(self) -> None:
         input_image_pil = self.get_input_image_pil()
         if input_image_pil.width != 512:  # noqa: PLR2004
-            errors.append(Exception(f"The input image's width must be 512. Current width: {input_image_pil.width}"))
-        return errors or None
+            msg = f"The input image's width must be 512. Current width: {input_image_pil.width}"
+            raise RuntimeError(msg)
 
     def get_repo_revision(self) -> tuple[str, str]:
         return self._huggingface_repo_parameter.get_repo_revision()

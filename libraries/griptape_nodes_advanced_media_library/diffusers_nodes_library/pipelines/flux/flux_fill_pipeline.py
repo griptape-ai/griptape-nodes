@@ -49,6 +49,7 @@ class FluxFillPipeline(ControlNode):
         yield lambda: self._process()
 
     def _process(self) -> AsyncResult | None:
+        self.pipe_params.validate_before_node_process()
         self.pipe_params.publish_output_image_preview_placeholder()
         self.log_params.append_to_logs("Preparing models...\n")
 

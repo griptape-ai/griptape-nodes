@@ -103,17 +103,18 @@ class FluxFillPipelineParameters:
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._huggingface_repo_parameter.validate_before_node_run() or []
+        return errors or None
+
+    def validate_before_node_process(self) -> None:
         input_image_pil = self.get_input_image_pil()
         mask_image_pil = self.get_mask_image_pil()
         if input_image_pil.size != mask_image_pil.size:
-            errors.append(
-                Exception(
-                    "The input image and mask image must have the same size. "
-                    f"Input image size: {input_image_pil.size}, "
-                    f"Mask image size: {mask_image_pil.size}"
-                )
+            msg = (
+                "The input image and mask image must have the same size. "
+                f"Input image size: {input_image_pil.size}, "
+                f"Mask image size: {mask_image_pil.size}"
             )
-        return errors or None
+            raise RuntimeError(msg)
 
     def get_repo_revision(self) -> tuple[str, str]:
         return self._huggingface_repo_parameter.get_repo_revision()
