@@ -40,7 +40,6 @@ from griptape_nodes.retained_mode.events.flow_events import (
     SerializedFlowCommands,
     SerializedNodeCommands,
     SerializeFlowToCommandsRequest,
-    SerializeFlowToCommandsResultFailure,
     SerializeFlowToCommandsResultSuccess,
 )
 from griptape_nodes.retained_mode.events.library_events import (
@@ -891,7 +890,7 @@ class WorkflowManager:
         if file_name and WorkflowRegistry.has_workflow_with_name(file_name):
             # Get the metadata.
             prior_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
-            # We'll use it's creation date.
+            # We'll use its creation date.
             creation_date = prior_workflow.metadata.creation_date
 
         if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
@@ -1104,7 +1103,7 @@ class WorkflowManager:
             ast_container.add_node(create_flow_context_node)
 
         # Generate assign flow context AST node
-        assign_flow_context_node = WorkflowManager._generate_assign_flow_context(create_flow_command, import_recorder)
+        assign_flow_context_node = WorkflowManager._generate_assign_flow_context(create_flow_command)
 
         # Generate nodes in flow AST node. This will create the node and apply all element modifiers.
         nodes_in_flow = WorkflowManager._generate_nodes_in_flow(
@@ -1126,11 +1125,13 @@ class WorkflowManager:
         # Now generate all the set parameter value code.
         set_parameter_value_asts = WorkflowManager._generate_set_parameter_value_code(
             set_parameter_value_commands=serialized_flow_commands.set_parameter_value_commands,
-            unique_parameter_uuid_to_values=serialized_flow_commands.unique_parameter_uuid_to_values,
             node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+            unique_values_dict_name="top_level_unique_values_dict",
             import_recorder=import_recorder,
         )
         ast_container.nodes.extend(set_parameter_value_asts)
+
+        # TODO: do child workflows
 
         # Generate final code from ASTContainer
         ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
@@ -1318,9 +1319,7 @@ class WorkflowManager:
         return create_flow_result
 
     @staticmethod
-    def _generate_assign_flow_context(
-        create_flow_command: CreateFlowRequest | None, import_recorder: ImportRecorder
-    ) -> ast.With:
+    def _generate_assign_flow_context(create_flow_command: CreateFlowRequest | None) -> ast.With:
         context_manager = ast.Attribute(
             value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
             attr="ContextManager",
@@ -1419,8 +1418,11 @@ class WorkflowManager:
         node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
     ) -> list[ast.stmt]:
         # Ensure necessary imports are recorded
-        import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "AddParameterToNodeRequest")
+        import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "NodeMetadata")
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeRequest")
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.parameter_events", "AddParameterToNodeRequest"
+        )
         import_recorder.add_from_import(
             "griptape_nodes.retained_mode.events.parameter_events", "AlterParameterDetailsRequest"
         )
@@ -1627,16 +1629,16 @@ class WorkflowManager:
         set_parameter_value_commands: dict[
             SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
         ],
-        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
+        unique_values_dict_name: str,
         import_recorder: ImportRecorder,
     ) -> list[ast.stmt]:
         parameter_value_asts = []
-        for node_uuid, commands in set_parameter_value_commands.items():
+        for node_uuid, indirect_set_parameter_value_commands in set_parameter_value_commands.items():
             node_variable_name = node_uuid_to_node_variable_name[node_uuid]
             parameter_value_asts.extend(
                 WorkflowManager._generate_set_parameter_value_for_node(
-                    node_variable_name, commands, unique_parameter_uuid_to_values, import_recorder
+                    node_variable_name, indirect_set_parameter_value_commands, unique_values_dict_name, import_recorder
                 )
             )
         return parameter_value_asts
@@ -1644,10 +1646,13 @@ class WorkflowManager:
     @staticmethod
     def _generate_set_parameter_value_for_node(
         node_variable_name: str,
-        commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand],
-        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        indirect_set_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand],
+        unique_values_dict_name: str,
         import_recorder: ImportRecorder,
     ) -> list[ast.stmt]:
+        if not indirect_set_parameter_value_commands:
+            return []
+
         import_recorder.add_from_import(
             "griptape_nodes.retained_mode.events.parameter_events", "SetParameterValueRequest"
         )
@@ -1677,8 +1682,15 @@ class WorkflowManager:
             col_offset=0,
         )
 
-        for command in commands:
-            value = unique_parameter_uuid_to_values[command.unique_value_uuid]
+        for command in indirect_set_parameter_value_commands:
+            value_lookup = ast.Subscript(
+                value=ast.Name(id=unique_values_dict_name, ctx=ast.Load(), lineno=1, col_offset=0),
+                slice=ast.Constant(value=str(command.unique_value_uuid), lineno=1, col_offset=0),
+                ctx=ast.Load(),
+                lineno=1,
+                col_offset=0,
+            )
+
             set_parameter_value_request_call = ast.Expr(
                 value=ast.Call(
                     func=ast.Attribute(
@@ -1703,7 +1715,7 @@ class WorkflowManager:
                                     arg="node_name",
                                     value=ast.Name(id=node_variable_name, ctx=ast.Load(), lineno=1, col_offset=0),
                                 ),
-                                ast.keyword(arg="value", value=ast.Constant(value=value, lineno=1, col_offset=0)),
+                                ast.keyword(arg="value", value=value_lookup, lineno=1, col_offset=0),
                                 ast.keyword(
                                     arg="initial_setup", value=ast.Constant(value=True, lineno=1, col_offset=0)
                                 ),
