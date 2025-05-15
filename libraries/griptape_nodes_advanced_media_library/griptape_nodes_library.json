@@ -90,6 +90,24 @@
       }
     },
     {
+      "class_name": "FluxFillPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/flux_fill_pipeline.py",
+      "metadata": {
+        "category": "image/flux",
+        "description": "FluxFillPipeline node.",
+        "display_name": "Fill Image with Flux"
+      }
+    },
+    {
+      "class_name": "DiptychFluxFillPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/diptych_flux_fill_pipeline.py",
+      "metadata": {
+        "category": "image/flux",
+        "description": "DiptychFluxFillPipeline node.",
+        "display_name": "Use the diptych fill technique to modify and image -- best taken with a side of lora"
+      }
+    },
+    {
       "class_name": "UnionFluxControlNetPipeline",
       "file_path": "diffusers_nodes_library/pipelines/flux/controlnet/union_flux_control_net_pipeline.py",
       "metadata": {
@@ -150,6 +168,15 @@
         "category": "image/flux/loras",
         "description": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-Miniature-World",
         "display_name": "Shakker-Labs/FLUX.1-dev-LoRA-Miniature-World"
+      }
+    },
+    {
+      "class_name": "RiverZNormalDiptychFluxFillLora",
+      "file_path": "diffusers_nodes_library/pipelines/flux/lora/river_z_normal_diptych_flux_fill_lora.py",
+      "metadata": {
+        "category": "image/flux/loras",
+        "description": "https://huggingface.co/RiverZ/normal-lora",
+        "display_name": "RiverZ/normal-lora"
       }
     },
     {
