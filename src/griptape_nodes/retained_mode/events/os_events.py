@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from pydantic.dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -9,19 +9,16 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
-@dataclass
 @PayloadRegistry.register
 class OpenAssociatedFileRequest(RequestPayload):
     path_to_file: str
 
 
-@dataclass
 @PayloadRegistry.register
 class OpenAssociatedFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class OpenAssociatedFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass

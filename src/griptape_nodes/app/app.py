@@ -8,7 +8,7 @@ import sys
 import threading
 from queue import Queue
 from time import sleep
-from typing import Any, cast
+from typing import Any
 from urllib.parse import urljoin
 
 import httpx
@@ -40,7 +40,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionGriptapeNodeEvent,
     GriptapeNodeEvent,
     ProgressEvent,
-    deserialize_event,
+    RequestPayload,
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -218,7 +218,7 @@ def _listen_for_api_events() -> None:
         except httpx.RemoteProtocolError as e:
             logger.debug("Server closed connection, this is expected. Reconnecting... %s", e)
         except Exception as e:
-            logger.error("Error while listening for events. Retrying in 2 seconds... %s", e)
+            logger.exception("Error while listening for events. Retrying in 2 seconds... %s", e)
             sleep(2)
 
 
@@ -235,7 +235,8 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
         raise TypeError(msg) from None
 
     # Don't send events over the wire that don't have a request_id set (e.g. engine-internal events)
-    event_json = result_event.json()
+    event_json = result_event.model_dump_json()
+
     socket_manager.emit(dest_socket, event_json)
 
 
@@ -244,7 +245,7 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
     result_event = event.wrapped_event
     if type(result_event.payload).__name__ == "NodeStartProcessEvent":
         GriptapeNodes.EventManager().current_active_node = result_event.payload.node_name
-    event_json = result_event.json()
+    event_json = result_event.model_dump_json()
 
     if type(result_event.payload).__name__ == "ResumeNodeProcessingEvent":
         node_name = result_event.payload.node_name
@@ -271,7 +272,7 @@ def __process_progress_event(gt_event: ProgressEvent) -> None:
             node_name=node_name, parameter_name=gt_event.parameter_name, type=type(gt_event).__name__, value=value
         )
         event_to_emit = ExecutionEvent(payload=payload)
-        socket_manager.emit("execution_event", event_to_emit.json())
+        socket_manager.emit("execution_event", event_to_emit.model_dump_json())
 
 
 def __process_app_event(event: AppEvent) -> None:
@@ -279,7 +280,7 @@ def __process_app_event(event: AppEvent) -> None:
     # Let Griptape Nodes broadcast it.
     GriptapeNodes.broadcast_app_event(event.payload)
 
-    socket_manager.emit("app_event", event.json())
+    socket_manager.emit("app_event", event.model_dump_json())
 
 
 def _process_event_queue() -> None:
@@ -377,6 +378,8 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
 
 def __process_api_event(data: Any) -> None:
     """Process API events and send them to the event queue."""
+    from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
     try:
         data["request"]
     except KeyError:
@@ -393,8 +396,21 @@ def __process_api_event(data: Any) -> None:
         raise RuntimeError(msg) from None
 
     # Now attempt to convert it into an EventRequest.
+    payload_model = PayloadRegistry.get_type(data["request_type"])
+    if payload_model is None:
+        msg = f"Unable to find payload model for request type '{data['request_type']}'."
+        raise RuntimeError(msg)
+
+    if not issubclass(payload_model, RequestPayload):
+        msg = f"Payload model for request type '{data['request_type']}' is not a RequestPayload."
+        raise TypeError(msg)
+
     try:
-        request_event: EventRequest = cast("EventRequest", deserialize_event(json_data=data))
+        request_event: EventRequest = EventRequest(
+            event_type=event_type,
+            request=payload_model.model_validate(data["request"]),
+            request_type=payload_model.__name__,
+        )
     except Exception as e:
         msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{e}'"
         raise RuntimeError(msg) from None

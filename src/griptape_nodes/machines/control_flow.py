@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 from griptape.events import EventBus
 
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
-from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.machines.node_resolution import NodeResolutionMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
@@ -151,9 +150,7 @@ class CompleteState(State):
                     wrapped_event=ExecutionEvent(
                         payload=ControlFlowResolvedEvent(
                             end_node_name=context.current_node.name,
-                            parameter_output_values=TypeValidator.safe_serialize(
-                                context.current_node.parameter_output_values
-                            ),
+                            parameter_output_values=context.current_node.parameter_output_values,
                         )
                     )
                 )

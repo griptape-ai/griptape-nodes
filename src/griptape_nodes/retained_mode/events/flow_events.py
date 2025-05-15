@@ -1,5 +1,6 @@
-from dataclasses import dataclass
 from typing import Any
+
+from pydantic.dataclasses import dataclass
 
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 from griptape_nodes.retained_mode.events.base_events import (
@@ -13,7 +14,6 @@ from griptape_nodes.retained_mode.events.node_events import SerializedNodeComman
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
-@dataclass(kw_only=True)
 @PayloadRegistry.register
 class CreateFlowRequest(RequestPayload):
     parent_flow_name: str | None
@@ -22,51 +22,43 @@ class CreateFlowRequest(RequestPayload):
     set_as_new_context: bool = True
 
 
-@dataclass
 @PayloadRegistry.register
 class CreateFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     flow_name: str
 
 
-@dataclass
 @PayloadRegistry.register
 class CreateFlowResultFailure(ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class DeleteFlowRequest(RequestPayload):
     # If None is passed, assumes we're deleting the flow in the Current Context.
     flow_name: str | None = None
 
 
-@dataclass
 @PayloadRegistry.register
 class DeleteFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class DeleteFlowResultFailure(ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class ListNodesInFlowRequest(RequestPayload):
     # If None is passed, assumes we're using the flow in the Current Context.
     flow_name: str | None = None
 
 
-@dataclass
 @PayloadRegistry.register
 class ListNodesInFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     node_names: list[str]
 
 
-@dataclass
 @PayloadRegistry.register
 class ListNodesInFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
@@ -77,51 +69,43 @@ class ListNodesInFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 # 2. ListFlowsInCurrentContext - List flows in whatever flow is at the top of the Current Context
 # These are separate classes to avoid ambiguity and to catch incorrect usage at compile time.
 # It was implemented this way to maintain backwards compatibility with the editor.
-@dataclass
 @PayloadRegistry.register
 class ListFlowsInCurrentContextRequest(RequestPayload):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class ListFlowsInCurrentContextResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     flow_names: list[str]
 
 
-@dataclass
 @PayloadRegistry.register
 class ListFlowsInCurrentContextResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
 # Gives a list of the flows directly parented by the node specified.
-@dataclass
 @PayloadRegistry.register
 class ListFlowsInFlowRequest(RequestPayload):
     # Pass in None to get the canvas.
     parent_flow_name: str | None = None
 
 
-@dataclass
 @PayloadRegistry.register
 class ListFlowsInFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     flow_names: list[str]
 
 
-@dataclass
 @PayloadRegistry.register
 class ListFlowsInFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class GetTopLevelFlowRequest(RequestPayload):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class GetTopLevelFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     flow_name: str | None
@@ -179,7 +163,6 @@ class SerializedFlowCommands:
     sub_flows_commands: list["SerializedFlowCommands"]
 
 
-@dataclass
 @PayloadRegistry.register
 class SerializeFlowToCommandsRequest(RequestPayload):
     """Request payload to serialize a flow into a sequence of commands.
@@ -195,31 +178,26 @@ class SerializeFlowToCommandsRequest(RequestPayload):
     include_create_flow_command: bool = True
 
 
-@dataclass
 @PayloadRegistry.register
 class SerializeFlowToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     serialized_flow_commands: SerializedFlowCommands
 
 
-@dataclass
 @PayloadRegistry.register
 class SerializeFlowToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class DeserializeFlowFromCommandsRequest(RequestPayload):
     serialized_flow_commands: SerializedFlowCommands
 
 
-@dataclass
 @PayloadRegistry.register
 class DeserializeFlowFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     flow_name: str
 
 
-@dataclass
 @PayloadRegistry.register
 class DeserializeFlowFromCommandsResultFailure(ResultPayloadFailure):
     pass

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from pydantic.dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -10,7 +10,6 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
-@dataclass
 @PayloadRegistry.register
 class CreateConnectionRequest(RequestPayload):
     source_parameter_name: str
@@ -22,19 +21,16 @@ class CreateConnectionRequest(RequestPayload):
     initial_setup: bool = False
 
 
-@dataclass
 @PayloadRegistry.register
 class CreateConnectionResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class CreateConnectionResultFailure(ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class DeleteConnectionRequest(RequestPayload):
     source_parameter_name: str
@@ -44,19 +40,16 @@ class DeleteConnectionRequest(RequestPayload):
     target_node_name: str | None = None
 
 
-@dataclass
 @PayloadRegistry.register
 class DeleteConnectionResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class DeleteConnectionResultFailure(ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class ListConnectionsForNodeRequest(RequestPayload):
     # If node name is None, use the Current Context
@@ -77,14 +70,12 @@ class OutgoingConnection:
     target_parameter_name: str
 
 
-@dataclass
 @PayloadRegistry.register
 class ListConnectionsForNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     incoming_connections: list[IncomingConnection]
     outgoing_connections: list[OutgoingConnection]
 
 
-@dataclass
 @PayloadRegistry.register
 class ListConnectionsForNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass

@@ -3,8 +3,8 @@ import logging
 import os
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import Any, cast
+from pydantic.dataclasses import dataclass
+from dataclasses import field
 from urllib.parse import urljoin
 
 import httpx

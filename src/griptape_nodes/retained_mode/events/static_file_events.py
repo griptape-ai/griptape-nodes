@@ -1,5 +1,5 @@
-from dataclasses import dataclass, field
-
+from pydantic.dataclasses import dataclass
+from dataclasses import field
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -9,7 +9,6 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
-@dataclass
 @PayloadRegistry.register
 class CreateStaticFileRequest(RequestPayload):
     """Request to create a static file.
@@ -23,13 +22,11 @@ class CreateStaticFileRequest(RequestPayload):
     file_name: str
 
 
-@dataclass
 @PayloadRegistry.register
 class CreateStaticFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     url: str
 
 
-@dataclass
 @PayloadRegistry.register
 class CreateStaticFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     error: str

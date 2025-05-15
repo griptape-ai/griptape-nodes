@@ -11,7 +11,6 @@ from griptape.utils import with_contextvars
 
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
-from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
@@ -235,7 +234,7 @@ class ExecuteNodeState(State):
                                 parameter_name=parameter.name,
                                 # this is because the type is currently IN the parameter.
                                 data_type=data_type,
-                                value=TypeValidator.safe_serialize(parameter_value),
+                                value=parameter_value,
                             )
                         )
                     )
@@ -302,8 +301,8 @@ class ExecuteNodeState(State):
         if logger.level <= logging.DEBUG:
             logger.debug(
                 "INPUTS: %s\nOUTPUTS: %s",
-                TypeValidator.safe_serialize(current_node.parameter_values),
-                TypeValidator.safe_serialize(current_node.parameter_output_values),
+                current_node.parameter_values,
+                current_node.parameter_output_values,
             )
 
         for parameter_name, value in current_node.parameter_output_values.items():
@@ -321,7 +320,7 @@ class ExecuteNodeState(State):
                             node_name=current_node.name,
                             parameter_name=parameter_name,
                             data_type=data_type,
-                            value=TypeValidator.safe_serialize(value),
+                            value=value,
                         )
                     ),
                 )
@@ -344,7 +343,7 @@ class ExecuteNodeState(State):
                 wrapped_event=ExecutionEvent(
                     payload=NodeResolvedEvent(
                         node_name=current_node.name,
-                        parameter_output_values=TypeValidator.safe_serialize(current_node.parameter_output_values),
+                        parameter_output_values=current_node.parameter_output_values,
                     )
                 )
             )

@@ -275,7 +275,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/855
 
-        return AppStartSessionResultSuccess(request.session_id)
+        return AppStartSessionResultSuccess(session_id=request.session_id)
 
     def handle_get_session_request(self, _: AppGetSessionRequest) -> ResultPayload:
         return AppGetSessionResultSuccess(session_id=BaseEvent._session_id)

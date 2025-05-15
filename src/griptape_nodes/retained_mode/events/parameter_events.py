@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from pydantic.dataclasses import dataclass
 from typing import Any, NamedTuple
 
 from pydantic import Field
@@ -17,7 +17,6 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
-@dataclass
 @PayloadRegistry.register
 class AddParameterToNodeRequest(RequestPayload):
     # If node name is None, use the Current Context
@@ -50,7 +49,6 @@ class AddParameterToNodeRequest(RequestPayload):
         return instance
 
 
-@dataclass
 @PayloadRegistry.register
 class AddParameterToNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     parameter_name: str
@@ -58,13 +56,11 @@ class AddParameterToNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess
     node_name: str
 
 
-@dataclass
 @PayloadRegistry.register
 class AddParameterToNodeResultFailure(ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class RemoveParameterFromNodeRequest(RequestPayload):
     parameter_name: str
@@ -72,19 +68,16 @@ class RemoveParameterFromNodeRequest(RequestPayload):
     node_name: str | None = None
 
 
-@dataclass
 @PayloadRegistry.register
 class RemoveParameterFromNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class RemoveParameterFromNodeResultFailure(ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class SetParameterValueRequest(RequestPayload):
     parameter_name: str
@@ -98,20 +91,17 @@ class SetParameterValueRequest(RequestPayload):
     is_output: bool = False
 
 
-@dataclass
 @PayloadRegistry.register
 class SetParameterValueResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     finalized_value: Any
     data_type: str
 
 
-@dataclass
 @PayloadRegistry.register
 class SetParameterValueResultFailure(ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class GetParameterDetailsRequest(RequestPayload):
     parameter_name: str
@@ -119,7 +109,6 @@ class GetParameterDetailsRequest(RequestPayload):
     node_name: str | None = None
 
 
-@dataclass
 @PayloadRegistry.register
 class GetParameterDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     element_id: str
@@ -138,13 +127,11 @@ class GetParameterDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuc
     ui_options: dict | None
 
 
-@dataclass
 @PayloadRegistry.register
 class GetParameterDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class AlterParameterDetailsRequest(RequestPayload):
     parameter_name: str
@@ -203,19 +190,16 @@ class AlterParameterDetailsRequest(RequestPayload):
         ]
 
 
-@dataclass
 @PayloadRegistry.register
 class AlterParameterDetailsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class AlterParameterDetailsResultFailure(ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class GetParameterValueRequest(RequestPayload):
     parameter_name: str
@@ -223,7 +207,6 @@ class GetParameterValueRequest(RequestPayload):
     node_name: str | None = None
 
 
-@dataclass
 @PayloadRegistry.register
 class GetParameterValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     input_types: list[str]
@@ -232,13 +215,11 @@ class GetParameterValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucce
     value: Any
 
 
-@dataclass
 @PayloadRegistry.register
 class GetParameterValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class OnParameterValueChanged(WorkflowAlteredMixin, ResultPayloadSuccess):
     node_name: str
@@ -247,7 +228,6 @@ class OnParameterValueChanged(WorkflowAlteredMixin, ResultPayloadSuccess):
     value: Any
 
 
-@dataclass
 @PayloadRegistry.register
 class GetCompatibleParametersRequest(RequestPayload):
     parameter_name: str
@@ -261,19 +241,16 @@ class ParameterAndMode(NamedTuple):
     is_output: bool
 
 
-@dataclass
 @PayloadRegistry.register
 class GetCompatibleParametersResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     valid_parameters_by_node: dict[str, list[ParameterAndMode]]
 
 
-@dataclass
 @PayloadRegistry.register
 class GetCompatibleParametersResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class GetNodeElementDetailsRequest(RequestPayload):
     # If node name is None, use the Current Context
@@ -281,20 +258,17 @@ class GetNodeElementDetailsRequest(RequestPayload):
     specific_element_id: str | None = None  # Pass None to use the root
 
 
-@dataclass
 @PayloadRegistry.register
 class GetNodeElementDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     element_details: dict[str, Any]
 
 
-@dataclass
 @PayloadRegistry.register
 class GetNodeElementDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
 # This is the same as getparameterelementdetailsrequest, might have to modify it a bit.
-@dataclass
 @PayloadRegistry.register
 class AlterParameterEvent(ExecutionPayload):
     node_name: str

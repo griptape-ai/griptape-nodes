@@ -20,7 +20,6 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
-from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -540,7 +539,7 @@ class BaseNode(ABC):
                 node_name=self.name,
                 parameter_name=parameter_name,
                 data_type=data_type,
-                value=TypeValidator.safe_serialize(value),
+                value=value,
             )
             EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
         else:

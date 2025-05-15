@@ -1,6 +1,8 @@
-from dataclasses import dataclass, field
+from dataclasses import field
 from typing import Any, NewType
 from uuid import uuid4
+
+from pydantic.dataclasses import dataclass
 
 from griptape_nodes.exe_types.node_types import NodeResolutionState
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
@@ -20,7 +22,6 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
-@dataclass
 @PayloadRegistry.register
 class CreateNodeRequest(RequestPayload):
     node_type: str
@@ -36,95 +37,80 @@ class CreateNodeRequest(RequestPayload):
     set_as_new_context: bool = False
 
 
-@dataclass
 @PayloadRegistry.register
 class CreateNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     node_name: str
 
 
-@dataclass
 @PayloadRegistry.register
 class CreateNodeResultFailure(ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class DeleteNodeRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context.
     node_name: str | None = None
 
 
-@dataclass
 @PayloadRegistry.register
 class DeleteNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class DeleteNodeResultFailure(ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class GetNodeResolutionStateRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 
 
-@dataclass
 @PayloadRegistry.register
 class GetNodeResolutionStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     state: str
 
 
-@dataclass
 @PayloadRegistry.register
 class GetNodeResolutionStateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class ListParametersOnNodeRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 
 
-@dataclass
 @PayloadRegistry.register
 class ListParametersOnNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     parameter_names: list[str]
 
 
-@dataclass
 @PayloadRegistry.register
 class ListParametersOnNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class GetNodeMetadataRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 
 
-@dataclass
 @PayloadRegistry.register
 class GetNodeMetadataResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     metadata: dict
 
 
-@dataclass
 @PayloadRegistry.register
 class GetNodeMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class SetNodeMetadataRequest(RequestPayload):
     metadata: dict
@@ -132,13 +118,11 @@ class SetNodeMetadataRequest(RequestPayload):
     node_name: str | None = None
 
 
-@dataclass
 @PayloadRegistry.register
 class SetNodeMetadataResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class SetNodeMetadataResultFailure(ResultPayloadFailure):
     pass
@@ -146,7 +130,6 @@ class SetNodeMetadataResultFailure(ResultPayloadFailure):
 
 # Get all info via a "jumbo" node event. Batches multiple info requests for, say, a GUI.
 # ...jumbode?
-@dataclass
 @PayloadRegistry.register
 class GetAllNodeInfoRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context
@@ -159,17 +142,15 @@ class ParameterInfoValue:
     value: GetParameterValueResultSuccess
 
 
-@dataclass
 @PayloadRegistry.register
 class GetAllNodeInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     metadata: dict
     node_resolution_state: str
     connections: ListConnectionsForNodeResultSuccess
-    element_id_to_value: dict[str, ParameterInfoValue]
+    element_id_to_value: dict[str, ParameterInfoValue | Any]
     root_node_element: dict[str, Any]
 
 
-@dataclass
 @PayloadRegistry.register
 class GetAllNodeInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
@@ -215,7 +196,6 @@ class SerializedNodeCommands:
     node_uuid: NodeUUID = field(default_factory=lambda: SerializedNodeCommands.NodeUUID(str(uuid4())))
 
 
-@dataclass
 @PayloadRegistry.register
 class SerializeNodeToCommandsRequest(RequestPayload):
     """Request payload to serialize a node into a sequence of commands.
@@ -239,7 +219,6 @@ class SerializeNodeToCommandsRequest(RequestPayload):
     )
 
 
-@dataclass
 @PayloadRegistry.register
 class SerializeNodeToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Represents a successful result for serializing a node into a sequence of commands.
@@ -254,25 +233,21 @@ class SerializeNodeToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloa
     set_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand]
 
 
-@dataclass
 @PayloadRegistry.register
 class SerializeNodeToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class DeserializeNodeFromCommandsRequest(RequestPayload):
     serialized_node_commands: SerializedNodeCommands
 
 
-@dataclass
 @PayloadRegistry.register
 class DeserializeNodeFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     node_name: str
 
 
-@dataclass
 @PayloadRegistry.register
 class DeserializeNodeFromCommandsResultFailure(ResultPayloadFailure):
     pass

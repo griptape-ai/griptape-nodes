@@ -14,7 +14,6 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
-from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
@@ -1102,7 +1101,7 @@ class NodeManager:
             input_types=parameter.input_types,
             type=parameter.type,
             output_type=parameter.output_type,
-            value=TypeValidator.safe_serialize(data_value),
+            value=data_value,
         )
         return result
 
