@@ -301,7 +301,7 @@ class SerializeSelectedNodestoCommandsResultFailure(WorkflowNotAlteredMixin, Res
 @PayloadRegistry.register
 class DeserializeSelectedNodesFromCommandsRequest(WorkflowAlteredMixin, RequestPayload):
     serialized_node_commands: list[SerializeNodeToCommandsResultSuccess]
-    serialzed_connection_commands: list[SerializeSelectedNodestoCommandsResultSuccess.IndirectConnectionSerialization]
+    serialized_connection_commands: list[SerializeSelectedNodestoCommandsResultSuccess.IndirectConnectionSerialization]
 
 @dataclass
 @PayloadRegistry.register
