@@ -1172,10 +1172,10 @@ class WorkflowManager:
             logger.error(details)
             return SaveWorkflowResultFailure()
 
-        import_recorder = WorkflowManager.ImportRecorder()
+        import_recorder = ImportRecorder()
         import_recorder.add_from_import("griptape_nodes.retained_mode.griptape_nodes", "GriptapeNodes")
 
-        ast_container = WorkflowManager.ASTContainer()
+        ast_container = ASTContainer()
 
         # Generate unique values code AST node.
         unique_values_node = WorkflowManager._generate_unique_values_code(
@@ -1243,6 +1243,7 @@ class WorkflowManager:
         # Create the pathing and write the file
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1189  matriculate this to be the main save function after vetting it.
         relative_serialized_file_path = f"{file_name}_serialize_test.py"
         serialized_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_serialized_file_path)
         with serialized_file_path.open("w") as file:
@@ -1256,66 +1257,6 @@ class WorkflowManager:
         details = f"Successfully saved workflow to: {serialized_file_path}"
         logger.info(details)
         return SaveWorkflowResultSuccess(file_path=str(serialized_file_path))
-
-    class ASTContainer:
-        """ASTContainer is a helper class to keep track of AST nodes and generate final code from them."""
-
-        def __init__(self) -> None:
-            """Initialize an empty list to store AST nodes."""
-            self.nodes = []
-
-        def add_node(self, node: ast.AST) -> None:
-            self.nodes.append(node)
-
-        def get_ast(self) -> list[ast.AST]:
-            return self.nodes
-
-    @dataclass
-    class ImportRecorder:
-        """Recorder to keep track of imports and generate code for them."""
-
-        imports: set[str]
-        from_imports: dict[str, set[str]]
-
-        def __init__(self) -> None:
-            """Initialize the recorder."""
-            self.imports = set()
-            self.from_imports = {}
-
-        def add_import(self, module_name: str) -> None:
-            """Add an import to the recorder.
-
-            Args:
-                module_name (str): The module name to import.
-            """
-            self.imports.add(module_name)
-
-        def add_from_import(self, module_name: str, class_name: str) -> None:
-            """Add a from-import to the recorder.
-
-            Args:
-                module_name (str): The module name to import from.
-                class_name (str): The class name to import.
-            """
-            if module_name not in self.from_imports:
-                self.from_imports[module_name] = set()
-            self.from_imports[module_name].add(class_name)
-
-        def generate_imports(self) -> str:
-            """Generate the import code from the recorded imports.
-
-            Returns:
-                str: The generated code.
-            """
-            import_lines = []
-            for module_name in sorted(self.imports):
-                import_lines.append(f"import {module_name}")  # noqa: PERF401
-
-            for module_name, class_names in sorted(self.from_imports.items()):
-                sorted_class_names = sorted(class_names)
-                import_lines.append(f"from {module_name} import {', '.join(sorted_class_names)}")
-
-            return "\n".join(import_lines)
 
     @staticmethod
     def _generate_workflow_metadata(
@@ -2227,3 +2168,65 @@ class WorkflowManager:
             details = f"Failed to publish workflow '{request.workflow_name}'. Error: {e}"
             logger.error(details)
             return PublishWorkflowResultFailure()
+
+
+class ASTContainer:
+    """ASTContainer is a helper class to keep track of AST nodes and generate final code from them."""
+
+    def __init__(self) -> None:
+        """Initialize an empty list to store AST nodes."""
+        self.nodes = []
+
+    def add_node(self, node: ast.AST) -> None:
+        self.nodes.append(node)
+
+    def get_ast(self) -> list[ast.AST]:
+        return self.nodes
+
+
+@dataclass
+class ImportRecorder:
+    """Recorder to keep track of imports and generate code for them."""
+
+    imports: set[str]
+    from_imports: dict[str, set[str]]
+
+    def __init__(self) -> None:
+        """Initialize the recorder."""
+        self.imports = set()
+        self.from_imports = {}
+
+    def add_import(self, module_name: str) -> None:
+        """Add an import to the recorder.
+
+        Args:
+            module_name (str): The module name to import.
+        """
+        self.imports.add(module_name)
+
+    def add_from_import(self, module_name: str, class_name: str) -> None:
+        """Add a from-import to the recorder.
+
+        Args:
+            module_name (str): The module name to import from.
+            class_name (str): The class name to import.
+        """
+        if module_name not in self.from_imports:
+            self.from_imports[module_name] = set()
+        self.from_imports[module_name].add(class_name)
+
+    def generate_imports(self) -> str:
+        """Generate the import code from the recorded imports.
+
+        Returns:
+            str: The generated code.
+        """
+        import_lines = []
+        for module_name in sorted(self.imports):
+            import_lines.append(f"import {module_name}")  # noqa: PERF401
+
+        for module_name, class_names in sorted(self.from_imports.items()):
+            sorted_class_names = sorted(class_names)
+            import_lines.append(f"from {module_name} import {', '.join(sorted_class_names)}")
+
+        return "\n".join(import_lines)
