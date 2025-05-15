@@ -1138,36 +1138,42 @@ class WorkflowManager:
             create_flow_context_node = WorkflowManager._generate_create_flow(create_flow_command, import_recorder)
             ast_container.add_node(create_flow_context_node)
 
-        # Generate assign flow context AST node
-        assign_flow_context_node = WorkflowManager._generate_assign_flow_context(create_flow_command)
+        # Generate assign flow context AST node, if we have any children commands.
+        if (
+            len(serialized_flow_commands.serialized_node_commands) > 0
+            or len(serialized_flow_commands.serialized_connections) > 0
+            or len(serialized_flow_commands.set_parameter_value_commands) > 0
+            or len(serialized_flow_commands.sub_flows_commands) > 0
+        ):
+            assign_flow_context_node = WorkflowManager._generate_assign_flow_context(create_flow_command)
 
-        # Generate nodes in flow AST node. This will create the node and apply all element modifiers.
-        nodes_in_flow = WorkflowManager._generate_nodes_in_flow(
-            serialized_flow_commands, import_recorder, node_uuid_to_node_variable_name
-        )
+            # Generate nodes in flow AST node. This will create the node and apply all element modifiers.
+            nodes_in_flow = WorkflowManager._generate_nodes_in_flow(
+                serialized_flow_commands, import_recorder, node_uuid_to_node_variable_name
+            )
 
-        # Add the nodes to the body of the Current Context flow's "with" statement
-        assign_flow_context_node.body.extend(nodes_in_flow)
-        ast_container.add_node(assign_flow_context_node)
+            # Add the nodes to the body of the Current Context flow's "with" statement
+            assign_flow_context_node.body.extend(nodes_in_flow)
+            ast_container.add_node(assign_flow_context_node)
 
-        # Now generate the connection code.
-        connection_asts = WorkflowManager._generate_connections_code(
-            serialized_connections=serialized_flow_commands.serialized_connections,
-            node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
-            import_recorder=import_recorder,
-        )
-        ast_container.nodes.extend(connection_asts)
+            # Now generate the connection code.
+            connection_asts = WorkflowManager._generate_connections_code(
+                serialized_connections=serialized_flow_commands.serialized_connections,
+                node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+                import_recorder=import_recorder,
+            )
+            ast_container.nodes.extend(connection_asts)
 
-        # Now generate all the set parameter value code.
-        set_parameter_value_asts = WorkflowManager._generate_set_parameter_value_code(
-            set_parameter_value_commands=serialized_flow_commands.set_parameter_value_commands,
-            node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
-            unique_values_dict_name="top_level_unique_values_dict",
-            import_recorder=import_recorder,
-        )
-        ast_container.nodes.extend(set_parameter_value_asts)
+            # Now generate all the set parameter value code.
+            set_parameter_value_asts = WorkflowManager._generate_set_parameter_value_code(
+                set_parameter_value_commands=serialized_flow_commands.set_parameter_value_commands,
+                node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+                unique_values_dict_name="top_level_unique_values_dict",
+                import_recorder=import_recorder,
+            )
+            ast_container.nodes.extend(set_parameter_value_asts)
 
-        # TODO: do child workflows
+            # TODO: do child workflows
 
         # Generate final code from ASTContainer
         ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
