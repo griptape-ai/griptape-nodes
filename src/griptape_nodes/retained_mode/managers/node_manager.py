@@ -1684,9 +1684,10 @@ class NodeManager:
         nodes_to_serialize = request.nodes_to_serialize
         # Sorts tuples in order based on the timestamp
         sorted_nodes = sorted(nodes_to_serialize, key=lambda x: x[1])
-        node_commands = []
+        node_commands = {}
         parameter_commands = []
         connections_to_serialize = []
+        # How do i keep track fo node / parameters 
         # I need to store node names and parameter names to UUID 
         for node_name, _ in sorted_nodes:
             result = self.on_serialize_node_to_commands(SerializeNodeToCommandsRequest(node_name=node_name))
@@ -1694,7 +1695,8 @@ class NodeManager:
                 # TODO : create error
                 return SerializeNodeToCommandsResultFailure()
             result = cast("SerializeNodeToCommandsResultSuccess",result)
-            node_commands.append(result.serialized_node_commands)
+            node_commands[node_name] = result.serialized_node_commands
+            # How do I keep parameter UUIds?
             parameter_commands.extend(result.set_parameter_value_commands)
             flow_name = self.get_node_parent_flow_by_name(node_name)
             flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
@@ -1710,6 +1712,13 @@ class NodeManager:
                 if connection.target_node.name not in sorted_nodes:
                     continue
                 connections_to_serialize.append(connection)
+        serialized_connections = []
+        for connection in connections_to_serialize:
+            serialized_connections.append(
+                SerializeSelectedNodestoCommandsResultSuccess.IndirectConnectionSerialization(
+                    source_node_uuid=
+                )
+            )
         # Final result for serialized node commands
         final_result = SerializedSelectedNodeCommands(node_commands=node_commands, parameter_commands=parameter_commands)
 
