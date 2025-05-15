@@ -293,7 +293,7 @@ class SerializeSelectedNodestoCommandsRequest(WorkflowNotAlteredMixin, RequestPa
 class SerializeSelectedNodestoCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     # They will be passed with node_name, timestamp
     # Could be a flow command if it's all nodes in a flow.
-    serialized_selected_node_commands: SerializedSelectedNodeCommands
+    serialized_selected_node_commands: SerializedSelectedNodesCommands
 
 @dataclass
 @PayloadRegistry.register

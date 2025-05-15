@@ -1664,7 +1664,7 @@ class NodeManager:
 
     def on_deserialize_node_from_commands(self, request: DeserializeNodeFromCommandsRequest) -> ResultPayload:
         # Issue the creation command first.
-        create_node_request = request.serialized_node_commands
+        create_node_request = request.serialized_node_commands.create_node_command
         create_node_result = GriptapeNodes().handle_request(create_node_request)
         if not isinstance(create_node_result, CreateNodeResultSuccess):
             details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to create node '{create_node_request.node_name}'."
@@ -1694,8 +1694,10 @@ class NodeManager:
         connections_to_serialize = []
         # How do i keep track fo node / parameters
         # I need to store node names and parameter names to UUID
+        unique_uuid_to_values = {}
+        value_hash_to_id = {}
         for node_name, _ in sorted_nodes:
-            result = self.on_serialize_node_to_commands(SerializeNodeToCommandsRequest(node_name=node_name))
+            result = self.on_serialize_node_to_commands(SerializeNodeToCommandsRequest(node_name=node_name, unique_parameter_uuid_to_values=unique_uuid_to_values, value_hash_to_unique_value_uuid=value_hash_to_id))
             if not result.succeeded():
                 # TODO : create error
                 return SerializeNodeToCommandsResultFailure()
@@ -1720,8 +1722,8 @@ class NodeManager:
         serialized_connections = []
         for connection in connections_to_serialize:
             connection = cast("Connection",connection)
-            source_node_uuid = node_commands[connection.get_source_node().name][0].serialized_node_commands.node_uuid
-            target_node_uuid = node_commands[connection.get_target_node().name][0].serialized_node_commands.node_uuid
+            source_node_uuid = node_commands[connection.get_source_node().name][0].node_uuid
+            target_node_uuid = node_commands[connection.get_target_node().name][0].node_uuid
             serialized_connections.append(
                 SerializedSelectedNodesCommands.IndirectConnectionSerialization(
                     source_node_uuid=source_node_uuid,
@@ -1733,6 +1735,8 @@ class NodeManager:
         # Final result for serialized node commands
         final_result = SerializedSelectedNodesCommands(serialized_node_commands=list(node_commands.values()), serialized_connection_commands=serialized_connections)
         GriptapeNodes.ContextManager().ClipBoard.node_commands = final_result
+        GriptapeNodes.ContextManager().ClipBoard.parameter_uuid_to_values = unique_uuid_to_values
+        self.on_deserialize_selected_nodes_from_commands(DeserializeSelectedNodesFromCommandsRequest())
         return SerializeSelectedNodestoCommandsResultSuccess(final_result)
 
     def on_deserialize_selected_nodes_from_commands(self, request:DeserializeSelectedNodesFromCommandsRequest) -> ResultPayload:
@@ -1850,7 +1854,11 @@ class NodeManager:
             # The value should be serialized. Add it to the map of uniques.
             unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
             value_hash_to_unique_value_uuid[value_id] = unique_uuid
-            unique_parameter_uuid_to_values[unique_uuid] = value
+            # TODO: check if this causes a failure
+            try:
+                unique_parameter_uuid_to_values[unique_uuid] = value.copy()
+            except Exception:
+                unique_parameter_uuid_to_values[unique_uuid] = value
 
         # Serialize it
         set_value_command = SetParameterValueRequest(
