@@ -1059,6 +1059,23 @@ class WorkflowManager:
 
         # Now let's try all this with the serialized flow.
 
+        # Get the engine version.
+        engine_version_request = GetEngineVersionRequest()
+        engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
+        if not isinstance(engine_version_result, GetEngineVersionResultSuccess):
+            details = f"Attempted to save workflow '{relative_file_path}', but failed getting the engine version."
+            logger.error(details)
+            return SaveWorkflowResultFailure()
+        try:
+            engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
+            engine_version = (
+                f"{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
+            )
+        except Exception as err:
+            details = f"Attempted to save workflow '{relative_file_path}', but failed getting the engine version: {err}"
+            logger.error(details)
+            return SaveWorkflowResultFailure()
+
         # Keep track of all of the nodes we create and the generated variable names for them.
         node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str] = {}
 
@@ -1080,6 +1097,25 @@ class WorkflowManager:
             logger.error(details)
             return SaveWorkflowResultFailure()
         serialized_flow_commands = serialized_flow_result.serialized_flow_commands
+
+        # Create the Workflow Metadata header.
+        workflow_metadata = WorkflowManager._generate_workflow_metadata(
+            file_name=file_name,
+            engine_version=engine_version,
+            creation_date=creation_date,
+            node_libraries_referenced=list(serialized_flow_commands.node_libraries_used),
+            published_workflow_id=prior_workflow.metadata.published_workflow_id if prior_workflow else None,
+        )
+        if workflow_metadata is None:
+            details = f"Attempted to save workflow '{relative_file_path}'. Failed to generate metadata."
+            logger.error(details)
+            return SaveWorkflowResultFailure()
+
+        metadata_block = WorkflowManager._generate_workflow_metadata_header(workflow_metadata=workflow_metadata)
+        if metadata_block is None:
+            details = f"Attempted to save workflow '{relative_file_path}'. Failed to generate metadata block."
+            logger.error(details)
+            return SaveWorkflowResultFailure()
 
         import_recorder = WorkflowManager.ImportRecorder()
         import_recorder.add_from_import("griptape_nodes.retained_mode.griptape_nodes", "GriptapeNodes")
@@ -1136,7 +1172,7 @@ class WorkflowManager:
         # Generate final code from ASTContainer
         ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
         import_output = import_recorder.generate_imports()
-        final_code_output = f"{import_output}\n\n{ast_output}"
+        final_code_output = f"{metadata_block}\n\n{import_output}\n\n{ast_output}"
 
         relative_serialized_file_path = f"{file_name}_serialize_test.py"
         serialized_file_path = config_manager.workspace_path.joinpath(relative_serialized_file_path)
@@ -1204,6 +1240,58 @@ class WorkflowManager:
                 import_lines.append(f"from {module_name} import {', '.join(sorted_class_names)}")
 
             return "\n".join(import_lines)
+
+    @staticmethod
+    def _generate_workflow_metadata(
+        file_name: str,
+        engine_version: str,
+        creation_date: datetime,
+        node_libraries_referenced: list[LibraryNameAndVersion],
+        published_workflow_id: str | None,
+    ) -> WorkflowMetadata | None:
+        local_tz = datetime.now().astimezone().tzinfo
+        workflow_metadata = WorkflowMetadata(
+            name=str(file_name),
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with=engine_version,
+            node_libraries_referenced=node_libraries_referenced,
+            creation_date=creation_date,
+            last_modified_date=datetime.now(tz=local_tz),
+            published_workflow_id=published_workflow_id,
+        )
+
+        return workflow_metadata
+
+    @staticmethod
+    def _generate_workflow_metadata_header(workflow_metadata: WorkflowMetadata) -> str | None:
+        try:
+            toml_doc = tomlkit.document()
+            toml_doc.add("dependencies", tomlkit.item([]))
+            griptape_tool_table = tomlkit.table()
+            metadata_dict = workflow_metadata.model_dump()
+            for key, value in metadata_dict.items():
+                # Strip out the Nones since TOML doesn't like those.
+                if value is not None:
+                    griptape_tool_table.add(key=key, value=value)
+            toml_doc["tool"] = tomlkit.table()
+            toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
+        except Exception as err:
+            details = f"Failed to get metadata into TOML format: {err}."
+            logger.error(details)
+            return None
+
+        # Format the metadata block with comment markers for each line
+        toml_lines = tomlkit.dumps(toml_doc).split("\n")
+        commented_toml_lines = ["# " + line for line in toml_lines]
+
+        # Create the complete metadata block
+        header = f"# /// {WorkflowManager.WORKFLOW_METADATA_HEADER}"
+        metadata_lines = [header]
+        metadata_lines.extend(commented_toml_lines)
+        metadata_lines.append("# ///")
+        metadata_block = "\n".join(metadata_lines)
+
+        return metadata_block
 
     @staticmethod
     def _generate_unique_values_code(
