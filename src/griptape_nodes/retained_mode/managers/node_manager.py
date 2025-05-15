@@ -1612,7 +1612,7 @@ class NodeManager:
                 node_type=node.__class__.__name__,
                 node_name=node_name,
                 specific_library_name=library_details.library_name,
-                metadata=node.metadata,
+                metadata=node.metadata.copy(),
             )
 
             # We're going to compare this node instance vs. a canonical one. Rez that one up.
