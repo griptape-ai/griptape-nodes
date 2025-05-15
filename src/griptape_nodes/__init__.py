@@ -13,7 +13,6 @@ with console.status("Loading Griptape Nodes...") as status:
     import sys
     import tarfile
     import tempfile
-    import webbrowser
     from pathlib import Path
     from typing import Literal
 
@@ -82,7 +81,6 @@ def _start_engine(*, no_update: bool) -> None:
         # Default init flow if there is no config directory
         console.print("[bold green]Config directory not found. Initializing...[/bold green]")
         _run_init()
-        webbrowser.open(NODES_APP_URL)
 
     # Confusing double negation -- If `no_update` is set, we want to skip the update
     if not no_update:
