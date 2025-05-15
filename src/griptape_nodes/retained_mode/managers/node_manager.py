@@ -1,5 +1,6 @@
 import logging
 import pickle
+from datetime import datetime
 from typing import Any, cast
 from uuid import uuid4
 
@@ -121,7 +122,6 @@ from griptape_nodes.retained_mode.events.validation_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from tld import Result
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -1700,10 +1700,9 @@ class NodeManager:
         """This will take the selected nodes in the Object manager and serialize them into commands."""
         nodes_to_serialize = request.nodes_to_serialize
         # Sorts tuples in order based on the timestamp
-        sorted_nodes = sorted(nodes_to_serialize, key=lambda x: x[1])
+        sorted_nodes = sorted(nodes_to_serialize, key=lambda x: datetime.fromisoformat(x[1]))
         node_commands = {}
         connections_to_serialize = []
-        # How do i keep track fo node / parameters
         # I need to store node names and parameter names to UUID
         unique_uuid_to_values = {}
         value_hash_to_id = {}
@@ -1757,14 +1756,16 @@ class NodeManager:
             serialized_node_commands=list(node_commands.values()), serialized_connection_commands=serialized_connections
         )
         # Set everything in the clipboard!
-        GriptapeNodes.ContextManager().ClipBoard().node_commands = final_result
-        GriptapeNodes.ContextManager().ClipBoard().parameter_uuid_to_values = unique_uuid_to_values
+        GriptapeNodes.ContextManager().clipboard.node_commands = final_result
+        GriptapeNodes.ContextManager().clipboard.parameter_uuid_to_values = unique_uuid_to_values
+        self.on_deserialize_selected_nodes_from_commands(DeserializeSelectedNodesFromCommandsRequest())
         return SerializeSelectedNodestoCommandsResultSuccess(final_result)
 
     def on_deserialize_selected_nodes_from_commands(
-        self, request: DeserializeSelectedNodesFromCommandsRequest
+        self,
+        request: DeserializeSelectedNodesFromCommandsRequest,  # noqa: ARG002
     ) -> ResultPayload:
-        commands = GriptapeNodes.ContextManager().ClipBoard().node_commands
+        commands = GriptapeNodes.ContextManager().clipboard.node_commands
         if commands is None:
             return DeserializeNodeFromCommandsResultFailure()
         connections = commands.serialized_connection_commands
@@ -1784,7 +1785,7 @@ class NodeManager:
                     # Set the Node name
                     param_request.node_name = result.node_name
                     # Set the new value
-                    table = GriptapeNodes.ContextManager().ClipBoard().parameter_uuid_to_values
+                    table = GriptapeNodes.ContextManager().clipboard.parameter_uuid_to_values
                     if table and parameter_command.unique_value_uuid in table:
                         param_request.value = table[parameter_command.unique_value_uuid]
                         set_parameter_result = GriptapeNodes.handle_request(
@@ -1805,7 +1806,7 @@ class NodeManager:
             if not result.succeeded():
                 details = f"Failed to create a connection between {connection_request.source_node_name} and {connection_request.target_node_name}"
                 logger.warning(details)
-        GriptapeNodes.ContextManager().ClipBoard().clear()
+        GriptapeNodes.ContextManager().clipboard.clear()
         return DeserializeSelectedNodesFromCommandsResultSuccess(node_names=list(node_uuid_to_name.values()))
 
     def on_duplicate_selected_nodes(self, request: DuplicateSelectedNodesRequest) -> ResultPayload:
@@ -1904,7 +1905,6 @@ class NodeManager:
             # The value should be serialized. Add it to the map of uniques.
             unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
             value_hash_to_unique_value_uuid[value_id] = unique_uuid
-            # TODO: check if this causes a failure
             try:
                 unique_parameter_uuid_to_values[unique_uuid] = value.copy()
             except Exception:

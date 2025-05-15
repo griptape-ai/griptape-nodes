@@ -31,6 +31,7 @@ class ContextManager:
     """
 
     _workflow_stack: list[ContextManager.WorkflowContextState]
+    clipboard: ClipBoard
 
     class WorkflowContextError(Exception):
         """Base exception for workflow context errors."""
@@ -263,7 +264,7 @@ class ContextManager:
     def __init__(self, event_manager: EventManager) -> None:
         """Initialize the context manager with empty workflow and flow stacks."""
         self._workflow_stack = []
-
+        self.clipboard = self.ClipBoard()
         event_manager.assign_manager_to_request_type(
             request_type=SetWorkflowContextRequest, callback=self.on_set_workflow_context_request
         )
