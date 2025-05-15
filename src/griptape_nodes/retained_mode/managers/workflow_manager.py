@@ -1154,7 +1154,7 @@ class WorkflowManager:
         serialized_flow_commands = serialized_flow_result.serialized_flow_commands
 
         # Create the Workflow Metadata header.
-        workflow_metadata = WorkflowManager._generate_workflow_metadata(
+        workflow_metadata = self._generate_workflow_metadata(
             file_name=file_name,
             engine_version=engine_version,
             creation_date=creation_date,
@@ -1166,7 +1166,7 @@ class WorkflowManager:
             logger.error(details)
             return SaveWorkflowResultFailure()
 
-        metadata_block = WorkflowManager._generate_workflow_metadata_header(workflow_metadata=workflow_metadata)
+        metadata_block = self._generate_workflow_metadata_header(workflow_metadata=workflow_metadata)
         if metadata_block is None:
             details = f"Attempted to save workflow '{relative_file_path}'. Failed to generate metadata block."
             logger.error(details)
@@ -1178,7 +1178,7 @@ class WorkflowManager:
         ast_container = ASTContainer()
 
         # Generate unique values code AST node.
-        unique_values_node = WorkflowManager._generate_unique_values_code(
+        unique_values_node = self._generate_unique_values_code(
             unique_parameter_uuid_to_values=serialized_flow_commands.unique_parameter_uuid_to_values,
             prefix="top_level",
             import_recorder=import_recorder,
@@ -1190,7 +1190,7 @@ class WorkflowManager:
 
         if create_flow_command is not None:
             # Generate create flow context AST node
-            create_flow_context_node = WorkflowManager._generate_create_flow(
+            create_flow_context_node = self._generate_create_flow(
                 create_flow_command, import_recorder, flow_creation_index
             )
             ast_container.add_node(create_flow_context_node)
@@ -1203,12 +1203,12 @@ class WorkflowManager:
             or len(serialized_flow_commands.sub_flows_commands) > 0
         ):
             # Create the "with..." statement
-            assign_flow_context_node = WorkflowManager._generate_assign_flow_context(
+            assign_flow_context_node = self._generate_assign_flow_context(
                 create_flow_command=create_flow_command, flow_creation_index=flow_creation_index
             )
 
             # Generate nodes in flow AST node. This will create the node and apply all element modifiers.
-            nodes_in_flow = WorkflowManager._generate_nodes_in_flow(
+            nodes_in_flow = self._generate_nodes_in_flow(
                 serialized_flow_commands, import_recorder, node_uuid_to_node_variable_name
             )
 
@@ -1217,7 +1217,7 @@ class WorkflowManager:
             ast_container.add_node(assign_flow_context_node)
 
             # Now generate the connection code.
-            connection_asts = WorkflowManager._generate_connections_code(
+            connection_asts = self._generate_connections_code(
                 serialized_connections=serialized_flow_commands.serialized_connections,
                 node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
                 import_recorder=import_recorder,
@@ -1225,7 +1225,7 @@ class WorkflowManager:
             ast_container.nodes.extend(connection_asts)
 
             # Now generate all the set parameter value code.
-            set_parameter_value_asts = WorkflowManager._generate_set_parameter_value_code(
+            set_parameter_value_asts = self._generate_set_parameter_value_code(
                 set_parameter_value_commands=serialized_flow_commands.set_parameter_value_commands,
                 node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
                 unique_values_dict_name="top_level_unique_values_dict",
@@ -1258,8 +1258,8 @@ class WorkflowManager:
         logger.info(details)
         return SaveWorkflowResultSuccess(file_path=str(serialized_file_path))
 
-    @staticmethod
     def _generate_workflow_metadata(
+        self,
         file_name: str,
         engine_version: str,
         creation_date: datetime,
@@ -1279,8 +1279,7 @@ class WorkflowManager:
 
         return workflow_metadata
 
-    @staticmethod
-    def _generate_workflow_metadata_header(workflow_metadata: WorkflowMetadata) -> str | None:
+    def _generate_workflow_metadata_header(self, workflow_metadata: WorkflowMetadata) -> str | None:
         try:
             toml_doc = tomlkit.document()
             toml_doc.add("dependencies", tomlkit.item([]))
@@ -1310,8 +1309,8 @@ class WorkflowManager:
 
         return metadata_block
 
-    @staticmethod
     def _generate_unique_values_code(
+        self,
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         prefix: str,
         import_recorder: ImportRecorder,
@@ -1377,9 +1376,8 @@ class WorkflowManager:
         full_ast = ast.Module(body=module_body, type_ignores=[])
         return full_ast
 
-    @staticmethod
     def _generate_create_flow(
-        create_flow_command: CreateFlowRequest, import_recorder: ImportRecorder, flow_creation_index: int
+        self, create_flow_command: CreateFlowRequest, import_recorder: ImportRecorder, flow_creation_index: int
     ) -> ast.AST:
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.flow_events", "CreateFlowRequest")
 
@@ -1432,9 +1430,8 @@ class WorkflowManager:
 
         return create_flow_result
 
-    @staticmethod
     def _generate_assign_flow_context(
-        create_flow_command: CreateFlowRequest | None, flow_creation_index: int
+        self, create_flow_command: CreateFlowRequest | None, flow_creation_index: int
     ) -> ast.With:
         context_manager = ast.Attribute(
             value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
@@ -1501,8 +1498,8 @@ class WorkflowManager:
 
         return with_stmt
 
-    @staticmethod
     def _generate_nodes_in_flow(
+        self,
         serialized_flow_commands: SerializedFlowCommands,
         import_recorder: ImportRecorder,
         node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
@@ -1510,7 +1507,7 @@ class WorkflowManager:
         # Generate node creation code and add it to the flow context
         node_creation_asts = []
         for node_index, serialized_node_command in enumerate(serialized_flow_commands.serialized_node_commands):
-            node_creation_ast = WorkflowManager._generate_node_creation_code(
+            node_creation_ast = self._generate_node_creation_code(
                 serialized_node_command,
                 node_index,
                 import_recorder,
@@ -1519,8 +1516,8 @@ class WorkflowManager:
             node_creation_asts.extend(node_creation_ast)
         return node_creation_asts
 
-    @staticmethod
     def _generate_node_creation_code(
+        self,
         serialized_node_command: SerializedNodeCommands,
         node_index: int,
         import_recorder: ImportRecorder,
@@ -1681,8 +1678,8 @@ class WorkflowManager:
 
         return node_creation_ast
 
-    @staticmethod
     def _generate_connections_code(
+        self,
         serialized_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],
         node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
         import_recorder: ImportRecorder,
@@ -1733,8 +1730,8 @@ class WorkflowManager:
 
         return connection_asts
 
-    @staticmethod
     def _generate_set_parameter_value_code(
+        self,
         set_parameter_value_commands: dict[
             SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
         ],
@@ -1746,14 +1743,14 @@ class WorkflowManager:
         for node_uuid, indirect_set_parameter_value_commands in set_parameter_value_commands.items():
             node_variable_name = node_uuid_to_node_variable_name[node_uuid]
             parameter_value_asts.extend(
-                WorkflowManager._generate_set_parameter_value_for_node(
+                self._generate_set_parameter_value_for_node(
                     node_variable_name, indirect_set_parameter_value_commands, unique_values_dict_name, import_recorder
                 )
             )
         return parameter_value_asts
 
-    @staticmethod
     def _generate_set_parameter_value_for_node(
+        self,
         node_variable_name: str,
         indirect_set_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand],
         unique_values_dict_name: str,
