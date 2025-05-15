@@ -434,6 +434,15 @@
       }
     },
     {
+      "class_name": "Webcam",
+      "file_path": "griptape_nodes_library/image/webcam.py",
+        "metadata": {
+          "category": "image",
+          "description": "Capture an image using the device's camera.",
+          "display_name": "Webcam"
+        }
+    },
+    {
       "class_name": "SaveImage",
       "file_path": "griptape_nodes_library/image/save_image.py",
       "metadata": {

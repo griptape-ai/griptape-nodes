@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import os
+import pickle
 import pkgutil
 import re
 import shutil
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -31,7 +33,15 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
-from griptape_nodes.retained_mode.events.flow_events import GetTopLevelFlowRequest, GetTopLevelFlowResultSuccess
+from griptape_nodes.retained_mode.events.flow_events import (
+    CreateFlowRequest,
+    GetTopLevelFlowRequest,
+    GetTopLevelFlowResultSuccess,
+    SerializedFlowCommands,
+    SerializedNodeCommands,
+    SerializeFlowToCommandsRequest,
+    SerializeFlowToCommandsResultSuccess,
+)
 from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
     GetLibraryMetadataResultSuccess,
@@ -880,7 +890,7 @@ class WorkflowManager:
         if file_name and WorkflowRegistry.has_workflow_with_name(file_name):
             # Get the metadata.
             prior_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
-            # We'll use it's creation date.
+            # We'll use its creation date.
             creation_date = prior_workflow.metadata.creation_date
 
         if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
@@ -1046,7 +1056,797 @@ class WorkflowManager:
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
         details = f"Successfully saved workflow to: {file_path}"
         logger.info(details)
+
+        # Now let's try all this with the serialized flow.
+        serialized_flow_result = self.on_save_workflow_request_as_serialized_flow(request=request)
+        if serialized_flow_result.failed():
+            details = "Attempted to save workflow with the serialized flow commands. Failed."
+            logger.error(details)
+            # Don't error out here, it's a problem with the serialized flow code.
+
         return SaveWorkflowResultSuccess(file_path=str(file_path))
+
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1189  matriculate this to be the main save function after vetting it.
+    def on_save_workflow_request_as_serialized_flow(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+        local_tz = datetime.now().astimezone().tzinfo
+
+        # Start with the file name provided; we may change it.
+        file_name = request.file_name
+
+        # See if we had an existing workflow for this.
+        prior_workflow = None
+        creation_date = None
+        if file_name and WorkflowRegistry.has_workflow_with_name(file_name):
+            # Get the metadata.
+            prior_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
+            # We'll use its creation date.
+            creation_date = prior_workflow.metadata.creation_date
+
+        if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
+            # Either a new workflow, or a backcompat situation.
+            creation_date = datetime.now(tz=local_tz)
+
+        # Let's see if this is a template file; if so, re-route it as a copy in the customer's workflow directory.
+        if prior_workflow and prior_workflow.metadata.is_template:
+            # Aha! User is attempting to save a template. Create a differently-named file in their workspace.
+            # Find the first available file name that doesn't conflict.
+            curr_idx = 1
+            free_file_found = False
+            while not free_file_found:
+                # Composite a new candidate file name to test.
+                new_file_name = f"{file_name}_{curr_idx}"
+                new_file_name_with_extension = f"{new_file_name}.py"
+                new_file_full_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(new_file_name_with_extension)
+                if new_file_full_path.exists():
+                    # Keep going.
+                    curr_idx += 1
+                else:
+                    free_file_found = True
+                    file_name = new_file_name
+
+        # Get file name stuff prepped.
+        if not file_name:
+            file_name = datetime.now(tz=local_tz).strftime("%d.%m_%H.%M")
+        relative_file_path = f"{file_name}.py"
+        file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+
+        # Get the engine version.
+        engine_version_request = GetEngineVersionRequest()
+        engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
+        if not isinstance(engine_version_result, GetEngineVersionResultSuccess):
+            details = f"Attempted to save workflow '{relative_file_path}', but failed getting the engine version."
+            logger.error(details)
+            return SaveWorkflowResultFailure()
+        try:
+            engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
+            engine_version = (
+                f"{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
+            )
+        except Exception as err:
+            details = f"Attempted to save workflow '{relative_file_path}', but failed getting the engine version: {err}"
+            logger.error(details)
+            return SaveWorkflowResultFailure()
+
+        # Keep track of all of the nodes we create and the generated variable names for them.
+        node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str] = {}
+
+        # Keep track of each flow and node index we've created.
+        flow_creation_index = 0
+
+        # Serialize from the top.
+        top_level_flow_request = GetTopLevelFlowRequest()
+        top_level_flow_result = GriptapeNodes.handle_request(top_level_flow_request)
+        if not isinstance(top_level_flow_result, GetTopLevelFlowResultSuccess):
+            details = (
+                f"Attempted to save workflow '{relative_file_path}'. Failed when requesting to get top level flow."
+            )
+            logger.error(details)
+            return SaveWorkflowResultFailure()
+        top_level_flow_name = top_level_flow_result.flow_name
+        serialized_flow_request = SerializeFlowToCommandsRequest(
+            flow_name=top_level_flow_name, include_create_flow_command=True
+        )
+        serialized_flow_result = GriptapeNodes.handle_request(serialized_flow_request)
+        if not isinstance(serialized_flow_result, SerializeFlowToCommandsResultSuccess):
+            details = f"Attempted to save workflow '{relative_file_path}'. Failed when serializing flow."
+            logger.error(details)
+            return SaveWorkflowResultFailure()
+        serialized_flow_commands = serialized_flow_result.serialized_flow_commands
+
+        # Create the Workflow Metadata header.
+        workflow_metadata = self._generate_workflow_metadata(
+            file_name=file_name,
+            engine_version=engine_version,
+            creation_date=creation_date,
+            node_libraries_referenced=list(serialized_flow_commands.node_libraries_used),
+            published_workflow_id=prior_workflow.metadata.published_workflow_id if prior_workflow else None,
+        )
+        if workflow_metadata is None:
+            details = f"Attempted to save workflow '{relative_file_path}'. Failed to generate metadata."
+            logger.error(details)
+            return SaveWorkflowResultFailure()
+
+        metadata_block = self._generate_workflow_metadata_header(workflow_metadata=workflow_metadata)
+        if metadata_block is None:
+            details = f"Attempted to save workflow '{relative_file_path}'. Failed to generate metadata block."
+            logger.error(details)
+            return SaveWorkflowResultFailure()
+
+        import_recorder = ImportRecorder()
+        import_recorder.add_from_import("griptape_nodes.retained_mode.griptape_nodes", "GriptapeNodes")
+
+        ast_container = ASTContainer()
+
+        # Generate unique values code AST node.
+        unique_values_node = self._generate_unique_values_code(
+            unique_parameter_uuid_to_values=serialized_flow_commands.unique_parameter_uuid_to_values,
+            prefix="top_level",
+            import_recorder=import_recorder,
+        )
+        ast_container.add_node(unique_values_node)
+
+        # See if this serialized flow has a create flow command; if it does, we'll need to insert that.
+        create_flow_command = serialized_flow_commands.create_flow_command
+
+        if create_flow_command is not None:
+            # Generate create flow context AST node
+            create_flow_context_node = self._generate_create_flow(
+                create_flow_command, import_recorder, flow_creation_index
+            )
+            ast_container.add_node(create_flow_context_node)
+
+        # Generate assign flow context AST node, if we have any children commands.
+        if (
+            len(serialized_flow_commands.serialized_node_commands) > 0
+            or len(serialized_flow_commands.serialized_connections) > 0
+            or len(serialized_flow_commands.set_parameter_value_commands) > 0
+            or len(serialized_flow_commands.sub_flows_commands) > 0
+        ):
+            # Create the "with..." statement
+            assign_flow_context_node = self._generate_assign_flow_context(
+                create_flow_command=create_flow_command, flow_creation_index=flow_creation_index
+            )
+
+            # Generate nodes in flow AST node. This will create the node and apply all element modifiers.
+            nodes_in_flow = self._generate_nodes_in_flow(
+                serialized_flow_commands, import_recorder, node_uuid_to_node_variable_name
+            )
+
+            # Add the nodes to the body of the Current Context flow's "with" statement
+            assign_flow_context_node.body.extend(nodes_in_flow)
+            ast_container.add_node(assign_flow_context_node)
+
+            # Now generate the connection code.
+            connection_asts = self._generate_connections_code(
+                serialized_connections=serialized_flow_commands.serialized_connections,
+                node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+                import_recorder=import_recorder,
+            )
+            ast_container.nodes.extend(connection_asts)
+
+            # Now generate all the set parameter value code.
+            set_parameter_value_asts = self._generate_set_parameter_value_code(
+                set_parameter_value_commands=serialized_flow_commands.set_parameter_value_commands,
+                node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+                unique_values_dict_name="top_level_unique_values_dict",
+                import_recorder=import_recorder,
+            )
+            ast_container.nodes.extend(set_parameter_value_asts)
+
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1190 do child workflows
+
+        # Generate final code from ASTContainer
+        ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
+        import_output = import_recorder.generate_imports()
+        final_code_output = f"{metadata_block}\n\n{import_output}\n\n{ast_output}"
+
+        # Create the pathing and write the file
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1189  matriculate this to be the main save function after vetting it.
+        relative_serialized_file_path = f"{file_name}_serialize_test.py"
+        serialized_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_serialized_file_path)
+        with serialized_file_path.open("w") as file:
+            file.write(final_code_output)
+
+        # save the created workflow as an entry in the JSON config file.
+        registered_workflows = WorkflowRegistry.list_workflows()
+        if file_name not in registered_workflows:
+            GriptapeNodes.ConfigManager().save_user_workflow_json(str(file_path))
+            WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
+        details = f"Successfully saved workflow to: {serialized_file_path}"
+        logger.info(details)
+        return SaveWorkflowResultSuccess(file_path=str(serialized_file_path))
+
+    def _generate_workflow_metadata(
+        self,
+        file_name: str,
+        engine_version: str,
+        creation_date: datetime,
+        node_libraries_referenced: list[LibraryNameAndVersion],
+        published_workflow_id: str | None,
+    ) -> WorkflowMetadata | None:
+        local_tz = datetime.now().astimezone().tzinfo
+        workflow_metadata = WorkflowMetadata(
+            name=str(file_name),
+            schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
+            engine_version_created_with=engine_version,
+            node_libraries_referenced=node_libraries_referenced,
+            creation_date=creation_date,
+            last_modified_date=datetime.now(tz=local_tz),
+            published_workflow_id=published_workflow_id,
+        )
+
+        return workflow_metadata
+
+    def _generate_workflow_metadata_header(self, workflow_metadata: WorkflowMetadata) -> str | None:
+        try:
+            toml_doc = tomlkit.document()
+            toml_doc.add("dependencies", tomlkit.item([]))
+            griptape_tool_table = tomlkit.table()
+            metadata_dict = workflow_metadata.model_dump()
+            for key, value in metadata_dict.items():
+                # Strip out the Nones since TOML doesn't like those.
+                if value is not None:
+                    griptape_tool_table.add(key=key, value=value)
+            toml_doc["tool"] = tomlkit.table()
+            toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
+        except Exception as err:
+            details = f"Failed to get metadata into TOML format: {err}."
+            logger.error(details)
+            return None
+
+        # Format the metadata block with comment markers for each line
+        toml_lines = tomlkit.dumps(toml_doc).split("\n")
+        commented_toml_lines = ["# " + line for line in toml_lines]
+
+        # Create the complete metadata block
+        header = f"# /// {WorkflowManager.WORKFLOW_METADATA_HEADER}"
+        metadata_lines = [header]
+        metadata_lines.extend(commented_toml_lines)
+        metadata_lines.append("# ///")
+        metadata_block = "\n".join(metadata_lines)
+
+        return metadata_block
+
+    def _generate_unique_values_code(
+        self,
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        prefix: str,
+        import_recorder: ImportRecorder,
+    ) -> ast.AST:
+        if len(unique_parameter_uuid_to_values) == 0:
+            return ast.Module(body=[], type_ignores=[])
+
+        import_recorder.add_import("pickle")
+
+        # Serialize the unique values as pickled strings.
+        unique_parameter_dict = {}
+        for uuid, unique_parameter_value in unique_parameter_uuid_to_values.items():
+            unique_parameter_bytes = pickle.dumps(unique_parameter_value)
+            # Encode the bytes as a string using latin1
+            unique_parameter_byte_str = unique_parameter_bytes.decode("latin1")
+            unique_parameter_dict[uuid] = unique_parameter_byte_str
+
+        # Generate a comment explaining what we're doing:
+        comment_text = (
+            "\n"
+            "1. We've collated all of the unique parameter values into a dictionary so that we do not have to duplicate them.\n"
+            "   This minimizes the size of the code, especially for large objects like serialized image files.\n"
+            "2. We're using a prefix so that it's clear which Flow these values are associated with.\n"
+            "3. The values are serialized using pickle, which is a binary format. This makes them harder to read, but makes\n"
+            "   them consistently save and load. It allows us to serialize complex objects like custom classes, which otherwise\n"
+            "   would be difficult to serialize.\n"
+        )
+
+        # Generate the dictionary of unique values
+        unique_values_dict_name = f"{prefix}_unique_values_dict"
+        unique_values_ast = ast.Assign(
+            targets=[ast.Name(id=unique_values_dict_name, ctx=ast.Store(), lineno=1, col_offset=0)],
+            value=ast.Dict(
+                keys=[ast.Constant(value=str(uuid), lineno=1, col_offset=0) for uuid in unique_parameter_dict],
+                values=[
+                    ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="pickle", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="loads",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[ast.Constant(value=byte_str.encode("latin1"), lineno=1, col_offset=0)],
+                        keywords=[],
+                        lineno=1,
+                        col_offset=0,
+                    )
+                    for byte_str in unique_parameter_dict.values()
+                ],
+                lineno=1,
+                col_offset=0,
+            ),
+            lineno=1,
+            col_offset=0,
+        )
+
+        # Create the final AST with comments
+        module_body = [
+            ast.Expr(value=ast.Constant(value=comment_text, lineno=1, col_offset=0), lineno=1, col_offset=0),
+            unique_values_ast,
+        ]
+        full_ast = ast.Module(body=module_body, type_ignores=[])
+        return full_ast
+
+    def _generate_create_flow(
+        self, create_flow_command: CreateFlowRequest, import_recorder: ImportRecorder, flow_creation_index: int
+    ) -> ast.AST:
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.flow_events", "CreateFlowRequest")
+
+        # Prepare arguments for CreateFlowRequest
+        create_flow_request_args = []
+
+        # Omit values that match default values.
+        if is_dataclass(create_flow_command):
+            for field in fields(create_flow_command):
+                field_value = getattr(create_flow_command, field.name)
+                if field_value != field.default:
+                    create_flow_request_args.append(
+                        ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
+                    )
+
+        # Construct the AST for creating the flow
+        flow_variable_name = f"flow{flow_creation_index}_name"
+        create_flow_result = ast.Assign(
+            targets=[ast.Name(id=flow_variable_name, ctx=ast.Store(), lineno=1, col_offset=0)],
+            value=ast.Attribute(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                        attr="handle_request",
+                        ctx=ast.Load(),
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    args=[
+                        ast.Call(
+                            func=ast.Name(id="CreateFlowRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                            args=[],
+                            keywords=create_flow_request_args,
+                            lineno=1,
+                            col_offset=0,
+                        )
+                    ],
+                    keywords=[],
+                    lineno=1,
+                    col_offset=0,
+                ),
+                attr="flow_name",
+                ctx=ast.Load(),
+                lineno=1,
+                col_offset=0,
+            ),
+            lineno=1,
+            col_offset=0,
+        )
+
+        return create_flow_result
+
+    def _generate_assign_flow_context(
+        self, create_flow_command: CreateFlowRequest | None, flow_creation_index: int
+    ) -> ast.With:
+        context_manager = ast.Attribute(
+            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+            attr="ContextManager",
+            ctx=ast.Load(),
+            lineno=1,
+            col_offset=0,
+        )
+
+        if create_flow_command is None:
+            # Construct AST for "GriptapeNodes.ContextManager().flow(GriptapeNodes.ContextManager().get_current_flow_name())"
+            flow_call = ast.Call(
+                func=ast.Attribute(
+                    value=ast.Call(func=context_manager, args=[], keywords=[], lineno=1, col_offset=0),
+                    attr="flow",
+                    ctx=ast.Load(),
+                    lineno=1,
+                    col_offset=0,
+                ),
+                args=[
+                    ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Call(func=context_manager, args=[], keywords=[], lineno=1, col_offset=0),
+                            attr="get_current_flow_name",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[],
+                        keywords=[],
+                        lineno=1,
+                        col_offset=0,
+                    )
+                ],
+                keywords=[],
+                lineno=1,
+                col_offset=0,
+            )
+        else:
+            # Construct AST for "GriptapeNodes.ContextManager().flow(flow{flow_creation_index}_name)"
+            flow_variable_name = f"flow{flow_creation_index}_name"
+            flow_call = ast.Call(
+                func=ast.Attribute(
+                    value=ast.Call(func=context_manager, args=[], keywords=[], lineno=1, col_offset=0),
+                    attr="flow",
+                    ctx=ast.Load(),
+                    lineno=1,
+                    col_offset=0,
+                ),
+                args=[ast.Name(id=flow_variable_name, ctx=ast.Load(), lineno=1, col_offset=0)],
+                keywords=[],
+                lineno=1,
+                col_offset=0,
+            )
+
+        # Construct the "with" statement with an empty body
+        with_stmt = ast.With(
+            items=[ast.withitem(context_expr=flow_call, optional_vars=None)],
+            body=[],  # Initialize the body as an empty list
+            type_comment=None,
+            lineno=1,
+            col_offset=0,
+        )
+
+        return with_stmt
+
+    def _generate_nodes_in_flow(
+        self,
+        serialized_flow_commands: SerializedFlowCommands,
+        import_recorder: ImportRecorder,
+        node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
+    ) -> list[ast.stmt]:
+        # Generate node creation code and add it to the flow context
+        node_creation_asts = []
+        for node_index, serialized_node_command in enumerate(serialized_flow_commands.serialized_node_commands):
+            node_creation_ast = self._generate_node_creation_code(
+                serialized_node_command,
+                node_index,
+                import_recorder,
+                node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+            )
+            node_creation_asts.extend(node_creation_ast)
+        return node_creation_asts
+
+    def _generate_node_creation_code(
+        self,
+        serialized_node_command: SerializedNodeCommands,
+        node_index: int,
+        import_recorder: ImportRecorder,
+        node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
+    ) -> list[ast.stmt]:
+        # Ensure necessary imports are recorded
+        import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "NodeMetadata")
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeRequest")
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.parameter_events", "AddParameterToNodeRequest"
+        )
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.parameter_events", "AlterParameterDetailsRequest"
+        )
+
+        # Generate the VARIABLE name that codegen will use for this node.
+        node_variable_name = f"node{node_index}_name"
+
+        # Construct AST for the function body
+        node_creation_ast = []
+
+        # Create the CreateNodeRequest parameters
+        create_node_request = serialized_node_command.create_node_command
+        create_node_request_args = []
+
+        if is_dataclass(create_node_request):
+            for field in fields(create_node_request):
+                field_value = getattr(create_node_request, field.name)
+                if field_value != field.default:
+                    create_node_request_args.append(
+                        ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
+                    )
+
+        # Handle the create node command and assign to node name
+        create_node_call_ast = ast.Assign(
+            targets=[ast.Name(id=node_variable_name, ctx=ast.Store(), lineno=1, col_offset=0)],
+            value=ast.Attribute(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                        attr="handle_request",
+                        ctx=ast.Load(),
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    args=[
+                        ast.Call(
+                            func=ast.Name(id="CreateNodeRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                            args=[],
+                            keywords=create_node_request_args,
+                            lineno=1,
+                            col_offset=0,
+                        )
+                    ],
+                    keywords=[],
+                    lineno=1,
+                    col_offset=0,
+                ),
+                attr="node_name",
+                ctx=ast.Load(),
+                lineno=1,
+                col_offset=0,
+            ),
+            lineno=1,
+            col_offset=0,
+        )
+
+        node_creation_ast.append(create_node_call_ast)
+
+        # Only add the 'with' statement if there are element_modification_commands
+        if serialized_node_command.element_modification_commands:
+            # Create the 'with' statement for the node context
+            with_stmt = ast.With(
+                items=[
+                    ast.withitem(
+                        context_expr=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Call(
+                                    func=ast.Attribute(
+                                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                                        attr="ContextManager",
+                                        ctx=ast.Load(),
+                                        lineno=1,
+                                        col_offset=0,
+                                    ),
+                                    args=[],
+                                    keywords=[],
+                                    lineno=1,
+                                    col_offset=0,
+                                ),
+                                attr="node",
+                                ctx=ast.Load(),
+                                lineno=1,
+                                col_offset=0,
+                            ),
+                            args=[ast.Name(id=f"node{node_index}_name", ctx=ast.Load(), lineno=1, col_offset=0)],
+                            keywords=[],
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        optional_vars=None,
+                    )
+                ],
+                body=[],
+                type_comment=None,
+                lineno=1,
+                col_offset=0,
+            )
+
+            # Generate handle_request calls for element_modification_commands
+            for element_command in serialized_node_command.element_modification_commands:
+                # Strip default values from element_command
+                element_command_args = []
+                if is_dataclass(element_command):
+                    for field in fields(element_command):
+                        field_value = getattr(element_command, field.name)
+                        if field_value != field.default:
+                            element_command_args.append(
+                                ast.keyword(
+                                    arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0)
+                                )
+                            )
+
+                # Create the handle_request call
+                handle_request_call = ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="handle_request",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(
+                                    id=element_command.__class__.__name__, ctx=ast.Load(), lineno=1, col_offset=0
+                                ),
+                                args=[],
+                                keywords=element_command_args,
+                                lineno=1,
+                                col_offset=0,
+                            )
+                        ],
+                        keywords=[],
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    lineno=1,
+                    col_offset=0,
+                )
+                with_stmt.body.append(handle_request_call)
+
+            node_creation_ast.append(with_stmt)
+
+        # Populate the dictionary with the node VARIABLE name and the node's UUID.
+        node_uuid_to_node_variable_name[serialized_node_command.node_uuid] = node_variable_name
+
+        return node_creation_ast
+
+    def _generate_connections_code(
+        self,
+        serialized_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],
+        node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
+        import_recorder: ImportRecorder,
+    ) -> list[ast.stmt]:
+        # Ensure necessary imports are recorded
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.connection_events", "CreateConnectionRequest"
+        )
+
+        connection_asts = []
+
+        for connection in serialized_connections:
+            # Match the connection's node UUID back to its variable name.
+            source_node_variable_name = node_uuid_to_node_variable_name[connection.source_node_uuid]
+            target_node_variable_name = node_uuid_to_node_variable_name[connection.target_node_uuid]
+
+            create_connection_request_args = [
+                ast.keyword(
+                    arg="source_node_name",
+                    value=ast.Name(id=source_node_variable_name, ctx=ast.Load()),
+                ),
+                ast.keyword(arg="source_parameter_name", value=ast.Constant(value=connection.source_parameter_name)),
+                ast.keyword(
+                    arg="target_node_name",
+                    value=ast.Name(id=target_node_variable_name, ctx=ast.Load()),
+                ),
+                ast.keyword(arg="target_parameter_name", value=ast.Constant(value=connection.target_parameter_name)),
+                ast.keyword(arg="initial_setup", value=ast.Constant(value=True)),
+            ]
+
+            create_connection_call = ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load()), attr="handle_request", ctx=ast.Load()
+                    ),
+                    args=[
+                        ast.Call(
+                            func=ast.Name(id="CreateConnectionRequest", ctx=ast.Load()),
+                            args=[],
+                            keywords=create_connection_request_args,
+                        )
+                    ],
+                    keywords=[],
+                )
+            )
+
+            connection_asts.append(create_connection_call)
+
+        return connection_asts
+
+    def _generate_set_parameter_value_code(
+        self,
+        set_parameter_value_commands: dict[
+            SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
+        ],
+        node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
+        unique_values_dict_name: str,
+        import_recorder: ImportRecorder,
+    ) -> list[ast.stmt]:
+        parameter_value_asts = []
+        for node_uuid, indirect_set_parameter_value_commands in set_parameter_value_commands.items():
+            node_variable_name = node_uuid_to_node_variable_name[node_uuid]
+            parameter_value_asts.extend(
+                self._generate_set_parameter_value_for_node(
+                    node_variable_name, indirect_set_parameter_value_commands, unique_values_dict_name, import_recorder
+                )
+            )
+        return parameter_value_asts
+
+    def _generate_set_parameter_value_for_node(
+        self,
+        node_variable_name: str,
+        indirect_set_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand],
+        unique_values_dict_name: str,
+        import_recorder: ImportRecorder,
+    ) -> list[ast.stmt]:
+        if not indirect_set_parameter_value_commands:
+            return []
+
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.parameter_events", "SetParameterValueRequest"
+        )
+
+        set_parameter_value_asts = []
+        with_node_context = ast.With(
+            items=[
+                ast.withitem(
+                    context_expr=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                            attr="ContextManager().node",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        args=[ast.Name(id=node_variable_name, ctx=ast.Load(), lineno=1, col_offset=0)],
+                        keywords=[],
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    optional_vars=None,
+                )
+            ],
+            body=[],
+            lineno=1,
+            col_offset=0,
+        )
+
+        for command in indirect_set_parameter_value_commands:
+            value_lookup = ast.Subscript(
+                value=ast.Name(id=unique_values_dict_name, ctx=ast.Load(), lineno=1, col_offset=0),
+                slice=ast.Constant(value=str(command.unique_value_uuid), lineno=1, col_offset=0),
+                ctx=ast.Load(),
+                lineno=1,
+                col_offset=0,
+            )
+
+            set_parameter_value_request_call = ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                        attr="handle_request",
+                        ctx=ast.Load(),
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    args=[
+                        ast.Call(
+                            func=ast.Name(id="SetParameterValueRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                            args=[],
+                            keywords=[
+                                ast.keyword(
+                                    arg="parameter_name",
+                                    value=ast.Constant(
+                                        value=command.set_parameter_value_command.parameter_name, lineno=1, col_offset=0
+                                    ),
+                                ),
+                                ast.keyword(
+                                    arg="node_name",
+                                    value=ast.Name(id=node_variable_name, ctx=ast.Load(), lineno=1, col_offset=0),
+                                ),
+                                ast.keyword(arg="value", value=value_lookup, lineno=1, col_offset=0),
+                                ast.keyword(
+                                    arg="initial_setup", value=ast.Constant(value=True, lineno=1, col_offset=0)
+                                ),
+                                ast.keyword(
+                                    arg="is_output",
+                                    value=ast.Constant(
+                                        value=command.set_parameter_value_command.is_output, lineno=1, col_offset=0
+                                    ),
+                                ),
+                            ],
+                            lineno=1,
+                            col_offset=0,
+                        )
+                    ],
+                    keywords=[],
+                    lineno=1,
+                    col_offset=0,
+                ),
+                lineno=1,
+                col_offset=0,
+            )
+            with_node_context.body.append(set_parameter_value_request_call)
+
+        set_parameter_value_asts.append(with_node_context)
+        return set_parameter_value_asts
 
     def _convert_parameter_to_minimal_dict(self, parameter: Parameter) -> dict[str, Any]:
         """Converts a parameter to a minimal dictionary for loading up a dynamic, black-box Node."""
@@ -1365,3 +2165,65 @@ class WorkflowManager:
             details = f"Failed to publish workflow '{request.workflow_name}'. Error: {e}"
             logger.error(details)
             return PublishWorkflowResultFailure()
+
+
+class ASTContainer:
+    """ASTContainer is a helper class to keep track of AST nodes and generate final code from them."""
+
+    def __init__(self) -> None:
+        """Initialize an empty list to store AST nodes."""
+        self.nodes = []
+
+    def add_node(self, node: ast.AST) -> None:
+        self.nodes.append(node)
+
+    def get_ast(self) -> list[ast.AST]:
+        return self.nodes
+
+
+@dataclass
+class ImportRecorder:
+    """Recorder to keep track of imports and generate code for them."""
+
+    imports: set[str]
+    from_imports: dict[str, set[str]]
+
+    def __init__(self) -> None:
+        """Initialize the recorder."""
+        self.imports = set()
+        self.from_imports = {}
+
+    def add_import(self, module_name: str) -> None:
+        """Add an import to the recorder.
+
+        Args:
+            module_name (str): The module name to import.
+        """
+        self.imports.add(module_name)
+
+    def add_from_import(self, module_name: str, class_name: str) -> None:
+        """Add a from-import to the recorder.
+
+        Args:
+            module_name (str): The module name to import from.
+            class_name (str): The class name to import.
+        """
+        if module_name not in self.from_imports:
+            self.from_imports[module_name] = set()
+        self.from_imports[module_name].add(class_name)
+
+    def generate_imports(self) -> str:
+        """Generate the import code from the recorded imports.
+
+        Returns:
+            str: The generated code.
+        """
+        import_lines = []
+        for module_name in sorted(self.imports):
+            import_lines.append(f"import {module_name}")  # noqa: PERF401
+
+        for module_name, class_names in sorted(self.from_imports.items()):
+            sorted_class_names = sorted(class_names)
+            import_lines.append(f"from {module_name} import {', '.join(sorted_class_names)}")
+
+        return "\n".join(import_lines)
