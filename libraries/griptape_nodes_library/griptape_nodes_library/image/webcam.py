@@ -19,7 +19,7 @@ class Webcam(DataNode):
         self.add_parameter(image_parameter)
 
     def process(self) -> None:
-        image = self.parameter_values["image"]
+        image = self.get_parameter_value("image")
 
         if isinstance(image, dict):
             image_artifact = dict_to_image_url_artifact(image)
