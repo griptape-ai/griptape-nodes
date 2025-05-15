@@ -214,10 +214,6 @@ class SerializedNodeCommands:
     node_library_details: LibraryNameAndVersion
     node_uuid: NodeUUID = field(default_factory=lambda: SerializedNodeCommands.NodeUUID(str(uuid4())))
 
-@dataclass
-class SerializedSelectedNodeCommands:
-    node_commands: list[SerializedNodeCommands]
-    parameter_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand]
 
 @dataclass
 @PayloadRegistry.register
@@ -263,7 +259,6 @@ class SerializeNodeToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloa
 class SerializeNodeToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
-
 @dataclass
 @PayloadRegistry.register
 class SerializeSelectedNodestoCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
@@ -293,7 +288,7 @@ class SerializeSelectedNodestoCommandsResultSuccess(WorkflowNotAlteredMixin, Res
         target_node_uuid: SerializedNodeCommands.NodeUUID
         target_parameter_name: str
 
-    serialized_node_commands: SerializedSelectedNodeCommands
+    serialized_node_commands: list[SerializeNodeToCommandsResultSuccess]
     # Connection commands are None if it's a Serialized Flow Commands
     serialized_connection_commands: list[IndirectConnectionSerialization] | None
 
@@ -305,7 +300,7 @@ class SerializeSelectedNodestoCommandsResultFailure(WorkflowNotAlteredMixin, Res
 @dataclass
 @PayloadRegistry.register
 class DeserializeSelectedNodesFromCommandsRequest(WorkflowAlteredMixin, RequestPayload):
-    serialized_node_commands: SerializedSelectedNodeCommands
+    serialized_node_commands: list[SerializeNodeToCommandsResultSuccess]
     serialzed_connection_commands: list[SerializeSelectedNodestoCommandsResultSuccess.IndirectConnectionSerialization]
 
 @dataclass

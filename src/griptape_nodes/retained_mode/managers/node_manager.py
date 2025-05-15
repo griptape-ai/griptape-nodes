@@ -76,7 +76,6 @@ from griptape_nodes.retained_mode.events.node_events import (
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultFailure,
     SerializeNodeToCommandsResultSuccess,
-    SerializedSelectedNodeCommands,
     SetNodeMetadataRequest,
     SetNodeMetadataResultFailure,
     SetNodeMetadataResultSuccess,
@@ -1689,7 +1688,6 @@ class NodeManager:
         # Sorts tuples in order based on the timestamp
         sorted_nodes = sorted(nodes_to_serialize, key=lambda x: x[1])
         node_commands = {}
-        parameter_commands = []
         connections_to_serialize = []
         # How do i keep track fo node / parameters 
         # I need to store node names and parameter names to UUID 
@@ -1699,9 +1697,8 @@ class NodeManager:
                 # TODO : create error
                 return SerializeNodeToCommandsResultFailure()
             result = cast("SerializeNodeToCommandsResultSuccess",result)
-            node_commands[node_name] = result.serialized_node_commands
+            node_commands[node_name] = result
             # How do I keep parameter UUIds?
-            parameter_commands.extend(result.set_parameter_value_commands)
             flow_name = self.get_node_parent_flow_by_name(node_name)
             flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
             if flow is None:
@@ -1730,7 +1727,7 @@ class NodeManager:
                 )
             )
         # Final result for serialized node commands
-        final_result = SerializedSelectedNodeCommands(node_commands=list(node_commands.values()), parameter_commands=parameter_commands)
+        final_result = list(node_commands.values())
 
         # Now we have the node and parameter commands. Get Connections
         return SerializeSelectedNodestoCommandsResultSuccess(serialized_node_commands=final_result, serialized_connection_commands=serialized_connections)
@@ -1740,16 +1737,19 @@ class NodeManager:
         serialized_node_commands = request.serialized_node_commands
         connections = request.serialzed_connection_commands
         node_uuid_to_name = {}
-        for node_command in serialized_node_commands.node_commands:
-            result = self.on_deserialize_node_from_commands(DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command))
+        for node_command in serialized_node_commands:
+            node_serialization = node_command.serialized_node_commands
+            result = self.on_deserialize_node_from_commands(DeserializeNodeFromCommandsRequest(serialized_node_commands=node_serialization))
             if not result.succeeded():
                 return DeserializeSelectedNodesFromCommandsResultFailure()
             result = cast("DeserializeNodeFromCommandsResultSuccess",result)
-            node_uuid_to_name[node_command.node_uuid] = result.node_name
-        for parameter_command in serialized_node_commands.parameter_commands:
-            param_request = parameter_command.set_parameter_value_command
-            param_request.node_name = node_uuid_to_name[parameter_command.unique_value_uuid]
-            set_parameter_result = GriptapeNodes.handle_request(parameter_command.set_parameter_value_command)
+            node_uuid_to_name[node_serialization.node_uuid] = result.node_name
+            with GriptapeNodes.ContextManager().node(result.node_name):
+                for parameter_command in node_command.set_parameter_value_commands:
+                    param_request = parameter_command.set_parameter_value_command
+                    param_request.node_name = result.node_name
+                    set_parameter_result = GriptapeNodes.handle_request(parameter_command.set_parameter_value_command)
+                    # TODO: What do i need to do to finish this off
         for connection_command in connections:
             pass
         return DeserializeSelectedNodesFromCommandsResultSuccess(node_names=list(node_uuid_to_name.values()))
