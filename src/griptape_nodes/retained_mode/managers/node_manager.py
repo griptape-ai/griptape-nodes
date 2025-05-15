@@ -1680,16 +1680,17 @@ class NodeManager:
 
     def on_serialize_selected_nodes_to_commands(self, request: SerializeSelectedNodestoCommandsRequest) -> ResultPayload:
         """This will take the selected nodes in the Object manager and serialize them into commands."""
-        # TODO: If this is all of the nodes in a flow, should it just serialize the whole flow?
         nodes_to_serialize = request.nodes_to_serialize
         # Sorts tuples in order based on the timestamp
         sorted_nodes = sorted(nodes_to_serialize, key=lambda x: x[1])
         node_commands = []
         parameter_commands = []
+        connections_to_serialize = []
+        # I need to store node names and parameter names to UUID 
         for node_name, _ in sorted_nodes:
             result = self.on_serialize_node_to_commands(SerializeNodeToCommandsRequest(node_name=node_name))
             if not result.succeeded():
-                # TODO : create error 
+                # TODO : create error
                 return SerializeNodeToCommandsResultFailure()
             result = cast("SerializeNodeToCommandsResultSuccess",result)
             node_commands.append(result.serialized_node_commands)
@@ -1699,8 +1700,16 @@ class NodeManager:
             if flow is None:
                 # TODO: Create error
                 return SerializeNodeToCommandsResultFailure()
-            # Get outgoing connections
-            # Set up Connections with Node name and parameter UUID
+            node_connections = [
+                flow.connections.connections[connection_id]
+                for category_dict in flow.connections.outgoing_index[node_name].values()
+                for connection_id in category_dict
+            ]
+            for connection in node_connections:
+                if connection.target_node.name not in sorted_nodes:
+                    continue
+                connections_to_serialize.append(connection)
+
         # Now we have the node and parameter commands. Get Connections
         return SerializeSelectedNodestoCommandsResultSuccess(serialized_node_commands=node_commands, serialized_connection_commands=[])
             # now we have all of our node commands. we need connections as well.
