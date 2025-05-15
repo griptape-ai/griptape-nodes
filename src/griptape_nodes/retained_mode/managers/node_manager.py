@@ -76,6 +76,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
+    SerializeSelectedNodesToCommandsRequest,
     SerializedNodeCommands,
     SerializedSelectedNodesCommands,
     SerializeNodeToCommandsRequest,
@@ -1695,14 +1696,17 @@ class NodeManager:
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)
 
     def on_serialize_selected_nodes_to_commands(
-        self, request: SerializeSelectedNodestoCommandsRequest
+        self, request: SerializeSelectedNodesToCommandsRequest
     ) -> ResultPayload:
         """This will take the selected nodes in the Object manager and serialize them into commands."""
         nodes_to_serialize = request.nodes_to_serialize
         # Sorts tuples in order based on the timestamp
         sorted_nodes = sorted(nodes_to_serialize, key=lambda x: datetime.fromisoformat(x[1]))
+        # This is node_uuid to the serialization command.
         node_commands = {}
         connections_to_serialize = []
+        # This is also node_uuid to the parameter serialization command.
+        parameter_commands = {}
         # I need to store node names and parameter names to UUID
         unique_uuid_to_values = {}
         value_hash_to_id = {}
@@ -1715,12 +1719,12 @@ class NodeManager:
                     value_hash_to_unique_value_uuid=value_hash_to_id,
                 )
             )
-            if not result.succeeded():
+            if not isinstance(result, SerializeNodeToCommandsResultSuccess):
                 details = f"Attempted to serialize a selection of Nodes. Failed to serialize {node_name}."
                 logger.error(details)
                 return SerializeNodeToCommandsResultFailure()
-            result = cast("SerializeNodeToCommandsResultSuccess", result)
-            node_commands[node_name] = (result.serialized_node_commands, result.set_parameter_value_commands)
+            node_commands[node_name] = result.serialized_node_commands
+            parameter_commands[result.serialized_node_commands.node_uuid] = result.set_parameter_value_commands
             try:
                 flow_name = self.get_node_parent_flow_by_name(node_name)
                 flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
@@ -1740,9 +1744,8 @@ class NodeManager:
                     connections_to_serialize.append(connection)
         serialized_connections = []
         for connection in connections_to_serialize:
-            connection = cast("Connection", connection)
-            source_node_uuid = node_commands[connection.get_source_node().name][0].node_uuid
-            target_node_uuid = node_commands[connection.get_target_node().name][0].node_uuid
+            source_node_uuid = node_commands[connection.get_source_node().name].node_uuid
+            target_node_uuid = node_commands[connection.get_target_node().name].node_uuid
             serialized_connections.append(
                 SerializedSelectedNodesCommands.IndirectConnectionSerialization(
                     source_node_uuid=source_node_uuid,
@@ -1753,7 +1756,7 @@ class NodeManager:
             )
         # Final result for serialized node commands
         final_result = SerializedSelectedNodesCommands(
-            serialized_node_commands=list(node_commands.values()), serialized_connection_commands=serialized_connections
+            serialized_node_commands=list(node_commands.values()), serialized_connection_commands=serialized_connections, set_parameter_value_commands=parameter_commands
         )
         # Set everything in the clipboard!
         GriptapeNodes.ContextManager().clipboard.node_commands = final_result
@@ -1769,7 +1772,7 @@ class NodeManager:
             return DeserializeSelectedNodesFromCommandsResultFailure()
         connections = commands.serialized_connection_commands
         node_uuid_to_name = {}
-        for node_command, parameter_commands in commands.serialized_node_commands:
+        for node_command in commands.serialized_node_commands:
             result = self.on_deserialize_node_from_commands(
                 DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command)
             )
@@ -1779,6 +1782,7 @@ class NodeManager:
             result = cast("DeserializeNodeFromCommandsResultSuccess", result)
             node_uuid_to_name[node_command.node_uuid] = result.node_name
             with GriptapeNodes.ContextManager().node(result.node_name):
+                parameter_commands = commands.set_parameter_value_commands[node_command.node_uuid]
                 for parameter_command in parameter_commands:
                     param_request = parameter_command.set_parameter_value_command
                     # Set the Node name
@@ -1810,7 +1814,7 @@ class NodeManager:
 
     def on_duplicate_selected_nodes(self, request: DuplicateSelectedNodesRequest) -> ResultPayload:
         result = GriptapeNodes.handle_request(
-            SerializeSelectedNodestoCommandsRequest(nodes_to_serialize=request.nodes_to_duplicate)
+            SerializeSelectedNodesToCommandsRequest(nodes_to_serialize=request.nodes_to_duplicate)
         )
         if not result.succeeded():
             details = "Failed to serialized selected nodes."

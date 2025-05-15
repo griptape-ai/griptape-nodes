@@ -123,7 +123,7 @@ class ObjectManager:
             logger.error(details)
             return ClearAllObjectStateResultFailure()
 
-        # Clare the current context.
+        # Clear the current context.
         context_mgr = GriptapeNodes.ContextManager()
         while context_mgr.has_current_workflow():
             while context_mgr.has_current_flow():
@@ -133,7 +133,7 @@ class ObjectManager:
                     context_mgr.pop_node()
                 context_mgr.pop_flow()
             context_mgr.pop_workflow()
-
+        context_mgr.clipboard.clear()
         details = "Successfully cleared all object state (deleted everything)."
         logger.debug(details)
         return ClearAllObjectStateResultSuccess()
