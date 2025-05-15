@@ -1731,13 +1731,9 @@ class NodeManager:
             )
         # Final result for serialized node commands
         final_result = list(node_commands.values())
-
+        self.on_deserialize_selected_nodes_from_commands(request=DeserializeSelectedNodesFromCommandsRequest(serialized_node_commands=final_result, serialized_connection_commands=serialized_connections))
         # Now we have the node and parameter commands. Get Connections
-        yay =  SerializeSelectedNodestoCommandsResultSuccess(serialized_node_commands=final_result, serialized_connection_commands=serialized_connections)
-        # testing
-        #self.on_deserialize_selected_nodes_from_commands(request=DeserializeSelectedNodesFromCommandsRequest(serialized_node_commands=final_result, serialzed_connection_commands=serialized_connections))
-            # now we have all of our node commands. we need connections as well.
-        return yay
+        return SerializeSelectedNodestoCommandsResultSuccess(serialized_node_commands=final_result, serialized_connection_commands=serialized_connections)
 
     def on_deserialize_selected_nodes_from_commands(self, request:DeserializeSelectedNodesFromCommandsRequest) -> ResultPayload:
         serialized_node_commands = request.serialized_node_commands
@@ -1753,8 +1749,17 @@ class NodeManager:
             with GriptapeNodes.ContextManager().node(result.node_name):
                 for parameter_command in node_command.set_parameter_value_commands:
                     param_request = parameter_command.set_parameter_value_command
+                    # Set the Node name
                     param_request.node_name = result.node_name
-                    set_parameter_result = GriptapeNodes.handle_request(parameter_command.set_parameter_value_command)
+                    # Set the new value
+                    try:
+                        old_node_name = node_serialization.create_node_command.node_name
+                        node = GriptapeNodes.NodeManager().get_node_by_name(old_node_name)
+                        value = node.get_parameter_value(param_request.parameter_name)
+                        param_request.value = value
+                        set_parameter_result = GriptapeNodes.handle_request(parameter_command.set_parameter_value_command)
+                    except Exception as e:
+                        logger.warning("Cannot set value. Sorry.")
                     # TODO: What do i need to do to finish this off
         # create Connections
         for connection_command in connections:
