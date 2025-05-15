@@ -60,6 +60,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     DeserializeSelectedNodesFromCommandsRequest,
     DeserializeSelectedNodesFromCommandsResultFailure,
     DeserializeSelectedNodesFromCommandsResultSuccess,
+    DuplicateSelectedNodesRequest,
+    DuplicateSelectedNodesResultFailure,
+    DuplicateSelectedNodesResultSuccess,
     GetAllNodeInfoRequest,
     GetAllNodeInfoResultFailure,
     GetAllNodeInfoResultSuccess,
@@ -118,6 +121,7 @@ from griptape_nodes.retained_mode.events.validation_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from tld import Result
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -172,6 +176,7 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(
             DeserializeSelectedNodesFromCommandsRequest, self.on_deserialize_selected_nodes_from_commands
         )
+        event_manager.assign_manager_to_request_type(DuplicateSelectedNodesRequest, self.on_duplicate_selected_nodes)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old node name and its parent.
@@ -1802,6 +1807,21 @@ class NodeManager:
                 logger.warning(details)
         GriptapeNodes.ContextManager().ClipBoard().clear()
         return DeserializeSelectedNodesFromCommandsResultSuccess(node_names=list(node_uuid_to_name.values()))
+
+    def on_duplicate_selected_nodes(self, request: DuplicateSelectedNodesRequest) -> ResultPayload:
+        result = GriptapeNodes.handle_request(
+            SerializeSelectedNodestoCommandsRequest(nodes_to_serialize=request.nodes_to_duplicate)
+        )
+        if not result.succeeded():
+            details = "Failed to serialized selected nodes."
+            logger.error(details)
+            return DuplicateSelectedNodesResultFailure()
+        GriptapeNodes.handle_request(DeserializeSelectedNodesFromCommandsRequest())
+        if not result.succeeded():
+            details = "Failed to deserialize selected nodes."
+            logger.error(details)
+            return DuplicateSelectedNodesResultFailure()
+        return DuplicateSelectedNodesResultSuccess()
 
     @staticmethod
     def _manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:

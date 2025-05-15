@@ -18,6 +18,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+from httpx import RequestError
 
 
 @dataclass
@@ -309,7 +310,7 @@ class SerializeSelectedNodestoCommandsResultFailure(WorkflowNotAlteredMixin, Res
 
 @dataclass
 @PayloadRegistry.register
-class DeserializeSelectedNodesFromCommandsRequest(WorkflowAlteredMixin, RequestPayload):
+class DeserializeSelectedNodesFromCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
     pass
 
 
@@ -321,7 +322,7 @@ class DeserializeSelectedNodesFromCommandsResultSuccess(WorkflowAlteredMixin, Re
 
 @dataclass
 @PayloadRegistry.register
-class DeserializeSelectedNodesFromCommandsResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
+class DeserializeSelectedNodesFromCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -340,4 +341,22 @@ class DeserializeNodeFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPaylo
 @dataclass
 @PayloadRegistry.register
 class DeserializeNodeFromCommandsResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DuplicateSelectedNodesRequest(WorkflowNotAlteredMixin, RequestPayload):
+    nodes_to_duplicate: list[tuple[str, str]]
+
+
+@dataclass
+@PayloadRegistry.register
+class DuplicateSelectedNodesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DuplicateSelectedNodesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
