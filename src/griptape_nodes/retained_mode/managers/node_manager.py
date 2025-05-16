@@ -1848,12 +1848,14 @@ class NodeManager:
         return diff
 
     @staticmethod
-    def _handle_value_hashing(
+    def _handle_value_hashing(  # noqa: PLR0913
         value: Any,
-        value_hash_to_unique_value_uuid: dict,
+        serialized_parameter_value_tracker: SerializedParameterValueTracker,
         unique_parameter_uuid_to_values: dict,
-        is_output: bool,  # noqa: FBT001
         parameter_name: str,
+        node_name: str,
+        *,
+        is_output: bool,
     ) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:
         try:
             hash(value)
@@ -1876,17 +1878,18 @@ class NodeManager:
                 # Confirm that the author wants this parameter and/or class to be serialized.
                 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1179 ID a method for classes and/or parameters to be flagged for NOT serializability.
 
-            # Check if we can serialize it.
-            try:
-                pickle.dumps(value)
-            except Exception:
-                return None
-            # The value should be serialized. Add it to the map of uniques.
-            unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
-            value_hash_to_unique_value_uuid[value_id] = unique_uuid
-            try:
-                unique_parameter_uuid_to_values[unique_uuid] = value.copy()
-            except Exception:
+                # Check if we can serialize it.
+                try:
+                    pickle.dumps(value)
+                except Exception as err:
+                    # Not serializable; don't waste time on future attempts.
+                    serialized_parameter_value_tracker.add_as_not_serializable(value_id)
+
+                    details = f"Attempted to serialize parameter '{parameter_name}' on node '{node_name}'. The value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable. Error: {err}."
+                    logger.warning(details)
+                    return None
+                # The value should be serialized. Add it to the map of uniques.
+                unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
                 unique_parameter_uuid_to_values[unique_uuid] = value
                 serialized_parameter_value_tracker.add_as_serializable(value_id, unique_uuid)
 
@@ -1908,7 +1911,7 @@ class NodeManager:
         parameter: Parameter,
         node: BaseNode,
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
-        value_hash_to_unique_value_uuid: dict[Any, SerializedNodeCommands.UniqueParameterValueUUID],
+        serialized_parameter_value_tracker: SerializedParameterValueTracker,
     ) -> list[SerializedNodeCommands.IndirectSetParameterValueCommand] | None:
         """Generates code to save a parameter value for a node in a Griptape workflow.
 
@@ -1924,7 +1927,7 @@ class NodeManager:
             parameter (Parameter): The parameter object containing metadata
             node (BaseNode): The node object that contains the parameter
             unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Dictionary mapping unique value UUIDs to values
-            value_hash_to_unique_value_uuid (dict[Any, SerializedNodeCommands.UniqueParameterValueUUID]): Dictionary mapping value hashes to unique value UUIDs
+            serialized_parameter_value_tracker (SerializedParameterValueTracker): Object mapping maintaining value hashes to unique value UUIDs, and non-serializable values
 
         Returns:
             None (if no value to be serialized) or an IndirectSetParameterValueCommand linking the value to the unique value map
@@ -1948,7 +1951,12 @@ class NodeManager:
         commands = []
         if internal_value is not None:
             internal_command = NodeManager._handle_value_hashing(
-                internal_value, value_hash_to_unique_value_uuid, unique_parameter_uuid_to_values, False, parameter.name
+                value=internal_value,
+                serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                is_output=False,
+                parameter_name=parameter.name,
+                node_name=node.name,
             )
             if internal_command is None:
                 details = f"Attempted to serialize set value for parameter'{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable."
@@ -1957,7 +1965,12 @@ class NodeManager:
                 commands.append(internal_command)
         if output_value is not None:
             output_command = NodeManager._handle_value_hashing(
-                output_value, value_hash_to_unique_value_uuid, unique_parameter_uuid_to_values, True, parameter.name
+                value=output_value,
+                serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                is_output=True,
+                parameter_name=parameter.name,
+                node_name=node.name,
             )
             if output_command is None:
                 details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable."
