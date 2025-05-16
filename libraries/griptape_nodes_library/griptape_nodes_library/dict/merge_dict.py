@@ -33,6 +33,7 @@ class MergeDicts(DataNode):
                 allowed_modes={ParameterMode.OUTPUT},
                 default_value={},
                 tooltip="The merged dictionary",
+                ui_options={"hide_property": True},
             )
         )
 
