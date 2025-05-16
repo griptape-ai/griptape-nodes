@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
 
 
@@ -15,7 +15,6 @@ class FilePathParameter:
                 name=self._parameter_name,
                 input_types=["str"],
                 type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="prompt",
             )
         )

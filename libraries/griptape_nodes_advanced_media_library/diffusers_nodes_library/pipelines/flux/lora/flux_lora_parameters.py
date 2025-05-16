@@ -13,7 +13,6 @@ class FluxLoraParameters:
                 default_value=1.0,
                 input_types=["float"],
                 type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="prompt",
                 ui_options={"slider": {"min_val": 0.0, "max_val": 1.0}, "step": 0.01},
             )
