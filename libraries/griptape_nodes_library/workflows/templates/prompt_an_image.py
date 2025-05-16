@@ -1,89 +1,132 @@
-from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd  # noqa: N813
-
-# Create flows
-cmd.create_flow()
-
-# Create nodes
-cmd.create_node(
-    node_type="Note",
-    node_name="ReadMe",
-    metadata={"position": {"x": 0, "y": -400}, "size": {"width": 1000, "height": 350}},
-)
-cmd.create_node(
-    node_type="Note",
-    node_name="NextStep",
-    metadata={"position": {"x": 500, "y": 450}, "size": {"width": 1000, "height": 200}},
-)
-cmd.create_node(
-    node_type="GenerateImage",
-    node_name="GenerateImage_1",
-    specific_library_name="Griptape Nodes Library",
-    metadata={
-        "position": {"x": 0, "y": 0},
-        "library_node_metadata": {
-            "category": "Image",
-            "description": "Generates images using configurable image drivers",
-        },
-        "library": "Griptape Nodes Library",
-        "node_type": "GenerateImage",
-        "category": "Image",
-    },
-)
-
-# Set parameter values
-cmd.set_value(
-    "ReadMe.note",
-    """This workflow serves as the lesson material for the tutorial located at:
-
-https://docs.griptapenodes.com/en/stable/ftue/01_prompt_an_image/FTUE_01_prompt_an_image/
-
-The concepts covered are:
-
-- Opening saved workflows
-- Using text prompts to generate images using the GenerateImage node
-- Running entire workflows, or just specific nodes""",
-)
-cmd.set_value(
-    "NextStep.note",
-    """If you're following along with our Getting Started tutorials, check out the next workflow: Coordinating Agents.
-
-Load the next tutorial page here:
-https://docs.griptapenodes.com/en/stable/ftue/02_coordinating_agents/FTUE_02_coordinating_agents/""",
-)
-cmd.set_value("GenerateImage_1.prompt", "A potato making an oil painting\n\n")
-cmd.set_value("GenerateImage_1.enhance_prompt", True)
-cmd.set_value(
-    "GenerateImage_1.output",
-    {
-        "type": "ImageArtifact",
-        "id": "89a02c8165d449b1898c1b3abf3e4262",
-        "reference": None,
-        "meta": {
-            "model": "dall-e-3",
-            "prompt": "A hyper-realistic close-up of a potato artist meticulously painting an oil masterpiece on a canvas, set in a rustic studio illuminated by the warm, golden light of late afternoon. The potato has a textured, earthy skin with subtle imperfections, and is holding a fine paintbrush with a delicate grip. The canvas features vibrant brushstrokes, hinting at an abstract landscape. Dust particles float gently in the air, catching the sunlight to create a dreamy sense of depth. The background is softly blurred with a shallow depth of field, showcasing wooden easels, jars of paint, and scattered brushes. A slight vignette frames the image, drawing focus to the potato and its artistic endeavor. The color palette is rich and harmonious, with warm browns, deep greens, and golden yellows complementing the potato's natural tones, while pops of crimson and cobalt blue from the painting add visual intrigue.",
-        },
-        "name": "image_artifact_250412022658_lkwk.png",
-        "value": "",
-        "format": "png",
-        "width": 1024,
-        "height": 1024,
-    },
-)
-
-# Create connections
 # /// script
 # dependencies = []
 #
 # [tool.griptape-nodes]
 # name = "prompt_an_image"
-# description = "The simplest image generation workflow."
 # image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/libraries/griptape_nodes_library/workflows/templates/thumbnail_prompt_an_image.webp"
-# schema_version = "0.1.0"
-# engine_version_created_with = "0.14.1"
-# node_libraries_referenced = [["Griptape Nodes Library", "0.1.0"]]
+# description = "The simplest image generation workflow."
+# schema_version = "0.3.0"
+# engine_version_created_with = "0.33.1"
+# node_libraries_referenced = [["Griptape Nodes Library", "0.34.0"]]
 # is_griptape_provided = true
 # is_template = true
 # creation_date = 2025-05-01T03:00:00.000000+00:00
-# last_modified_date = 2025-05-01T03:00:00.000000+00:00
+# last_modified_date = 2025-05-18T06:42:57.915422+12:00
 #
 # ///
+
+import pickle
+
+from griptape_nodes.node_library.library_registry import NodeMetadata
+from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest
+from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
+from griptape_nodes.retained_mode.events.parameter_events import (
+    SetParameterValueRequest,
+)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+"""
+1. We've collated all of the unique parameter values into a dictionary so that we do not have to duplicate them.
+   This minimizes the size of the code, especially for large objects like serialized image files.
+2. We're using a prefix so that it's clear which Flow these values are associated with.
+3. The values are serialized using pickle, which is a binary format. This makes them harder to read, but makes
+   them consistently save and load. It allows us to serialize complex objects like custom classes, which otherwise
+   would be difficult to serialize.
+"""
+top_level_unique_values_dict = {
+    "67e24d2c-ea73-445d-854e-86414469075b": pickle.loads(
+        b"\x80\x04\x95X\x01\x00\x00\x00\x00\x00\x00XQ\x01\x00\x00This workflow serves as the lesson material for the tutorial located at:\n\nhttps://docs.griptapenodes.com/en/stable/ftue/01_prompt_an_image/FTUE_01_prompt_an_image/\n\nThe concepts covered are:\n\n- Opening saved workflows\n- Using text prompts to generate images using the GenerateImage node\n- Running entire workflows, or just specific nodes\x94."
+    ),
+    "dfc1b718-92fc-450f-b4b8-53964c394721": pickle.loads(
+        b"\x80\x04\x95\xf8\x00\x00\x00\x00\x00\x00\x00\x8c\xf4If you're following along with our Getting Started tutorials, check out the next workflow: Coordinating Agents.\n\nLoad the next tutorial page here:\nhttps://docs.griptapenodes.com/en/stable/ftue/02_coordinating_agents/FTUE_02_coordinating_agents/\x94."
+    ),
+    "11f349d6-79e4-49fb-9eb0-9567ae7aa424": pickle.loads(
+        b"\x80\x04\x95#\x00\x00\x00\x00\x00\x00\x00\x8c\x1fA potato making an oil painting\x94."
+    ),
+}
+
+flow0_name = GriptapeNodes.handle_request(CreateFlowRequest(parent_flow_name=None)).flow_name
+
+with GriptapeNodes.ContextManager().flow(flow0_name):
+    node0_name = GriptapeNodes.handle_request(
+        CreateNodeRequest(
+            node_type="Note",
+            specific_library_name="Griptape Nodes Library",
+            node_name="ReadMe",
+            metadata={
+                "position": {"x": 0, "y": -400},
+                "size": {"width": 1000, "height": 350},
+                "library_node_metadata": NodeMetadata(
+                    category="Base", description="Note node", display_name="Note", tags=None
+                ),
+                "library": "Griptape Nodes Library",
+                "node_type": "Note",
+            },
+        )
+    ).node_name
+    node1_name = GriptapeNodes.handle_request(
+        CreateNodeRequest(
+            node_type="Note",
+            specific_library_name="Griptape Nodes Library",
+            node_name="NextStep",
+            metadata={
+                "position": {"x": 485.64269456986915, "y": 530.922994242555},
+                "size": {"width": 1000, "height": 200},
+                "library_node_metadata": NodeMetadata(
+                    category="Base", description="Note node", display_name="Note", tags=None
+                ),
+                "library": "Griptape Nodes Library",
+                "node_type": "Note",
+                "category": "Base",
+            },
+        )
+    ).node_name
+    node2_name = GriptapeNodes.handle_request(
+        CreateNodeRequest(
+            node_type="GenerateImage",
+            specific_library_name="Griptape Nodes Library",
+            node_name="GenerateImage_1",
+            metadata={
+                "position": {"x": 8.029015213045938, "y": 4.982630454782765},
+                "tempId": "placing-1747420608205-t8bruk",
+                "library_node_metadata": {"category": "image", "description": "GenerateImage node"},
+                "library": "Griptape Nodes Library",
+                "node_type": "GenerateImage",
+                "category": "image",
+                "size": {"width": 422, "height": 725},
+            },
+        )
+    ).node_name
+
+with GriptapeNodes.ContextManager().node(node0_name):
+    GriptapeNodes.handle_request(
+        SetParameterValueRequest(
+            parameter_name="note",
+            node_name=node0_name,
+            value=top_level_unique_values_dict["67e24d2c-ea73-445d-854e-86414469075b"],
+            initial_setup=True,
+            is_output=False,
+        )
+    )
+
+with GriptapeNodes.ContextManager().node(node1_name):
+    GriptapeNodes.handle_request(
+        SetParameterValueRequest(
+            parameter_name="note",
+            node_name=node1_name,
+            value=top_level_unique_values_dict["dfc1b718-92fc-450f-b4b8-53964c394721"],
+            initial_setup=True,
+            is_output=False,
+        )
+    )
+
+with GriptapeNodes.ContextManager().node(node2_name):
+    GriptapeNodes.handle_request(
+        SetParameterValueRequest(
+            parameter_name="prompt",
+            node_name=node2_name,
+            value=top_level_unique_values_dict["11f349d6-79e4-49fb-9eb0-9567ae7aa424"],
+            initial_setup=True,
+            is_output=False,
+        )
+    )
