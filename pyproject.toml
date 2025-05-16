@@ -95,4 +95,7 @@ convention = "google"
 venvPath = "."
 venv = ".venv"
 include = ["."]
+exclude = [
+    "libraries/griptape_nodes_library/workflows/templates/**/*"
+]
 pythonVersion = "3.12"
