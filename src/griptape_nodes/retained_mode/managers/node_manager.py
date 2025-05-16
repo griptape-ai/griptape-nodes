@@ -69,6 +69,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
     SerializedNodeCommands,
+    SerializedParameterValueTracker,
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultFailure,
     SerializeNodeToCommandsResultSuccess,
@@ -1633,8 +1634,7 @@ class NodeManager:
                 set_param_value_request = NodeManager._handle_parameter_value_saving(
                     parameter=parameter,
                     node=node,
-                    unique_parameter_uuid_to_values=request.unique_parameter_uuid_to_values,
-                    value_hash_to_unique_value_uuid=request.value_hash_to_unique_value_uuid,
+                    serialized_parameter_value_tracker=request.serialized_parameter_value_tracker,
                 )
                 if set_param_value_request is not None:
                     set_value_commands.append(set_param_value_request)
@@ -1689,8 +1689,7 @@ class NodeManager:
     def _handle_parameter_value_saving(
         parameter: Parameter,
         node: BaseNode,
-        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
-        value_hash_to_unique_value_uuid: dict[Any, SerializedNodeCommands.UniqueParameterValueUUID],
+        serialized_parameter_value_tracker: SerializedParameterValueTracker,
     ) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:
         """Generates code to save a parameter value for a node in a Griptape workflow.
 
@@ -1705,8 +1704,10 @@ class NodeManager:
         Args:
             parameter (Parameter): The parameter object containing metadata
             node (BaseNode): The node object that contains the parameter
-            unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Dictionary mapping unique value UUIDs to values
-            value_hash_to_unique_value_uuid (dict[Any, SerializedNodeCommands.UniqueParameterValueUUID]): Dictionary mapping value hashes to unique value UUIDs
+            unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Dictionary mapping unique
+                value UUIDs to values
+            serialized_parameter_value_tracker (SerializedParameterValueTracker): Map of hash values to unique parameter value UUIDs,
+                or values already declared as not serializable
 
         Returns:
             None (if no value to be serialized) or an IndirectSetParameterValueCommand linking the value to the unique value map
@@ -1738,26 +1739,33 @@ class NodeManager:
             # Couldn't get a hash. Use the object's ID
             value_id = id(value)
 
-        if value_id in value_hash_to_unique_value_uuid:
-            # We have a match on this value. We're all good.
-            unique_uuid = value_hash_to_unique_value_uuid[value_id]
-        else:
-            # This value is new for us.
-
-            # Confirm that the author wants this parameter and/or class to be serialized.
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1179 ID a method for classes and/or parameters to be flagged for NOT serializability.
-
-            # Check if we can serialize it.
-            try:
-                pickle.dumps(value)
-            except Exception as err:
-                details = f"Attempted to serialize parameter '{parameter.name}' on node '{node.name}'. The value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable. Error: {err}."
-                logger.warning(details)
+        tracker_status = serialized_parameter_value_tracker.get_tracker_state(value_id)
+        match tracker_status:
+            case SerializedParameterValueTracker.TrackerState.SERIALIZABLE:
+                # We have a match on this value. We're all good.
+                unique_uuid = serialized_parameter_value_tracker.get_uuid_for_value_hash(value_id)
+            case SerializedParameterValueTracker.TrackerState.NOT_SERIALIZABLE:
+                # This value is not serializable. Bail.
                 return None
-            # The value should be serialized. Add it to the map of uniques.
-            unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
-            value_hash_to_unique_value_uuid[value_id] = unique_uuid
-            unique_parameter_uuid_to_values[unique_uuid] = value
+            case SerializedParameterValueTracker.TrackerState.NOT_IN_TRACKER:
+                # This value is new for us.
+
+                # Confirm that the author wants this parameter and/or class to be serialized.
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1179 ID a method for classes and/or parameters to be flagged for NOT serializability.
+
+                # Check if we can serialize it.
+                try:
+                    pickle.dumps(value)
+                except Exception as err:
+                    # Not serializable; don't waste time on future attempts.
+                    serialized_parameter_value_tracker.add_as_not_serializable(value_id)
+
+                    details = f"Attempted to serialize parameter '{parameter.name}' on node '{node.name}'. The value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable. Error: {err}."
+                    logger.warning(details)
+                    return None
+                # The value should be serialized. Add it to the map of uniques.
+                unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
+                serialized_parameter_value_tracker.add_as_serializable(value_id, unique_uuid)
 
         # Serialize it
         set_value_command = SetParameterValueRequest(

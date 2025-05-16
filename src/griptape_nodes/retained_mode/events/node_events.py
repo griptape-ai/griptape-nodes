@@ -1,5 +1,5 @@
-from abc import ABC
 from dataclasses import dataclass, field
+from enum import Enum, auto
 from typing import Any, NewType
 from uuid import uuid4
 
@@ -217,17 +217,53 @@ class SerializedNodeCommands:
 
 
 @dataclass
-class ValueSerializationState:
-    class State(ABC):
-        pass
+class SerializedParameterValueTracker:
+    """Tracks the serialization state of parameter value hashes.
 
-    class Serializable(State):
-        uuid: SerializedNodeCommands.UniqueParameterValueUUID
+    This class manages the relationship between value hashes and their unique UUIDs,
+    indicating whether a value is serializable or not. It allows the addition of both
+    serializable and non-serializable value hashes and provides methods to retrieve
+    the serialization state and unique UUIDs for given value hashes.
 
-    class NotSerializable(State):
-        pass
+    Attributes:
+        _value_hash_to_unique_value_uuid (dict[Any, SerializedNodeCommands.UniqueParameterValueUUID]):
+            A dictionary mapping value hashes to their unique UUIDs when they are serializable.
+        _non_serializable_value_hashes (set[Any]):
+            A set of value hashes that are not serializable.
+    """
 
-    _value_hash_to_unique_value_uuid: dict[Any, State]
+    class TrackerState(Enum):
+        """State of a value hash in the tracker."""
+
+        NOT_IN_TRACKER = auto()
+        SERIALIZABLE = auto()
+        NOT_SERIALIZABLE = auto()
+
+    _value_hash_to_unique_value_uuid: dict[Any, SerializedNodeCommands.UniqueParameterValueUUID] = field(
+        default_factory=dict
+    )
+    _non_serializable_value_hashes: set[Any] = field(default_factory=set)
+
+    def get_tracker_state(self, value_hash: Any) -> TrackerState:
+        if value_hash in self._non_serializable_value_hashes:
+            return SerializedParameterValueTracker.TrackerState.NOT_SERIALIZABLE
+        if value_hash in self._value_hash_to_unique_value_uuid:
+            return SerializedParameterValueTracker.TrackerState.SERIALIZABLE
+        return SerializedParameterValueTracker.TrackerState.NOT_IN_TRACKER
+
+    def add_as_serializable(
+        self, value_hash: Any, unique_value_uuid: SerializedNodeCommands.UniqueParameterValueUUID
+    ) -> None:
+        self._value_hash_to_unique_value_uuid[value_hash] = unique_value_uuid
+
+    def add_as_not_serializable(self, value_hash: Any) -> None:
+        self._non_serializable_value_hashes.add(value_hash)
+
+    def get_uuid_for_value_hash(self, value_hash: Any) -> SerializedNodeCommands.UniqueParameterValueUUID:
+        return self._value_hash_to_unique_value_uuid[value_hash]
+
+    def get_serializable_count(self) -> int:
+        return len(self._value_hash_to_unique_value_uuid)
 
 
 @dataclass
@@ -240,17 +276,17 @@ class SerializeNodeToCommandsRequest(RequestPayload):
         unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Mapping of
             UUIDs to unique parameter values. Serialization will check a parameter's value against these, inserting
             new values if necessary. NOTE that it modifies the dict in-place.
-        value_hash_to_unique_value_uuid (dict[Any, SerializedNodeCommands.UniqueParameterValueUUID]): Mapping of hash
-            values to unique parameter value UUIDs. If serialization adds new unique values, they are added to this map.
-            NOTE that it modifies the dict in-place.
+        serialized_parameter_value_tracker (SerializedParameterValueTracker): Mapping of hash values to unique parameter
+            value UUIDs. If serialization adds new unique values, they are added to this map. Unserializable values
+            are preserved to prevent duplicate serialization attempts.
     """
 
     node_name: str | None = None
     unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] = field(
         default_factory=dict
     )
-    value_hash_to_unique_value_uuid: dict[Any, SerializedNodeCommands.UniqueParameterValueUUID] = field(
-        default_factory=dict
+    serialized_parameter_value_tracker: SerializedParameterValueTracker = field(
+        default_factory=SerializedParameterValueTracker
     )
 
 
