@@ -76,6 +76,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     DeleteNodeRequest,
     DeleteNodeResultFailure,
     DeserializeNodeFromCommandsRequest,
+    SerializedParameterValueTracker,
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultSuccess,
 )
@@ -1132,7 +1133,7 @@ class FlowManager:
         # Track all parameter values that were in use by these Nodes (maps UUID to Parameter value)
         unique_parameter_uuid_to_values = {}
         # And track how values map into that map.
-        value_hash_to_unique_value_uuid = {}
+        serialized_parameter_value_tracker = SerializedParameterValueTracker()
 
         with GriptapeNodes.ContextManager().flow(flow_name):
             # The base flow creation, if desired.
@@ -1162,7 +1163,7 @@ class FlowManager:
                     # This might be dangerous if done over the wire.
                     serialize_node_request = SerializeNodeToCommandsRequest(
                         unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,  # Unique values
-                        value_hash_to_unique_value_uuid=value_hash_to_unique_value_uuid,  # Mapping values to UUIDs
+                        serialized_parameter_value_tracker=serialized_parameter_value_tracker,  # Mapping values to UUIDs
                     )
                     serialize_node_result = GriptapeNodes().handle_request(serialize_node_request)
                     if not isinstance(serialize_node_result, SerializeNodeToCommandsResultSuccess):
