@@ -1648,14 +1648,14 @@ class NodeManager:
             set_value_commands = []
             for parameter in node.parameters:
                 # SetParameterValueRequest event
-                set_param_value_request = NodeManager._handle_parameter_value_saving(
+                set_param_value_requests = NodeManager._handle_parameter_value_saving(
                     parameter=parameter,
                     node=node,
                     unique_parameter_uuid_to_values=request.unique_parameter_uuid_to_values,
                     value_hash_to_unique_value_uuid=request.value_hash_to_unique_value_uuid,
                 )
-                if set_param_value_request is not None:
-                    set_value_commands.append(set_param_value_request)
+                if set_param_value_requests is not None:
+                    set_value_commands.extend(set_param_value_requests)
 
         # Hooray
         serialized_node_commands = SerializedNodeCommands(
@@ -1895,7 +1895,7 @@ class NodeManager:
         node: BaseNode,
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         value_hash_to_unique_value_uuid: dict[Any, SerializedNodeCommands.UniqueParameterValueUUID],
-    ) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:
+    ) -> list[SerializedNodeCommands.IndirectSetParameterValueCommand] | None:
         """Generates code to save a parameter value for a node in a Griptape workflow.
 
         This function handles the process of creating commands that will reconstruct and set
@@ -1926,20 +1926,27 @@ class NodeManager:
         if parameter.name in node.parameter_output_values:
             # Output values are more important.
             output_value = node.parameter_output_values[parameter.name]
-            is_output = True
         if parameter.name in node.parameter_values:
             # Check the internal parameter values
             internal_value = node.get_parameter_value(parameter.name)
-            is_output = False
         if output_value is None and internal_value is None:
             # No value set; bail.
             return None
-
         # We have a value. Attempt to get a hash for it to see if it matches one
         # we've already indexed.
-        command = _handle_value_hashing()
-        if command is None:
-            details = f"Attempted to serialize parameter '{parameter.name}' on node '{node.name}'. The value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable. Error: {err}."
-            logger.warning(details)
-            return None
-        return command
+        commands = []
+        if internal_value is not None:
+            internal_command = NodeManager._handle_value_hashing(internal_value, value_hash_to_unique_value_uuid, unique_parameter_uuid_to_values, False, parameter.name)
+            if internal_command is None:
+                details = f"Attempted to serialize set value for parameter'{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable."
+                logger.warning(details)
+            else:
+                commands.append(internal_command)
+        if output_value is not None:
+            output_command = NodeManager._handle_value_hashing(output_value, value_hash_to_unique_value_uuid, unique_parameter_uuid_to_values, True, parameter.name)
+            if output_command is None:
+                details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable."
+                logger.warning(details)
+            else:
+                commands.append(output_command)
+        return commands if commands else None
