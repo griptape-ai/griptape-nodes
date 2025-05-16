@@ -87,7 +87,7 @@ check/format:
 
 .PHONY: check/lint
 check/lint:
-	@uv run ruff check --exclude "libraries/**/tests/**/*"
+	@uv run ruff check --exclude "libraries/**/tests/**/*" --exclude "libraries/griptape_nodes_library/workflows/templates/**/*"
 
 .PHONY: check/types
 check/types:
