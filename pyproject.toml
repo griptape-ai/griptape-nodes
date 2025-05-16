@@ -97,6 +97,9 @@ venv = ".venv"
 include = ["."]
 exclude = [
     "libraries/griptape_nodes_library/workflows/templates/**/*",
-    ".venv"
+    ".venv",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*"
 ]
 pythonVersion = "3.12"
