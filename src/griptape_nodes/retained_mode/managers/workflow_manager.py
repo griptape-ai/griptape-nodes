@@ -104,7 +104,9 @@ logger = logging.getLogger("griptape_nodes")
 
 class WorkflowManager:
     WORKFLOW_METADATA_HEADER: ClassVar[str] = "script"
-    MAX_MINOR_VERSION_DEVIATION: ClassVar[int] = 2
+    MAX_MINOR_VERSION_DEVIATION: ClassVar[int] = (
+        100  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1219 <- make the versioning enforcement softer after we get a release going
+    )
     EPOCH_START = datetime(tzinfo=UTC, year=1970, month=1, day=1)
 
     class WorkflowStatus(StrEnum):
