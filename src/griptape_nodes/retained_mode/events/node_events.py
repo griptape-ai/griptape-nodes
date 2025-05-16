@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, NewType
+from typing import Any, NamedTuple, NewType
 from uuid import uuid4
 
 from griptape_nodes.exe_types.node_types import NodeResolutionState
@@ -312,6 +312,84 @@ class SerializeNodeToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 
 
 @dataclass
+class SerializedSelectedNodesCommands:
+    @dataclass
+    class IndirectConnectionSerialization:
+        """Companion class to create connections from node IDs in a serialization, since we can't predict the names.
+
+        These are UUIDs referencing into the serialized_node_commands we maintain.
+
+        Attributes:
+            source_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the source node, as stored within the serialization.
+            source_parameter_name (str): Name of the source parameter.
+            target_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the target node.
+            target_parameter_name (str): Name of the target parameter.
+        """
+
+        source_node_uuid: SerializedNodeCommands.NodeUUID
+        source_parameter_name: str
+        target_node_uuid: SerializedNodeCommands.NodeUUID
+        target_parameter_name: str
+
+    serialized_node_commands: list[SerializedNodeCommands]
+    set_parameter_value_commands: dict[
+        SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
+    ]
+    serialized_connection_commands: list[IndirectConnectionSerialization]
+
+
+class NodeToTimestamp(NamedTuple):
+    """A named tuple for storing the node_name and the timestamp passed on selection.
+
+    Fields:
+        node_name: The name of the node selected
+        timestamp: The time the node was selected
+    """
+
+    node_name: str
+    timestamp: str
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeSelectedNodesToCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
+    # They will be passed with node_name, timestamp
+    nodes_to_serialize: list[NodeToTimestamp]
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeSelectedNodesToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    # They will be passed with node_name, timestamp
+    # Could be a flow command if it's all nodes in a flow.
+    serialized_selected_node_commands: SerializedSelectedNodesCommands
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeSelectedNodesToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeSelectedNodesFromCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeSelectedNodesFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    node_names: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeSelectedNodesFromCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
+
+
+@dataclass
 @PayloadRegistry.register
 class DeserializeNodeFromCommandsRequest(RequestPayload):
     serialized_node_commands: SerializedNodeCommands
@@ -326,4 +404,22 @@ class DeserializeNodeFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPaylo
 @dataclass
 @PayloadRegistry.register
 class DeserializeNodeFromCommandsResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DuplicateSelectedNodesRequest(WorkflowNotAlteredMixin, RequestPayload):
+    nodes_to_duplicate: list[NodeToTimestamp]
+
+
+@dataclass
+@PayloadRegistry.register
+class DuplicateSelectedNodesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DuplicateSelectedNodesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass

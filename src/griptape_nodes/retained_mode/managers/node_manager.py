@@ -1,5 +1,6 @@
 import logging
 import pickle
+from datetime import datetime
 from typing import Any, cast
 from uuid import uuid4
 
@@ -23,6 +24,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayloadFailure,
 )
 from griptape_nodes.retained_mode.events.connection_events import (
+    CreateConnectionRequest,
     DeleteConnectionRequest,
     DeleteConnectionResultFailure,
     IncomingConnection,
@@ -56,6 +58,12 @@ from griptape_nodes.retained_mode.events.node_events import (
     DeserializeNodeFromCommandsRequest,
     DeserializeNodeFromCommandsResultFailure,
     DeserializeNodeFromCommandsResultSuccess,
+    DeserializeSelectedNodesFromCommandsRequest,
+    DeserializeSelectedNodesFromCommandsResultFailure,
+    DeserializeSelectedNodesFromCommandsResultSuccess,
+    DuplicateSelectedNodesRequest,
+    DuplicateSelectedNodesResultFailure,
+    DuplicateSelectedNodesResultSuccess,
     GetAllNodeInfoRequest,
     GetAllNodeInfoResultFailure,
     GetAllNodeInfoResultSuccess,
@@ -69,10 +77,13 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
     SerializedNodeCommands,
+    SerializedSelectedNodesCommands,
     SerializedParameterValueTracker,
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultFailure,
     SerializeNodeToCommandsResultSuccess,
+    SerializeSelectedNodesToCommandsRequest,
+    SerializeSelectedNodesToCommandsResultSuccess,
     SetNodeMetadataRequest,
     SetNodeMetadataResultFailure,
     SetNodeMetadataResultSuccess,
@@ -160,6 +171,13 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(
             DeserializeNodeFromCommandsRequest, self.on_deserialize_node_from_commands
         )
+        event_manager.assign_manager_to_request_type(
+            SerializeSelectedNodesToCommandsRequest, self.on_serialize_selected_nodes_to_commands
+        )
+        event_manager.assign_manager_to_request_type(
+            DeserializeSelectedNodesFromCommandsRequest, self.on_deserialize_selected_nodes_from_commands
+        )
+        event_manager.assign_manager_to_request_type(DuplicateSelectedNodesRequest, self.on_duplicate_selected_nodes)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old node name and its parent.
@@ -1595,7 +1613,7 @@ class NodeManager:
                 node_type=node.__class__.__name__,
                 node_name=node_name,
                 specific_library_name=library_details.library_name,
-                metadata=node.metadata,
+                metadata=node.metadata.copy(),
             )
 
             # We're going to compare this node instance vs. a canonical one. Rez that one up.
@@ -1676,6 +1694,148 @@ class NodeManager:
         logger.debug(details)
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)
 
+    def on_serialize_selected_nodes_to_commands(
+        self, request: SerializeSelectedNodesToCommandsRequest
+    ) -> ResultPayload:
+        """This will take the selected nodes in the Object manager and serialize them into commands."""
+        nodes_to_serialize = request.nodes_to_serialize
+        # Sorts tuples in order based on the timestamp
+        sorted_nodes = sorted(nodes_to_serialize, key=lambda x: datetime.fromisoformat(x[1]))
+        # This is node_uuid to the serialization command.
+        node_commands = {}
+        # Node Name to UUID
+        node_name_to_uuid = {}
+        connections_to_serialize = []
+        # This is also node_uuid to the parameter serialization command.
+        parameter_commands = {}
+        # I need to store node names and parameter names to UUID
+        unique_uuid_to_values = {}
+        value_hash_to_id = {}
+        selected_node_names = [values[0] for values in sorted_nodes]
+        for node_name, _ in sorted_nodes:
+            result = self.on_serialize_node_to_commands(
+                SerializeNodeToCommandsRequest(
+                    node_name=node_name,
+                    unique_parameter_uuid_to_values=unique_uuid_to_values,
+                    value_hash_to_unique_value_uuid=value_hash_to_id,
+                )
+            )
+            if not isinstance(result, SerializeNodeToCommandsResultSuccess):
+                details = f"Attempted to serialize a selection of Nodes. Failed to serialize {node_name}."
+                logger.error(details)
+                return SerializeNodeToCommandsResultFailure()
+            node_commands[node_name] = result.serialized_node_commands
+            node_name_to_uuid[node_name] = result.serialized_node_commands.node_uuid
+            parameter_commands[result.serialized_node_commands.node_uuid] = result.set_parameter_value_commands
+            try:
+                flow_name = self.get_node_parent_flow_by_name(node_name)
+                flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+            except Exception:
+                details = f"Attempted to serialize a selection of Nodes. Failed to get the flow of node {node_name}. Cannot serialize connections for this node."
+                logger.warning(details)
+                continue
+            if node_name in flow.connections.outgoing_index:
+                node_connections = [
+                    flow.connections.connections[connection_id]
+                    for category_dict in flow.connections.outgoing_index[node_name].values()
+                    for connection_id in category_dict
+                ]
+                for connection in node_connections:
+                    if connection.target_node.name not in selected_node_names:
+                        continue
+                    connections_to_serialize.append(connection)
+        serialized_connections = []
+        for connection in connections_to_serialize:
+            source_node_uuid = node_name_to_uuid[connection.source_node.name]
+            target_node_uuid = node_name_to_uuid[connection.target_node.name]
+            serialized_connections.append(
+                SerializedSelectedNodesCommands.IndirectConnectionSerialization(
+                    source_node_uuid=source_node_uuid,
+                    source_parameter_name=connection.source_parameter.name,
+                    target_node_uuid=target_node_uuid,
+                    target_parameter_name=connection.target_parameter.name,
+                )
+            )
+        # Final result for serialized node commands
+        final_result = SerializedSelectedNodesCommands(
+            serialized_node_commands=list(node_commands.values()),
+            serialized_connection_commands=serialized_connections,
+            set_parameter_value_commands=parameter_commands,
+        )
+        # Set everything in the clipboard!
+        GriptapeNodes.ContextManager()._clipboard.node_commands = final_result
+        GriptapeNodes.ContextManager()._clipboard.parameter_uuid_to_values = unique_uuid_to_values
+        return SerializeSelectedNodesToCommandsResultSuccess(final_result)
+
+    def on_deserialize_selected_nodes_from_commands(
+        self,
+        request: DeserializeSelectedNodesFromCommandsRequest,  # noqa: ARG002
+    ) -> ResultPayload:
+        commands = GriptapeNodes.ContextManager()._clipboard.node_commands
+        if commands is None:
+            return DeserializeSelectedNodesFromCommandsResultFailure()
+        connections = commands.serialized_connection_commands
+        node_uuid_to_name = {}
+        for node_command in commands.serialized_node_commands:
+            result = self.on_deserialize_node_from_commands(
+                DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command)
+            )
+            if not isinstance(result, DeserializeNodeFromCommandsResultSuccess):
+                logger.error("Attempted to deserialize node but ran into an error on node serialization.")
+                return DeserializeSelectedNodesFromCommandsResultFailure()
+            node_uuid_to_name[node_command.node_uuid] = result.node_name
+            with GriptapeNodes.ContextManager().node(result.node_name):
+                parameter_commands = commands.set_parameter_value_commands[node_command.node_uuid]
+                for parameter_command in parameter_commands:
+                    param_request = parameter_command.set_parameter_value_command
+                    # Set the Node name
+                    param_request.node_name = result.node_name
+                    # Set the new value
+                    table = GriptapeNodes.ContextManager()._clipboard.parameter_uuid_to_values
+                    if table and parameter_command.unique_value_uuid in table:
+                        value = table[parameter_command.unique_value_uuid]
+                        # Using try-except-pass instead of contextlib.suppress because it's clearer.
+                        try:  # noqa: SIM105
+                            # If we're pasting multiple times - we need to create a new copy for each paste so they don't all have the same reference.
+                            value = value.copy()
+                        except Exception:  # noqa: S110
+                            pass
+                        param_request.value = value
+                        set_parameter_result = GriptapeNodes.handle_request(
+                            parameter_command.set_parameter_value_command
+                        )
+                        if not set_parameter_result.succeeded():
+                            details = f"Failed to set parameter value for {param_request.parameter_name} on node {param_request.node_name}"
+                            logger.warning(details)
+        # create Connections
+        for connection_command in connections:
+            connection_request = CreateConnectionRequest(
+                source_node_name=node_uuid_to_name[connection_command.source_node_uuid],
+                source_parameter_name=connection_command.source_parameter_name,
+                target_node_name=node_uuid_to_name[connection_command.target_node_uuid],
+                target_parameter_name=connection_command.target_parameter_name,
+            )
+            result = GriptapeNodes.handle_request(connection_request)
+            if not result.succeeded():
+                details = f"Failed to create a connection between {connection_request.source_node_name} and {connection_request.target_node_name}"
+                logger.warning(details)
+        return DeserializeSelectedNodesFromCommandsResultSuccess(node_names=list(node_uuid_to_name.values()))
+
+    def on_duplicate_selected_nodes(self, request: DuplicateSelectedNodesRequest) -> ResultPayload:
+        result = GriptapeNodes.handle_request(
+            SerializeSelectedNodesToCommandsRequest(nodes_to_serialize=request.nodes_to_duplicate)
+        )
+        if not result.succeeded():
+            details = "Failed to serialized selected nodes."
+            logger.error(details)
+            return DuplicateSelectedNodesResultFailure()
+        GriptapeNodes.handle_request(DeserializeSelectedNodesFromCommandsRequest())
+        if not result.succeeded():
+            details = "Failed to deserialize selected nodes."
+            logger.error(details)
+            return DuplicateSelectedNodesResultFailure()
+        return DuplicateSelectedNodesResultSuccess()
+
     @staticmethod
     def _manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
         base_param = base_node_obj.get_parameter_by_name(parameter.name)
@@ -1753,6 +1913,20 @@ class NodeManager:
                 # Confirm that the author wants this parameter and/or class to be serialized.
                 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1179 ID a method for classes and/or parameters to be flagged for NOT serializability.
 
+            # Check if we can serialize it.
+            try:
+                pickle.dumps(value)
+            except Exception as err:
+                details = f"Attempted to serialize parameter '{parameter.name}' on node '{node.name}'. The value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable. Error: {err}."
+                logger.warning(details)
+                return None
+            # The value should be serialized. Add it to the map of uniques.
+            unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
+            value_hash_to_unique_value_uuid[value_id] = unique_uuid
+            try:
+                unique_parameter_uuid_to_values[unique_uuid] = value.copy()
+            except Exception:
+                unique_parameter_uuid_to_values[unique_uuid] = value
                 # Check if we can serialize it.
                 try:
                     pickle.dumps(value)
