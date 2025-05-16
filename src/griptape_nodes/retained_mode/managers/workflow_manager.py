@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.metadata
 import json
 import logging
 import os
@@ -8,12 +9,14 @@ import pickle
 import pkgutil
 import re
 import shutil
+import subprocess
 import tempfile
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from importlib import resources
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, TypeVar, cast
 from urllib.parse import urljoin
 
 import httpx
@@ -26,9 +29,10 @@ from rich.table import Table
 from rich.text import Text
 from xdg_base_dirs import xdg_config_home
 
+from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
-from griptape_nodes.node_library.library_registry import LibraryNameAndVersion  # noqa: TC001
-from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowRegistry
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
+from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowMetadata, WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
@@ -104,7 +108,9 @@ logger = logging.getLogger("griptape_nodes")
 
 class WorkflowManager:
     WORKFLOW_METADATA_HEADER: ClassVar[str] = "script"
-    MAX_MINOR_VERSION_DEVIATION: ClassVar[int] = 2
+    MAX_MINOR_VERSION_DEVIATION: ClassVar[int] = (
+        100  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1219 <- make the versioning enforcement softer after we get a release going
+    )
     EPOCH_START = datetime(tzinfo=UTC, year=1970, month=1, day=1)
 
     class WorkflowStatus(StrEnum):
@@ -1684,13 +1690,11 @@ class WorkflowManager:
         """
         for node in nodes:
             for param in node.parameters:
-                # The user_defined flag is utilized here since the StartFlow and EndFlow Nodes make use of
-                # ParameterLists, which enable Workflow authors to define their own Parameters as children, and
-                # by default the user_defined flag is set to True for the children. Filtering on that flag keeps
-                # the workflow shape clean and only includes the Parameters that are actually defined/usable by the
-                # Published Workflow.
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1090
-                if param.user_defined:
+                # Expose only the parameters that are relevant for workflow input and output.
+                # Those parameters are not of type CONTROL_TYPE, and are builtin types.
+                if param.type != ParameterTypeBuiltin.CONTROL_TYPE.value and param.type in [
+                    t.value for t in ParameterTypeBuiltin
+                ]:
                     if node.name in workflow_shape[workflow_shape_type]:
                         cast("dict", workflow_shape[workflow_shape_type][node.name])[param.name] = (
                             self._convert_parameter_to_minimal_dict(param)
@@ -1753,7 +1757,85 @@ class WorkflowManager:
 
         return workflow_shape
 
-    def _package_workflow(self, workflow_name: str) -> str:
+    def _copy_libraries_to_path_for_workflow(
+        self,
+        node_libraries: list[LibraryNameAndVersion],
+        destination_path: Path,
+        runtime_env_path: Path,
+        workflow: Workflow,
+    ) -> list[str]:
+        """Copies the libraries to the specified path for the workflow, returning the list of library paths.
+
+        This is used to package the workflow for publishing.
+        """
+        library_paths: list[str] = []
+
+        for library_ref in node_libraries:
+            library = GriptapeNodes.LibraryManager().get_library_info_by_library_name(library_ref.library_name)
+
+            if library is None:
+                details = f"Attempted to publish workflow '{workflow.metadata.name}', but failed gathering library info for library '{library_ref.library_name}'."
+                logger.error(details)
+                raise ValueError(details)
+
+            library_data = LibraryRegistry.get_library(library_ref.library_name).get_library_data()
+
+            library_path = Path(library.library_path)
+            absolute_library_path = library_path.resolve()
+            abs_paths = [absolute_library_path]
+            for node in library_data.nodes:
+                p = (library_path.parent / Path(node.file_path)).resolve()
+                abs_paths.append(p)
+            common_root = Path(os.path.commonpath([str(p) for p in abs_paths]))
+            dest = destination_path / common_root.name
+            shutil.copytree(common_root, dest, dirs_exist_ok=True)
+            library_path_relative_to_common_root = absolute_library_path.relative_to(common_root)
+            library_paths.append(str(runtime_env_path / common_root.name / library_path_relative_to_common_root))
+
+        return library_paths
+
+    def __get_install_source(self) -> tuple[Literal["git", "file", "pypi"], str | None]:
+        """Determines the install source of the Griptape Nodes package.
+
+        Returns:
+            tuple: A tuple containing the install source and commit ID (if applicable).
+        """
+        dist = importlib.metadata.distribution("griptape_nodes")
+        direct_url_text = dist.read_text("direct_url.json")
+        # installing from pypi doesn't have a direct_url.json file
+        if direct_url_text is None:
+            logger.debug("No direct_url.json file found, assuming pypi install")
+            return "pypi", None
+
+        direct_url_info = json.loads(direct_url_text)
+        url = direct_url_info.get("url")
+        if url.startswith("file://"):
+            try:
+                pkg_dir = Path(str(dist.locate_file(""))).resolve()
+                git_root = next(p for p in (pkg_dir, *pkg_dir.parents) if (p / ".git").is_dir())
+                commit = (
+                    subprocess.check_output(  # noqa: S603
+                        ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
+                        cwd=git_root,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    .decode()
+                    .strip()
+                )
+            except (StopIteration, subprocess.CalledProcessError):
+                logger.debug("File URL but no git repo → file")
+                return "file", None
+            else:
+                logger.debug("Detected git repo at %s (commit %s)", git_root, commit)
+                return "git", commit
+        if "vcs_info" in direct_url_info:
+            logger.debug("Detected git repo at %s", url)
+            return "git", direct_url_info["vcs_info"].get("commit_id")[:7]
+        # Fall back to pypi if no other source is found
+        logger.debug("Failed to detect install source, assuming pypi")
+        return "pypi", None
+
+    def _package_workflow(self, workflow_name: str) -> str:  # noqa: PLR0915
         config_manager = GriptapeNodes.get_instance()._config_manager
         workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
 
@@ -1771,33 +1853,64 @@ class WorkflowManager:
             f"v{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
         )
 
-        # TODO (https://github.com/griptape-ai/griptape-nodes/issues/951): Libraries
+        # This is the path where the full workflow will be packaged to in the runtime environment.
+        packaged_top_level_dir = "/structure"
 
         # Gather the paths to the files we need to copy.
-        root_path = Path(__file__).parent.parent.parent.parent.parent
-        libraries_path = root_path / "libraries"
-        structure_file_path = root_path / "src" / "griptape_nodes" / "bootstrap" / "bootstrap_script.py"
-        structure_config_file_path = root_path / "src" / "griptape_nodes" / "bootstrap" / "structure_config.yaml"
+        bootstrap_pkg = resources.files("griptape_nodes.bootstrap")
+        bootstrap_script_traversable = bootstrap_pkg.joinpath("bootstrap_script.py")
+        with resources.as_file(bootstrap_script_traversable) as script_path:
+            root_griptape_nodes_path = Path(script_path).parent.parent
+
+        structure_file_path = root_griptape_nodes_path / "bootstrap" / "bootstrap_script.py"
+        structure_config_file_path = root_griptape_nodes_path / "bootstrap" / "structure_config.yaml"
+        pre_build_install_script_path = root_griptape_nodes_path / "bootstrap" / "pre_build_install_script.sh"
+        post_build_install_script_path = root_griptape_nodes_path / "bootstrap" / "post_build_install_script.sh"
+        register_libraries_script_path = root_griptape_nodes_path / "bootstrap" / "register_libraries_script.py"
         env_file_path = config_manager.workspace_path / ".env"
 
         config = config_manager.user_config
-        config["workspace_directory"] = "/structure"
+        config["workspace_directory"] = packaged_top_level_dir
 
         # Create a temporary directory to perform the packaging
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_dir_path = Path(tmp_dir)
             temp_workflow_file_path = tmp_dir_path / "workflow.py"
             temp_structure_path = tmp_dir_path / "structure.py"
+            temp_pre_build_install_script_path = tmp_dir_path / "pre_build_install_script.sh"
+            temp_post_build_install_script_path = tmp_dir_path / "post_build_install_script.sh"
+            temp_register_libraries_script_path = tmp_dir_path / "register_libraries_script.py"
             config_file_path = tmp_dir_path / "GriptapeNodes" / "griptape_nodes_config.json"
-            init_file_path = tmp_dir_path / "src" / "griptape_nodes" / "__init__.py"
+            init_file_path = tmp_dir_path / "__init__.py"
 
             try:
                 # Copy the workflow file, libraries, and structure files to the temporary directory
                 shutil.copyfile(workflow.file_path, temp_workflow_file_path)
-                shutil.copytree(libraries_path, tmp_dir_path / "libraries")
                 shutil.copyfile(structure_file_path, temp_structure_path)
+                shutil.copyfile(pre_build_install_script_path, temp_pre_build_install_script_path)
+                shutil.copyfile(post_build_install_script_path, temp_post_build_install_script_path)
+                shutil.copyfile(register_libraries_script_path, temp_register_libraries_script_path)
                 shutil.copyfile(structure_config_file_path, tmp_dir_path / "structure_config.yaml")
-                shutil.copyfile(env_file_path, tmp_dir_path / ".env")
+                if env_file_path.exists():
+                    shutil.copyfile(env_file_path, tmp_dir_path / ".env")
+
+                # Get the library paths
+                library_paths = self._copy_libraries_to_path_for_workflow(
+                    node_libraries=workflow.metadata.node_libraries_referenced,
+                    destination_path=tmp_dir_path / "libraries",
+                    runtime_env_path=Path(packaged_top_level_dir) / "libraries",
+                    workflow=workflow,
+                )
+
+                with register_libraries_script_path.open("r", encoding="utf-8") as register_libraries_script_file:
+                    register_libraries_script_contents = register_libraries_script_file.read()
+                    library_paths = [f'"{library_path}"' for library_path in library_paths]
+                    register_libraries_script_contents = register_libraries_script_contents.replace(
+                        '["REPLACE_LIBRARY_PATHS"]',
+                        f"[{', '.join(library_paths)}]",
+                    )
+                with temp_register_libraries_script_path.open("w") as register_libraries_script_file:
+                    register_libraries_script_file.write(register_libraries_script_contents)
 
                 config_file_path.parent.mkdir(parents=True, exist_ok=True)
                 with config_file_path.open("w") as config_file:
@@ -1811,10 +1924,13 @@ class WorkflowManager:
 
             except Exception as e:
                 details = f"Failed to copy files to temporary directory. Error: {e}"
-                logger.error(details)
+                logger.exception(details)
                 raise
 
             # Create the requirements.txt file using the correct engine version
+            source, commit_id = self.__get_install_source()
+            if source == "git" and commit_id is not None:
+                engine_version = commit_id
             requirements_file_path = tmp_dir_path / "requirements.txt"
             with requirements_file_path.open("w") as requirements_file:
                 requirements_file.write(
