@@ -1890,7 +1890,12 @@ class NodeManager:
                     return None
                 # The value should be serialized. Add it to the map of uniques.
                 unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
-                unique_parameter_uuid_to_values[unique_uuid] = value
+                try:
+                    unique_parameter_uuid_to_values[unique_uuid] = value.copy()
+                except Exception:
+                    details = f"Attempted to serialize parameter '{parameter_name}` on node '{node_name}'. The parameter value could not be copied. It will be serialized by value. If problems arise from this, ensure the type '{type(value)}' properly implements copy()."
+                    logger.warning(details)
+                    unique_parameter_uuid_to_values[unique_uuid] = value
                 serialized_parameter_value_tracker.add_as_serializable(value_id, unique_uuid)
 
         # Serialize it
