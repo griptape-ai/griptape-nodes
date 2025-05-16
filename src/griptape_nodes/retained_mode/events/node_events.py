@@ -1,3 +1,4 @@
+from abc import ABC
 from dataclasses import dataclass, field
 from typing import Any, NewType
 from uuid import uuid4
@@ -213,6 +214,20 @@ class SerializedNodeCommands:
     element_modification_commands: list[RequestPayload]
     node_library_details: LibraryNameAndVersion
     node_uuid: NodeUUID = field(default_factory=lambda: SerializedNodeCommands.NodeUUID(str(uuid4())))
+
+
+@dataclass
+class ValueSerializationState:
+    class Serializable_State(ABC):
+        pass
+
+    class Serializable(Serializable_State):
+        uuid: SerializedNodeCommands.UniqueParameterValueUUID
+
+    class NotSerializable(Serializable_State):
+        pass
+
+    _value_hash_to_unique_value_uuid: dict[Any, ValueSerializationState.Serializable_State]
 
 
 @dataclass
