@@ -1613,6 +1613,8 @@ class NodeManager:
                 node_name=node_name,
                 specific_library_name=library_details.library_name,
                 metadata=node.metadata.copy(),
+                # If it is actively resolving, mark as unresolved.
+                resolution= NodeResolutionState.RESOLVED if node.state == NodeResolutionState.RESOLVED else NodeResolutionState.UNRESOLVED
             )
 
             # We're going to compare this node instance vs. a canonical one. Rez that one up.
