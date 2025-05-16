@@ -1846,6 +1846,50 @@ class NodeManager:
         return diff
 
     @staticmethod
+    def _handle_value_hashing(value:Any, value_hash_to_unique_value_uuid:dict,unique_parameter_uuid_to_values:dict, is_output:bool, parameter_name:str) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:
+        try:
+            hash(value)
+            value_id = value
+        except TypeError:
+            # Couldn't get a hash. Use the object's ID
+            value_id = id(value)
+
+        if value_id in value_hash_to_unique_value_uuid:
+            # We have a match on this value. We're all good.
+            unique_uuid = value_hash_to_unique_value_uuid[value_id]
+        else:
+            # This value is new for us.
+
+            # Confirm that the author wants this parameter and/or class to be serialized.
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1179 ID a method for classes and/or parameters to be flagged for NOT serializability.
+
+            # Check if we can serialize it.
+            try:
+                pickle.dumps(value)
+            except Exception:
+                return None
+            # The value should be serialized. Add it to the map of uniques.
+            unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
+            value_hash_to_unique_value_uuid[value_id] = unique_uuid
+            try:
+                unique_parameter_uuid_to_values[unique_uuid] = value.copy()
+            except Exception:
+                unique_parameter_uuid_to_values[unique_uuid] = value
+
+        # Serialize it
+        set_value_command = SetParameterValueRequest(
+            parameter_name=parameter_name,
+            value=None,  # <- this will get overridden when instantiated
+            is_output=is_output,
+            initial_setup=True,
+        )
+        indirect_set_value_command = SerializedNodeCommands.IndirectSetParameterValueCommand(
+            set_parameter_value_command=set_value_command,
+            unique_value_uuid=unique_uuid,
+        )
+        return indirect_set_value_command
+
+    @staticmethod
     def _handle_parameter_value_saving(
         parameter: Parameter,
         node: BaseNode,
@@ -1877,60 +1921,25 @@ class NodeManager:
             - For unhashable values, the object's id is used as the key
             - The function will reuse already created values to avoid duplication
         """
+        output_value = None
+        internal_value = None
         if parameter.name in node.parameter_output_values:
             # Output values are more important.
-            value = node.parameter_output_values[parameter.name]
+            output_value = node.parameter_output_values[parameter.name]
             is_output = True
-        elif parameter.name in node.parameter_values:
+        if parameter.name in node.parameter_values:
             # Check the internal parameter values
-            value = node.get_parameter_value(parameter.name)
+            internal_value = node.get_parameter_value(parameter.name)
             is_output = False
-        else:
+        if output_value is None and internal_value is None:
             # No value set; bail.
             return None
 
         # We have a value. Attempt to get a hash for it to see if it matches one
         # we've already indexed.
-        try:
-            hash(value)
-            value_id = value
-        except TypeError:
-            # Couldn't get a hash. Use the object's ID
-            value_id = id(value)
-
-        if value_id in value_hash_to_unique_value_uuid:
-            # We have a match on this value. We're all good.
-            unique_uuid = value_hash_to_unique_value_uuid[value_id]
-        else:
-            # This value is new for us.
-
-            # Confirm that the author wants this parameter and/or class to be serialized.
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1179 ID a method for classes and/or parameters to be flagged for NOT serializability.
-
-            # Check if we can serialize it.
-            try:
-                pickle.dumps(value)
-            except Exception as err:
-                details = f"Attempted to serialize parameter '{parameter.name}' on node '{node.name}'. The value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable. Error: {err}."
-                logger.warning(details)
-                return None
-            # The value should be serialized. Add it to the map of uniques.
-            unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
-            value_hash_to_unique_value_uuid[value_id] = unique_uuid
-            try:
-                unique_parameter_uuid_to_values[unique_uuid] = value.copy()
-            except Exception:
-                unique_parameter_uuid_to_values[unique_uuid] = value
-
-        # Serialize it
-        set_value_command = SetParameterValueRequest(
-            parameter_name=parameter.name,
-            value=None,  # <- this will get overridden when instantiated
-            is_output=is_output,
-            initial_setup=True,
-        )
-        indirect_set_value_command = SerializedNodeCommands.IndirectSetParameterValueCommand(
-            set_parameter_value_command=set_value_command,
-            unique_value_uuid=unique_uuid,
-        )
-        return indirect_set_value_command
+        command = _handle_value_hashing()
+        if command is None:
+            details = f"Attempted to serialize parameter '{parameter.name}' on node '{node.name}'. The value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable. Error: {err}."
+            logger.warning(details)
+            return None
+        return command
