@@ -1126,7 +1126,7 @@ class NodeManager:
         return result
 
     # added ignoring C901 since this method is overly long because of granular error checking, not actual complexity.
-    def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
+    def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -1185,12 +1185,13 @@ class NodeManager:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             logger.error(details)
             return SetParameterValueResultFailure()
-        try:
-            parent_flow.connections.unresolve_future_nodes(node)
-        except Exception as err:
-            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
-            logger.error(details)
-            return SetParameterValueResultFailure()
+        if not request.initial_setup:
+            try:
+                parent_flow.connections.unresolve_future_nodes(node)
+            except Exception as err:
+                details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
+                logger.error(details)
+                return SetParameterValueResultFailure()
 
         # Values are actually stored on the NODE.
         try:
@@ -1614,6 +1615,8 @@ class NodeManager:
                 node_name=node_name,
                 specific_library_name=library_details.library_name,
                 metadata=node.metadata.copy(),
+                # If it is actively resolving, mark as unresolved.
+                resolution=node.state.value,
             )
 
             # We're going to compare this node instance vs. a canonical one. Rez that one up.
