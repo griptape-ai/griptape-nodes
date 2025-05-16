@@ -24,6 +24,6 @@ class FluxLoraFromFile(ControlNode):
 
     def process(self) -> None:
         self.lora_file_path_params.validate_parameter_values()
-        lora_path = self.lora_file_path_params.get_file_path()
+        lora_path = str(self.lora_file_path_params.get_file_path())
         lora_weight = self.lora_weight_and_output_params.get_weight()
         self.lora_weight_and_output_params.set_output_lora({lora_path: lora_weight})
