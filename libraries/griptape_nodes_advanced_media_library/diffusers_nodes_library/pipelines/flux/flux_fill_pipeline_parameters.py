@@ -34,6 +34,26 @@ class FluxFillPipelineParameters:
         self._huggingface_repo_parameter.add_input_parameters()
         self._node.add_parameter(
             Parameter(
+                name="text_encoder",
+                input_types=["str"],
+                type="str",
+                allowed_modes=set(),
+                tooltip="text_encoder",
+                default_value="openai/clip-vit-large-patch14",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
+                name="text_encoder_2",
+                input_types=["str"],
+                type="str",
+                allowed_modes=set(),
+                tooltip="text_encoder_2",
+                default_value="google/t5-v1_1-xxl",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
                 name="input_image",
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
@@ -51,6 +71,15 @@ class FluxFillPipelineParameters:
         self._node.add_parameter(
             Parameter(
                 name="prompt",
+                default_value="",
+                input_types=["str"],
+                type="str",
+                tooltip="prompt",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
+                name="prompt_2",
                 default_value="",
                 input_types=["str"],
                 type="str",
@@ -128,7 +157,13 @@ class FluxFillPipelineParameters:
         return mask_image_pil.convert("L")
 
     def get_prompt(self) -> str:
-        return self._node.parameter_values["prompt"]
+        return self._node.get_parameter_value("prompt")
+
+    def get_prompt_2(self) -> str:
+        prompt_2 = self._node.get_parameter_value("prompt_2")
+        if prompt_2 is None:
+            return self.get_prompt()
+        return prompt_2
 
     def get_num_inference_steps(self) -> int:
         return int(self._node.get_parameter_value("num_inference_steps"))
@@ -147,6 +182,7 @@ class FluxFillPipelineParameters:
         width, height = self.get_input_image_pil().size
         return {
             "prompt": self.get_prompt(),
+            "prompt_2": self.get_prompt_2(),
             "width": width,
             "height": height,
             "image": self.get_input_image_pil(),
