@@ -15,6 +15,7 @@ from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint impor
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
 )
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -31,6 +32,9 @@ class FluxPipeline(ControlNode):
         self.pipe_params.add_output_parameters()
         self.log_params.add_output_parameters()
 
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        self.pipe_params.after_value_set(parameter, value, modified_parameters_set)
+
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self.pipe_params.validate_before_node_run()
         return errors or None
@@ -39,6 +43,7 @@ class FluxPipeline(ControlNode):
         yield lambda: self._process()
 
     def _process(self) -> AsyncResult | None:
+        self.pipe_params.preprocess()
         self.pipe_params.publish_output_image_preview_placeholder()
         self.log_params.append_to_logs("Preparing models...\n")
 

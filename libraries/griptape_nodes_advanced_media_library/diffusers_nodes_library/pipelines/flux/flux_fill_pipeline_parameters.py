@@ -13,6 +13,7 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
 )
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
+from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
@@ -28,6 +29,7 @@ class FluxFillPipelineParameters:
                 "black-forest-labs/FLUX.1-Fill-dev",
             ],
         )
+        self._seed_parameter = SeedParameter(node)
         self._input_image_size = (None, None)
 
     def add_input_parameters(self) -> None:
@@ -105,14 +107,7 @@ class FluxFillPipelineParameters:
                 ui_options={"slider": {"min_val": 1, "max_val": 100}, "step": 1},
             )
         )
-        self._node.add_parameter(
-            Parameter(
-                name="seed",
-                input_types=["int"],
-                type="int",
-                tooltip="optional - random seed, default is random seed",
-            )
-        )
+        self._seed_parameter.add_input_parameters()
 
     def add_output_parameters(self) -> None:
         self._node.add_parameter(
@@ -128,6 +123,9 @@ class FluxFillPipelineParameters:
         errors = self._huggingface_repo_parameter.validate_before_node_run() or []
         return errors or None
 
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
+
     def validate_before_node_process(self) -> None:
         input_image_pil = self.get_input_image_pil()
         mask_image_pil = self.get_mask_image_pil()
@@ -138,6 +136,9 @@ class FluxFillPipelineParameters:
                 f"Mask image size: {mask_image_pil.size}"
             )
             raise RuntimeError(msg)
+
+    def preprocess(self) -> None:
+        self._seed_parameter.preprocess()
 
     def get_repo_revision(self) -> tuple[str, str]:
         return self._huggingface_repo_parameter.get_repo_revision()
