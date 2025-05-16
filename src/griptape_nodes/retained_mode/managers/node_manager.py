@@ -1763,15 +1763,15 @@ class NodeManager:
             set_parameter_value_commands=parameter_commands,
         )
         # Set everything in the clipboard!
-        GriptapeNodes.ContextManager().clipboard.node_commands = final_result
-        GriptapeNodes.ContextManager().clipboard.parameter_uuid_to_values = unique_uuid_to_values
+        GriptapeNodes.ContextManager()._clipboard.node_commands = final_result
+        GriptapeNodes.ContextManager()._clipboard.parameter_uuid_to_values = unique_uuid_to_values
         return SerializeSelectedNodesToCommandsResultSuccess(final_result)
 
     def on_deserialize_selected_nodes_from_commands(
         self,
         request: DeserializeSelectedNodesFromCommandsRequest,  # noqa: ARG002
     ) -> ResultPayload:
-        commands = GriptapeNodes.ContextManager().clipboard.node_commands
+        commands = GriptapeNodes.ContextManager()._clipboard.node_commands
         if commands is None:
             return DeserializeSelectedNodesFromCommandsResultFailure()
         connections = commands.serialized_connection_commands
@@ -1791,7 +1791,7 @@ class NodeManager:
                     # Set the Node name
                     param_request.node_name = result.node_name
                     # Set the new value
-                    table = GriptapeNodes.ContextManager().clipboard.parameter_uuid_to_values
+                    table = GriptapeNodes.ContextManager()._clipboard.parameter_uuid_to_values
                     if table and parameter_command.unique_value_uuid in table:
                         value = table[parameter_command.unique_value_uuid]
                         # Using try-except-pass instead of contextlib.suppress because it's clearer.
