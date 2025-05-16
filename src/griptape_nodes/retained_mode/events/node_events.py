@@ -218,16 +218,16 @@ class SerializedNodeCommands:
 
 @dataclass
 class ValueSerializationState:
-    class Serializable_State(ABC):
+    class State(ABC):
         pass
 
-    class Serializable(Serializable_State):
+    class Serializable(State):
         uuid: SerializedNodeCommands.UniqueParameterValueUUID
 
-    class NotSerializable(Serializable_State):
+    class NotSerializable(State):
         pass
 
-    _value_hash_to_unique_value_uuid: dict[Any, ValueSerializationState.Serializable_State]
+    _value_hash_to_unique_value_uuid: dict[Any, State]
 
 
 @dataclass
