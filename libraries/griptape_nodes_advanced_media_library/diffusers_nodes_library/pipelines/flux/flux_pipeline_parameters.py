@@ -33,7 +33,6 @@ class FluxPipelineParameters:
                 default_value="",
                 input_types=["str"],
                 type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="prompt",
             )
         )
@@ -42,7 +41,6 @@ class FluxPipelineParameters:
                 name="prompt_2",
                 input_types=["str"],
                 type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="optional prompt_2 - defaults to prompt",
             )
         )
@@ -52,7 +50,6 @@ class FluxPipelineParameters:
                 default_value="",
                 input_types=["str"],
                 type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="optional negative_prompt",
             )
         )
@@ -61,7 +58,6 @@ class FluxPipelineParameters:
                 name="negative_prompt_2",
                 input_types=["str"],
                 type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="optional negative_prompt_2 - defaults to negative_prompt",
             )
         )
@@ -71,7 +67,6 @@ class FluxPipelineParameters:
                 default_value=1.0,
                 input_types=["float"],
                 type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="true_cfg_scale",
             )
         )
@@ -81,7 +76,6 @@ class FluxPipelineParameters:
                 default_value=1024,
                 input_types=["int"],
                 type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="width",
             )
         )
@@ -91,7 +85,6 @@ class FluxPipelineParameters:
                 default_value=1024,
                 input_types=["int"],
                 type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="height",
             )
         )
@@ -101,7 +94,6 @@ class FluxPipelineParameters:
                 default_value=4,
                 input_types=["int"],
                 type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="num_inference_steps",
             )
         )
@@ -110,7 +102,6 @@ class FluxPipelineParameters:
                 name="sigmas",
                 input_types=["str", "list[float]", "None"],
                 type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="sigmas",
             )
         )
@@ -121,7 +112,6 @@ class FluxPipelineParameters:
                 default_value=3.5,
                 input_types=["float"],
                 type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="guidance_scale",
             )
         )
@@ -131,7 +121,6 @@ class FluxPipelineParameters:
                 name="seed",
                 input_types=["int"],
                 type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="optional - random seed, default is random seed",
             )
         )

@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 
 from diffusers_nodes_library.common.utils.option_utils import update_option_choices
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
 
@@ -51,7 +51,6 @@ class HuggingFaceModelParameter(ABC):
                         choices=choices,
                     )
                 },
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip=self._parameter_name,
             )
         )

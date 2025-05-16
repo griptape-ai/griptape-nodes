@@ -45,7 +45,6 @@ class TilingSPAN(ControlNode):
                 name="input_image",
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="input_image",
             )
         )
@@ -55,7 +54,6 @@ class TilingSPAN(ControlNode):
                 default_value=256,
                 input_types=["int"],
                 type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip=(
                     "max_tile_size, "
                     "if unecessily larger than input image, it will automatically "
@@ -69,7 +67,6 @@ class TilingSPAN(ControlNode):
                 default_value=16,
                 input_types=["int"],
                 type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="tile_overlap",
             )
         )
@@ -90,7 +87,6 @@ class TilingSPAN(ControlNode):
                         ]
                     )
                 },
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="tile_strategy",
             )
         )

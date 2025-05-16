@@ -1649,14 +1649,14 @@ class NodeManager:
             set_value_commands = []
             for parameter in node.parameters:
                 # SetParameterValueRequest event
-                set_param_value_request = NodeManager._handle_parameter_value_saving(
+                set_param_value_requests = NodeManager._handle_parameter_value_saving(
                     parameter=parameter,
                     node=node,
                     unique_parameter_uuid_to_values=request.unique_parameter_uuid_to_values,
                     serialized_parameter_value_tracker=request.serialized_parameter_value_tracker,
                 )
-                if set_param_value_request is not None:
-                    set_value_commands.append(set_param_value_request)
+                if set_param_value_requests is not None:
+                    set_value_commands.extend(set_param_value_requests)
 
         # Hooray
         serialized_node_commands = SerializedNodeCommands(
@@ -1848,53 +1848,13 @@ class NodeManager:
         return diff
 
     @staticmethod
-    def _handle_parameter_value_saving(
-        parameter: Parameter,
-        node: BaseNode,
-        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
-        serialized_parameter_value_tracker: SerializedParameterValueTracker,
+    def _handle_value_hashing(
+        value: Any,
+        value_hash_to_unique_value_uuid: dict,
+        unique_parameter_uuid_to_values: dict,
+        is_output: bool,  # noqa: FBT001
+        parameter_name: str,
     ) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:
-        """Generates code to save a parameter value for a node in a Griptape workflow.
-
-        This function handles the process of creating commands that will reconstruct and set
-        parameter values for nodes. It performs the following steps:
-        1. Retrieves the parameter value from the node's parameter values or output values
-        2. Checks if the value has already been created in our map of unique values
-        3. If so, it records the unique value UUID for later correlation.
-        4. If not, confirm that the value will serialize reliably. If so,it adds the value to the uniques map and records the new UUID.
-        5. Creates a SetParameterValueRequest to reconstruct this for the node
-
-        Args:
-            parameter (Parameter): The parameter object containing metadata
-            node (BaseNode): The node object that contains the parameter
-            unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Dictionary mapping unique
-                value UUIDs to values
-            serialized_parameter_value_tracker (SerializedParameterValueTracker): Map of hash values to unique parameter value UUIDs,
-                or values already declared as not serializable
-
-        Returns:
-            None (if no value to be serialized) or an IndirectSetParameterValueCommand linking the value to the unique value map
-
-        Notes:
-            - Parameter output values take precedence over regular parameter values
-            - For values that can be hashed, the value itself is used as the key in values_created
-            - For unhashable values, the object's id is used as the key
-            - The function will reuse already created values to avoid duplication
-        """
-        if parameter.name in node.parameter_output_values:
-            # Output values are more important.
-            value = node.parameter_output_values[parameter.name]
-            is_output = True
-        elif parameter.name in node.parameter_values:
-            # Check the internal parameter values
-            value = node.get_parameter_value(parameter.name)
-            is_output = False
-        else:
-            # No value set; bail.
-            return None
-
-        # We have a value. Attempt to get a hash for it to see if it matches one
-        # we've already indexed.
         try:
             hash(value)
             value_id = value
@@ -1916,24 +1876,23 @@ class NodeManager:
                 # Confirm that the author wants this parameter and/or class to be serialized.
                 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1179 ID a method for classes and/or parameters to be flagged for NOT serializability.
 
-                # Check if we can serialize it.
-                try:
-                    pickle.dumps(value)
-                except Exception as err:
-                    # Not serializable; don't waste time on future attempts.
-                    serialized_parameter_value_tracker.add_as_not_serializable(value_id)
-
-                    details = f"Attempted to serialize parameter '{parameter.name}' on node '{node.name}'. The value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable. Error: {err}."
-                    logger.warning(details)
-                    return None
-                # The value should be serialized. Add it to the map of uniques.
-                unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
+            # Check if we can serialize it.
+            try:
+                pickle.dumps(value)
+            except Exception:
+                return None
+            # The value should be serialized. Add it to the map of uniques.
+            unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
+            value_hash_to_unique_value_uuid[value_id] = unique_uuid
+            try:
+                unique_parameter_uuid_to_values[unique_uuid] = value.copy()
+            except Exception:
                 unique_parameter_uuid_to_values[unique_uuid] = value
                 serialized_parameter_value_tracker.add_as_serializable(value_id, unique_uuid)
 
         # Serialize it
         set_value_command = SetParameterValueRequest(
-            parameter_name=parameter.name,
+            parameter_name=parameter_name,
             value=None,  # <- this will get overridden when instantiated
             is_output=is_output,
             initial_setup=True,
@@ -1943,3 +1902,66 @@ class NodeManager:
             unique_value_uuid=unique_uuid,
         )
         return indirect_set_value_command
+
+    @staticmethod
+    def _handle_parameter_value_saving(
+        parameter: Parameter,
+        node: BaseNode,
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        value_hash_to_unique_value_uuid: dict[Any, SerializedNodeCommands.UniqueParameterValueUUID],
+    ) -> list[SerializedNodeCommands.IndirectSetParameterValueCommand] | None:
+        """Generates code to save a parameter value for a node in a Griptape workflow.
+
+        This function handles the process of creating commands that will reconstruct and set
+        parameter values for nodes. It performs the following steps:
+        1. Retrieves the parameter value from the node's parameter values or output values
+        2. Checks if the value has already been created in our map of unique values
+        3. If so, it records the unique value UUID for later correlation.
+        4. If not, confirm that the value will serialize reliably. If so,it adds the value to the uniques map and records the new UUID.
+        5. Creates a SetParameterValueRequest to reconstruct this for the node
+
+        Args:
+            parameter (Parameter): The parameter object containing metadata
+            node (BaseNode): The node object that contains the parameter
+            unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Dictionary mapping unique value UUIDs to values
+            value_hash_to_unique_value_uuid (dict[Any, SerializedNodeCommands.UniqueParameterValueUUID]): Dictionary mapping value hashes to unique value UUIDs
+
+        Returns:
+            None (if no value to be serialized) or an IndirectSetParameterValueCommand linking the value to the unique value map
+
+        Notes:
+            - Parameter output values take precedence over regular parameter values
+            - For values that can be hashed, the value itself is used as the key in values_created
+            - For unhashable values, the object's id is used as the key
+            - The function will reuse already created values to avoid duplication
+        """
+        output_value = None
+        internal_value = None
+        if parameter.name in node.parameter_output_values and node.state == NodeResolutionState.RESOLVED:
+            # Output values are more important.
+            output_value = node.parameter_output_values[parameter.name]
+        if parameter.name in node.parameter_values:
+            # Check the internal parameter values
+            internal_value = node.get_parameter_value(parameter.name)
+        # We have a value. Attempt to get a hash for it to see if it matches one
+        # we've already indexed.
+        commands = []
+        if internal_value is not None:
+            internal_command = NodeManager._handle_value_hashing(
+                internal_value, value_hash_to_unique_value_uuid, unique_parameter_uuid_to_values, False, parameter.name
+            )
+            if internal_command is None:
+                details = f"Attempted to serialize set value for parameter'{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable."
+                logger.warning(details)
+            else:
+                commands.append(internal_command)
+        if output_value is not None:
+            output_command = NodeManager._handle_value_hashing(
+                output_value, value_hash_to_unique_value_uuid, unique_parameter_uuid_to_values, True, parameter.name
+            )
+            if output_command is None:
+                details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable."
+                logger.warning(details)
+            else:
+                commands.append(output_command)
+        return commands if commands else None
