@@ -1881,12 +1881,10 @@ class NodeManager:
                 # Check if we can serialize it.
                 try:
                     pickle.dumps(value)
-                except Exception as err:
+                except Exception:
                     # Not serializable; don't waste time on future attempts.
                     serialized_parameter_value_tracker.add_as_not_serializable(value_id)
-
-                    details = f"Attempted to serialize parameter '{parameter_name}' on node '{node_name}'. The value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable. Error: {err}."
-                    logger.warning(details)
+                    # Bail.
                     return None
                 # The value should be serialized. Add it to the map of uniques.
                 unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
