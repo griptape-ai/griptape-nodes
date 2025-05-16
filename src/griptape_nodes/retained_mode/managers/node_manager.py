@@ -1800,6 +1800,7 @@ class NodeManager:
                             value = value.copy()
                         except Exception:  # noqa: S110
                             pass
+                        param_request.value = value
                         set_parameter_result = GriptapeNodes.handle_request(
                             parameter_command.set_parameter_value_command
                         )
