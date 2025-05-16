@@ -947,6 +947,13 @@ class FlowManager:
         details = f"Successfully cancelled flow execution with name {flow_name}"
         logger.debug(details)
 
+        # The engine will automatically restart if we exit with exit code 42.
+        # This is a hack to immediately stop a flow. os._exit(42) is required
+        # to avoid waiting for threads in the process to join -- which may
+        # take a long time, that's the hole point of cancelling a flow.
+        import os
+        os._exit(42)
+
         return CancelFlowResultSuccess()
 
     def on_single_node_step_request(self, request: SingleNodeStepRequest) -> ResultPayload:

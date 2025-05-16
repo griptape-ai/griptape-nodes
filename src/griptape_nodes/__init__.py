@@ -2,6 +2,7 @@
 # ruff: noqa: S603, S607
 
 from rich.console import Console
+import multiprocessing as mp
 
 console = Console()
 
@@ -87,8 +88,15 @@ def _start_engine(*, no_update: bool) -> None:
         _auto_update_self()
 
     console.print("[bold green]Starting Griptape Nodes engine...[/bold green]")
-    start_app()
 
+    # TEMPORARY HACK
+    # If exiting with code 42, this is a cancel flow event, so we should restart the engine.
+    exitcode = 42
+    while exitcode == 42:
+        p = mp.Process(target=start_app)
+        p.start()
+        p.join()
+        exitcode = p.exitcode
 
 def _get_args() -> argparse.Namespace:
     """Parse CLI arguments for the *griptape-nodes* entry-point."""
