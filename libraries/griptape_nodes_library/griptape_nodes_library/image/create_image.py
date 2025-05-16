@@ -1,6 +1,7 @@
 import uuid
 
-from griptape.artifacts import BaseArtifact, ImageUrlArtifact
+import requests
+from griptape.artifacts import BaseArtifact, ErrorArtifact, ImageUrlArtifact
 from griptape.drivers.image_generation.base_image_generation_driver import BaseImageGenerationDriver
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
@@ -200,6 +201,8 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
                 model=model_input,
                 image_size=self.get_parameter_value("image_size"),
                 api_key=self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
+                # Don't retry on HTTP errors, we want to fail fast.
+                ignored_exception_types=(requests.exceptions.HTTPError,),
             )
         else:
             driver = GriptapeCloudImageGenerationDriver(
@@ -296,7 +299,24 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
     def _create_image(self, agent: GtAgent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)
+
+        if isinstance(agent.output, ErrorArtifact) and agent.output.exception:
+            message = self.__parse_exception(agent.output.exception)
+            raise ValueError(message)
+
         static_url = GriptapeNodes.StaticFilesManager().save_static_file(agent.output.to_bytes(), f"{uuid.uuid4()}.png")
         url_artifact = ImageUrlArtifact(value=static_url)
         self.publish_update_to_parameter("output", url_artifact)
         try_throw_error(agent.output)
+
+    def __parse_exception(self, exception: Exception) -> str:
+        """Parses the exception and returns a string."""
+        if isinstance(exception, requests.exceptions.HTTPError):
+            error = exception.response.json().get("error", {})
+            if error:
+                message = error.get("error", {}).get("message", "Unknown error")
+            else:
+                message = exception.response.text
+        else:
+            message = str(exception)
+        return message
