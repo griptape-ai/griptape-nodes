@@ -27,7 +27,6 @@ class CannyConvertImage(ControlNode):
                 name="input_image",
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="input_image",
             )
         )
@@ -37,7 +36,6 @@ class CannyConvertImage(ControlNode):
                 default_value=50.0,
                 input_types=["float"],
                 type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="0 to 255 - The minimum intensity gradient that is considered as a possible edge.",
                 ui_options={"slider": {"min_val": 0.0, "max_val": 255.0}, "step": 0.01},
             )
@@ -48,7 +46,6 @@ class CannyConvertImage(ControlNode):
                 default_value=150.0,
                 input_types=["float"],
                 type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="0 to 255 - The strong edge gradient—pixels with values above this are definitely edges.",
                 ui_options={"slider": {"min_val": 0.0, "max_val": 255.0}, "step": 0.01},
             )
@@ -59,7 +56,6 @@ class CannyConvertImage(ControlNode):
                 default_value=3,
                 input_types=["int"],
                 type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="aperture_size",
                 ui_options={"slider": {"min_val": 3, "max_val": 7}, "step": 2},
             )
@@ -70,7 +66,6 @@ class CannyConvertImage(ControlNode):
                 default_value=False,
                 input_types=["bool"],
                 type="bool",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="l2_gradient",
             )
         )

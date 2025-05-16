@@ -38,7 +38,6 @@ class DiptychFluxFillPipelineParameters:
                 name="input_image",
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="input_image",
             )
         )
@@ -48,7 +47,6 @@ class DiptychFluxFillPipelineParameters:
                 default_value="",
                 input_types=["str"],
                 type="str",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="prompt",
             )
         )
@@ -58,7 +56,6 @@ class DiptychFluxFillPipelineParameters:
                 default_value=28,
                 input_types=["int"],
                 type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="num_inference_steps",
             )
         )
@@ -68,7 +65,6 @@ class DiptychFluxFillPipelineParameters:
                 default_value=50,
                 input_types=["float"],
                 type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="guidance_scale",
                 ui_options={"slider": {"min_val": 1, "max_val": 100}, "step": 1},
             )
@@ -78,7 +74,6 @@ class DiptychFluxFillPipelineParameters:
                 name="seed",
                 input_types=["int"],
                 type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="optional - random seed, default is random seed",
             )
         )
