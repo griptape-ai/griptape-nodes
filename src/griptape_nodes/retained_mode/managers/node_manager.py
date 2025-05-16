@@ -1846,7 +1846,13 @@ class NodeManager:
         return diff
 
     @staticmethod
-    def _handle_value_hashing(value:Any, value_hash_to_unique_value_uuid:dict,unique_parameter_uuid_to_values:dict, is_output:bool, parameter_name:str) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:  # noqa: FBT001
+    def _handle_value_hashing(
+        value: Any,
+        value_hash_to_unique_value_uuid: dict,
+        unique_parameter_uuid_to_values: dict,
+        is_output: bool,  # noqa: FBT001
+        parameter_name: str,
+    ) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:
         try:
             hash(value)
             value_id = value
@@ -1936,14 +1942,18 @@ class NodeManager:
         # we've already indexed.
         commands = []
         if internal_value is not None:
-            internal_command = NodeManager._handle_value_hashing(internal_value, value_hash_to_unique_value_uuid, unique_parameter_uuid_to_values, False, parameter.name)
+            internal_command = NodeManager._handle_value_hashing(
+                internal_value, value_hash_to_unique_value_uuid, unique_parameter_uuid_to_values, False, parameter.name
+            )
             if internal_command is None:
                 details = f"Attempted to serialize set value for parameter'{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable."
                 logger.warning(details)
             else:
                 commands.append(internal_command)
         if output_value is not None:
-            output_command = NodeManager._handle_value_hashing(output_value, value_hash_to_unique_value_uuid, unique_parameter_uuid_to_values, True, parameter.name)
+            output_command = NodeManager._handle_value_hashing(
+                output_value, value_hash_to_unique_value_uuid, unique_parameter_uuid_to_values, True, parameter.name
+            )
             if output_command is None:
                 details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable."
                 logger.warning(details)
