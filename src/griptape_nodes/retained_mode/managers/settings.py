@@ -57,7 +57,7 @@ class Settings(BaseModel):
     app_events: AppEvents = Field(default_factory=AppEvents)
     nodes: dict[str, Any] = Field(
         default_factory=lambda: {
-            "Griptape": {"GT_CLOUD_API_KEY": "$GT_CLOUD_API_KEY"},
+            "Griptape": {"GT_CLOUD_API_KEY": "$GT_CLOUD_API_KEY", "GT_CLOUD_BASE_URL": "$GT_CLOUD_BASE_URL"},
             "OpenAI": {"OPENAI_API_KEY": "$OPENAI_API_KEY"},
             "Amazon": {
                 "AWS_ACCESS_KEY_ID": "$AWS_ACCESS_KEY_ID",
