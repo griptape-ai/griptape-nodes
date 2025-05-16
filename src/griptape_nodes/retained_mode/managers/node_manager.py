@@ -1935,9 +1935,6 @@ class NodeManager:
         if parameter.name in node.parameter_values:
             # Check the internal parameter values
             internal_value = node.get_parameter_value(parameter.name)
-        if output_value is None and internal_value is None:
-            # No value set; bail.
-            return None
         # We have a value. Attempt to get a hash for it to see if it matches one
         # we've already indexed.
         commands = []
