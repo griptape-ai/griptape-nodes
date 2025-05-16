@@ -1846,7 +1846,7 @@ class NodeManager:
         return diff
 
     @staticmethod
-    def _handle_value_hashing(value:Any, value_hash_to_unique_value_uuid:dict,unique_parameter_uuid_to_values:dict, is_output:bool, parameter_name:str) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:
+    def _handle_value_hashing(value:Any, value_hash_to_unique_value_uuid:dict,unique_parameter_uuid_to_values:dict, is_output:bool, parameter_name:str) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:  # noqa: FBT001
         try:
             hash(value)
             value_id = value
