@@ -133,7 +133,7 @@ class ObjectManager:
                     context_mgr.pop_node()
                 context_mgr.pop_flow()
             context_mgr.pop_workflow()
-        context_mgr.clipboard.clear()
+        context_mgr._clipboard.clear()
         details = "Successfully cleared all object state (deleted everything)."
         logger.debug(details)
         return ClearAllObjectStateResultSuccess()
