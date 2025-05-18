@@ -149,10 +149,18 @@
       }
     },
     {
+      "config/audio": {
+        "color": "border-lime-500",
+        "title": "Audio",
+        "description": "Audio Configs for Griptape Agents",
+        "icon": "Truck"
+      }
+    },
+    {
       "config/image": {
         "color": "border-lime-500",
         "title": "Image",
-        "description": "Image Drivers for Griptape Agents",
+        "description": "Image Configs for Griptape Agents",
         "icon": "Truck"
       }
     },
@@ -160,15 +168,15 @@
       "config/prompt": {
         "color": "border-lime-500",
         "title": "Prompt",
-        "description": "Prompt Drivers for Griptape Agents",
+        "description": "Prompt Configs for Griptape Agents",
         "icon": "Truck"
       }
     },
     {
       "config/web_search": {
         "color": "border-lime-500",
-        "title": "Drivers",
-        "description": "Drivers for Griptape Agents",
+        "title": "Web Search",
+        "description": "Web Search Configs for Griptape Agents",
         "icon": "Truck"
       }
     },
@@ -206,6 +214,15 @@
         "category": "audio",
         "description": "LoadAudio node",
         "display_name": "Load Audio"
+      }
+    },
+    {
+      "class_name": "TranscribeAudio",
+      "file_path": "griptape_nodes_library/audio/transcribe_audio.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Transcribe Audio node using OpenAI models",
+        "display_name": "Transcribe Audio"
       }
     },
     {
@@ -322,7 +339,7 @@
       "metadata": {
         "category": "config/image",
         "description": "Node for OpenAI Image Generation Driver",
-        "display_name": "Open Ai Image"
+        "display_name": "OpenAI Image"
       }
     },
     {
@@ -371,12 +388,21 @@
       }
     },
     {
+      "class_name": "OpenAiAudioTranscription",
+      "file_path": "griptape_nodes_library/config/audio_transcription/openai_audio_transcription_driver.py",
+      "metadata": {
+        "category": "config/audio",
+        "description": "Node for OpenAI Audio Transcription Driver",
+        "display_name": "OpenAI Audio Transcription"
+      }
+    },
+    {
       "class_name": "OpenAiPrompt",
       "file_path": "griptape_nodes_library/config/prompt/openai_prompt.py",
       "metadata": {
         "category": "config/prompt",
-        "description": "Node for OpenAi Prompt Driver",
-        "display_name": "Open Ai Prompt"
+        "description": "Node for OpenAI Prompt Driver",
+        "display_name": "OpenAI Prompt"
       }
     },
     {
@@ -436,11 +462,11 @@
     {
       "class_name": "Webcam",
       "file_path": "griptape_nodes_library/image/webcam.py",
-        "metadata": {
-          "category": "image",
-          "description": "Capture an image using the device's camera.",
-          "display_name": "Webcam"
-        }
+      "metadata": {
+        "category": "image",
+        "description": "Capture an image using the device's camera.",
+        "display_name": "Webcam"
+      }
     },
     {
       "class_name": "SaveImage",

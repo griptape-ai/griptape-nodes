@@ -40,6 +40,15 @@ class BaseDriver(DataNode):
             )
         )
 
+    def clear_api_key_check(self, service: str, api_key_env_var: str) -> bool:
+        # Check to see if the API key is set, if not we'll show the message
+        api_key = self.get_config_value(service, api_key_env_var)
+        if api_key:
+            self.hide_parameter_by_name("message")
+            return True
+        self.show_parameter_by_name("message")
+        return False
+
     # -----------------------------------------------------------------------------
     # Abstract Methods
     # -----------------------------------------------------------------------------
