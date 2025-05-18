@@ -44,6 +44,21 @@ class ToDictionary(DataNode):
     ) -> None:
         pass
 
+    def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+        modified_parameters_set: set[str],
+    ) -> None:
+        if target_parameter.name == "from":
+            self.set_parameter_to_default_value(target_parameter.name)
+            modified_parameters_set.add(target_parameter.name)
+
+        return super().after_incoming_connection_removed(
+            source_node, source_parameter, target_parameter, modified_parameters_set
+        )
+
     def process(self) -> None:
         # Get the input value
         params = self.parameter_values

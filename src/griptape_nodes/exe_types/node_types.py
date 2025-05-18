@@ -273,6 +273,18 @@ class BaseNode(ABC):
         """Shows one or more parameters by name."""
         self._set_parameter_visibility(names, visible=True)
 
+    def set_parameter_to_default_value(self, param_name: str) -> None:
+        """Sets a Parameter's value to its default value.
+
+        Args:
+            param_name: the name of the Parameter on this node that is about to be changed
+        """
+        parameter = self.get_parameter_by_name(param_name)
+        if parameter is None:
+            err = f"Attempted to set value for Parameter '{param_name}' but no such Parameter could be found."
+            raise KeyError(err)
+        self.set_parameter_value(param_name, parameter.default_value)
+
     def initialize_spotlight(self) -> None:
         # Make a deep copy of all of the parameters and create the linked list.
         curr_param = None

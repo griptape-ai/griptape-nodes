@@ -220,6 +220,11 @@ class Agent(ControlNode):
         target_parameter: Parameter,
         modified_parameters_set: set[str],
     ) -> None:
+        # Reset to default values
+        if any(param in target_parameter.name for param in ["tool", "ruleset", "agent", "model"]):
+            self.set_parameter_to_default_value(target_parameter.name)
+            modified_parameters_set.add(target_parameter.name)
+
         # If the agent connection is removed, show agent creation parameters.
         if target_parameter.name == "agent":
             params_to_toggle = ["model", "tools", "rulesets"]
@@ -231,12 +236,8 @@ class Agent(ControlNode):
             target_parameter.type = "str"
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             # Sometimes the value is not set to the default value - these are all attemnpts to get it to work.
-            target_parameter.set_default_value(DEFAULT_MODEL)
-            target_parameter.default_value = DEFAULT_MODEL
             self.set_parameter_value("model", DEFAULT_MODEL)
-
             target_parameter._ui_options["display_name"] = "prompt model"
-
             modified_parameters_set.add("model")
 
         # If the additional context connection is removed, make it editable again.

@@ -140,6 +140,7 @@ class DescribeImage(ControlNode):
         modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "agent":
+            self.set_parameter_to_default_value("agent")
             self.show_parameter_by_name("model")
             modified_parameters_set.add("model")
         # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter

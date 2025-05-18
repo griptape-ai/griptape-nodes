@@ -5,7 +5,7 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
 )
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.button import Button
 
@@ -38,6 +38,21 @@ class SaveDictionary(ControlNode):
                 tooltip="The output filename",
                 traits={Button(button_type="save")},
             )
+        )
+
+    def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+        modified_parameters_set: set[str],
+    ) -> None:
+        if target_parameter.name == "dict":
+            self.set_parameter_to_default_value(target_parameter.name)
+            modified_parameters_set.add(target_parameter.name)
+
+        return super().after_incoming_connection_removed(
+            source_node, source_parameter, target_parameter, modified_parameters_set
         )
 
     def process(self) -> None:

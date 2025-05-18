@@ -5,7 +5,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterList,
     ParameterMode,
 )
-from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 
 
 class MergeKeyValuePairs(DataNode):
@@ -34,6 +34,21 @@ class MergeKeyValuePairs(DataNode):
                 default_value="",
                 tooltip="The merged key value pair result.",
             )
+        )
+
+    def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+        modified_parameters_set: set[str],
+    ) -> None:
+        if "KeyValuePair" in target_parameter.name:
+            self.set_parameter_to_default_value(target_parameter.name)
+            modified_parameters_set.add(target_parameter.name)
+
+        return super().after_incoming_connection_removed(
+            source_node, source_parameter, target_parameter, modified_parameters_set
         )
 
     def get_kv_pairs(self) -> list:

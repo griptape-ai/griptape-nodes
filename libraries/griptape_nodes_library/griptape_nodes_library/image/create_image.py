@@ -271,6 +271,9 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
         modified_parameters_set: set[str],
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
+        if target_parameter.name == "agent":
+            self.set_parameter_to_default_value("model")
+
         # Remove the state maintenance of the connection to the prompt Parameter
         if target_parameter.name == "prompt":
             self._has_connection_to_prompt = False
