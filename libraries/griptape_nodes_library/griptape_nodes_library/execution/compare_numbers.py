@@ -33,7 +33,7 @@ class CompareNumbers(BaseNode):
                 input_types=["str"],
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["A == B", "A != B", "A < B", "A > B", "A <= B", "A >= B"])},
-                default_value="==",
+                default_value="A == B",
             )
         )
         self.add_parameter(
