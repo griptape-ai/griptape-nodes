@@ -1629,7 +1629,6 @@ class NodeManager:
                 if parameter.user_defined:
                     # Add a user-defined Parameter.
                     param_dict = parameter.to_dict()
-                    param_dict["node_name"] = node.name
                     param_dict["initial_setup"] = True
                     add_param_request = AddParameterToNodeRequest.create(**param_dict)
                     element_modification_commands.append(add_param_request)
@@ -1642,7 +1641,6 @@ class NodeManager:
                             relevant = True
                             break
                     if relevant:
-                        diff["node_name"] = node.name
                         diff["parameter_name"] = parameter.name
                         diff["initial_setup"] = True
                         alter_param_request = AlterParameterDetailsRequest.create(**diff)
@@ -1688,6 +1686,10 @@ class NodeManager:
         node_name = create_node_result.node_name
         with GriptapeNodes.ContextManager().node(node_name=node_name):
             for element_command in request.serialized_node_commands.element_modification_commands:
+                if isinstance(
+                    element_command, (AlterParameterDetailsRequest, AddParameterToNodeRequest)
+                ):  # are there more types of requests we could encounter here?
+                    element_command.node_name = node_name
                 element_result = GriptapeNodes().handle_request(element_command)
                 if element_result.failed():
                     details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to execute an element command for node '{node_name}'."
