@@ -72,6 +72,23 @@ class TranscribeAudio(ControlNode):
                 },
             )
         )
+        # with ParameterGroup(name="warning", ui_options={"variant": "warning"}) as warning_group:
+        #     Parameter(
+        #         name="api_key_missing",
+        #         type="str",
+        #         default_value="This node requires an OPENAI_API_KEY.\n\nPlease get an API key and set the key in your Griptape Settings.",
+        #         tooltip="",
+        #         allowed_modes={ParameterMode.PROPERTY},  # type: ignore  # noqa: PGH003
+        #         ui_options={
+        #             "multiline": True,
+        #             "variant": "warning",
+        #             "markdown": True,
+        #             "message_link": str(API_KEY_URL),
+        #             "message_link_text": "Get API Key",
+        #         },
+        #     )
+
+        # self.add_node_element(warning_group)
         self.add_parameter(
             Parameter(
                 name="message",
