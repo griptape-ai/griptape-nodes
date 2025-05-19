@@ -1629,7 +1629,6 @@ class NodeManager:
                 if parameter.user_defined:
                     # Add a user-defined Parameter.
                     param_dict = parameter.to_dict()
-                    param_dict["node_name"] = node.name
                     param_dict["initial_setup"] = True
                     add_param_request = AddParameterToNodeRequest.create(**param_dict)
                     element_modification_commands.append(add_param_request)
@@ -1642,7 +1641,6 @@ class NodeManager:
                             relevant = True
                             break
                     if relevant:
-                        diff["node_name"] = node.name
                         diff["parameter_name"] = parameter.name
                         diff["initial_setup"] = True
                         alter_param_request = AlterParameterDetailsRequest.create(**diff)
@@ -1686,13 +1684,14 @@ class NodeManager:
 
         # Adopt the newly-created node as our current context.
         node_name = create_node_result.node_name
-        with GriptapeNodes.ContextManager().node(node_name=node_name):
-            for element_command in request.serialized_node_commands.element_modification_commands:
-                element_result = GriptapeNodes().handle_request(element_command)
-                if element_result.failed():
-                    details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to execute an element command for node '{node_name}'."
-                    logger.error(details)
-                    return DeserializeNodeFromCommandsResultFailure()
+        GriptapeNodes.ContextManager().push_node(node_name=node_name)
+        for element_command in request.serialized_node_commands.element_modification_commands:
+            element_result = GriptapeNodes().handle_request(element_command)
+            if element_result.failed():
+                details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to execute an element command for node '{node_name}'."
+                logger.error(details)
+                return DeserializeNodeFromCommandsResultFailure()
+        GriptapeNodes.ContextManager().pop_node()
 
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         logger.debug(details)
