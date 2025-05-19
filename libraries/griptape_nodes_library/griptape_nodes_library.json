@@ -13,9 +13,9 @@
   },
   "categories": [
     {
-      "Base": {
-        "title": "Base",
-        "description": "Base related nodes",
+      "misc": {
+        "title": "misc",
+        "description": "Miscellaneous nodes",
         "color": "border-gray-500",
         "icon": "Folder"
       }
@@ -464,7 +464,7 @@
       "class_name": "Note",
       "file_path": "griptape_nodes_library/note.py",
       "metadata": {
-        "category": "Base",
+        "category": "misc",
         "description": "Note node",
         "display_name": "Note"
       }
@@ -633,18 +633,18 @@
     },
     {
       "class_name": "StartFlow",
-      "file_path": "griptape_nodes_library/execution/start_flow.py",
+      "file_path": "griptape_nodes_library/workflows/start_flow.py",
       "metadata": {
-        "category": "execution",
+        "category": "workflows",
         "description": "StartFlow node",
         "display_name": "Start Flow"
       }
     },
     {
       "class_name": "EndFlow",
-      "file_path": "griptape_nodes_library/execution/end_flow.py",
+      "file_path": "griptape_nodes_library/workflows/end_flow.py",
       "metadata": {
-        "category": "execution",
+        "category": "workflows",
         "description": "EndFlow node",
         "display_name": "End Flow"
       }
