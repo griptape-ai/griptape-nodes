@@ -209,6 +209,15 @@
       }
     },
     {
+      "class_name": "Microphone",
+      "file_path": "griptape_nodes_library/audio/microphone.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Microphone node",
+        "display_name": "Microphone"
+      }
+    },
+    {
       "class_name": "ToBool",
       "file_path": "griptape_nodes_library/convert/to_bool.py",
       "metadata": {
@@ -436,11 +445,11 @@
     {
       "class_name": "Webcam",
       "file_path": "griptape_nodes_library/image/webcam.py",
-        "metadata": {
-          "category": "image",
-          "description": "Capture an image using the device's camera.",
-          "display_name": "Webcam"
-        }
+      "metadata": {
+        "category": "image",
+        "description": "Capture an image using the device's camera.",
+        "display_name": "Webcam"
+      }
     },
     {
       "class_name": "SaveImage",
