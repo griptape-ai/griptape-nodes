@@ -1783,7 +1783,16 @@ class NodeManager:
             return DeserializeSelectedNodesFromCommandsResultFailure()
         connections = commands.serialized_connection_commands
         node_uuid_to_name = {}
-        for node_command in commands.serialized_node_commands:
+        new_position = request.position
+        offset = {"x":0, "y":0}
+        old_position = {"x":0, "y":0}
+        for i, node_command in enumerate(commands.serialized_node_commands):
+            if new_position is not None and node_command.create_node_command.metadata is not None and "position" in node_command.create_node_command.metadata:
+                if i == 0:
+                    old_position = node_command.create_node_command.metadata["position"]
+                else:
+                    offset = {"x":node_command.create_node_command.metadata["position"]["x"] - old_position["x"], "y":node_command.create_node_command.metadata["position"]["y"] - old_position["y"]}
+                node_command.create_node_command.metadata["position"] = {"x":new_position.x + offset["x"], "y":new_position.y + offset["y"]}
             result = self.on_deserialize_node_from_commands(
                 DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command)
             )
@@ -1836,12 +1845,12 @@ class NodeManager:
             details = "Failed to serialized selected nodes."
             logger.error(details)
             return DuplicateSelectedNodesResultFailure()
-        GriptapeNodes.handle_request(DeserializeSelectedNodesFromCommandsRequest())
-        if not result.succeeded():
+        result = GriptapeNodes.handle_request(DeserializeSelectedNodesFromCommandsRequest())
+        if not isinstance(result, DeserializeSelectedNodesFromCommandsResultSuccess):
             details = "Failed to deserialize selected nodes."
             logger.error(details)
             return DuplicateSelectedNodesResultFailure()
-        return DuplicateSelectedNodesResultSuccess()
+        return DuplicateSelectedNodesResultSuccess(result.node_names)
 
     @staticmethod
     def _manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
