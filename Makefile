@@ -30,6 +30,7 @@ version/commit: ## Commit version.
 
 .PHONY: version/publish
 version/publish: ## Create and push git tags.
+	@git fetch --tags --force
 	@git tag v$$(make version/get)
 	@git tag stable -f
 	@git push -f --tags
