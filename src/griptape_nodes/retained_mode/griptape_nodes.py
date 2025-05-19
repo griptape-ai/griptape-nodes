@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.metadata
 import logging
 import re
 from dataclasses import dataclass
@@ -60,6 +61,9 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger("griptape_nodes")
+
+
+engine_version = importlib.metadata.version("griptape_nodes")
 
 
 @dataclass
@@ -240,19 +244,15 @@ class GriptapeNodes(metaclass=SingletonMeta):
             raise ValueError(msg)
 
     def handle_engine_version_request(self, request: GetEngineVersionRequest) -> ResultPayload:  # noqa: ARG002
-        import importlib.metadata
-
         try:
-            engine_version_str = importlib.metadata.version("griptape_nodes")
-
-            engine_ver = Version.from_string(engine_version_str)
+            engine_ver = Version.from_string(engine_version)
             if engine_ver:
                 return GetEngineVersionResultSuccess(
                     major=engine_ver.major,
                     minor=engine_ver.minor,
                     patch=engine_ver.patch,
                 )
-            details = f"Attempted to get engine version. Failed because version string '{engine_version_str}' wasn't in expected major.minor.patch format."
+            details = f"Attempted to get engine version. Failed because version string '{engine_ver}' wasn't in expected major.minor.patch format."
             logger.error(details)
             return GetEngineVersionResultFailure()
         except Exception as err:

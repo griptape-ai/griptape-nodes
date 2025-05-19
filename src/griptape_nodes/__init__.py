@@ -24,6 +24,7 @@ with console.status("Loading Griptape Nodes...") as status:
     from xdg_base_dirs import xdg_config_home, xdg_data_home
 
     from griptape_nodes.app import start_app
+    from griptape_nodes.retained_mode.griptape_nodes import engine_version
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -490,9 +491,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
 
 def __get_current_version() -> str:
     """Returns the current version of the Griptape Nodes package."""
-    version = importlib.metadata.version("griptape_nodes")
-
-    return f"v{version}"
+    return f"v{engine_version}"
 
 
 def __get_install_source() -> tuple[Literal["git", "file", "pypi"], str | None]:
