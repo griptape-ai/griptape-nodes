@@ -85,6 +85,7 @@ class Agent(ControlNode):
                 output_type="Agent",
                 tooltip="Create a new agent, or continue a chat with an existing agent.",
                 default_value=None,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
         # Selection for the Griptape Cloud model.

@@ -37,6 +37,7 @@ class DescribeImage(ControlNode):
                 output_type="Agent",
                 tooltip="An agent that can be used to describe the image.",
                 default_value=None,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
         self.add_parameter(
