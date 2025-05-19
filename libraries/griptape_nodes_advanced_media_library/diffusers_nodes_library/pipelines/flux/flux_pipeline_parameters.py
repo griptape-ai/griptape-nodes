@@ -3,11 +3,11 @@ from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
-import torch  # type: ignore[reportMissingImports]
 from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
+from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
@@ -24,6 +24,7 @@ class FluxPipelineParameters:
                 "black-forest-labs/FLUX.1-dev",
             ],
         )
+        self._seed_parameter = SeedParameter(node)
 
     def add_input_parameters(self) -> None:
         self._huggingface_repo_parameter.add_input_parameters()
@@ -135,15 +136,7 @@ class FluxPipelineParameters:
                 tooltip="guidance_scale",
             )
         )
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/842
-        self._node.add_parameter(
-            Parameter(
-                name="seed",
-                input_types=["int"],
-                type="int",
-                tooltip="optional - random seed, default is random seed",
-            )
-        )
+        self._seed_parameter.add_input_parameters()
 
     def add_output_parameters(self) -> None:
         self._node.add_parameter(
@@ -159,6 +152,12 @@ class FluxPipelineParameters:
         errors = self._huggingface_repo_parameter.validate_before_node_run()
         return errors or None
 
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
+
+    def preprocess(self) -> None:
+        self._seed_parameter.preprocess()
+
     def get_repo_revision(self) -> tuple[str, str]:
         return self._huggingface_repo_parameter.get_repo_revision()
 
@@ -170,6 +169,36 @@ class FluxPipelineParameters:
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
         self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
+    def get_prompt(self) -> str:
+        return self._node.get_parameter_value("prompt")
+
+    def get_prompt_2(self) -> str:
+        return self._node.get_parameter_value("prompt_2") or self.get_prompt()
+
+    def get_negative_prompt(self) -> str:
+        return self._node.get_parameter_value("negative_prompt")
+
+    def get_negative_prompt_2(self) -> str:
+        return self._node.get_parameter_value("negative_prompt_2") or self.get_negative_prompt()
+
+    def get_true_cfg_scale(self) -> float:
+        return float(self._node.get_parameter_value("true_cfg_scale"))
+
+    def get_width(self) -> int:
+        return int(self._node.get_parameter_value("width"))
+
+    def get_height(self) -> int:
+        return int(self._node.get_parameter_value("height"))
+
+    def get_num_inference_steps(self) -> int:
+        sigmas = self.get_sigmas()
+        if sigmas is not None:
+            return len(sigmas)
+        return int(self._node.get_parameter_value("num_inference_steps"))
+
+    def get_guidance_scale(self) -> float:
+        return float(self._node.get_parameter_value("guidance_scale"))
+
     def get_sigmas(self) -> list[float] | None:
         sigmas = self._node.get_parameter_value("sigmas")
         if isinstance(sigmas, str):
@@ -177,32 +206,18 @@ class FluxPipelineParameters:
         return sigmas
 
     def get_pipe_kwargs(self) -> dict:
-        prompt = self._node.parameter_values["prompt"]
-        prompt_2 = self._node.parameter_values.get("prompt_2", prompt)
-        negative_prompt = self._node.parameter_values["negative_prompt"]
-        negative_prompt_2 = self._node.parameter_values.get("negative_prompt_2", negative_prompt)
-
-        num_inference_steps = int(self._node.parameter_values["num_inference_steps"])
-        sigmas = self.get_sigmas()
-        num_inference_steps = num_inference_steps if sigmas is None else len(sigmas)
-
-        seed = int(self._node.parameter_values["seed"]) if ("seed" in self._node.parameter_values) else None
-        generator = torch.Generator("cpu")
-        if seed is not None:
-            generator = generator.manual_seed(seed)
-
         return {
-            "prompt": prompt,
-            "prompt_2": prompt_2,
-            "negative_prompt": negative_prompt,
-            "negative_prompt_2": negative_prompt_2,
-            "true_cfg_scale": float(self._node.parameter_values["true_cfg_scale"]),
-            "width": int(self._node.parameter_values["width"]),
-            "height": int(self._node.parameter_values["height"]),
-            "num_inference_steps": num_inference_steps,
-            "sigmas": sigmas,
-            "guidance_scale": float(self._node.parameter_values["guidance_scale"]),
-            "generator": generator,
+            "prompt": self.get_prompt(),
+            "prompt_2": self.get_prompt_2(),
+            "negative_prompt": self.get_negative_prompt(),
+            "negative_prompt_2": self.get_negative_prompt_2(),
+            "true_cfg_scale": self.get_true_cfg_scale(),
+            "width": self.get_width(),
+            "height": self.get_height(),
+            "num_inference_steps": self.get_num_inference_steps(),
+            "sigmas": self.get_sigmas(),
+            "guidance_scale": self.get_guidance_scale(),
+            "generator": self._seed_parameter.get_generator(),
         }
 
     def latents_to_image_pil(
@@ -228,6 +243,3 @@ class FluxPipelineParameters:
         image_artifact = pil_to_image_artifact(output_image_pil)
         self._node.set_parameter_value("output_image", image_artifact)
         self._node.parameter_output_values["output_image"] = image_artifact
-
-    def get_num_inference_steps(self) -> int:
-        return int(self._node.get_parameter_value("num_inference_steps"))
