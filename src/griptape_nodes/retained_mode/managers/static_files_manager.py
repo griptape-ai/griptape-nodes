@@ -1,14 +1,24 @@
 import base64
 import binascii
 import logging
-from pathlib import Path
+from urllib.parse import urljoin
 
+import httpx
 from xdg_base_dirs import xdg_config_home
 
+from griptape_nodes.app.app import (
+    STATIC_SERVER_ENABLED,
+    STATIC_SERVER_HOST,
+    STATIC_SERVER_PORT,
+    STATIC_SERVER_URL,
+)
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileRequest,
     CreateStaticFileResultFailure,
     CreateStaticFileResultSuccess,
+    CreateStaticFileUploadUrlRequest,
+    CreateStaticFileUploadUrlResultFailure,
+    CreateStaticFileUploadUrlResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -29,9 +39,13 @@ class StaticFilesManager:
             event_manager: The EventManager instance to use for event handling.
         """
         self.config_manager = config_manager
+        self.base_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}"
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(
                 CreateStaticFileRequest, self.on_handle_create_static_file_request
+            )
+            event_manager.assign_manager_to_request_type(
+                CreateStaticFileUploadUrlRequest, self.on_handle_create_static_file_upload_url_request
             )
 
     def on_handle_create_static_file_request(
@@ -39,22 +53,73 @@ class StaticFilesManager:
         request: CreateStaticFileRequest,
     ) -> CreateStaticFileResultSuccess | CreateStaticFileResultFailure:
         file_name = request.file_name
+        response = self.on_handle_create_static_file_upload_url_request(
+            CreateStaticFileUploadUrlRequest(file_name=file_name)
+        )
+
+        if isinstance(response, CreateStaticFileUploadUrlResultFailure):
+            msg = f"Failed to create presigned URL for file {file_name}: {response.error}"
+            logger.error(msg)
+            return CreateStaticFileResultFailure(error=msg)
+
         try:
-            url = self.save_static_file(base64.b64decode(request.content), file_name)
-        except binascii.Error:
-            msg = f"Invalid base64 encoding for file {file_name}."
+            content_bytes = base64.b64decode(request.content)
+        except (binascii.Error, ValueError) as e:
+            msg = f"Failed to decode base64 content for file {file_name}: {e}"
             logger.error(msg)
             return CreateStaticFileResultFailure(error=msg)
-        except (OSError, PermissionError) as e:
-            msg = f"Failed to write file {file_name} to {self.config_manager.workspace_path}: {e}"
-            logger.error(msg)
-            return CreateStaticFileResultFailure(error=msg)
-        except ValueError as e:
+
+        try:
+            response = httpx.put(urljoin(response.url, file_name), files={"file": (file_name, content_bytes)})
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
             msg = str(e)
             logger.error(msg)
             return CreateStaticFileResultFailure(error=msg)
-        else:
-            return CreateStaticFileResultSuccess(url=url)
+
+        response_data = response.json()
+        response_url = response_data.get("url")
+        if response_url is None:
+            msg = f"Failed to create static file {file_name}: {response_data}"
+            logger.error(msg)
+            return CreateStaticFileResultFailure(error=msg)
+
+        return CreateStaticFileResultSuccess(url=response_url)
+
+    def on_handle_create_static_file_upload_url_request(
+        self,
+        request: CreateStaticFileUploadUrlRequest,
+    ) -> CreateStaticFileUploadUrlResultSuccess | CreateStaticFileUploadUrlResultFailure:
+        """Handle the request to create a presigned URL for uploading a static file.
+
+        Args:
+            request: The request object containing the file name.
+
+        Returns:
+            A result object indicating success or failure.
+        """
+        file_name = request.file_name
+
+        static_url = urljoin(self.base_url, "/static-upload-urls")
+        try:
+            response = httpx.post(
+                static_url,
+                json={"file_name": file_name},
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = f"Failed to create presigned URL for file {file_name}: {e}"
+            logger.error(msg)
+            return CreateStaticFileUploadUrlResultFailure(error=msg)
+
+        response_data = response.json()
+        url = response_data.get("url")
+        if url is None:
+            msg = f"Failed to create presigned URL for file {file_name}: {response_data}"
+            logger.error(msg)
+            return CreateStaticFileUploadUrlResultFailure(error=msg)
+
+        return CreateStaticFileUploadUrlResultSuccess(url=url)
 
     def save_static_file(self, data: bytes, file_name: str) -> str:
         """Saves a static file to the workspace directory.
@@ -68,24 +133,17 @@ class StaticFilesManager:
         Returns:
             The URL of the saved file.
         """
-        from griptape_nodes.app.app import (
-            STATIC_SERVER_ENABLED,
-            STATIC_SERVER_HOST,
-            STATIC_SERVER_PORT,
-            STATIC_SERVER_URL,
-        )
-
         if not STATIC_SERVER_ENABLED:
             msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
             raise ValueError(msg)
 
-        file_path = Path(
-            self.config_manager.workspace_path / self.config_manager.merged_config["static_files_directory"]
+        response = self.on_handle_create_static_file_request(
+            CreateStaticFileRequest(file_name=file_name, content=base64.b64encode(data).decode("utf-8"))
         )
-        if not file_path.exists():
-            file_path.mkdir(parents=True, exist_ok=True)
-        Path(file_path / file_name).write_bytes(data)
 
-        static_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}/{file_name}"
+        if isinstance(response, CreateStaticFileResultFailure):
+            msg = f"Failed to create static file {file_name}: {response.error}"
+            logger.error(msg)
+            raise ValueError(msg)  # noqa: TRY004
 
-        return static_url
+        return response.url
