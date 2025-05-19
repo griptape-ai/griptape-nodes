@@ -976,6 +976,7 @@ class LibraryManager:
 
         # Prepend the workflow directory; if the sandbox dir starts with a slash, the workflow dir will be ignored.
         sandbox_library_dir = config_mgr.workspace_path / sandbox_library_subdir
+        sandbox_library_dir_as_posix = sandbox_library_dir.as_posix()
 
         sandbox_node_candidates = self._find_files_in_dir(directory=sandbox_library_dir, extension=".py")
         if not sandbox_node_candidates:
@@ -989,22 +990,31 @@ class LibraryManager:
             icon="Folder",
         )
 
+        problems = []
+
         # Trawl through the Python files and find those that are nodes.
         node_definitions = []
         for candidate in sandbox_node_candidates:
             try:
                 module = self._load_module_from_file(candidate)
             except Exception as err:
-                logger.error("Could not load module in sandbox library '%s': %s", candidate, err)
+                problems.append(f"Could not load module in sandbox library '{candidate}': {err}")
+                details = f"Attempted to load module in sandbox library '{candidate}'. Failed because an exception occurred: {err}."
+                logger.warning(details)
                 continue  # SKIP IT
 
             # Peek inside for any BaseNodes.
             for class_name, obj in vars(module).items():
-                if issubclass(obj, BaseNode):
+                if (
+                    isinstance(obj, type)
+                    and issubclass(obj, BaseNode)
+                    and obj is not BaseNode
+                    and obj.__module__ == module.__name__
+                ):
                     details = f"Found node '{class_name}' in sandbox library '{candidate}'."
                     logger.debug(details)
                     node_metadata = NodeMetadata(
-                        category="gtn-sandbox",
+                        category="Griptape Nodes Sandbox",
                         description=f"'{class_name}' (loaded from the Sandbox Library).",
                         display_name=class_name,
                     )
@@ -1034,7 +1044,7 @@ class LibraryManager:
             is_griptape_nodes_searchable=False,
         )
         categories = [
-            {"gtn-sandbox": sandbox_category},
+            {"Griptape Nodes Sandbox": sandbox_category},
         ]
         library_data = LibrarySchema(
             name="Sandbox Library",
@@ -1055,8 +1065,8 @@ class LibraryManager:
 
         except KeyError as err:
             # Library already exists
-            self._library_file_path_to_info[sandbox_library_dir] = LibraryManager.LibraryInfo(
-                library_path=sandbox_library_dir,
+            self._library_file_path_to_info[sandbox_library_dir_as_posix] = LibraryManager.LibraryInfo(
+                library_path=sandbox_library_dir_as_posix,
                 library_name=library_data.name,
                 library_version=engine_version_str,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
@@ -1067,17 +1077,16 @@ class LibraryManager:
             logger.error(details)
             return
 
-        problems = []
         # Attempt to load nodes from the library.
         library_load_results = self._attempt_load_nodes_from_library(
             library_data=library_data,
             library=library,
-            base_dir=sandbox_library_dir,
-            library_file_path=sandbox_library_dir,
+            base_dir=sandbox_library_dir_as_posix,
+            library_file_path=sandbox_library_dir_as_posix,
             library_version=engine_version_str,
             problems=problems,
         )
-        self._library_file_path_to_info[sandbox_library_dir] = library_load_results
+        self._library_file_path_to_info[sandbox_library_dir_as_posix] = library_load_results
 
     def _find_files_in_dir(self, directory: Path, extension: str) -> list[Path]:
         ret_val = []
