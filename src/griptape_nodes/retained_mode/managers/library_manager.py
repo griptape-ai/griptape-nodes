@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
+import os
 import platform
 import subprocess
 import sys
@@ -24,9 +25,19 @@ from rich.text import Text
 from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.node_library.library_registry import LibraryRegistry, LibrarySchema
+from griptape_nodes.node_library.library_registry import (
+    CategoryDefinition,
+    Library,
+    LibraryMetadata,
+    LibraryRegistry,
+    LibrarySchema,
+    NodeDefinition,
+    NodeMetadata,
+)
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
+    GetEngineVersionRequest,
+    GetEngineVersionResultSuccess,
 )
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
@@ -69,6 +80,8 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 if TYPE_CHECKING:
+    from types import ModuleType
+
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -553,77 +566,33 @@ class LibraryManager:
                         continue  # SKIP IT
 
         # Attempt to load nodes from the library.
-        any_nodes_loaded_successesfully = False
-        # Process each node in the metadata
-        for node_definition in library_data.nodes:
-            # Resolve relative path to absolute path
-            node_file_path = Path(node_definition.file_path)
-            if not node_file_path.is_absolute():
-                node_file_path = base_dir / node_file_path
+        library_load_results = self._attempt_load_nodes_from_library(
+            library_data=library_data,
+            library=library,
+            base_dir=base_dir,
+            library_file_path=file_path,
+            library_version=library_version,
+            problems=problems,
+        )
+        self._library_file_path_to_info[file_path] = library_load_results
 
-            try:
-                # Dynamically load the module containing the node class
-                node_class = self._load_class_from_file(node_file_path, node_definition.class_name)
-            except Exception as err:
-                problems.append(
-                    f"Failed to load node '{node_definition.class_name}' from '{node_file_path}' with error: {err}"
-                )
-                details = f"Attempted to load node '{node_definition.class_name}' from '{node_file_path}'. Failed because an exception occurred: {err}"
+        match library_load_results.status:
+            case LibraryManager.LibraryStatus.GOOD:
+                details = f"Successfully loaded Library '{library_data.name}' from JSON file at {json_path}"
+                logger.info(details)
+                return RegisterLibraryFromFileResultSuccess(library_name=library_data.name)
+            case LibraryManager.LibraryStatus.FLAWED:
+                details = f"Successfully loaded Library JSON file from '{json_path}', but one or more nodes failed to load. Check the log for more details."
+                logger.warning(details)
+                return RegisterLibraryFromFileResultSuccess(library_name=library_data.name)
+            case LibraryManager.LibraryStatus.UNUSABLE:
+                details = f"Attempted to load Library JSON file from '{json_path}'. Failed because no nodes were loaded. Check the log for more details."
                 logger.error(details)
-                continue  # SKIP IT
-
-            try:
-                # Register the node type with the library
-                forensics_string = library.register_new_node_type(node_class, metadata=node_definition.metadata)
-                if forensics_string is not None:
-                    problems.append(forensics_string)
-            except Exception as err:
-                problems.append(
-                    f"Failed to register node '{node_definition.class_name}' from '{node_file_path}' with error: {err}"
-                )
-                details = f"Attempted to load node '{node_definition.class_name}' from '{node_file_path}'. Failed because an exception occurred: {err}"
+                return RegisterLibraryFromFileResultFailure()
+            case _:
+                details = f"Attempted to load Library JSON file from '{json_path}'. Failed because an unknown/unexpected status '{library_load_results.status}' was returned."
                 logger.error(details)
-                continue  # SKIP IT
-
-            # If we got here, at least one node came in.
-            any_nodes_loaded_successesfully = True
-
-        if not any_nodes_loaded_successesfully:
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=library_data.name,
-                library_version=library_version,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=problems,
-            )
-            details = f"Attempted to load Library JSON file from '{json_path}'. Failed because no nodes were loaded. Check the log for more details."
-            logger.error(details)
-            return RegisterLibraryFromFileResultFailure()
-
-        # Successes, but errors.
-        if problems:
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=library_data.name,
-                library_version=library_version,
-                status=LibraryManager.LibraryStatus.FLAWED,
-                problems=problems,
-            )
-            details = f"Successfully loaded Library JSON file from '{json_path}', but one or more nodes failed to load. Check the log for more details."
-            logger.warning(details)
-        else:
-            # Flawless victory.
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=library_data.name,
-                library_version=library_version,
-                status=LibraryManager.LibraryStatus.GOOD,
-                problems=problems,
-            )
-            details = f"Successfully loaded Library '{library_data.name}' from JSON file at {json_path}"
-            logger.info(details)
-
-        return RegisterLibraryFromFileResultSuccess(library_name=library_data.name)
+                return RegisterLibraryFromFileResultFailure()
 
     def register_library_from_requirement_specifier_request(
         self, request: RegisterLibraryFromRequirementSpecifierRequest
@@ -779,20 +748,17 @@ class LibraryManager:
         )
         return result
 
-    def _load_class_from_file(self, file_path: Path | str, class_name: str) -> type[BaseNode]:
-        """Dynamically load a class from a Python file with support for hot reloading.
+    def _load_module_from_file(self, file_path: Path | str) -> ModuleType:
+        """Dynamically load a module from a Python file with support for hot reloading.
 
         Args:
             file_path: Path to the Python file
-            class_name: Name of the class to load
 
         Returns:
-            The loaded class
+            The loaded module
 
         Raises:
             ImportError: If the module cannot be imported
-            AttributeError: If the class doesn't exist in the module
-            TypeError: If the loaded class isn't a BaseNode-derived class
         """
         # Ensure file_path is a Path object
         file_path = Path(file_path)
@@ -846,8 +812,31 @@ class LibraryManager:
             try:
                 spec.loader.exec_module(module)
             except Exception as err:
-                msg = f"Class '{class_name}' from module '{file_path}' failed to load with error: {err}"
+                msg = f"Module at '{file_path}' failed to load with error: {err}"
                 raise ImportError(msg) from err
+
+        return module
+
+    def _load_class_from_file(self, file_path: Path | str, class_name: str) -> type[BaseNode]:
+        """Dynamically load a class from a Python file with support for hot reloading.
+
+        Args:
+            file_path: Path to the Python file
+            class_name: Name of the class to load
+
+        Returns:
+            The loaded class
+
+        Raises:
+            ImportError: If the module cannot be imported
+            AttributeError: If the class doesn't exist in the module
+            TypeError: If the loaded class isn't a BaseNode-derived class
+        """
+        try:
+            module = self._load_module_from_file(file_path)
+        except ImportError as err:
+            msg = f"Attempted to load class '{class_name}'. Error: {err}"
+            raise ImportError(msg) from err
 
         # Get the class
         try:
@@ -867,7 +856,13 @@ class LibraryManager:
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         self._load_libraries_from_config_category(config_category=user_libraries_section, load_as_default_library=False)
 
-        # Remove any missing libraries
+        sandbox_library_section = "sandbox_library_directory"
+        self._attempt_generate_sandbox_library(config_category=sandbox_library_section)
+
+        # Print 'em all pretty
+        self.print_library_load_status()
+
+        # Remove any missing libraries AFTER we've printed them for the user.
         self._remove_missing_libraries_from_config(config_category=user_libraries_section)
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
@@ -909,6 +904,190 @@ class LibraryManager:
         # Go tell the Workflow Manager that it's turn is now.
         GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
 
+    def _attempt_load_nodes_from_library(  # noqa: PLR0913
+        self,
+        library_data: LibrarySchema,
+        library: Library,
+        base_dir: Path,
+        library_file_path: str,
+        library_version: str | None,
+        problems: list[str],
+    ) -> LibraryManager.LibraryInfo:
+        any_nodes_loaded_successfully = False
+        # Process each node in the metadata
+        for node_definition in library_data.nodes:
+            # Resolve relative path to absolute path
+            node_file_path = Path(node_definition.file_path)
+            if not node_file_path.is_absolute():
+                node_file_path = base_dir / node_file_path
+
+            try:
+                # Dynamically load the module containing the node class
+                node_class = self._load_class_from_file(node_file_path, node_definition.class_name)
+            except Exception as err:
+                problems.append(
+                    f"Failed to load node '{node_definition.class_name}' from '{node_file_path}' with error: {err}"
+                )
+                details = f"Attempted to load node '{node_definition.class_name}' from '{node_file_path}'. Failed because an exception occurred: {err}"
+                logger.error(details)
+                continue  # SKIP IT
+
+            try:
+                # Register the node type with the library
+                forensics_string = library.register_new_node_type(node_class, metadata=node_definition.metadata)
+                if forensics_string is not None:
+                    problems.append(forensics_string)
+            except Exception as err:
+                problems.append(
+                    f"Failed to register node '{node_definition.class_name}' from '{node_file_path}' with error: {err}"
+                )
+                details = f"Attempted to load node '{node_definition.class_name}' from '{node_file_path}'. Failed because an exception occurred: {err}"
+                logger.error(details)
+                continue  # SKIP IT
+
+            # If we got here, at least one node came in.
+            any_nodes_loaded_successfully = True
+
+        # Create a LibraryInfo object based on load successes and problem count.
+        if not any_nodes_loaded_successfully:
+            status = LibraryManager.LibraryStatus.UNUSABLE
+        elif problems:
+            # Success, but errors.
+            status = LibraryManager.LibraryStatus.FLAWED
+        else:
+            # Flawless victory.
+            status = LibraryManager.LibraryStatus.GOOD
+
+        # Create a LibraryInfo object based on load successes and problem count.
+        return LibraryManager.LibraryInfo(
+            library_path=library_file_path,
+            library_name=library_data.name,
+            library_version=library_version,
+            status=status,
+            problems=problems,
+        )
+
+    def _attempt_generate_sandbox_library(self, config_category: str) -> None:
+        config_mgr = GriptapeNodes.ConfigManager()
+        sandbox_library_subdir = config_mgr.get_config_value(config_category)
+        if not sandbox_library_subdir:
+            logger.debug("No sandbox directory specified in config at key '%s'. Skipping.", config_category)
+            return
+
+        # Prepend the workflow directory; if the sandbox dir starts with a slash, the workflow dir will be ignored.
+        sandbox_library_dir = config_mgr.workspace_path / sandbox_library_subdir
+
+        sandbox_node_candidates = self._find_files_in_dir(directory=sandbox_library_dir, extension=".py")
+        if not sandbox_node_candidates:
+            logger.debug("No candidate files found in sandbox directory '%s'. Skipping.", sandbox_library_dir)
+            return
+
+        sandbox_category = CategoryDefinition(
+            title="Sandbox",
+            description="Nodes loaded from the Sandbox Library.",
+            color="#ff0000",
+            icon="Folder",
+        )
+
+        # Trawl through the Python files and find those that are nodes.
+        node_definitions = []
+        for candidate in sandbox_node_candidates:
+            try:
+                module = self._load_module_from_file(candidate)
+            except Exception as err:
+                logger.error("Could not load module in sandbox library '%s': %s", candidate, err)
+                continue  # SKIP IT
+
+            # Peek inside for any BaseNodes.
+            for class_name, obj in vars(module).items():
+                if issubclass(obj, BaseNode):
+                    details = f"Found node '{class_name}' in sandbox library '{candidate}'."
+                    logger.debug(details)
+                    node_metadata = NodeMetadata(
+                        category="gtn-sandbox",
+                        description=f"'{class_name}' (loaded from the Sandbox Library).",
+                        display_name=class_name,
+                    )
+                    node_definition = NodeDefinition(
+                        class_name=class_name,
+                        file_path=str(candidate),
+                        metadata=node_metadata,
+                    )
+                    node_definitions.append(node_definition)
+
+        if not node_definitions:
+            logger.info("No nodes found in sandbox library '%s'. Skipping.", sandbox_library_dir)
+            return
+
+        # Create the library schema and metadata.
+        engine_version = GriptapeNodes().handle_engine_version_request(request=GetEngineVersionRequest())
+        if not isinstance(engine_version, GetEngineVersionResultSuccess):
+            logger.error("Could not get engine version. Skipping sandbox library.")
+            return
+        engine_version_str = f"{engine_version.major}.{engine_version.minor}.{engine_version.patch}"
+        library_metadata = LibraryMetadata(
+            author="Author needs to be specified when library is published.",
+            description="Nodes loaded from the sandbox library.",
+            library_version=engine_version_str,
+            engine_version=engine_version_str,
+            tags=["sandbox"],
+            is_griptape_nodes_searchable=False,
+        )
+        categories = [
+            {"gtn-sandbox": sandbox_category},
+        ]
+        library_data = LibrarySchema(
+            name="Sandbox Library",
+            library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
+            metadata=library_metadata,
+            categories=categories,
+            nodes=node_definitions,
+        )
+
+        # Register the library.
+        # Create or get the library
+        try:
+            # Try to create a new library
+            library = LibraryRegistry.generate_new_library(
+                library_data=library_data,
+                mark_as_default_library=True,
+            )
+
+        except KeyError as err:
+            # Library already exists
+            self._library_file_path_to_info[sandbox_library_dir] = LibraryManager.LibraryInfo(
+                library_path=sandbox_library_dir,
+                library_name=library_data.name,
+                library_version=engine_version_str,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=["Failed because a library with this name was already registered."],
+            )
+
+            details = f"Attempted to load Library JSON file from '{sandbox_library_dir}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
+            logger.error(details)
+            return
+
+        problems = []
+        # Attempt to load nodes from the library.
+        library_load_results = self._attempt_load_nodes_from_library(
+            library_data=library_data,
+            library=library,
+            base_dir=sandbox_library_dir,
+            library_file_path=sandbox_library_dir,
+            library_version=engine_version_str,
+            problems=problems,
+        )
+        self._library_file_path_to_info[sandbox_library_dir] = library_load_results
+
+    def _find_files_in_dir(self, directory: Path, extension: str) -> list[Path]:
+        ret_val = []
+        for root, _, files_found in os.walk(directory):
+            for file in files_found:
+                if file.endswith(extension):
+                    file_path = Path(root) / file
+                    ret_val.append(file_path)
+        return ret_val
+
     def _load_libraries_from_config_category(self, config_category: str, *, load_as_default_library: bool) -> None:
         config_mgr = GriptapeNodes.ConfigManager()
         libraries_to_register_category: list[str] = config_mgr.get_config_value(config_category)
@@ -925,9 +1104,6 @@ class LibraryManager:
                         requirement_specifier=library_to_register
                     )
                 GriptapeNodes.handle_request(library_load_request)
-
-        # Print 'em all pretty
-        self.print_library_load_status()
 
     def _remove_missing_libraries_from_config(self, config_category: str) -> None:
         # Now remove all libraries that were missing from the user's config.

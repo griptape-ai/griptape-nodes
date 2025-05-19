@@ -84,6 +84,8 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.1.0"
+
     name: str
     library_schema_version: str
     metadata: LibraryMetadata
