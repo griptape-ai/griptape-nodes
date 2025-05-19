@@ -21,13 +21,6 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
-class NewPosition(NamedTuple):
-    """The new X and Y position that the node should be created in."""
-
-    x: float
-    y: float
-
-
 @dataclass
 @PayloadRegistry.register
 class CreateNodeRequest(RequestPayload):
@@ -381,7 +374,7 @@ class SerializeSelectedNodesToCommandsResultFailure(WorkflowNotAlteredMixin, Res
 @dataclass
 @PayloadRegistry.register
 class DeserializeSelectedNodesFromCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
-    position: NewPosition | None
+    position: dict[str, int] | None = None
 
 
 @dataclass

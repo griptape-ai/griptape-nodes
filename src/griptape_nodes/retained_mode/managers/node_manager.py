@@ -1783,7 +1783,7 @@ class NodeManager:
             return DeserializeSelectedNodesFromCommandsResultFailure()
         connections = commands.serialized_connection_commands
         node_uuid_to_name = {}
-        new_position = {"x": request.position.x, "y": request.position.y} if request.position is not None else None
+        new_position = request.position
         offset = {"x": 0, "y": 0}
         old_position = {"x": 0, "y": 0}
         for i, node_command in enumerate(commands.serialized_node_commands):
