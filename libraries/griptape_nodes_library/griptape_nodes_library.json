@@ -217,12 +217,21 @@
       }
     },
     {
+<<<<<<< HEAD
       "class_name": "TranscribeAudio",
       "file_path": "griptape_nodes_library/audio/transcribe_audio.py",
       "metadata": {
         "category": "audio",
         "description": "Transcribe Audio node using OpenAI models",
         "display_name": "Transcribe Audio"
+=======
+      "class_name": "Microphone",
+      "file_path": "griptape_nodes_library/audio/microphone.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Microphone node",
+        "display_name": "Microphone"
+>>>>>>> 6c92962 (added microphone node (#1247))
       }
     },
     {
