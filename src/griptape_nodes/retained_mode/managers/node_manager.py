@@ -1783,16 +1783,17 @@ class NodeManager:
             return DeserializeSelectedNodesFromCommandsResultFailure()
         connections = commands.serialized_connection_commands
         node_uuid_to_name = {}
-        for i, node_command in enumerate(commands.serialized_node_commands):
-            if request.positions is not None:
+        for node_command in commands.serialized_node_commands:
+            old_node_name = node_command.create_node_command.node_name
+            if request.positions is not None and old_node_name is not None and old_node_name in request.positions:
                 if node_command.create_node_command.metadata is None:
                     node_command.create_node_command.metadata = {
-                        "position": {"x": request.positions[i][0], "y": request.positions[i][1]}
+                        "position": {"x": request.positions[old_node_name][0], "y": request.positions[old_node_name][1]}
                     }
                 else:
                     node_command.create_node_command.metadata["position"] = {
-                        "x": request.positions[i][0],
-                        "y": request.positions[i][1],
+                        "x": request.positions[old_node_name][0],
+                        "y": request.positions[old_node_name][1],
                     }
             result = self.on_deserialize_node_from_commands(
                 DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command)
