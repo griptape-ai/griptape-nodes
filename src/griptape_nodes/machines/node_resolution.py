@@ -216,7 +216,7 @@ class ExecuteNodeState(State):
                             modified_parameter = current_node.get_parameter_by_name(modified_parameter_name)
                             if modified_parameter is not None:
                                 modified_request = AlterParameterEvent.create(
-                                    node_name=current_node.name, parameter=modified_parameter
+                                    node=current_node, parameter=modified_parameter
                                 )
                                 EventBus.publish_event(
                                     ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request))
