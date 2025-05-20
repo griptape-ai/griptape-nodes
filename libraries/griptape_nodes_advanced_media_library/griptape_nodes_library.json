@@ -206,6 +206,18 @@
         "description": "Upscales an image using the SPAN model via the 🥞 spandrel python package. Pairs well with Generate Image Variation with Flux + Tiling.",
         "display_name": "SPAN Upscale"
       }
+    },
+
+    {
+      "class_name": "TrainFluxLora",
+      "file_path": "diffusers_nodes_library/pipelines/flux/peft/train_flux_lora.py",
+      "metadata": {
+        "category": "image/flux/loras",
+        "description": "TrainFluxLora node.",
+        "display_name": "Train Flux Lora"
+      }
     }
+
+
   ]
 }
