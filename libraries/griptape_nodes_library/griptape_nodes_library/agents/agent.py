@@ -144,7 +144,7 @@ class Agent(ControlNode):
         self.add_parameter(
             ParameterList(
                 name="rulesets",
-                input_types=["Ruleset", "List[Ruleset]"],
+                input_types=["Ruleset"],
                 tooltip="Rulesets to apply to the agent to control its behavior.",
                 default_value=[],
                 allowed_modes={ParameterMode.INPUT},

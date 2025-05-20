@@ -37,6 +37,14 @@
       }
     },
     {
+      "prompt_models": {
+        "color": "border-lime-500",
+        "title": "Prompt",
+        "description": "Prompt Drivers for Griptape Agents",
+        "icon": "Truck"
+      }
+    },
+    {
       "rules": {
         "color": "border-amber-500",
         "title": "Rules",
@@ -53,6 +61,14 @@
       }
     },
     {
+      "tools/config": {
+        "color": "border-cyan-500",
+        "title": "Drivers",
+        "description": "Drivers for Griptape Agents",
+        "icon": "Truck"
+      }
+    },
+    {
       "audio": {
         "color": "border-sky-500",
         "title": "Audio",
@@ -66,6 +82,14 @@
         "title": "Image",
         "description": "Image related nodes",
         "icon": "Image"
+      }
+    },
+    {
+      "image_models": {
+        "color": "border-lime-500",
+        "title": "Image",
+        "description": "Image Drivers for Griptape Agents",
+        "icon": "Truck"
       }
     },
     {
@@ -146,30 +170,6 @@
         "title": "Convert",
         "description": "Convert nodes",
         "icon": "Shuffle"
-      }
-    },
-    {
-      "config/image": {
-        "color": "border-lime-500",
-        "title": "Image",
-        "description": "Image Drivers for Griptape Agents",
-        "icon": "Truck"
-      }
-    },
-    {
-      "config/prompt": {
-        "color": "border-lime-500",
-        "title": "Prompt",
-        "description": "Prompt Drivers for Griptape Agents",
-        "icon": "Truck"
-      }
-    },
-    {
-      "config/web_search": {
-        "color": "border-lime-500",
-        "title": "Drivers",
-        "description": "Drivers for Griptape Agents",
-        "icon": "Truck"
       }
     },
     {
@@ -311,7 +311,7 @@
       "class_name": "GriptapeCloudImage",
       "file_path": "griptape_nodes_library/config/image/griptape_cloud_image_driver.py",
       "metadata": {
-        "category": "config/image",
+        "category": "image_models",
         "description": "Node for Griptape Cloud Image Generation Driver",
         "display_name": "Griptape Cloud Image"
       }
@@ -320,7 +320,7 @@
       "class_name": "GrokImage",
       "file_path": "griptape_nodes_library/config/image/grok_image_driver.py",
       "metadata": {
-        "category": "config/image",
+        "category": "image_models",
         "description": "Node for Grok Image Generation Driver",
         "display_name": "Grok Image"
       }
@@ -329,7 +329,7 @@
       "class_name": "OpenAiImage",
       "file_path": "griptape_nodes_library/config/image/openai_image_driver.py",
       "metadata": {
-        "category": "config/image",
+        "category": "image_models",
         "description": "Node for OpenAI Image Generation Driver",
         "display_name": "Open Ai Image"
       }
@@ -338,7 +338,7 @@
       "class_name": "AmazonBedrockPrompt",
       "file_path": "griptape_nodes_library/config/prompt/amazon_bedrock_prompt.py",
       "metadata": {
-        "category": "config/prompt",
+        "category": "prompt_models",
         "description": "Node for Amazon Bedrock Prompt Driver",
         "display_name": "Amazon Bedrock Prompt"
       }
@@ -347,7 +347,7 @@
       "class_name": "AnthropicPrompt",
       "file_path": "griptape_nodes_library/config/prompt/anthropic_prompt.py",
       "metadata": {
-        "category": "config/prompt",
+        "category": "prompt_models",
         "description": "Node for Anthropic Prompt Driver",
         "display_name": "Anthropic Prompt"
       }
@@ -356,7 +356,7 @@
       "class_name": "CoherePrompt",
       "file_path": "griptape_nodes_library/config/prompt/cohere_prompt.py",
       "metadata": {
-        "category": "config/prompt",
+        "category": "prompt_models",
         "description": "Node for Cohere Prompt Driver",
         "display_name": "Cohere Prompt"
       }
@@ -365,7 +365,7 @@
       "class_name": "GriptapeCloudPrompt",
       "file_path": "griptape_nodes_library/config/prompt/griptape_cloud_prompt.py",
       "metadata": {
-        "category": "config/prompt",
+        "category": "prompt_models",
         "description": "Node for Griptape Cloud Prompt Driver",
         "display_name": "Griptape Cloud Prompt"
       }
@@ -374,7 +374,7 @@
       "class_name": "GrokPrompt",
       "file_path": "griptape_nodes_library/config/prompt/grok_prompt.py",
       "metadata": {
-        "category": "config/prompt",
+        "category": "prompt_models",
         "description": "Node for Grok Prompt Driver",
         "display_name": "Grok Prompt"
       }
@@ -383,7 +383,7 @@
       "class_name": "OpenAiPrompt",
       "file_path": "griptape_nodes_library/config/prompt/openai_prompt.py",
       "metadata": {
-        "category": "config/prompt",
+        "category": "prompt_models",
         "description": "Node for OpenAi Prompt Driver",
         "display_name": "Open Ai Prompt"
       }
@@ -392,7 +392,7 @@
       "class_name": "DuckDuckGo",
       "file_path": "griptape_nodes_library/config/web_search/web_search_drivers.py",
       "metadata": {
-        "category": "config/web_search",
+        "category": "tools/config",
         "description": "DuckDuckGo node",
         "display_name": "Duck Duck Go"
       }
