@@ -1246,7 +1246,7 @@ class NodeManager:
             for modified_parameter_name in modified_parameters:
                 modified_parameter = node.get_parameter_by_name(modified_parameter_name)
                 if modified_parameter is not None:
-                    modified_request = AlterParameterEvent.create(node_name=node.name, parameter=modified_parameter)
+                    modified_request = AlterParameterEvent.create(node=node, parameter=modified_parameter)
                     EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
         return finalized_value
 
