@@ -33,3 +33,27 @@ class CreateStaticFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
 @PayloadRegistry.register
 class CreateStaticFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     error: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateStaticFileUploadUrlRequest(RequestPayload):
+    """Request to create a presigned URL for uploading a static file via a HTTP PUT.
+
+    Args:
+        file_name: Name of the file to be uploaded
+    """
+
+    file_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateStaticFileUploadUrlResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    url: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateStaticFileUploadUrlResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    error: str

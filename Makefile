@@ -30,10 +30,12 @@ version/commit: ## Commit version.
 
 .PHONY: version/publish
 version/publish: ## Create and push git tags.
+	@git fetch --tags --force
 	@git tag v$$(make version/get)
 	@git tag stable -f
 	@git push -f --tags
-	@git push
+	# Push to a release branch (e.g. release/v0.34).
+	@git push -u origin release/v$$(make version/get | awk -F. '{print $$1 "." $$2}')
 	
 .PHONY: run
 run: ## Run the project.

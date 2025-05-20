@@ -24,6 +24,7 @@ with console.status("Loading Griptape Nodes...") as status:
     from xdg_base_dirs import xdg_config_home, xdg_data_home
 
     from griptape_nodes.app import start_app
+    from griptape_nodes.retained_mode.griptape_nodes import engine_version
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -191,18 +192,20 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
         )
 
     secrets_manager.set_secret("GT_CLOUD_API_KEY", current_key)
+    console.print("[bold green]Griptape API Key set")
 
 
 def _prompt_for_workspace(*, workspace_directory_arg: str | None) -> None:
     """Prompts the user for their workspace directory and stores it in config directory."""
-    explainer = """[bold cyan]Workspace Directory[/bold cyan]
-    Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows.
-    You may enter a custom directory or press Return to accept the default workspace directory"""
-    console.print(Panel(explainer, expand=False))
+    if workspace_directory_arg is None:
+        explainer = """[bold cyan]Workspace Directory[/bold cyan]
+        Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows.
+        You may enter a custom directory or press Return to accept the default workspace directory"""
+        console.print(Panel(explainer, expand=False))
 
     valid_workspace = False
     default_workspace_directory = workspace_directory_arg or config_manager.get_config_value("workspace_directory")
-    while not valid_workspace:
+    while not (valid_workspace or workspace_directory_arg):
         try:
             workspace_directory = Prompt.ask(
                 "Workspace Directory",
@@ -224,14 +227,15 @@ def _prompt_for_workspace(*, workspace_directory_arg: str | None) -> None:
 
 def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None = None) -> None:
     """Prompts the user for the libraries to register and stores them in config directory."""
-    explainer = """[bold cyan]Advanced Media Library[/bold cyan]
-    Would you like to install the Griptape Nodes Advanced Media Library?
-    This node library makes advanced media generation and manipulation nodes available.
-    For example, nodes are available for Flux AI image upscaling, or to leverage CUDA for GPU-accelerated image generation.
-    CAVEAT: Installing this library requires additional dependencies to download and install, which can take several minutes.
-    The Griptape Nodes Advanced Media Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
-    """
-    console.print(Panel(explainer, expand=False))
+    if register_advanced_library is None:
+        explainer = """[bold cyan]Advanced Media Library[/bold cyan]
+        Would you like to install the Griptape Nodes Advanced Media Library?
+        This node library makes advanced media generation and manipulation nodes available.
+        For example, nodes are available for Flux AI image upscaling, or to leverage CUDA for GPU-accelerated image generation.
+        CAVEAT: Installing this library requires additional dependencies to download and install, which can take several minutes.
+        The Griptape Nodes Advanced Media Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
+        """
+        console.print(Panel(explainer, expand=False))
 
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/929
     key = "app_events.on_app_initialization_complete.libraries_to_register"
@@ -347,7 +351,7 @@ def _sync_assets() -> None:
     else:
         version = LATEST_TAG
 
-    console.print(f"[bold cyan]Fetching Griptape Nodes assets ({version})…[/bold cyan]")
+    console.print(f"[bold cyan]Fetching Griptape Nodes assets ({version})...[/bold cyan]")
 
     tar_url = NODES_TARBALL_URL.format(tag=version)
     console.print(f"[green]Downloading from {tar_url}[/green]")
@@ -487,9 +491,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
 
 def __get_current_version() -> str:
     """Returns the current version of the Griptape Nodes package."""
-    version = importlib.metadata.version("griptape_nodes")
-
-    return f"v{version}"
+    return f"v{engine_version}"
 
 
 def __get_install_source() -> tuple[Literal["git", "file", "pypi"], str | None]:
