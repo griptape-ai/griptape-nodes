@@ -76,6 +76,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
+    NewPosition,
     SerializedNodeCommands,
     SerializedParameterValueTracker,
     SerializedSelectedNodesCommands,
@@ -1783,26 +1784,11 @@ class NodeManager:
             return DeserializeSelectedNodesFromCommandsResultFailure()
         connections = commands.serialized_connection_commands
         node_uuid_to_name = {}
-        new_position = request.position
-        offset = {"x": 0, "y": 0}
-        old_position = {"x": 0, "y": 0}
+        offset = NewPosition(x=0, y=0)
+        old_position = NewPosition(x=0, y=0)
         for i, node_command in enumerate(commands.serialized_node_commands):
-            if (
-                new_position is not None
-                and node_command.create_node_command.metadata is not None
-                and "position" in node_command.create_node_command.metadata
-            ):
-                if i == 0:
-                    old_position = node_command.create_node_command.metadata["position"]
-                else:
-                    offset = {
-                        "x": node_command.create_node_command.metadata["position"]["x"] - old_position["x"],
-                        "y": node_command.create_node_command.metadata["position"]["y"] - old_position["y"],
-                    }
-                node_command.create_node_command.metadata["position"] = {
-                    "x": new_position["x"] + offset["x"],
-                    "y": new_position["y"] + offset["y"],
-                }
+            if request.position is not None:
+                NodeManager._update_node_positions(request.position, node_command, old_position, offset, i)
             result = self.on_deserialize_node_from_commands(
                 DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command)
             )
@@ -1846,6 +1832,32 @@ class NodeManager:
                 details = f"Failed to create a connection between {connection_request.source_node_name} and {connection_request.target_node_name}"
                 logger.warning(details)
         return DeserializeSelectedNodesFromCommandsResultSuccess(node_names=list(node_uuid_to_name.values()))
+
+    @staticmethod
+    def _update_node_positions(
+        new_position: NewPosition,
+        node_command: SerializedNodeCommands,
+        old_position: NewPosition,
+        offset: NewPosition,
+        i: int,
+    ) -> None:
+        if (
+            node_command.create_node_command.metadata is not None
+            and "position" in node_command.create_node_command.metadata
+        ):
+            if i == 0:
+                # We're basing everything off of the original position of this node.
+                old_position = node_command.create_node_command.metadata["position"]
+            else:
+                offset = NewPosition(
+                    x=node_command.create_node_command.metadata["position"]["x"] - old_position[0],
+                    y=node_command.create_node_command.metadata["position"]["y"] - old_position[1],
+                )
+            # Update the node command with our new output.
+            node_command.create_node_command.metadata["position"] = {
+                "x": new_position[0] + offset[0],
+                "y": new_position[1] + offset[1],
+            }
 
     def on_duplicate_selected_nodes(self, request: DuplicateSelectedNodesRequest) -> ResultPayload:
         result = GriptapeNodes.handle_request(
