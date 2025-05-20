@@ -76,7 +76,6 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
-    NewPosition,
     SerializedNodeCommands,
     SerializedParameterValueTracker,
     SerializedSelectedNodesCommands,
@@ -1784,11 +1783,17 @@ class NodeManager:
             return DeserializeSelectedNodesFromCommandsResultFailure()
         connections = commands.serialized_connection_commands
         node_uuid_to_name = {}
-        offset = NewPosition(x=0, y=0)
-        old_position = NewPosition(x=0, y=0)
         for i, node_command in enumerate(commands.serialized_node_commands):
-            if request.position is not None:
-                NodeManager._update_node_positions(request.position, node_command, old_position, offset, i)
+            if request.positions is not None:
+                if node_command.create_node_command.metadata is None:
+                    node_command.create_node_command.metadata = {
+                        "position": {"x": request.positions[i][0], "y": request.positions[i][1]}
+                    }
+                else:
+                    node_command.create_node_command.metadata["position"] = {
+                        "x": request.positions[i][0],
+                        "y": request.positions[i][1],
+                    }
             result = self.on_deserialize_node_from_commands(
                 DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command)
             )
@@ -1833,35 +1838,6 @@ class NodeManager:
                 logger.warning(details)
         return DeserializeSelectedNodesFromCommandsResultSuccess(node_names=list(node_uuid_to_name.values()))
 
-    @staticmethod
-    def _update_node_positions(
-        new_position: NewPosition,
-        node_command: SerializedNodeCommands,
-        old_position: NewPosition,
-        offset: NewPosition,
-        i: int,
-    ) -> None:
-        if (
-            node_command.create_node_command.metadata is not None
-            and "position" in node_command.create_node_command.metadata
-        ):
-            if i == 0:
-                # We're basing everything off of the original position of this node.
-                old_position = NewPosition(
-                    x=node_command.create_node_command.metadata["position"]["x"],
-                    y=node_command.create_node_command.metadata["position"]["y"],
-                )
-            else:
-                offset = NewPosition(
-                    x=node_command.create_node_command.metadata["position"]["x"] - old_position.x,
-                    y=node_command.create_node_command.metadata["position"]["y"] - old_position.y,
-                )
-            # Update the node command with our new output.
-            node_command.create_node_command.metadata["position"] = {
-                "x": new_position[0] + offset.x,
-                "y": new_position[1] + offset.y,
-            }
-
     def on_duplicate_selected_nodes(self, request: DuplicateSelectedNodesRequest) -> ResultPayload:
         result = GriptapeNodes.handle_request(
             SerializeSelectedNodesToCommandsRequest(nodes_to_serialize=request.nodes_to_duplicate)
@@ -1870,7 +1846,7 @@ class NodeManager:
             details = "Failed to serialized selected nodes."
             logger.error(details)
             return DuplicateSelectedNodesResultFailure()
-        result = GriptapeNodes.handle_request(DeserializeSelectedNodesFromCommandsRequest(position=None))
+        result = GriptapeNodes.handle_request(DeserializeSelectedNodesFromCommandsRequest(positions=None))
         if not isinstance(result, DeserializeSelectedNodesFromCommandsResultSuccess):
             details = "Failed to deserialize selected nodes."
             logger.error(details)

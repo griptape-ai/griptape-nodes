@@ -381,7 +381,7 @@ class SerializeSelectedNodesToCommandsResultFailure(WorkflowNotAlteredMixin, Res
 @dataclass
 @PayloadRegistry.register
 class DeserializeSelectedNodesFromCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
-    position: NewPosition | None = None
+    positions: list[NewPosition] | None = None
 
 
 @dataclass
