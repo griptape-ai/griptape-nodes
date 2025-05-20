@@ -1008,7 +1008,7 @@ class LibraryManager:
                 if (
                     isinstance(obj, type)
                     and issubclass(obj, BaseNode)
-                    and obj is not BaseNode
+                    and type(obj) is not BaseNode
                     and obj.__module__ == module.__name__
                 ):
                     details = f"Found node '{class_name}' in sandbox library '{candidate}'."
