@@ -1847,16 +1847,19 @@ class NodeManager:
         ):
             if i == 0:
                 # We're basing everything off of the original position of this node.
-                old_position = node_command.create_node_command.metadata["position"]
+                old_position = NewPosition(
+                    x=node_command.create_node_command.metadata["position"]["x"],
+                    y=node_command.create_node_command.metadata["position"]["y"],
+                )
             else:
                 offset = NewPosition(
-                    x=node_command.create_node_command.metadata["position"]["x"] - old_position[0],
-                    y=node_command.create_node_command.metadata["position"]["y"] - old_position[1],
+                    x=node_command.create_node_command.metadata["position"]["x"] - old_position.x,
+                    y=node_command.create_node_command.metadata["position"]["y"] - old_position.y,
                 )
             # Update the node command with our new output.
             node_command.create_node_command.metadata["position"] = {
-                "x": new_position[0] + offset[0],
-                "y": new_position[1] + offset[1],
+                "x": new_position.x + offset.x,
+                "y": new_position.y + offset.y,
             }
 
     def on_duplicate_selected_nodes(self, request: DuplicateSelectedNodesRequest) -> ResultPayload:
