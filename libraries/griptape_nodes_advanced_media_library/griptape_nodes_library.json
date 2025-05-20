@@ -24,7 +24,12 @@
         "sentencepiece>=0.2.0",
         "spandrel>=0.4.1",
         "torch>=2.7.0",
-        "transformers>=4.51.2"
+        "torchvision",
+        "torchaudio",
+        "transformers>=4.51.2",
+        "tqdm>=4.67.1",
+        "protobuf>=6.31.0",
+        "prodigyopt>=1.1.2"
       ],
       "pip_install_flags": [
         "--preview",

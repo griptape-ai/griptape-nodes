@@ -1,3 +1,14 @@
+import os
+import sys
+
+
+print("ACCELERATE MAIN CWD", os.getcwd())
+
+print("Python executable:", sys.executable)
+for path in sys.path:
+    print(path)
+print()
+
 import argparse
 import copy
 from accelerate import Accelerator
@@ -6,41 +17,25 @@ from accelerate.utils import DistributedDataParallelKwargs, ProjectConfiguration
 from pathlib import Path
 import diffusers
 import torch
-from transformers import CLIPTokenizer, CLIPTextModel, CLIPTextModel, PretrainedConfig, T5TokenizerFast  # type: ignore[reportPrivateImportUsage]
+from transformers import CLIPTokenizer, CLIPTextModel, CLIPTextModel, T5TokenizerFast, T5EncoderModel  # type: ignore[reportPrivateImportUsage]
 from diffusers import (
     AutoencoderKL,  # type: ignore[reportPrivateImportUsage]
     FlowMatchEulerDiscreteScheduler,  # type: ignore[reportPrivateImportUsage]
     FluxTransformer2DModel,  # type: ignore[reportPrivateImportUsage]
 )
 
-from diffusers_nodes_library.pipelines.flux.peft.training.accelerate_parse_args import parse_args
-from diffusers_nodes_library.pipelines.flux.peft.training.utils.logging import configure_logging
-from diffusers_nodes_library.pipelines.flux.peft.training.utils.accelerate_utils import register_save_load_hooks, unwrap_model
-from diffusers_nodes_library.pipelines.flux.peft.training.utils.seed import configure_seed
-from peft import LoraConfig, set_peft_model_state_dict
+from accelerate_parse_args import parse_args
+from utils.logging import configure_logging
+from utils.accelerate_utils import register_save_load_hooks, unwrap_model
+from utils.seed import configure_seed
+from peft import LoraConfig
 from peft.utils import get_peft_model_state_dict
 
-from diffusers_nodes_library.pipelines.flux.peft.training.utils.dreambooth_dataset import DreamBoothDataset, collate_fn
-from diffusers_nodes_library.pipelines.flux.peft.training.utils.optimizer import create_optimizer
+from utils.dreambooth_dataset import DreamBoothDataset, collate_fn
+from utils.optimizer import create_optimizer
 from tqdm.auto import tqdm
 
-from diffusers_nodes_library.pipelines.flux.peft.training.utils.encode_prompt import encode_prompt
-
-
-#!/usr/bin/env python
-# coding=utf-8
-# Copyright 2025 The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
+from utils.encode_prompt import encode_prompt
 
 import argparse
 import copy
@@ -136,7 +131,7 @@ def main(args: argparse.Namespace) -> None:
     )
 
     logger.info("Loading text encoder_2.")
-    text_encoder_two = CLIPTextModel.from_pretrained(
+    text_encoder_two = T5EncoderModel.from_pretrained(
         args.pretrained_model_name_or_path,
         subfolder="text_encoder_2",
         revision=args.revision,

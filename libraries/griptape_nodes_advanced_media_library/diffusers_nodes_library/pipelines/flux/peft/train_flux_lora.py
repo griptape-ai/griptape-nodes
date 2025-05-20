@@ -1,8 +1,10 @@
 import logging
 import os
-
-from accelerate.cli.launch import launch_command_parser, launch_command  # type: ignore[reportMissingImports]
-
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
 from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
     LogParameter,  # type: ignore[reportMissingImports]
 )
@@ -27,38 +29,72 @@ class TrainFluxLora(ControlNode):
         yield lambda: self._process()
 
     def _process(self) -> AsyncResult | None:
-        # export MODEL_NAME="black-forest-labs/FLUX.1-schnell"
-        # export INSTANCE_DIR="dog"
-        # export OUTPUT_DIR="trained-flux-lora"
+        self.log_params.clear_logs()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cwd = Path(__file__).parent / "training"
+            model_name="black-forest-labs/FLUX.1-schnell"
+            instance_data_dir = Path(tmpdir) / "sylphluxnix"
+            output_dir = Path(tmpdir) / "trained-flux-lora"
 
-        # accelerate launch train_dreambooth_lora_flux.py \
-        # --pretrained_model_name_or_path=$MODEL_NAME  \
-        # --instance_data_dir=$INSTANCE_DIR \
-        # --output_dir=$OUTPUT_DIR \
-        # --mixed_precision="no" \
-        # --instance_prompt="a photo of sks dog" \
-        # --resolution=512 \
-        # --train_batch_size=1 \
-        # --guidance_scale=1 \
-        # --gradient_accumulation_steps=4 \
-        # --gradient_checkpointing \
-        # --optimizer="adamw" \
-        # --learning_rate=1.0e-04 \
-        # --lr_scheduler="constant" \
-        # --lr_warmup_steps=0 \
-        # --num_train_epochs=200 \
-        # --max_train_steps=200 \
-        # --train_batch_size=1 \
-        # --cache_latents \
-        # --validation_prompt="A photo of sks dog in a bucket" \
-        # --num_validation_images=1 \
-        # --validation_epochs=10 \
-        # --seed=42
+            output_dir.mkdir(parents=True, exist_ok=True)
 
-        
+            # Copy a hardcoded data set for testing
+            shutil.copytree("/Users/dylan/Documents/lora/datasets/sylphluxnix", instance_data_dir)
 
-        with self.log_params.append_stdout_to_logs():
-            print("CURRENT WORKING DIR", os.getcwd())
-            parser = launch_command_parser()
-            args   = parser.parse_args(["train_dreambooth_lora_flux.py"])
-            launch_command(args)
+            env = os.environ.copy()
+
+            # Convert current sys.path entries to resolved Path objects and join them
+            current_python_paths = [str(Path(p).resolve()) for p in sys.path if p]
+            new_python_path = os.pathsep.join([str(cwd)] + current_python_paths)
+
+            # Create a copy of the current environment and update PYTHONPATH
+            env = os.environ.copy()
+            env["PYTHONPATH"] = new_python_path
+
+            process = subprocess.Popen(
+                [
+                    "accelerate",
+                    "launch",
+                    "accelerate_main.py",
+                    f"--pretrained_model_name_or_path={model_name}",
+                    f"--instance_data_dir={instance_data_dir}",
+                    f"--output_dir={output_dir}",
+                    '--mixed_precision=no',
+                    '--instance_prompt="default...."', # We are going to rely on txt caption files next to the image files
+                    "--resolution=512",
+                    "--train_batch_size=1",
+                    "--guidance_scale=1",
+                    "--gradient_accumulation_steps=4",
+                    "--gradient_checkpointing",
+                    '--optimizer=adamw',
+                    "--learning_rate=1.0e-04",
+                    '--lr_scheduler=constant',
+                    "--lr_warmup_steps=0",
+                    "--num_train_epochs=10",
+                    "--max_train_steps=10",
+                    "--train_batch_size=1",
+                    "--cache_latents",
+                    '--validation_prompt="A photo of sks dog in a bucket"',
+                    "--num_validation_images=1",
+                    "--validation_epochs=10",
+                    "--seed=42",
+                ],
+                cwd=str(cwd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                env=env,
+            )
+            
+            assert process.stdout is not None, "Failed to open stdout for subprocess"
+
+            # Stream output to logger
+            with process.stdout:
+                for line in iter(process.stdout.readline, ''):
+                    self.log_params.append_to_logs(f"{line.rstrip()}\n")
+
+            # Wait for the process to finish
+            exit_code = process.wait()
+            if exit_code != 0:
+                logger.error(f"Training process exited with code {exit_code}")

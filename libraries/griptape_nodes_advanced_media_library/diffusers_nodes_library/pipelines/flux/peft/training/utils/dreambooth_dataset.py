@@ -128,13 +128,33 @@ class DreamBoothDataset(Dataset):
             self.instance_data_root = Path(instance_data_root)
             if not self.instance_data_root.exists():
                 raise ValueError("Instance images root doesn't exists.")
+            
 
-            instance_images = [Image.open(path) for path in list(Path(instance_data_root).iterdir())]
-            self.custom_instance_prompts = None
+            images = []
+            captions = []
+            for path in list(Path(instance_data_root).iterdir()):
+                if path.is_file() and path.suffix.lower() in [".jpg", ".jpeg", ".png"]:
+                    caption_path = path.with_suffix(".txt")
+                    if not caption_path.exists():
+                        logger.warning(
+                            f"Caption file {caption_path} does not exist. Skipping image {path}."
+                        )
+                        continue
+                    image = Image.open(path)
+                    caption = caption_path.read_text().strip()
+                    logger.info(f"Caption for image at {path}: {caption}")
+                    images.append(image)
+                    captions.append(caption)
 
-        self.instance_images = []
-        for img in instance_images:
-            self.instance_images.extend(itertools.repeat(img, repeats))
+                self.custom_instance_prompts = None
+
+            self.instance_images = []
+            for image in images:
+                self.instance_images.extend(itertools.repeat(image, repeats))
+
+            self.custom_instance_prompts = []
+            for caption in captions:
+                self.custom_instance_prompts.extend(itertools.repeat(caption, repeats))
 
         self.pixel_values = []
         train_resize = transforms.Resize(size, interpolation=transforms.InterpolationMode.BILINEAR)

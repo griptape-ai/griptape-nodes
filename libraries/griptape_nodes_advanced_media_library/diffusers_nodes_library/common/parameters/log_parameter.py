@@ -49,3 +49,6 @@ class LogParameter:
 
     def append_to_logs(self, text: str) -> None:
         self._node.append_value_to_parameter("logs", text)
+
+    def clear_logs(self) -> None:
+        self._node.publish_update_to_parameter("logs", "")
