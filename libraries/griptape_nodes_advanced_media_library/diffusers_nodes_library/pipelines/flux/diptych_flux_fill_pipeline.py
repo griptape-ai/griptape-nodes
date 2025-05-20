@@ -1,10 +1,10 @@
 import logging
 
-from diffusers_nodes_library.pipelines.flux.flux_fill_pipeline import FluxFillPipeline
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.pipelines.flux.diptych_flux_fill_pipeline_parameters import (
+from diffusers_nodes_library.pipelines.flux.diptych_flux_fill_pipeline_parameters import (
     DiptychFluxFillPipelineParameters,  # type: ignore[reportMissingImports]
 )
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.pipelines.flux.flux_fill_pipeline_parameters import (
+from diffusers_nodes_library.pipelines.flux.flux_fill_pipeline import FluxFillPipeline
+from diffusers_nodes_library.pipelines.flux.flux_fill_pipeline_parameters import (
     FluxFillPipelineParameters,
 )
 
