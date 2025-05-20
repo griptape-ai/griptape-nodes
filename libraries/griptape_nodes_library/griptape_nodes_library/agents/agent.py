@@ -144,7 +144,7 @@ class Agent(ControlNode):
         self.add_parameter(
             ParameterList(
                 name="rulesets",
-                input_types=["Ruleset", "List[Ruleset]"],
+                input_types=["Ruleset"],
                 tooltip="Rulesets to apply to the agent to control its behavior.",
                 default_value=[],
                 allowed_modes={ParameterMode.INPUT},
@@ -195,13 +195,21 @@ class Agent(ControlNode):
                 modified_parameters_set.add(param_name)
 
         if target_parameter.name == "model" and source_parameter.name == "prompt_model_config":
-            # Check and see if the incoming connection is from a prompt model config or an agent.
-            target_parameter.type = source_parameter.type
+            # Remove the options trait
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
 
+            # Check and see if the incoming connection is from a prompt model config or an agent.
+            target_parameter.type = source_parameter.type
+
+            # Remove ParameterMode.PROPERTY so it forces the node mark itself dirty & remove the value
+            target_parameter.allowed_modes = {ParameterMode.INPUT}
+
+            # Set the display name to be appropriate
             target_parameter._ui_options["display_name"] = source_parameter.ui_options.get(
                 "display_name", source_parameter.name
             )
+
+            # make sure we update the model
             modified_parameters_set.add("model")
 
         # If additional context is connected, prevent editing via property panel.
@@ -229,13 +237,21 @@ class Agent(ControlNode):
                 modified_parameters_set.add(param_name)
 
         if target_parameter.name == "model":
+            # Reset the parameter type
             target_parameter.type = "str"
-            target_parameter.add_trait(Options(choices=MODEL_CHOICES))
-            # Sometimes the value is not set to the default value - these are all attemnpts to get it to work.
+
+            # Enable PROPERTY so the user can set it
+            target_parameter.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY}
+
+            # Sometimes the value is not set to the default value - these are all attempts to get it to work.
             target_parameter.set_default_value(DEFAULT_MODEL)
             target_parameter.default_value = DEFAULT_MODEL
             self.set_parameter_value("model", DEFAULT_MODEL)
 
+            # Add the options trait
+            target_parameter.add_trait(Options(choices=MODEL_CHOICES))
+
+            # Change the display name to be appropriate
             target_parameter._ui_options["display_name"] = "prompt model"
 
             modified_parameters_set.add("model")
