@@ -21,7 +21,8 @@ from urllib.parse import urljoin
 
 import httpx
 import tomlkit
-from dotenv import get_key
+from dotenv import get_key, set_key
+from dotenv.main import DotEnv
 from rich.box import HEAVY_EDGE
 from rich.console import Console
 from rich.panel import Panel
@@ -54,6 +55,10 @@ from griptape_nodes.retained_mode.events.library_events import (
     UnloadLibraryFromRegistryRequest,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+from griptape_nodes.retained_mode.events.secrets_events import (
+    GetAllSecretValuesRequest,
+    GetAllSecretValuesResultSuccess,
+)
 from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
     DeleteWorkflowResultFailure,
@@ -1835,8 +1840,39 @@ class WorkflowManager:
         logger.debug("Failed to detect install source, assuming pypi")
         return "pypi", None
 
+    def _get_merged_env_file_mapping(self, workspace_env_file_path: Path) -> dict[str, Any]:
+        """Merges the secrets from the workspace env file with the secrets from the GriptapeNodes SecretsManager.
+
+        This is used to create a single .env file for the workflow. We can gather all secrets explicitly defined in the .env file
+        and by the settings/SecretsManager, but we will not gather all secrets from the OS env for the purpose of publishing.
+        """
+        env_file_dict = {}
+        if workspace_env_file_path.exists():
+            env_file = DotEnv(workspace_env_file_path)
+            env_file_dict = env_file.dict()
+
+        get_all_secrets_request = GetAllSecretValuesRequest()
+        get_all_secrets_result = GriptapeNodes.handle_request(request=get_all_secrets_request)
+        if not isinstance(get_all_secrets_result, GetAllSecretValuesResultSuccess):
+            details = "Failed to get all secret values."
+            logger.error(details)
+            raise TypeError(details)
+
+        secret_values = get_all_secrets_result.values
+        for secret_name, secret_value in secret_values.items():
+            if secret_name not in env_file_dict:
+                env_file_dict[secret_name] = secret_value
+
+        return env_file_dict
+
+    def _write_env_file(self, env_file_path: Path, env_file_dict: dict[str, Any]) -> None:
+        env_file_path.touch(exist_ok=True)
+        for key, val in env_file_dict.items():
+            set_key(env_file_path, key, str(val))
+
     def _package_workflow(self, workflow_name: str) -> str:  # noqa: PLR0915
         config_manager = GriptapeNodes.get_instance()._config_manager
+        secrets_manager = GriptapeNodes.get_instance()._secrets_manager
         workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
 
         engine_version: str = ""
@@ -1867,7 +1903,8 @@ class WorkflowManager:
         pre_build_install_script_path = root_griptape_nodes_path / "bootstrap" / "pre_build_install_script.sh"
         post_build_install_script_path = root_griptape_nodes_path / "bootstrap" / "post_build_install_script.sh"
         register_libraries_script_path = root_griptape_nodes_path / "bootstrap" / "register_libraries_script.py"
-        env_file_path = config_manager.workspace_path / ".env"
+
+        env_file_mapping = self._get_merged_env_file_mapping(secrets_manager.workspace_env_path)
 
         config = config_manager.user_config
         config["workspace_directory"] = packaged_top_level_dir
@@ -1891,8 +1928,9 @@ class WorkflowManager:
                 shutil.copyfile(post_build_install_script_path, temp_post_build_install_script_path)
                 shutil.copyfile(register_libraries_script_path, temp_register_libraries_script_path)
                 shutil.copyfile(structure_config_file_path, tmp_dir_path / "structure_config.yaml")
-                if env_file_path.exists():
-                    shutil.copyfile(env_file_path, tmp_dir_path / ".env")
+
+                # Write the environment variables to the .env file
+                self._write_env_file(tmp_dir_path / ".env", env_file_mapping)
 
                 # Get the library paths
                 library_paths = self._copy_libraries_to_path_for_workflow(
