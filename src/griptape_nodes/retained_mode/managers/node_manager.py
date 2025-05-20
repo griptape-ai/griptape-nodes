@@ -1,6 +1,5 @@
 import logging
 import pickle
-from datetime import datetime
 from typing import Any, cast
 from uuid import uuid4
 
@@ -1704,9 +1703,8 @@ class NodeManager:
         self, request: SerializeSelectedNodesToCommandsRequest
     ) -> ResultPayload:
         """This will take the selected nodes in the Object manager and serialize them into commands."""
+        # These have already been sorted by the time they were selected.
         nodes_to_serialize = request.nodes_to_serialize
-        # Sorts tuples in order based on the timestamp
-        sorted_nodes = sorted(nodes_to_serialize, key=lambda x: datetime.fromisoformat(x[1]))
         # This is node_uuid to the serialization command.
         node_commands = {}
         # Node Name to UUID
@@ -1718,8 +1716,8 @@ class NodeManager:
         unique_uuid_to_values = {}
         # And track how values map into that map.
         serialized_parameter_value_tracker = SerializedParameterValueTracker()
-        selected_node_names = [values[0] for values in sorted_nodes]
-        for node_name, _ in sorted_nodes:
+        selected_node_names = [values[0] for values in nodes_to_serialize]
+        for node_name, _ in nodes_to_serialize:
             result = self.on_serialize_node_to_commands(
                 SerializeNodeToCommandsRequest(
                     node_name=node_name,
@@ -1783,17 +1781,17 @@ class NodeManager:
             return DeserializeSelectedNodesFromCommandsResultFailure()
         connections = commands.serialized_connection_commands
         node_uuid_to_name = {}
-        for node_command in commands.serialized_node_commands:
-            old_node_name = node_command.create_node_command.node_name
-            if request.positions is not None and old_node_name is not None and old_node_name in request.positions:
+        # Enumerate because positions is in the same order as the node commands.
+        for i, node_command in enumerate(commands.serialized_node_commands):
+            if request.positions is not None and len(request.positions) > i:
                 if node_command.create_node_command.metadata is None:
                     node_command.create_node_command.metadata = {
-                        "position": {"x": request.positions[old_node_name][0], "y": request.positions[old_node_name][1]}
+                        "position": {"x": request.positions[i][0], "y": request.positions[i][1]}
                     }
                 else:
                     node_command.create_node_command.metadata["position"] = {
-                        "x": request.positions[old_node_name][0],
-                        "y": request.positions[old_node_name][1],
+                        "x": request.positions[i][0],
+                        "y": request.positions[i][1],
                     }
             result = self.on_deserialize_node_from_commands(
                 DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command)

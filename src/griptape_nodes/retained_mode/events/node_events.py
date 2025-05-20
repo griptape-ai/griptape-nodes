@@ -345,23 +345,11 @@ class SerializedSelectedNodesCommands:
     serialized_connection_commands: list[IndirectConnectionSerialization]
 
 
-class NodeToTimestamp(NamedTuple):
-    """A named tuple for storing the node_name and the timestamp passed on selection.
-
-    Fields:
-        node_name: The name of the node selected
-        timestamp: The time the node was selected
-    """
-
-    node_name: str
-    timestamp: str
-
-
 @dataclass
 @PayloadRegistry.register
 class SerializeSelectedNodesToCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
     # They will be passed with node_name, timestamp
-    nodes_to_serialize: list[NodeToTimestamp]
+    nodes_to_serialize: list[str]
 
 
 @dataclass
@@ -381,7 +369,7 @@ class SerializeSelectedNodesToCommandsResultFailure(WorkflowNotAlteredMixin, Res
 @dataclass
 @PayloadRegistry.register
 class DeserializeSelectedNodesFromCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
-    positions: dict[str, NewPosition] | None = None
+    positions: list[NewPosition] | None = None
 
 
 @dataclass
@@ -417,7 +405,7 @@ class DeserializeNodeFromCommandsResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class DuplicateSelectedNodesRequest(WorkflowNotAlteredMixin, RequestPayload):
-    nodes_to_duplicate: list[NodeToTimestamp]
+    nodes_to_duplicate: list[str]
 
 
 @dataclass
