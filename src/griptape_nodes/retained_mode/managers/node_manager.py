@@ -1858,8 +1858,8 @@ class NodeManager:
                 )
             # Update the node command with our new output.
             node_command.create_node_command.metadata["position"] = {
-                "x": new_position.x + offset.x,
-                "y": new_position.y + offset.y,
+                "x": new_position[0] + offset.x,
+                "y": new_position[1] + offset.y,
             }
 
     def on_duplicate_selected_nodes(self, request: DuplicateSelectedNodesRequest) -> ResultPayload:
