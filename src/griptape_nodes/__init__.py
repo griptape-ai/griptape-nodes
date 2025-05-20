@@ -440,6 +440,7 @@ def _uninstall_self() -> None:
     # Remove config and data directories
     console.print("[bold]Removing config and data directories...[/bold]")
     dirs = [(CONFIG_DIR, "Config Dir"), (DATA_DIR, "Data Dir")]
+    caveats = []
     for dir_path, dir_name in dirs:
         if dir_path.exists():
             console.print(f"[bold]Removing {dir_name} '{dir_path}'...[/bold]")
@@ -447,10 +448,12 @@ def _uninstall_self() -> None:
                 shutil.rmtree(dir_path)
             except OSError as exc:
                 console.print(f"[red]Error removing {dir_name} '{dir_path}': {exc}[/red]")
+                caveats.append(
+                    f"- [red]Error removing {dir_name} '{dir_path}'. You may want remove this directory manually.[/red]"
+                )
         else:
             console.print(f"[yellow]{dir_name} '{dir_path}' does not exist; skipping.[/yellow]")
 
-    caveats = []
     # Handle any remaining config files not removed by design
     remaining_config_files = config_manager.config_files
     if remaining_config_files:
