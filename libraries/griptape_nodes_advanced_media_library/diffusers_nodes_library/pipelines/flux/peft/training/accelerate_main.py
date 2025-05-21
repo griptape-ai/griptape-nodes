@@ -709,6 +709,7 @@ def main(args: argparse.Namespace) -> None:
         diffusers.FluxPipeline.save_lora_weights(  # type: ignore
             save_directory=args.output_dir,
             transformer_lora_layers=get_peft_model_state_dict(transformer),
+            weight_name="pytorch_lora_weights.safetensors"
         )
 
 

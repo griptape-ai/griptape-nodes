@@ -221,6 +221,17 @@
         "description": "TrainFluxLora node.",
         "display_name": "Train Flux Lora"
       }
+    },
+
+    {
+      
+      "class_name": "FluxLoraTrainingData",
+      "file_path": "diffusers_nodes_library/pipelines/flux/peft/flux_lora_training_data.py",
+      "metadata": {
+        "category": "image/flux/loras",
+        "description": "FluxLoraTrainingData node.",
+        "display_name": "Data for Train Flux Lora"
+      }
     }
 
 
