@@ -60,7 +60,13 @@ class SaveImage(ControlNode):
             return
 
         if isinstance(image, ImageUrlArtifact):
-            image = ImageLoader().parse(image.to_bytes())
+            try:
+                image_bytes = image.to_bytes()
+            except Exception as err:
+                details = f"Failed to download image at '{image.value}'. If this workflow was shared from another engine installation, that image file will need to be regenerated. Error: {err}"
+                raise ValueError(details) from err
+
+            image = ImageLoader().parse(image_bytes)
 
         output_file = self.parameter_values.get("output_path", DEFAULT_FILENAME)
 

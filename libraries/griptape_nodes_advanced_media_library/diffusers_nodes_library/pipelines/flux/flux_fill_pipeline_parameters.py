@@ -145,14 +145,24 @@ class FluxFillPipelineParameters:
     def get_input_image_pil(self) -> Image:
         input_image_artifact = self._node.get_parameter_value("input_image")
         if isinstance(input_image_artifact, ImageUrlArtifact):
-            input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
+            try:
+                image_bytes = input_image_artifact.to_bytes()
+            except Exception as err:
+                details = f"Failed to download image at '{input_image_artifact.value}'. If this workflow was shared from another engine installation, that image file will need to be regenerated. Error: {err}"
+                raise ValueError(details) from err
+            input_image_artifact = ImageLoader().parse(image_bytes)
         input_image_pil = image_artifact_to_pil(input_image_artifact)
         return input_image_pil.convert("RGB")
 
     def get_mask_image_pil(self) -> Image:
         mask_image_artifact = self._node.get_parameter_value("mask_image")
         if isinstance(mask_image_artifact, ImageUrlArtifact):
-            mask_image_artifact = ImageLoader().parse(mask_image_artifact.to_bytes())
+            try:
+                image_bytes = mask_image_artifact.to_bytes()
+            except Exception as err:
+                details = f"Failed to download image at '{mask_image_artifact.value}'. If this workflow was shared from another engine installation, that image file will need to be regenerated. Error: {err}"
+                raise ValueError(details) from err
+            mask_image_artifact = ImageLoader().parse(image_bytes)
         mask_image_pil = image_artifact_to_pil(mask_image_artifact)
         return mask_image_pil.convert("L")
 
