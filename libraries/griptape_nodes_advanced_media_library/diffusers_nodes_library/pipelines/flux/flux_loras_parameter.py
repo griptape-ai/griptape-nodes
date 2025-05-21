@@ -35,7 +35,7 @@ class FluxLorasParameter:
         return hashlib.sha256(model_path.encode("utf-8")).hexdigest()
 
     def configure_loras(self, pipe: Any) -> None:
-        loras_list = self._node.get_parameter_value(self._loras_parameter_name)
+        loras_list = self._node.get_parameter_value(self._loras_parameter_name) or []
 
         loras = {}
         for lora in loras_list:
