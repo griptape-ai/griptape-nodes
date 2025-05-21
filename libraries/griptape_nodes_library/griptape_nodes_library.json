@@ -241,534 +241,534 @@
       }
     },
     {
-<<<<<<< HEAD
       "class_name": "TranscribeAudio",
       "file_path": "griptape_nodes_library/audio/transcribe_audio.py",
       "metadata": {
         "category": "audio",
         "description": "Transcribe Audio node using OpenAI models",
         "display_name": "Transcribe Audio"
-=======
-      "class_name": "Microphone",
-        "file_path": "griptape_nodes_library/audio/microphone.py",
-        "metadata": {
-          "category": "audio",
-          "description": "Can record audio from your microphone.",
-          "display_name": "Microphone"
->>>>>>> 6c92962 (added microphone node (#1247))
-        }
-      },
-      {
-        "class_name": "ToBool",
-        "file_path": "griptape_nodes_library/convert/to_bool.py",
-        "metadata": {
-          "category": "convert",
-          "description": "Converts incoming value to a boolean",
-          "display_name": "To Bool"
-        }
-      },
-      {
-        "class_name": "ToDictionary",
-        "file_path": "griptape_nodes_library/convert/to_dict.py",
-        "metadata": {
-          "category": "convert",
-          "description": "Converts incoming value to a dictionary",
-          "display_name": "To Dictionary"
-        }
-      },
-      {
-        "class_name": "ToFloat",
-        "file_path": "griptape_nodes_library/convert/to_float.py",
-        "metadata": {
-          "category": "convert",
-          "description": "Converts incoming value to a float",
-          "display_name": "To Float"
-        }
-      },
-      {
-        "class_name": "ToInteger",
-        "file_path": "griptape_nodes_library/convert/to_int.py",
-        "display_name": "To Integer",
-        "metadata": {
-          "category": "convert",
-          "description": "Converts incoming value to an integer",
-          "display_name": "To Integer"
-        }
-      },
-      {
-        "class_name": "ToText",
-        "file_path": "griptape_nodes_library/convert/to_text.py",
-        "metadata": {
-          "category": "convert",
-          "description": "Converts incoming value to text",
-          "display_name": "To Text"
-        }
-      },
-      {
-        "class_name": "DisplayDictionary",
-        "file_path": "griptape_nodes_library/dict/display_dict.py",
-        "metadata": {
-          "category": "dict",
-          "description": "Displays dictionary data",
-          "display_name": "Display Dictionary"
-        }
-      },
-      {
-        "class_name": "KeyValuePair",
-        "file_path": "griptape_nodes_library/dict/key_value_pair.py",
-        "metadata": {
-          "category": "dict",
-          "description": "Create a Key Value Pair",
-          "display_name": "Key Value Pair"
-        }
-      },
-      {
-        "class_name": "LoadDictionary",
-        "file_path": "griptape_nodes_library/dict/load_dict.py",
-        "metadata": {
-          "category": "dict",
-          "description": "Loads a dictionary from disk",
-          "display_name": "Load Dictionary"
-        }
-      },
-      {
-        "class_name": "MergeKeyValuePairs",
-        "file_path": "griptape_nodes_library/dict/merge_key_value_pair.py",
-        "metadata": {
-          "category": "dict",
-          "description": "Merges multiple Key/Value Pairs into a single dictionary",
-          "display_name": "Merge Key Value Pairs"
-        }
-      },
-      {
-        "class_name": "SaveDictionary",
-        "file_path": "griptape_nodes_library/dict/save_dict.py",
-        "metadata": {
-          "category": "dict",
-          "description": "Save dictionary data to a file",
-          "display_name": "Save Dictionary"
-        }
-      },
-      {
-        "class_name": "GriptapeCloudImage",
-        "file_path": "griptape_nodes_library/config/image/griptape_cloud_image_driver.py",
-        "metadata": {
-          "category": "image_models",
-          "description": "Image Generation Models available from Griptape Cloud",
-          "display_name": "Griptape Cloud Image"
-        }
-      },
-      {
-        "class_name": "GrokImage",
-        "file_path": "griptape_nodes_library/config/image/grok_image_driver.py",
-        "metadata": {
-          "category": "image_models",
-          "description": "Image Generation Models available from xAI Grok",
-          "display_name": "Grok Image"
-        }
-      },
-      {
-        "class_name": "OpenAiImage",
-        "file_path": "griptape_nodes_library/config/image/openai_image_driver.py",
-        "metadata": {
-          "category": "image_models",
-          "description": "Image Generation Models available from OpenAI",
-          "display_name": "OpenAI Image"
-        }
-      },
-      {
-        "class_name": "AmazonBedrockPrompt",
-        "file_path": "griptape_nodes_library/config/prompt/amazon_bedrock_prompt.py",
-        "metadata": {
-          "category": "prompt_models",
-          "description": "Prompt Models available from Amazon Bedrock",
-          "display_name": "Amazon Bedrock Prompt"
-        }
-      },
-      {
-        "class_name": "AnthropicPrompt",
-        "file_path": "griptape_nodes_library/config/prompt/anthropic_prompt.py",
-        "metadata": {
-          "category": "prompt_models",
-          "description": "Prompt Models available from Anthropic",
-          "display_name": "Anthropic Prompt"
-        }
-      },
-      {
-        "class_name": "CoherePrompt",
-        "file_path": "griptape_nodes_library/config/prompt/cohere_prompt.py",
-        "metadata": {
-          "category": "prompt_models",
-          "description": "Prompt Models available from Cohere",
-          "display_name": "Cohere Prompt"
-        }
-      },
-      {
-        "class_name": "GriptapeCloudPrompt",
-        "file_path": "griptape_nodes_library/config/prompt/griptape_cloud_prompt.py",
-        "metadata": {
-          "category": "prompt_models",
-          "description": "Prompt Models available from Griptape Cloud",
-          "display_name": "Griptape Cloud Prompt"
-        }
-      },
-      {
-        "class_name": "GrokPrompt",
-        "file_path": "griptape_nodes_library/config/prompt/grok_prompt.py",
-        "metadata": {
-          "category": "prompt_models",
-          "description": "Prompt Models available from xAI Grok",
-          "display_name": "Grok Prompt"
-        }
-      },
-      {
-        "class_name": "OpenAiAudioTranscription",
-        "file_path": "griptape_nodes_library/config/audio_transcription/openai_audio_transcription_driver.py",
-        "metadata": {
-          "category": "config/audio",
-          "description": "Node for OpenAI Audio Transcription Driver",
-          "display_name": "OpenAI Audio Transcription"
-        }
-      },
-      {
-        "class_name": "OpenAiPrompt",
-        "file_path": "griptape_nodes_library/config/prompt/openai_prompt.py",
-        "metadata": {
-          "category": "prompt_models",
-          "description": "Prompt Models available from OpenAI",
-          "display_name": "OpenAI Prompt"
-        }
-      },
-      {
-        "class_name": "DuckDuckGo",
-        "file_path": "griptape_nodes_library/config/web_search/web_search_drivers.py",
-        "metadata": {
-          "category": "tools/config",
-          "description": "WebSearch driver for DuckDuckGo",
-          "display_name": "Duck Duck Go"
-        }
-      },
-      {
-        "class_name": "GenerateImage",
-        "file_path": "griptape_nodes_library/image/create_image.py",
-        "metadata": {
-          "category": "image",
-          "description": "Generates an image using Griptape Cloud, or other provided image generation models",
-          "display_name": "Generate Image"
-        }
-      },
-      {
-        "class_name": "DescribeImage",
-        "file_path": "griptape_nodes_library/image/describe_image.py",
-        "metadata": {
-          "category": "image",
-          "description": "Can be used to describe an image",
-          "display_name": "Describe Image"
-        }
-      },
-      {
-        "class_name": "DisplayImage",
-        "file_path": "griptape_nodes_library/image/display_image.py",
-        "metadata": {
-          "category": "image",
-          "description": "Display an image",
-          "display_name": "Display Image"
-        }
-      },
-      {
-        "class_name": "CompareImages",
-        "file_path": "griptape_nodes_library/image/compare_images.py",
-        "metadata": {
-          "category": "image",
-          "description": "Can be used to compare two images",
-          "display_name": "Compare Images"
-        }
-      },
-      {
-        "class_name": "LoadImage",
-        "file_path": "griptape_nodes_library/image/load_image.py",
-        "metadata": {
-          "category": "image",
-          "description": "Loads an image from disk",
-          "display_name": "Load Image"
-        }
-      },
-      {
-        "class_name": "Webcam",
-        "file_path": "griptape_nodes_library/image/webcam.py",
-        "metadata": {
-          "category": "image",
-          "description": "Capture an image using the device's camera",
-          "display_name": "Webcam"
-        }
-      },
-      {
-        "class_name": "SaveImage",
-        "file_path": "griptape_nodes_library/image/save_image.py",
-        "metadata": {
-          "category": "image",
-          "description": "Save an image to a file",
-          "display_name": "Save Image"
-        }
-      },
-      {
-        "class_name": "Note",
-        "file_path": "griptape_nodes_library/note.py",
-        "metadata": {
-          "category": "misc",
-          "description": "Create a note node to provide helpful context in your workflow",
-          "display_name": "Note"
-        }
-      },
-      {
-        "class_name": "FloatInput",
-        "file_path": "griptape_nodes_library/number/create_float.py",
-        "metadata": {
-          "category": "number",
-          "description": "Create a float value",
-          "display_name": "Float Input"
-        }
-      },
-      {
-        "class_name": "IntegerInput",
-        "file_path": "griptape_nodes_library/number/create_int.py",
-        "metadata": {
-          "category": "number",
-          "description": "Create an integer value",
-          "display_name": "Integer Input"
-        }
-      },
-      {
-        "class_name": "DisplayFloat",
-        "file_path": "griptape_nodes_library/number/display_float.py",
-        "metadata": {
-          "category": "number",
-          "description": "Display a float value",
-          "display_name": "Display Float"
-        }
-      },
-      {
-        "class_name": "DisplayInteger",
-        "file_path": "griptape_nodes_library/number/display_int.py",
-        "metadata": {
-          "category": "number",
-          "description": "Display an integer value",
-          "display_name": "Display Integer"
-        }
-      },
-      {
-        "class_name": "Ruleset",
-        "file_path": "griptape_nodes_library/rules/create_ruleset.py",
-        "metadata": {
-          "category": "rules",
-          "description": "Ruleset node",
-          "display_name": "Ruleset"
-        }
-      },
-      {
-        "class_name": "RulesetList",
-        "file_path": "griptape_nodes_library/rules/ruleset_list.py",
-        "metadata": {
-          "category": "rules",
-          "description": "Combine rulesets to give an agent a more complex set of behaviors",
-          "display_name": "Ruleset List"
-        }
-      },
-      {
-        "class_name": "TextInput",
-        "file_path": "griptape_nodes_library/text/create_multiline_text.py",
-        "metadata": {
-          "category": "text",
-          "description": "TextInput node",
-          "display_name": "Text Input"
-        }
-      },
-      {
-        "class_name": "DisplayText",
-        "file_path": "griptape_nodes_library/text/display_text.py",
-        "metadata": {
-          "category": "text",
-          "description": "DisplayText node",
-          "display_name": "Display Text"
-        }
-      },
-      {
-        "class_name": "ListTexts",
-        "file_path": "griptape_nodes_library/text/list_texts.py",
-        "metadata": {
-          "category": "text",
-          "description": "Create a list of strings from multiple input values, and immediately forwards to output",
-          "display_name": "List Texts"
-        }
-      },
-      {
-        "class_name": "LoadText",
-        "file_path": "griptape_nodes_library/text/load_text.py",
-        "metadata": {
-          "category": "text",
-          "description": "LoadText node",
-          "display_name": "Load Text"
-        }
-      },
-      {
-        "class_name": "MergeTexts",
-        "file_path": "griptape_nodes_library/text/merge_texts.py",
-        "metadata": {
-          "category": "text",
-          "description": "MergeTexts node",
-          "display_name": "Merge Texts"
-        }
-      },
-      {
-        "class_name": "SaveText",
-        "file_path": "griptape_nodes_library/text/save_text.py",
-        "metadata": {
-          "category": "text",
-          "description": "Save text to a file",
-          "display_name": "Save Text"
-        }
-      },
-      {
-        "class_name": "Calculator",
-        "file_path": "griptape_nodes_library/tools/calculator_tool.py",
-        "metadata": {
-          "category": "tools",
-          "description": "Give an agent the ability to use a calculator",
-          "display_name": "Calculator"
-        }
-      },
-      {
-        "class_name": "DateTime",
-        "file_path": "griptape_nodes_library/tools/date_time_tool.py",
-        "metadata": {
-          "category": "tools",
-          "description": "Give an agent the ability to know what day and time it is",
-          "display_name": "Date Time"
-        }
-      },
-      {
-        "class_name": "FileManager",
-        "file_path": "griptape_nodes_library/tools/file_manager_tool.py",
-        "metadata": {
-          "category": "tools",
-          "description": "Give an agent the ability to load files from disk",
-          "display_name": "File Manager"
-        }
-      },
-      {
-        "class_name": "ToolList",
-        "file_path": "griptape_nodes_library/tools/tool_list.py",
-        "metadata": {
-          "category": "tools",
-          "description": "Combine tools to give an agent a more complex set of tools",
-          "display_name": "Tool List"
-        }
-      },
-      {
-        "class_name": "WebSearch",
-        "file_path": "griptape_nodes_library/tools/web_search_tool.py",
-        "metadata": {
-          "category": "tools",
-          "description": "Give an agent the ability to search the web",
-          "display_name": "Web Search"
-        }
-      },
-      {
-        "class_name": "WebScraper",
-        "file_path": "griptape_nodes_library/tools/web_scraper_tool.py",
-        "metadata": {
-          "category": "tools",
-          "description": "Give an agent the ability to scrape the web for information",
-          "display_name": "Web Scraper"
-        }
-      },
-      {
-        "class_name": "StartFlow",
-        "file_path": "griptape_nodes_library/workflows/start_flow.py",
-        "metadata": {
-          "category": "workflows",
-          "description": "Define the start of a workflow and pass parameters into the flow",
-          "display_name": "Start Flow"
-        }
-      },
-      {
-        "class_name": "EndFlow",
-        "file_path": "griptape_nodes_library/workflows/end_flow.py",
-        "metadata": {
-          "category": "workflows",
-          "description": "Define the end of a workflow and return parameters from the flow",
-          "display_name": "End Flow"
-        }
-      },
-      {
-        "class_name": "Reroute",
-        "file_path": "griptape_nodes_library/execution/reroute.py",
-        "metadata": {
-          "category": "execution_flow",
-          "description": "Provides a node to allow you to redirect a flow, matching inputs and outputs",
-          "display_name": "Reroute"
-        }
-      },
-      {
-        "class_name": "IfElse",
-        "file_path": "griptape_nodes_library/execution/if_else.py",
-        "metadata": {
-          "category": "execution_flow",
-          "description": "Create a branching workflow based on whether a value is true or false",
-          "display_name": "IfElse"
-        }
-      },
-      {
-        "class_name": "CompareNumbers",
-        "file_path": "griptape_nodes_library/execution/compare_numbers.py",
-        "metadata": {
-          "category": "execution_flow",
-          "description": "Branch your workflow based on a comparison of two numbers",
-          "display_name": "Compare Numbers"
-        }
-      },
-      {
-        "class_name": "CompareStrings",
-        "file_path": "griptape_nodes_library/execution/compare_strings.py",
-        "metadata": {
-          "category": "execution_flow",
-          "description": "Branch your workflow based on a comparison of two strings",
-          "display_name": "Compare Strings"
-        }
-      },
-      {
-        "class_name": "OutputSelector",
-        "file_path": "griptape_nodes_library/execution/select_output.py",
-        "metadata": {
-          "category": "execution_flow",
-          "description": "Let's you choose which direction you want a flow to go, based on the output of previous nodes",
-          "display_name": "Output Selector"
-        }
-      },
-      {
-        "class_name": "AgentToTool",
-        "file_path": "griptape_nodes_library/convert/agent_to_tool.py",
-        "metadata": {
-          "category": "convert",
-          "description": "Convert an agent into a tool that another agent can use",
-          "display_name": "Agent To Tool"
-        }
-      },
-      {
-        "class_name": "PublishedWorkflow",
-        "file_path": "griptape_nodes_library/workflows/published_workflow.py",
-        "metadata": {
-          "category": "workflows",
-          "description": "Use a published workflow within your graph",
-          "display_name": "Published Workflow"
-        }
       }
-    ],
-    "workflows": [
-      "workflows/templates/prompt_an_image.py",
-      "workflows/templates/coordinating_agents.py",
-      "workflows/templates/compare_prompts.py",
-      "workflows/templates/photography_team.py"
-    ],
-    "is_default_library": true
-  }
+    },
+    {
+      "class_name": "Microphone",
+      "file_path": "griptape_nodes_library/audio/microphone.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Can record audio from your microphone.",
+        "display_name": "Microphone"
+      }
+    },
+    {
+      "class_name": "ToBool",
+      "file_path": "griptape_nodes_library/convert/to_bool.py",
+      "metadata": {
+        "category": "convert",
+        "description": "Converts incoming value to a boolean",
+        "display_name": "To Bool"
+      }
+    },
+    {
+      "class_name": "ToDictionary",
+      "file_path": "griptape_nodes_library/convert/to_dict.py",
+      "metadata": {
+        "category": "convert",
+        "description": "Converts incoming value to a dictionary",
+        "display_name": "To Dictionary"
+      }
+    },
+    {
+      "class_name": "ToFloat",
+      "file_path": "griptape_nodes_library/convert/to_float.py",
+      "metadata": {
+        "category": "convert",
+        "description": "Converts incoming value to a float",
+        "display_name": "To Float"
+      }
+    },
+    {
+      "class_name": "ToInteger",
+      "file_path": "griptape_nodes_library/convert/to_int.py",
+      "display_name": "To Integer",
+      "metadata": {
+        "category": "convert",
+        "description": "Converts incoming value to an integer",
+        "display_name": "To Integer"
+      }
+    },
+    {
+      "class_name": "ToText",
+      "file_path": "griptape_nodes_library/convert/to_text.py",
+      "metadata": {
+        "category": "convert",
+        "description": "Converts incoming value to text",
+        "display_name": "To Text"
+      }
+    },
+    {
+      "class_name": "DisplayDictionary",
+      "file_path": "griptape_nodes_library/dict/display_dict.py",
+      "metadata": {
+        "category": "dict",
+        "description": "Displays dictionary data",
+        "display_name": "Display Dictionary"
+      }
+    },
+    {
+      "class_name": "KeyValuePair",
+      "file_path": "griptape_nodes_library/dict/key_value_pair.py",
+      "metadata": {
+        "category": "dict",
+        "description": "Create a Key Value Pair",
+        "display_name": "Key Value Pair"
+      }
+    },
+    {
+      "class_name": "LoadDictionary",
+      "file_path": "griptape_nodes_library/dict/load_dict.py",
+      "metadata": {
+        "category": "dict",
+        "description": "Loads a dictionary from disk",
+        "display_name": "Load Dictionary"
+      }
+    },
+    {
+      "class_name": "MergeKeyValuePairs",
+      "file_path": "griptape_nodes_library/dict/merge_key_value_pair.py",
+      "metadata": {
+        "category": "dict",
+        "description": "Merges multiple Key/Value Pairs into a single dictionary",
+        "display_name": "Merge Key Value Pairs"
+      }
+    },
+    {
+      "class_name": "SaveDictionary",
+      "file_path": "griptape_nodes_library/dict/save_dict.py",
+      "metadata": {
+        "category": "dict",
+        "description": "Save dictionary data to a file",
+        "display_name": "Save Dictionary"
+      }
+    },
+    {
+      "class_name": "GriptapeCloudImage",
+      "file_path": "griptape_nodes_library/config/image/griptape_cloud_image_driver.py",
+      "metadata": {
+        "category": "image_models",
+        "description": "Image Generation Models available from Griptape Cloud",
+        "display_name": "Griptape Cloud Image"
+      }
+    },
+    {
+      "class_name": "GrokImage",
+      "file_path": "griptape_nodes_library/config/image/grok_image_driver.py",
+      "metadata": {
+        "category": "image_models",
+        "description": "Image Generation Models available from xAI Grok",
+        "display_name": "Grok Image"
+      }
+    },
+    {
+      "class_name": "OpenAiImage",
+      "file_path": "griptape_nodes_library/config/image/openai_image_driver.py",
+      "metadata": {
+        "category": "image_models",
+        "description": "Image Generation Models available from OpenAI",
+        "display_name": "OpenAI Image"
+      }
+    },
+    {
+      "class_name": "AmazonBedrockPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/amazon_bedrock_prompt.py",
+      "metadata": {
+        "category": "prompt_models",
+        "description": "Prompt Models available from Amazon Bedrock",
+        "display_name": "Amazon Bedrock Prompt"
+      }
+    },
+    {
+      "class_name": "AnthropicPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/anthropic_prompt.py",
+      "metadata": {
+        "category": "prompt_models",
+        "description": "Prompt Models available from Anthropic",
+        "display_name": "Anthropic Prompt"
+      }
+    },
+    {
+      "class_name": "CoherePrompt",
+      "file_path": "griptape_nodes_library/config/prompt/cohere_prompt.py",
+      "metadata": {
+        "category": "prompt_models",
+        "description": "Prompt Models available from Cohere",
+        "display_name": "Cohere Prompt"
+      }
+    },
+    {
+      "class_name": "GriptapeCloudPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/griptape_cloud_prompt.py",
+      "metadata": {
+        "category": "prompt_models",
+        "description": "Prompt Models available from Griptape Cloud",
+        "display_name": "Griptape Cloud Prompt"
+      }
+    },
+    {
+      "class_name": "GrokPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/grok_prompt.py",
+      "metadata": {
+        "category": "prompt_models",
+        "description": "Prompt Models available from xAI Grok",
+        "display_name": "Grok Prompt"
+      }
+    },
+    {
+      "class_name": "OpenAiAudioTranscription",
+      "file_path": "griptape_nodes_library/config/audio_transcription/openai_audio_transcription_driver.py",
+      "metadata": {
+        "category": "config/audio",
+        "description": "Node for OpenAI Audio Transcription Driver",
+        "display_name": "OpenAI Audio Transcription"
+      }
+    },
+    {
+      "class_name": "OpenAiPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/openai_prompt.py",
+      "metadata": {
+        "category": "prompt_models",
+        "description": "Prompt Models available from OpenAI",
+        "display_name": "OpenAI Prompt"
+      }
+    },
+    {
+      "class_name": "DuckDuckGo",
+      "file_path": "griptape_nodes_library/config/web_search/web_search_drivers.py",
+      "metadata": {
+        "category": "tools/config",
+        "description": "WebSearch driver for DuckDuckGo",
+        "display_name": "Duck Duck Go"
+      }
+    },
+    {
+      "class_name": "GenerateImage",
+      "file_path": "griptape_nodes_library/image/create_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Generates an image using Griptape Cloud, or other provided image generation models",
+        "display_name": "Generate Image"
+      }
+    },
+    {
+      "class_name": "DescribeImage",
+      "file_path": "griptape_nodes_library/image/describe_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Can be used to describe an image",
+        "display_name": "Describe Image"
+      }
+    },
+    {
+      "class_name": "DisplayImage",
+      "file_path": "griptape_nodes_library/image/display_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Display an image",
+        "display_name": "Display Image"
+      }
+    },
+    {
+      "class_name": "CompareImages",
+      "file_path": "griptape_nodes_library/image/compare_images.py",
+      "metadata": {
+        "category": "image",
+        "description": "Can be used to compare two images",
+        "display_name": "Compare Images"
+      }
+    },
+    {
+      "class_name": "LoadImage",
+      "file_path": "griptape_nodes_library/image/load_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Loads an image from disk",
+        "display_name": "Load Image"
+      }
+    },
+    {
+      "class_name": "Webcam",
+      "file_path": "griptape_nodes_library/image/webcam.py",
+      "metadata": {
+        "category": "image",
+        "description": "Capture an image using the device's camera",
+        "display_name": "Webcam"
+      }
+    },
+    {
+      "class_name": "SaveImage",
+      "file_path": "griptape_nodes_library/image/save_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Save an image to a file",
+        "display_name": "Save Image"
+      }
+    },
+    {
+      "class_name": "Note",
+      "file_path": "griptape_nodes_library/note.py",
+      "metadata": {
+        "category": "misc",
+        "description": "Create a note node to provide helpful context in your workflow",
+        "display_name": "Note"
+      }
+    },
+    {
+      "class_name": "FloatInput",
+      "file_path": "griptape_nodes_library/number/create_float.py",
+      "metadata": {
+        "category": "number",
+        "description": "Create a float value",
+        "display_name": "Float Input"
+      }
+    },
+    {
+      "class_name": "IntegerInput",
+      "file_path": "griptape_nodes_library/number/create_int.py",
+      "metadata": {
+        "category": "number",
+        "description": "Create an integer value",
+        "display_name": "Integer Input"
+      }
+    },
+    {
+      "class_name": "DisplayFloat",
+      "file_path": "griptape_nodes_library/number/display_float.py",
+      "metadata": {
+        "category": "number",
+        "description": "Display a float value",
+        "display_name": "Display Float"
+      }
+    },
+    {
+      "class_name": "DisplayInteger",
+      "file_path": "griptape_nodes_library/number/display_int.py",
+      "metadata": {
+        "category": "number",
+        "description": "Display an integer value",
+        "display_name": "Display Integer"
+      }
+    },
+    {
+      "class_name": "Ruleset",
+      "file_path": "griptape_nodes_library/rules/create_ruleset.py",
+      "metadata": {
+        "category": "rules",
+        "description": "Ruleset node",
+        "display_name": "Ruleset"
+      }
+    },
+    {
+      "class_name": "RulesetList",
+      "file_path": "griptape_nodes_library/rules/ruleset_list.py",
+      "metadata": {
+        "category": "rules",
+        "description": "Combine rulesets to give an agent a more complex set of behaviors",
+        "display_name": "Ruleset List"
+      }
+    },
+    {
+      "class_name": "TextInput",
+      "file_path": "griptape_nodes_library/text/create_multiline_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "TextInput node",
+        "display_name": "Text Input"
+      }
+    },
+    {
+      "class_name": "DisplayText",
+      "file_path": "griptape_nodes_library/text/display_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "DisplayText node",
+        "display_name": "Display Text"
+      }
+    },
+    {
+      "class_name": "ListTexts",
+      "file_path": "griptape_nodes_library/text/list_texts.py",
+      "metadata": {
+        "category": "text",
+        "description": "Create a list of strings from multiple input values, and immediately forwards to output",
+        "display_name": "List Texts"
+      }
+    },
+    {
+      "class_name": "LoadText",
+      "file_path": "griptape_nodes_library/text/load_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "LoadText node",
+        "display_name": "Load Text"
+      }
+    },
+    {
+      "class_name": "MergeTexts",
+      "file_path": "griptape_nodes_library/text/merge_texts.py",
+      "metadata": {
+        "category": "text",
+        "description": "MergeTexts node",
+        "display_name": "Merge Texts"
+      }
+    },
+    {
+      "class_name": "SaveText",
+      "file_path": "griptape_nodes_library/text/save_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "Save text to a file",
+        "display_name": "Save Text"
+      }
+    },
+    {
+      "class_name": "Calculator",
+      "file_path": "griptape_nodes_library/tools/calculator_tool.py",
+      "metadata": {
+        "category": "tools",
+        "description": "Give an agent the ability to use a calculator",
+        "display_name": "Calculator"
+      }
+    },
+    {
+      "class_name": "DateTime",
+      "file_path": "griptape_nodes_library/tools/date_time_tool.py",
+      "metadata": {
+        "category": "tools",
+        "description": "Give an agent the ability to know what day and time it is",
+        "display_name": "Date Time"
+      }
+    },
+    {
+      "class_name": "FileManager",
+      "file_path": "griptape_nodes_library/tools/file_manager_tool.py",
+      "metadata": {
+        "category": "tools",
+        "description": "Give an agent the ability to load files from disk",
+        "display_name": "File Manager"
+      }
+    },
+    {
+      "class_name": "ToolList",
+      "file_path": "griptape_nodes_library/tools/tool_list.py",
+      "metadata": {
+        "category": "tools",
+        "description": "Combine tools to give an agent a more complex set of tools",
+        "display_name": "Tool List"
+      }
+    },
+    {
+      "class_name": "WebSearch",
+      "file_path": "griptape_nodes_library/tools/web_search_tool.py",
+      "metadata": {
+        "category": "tools",
+        "description": "Give an agent the ability to search the web",
+        "display_name": "Web Search"
+      }
+    },
+    {
+      "class_name": "WebScraper",
+      "file_path": "griptape_nodes_library/tools/web_scraper_tool.py",
+      "metadata": {
+        "category": "tools",
+        "description": "Give an agent the ability to scrape the web for information",
+        "display_name": "Web Scraper"
+      }
+    },
+    {
+      "class_name": "StartFlow",
+      "file_path": "griptape_nodes_library/workflows/start_flow.py",
+      "metadata": {
+        "category": "workflows",
+        "description": "Define the start of a workflow and pass parameters into the flow",
+        "display_name": "Start Flow"
+      }
+    },
+    {
+      "class_name": "EndFlow",
+      "file_path": "griptape_nodes_library/workflows/end_flow.py",
+      "metadata": {
+        "category": "workflows",
+        "description": "Define the end of a workflow and return parameters from the flow",
+        "display_name": "End Flow"
+      }
+    },
+    {
+      "class_name": "Reroute",
+      "file_path": "griptape_nodes_library/execution/reroute.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Provides a node to allow you to redirect a flow, matching inputs and outputs",
+        "display_name": "Reroute"
+      }
+    },
+    {
+      "class_name": "IfElse",
+      "file_path": "griptape_nodes_library/execution/if_else.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Create a branching workflow based on whether a value is true or false",
+        "display_name": "IfElse"
+      }
+    },
+    {
+      "class_name": "CompareNumbers",
+      "file_path": "griptape_nodes_library/execution/compare_numbers.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Branch your workflow based on a comparison of two numbers",
+        "display_name": "Compare Numbers"
+      }
+    },
+    {
+      "class_name": "CompareStrings",
+      "file_path": "griptape_nodes_library/execution/compare_strings.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Branch your workflow based on a comparison of two strings",
+        "display_name": "Compare Strings"
+      }
+    },
+    {
+      "class_name": "OutputSelector",
+      "file_path": "griptape_nodes_library/execution/select_output.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Let's you choose which direction you want a flow to go, based on the output of previous nodes",
+        "display_name": "Output Selector"
+      }
+    },
+    {
+      "class_name": "AgentToTool",
+      "file_path": "griptape_nodes_library/convert/agent_to_tool.py",
+      "metadata": {
+        "category": "convert",
+        "description": "Convert an agent into a tool that another agent can use",
+        "display_name": "Agent To Tool"
+      }
+    },
+    {
+      "class_name": "PublishedWorkflow",
+      "file_path": "griptape_nodes_library/workflows/published_workflow.py",
+      "metadata": {
+        "category": "workflows",
+        "description": "Use a published workflow within your graph",
+        "display_name": "Published Workflow"
+      }
+    }
+  ],
+  "workflows": [
+    "workflows/templates/prompt_an_image.py",
+    "workflows/templates/coordinating_agents.py",
+    "workflows/templates/compare_prompts.py",
+    "workflows/templates/photography_team.py"
+  ],
+  "is_default_library": true
+}

@@ -4,9 +4,8 @@ from griptape.loaders import AudioLoader
 from griptape.structures import Structure
 from griptape.tasks import AudioTranscriptionTask
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
@@ -72,51 +71,26 @@ class TranscribeAudio(ControlNode):
                 },
             )
         )
-        # with ParameterGroup(name="warning", ui_options={"variant": "warning"}) as warning_group:
-        #     Parameter(
-        #         name="api_key_missing",
-        #         type="str",
-        #         default_value="This node requires an OPENAI_API_KEY.\n\nPlease get an API key and set the key in your Griptape Settings.",
-        #         tooltip="",
-        #         allowed_modes={ParameterMode.PROPERTY},  # type: ignore  # noqa: PGH003
-        #         ui_options={
-        #             "multiline": True,
-        #             "variant": "warning",
-        #             "markdown": True,
-        #             "message_link": str(API_KEY_URL),
-        #             "message_link_text": "Get API Key",
-        #         },
-        #     )
 
-        # self.add_node_element(warning_group)
-        self.add_parameter(
-            Parameter(
-                name="message",
-                type="str",
-                default_value="",
-                tooltip="",
-                allowed_modes={ParameterMode.PROPERTY},  # type: ignore  # noqa: PGH003
-                ui_options={
-                    "hide": True,
-                    "placeholder_text": "Enter your OPENAI_API_KEY here",
-                    "display_name": "OPENAI_API_KEY",
-                    "message_text": "This node requires an OPENAI_API_KEY.\n\nPlease get an API key and set the key in your Griptape Settings.",
-                    "message_type": "warning",
-                    "message_link": str(API_KEY_URL),
-                    "message_link_text": "Get API Key",
-                },
-            )
+        pm = ParameterMessage(
+            name="openai_api_key_message",
+            title="OPENAI_API_KEY Required",
+            variant="warning",
+            value="This node requires an OPENAI_API_KEY.\n\nPlease get an API key and set the key in your Griptape Settings.",
+            button_link=str(API_KEY_URL),
+            button_text="Get API Key",
         )
-        # self.clear_api_key_check()
+        self.add_node_element(pm)
+        self.clear_api_key_check()
 
     def clear_api_key_check(self) -> bool:
         # Check to see if the API key is set, if not we'll show the message
+        message_name = "openai_api_key_message"
         api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
-        logger.info(f"API key: {api_key}")
         if api_key:
-            self.hide_parameter_by_name("message")
+            self.hide_message_by_name(message_name)
             return True
-        self.show_parameter_by_name("message")
+        self.show_message_by_name(message_name)
         return False
 
     def validate_before_workflow_run(self) -> list[Exception] | None:

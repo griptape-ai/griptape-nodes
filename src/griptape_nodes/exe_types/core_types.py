@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -270,6 +270,58 @@ class BaseNodeElement:
     def get_current(cls) -> BaseNodeElement | None:
         """Return the element on top of the stack, or None if no active element."""
         return cls._stack[-1] if cls._stack else None
+
+
+@dataclass(kw_only=True)
+class ParameterMessage(BaseNodeElement):
+    """Represents a UI message element, such as a warning or informational text."""
+
+    element_type: str = field(default_factory=lambda: ParameterMessage.__name__)
+    variant: Literal["info", "warning", "error", "success", "tip", "none"]
+    title: str | None = None
+    value: str
+    button_link: str | None = None
+    button_text: str | None = None
+    full_width: bool = False
+    ui_options: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+
+        # Use default title based on variant if none is explicitly provided
+        default_titles = {
+            "info": "Info",
+            "warning": "Warning",
+            "error": "Error",
+            "success": "Success",
+            "tip": "Tip",
+            "none": "",
+        }
+
+        title = self.title or default_titles.get(str(self.variant), "")
+
+        # Merge the UI options with the message-specific options
+        merged_ui_options = {
+            **self.ui_options,
+            **{
+                k: v
+                for k, v in {
+                    "title": title,
+                    "variant": self.variant,
+                    "button_link": self.button_link,
+                    "button_text": self.button_text,
+                    "full_width": self.full_width,
+                }.items()
+                if v is not None
+            },
+        }
+
+        data["name"] = self.name
+        data["value"] = self.value
+        data["default_value"] = self.value  # for compatibility
+        data["ui_options"] = merged_ui_options
+
+        return data
 
 
 @dataclass(kw_only=True)
