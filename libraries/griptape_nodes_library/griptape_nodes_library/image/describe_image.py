@@ -210,6 +210,8 @@ class DescribeImage(ControlNode):
         # Run the agent
         yield lambda: agent.run([prompt, image_artifact])
         self.parameter_output_values["output"] = agent.output.value
+        # Insert a false memory to prevent the base64
+        agent.insert_false_memory(prompt=prompt, output=self.parameter_output_values["output"])
         try_throw_error(agent.output)
 
         # Set the output value for the agent
