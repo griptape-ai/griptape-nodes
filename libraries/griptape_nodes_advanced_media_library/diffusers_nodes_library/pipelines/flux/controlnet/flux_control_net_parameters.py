@@ -51,7 +51,12 @@ class FluxControlNetParameters:
     def get_control_image_pil(self) -> Image:
         control_image_artifact = self._node.get_parameter_value("control_image")
         if isinstance(control_image_artifact, ImageUrlArtifact):
-            control_image_artifact = ImageLoader().parse(control_image_artifact.to_bytes())
+            try:
+                image_bytes = control_image_artifact.to_bytes()
+            except Exception as err:
+                details = f"Failed to download image at '{control_image_artifact.value}'. If this workflow was shared from another engine installation, that image file will need to be regenerated. Error: {err}"
+                raise ValueError(details) from err
+            control_image_artifact = ImageLoader().parse(image_bytes)
         control_image_pil = image_artifact_to_pil(control_image_artifact)
         return control_image_pil.convert("RGB")
 

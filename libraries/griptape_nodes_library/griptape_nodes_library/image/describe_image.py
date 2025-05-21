@@ -202,7 +202,13 @@ class DescribeImage(ControlNode):
         image_artifact = params.get("image", None)
 
         if isinstance(image_artifact, ImageUrlArtifact):
-            image_artifact = ImageLoader().parse(image_artifact.to_bytes())
+            try:
+                image_bytes = image_artifact.to_bytes()
+            except Exception as err:
+                details = f"Failed to download image at '{image_artifact.value}'. If this workflow was shared from another engine installation, that image file will need to be regenerated. Error: {err}"
+                raise ValueError(details) from err
+
+            image_artifact = ImageLoader().parse(image_bytes)
         if image_artifact is None:
             self.parameter_output_values["output"] = "No image provided"
             return
