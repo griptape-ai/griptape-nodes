@@ -1,3 +1,4 @@
+import io
 import logging
 import os
 from pathlib import Path
@@ -11,13 +12,20 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 
+from diffusers_nodes_library.pipelines.flux.peft.train_flux_lora_parameters import TrainFluxLoraParameters
+
 logger = logging.getLogger("diffusers_nodes_library")
+
+
 
 
 class TrainFluxLora(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+        self.train_params = TrainFluxLoraParameters(self)
         self.log_params = LogParameter(self)
+        self.train_params.add_input_parameters()
+        self.train_params.add_output_parameters()
         self.log_params.add_output_parameters()
 
 
@@ -60,21 +68,21 @@ class TrainFluxLora(ControlNode):
                     f"--instance_data_dir={instance_data_dir}",
                     f"--output_dir={output_dir}",
                     '--mixed_precision=no',
-                    '--instance_prompt="default...."', # We are going to rely on txt caption files next to the image files
-                    "--resolution=512",
+                    '--instance_prompt="glorp"', # We are going to rely on txt caption files next to the image files
+                    f"--resolution={self.train_params.get_resolution()}",
                     "--train_batch_size=1",
                     "--guidance_scale=1",
                     "--gradient_accumulation_steps=4",
                     "--gradient_checkpointing",
                     '--optimizer=adamw',
-                    "--learning_rate=1.0e-04",
+                    f"--learning_rate={self.train_params.get_learning_rate()}",
                     '--lr_scheduler=constant',
                     "--lr_warmup_steps=0",
-                    "--num_train_epochs=10",
-                    "--max_train_steps=10",
+                    f"--num_train_epochs={self.train_params.get_num_train_epochs()}",
+                    f"--max_train_steps={self.train_params.get_max_train_steps()}",
                     "--train_batch_size=1",
                     "--cache_latents",
-                    '--validation_prompt="A photo of sks dog in a bucket"',
+                    f'--validation_prompt="{self.train_params.get_validation_prompt()}"',
                     "--num_validation_images=1",
                     "--validation_epochs=10",
                     "--seed=42",
@@ -98,3 +106,7 @@ class TrainFluxLora(ControlNode):
             exit_code = process.wait()
             if exit_code != 0:
                 logger.error(f"Training process exited with code {exit_code}")
+
+
+            lora_path = output_dir / "pytorch_lora_weights.safetensors"
+            self.train_params.publish_lora_output(lora_path)

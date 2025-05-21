@@ -35,7 +35,7 @@ class LoadText(ControlNode):
         # Add output parameters
         self.add_parameter(
             Parameter(
-                name="file_path",
+                name="path",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 input_types=["str"],
                 type="str",
