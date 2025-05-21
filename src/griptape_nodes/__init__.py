@@ -193,11 +193,11 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
         Once the key is generated, copy and paste its value here to proceed."""
         console.print(Panel(explainer, expand=False))
 
-    api_key = api_key or secrets_manager.get_secret("GT_CLOUD_API_KEY", should_error_on_not_found=False)
+    default_api_key = api_key or secrets_manager.get_secret("GT_CLOUD_API_KEY", should_error_on_not_found=False)
     while api_key is None:
         api_key = Prompt.ask(
             "Griptape API Key",
-            default=api_key,
+            default=default_api_key,
             show_default=True,
         )
 
@@ -213,12 +213,12 @@ def _prompt_for_workspace(*, workspace_directory: str | None) -> None:
         You may enter a custom directory or press Return to accept the default workspace directory"""
         console.print(Panel(explainer, expand=False))
 
-    workspace_directory = workspace_directory or config_manager.get_config_value("workspace_directory")
+    default_workspace_directory = workspace_directory or config_manager.get_config_value("workspace_directory")
     while workspace_directory is None:
         try:
             workspace_to_test = Prompt.ask(
                 "Workspace Directory",
-                default=workspace_directory,
+                default=default_workspace_directory,
                 show_default=True,
             )
             # Try to resolve the path to check if it exists
