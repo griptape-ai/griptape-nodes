@@ -77,6 +77,14 @@
       }
     },
     {
+      "audio_models": {
+        "color": "border-lime-500",
+        "title": "Audio Models",
+        "description": "Audio Configs for Griptape Agents",
+        "icon": "Truck"
+      }
+    },
+    {
       "image": {
         "color": "border-purple-500",
         "title": "Image",
@@ -170,14 +178,6 @@
         "title": "Convert",
         "description": "Convert nodes",
         "icon": "Shuffle"
-      }
-    },
-    {
-      "config/audio": {
-        "color": "border-lime-500",
-        "title": "Audio",
-        "description": "Audio Configs for Griptape Agents",
-        "icon": "Truck"
       }
     },
     {
@@ -425,7 +425,7 @@
       "class_name": "OpenAiAudioTranscription",
       "file_path": "griptape_nodes_library/config/audio_transcription/openai_audio_transcription_driver.py",
       "metadata": {
-        "category": "config/audio",
+        "category": "audio_models",
         "description": "Node for OpenAI Audio Transcription Driver",
         "display_name": "OpenAI Audio Transcription"
       }
