@@ -23,8 +23,8 @@ class FluxLoraParameters:
             Parameter(
                 name="loras",
                 default_value=1.0,
-                input_types=["dict"],
-                type="dict",
+                type="loras",
+                output_type="loras",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="loras",
             )
