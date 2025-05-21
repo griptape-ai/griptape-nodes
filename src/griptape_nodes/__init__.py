@@ -9,6 +9,7 @@ with console.status("Loading Griptape Nodes...") as status:
     import argparse
     import importlib.metadata
     import json
+    import os
     import shutil
     import sys
     import tarfile
@@ -60,31 +61,29 @@ def main() -> None:
     _process_args(args)
 
 
-def _run_init(
-    *, api_key: str | None = None, workspace_directory: str | None = None, register_advanced_library: bool | None = None
-) -> None:
+def _run_init(args: argparse.Namespace) -> None:
     """Runs through the engine init steps, optionally skipping prompts if the user provided `--api-key`."""
     __init_system_config()
-    _prompt_for_workspace(workspace_directory_arg=workspace_directory)
-    _prompt_for_api_key(api_key=api_key)
-    _prompt_for_libraries_to_register(register_advanced_library=register_advanced_library)
+    _prompt_for_workspace(workspace_directory=args.workspace_directory)
+    _prompt_for_api_key(api_key=args.api_key)
+    _prompt_for_libraries_to_register(register_advanced_library=args.register_advanced_library)
     _sync_assets()
     console.print("[bold green]Initialization complete![/bold green]")
 
 
-def _start_engine(*, no_update: bool) -> None:
+def _start_engine(args: argparse.Namespace) -> None:
     """Starts the Griptape Nodes engine.
 
     Args:
-        no_update: If True, skips the auto-update check.
+        args: The parsed command-line arguments.
     """
     if not CONFIG_DIR.exists():
         # Default init flow if there is no config directory
         console.print("[bold green]Config directory not found. Initializing...[/bold green]")
-        _run_init()
+        _run_init(args)
 
     # Confusing double negation -- If `no_update` is set, we want to skip the update
-    if not no_update:
+    if not args.no_update:
         _auto_update_self()
 
     console.print("[bold green]Starting Griptape Nodes engine...[/bold green]")
@@ -115,15 +114,16 @@ def _get_args() -> argparse.Namespace:
     init_parser.add_argument(
         "--api-key",
         help="Set the Griptape Nodes API key.",
+        default=os.getenv("GTN_API_KEY", None),
     )
     init_parser.add_argument(
         "--workspace-directory",
         help="Set the Griptape Nodes workspace directory.",
+        default=os.getenv("GTN_WORKSPACE_DIRECTORY", None),
     )
     init_parser.add_argument(
         "--register-advanced-library",
-        action="store_true",
-        default=None,
+        default=os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", "false").lower() == "true",
         help="Install the Griptape Nodes Advanced Image Library.",
     )
 
@@ -171,7 +171,7 @@ def _get_args() -> argparse.Namespace:
 
 
 def _prompt_for_api_key(api_key: str | None = None) -> None:
-    """Prompts the user for their GT_CLOUD_API_KEY unless it's provided."""
+    """Prompts the user for their GTN_API_KEY unless it's provided."""
     if api_key is None:
         explainer = f"""[bold cyan]Griptape API Key[/bold cyan]
         A Griptape API Key is needed to proceed.
@@ -181,47 +181,46 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
         Once the key is generated, copy and paste its value here to proceed."""
         console.print(Panel(explainer, expand=False))
 
-    default_key = api_key or secrets_manager.get_secret("GT_CLOUD_API_KEY", should_error_on_not_found=False)
-    # If api_key is provided via --api-key, we don't want to prompt for it
-    current_key = api_key
-    while current_key is None:
-        current_key = Prompt.ask(
+    api_key = api_key or secrets_manager.get_secret("GTN_API_KEY", should_error_on_not_found=False)
+    while api_key is None:
+        api_key = Prompt.ask(
             "Griptape API Key",
-            default=default_key,
+            default=api_key,
             show_default=True,
         )
 
-    secrets_manager.set_secret("GT_CLOUD_API_KEY", current_key)
+    secrets_manager.set_secret("GTN_API_KEY", api_key)
     console.print("[bold green]Griptape API Key set")
 
 
-def _prompt_for_workspace(*, workspace_directory_arg: str | None) -> None:
+def _prompt_for_workspace(*, workspace_directory: str | None) -> None:
     """Prompts the user for their workspace directory and stores it in config directory."""
-    if workspace_directory_arg is None:
+    if workspace_directory is None:
         explainer = """[bold cyan]Workspace Directory[/bold cyan]
         Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows.
         You may enter a custom directory or press Return to accept the default workspace directory"""
         console.print(Panel(explainer, expand=False))
 
-    valid_workspace = False
-    default_workspace_directory = workspace_directory_arg or config_manager.get_config_value("workspace_directory")
-    while not (valid_workspace or workspace_directory_arg):
+    workspace_directory = workspace_directory or config_manager.get_config_value("workspace_directory")
+    while workspace_directory is None:
         try:
-            workspace_directory = Prompt.ask(
+            workspace_to_test = Prompt.ask(
                 "Workspace Directory",
-                default=default_workspace_directory,
+                default=workspace_directory,
                 show_default=True,
             )
-            workspace_path = Path(workspace_directory).expanduser().resolve()
-
-            config_manager.workspace_path = workspace_path
-            config_manager.set_config_value("workspace_directory", str(workspace_path))
-
-            valid_workspace = True
+            # Try to resolve the path to check if it exists
+            if workspace_to_test is not None:
+                Path(workspace_to_test).expanduser().resolve()
+            workspace_directory = workspace_to_test
         except OSError as e:
             console.print(f"[bold red]Invalid workspace directory: {e}[/bold red]")
         except json.JSONDecodeError as e:
             console.print(f"[bold red]Error reading config file: {e}[/bold red]")
+
+    workspace_path = Path(workspace_directory).expanduser().resolve()
+    config_manager.set_config_value("workspace_directory", str(workspace_path))
+
     console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
 
 
@@ -460,13 +459,9 @@ def _uninstall_self() -> None:
 
 def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
     if args.command == "init":
-        _run_init(
-            api_key=args.api_key,
-            workspace_directory=args.workspace_directory,
-            register_advanced_library=args.register_advanced_library,
-        )
+        _run_init(args)
     elif args.command == "engine":
-        _start_engine(no_update=args.no_update)
+        _start_engine(args)
     elif args.command == "config":
         if args.subcommand == "list":
             _list_user_configs()
