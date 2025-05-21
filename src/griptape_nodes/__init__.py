@@ -193,7 +193,7 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
         Once the key is generated, copy and paste its value here to proceed."""
         console.print(Panel(explainer, expand=False))
 
-    api_key = api_key or secrets_manager.get_secret("GTN_API_KEY", should_error_on_not_found=False)
+    api_key = api_key or secrets_manager.get_secret("GT_CLOUD_API_KEY", should_error_on_not_found=False)
     while api_key is None:
         api_key = Prompt.ask(
             "Griptape API Key",
@@ -201,7 +201,7 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
             show_default=True,
         )
 
-    secrets_manager.set_secret("GTN_API_KEY", api_key)
+    secrets_manager.set_secret("GT_CLOUD_API_KEY", api_key)
     console.print("[bold green]Griptape API Key set")
 
 
