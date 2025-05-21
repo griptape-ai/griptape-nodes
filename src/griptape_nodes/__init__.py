@@ -61,29 +61,41 @@ def main() -> None:
     _process_args(args)
 
 
-def _run_init(args: argparse.Namespace) -> None:
-    """Runs through the engine init steps, optionally skipping prompts if the user provided `--api-key`."""
+def _run_init(
+    *, workspace_directory: str | None = None, api_key: str | None = None, register_advanced_library: bool | None = None
+) -> None:
+    """Runs through the engine init steps.
+
+    Args:
+        workspace_directory (str | None): The workspace directory to set.
+        api_key (str | None): The API key to set.
+        register_advanced_library (bool | None): Whether to register the advanced library.
+    """
     __init_system_config()
-    _prompt_for_workspace(workspace_directory=args.workspace_directory)
-    _prompt_for_api_key(api_key=args.api_key)
-    _prompt_for_libraries_to_register(register_advanced_library=args.register_advanced_library)
+    _prompt_for_workspace(workspace_directory=workspace_directory)
+    _prompt_for_api_key(api_key=api_key)
+    _prompt_for_libraries_to_register(register_advanced_library=register_advanced_library)
     _sync_assets()
     console.print("[bold green]Initialization complete![/bold green]")
 
 
-def _start_engine(args: argparse.Namespace) -> None:
+def _start_engine(*, no_update: bool = False) -> None:
     """Starts the Griptape Nodes engine.
 
     Args:
-        args: The parsed command-line arguments.
+        no_update (bool): If True, skips the auto-update check.
     """
     if not CONFIG_DIR.exists():
         # Default init flow if there is no config directory
         console.print("[bold green]Config directory not found. Initializing...[/bold green]")
-        _run_init(args)
+        _run_init(
+            workspace_directory=os.getenv("GTN_WORKSPACE_DIRECTORY"),
+            api_key=os.getenv("GTN_API_KEY"),
+            register_advanced_library=os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", "false").lower() == "true",
+        )
 
     # Confusing double negation -- If `no_update` is set, we want to skip the update
-    if not args.no_update:
+    if not no_update:
         _auto_update_self()
 
     console.print("[bold green]Starting Griptape Nodes engine...[/bold green]")
@@ -459,9 +471,13 @@ def _uninstall_self() -> None:
 
 def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
     if args.command == "init":
-        _run_init(args)
+        _run_init(
+            workspace_directory=args.workspace_directory,
+            api_key=args.api_key,
+            register_advanced_library=args.register_advanced_library,
+        )
     elif args.command == "engine":
-        _start_engine(args)
+        _start_engine(no_update=args.no_update)
     elif args.command == "config":
         if args.subcommand == "list":
             _list_user_configs()
