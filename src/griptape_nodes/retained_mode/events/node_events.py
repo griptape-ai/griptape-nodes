@@ -21,6 +21,13 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
+class NewPosition(NamedTuple):
+    """The X and Y position for the node to be copied to. Updates in the node metadata."""
+
+    x: float
+    y: float
+
+
 @dataclass
 @PayloadRegistry.register
 class CreateNodeRequest(RequestPayload):
@@ -338,23 +345,11 @@ class SerializedSelectedNodesCommands:
     serialized_connection_commands: list[IndirectConnectionSerialization]
 
 
-class NodeToTimestamp(NamedTuple):
-    """A named tuple for storing the node_name and the timestamp passed on selection.
-
-    Fields:
-        node_name: The name of the node selected
-        timestamp: The time the node was selected
-    """
-
-    node_name: str
-    timestamp: str
-
-
 @dataclass
 @PayloadRegistry.register
 class SerializeSelectedNodesToCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
     # They will be passed with node_name, timestamp
-    nodes_to_serialize: list[NodeToTimestamp]
+    nodes_to_serialize: list[str]
 
 
 @dataclass
@@ -374,7 +369,7 @@ class SerializeSelectedNodesToCommandsResultFailure(WorkflowNotAlteredMixin, Res
 @dataclass
 @PayloadRegistry.register
 class DeserializeSelectedNodesFromCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
-    pass
+    positions: list[NewPosition] | None = None
 
 
 @dataclass
@@ -410,13 +405,13 @@ class DeserializeNodeFromCommandsResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class DuplicateSelectedNodesRequest(WorkflowNotAlteredMixin, RequestPayload):
-    nodes_to_duplicate: list[NodeToTimestamp]
+    nodes_to_duplicate: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
 class DuplicateSelectedNodesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    pass
+    node_names: list[str]
 
 
 @dataclass
