@@ -118,14 +118,6 @@ class FluxPipelineParameters:
                 tooltip="num_inference_steps",
             )
         )
-        self._node.add_parameter(
-            Parameter(
-                name="sigmas",
-                input_types=["str", "list[float]", "None"],
-                type="str",
-                tooltip="sigmas",
-            )
-        )
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/841
         self._node.add_parameter(
             Parameter(
@@ -191,19 +183,10 @@ class FluxPipelineParameters:
         return int(self._node.get_parameter_value("height"))
 
     def get_num_inference_steps(self) -> int:
-        sigmas = self.get_sigmas()
-        if sigmas is not None:
-            return len(sigmas)
         return int(self._node.get_parameter_value("num_inference_steps"))
 
     def get_guidance_scale(self) -> float:
         return float(self._node.get_parameter_value("guidance_scale"))
-
-    def get_sigmas(self) -> list[float] | None:
-        sigmas = self._node.get_parameter_value("sigmas")
-        if isinstance(sigmas, str):
-            return [float(sigma) for sigma in sigmas.split(",")]
-        return sigmas
 
     def get_pipe_kwargs(self) -> dict:
         return {
@@ -215,7 +198,6 @@ class FluxPipelineParameters:
             "width": self.get_width(),
             "height": self.get_height(),
             "num_inference_steps": self.get_num_inference_steps(),
-            "sigmas": self.get_sigmas(),
             "guidance_scale": self.get_guidance_scale(),
             "generator": self._seed_parameter.get_generator(),
         }
