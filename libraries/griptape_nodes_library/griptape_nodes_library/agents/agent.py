@@ -159,7 +159,7 @@ class Agent(ControlNode):
                 default_value="",
                 tooltip="The final text response from the agent.",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"multiline": True, "placeholder_text": "Agent response", "markdown": True},
+                ui_options={"multiline": True, "placeholder_text": "Agent response", "markdown": False},
             )
         )
 
