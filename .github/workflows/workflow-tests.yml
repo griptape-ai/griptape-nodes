@@ -1,0 +1,52 @@
+name: Workflow Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  merge_group:
+    types: [checks_requested]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-ubuntu:
+    runs-on: ubuntu-latest
+    env:
+      GT_CLOUD_API_KEY: ${{ secrets.GT_CLOUD_API_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - name: Checkout actions
+        uses: actions/checkout@v4
+      - name: Init environment 
+        uses: ./.github/actions/init-environment 
+      - name: Run workflow tests
+        run: make test/workflows
+  test-windows:
+    runs-on: windows-latest
+    env:
+      GT_CLOUD_API_KEY: ${{ secrets.GT_CLOUD_API_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout actions
+        uses: actions/checkout@v4
+      - name: Init environment 
+        uses: ./.github/actions/init-environment
+      - name: Run workflow tests
+        # TODO: make test/unit fails with the following error:
+        # process_begin: CreateProcess(NULL, uv run pytest -n auto tests/unit, ...) failed.
+        # make (e=2): The system cannot find the file specified.
+        # make: *** [Makefile:24: test/unit] Error 2
+        run: uv run pytest -s tests/workflows
