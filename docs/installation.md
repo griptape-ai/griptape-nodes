@@ -6,11 +6,11 @@ The Engine can be installed on your local machine, whether that runs MacOS, Wind
 
 If you'd rather not install the Engine locally, perhaps because you want it to be able to access more resources than you have available on your laptop, it is easy to run it in on a separate machine. The instructions that follow will work the same for either approach.
 
-- The Editor and the Engine are decoupled and communicate with each other through an event service.
+The Editor and the Engine are decoupled and communicate with each other through an event service. There is no locally-hosted Editor option
 
-- There is no locally-hosted Editor option
+#### Summary
 
-There are just 4 easy steps:
+There are just 4 steps required to install Griptape Nodes:
 
 1. Sign up or Log in
 1. Install the Griptape Nodes Engine
