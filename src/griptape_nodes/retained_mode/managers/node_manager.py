@@ -1,3 +1,4 @@
+import copy
 import logging
 import pickle
 from typing import Any, cast
@@ -1613,7 +1614,7 @@ class NodeManager:
                 node_type=node.__class__.__name__,
                 node_name=node_name,
                 specific_library_name=library_details.library_name,
-                metadata=node.metadata.copy(),
+                metadata=copy.deepcopy(node.metadata),
                 # If it is actively resolving, mark as unresolved.
                 resolution=node.state.value,
             )
@@ -1783,6 +1784,8 @@ class NodeManager:
         node_uuid_to_name = {}
         # Enumerate because positions is in the same order as the node commands.
         for i, node_command in enumerate(commands.serialized_node_commands):
+            # Create a deepcopy of the metadata so the nodes don't all share the same position.
+            node_command.create_node_command.metadata = copy.deepcopy(node_command.create_node_command.metadata)
             if request.positions is not None and len(request.positions) > i:
                 if node_command.create_node_command.metadata is None:
                     node_command.create_node_command.metadata = {
@@ -1813,7 +1816,7 @@ class NodeManager:
                         # Using try-except-pass instead of contextlib.suppress because it's clearer.
                         try:  # noqa: SIM105
                             # If we're pasting multiple times - we need to create a new copy for each paste so they don't all have the same reference.
-                            value = value.copy()
+                            value = copy.deepcopy(value)
                         except Exception:  # noqa: S110
                             pass
                         param_request.value = value
@@ -1903,9 +1906,9 @@ class NodeManager:
                 # The value should be serialized. Add it to the map of uniques.
                 unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
                 try:
-                    unique_parameter_uuid_to_values[unique_uuid] = value.copy()
+                    unique_parameter_uuid_to_values[unique_uuid] = copy.deepcopy(value)
                 except Exception:
-                    details = f"Attempted to serialize parameter '{parameter_name}` on node '{node_name}'. The parameter value could not be copied. It will be serialized by value. If problems arise from this, ensure the type '{type(value)}' properly implements copy()."
+                    details = f"Attempted to serialize parameter '{parameter_name}` on node '{node_name}'. The parameter value could not be copied. It will be serialized by value. If problems arise from this, ensure the type '{type(value)}' works with copy.deepcopy()."
                     logger.warning(details)
                     unique_parameter_uuid_to_values[unique_uuid] = value
                 serialized_parameter_value_tracker.add_as_serializable(value_id, unique_uuid)
