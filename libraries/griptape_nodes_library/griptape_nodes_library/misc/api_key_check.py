@@ -22,7 +22,7 @@ class ApiCheck(BaseNode):
 
         self.add_parameter(
             Parameter(
-                name="test",
+                name="hide_messages",
                 type="bool",
                 default_value=False,
                 tooltip="This is a test parameter",
@@ -31,9 +31,9 @@ class ApiCheck(BaseNode):
 
         self.add_parameter(
             Parameter(
-                name="test2",
-                type="bool",
-                default_value=False,
+                name="test_parameter",
+                type="str",
+                default_value="This is a test parameter to see if it toggles on and off.",
                 tooltip="This is a test parameter",
             )
         )
@@ -45,18 +45,18 @@ class ApiCheck(BaseNode):
                 value="This node requires an EXA_API_KEY to function.\n\nPlease set the key in your Griptape Settings.",
             )
         )
-        self.clear_api_key_check()
+        # self.clear_api_key_check() #TODO(jason): Test once this is resolved: https://github.com/griptape-ai/griptape-nodes/issues/1309  # noqa: ERA001
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        if parameter.name == "test":
-            # If the test parameter is set to True, we want to show the message
+        if parameter.name == "hide_messages":
+            # If the hide_messages parameter is set to True, we want to show the message
             if value:
-                self.hide_parameter_by_name("test2")
+                self.hide_parameter_by_name("test_parameter")
                 self.hide_message_by_name("api_key_message")
             else:
-                self.show_parameter_by_name("test2")
+                self.show_parameter_by_name("test_parameter")
                 self.show_message_by_name("api_key_message")
-            modified_parameters_set.add("test2")
+            modified_parameters_set.add("test_parameter")
             modified_parameters_set.add("api_key_message")
 
         return super().after_value_set(parameter, value, modified_parameters_set)

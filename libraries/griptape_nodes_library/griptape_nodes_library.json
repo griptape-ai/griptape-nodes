@@ -471,6 +471,15 @@
       }
     },
     {
+      "class_name": "ApiCheck",
+      "file_path": "griptape_nodes_library/misc/api_key_check.py",
+      "metadata": {
+        "category": "misc",
+        "description": "Create a note node to provide helpful context in your workflow",
+        "display_name": "ApiCheck"
+      }
+    },
+    {
       "class_name": "FloatInput",
       "file_path": "griptape_nodes_library/number/create_float.py",
       "metadata": {
