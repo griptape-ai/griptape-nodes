@@ -4,7 +4,6 @@ from typing import Any
 import diffusers  # type: ignore[reportMissingImports]
 import numpy as np
 import PIL.Image
-import torch  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 from griptape.loaders import ImageLoader
 from PIL.Image import Image
@@ -181,13 +180,6 @@ class DiptychFluxFillPipelineParameters:
     def get_guidance_scale(self) -> float:
         return float(self._node.get_parameter_value("guidance_scale"))
 
-    def get_generator(self) -> torch.Generator:
-        seed = self._node.get_parameter_value("seed")
-        generator = torch.Generator("cpu")
-        if seed is not None:
-            generator = generator.manual_seed(int(seed))
-        return generator
-
     def get_pipe_kwargs(self) -> dict:
         width, height = self.get_input_image_pil().size
         return {
@@ -199,7 +191,7 @@ class DiptychFluxFillPipelineParameters:
             "mask_image": self.get_dyptych_mask(),
             "num_inference_steps": self.get_num_inference_steps(),
             "guidance_scale": self.get_guidance_scale(),
-            "generator": self.get_generator(),
+            "generator": self._seed_parameter.get_generator(),
         }
 
     def publish_output_image_preview_placeholder(self) -> None:

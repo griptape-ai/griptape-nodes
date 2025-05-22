@@ -49,10 +49,14 @@ class UnionFluxControlNetPipeline(ControlNode):
         errors = self.controlnet_revisions_params.validate_before_node_run()
         return errors or None
 
+    def preprocess(self) -> None:
+        self.flux_params.preprocess()
+
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
     def _process(self) -> AsyncResult | None:
+        self.preprocess()
         self.flux_params.publish_output_image_preview_placeholder()
         self.log_params.append_to_logs("Preparing models...\n")
 
