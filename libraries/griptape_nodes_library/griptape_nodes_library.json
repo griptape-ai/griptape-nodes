@@ -422,15 +422,6 @@
       }
     },
     {
-      "class_name": "OpenAiAudioTranscription",
-      "file_path": "griptape_nodes_library/config/audio_transcription/openai_audio_transcription_driver.py",
-      "metadata": {
-        "category": "audio_models",
-        "description": "Node for OpenAI Audio Transcription Driver",
-        "display_name": "OpenAI Audio Transcription"
-      }
-    },
-    {
       "class_name": "OpenAiPrompt",
       "file_path": "griptape_nodes_library/config/prompt/openai_prompt.py",
       "metadata": {
