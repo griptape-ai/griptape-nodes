@@ -85,6 +85,7 @@ class TranscribeAudio(ControlNode):
 
     def clear_api_key_check(self) -> bool:
         # Check to see if the API key is set, if not we'll show the message
+        # TODO(jason): Implement a better way to check for the API key after https://github.com/griptape-ai/griptape-nodes/issues/1309
         message_name = "openai_api_key_message"
         api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         if api_key:
