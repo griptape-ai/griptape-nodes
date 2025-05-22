@@ -135,7 +135,9 @@ def _get_args() -> argparse.Namespace:
     )
     init_parser.add_argument(
         "--register-advanced-library",
-        default=os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", "false").lower() == "true",
+        default=os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", None).lower() == "true"
+        if os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", None) is not None
+        else None,
         help="Install the Griptape Nodes Advanced Image Library.",
     )
 
