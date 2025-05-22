@@ -33,15 +33,6 @@ class OpenAiAudioTranscription(BaseAudioTranscription):
                 ui_options={"is_full_width": True, "multiline": True, "hide": True},
             )
         )
-        self.add_parameter(
-            Parameter(
-                name="testy",
-                type="float",
-                default_value=23423423443.2342342,
-                tooltip="",
-                allowed_modes={},  # type: ignore  # noqa: PGH003
-            )
-        )
         # Update the parameters  for OpenAI specifics.
         self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
         self.clear_api_key_check(service=SERVICE, api_key_env_var=API_KEY_ENV_VAR)
