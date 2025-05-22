@@ -276,8 +276,21 @@ class BaseNodeElement:
 class ParameterMessage(BaseNodeElement):
     """Represents a UI message element, such as a warning or informational text."""
 
+    # Define default titles as a class-level constant
+    DEFAULT_TITLES: ClassVar[dict[str, str]] = {
+        "info": "Info",
+        "warning": "Warning",
+        "error": "Error",
+        "success": "Success",
+        "tip": "Tip",
+        "none": "",
+    }
+
+    # Create a type alias using the keys from DEFAULT_TITLES
+    type VariantType = Literal["info", "warning", "error", "success", "tip", "none"]
+
     element_type: str = field(default_factory=lambda: ParameterMessage.__name__)
-    variant: Literal["info", "warning", "error", "success", "tip", "none"]
+    variant: VariantType
     title: str | None = None
     value: str
     button_link: str | None = None
@@ -288,17 +301,8 @@ class ParameterMessage(BaseNodeElement):
     def to_dict(self) -> dict[str, Any]:
         data = super().to_dict()
 
-        # Use default title based on variant if none is explicitly provided
-        default_titles = {
-            "info": "Info",
-            "warning": "Warning",
-            "error": "Error",
-            "success": "Success",
-            "tip": "Tip",
-            "none": "",
-        }
-
-        title = self.title or default_titles.get(str(self.variant), "")
+        # Use class-level default titles
+        title = self.title or self.DEFAULT_TITLES.get(str(self.variant), "")
 
         # Merge the UI options with the message-specific options
         merged_ui_options = {
