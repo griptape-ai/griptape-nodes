@@ -444,6 +444,15 @@
       }
     },
     {
+      "class_name": "SketchImage",
+      "file_path": "griptape_nodes_library/image/sketch_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Sketch an image and optionally generate a mask.",
+        "display_name": "Sketch Image"
+      }
+    },
+    {
       "class_name": "Webcam",
       "file_path": "griptape_nodes_library/image/webcam.py",
       "metadata": {
