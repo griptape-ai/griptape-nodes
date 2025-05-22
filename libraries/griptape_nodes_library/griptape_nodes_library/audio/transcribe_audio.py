@@ -9,6 +9,7 @@ from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNo
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
+from griptape_nodes_library.utils.audio_utils import dict_to_audio_url_artifact
 from griptape_nodes_library.utils.error_utils import try_throw_error
 
 SERVICE = "OpenAI"
@@ -34,7 +35,6 @@ class TranscribeAudio(ControlNode):
         self.add_parameter(
             Parameter(
                 name="model",
-                input_types=["str", "Audio Transcription Model Config"],
                 type="str",
                 output_type="str",
                 default_value=DEFAULT_MODEL,
@@ -177,10 +177,14 @@ class TranscribeAudio(ControlNode):
             driver = OpenAiAudioTranscriptionDriver(
                 model=model_input, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR)
             )
-        audio_artifact = self.get_parameter_value("audio")
-        if audio_artifact is None:
+        audio = self.get_parameter_value("audio")
+        if audio is None:
             self.parameter_output_values["output"] = "No audio provided"
             return
+        if isinstance(audio, dict):
+            audio_artifact = dict_to_audio_url_artifact(audio)
+        else:
+            audio_artifact = audio
 
         if isinstance(audio_artifact, AudioUrlArtifact):
             audio_artifact = AudioLoader().parse(audio_artifact.to_bytes())
