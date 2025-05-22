@@ -204,6 +204,11 @@ class BaseNode(ABC):
         # Default behavior is to do nothing, and indicate no other modified Parameters.
         return None  # noqa: RET501
 
+    def after_settings_changed(self, modified_parameters_set: set[str]) -> None:  # noqa: ARG002
+        """Callback for when the settings of this Node are changed."""
+        # Waiting for https://github.com/griptape-ai/griptape-nodes/issues/1309
+        return
+
     def on_griptape_event(self, event: BaseEvent) -> None:  # noqa: ARG002
         """Callback for when a Griptape Event comes destined for this Node."""
         return
