@@ -4,7 +4,7 @@ Griptape Nodes is comprised of two components - an Editor and an Engine. The Ed
 
 The Engine can be installed on your local machine, whether that runs MacOS, Windows or Linux.
 
-If you'd rather not install the Engine locally, perhaps because you want it to be able to access more resources than you have available on your laptop, it is easy to run it in on a seperate machine. The instructions that follow will work the same for either approach.
+If you'd rather not install the Engine locally, perhaps because you want it to be able to access more resources than you have available on your laptop, it is easy to run it in on a separate machine. The instructions that follow will work the same for either approach.
 
 - The Editor and the Engine are decoupled and communicate with each other through an event service.
 
@@ -35,7 +35,7 @@ Once you've logged in, you'll be presented with a setup screen which walks you t
 
 !!! info
 
-    You can install the Griptape Nodes Engine on your local machine *or* on a seperate machine. That could be a cloud based machine equipped with a powerful GPU, or a similar high performance machine on the network in your studio.
+    You can install the Griptape Nodes Engine on your local machine *or* on a separate machine. That could be a cloud based machine equipped with a powerful GPU, or a similar high performance machine on the network in your studio.
 
 1. If it's not already the active tab, select the **New Installation** tab.
 
