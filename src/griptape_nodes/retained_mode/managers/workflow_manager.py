@@ -1903,6 +1903,7 @@ class WorkflowManager:
         pre_build_install_script_path = root_griptape_nodes_path / "bootstrap" / "pre_build_install_script.sh"
         post_build_install_script_path = root_griptape_nodes_path / "bootstrap" / "post_build_install_script.sh"
         register_libraries_script_path = root_griptape_nodes_path / "bootstrap" / "register_libraries_script.py"
+        full_workflow_file_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
 
         env_file_mapping = self._get_merged_env_file_mapping(secrets_manager.workspace_env_path)
 
@@ -1922,7 +1923,7 @@ class WorkflowManager:
 
             try:
                 # Copy the workflow file, libraries, and structure files to the temporary directory
-                shutil.copyfile(workflow.file_path, temp_workflow_file_path)
+                shutil.copyfile(full_workflow_file_path, temp_workflow_file_path)
                 shutil.copyfile(structure_file_path, temp_structure_path)
                 shutil.copyfile(pre_build_install_script_path, temp_pre_build_install_script_path)
                 shutil.copyfile(post_build_install_script_path, temp_post_build_install_script_path)
