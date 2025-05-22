@@ -107,10 +107,17 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         self.flux_params.add_output_parameters()
         self.log_params.add_output_parameters()
 
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        self.flux_params.after_value_set(parameter, value, modified_parameters_set)
+
+    def preprocess(self) -> None:
+        self.flux_params.preprocess()
+
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
     def _process(self) -> AsyncResult | None:  # noqa: PLR0915
+        self.preprocess()
         max_tile_size = int(self.get_parameter_value("max_tile_size"))
         input_image_artifact = self.get_parameter_value("input_image")
         tile_overlap = int(self.get_parameter_value("tile_overlap"))
