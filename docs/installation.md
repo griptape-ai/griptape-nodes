@@ -1,10 +1,10 @@
 # Installing Griptape Nodes
 
-Griptape Nodes is comprised of two components - an Editor and an Engine. The Editor is served from the web, so there is no need to install that, and you'll interact with your Engine through the Editor in your web browser. 
+Griptape Nodes is comprised of two components - an Editor and an Engine. The Editor is served from the web, so there is no need to install that, and you'll interact with your Engine through the Editor in your web browser.
 
 The Engine can be installed on your local machine, whether that runs MacOS, Windows or Linux.
 
-If you'd rather not install the Engine locally, perhaps because you want it to be able to access more resources than you have available on your laptop, it is easy to run it in on a seperate machine. The instructions that follow will work the same for either approach. 
+If you'd rather not install the Engine locally, perhaps because you want it to be able to access more resources than you have available on your laptop, it is easy to run it in on a seperate machine. The instructions that follow will work the same for either approach.
 
 - The Editor and the Engine are decoupled and communicate with each other through an event service.
 
@@ -39,18 +39,17 @@ Once you've logged in, you'll be presented with a setup screen which walks you t
 
 1. If it's not already the active tab, select the **New Installation** tab.
 
-1. On the **New Installation** tab, copy the installation command from the first step: **Install Griptape nodes Engine**. 
+1. On the **New Installation** tab, copy the installation command from the first step: **Install Griptape nodes Engine**.
 
 1. Open a Terminal on the machine where you wish to install the engine
 
-1. Paste and run the appropriate installation command for your operating system 
+1. Paste and run the appropriate installation command for your operating system
 
 ![Installation Page](assets/img/getting_started/getting_started-installation_page.webp)
 
 !!! info
 
     In most cases, the browser will automatically detect the platform that you are using and show the correct installation command for your system. If this is not the case - for example if you want to install the engine on a system using a different operating system from your local machine - select the target operating system from the dropdown on the right. The available operations are macOS, Windows & Linux.
-
 
 Once installation is complete, you'll see this message appear in the terminal where you entered the installation command:
 
