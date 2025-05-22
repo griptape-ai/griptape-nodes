@@ -1,4 +1,5 @@
 import logging
+import os
 from urllib.parse import urljoin
 
 import httpx
@@ -23,12 +24,14 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         Args:
             bucket_id: The ID of the bucket to use. If not provided, a new bucket will be provisioned.
-            base_url: The base URL for the Griptape Cloud API. If not provided, it will default to "https://cloud.griptape.ai".
-            api_key: The API key for authentication. This is required.
+            base_url: The base URL for the Griptape Cloud API. If not provided, it will be retrieved from the environment variable "GT_CLOUD_BASE_URL" or default to "https://cloud.griptape.ai".
+            api_key: The API key for authentication. If not provided, it will be retrieved from the environment variable "GT_CLOUD_API_KEY".
             headers: Additional headers to include in the requests. If not provided, the default headers will be used.
         """
-        self.base_url = base_url if base_url is not None else "https://cloud.griptape.ai"
-        self.api_key = api_key
+        self.base_url = (
+            base_url if base_url is not None else os.environ.get("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
+        )
+        self.api_key = api_key if api_key is not None else os.environ.get("GT_CLOUD_API_KEY")
         self.headers = (
             headers
             if headers is not None
@@ -47,7 +50,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{file_name}")
         try:
-            response = httpx.post(url, json={"method": "PUT"}, headers=self.headers)
+            response = httpx.post(url, json={"operation": "PUT"}, headers=self.headers)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
