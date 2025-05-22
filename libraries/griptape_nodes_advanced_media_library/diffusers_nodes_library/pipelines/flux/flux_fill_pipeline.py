@@ -49,11 +49,14 @@ class FluxFillPipeline(ControlNode):
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         self.pipe_params.after_value_set(parameter, value, modified_parameters_set)
 
+    def preprocess(self) -> None:
+        self.pipe_params.preprocess()
+
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
     def _process(self) -> AsyncResult | None:
-        self.pipe_params.preprocess()
+        self.preprocess()
         self.pipe_params.validate_before_node_process()
         self.pipe_params.publish_output_image_preview_placeholder()
         self.log_params.append_to_logs("Preparing models...\n")
