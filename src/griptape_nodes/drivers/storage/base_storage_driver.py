@@ -36,16 +36,3 @@ class BaseStorageDriver(ABC):
             str: The signed URL for downloading the file.
         """
         ...
-
-    @abstractmethod
-    def create_static_file(self, content: bytes, file_name: str) -> str:
-        """Create a static file with the given content and file name.
-
-        Args:
-            content: The content of the file.
-            file_name: The name of the file.
-
-        Returns:
-            str: The URL of the created file and any additional headers to
-        """
-        ...
