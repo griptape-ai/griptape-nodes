@@ -39,7 +39,16 @@ class TrainFluxLoraParameters:
 
     def add_input_parameters(self) -> None:
         self._huggingface_repo_parameter.add_input_parameters()
-        # resolutio
+        self._node.add_parameter(
+            Parameter(
+                name="training_data_directory",
+                input_types=["str"],
+                type="str",
+                tooltip="A path to a directory on the engine's filesystem containing training samples. Each sample should consist of two files with the same name. The first file should be an image (png, jpg, jpeg) and the second file should be a plain text file containing captions (txt).",
+                default_value=None,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
         self._node.add_parameter(
             Parameter(
                 name="resolution",
@@ -89,6 +98,16 @@ class TrainFluxLoraParameters:
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
+        self._node.add_parameter(
+            Parameter(
+                name="validation_epoch",
+                input_types=["int"],
+                type="int",
+                tooltip="validation_epoch",
+                default_value=1,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
 
     def add_output_parameters(self) -> None:
         # TODO: Cache the output model -- only train if input parameters change
@@ -109,6 +128,9 @@ class TrainFluxLoraParameters:
     def get_repo_revision(self) -> tuple[str, str]:
         return self._huggingface_repo_parameter.get_repo_revision()
     
+    def get_training_data_directory(self) -> str:
+        return str(self._node.get_parameter_value("training_data_directory"))
+    
     def get_resolution(self) -> int:
         return int(self._node.get_parameter_value("resolution"))
     
@@ -123,6 +145,9 @@ class TrainFluxLoraParameters:
     
     def get_validation_prompt(self) -> str:
         return str(self._node.get_parameter_value("validation_prompt"))
+    
+    def get_validation_epoch(self) -> int:
+        return int(self._node.get_parameter_value("validation_epoch"))
     
     def publish_lora_output(self, lora_safetensors_path: Path) -> None:
         self._node.parameter_output_values["lora_path"] = upload_and_get_local_file_path(lora_safetensors_path)

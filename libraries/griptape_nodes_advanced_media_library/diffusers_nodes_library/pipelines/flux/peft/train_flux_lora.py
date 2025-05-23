@@ -1,4 +1,5 @@
 import io
+import json
 import logging
 import os
 from pathlib import Path
@@ -46,8 +47,8 @@ class TrainFluxLora(ControlNode):
 
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Copy a hardcoded data set for testing
-            shutil.copytree("/Users/dylan/Documents/lora/datasets/sylphluxnix", instance_data_dir)
+            # Copy the dataset to the temporary directory
+            shutil.copytree(self.train_params.get_training_data_directory(), instance_data_dir)
 
             env = os.environ.copy()
 
@@ -84,8 +85,9 @@ class TrainFluxLora(ControlNode):
                     "--cache_latents",
                     f'--validation_prompt="{self.train_params.get_validation_prompt()}"',
                     "--num_validation_images=1",
-                    "--validation_epochs=10",
+                    f"--validation_epochs={self.train_params.get_validation_epoch()}",
                     "--seed=42",
+                    # "--status_log_prefix=badger",
                 ],
                 cwd=str(cwd),
                 stdout=subprocess.PIPE,
@@ -100,7 +102,26 @@ class TrainFluxLora(ControlNode):
             # Stream output to logger
             with process.stdout:
                 for line in iter(process.stdout.readline, ''):
-                    self.log_params.append_to_logs(f"{line.rstrip()}\n")
+                    splits = line.split("|")
+                    badger = splits[0] == "badger" if len(splits) > 0 else None
+                    if not badger:
+                        self.log_params.append_to_logs(f"{line.rstrip()}\n")
+                        continue
+
+                    badge = splits[1] if len(splits) > 1 else None
+                    if not badge:
+                        continue
+
+                    if badge == "StdoutTracker.log":
+                        data_json_str = "|".join(splits[2:]).rstrip()
+                        data = json.loads(data_json_str)
+                        step = data.get("step")
+                        values = data.get("values")
+                        # TODO: use the data from here:
+                        #       - loss graph
+                        #       - grid of validation images + partial _tiles_ oh man
+                        print(f"{step=}")
+                        print(f"{values=}")
 
             # Wait for the process to finish
             exit_code = process.wait()
