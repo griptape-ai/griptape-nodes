@@ -136,7 +136,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._workflow_manager = WorkflowManager(self._event_manager)
             self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
             self._operation_depth_manager = OperationDepthManager(self._config_manager)
-            self._static_files_manager = StaticFilesManager(self._config_manager, self._event_manager)
+            self._static_files_manager = StaticFilesManager(
+                self._config_manager, self._secrets_manager, self._event_manager
+            )
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
