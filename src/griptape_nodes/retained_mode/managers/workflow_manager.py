@@ -1058,7 +1058,7 @@ class WorkflowManager:
 
         relative_serialized_file_path = f"{file_name}.py"
         serialized_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_serialized_file_path)
-        with serialized_file_path.open("w") as file:
+        with serialized_file_path.open("w", encoding="utf-8") as file:
             file.write(final_code_output)
 
         # save the created workflow as an entry in the JSON config file.
@@ -1952,7 +1952,7 @@ class WorkflowManager:
                     register_libraries_script_file.write(register_libraries_script_contents)
 
                 config_file_path.parent.mkdir(parents=True, exist_ok=True)
-                with config_file_path.open("w") as config_file:
+                with config_file_path.open("w", encoding="utf-8") as config_file:
                     config_file.write(json.dumps(config, indent=4))
 
                 init_file_path.parent.mkdir(parents=True, exist_ok=True)
