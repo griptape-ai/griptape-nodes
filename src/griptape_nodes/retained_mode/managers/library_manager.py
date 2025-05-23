@@ -355,7 +355,7 @@ class LibraryManager:
 
         # Load the JSON
         try:
-            with json_path.open("r") as f:
+            with json_path.open("r", encoding="utf-8") as f:
                 library_json = json.load(f)
         except json.JSONDecodeError:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
