@@ -45,107 +45,107 @@ libraries/griptape_nodes_advanced_media_library/diffusers_nodes_library/
 ## Detailed TODO List
 
 ### Phase 1: Core Infrastructure
-- [ ] **1.1** Set up directory structure
-  - [ ] Create `libraries/griptape_nodes_advanced_media_library/diffusers_nodes_library/pipelines/stabilityai/` directory
-  - [ ] Create `stable_diffusion_35/` subdirectory with `__init__.py`
-  - [ ] Create `helpers/` subdirectory with `__init__.py`
-  - [ ] Set up proper imports in parent `stabilityai/__init__.py`
+- [x] **1.1** Set up directory structure
+  - [x] Create `libraries/griptape_nodes_advanced_media_library/diffusers_nodes_library/pipelines/stabilityai/` directory
+  - [x] Create `stable_diffusion_35/` subdirectory with `__init__.py`
+  - [x] Create `helpers/` subdirectory with `__init__.py`
+  - [x] Set up proper imports in parent `stabilityai/__init__.py`
 
-- [ ] **1.2** Create base node class structure inheriting from `ControlNode`
-  - [ ] Set up `__init__` method with helper instantiation
-  - [ ] Define node metadata (`category = "image"`, `description`)
-  - [ ] Implement abstract methods from ControlNode
+- [x] **1.2** Create base node class structure inheriting from `ControlNode`
+  - [x] Set up `__init__` method with helper instantiation
+  - [x] Define node metadata (`category = "image"`, `description`)
+  - [x] Implement abstract methods from ControlNode
 
-- [ ] **1.3** Create `SD35ModelManager` helper class
-  - [ ] Define model repository mappings (large/medium variants)
-  - [ ] Implement model caching with `ClassVar[dict[str, Any]]` pattern
-  - [ ] Add model loading with proper error handling
-  - [ ] Include memory optimization setup (quantization options)
-  - [ ] Implement `validate_model_availability()` method
+- [x] **1.3** Create `SD35ModelManager` helper class
+  - [x] Define model repository mappings (large/medium variants)
+  - [x] Implement model caching with `ClassVar[dict[str, Any]]` pattern
+  - [x] Add model loading with proper error handling
+  - [x] Include memory optimization setup (quantization options)
+  - [x] Implement `validate_model_availability()` method
 
-- [ ] **1.4** Create `SD35PipelineParameters` helper class
-  - [ ] Define standard diffusion parameters (prompt, negative_prompt, steps, guidance_scale, etc.)
-  - [ ] Add SD3.5-specific parameters (max_sequence_length, etc.)
-  - [ ] Implement parameter validation methods
-  - [ ] Add `get_pipe_kwargs()` method for pipeline arguments
+- [x] **1.4** Create `SD35PipelineParameters` helper class
+  - [x] Define standard diffusion parameters (prompt, negative_prompt, steps, guidance_scale, etc.)
+  - [x] Add SD3.5-specific parameters (max_sequence_length, etc.)
+  - [x] Implement parameter validation methods
+  - [x] Add `get_pipe_kwargs()` method for pipeline arguments
 
-- [ ] **1.5** Register node in library configuration
-  - [ ] Add node entry to `griptape_nodes_library.json` in the "nodes" array
-  - [ ] Set `class_name`: "StableDiffusion35Pipeline"
-  - [ ] Set `file_path`: "diffusers_nodes_library/pipelines/stabilityai/stable_diffusion_35/stable_diffusion_35_node.py"
-  - [ ] Configure metadata with category, description, and display_name
+- [x] **1.5** Register node in library configuration
+  - [x] Add node entry to `griptape_nodes_library.json` in the "nodes" array
+  - [x] Set `class_name`: "StableDiffusion35Pipeline"
+  - [x] Set `file_path`: "diffusers_nodes_library/pipelines/stabilityai/stable_diffusion_35/stable_diffusion_35_node.py"
+  - [x] Configure metadata with category, description, and display_name
 
 ### Phase 2: Parameter Definition
-- [ ] **2.1** Core generation parameters
-  - [ ] `prompt` - Text input with multiline support
-  - [ ] `negative_prompt` - Optional negative prompting
-  - [ ] `input_image` - Optional image input (enables img2img mode when provided)
-  - [ ] `width` / `height` - Image dimensions with validation
-  - [ ] `num_inference_steps` - Generation steps (default: 28)
-  - [ ] `guidance_scale` - CFG scale (default: 3.5)
-  - [ ] `strength` - Denoising strength for img2img (only shown when image input provided)
-  - [ ] `seed` - Random seed for reproducibility
+- [x] **2.1** Core generation parameters
+  - [x] `prompt` - Text input with multiline support
+  - [x] `negative_prompt` - Optional negative prompting
+  - [x] `input_image` - Optional image input (enables img2img mode when provided)
+  - [x] `width` / `height` - Image dimensions with validation
+  - [x] `num_inference_steps` - Generation steps (default: 28)
+  - [x] `guidance_scale` - CFG scale (default: 3.5)
+  - [x] `strength` - Denoising strength for img2img (only shown when image input provided)
+  - [x] `seed` - Random seed for reproducibility
 
-- [ ] **2.2** Model and sampling parameters
-  - [ ] `model_variant` - Dropdown with Options trait ["large", "medium"]
-  - [ ] `scheduler` - Scheduler/sampler selection (DPM++, Euler, etc.)
-  - [ ] `quantization` - Memory optimization options (none/4bit/8bit)
+- [x] **2.2** Model and sampling parameters
+  - [x] `model_variant` - Dropdown with Options trait ["large", "medium"]
+  - [x] `scheduler` - Scheduler/sampler selection (DPM++, Euler, etc.)
+  - [x] `quantization` - Memory optimization options (none/4bit/8bit)
   - [ ] `device` - GPU/CPU selection if needed
 
-- [ ] **2.3** Batch generation parameters
-  - [ ] `num_images_per_prompt` - Batch generation (default: 1)
+- [x] **2.3** Batch generation parameters
+  - [x] `num_images_per_prompt` - Batch generation (default: 1)
   - [ ] Dynamic UI logic to hide batch param when set to 1
 
-- [ ] **2.4** Advanced parameters (in expandable group)
-  - [ ] `max_sequence_length` - Text encoder sequence length
-  - [ ] `generator` - Custom random number generator
+- [x] **2.4** Advanced parameters (in expandable group)
+  - [x] `max_sequence_length` - Text encoder sequence length
+  - [x] `generator` - Custom random number generator
 
-- [ ] **2.5** Output parameters
-  - [ ] `output_image` - Single ImageArtifact (when batch=1) or dict of ImageUrlArtifacts (when batch>1)
-  - [ ] `used_seed` - The actual seed used for generation
-  - [ ] `logs` - Progress and status information
+- [x] **2.5** Output parameters
+  - [x] `output_image` - Single ImageArtifact (when batch=1) or dict of ImageUrlArtifacts (when batch>1)
+  - [x] `used_seed` - The actual seed used for generation
+  - [x] `logs` - Progress and status information
 
 ### Phase 3: Core Logic Implementation
-- [ ] **3.1** Model validation in `validate_before_node_run()`
-  - [ ] Check HuggingFace model availability using `huggingface_hub`
-  - [ ] Validate local cache presence
-  - [ ] Return descriptive error messages for missing models
-  - [ ] Suggest download commands if models not found
+- [x] **3.1** Model validation in `validate_before_node_run()`
+  - [x] Check HuggingFace model availability using `huggingface_hub`
+  - [x] Validate local cache presence
+  - [x] Return descriptive error messages for missing models
+  - [x] Suggest download commands if models not found
 
-- [ ] **3.2** Main `process()` method implementation
-  - [ ] Implement as generator for progress updates: `yield lambda: self._process()`
-  - [ ] Call helper validation methods
-  - [ ] Load/retrieve cached model via `SD35ModelManager`
-  - [ ] Detect txt2img vs img2img mode based on input_image presence
-  - [ ] Set up progress callback for step updates
-  - [ ] Execute pipeline with proper error handling
-  - [ ] Handle batch output logic (single ImageArtifact vs dict of ImageUrlArtifacts)
-  - [ ] Convert PIL outputs appropriately based on batch size
+- [x] **3.2** Main `process()` method implementation
+  - [x] Implement as generator for progress updates: `yield lambda: self._process()`
+  - [x] Call helper validation methods
+  - [x] Load/retrieve cached model via `SD35ModelManager`
+  - [x] Detect txt2img vs img2img mode based on input_image presence
+  - [x] Set up progress callback for step updates
+  - [x] Execute pipeline with proper error handling
+  - [x] Handle batch output logic (single ImageArtifact vs dict of ImageUrlArtifacts)
+  - [x] Convert PIL outputs appropriately based on batch size
 
-- [ ] **3.3** Progress and logging implementation
-  - [ ] Implement `callback_on_step_end` for progress updates
-  - [ ] Use `append_value_to_parameter("logs", ...)` for status messages
-  - [ ] Publish preview updates using `publish_update_to_parameter()`
-  - [ ] Handle generation completion and final output
+- [x] **3.3** Progress and logging implementation
+  - [x] Implement `callback_on_step_end` for progress updates
+  - [x] Use `append_value_to_parameter("logs", ...)` for status messages
+  - [x] Publish preview updates using `publish_update_to_parameter()`
+  - [x] Handle generation completion and final output
 
 ### Phase 4: Model Management
-- [ ] **4.1** HuggingFace integration
-  - [ ] Use `huggingface_hub.hf_hub_download()` for model files
-  - [ ] Implement proper repo_id mapping for variants
-  - [ ] Handle authentication if required (license acceptance)
-  - [ ] Support `local_files_only=True` for offline operation
+- [x] **4.1** HuggingFace integration
+  - [x] Use `huggingface_hub.hf_hub_download()` for model files
+  - [x] Implement proper repo_id mapping for variants
+  - [x] Handle authentication if required (license acceptance)
+  - [x] Support `local_files_only=True` for offline operation
 
-- [ ] **4.2** Model caching strategy
-  - [ ] Implement class-level model cache with proper cache keys
-  - [ ] Include model variant and quantization in cache key
-  - [ ] Add memory management for large models
-  - [ ] Implement cache cleanup if needed
+- [x] **4.2** Model caching strategy
+  - [x] Implement class-level model cache with proper cache keys
+  - [x] Include model variant and quantization in cache key
+  - [x] Add memory management for large models
+  - [x] Implement cache cleanup if needed
 
-- [ ] **4.3** Pipeline optimization
-  - [ ] Apply `optimize_pipeline_memory_footprint()` pattern
-  - [ ] Support quantization with BitsAndBytesConfig
-  - [ ] Enable model CPU offloading for memory management
-  - [ ] Handle CUDA out of memory gracefully
+- [x] **4.3** Pipeline optimization
+  - [x] Apply `optimize_pipeline_memory_footprint()` pattern
+  - [x] Support quantization with BitsAndBytesConfig
+  - [x] Enable model CPU offloading for memory management
+  - [x] Handle CUDA out of memory gracefully
 
 ### Phase 5: UI and User Experience
 - [ ] **5.1** Parameter UI optimization
