@@ -79,31 +79,22 @@ class StableDiffusion35Pipeline(ControlNode):
         # Run generation
         self.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")
         
-        # Handle batch generation
+        # Generate using native batch generation
         num_images = self.pipe_params.get_num_images_per_prompt()
         if num_images > 1:
-            # Batch generation
-            all_images = []
-            for i in range(num_images):
-                self.log_params.append_to_logs(f"Generating image {i + 1} of {num_images}...\n")
-                result = pipe(
-                    **pipe_kwargs,
-                    num_images_per_prompt=1,
-                    output_type="pil",
-                    callback_on_step_end=callback_on_step_end,
-                )
-                all_images.extend(result.images)
-            
+            self.log_params.append_to_logs(f"Generating {num_images} images in batch...\n")
+        
+        result = pipe(
+            **pipe_kwargs,
+            output_type="pil", 
+            callback_on_step_end=callback_on_step_end,
+        )
+        
+        # Handle output based on number of images
+        if num_images > 1:
             # Publish batch output
-            self.pipe_params.publish_output_images_batch(all_images)
-            
+            self.pipe_params.publish_output_images_batch(result.images)
         else:
-            # Single image generation
-            result = pipe(
-                **pipe_kwargs,
-                output_type="pil", 
-                callback_on_step_end=callback_on_step_end,
-            )
             # Publish single output
             self.pipe_params.publish_output_image(result.images[0])
         
