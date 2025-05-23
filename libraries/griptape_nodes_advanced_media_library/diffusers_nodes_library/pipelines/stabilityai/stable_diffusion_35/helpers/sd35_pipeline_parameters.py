@@ -167,14 +167,7 @@ class SD3PipelineParameters:
             )
         )
         
-        self._node.add_parameter(
-            Parameter(
-                name="used_seed",
-                output_type="int",
-                tooltip="The actual seed used for generation",
-                allowed_modes={ParameterMode.OUTPUT},
-            )
-        )
+        # Note: used_seed removed - seed parameter already has output pin
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         """Handle parameter value changes."""
@@ -202,9 +195,6 @@ class SD3PipelineParameters:
     def preprocess(self) -> None:
         """Preprocess parameters before generation."""
         self._seed_parameter.preprocess()
-        
-        # Update used_seed output
-        self._node.publish_update_to_parameter("used_seed", self._seed_parameter.get_seed())
 
     def get_prompt(self) -> str:
         return str(self._node.get_parameter_value("prompt"))
