@@ -216,7 +216,8 @@ class FlowManager:
         result = CreateFlowResultSuccess(flow_name=final_flow_name)
         return result
 
-    def on_delete_flow_request(self, request: DeleteFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
+    # This needs to have a lot of branches to check the flow in all possible situations. In Current Context, or when the name is passed in.
+    def on_delete_flow_request(self, request: DeleteFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         flow_name = request.flow_name
         flow = None
         if flow_name is None:
@@ -283,7 +284,9 @@ class FlowManager:
             for child_flow_name in flow_names:
                 child_flow = obj_mgr.attempt_get_object_by_name_as_type(child_flow_name, ControlFlow)
                 if child_flow is None:
-                    details = f"Attempted to delete Flow '{child_flow_name}', but no Flow with that name could be found."
+                    details = (
+                        f"Attempted to delete Flow '{child_flow_name}', but no Flow with that name could be found."
+                    )
                     logger.error(details)
                     result = DeleteFlowResultFailure()
                     return result

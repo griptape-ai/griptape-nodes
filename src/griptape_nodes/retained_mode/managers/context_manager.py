@@ -155,7 +155,7 @@ class ContextManager:
             self.node = node
             self._element_stack = []
 
-        def push_element(self, element:BaseNodeElement) -> BaseNodeElement:
+        def push_element(self, element: BaseNodeElement) -> BaseNodeElement:
             """Push an element name onto this node's element stack."""
             self._element_stack.append(element)
             return element
