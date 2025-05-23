@@ -13,8 +13,8 @@ from griptape_nodes.exe_types.node_types import BaseNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-def print_sd35_pipeline_memory_footprint(pipe: diffusers.StableDiffusion3Pipeline) -> None:
-    """Print SD3.5 pipeline memory footprint."""
+def print_sd3_pipeline_memory_footprint(pipe: diffusers.StableDiffusion3Pipeline) -> None:
+    """Print SD3 pipeline memory footprint."""
     print_pipeline_memory_footprint(
         pipe,
         [
@@ -28,8 +28,8 @@ def print_sd35_pipeline_memory_footprint(pipe: diffusers.StableDiffusion3Pipelin
 
 
 @cache
-def optimize_sd35_pipeline_memory_footprint(pipe: diffusers.StableDiffusion3Pipeline) -> None:
-    """Optimize SD3.5 pipeline memory footprint following official patterns."""
+def optimize_sd3_pipeline_memory_footprint(pipe: diffusers.StableDiffusion3Pipeline) -> None:
+    """Optimize SD3 pipeline memory footprint following official patterns."""
     device = get_best_device()
     
     if device == torch.device("cuda"):
@@ -58,12 +58,12 @@ def optimize_sd35_pipeline_memory_footprint(pipe: diffusers.StableDiffusion3Pipe
         logger.info("Enabling VAE slicing for SD3.5")
         pipe.vae.enable_slicing()
     
-    logger.info("Final SD3.5 memory footprint:")
-    print_sd35_pipeline_memory_footprint(pipe)
+    logger.info("Final SD3 memory footprint:")
+    print_sd3_pipeline_memory_footprint(pipe)
 
 
-class SD35ModelManager:
-    """Manages Stable Diffusion 3.5 model loading, caching, and validation."""
+class SD3ModelManager:
+    """Manages Stable Diffusion 3 model loading, caching, and validation."""
     
     # Model repository mappings
     MODEL_REPOS = {
@@ -112,7 +112,7 @@ class SD35ModelManager:
         )
         
         # Apply memory optimizations
-        optimize_sd35_pipeline_memory_footprint(pipe)
+        optimize_sd3_pipeline_memory_footprint(pipe)
         
         # Cache the optimized pipeline
         self._pipeline_cache[cache_key] = pipe

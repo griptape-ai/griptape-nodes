@@ -2,8 +2,8 @@ import logging
 from typing import Any
 
 from diffusers_nodes_library.common.parameters.log_parameter import LogParameter  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.pipelines.stabilityai.stable_diffusion_35.helpers.sd35_model_manager import SD35ModelManager
-from diffusers_nodes_library.pipelines.stabilityai.stable_diffusion_35.helpers.sd35_pipeline_parameters import SD35PipelineParameters
+from diffusers_nodes_library.pipelines.stabilityai.stable_diffusion_35.helpers.sd35_model_manager import SD3ModelManager
+from diffusers_nodes_library.pipelines.stabilityai.stable_diffusion_35.helpers.sd35_pipeline_parameters import SD3PipelineParameters
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 
@@ -17,8 +17,8 @@ class StableDiffusion35Pipeline(ControlNode):
         super().__init__(**kwargs)
         
         # Initialize helper classes using Flux pattern
-        self.model_manager = SD35ModelManager(self)
-        self.pipe_params = SD35PipelineParameters(self)
+        self.model_manager = SD3ModelManager(self)
+        self.pipe_params = SD3PipelineParameters(self)
         self.log_params = LogParameter(self)
         
         # Add parameters from helper classes

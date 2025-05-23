@@ -13,8 +13,8 @@ from griptape_nodes.traits.options import Options  # type: ignore[reportMissingI
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class SD35PipelineParameters:
-    """Manages all parameters for Stable Diffusion 3.5 pipeline."""
+class SD3PipelineParameters:
+    """Manages all parameters for Stable Diffusion 3 pipeline."""
     
         # Available schedulers for SD3.5 (flow-matching compatible only)
     AVAILABLE_SCHEDULERS = [
@@ -53,16 +53,7 @@ class SD35PipelineParameters:
             )
         )
         
-        # Optional image input for img2img mode
-        self._node.add_parameter(
-            Parameter(
-                name="input_image",
-                input_types=["ImageArtifact"],
-                type="ImageArtifact",
-                tooltip="Optional input image for image-to-image generation",
-                allowed_modes={ParameterMode.INPUT}
-            )
-        )
+        # Note: SD3.5 doesn't support img2img mode - text-to-image only
         
         # Image dimensions
         self._node.add_parameter(
@@ -110,17 +101,7 @@ class SD35PipelineParameters:
             )
         )
         
-        # Image-to-image strength (shown only when image input provided)
-        self._node.add_parameter(
-            Parameter(
-                name="strength",
-                default_value=0.7,
-                input_types=["float"],
-                type="float",
-                tooltip="Denoising strength for image-to-image generation",
-                ui_options={"min": 0.0, "max": 1.0, "step": 0.05, "hide": True}
-            )
-        )
+        # Note: strength parameter removed - SD3.5 is text-to-image only
         
         # Model and sampling parameters (model selection now handled by SD35ModelManager)
         
@@ -198,16 +179,6 @@ class SD35PipelineParameters:
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         """Handle parameter value changes."""
         self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
-        
-        # Show/hide strength parameter based on input_image
-        if parameter.name == "input_image":
-            strength_param = self._node.get_parameter_by_name("strength")
-            if strength_param:
-                if value:  # Image provided
-                    strength_param.ui_options["hide"] = False
-                else:  # No image
-                    strength_param.ui_options["hide"] = True
-                modified_parameters_set.add("strength")
 
     def validate_before_node_run(self) -> list[Exception] | None:
         """Validate parameters before node execution."""
@@ -271,7 +242,7 @@ class SD35PipelineParameters:
 
     def get_pipe_kwargs(self) -> dict:
         """Get pipeline kwargs for generation."""
-        kwargs = {
+        return {
             "prompt": self.get_prompt(),
             "negative_prompt": self.get_negative_prompt(),
             "width": self.get_width(),
@@ -282,13 +253,6 @@ class SD35PipelineParameters:
             "max_sequence_length": self.get_max_sequence_length(),
             "generator": self._seed_parameter.get_generator(),
         }
-        
-        # Add img2img specific parameters
-        if self.is_img2img_mode():
-            kwargs["image"] = self.get_input_image()
-            kwargs["strength"] = self.get_strength()
-            
-        return kwargs
 
     def publish_output_image_preview_placeholder(self) -> None:
         """Publish a preview placeholder image."""
