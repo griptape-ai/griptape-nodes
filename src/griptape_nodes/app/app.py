@@ -16,7 +16,7 @@ from urllib.parse import urljoin
 import httpx
 import uvicorn
 from dotenv import get_key
-from fastapi import FastAPI, HTTPException, Request, UploadFile
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from griptape.events import (
@@ -154,15 +154,15 @@ def _serve_static_server() -> None:
         return {"url": url}
 
     @app.put("/static-uploads/{file_name:str}")
-    async def create_static_file(file: UploadFile, file_name: str) -> dict:
+    async def create_static_file(request: Request, file_name: str) -> dict:
         """Upload a static file to the static server."""
         if not STATIC_SERVER_ENABLED:
             msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
             raise ValueError(msg)
 
-        data = await file.read()
         if not static_dir.exists():
             static_dir.mkdir(parents=True, exist_ok=True)
+        data = await request.body()
         try:
             Path(static_dir / file_name).write_bytes(data)
         except binascii.Error as e:

@@ -72,28 +72,6 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         return response_data["url"]
 
-    def create_static_file(self, content: bytes, file_name: str) -> str:
-        self._create_asset(file_name)
-
-        response = self.create_signed_upload_url(file_name)
-        signed_url = response["url"]
-        headers = response["headers"]
-
-        try:
-            response = httpx.request(
-                response["method"],
-                signed_url,
-                files={"file": (file_name, content)},
-                headers={**self.headers, **headers},
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            msg = str(e)
-            logger.error(msg)
-            raise ValueError(msg) from e
-
-        return response.json()["url"]
-
     def _create_asset(self, asset_name: str) -> str:
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets")
         try:

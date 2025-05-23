@@ -47,28 +47,3 @@ class LocalStorageDriver(BaseStorageDriver):
 
     def create_signed_download_url(self, file_name: str) -> str:
         return urljoin(self.base_url, f"/static/{file_name}")
-
-    def create_static_file(self, content: bytes, file_name: str) -> str:
-        response = self.create_signed_upload_url(file_name)
-        signed_url = response["url"]
-        headers = response["headers"]
-        method = response["method"]
-
-        try:
-            response = httpx.request(
-                method, urljoin(signed_url, file_name), files={"file": (file_name, content)}, headers=headers
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            msg = str(e)
-            logger.error(msg)
-            raise ValueError(msg) from e
-
-        response_data = response.json()
-        response_url = response_data.get("url")
-        if response_url is None:
-            msg = f"Failed to create static file {file_name}: {response_data}"
-            logger.error(msg)
-            raise ValueError(msg)
-
-        return response_url
