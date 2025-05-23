@@ -13,6 +13,7 @@ from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
+from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -339,12 +340,19 @@ class ExecuteNodeState(State):
                 )
 
         # Output values should already be saved!
+        library = LibraryRegistry.get_libraries_with_node_type(current_node.__class__.__name__)
+        if len(library) == 1:
+            library_name = library[0]
+        else:
+            library_name = None
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(
                     payload=NodeResolvedEvent(
                         node_name=current_node.name,
                         parameter_output_values=TypeValidator.safe_serialize(current_node.parameter_output_values),
+                        node_type=current_node.__class__.__name__,
+                        specific_library_name=library_name,
                     )
                 )
             )
