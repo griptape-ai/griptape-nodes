@@ -1,5 +1,5 @@
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 import PIL.Image
 from PIL.Image import Image
@@ -15,21 +15,20 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class SD3PipelineParameters:
     """Manages all parameters for Stable Diffusion 3 pipeline."""
-    
-        # Available schedulers for SD3.5 (flow-matching compatible only)
-    AVAILABLE_SCHEDULERS = [
+
+    # Available schedulers for SD3.5 (flow-matching compatible only)
+    AVAILABLE_SCHEDULERS: ClassVar[list[str]] = [
         "FlowMatchEulerDiscreteScheduler",  # SD3.5 default - official recommendation
-        "FlowMatchHeunDiscreteScheduler",   # Alternative flow-matching scheduler
+        "FlowMatchHeunDiscreteScheduler",  # Alternative flow-matching scheduler
         # Removed traditional diffusion schedulers - they cause warnings and poor results
     ]
-    
+
     def __init__(self, node: BaseNode):
         self._node = node
         self._seed_parameter = SeedParameter(node)
 
     def add_input_parameters(self) -> None:
         """Add all input parameters for SD3.5 generation."""
-        
         # Core generation parameters
         self._node.add_parameter(
             Parameter(
@@ -38,10 +37,10 @@ class SD3PipelineParameters:
                 input_types=["str"],
                 type="str",
                 tooltip="Text prompt to guide image generation",
-                ui_options={"multiline": True}
+                ui_options={"multiline": True},
             )
         )
-        
+
         self._node.add_parameter(
             Parameter(
                 name="negative_prompt",
@@ -49,12 +48,12 @@ class SD3PipelineParameters:
                 input_types=["str"],
                 type="str",
                 tooltip="Negative prompt to avoid certain elements",
-                ui_options={"multiline": True}
+                ui_options={"multiline": True},
             )
         )
-        
+
         # Note: SD3.5 doesn't support img2img mode - text-to-image only
-        
+
         # Image dimensions
         self._node.add_parameter(
             Parameter(
@@ -63,10 +62,10 @@ class SD3PipelineParameters:
                 input_types=["int"],
                 type="int",
                 tooltip="Width of generated image",
-                ui_options={"min": 256, "max": 2048, "step": 64}
+                ui_options={"min": 256, "max": 2048, "step": 64},
             )
         )
-        
+
         self._node.add_parameter(
             Parameter(
                 name="height",
@@ -74,10 +73,10 @@ class SD3PipelineParameters:
                 input_types=["int"],
                 type="int",
                 tooltip="Height of generated image",
-                ui_options={"min": 256, "max": 2048, "step": 64}
+                ui_options={"min": 256, "max": 2048, "step": 64},
             )
         )
-        
+
         # Generation parameters
         self._node.add_parameter(
             Parameter(
@@ -86,10 +85,10 @@ class SD3PipelineParameters:
                 input_types=["int"],
                 type="int",
                 tooltip="Number of denoising steps",
-                ui_options={"min": 1, "max": 100}
+                ui_options={"min": 1, "max": 100},
             )
         )
-        
+
         self._node.add_parameter(
             Parameter(
                 name="guidance_scale",
@@ -97,26 +96,26 @@ class SD3PipelineParameters:
                 input_types=["float"],
                 type="float",
                 tooltip="Classifier-free guidance scale",
-                ui_options={"min": 0.0, "max": 20.0, "step": 0.1}
+                ui_options={"min": 0.0, "max": 20.0, "step": 0.1},
             )
         )
-        
+
         # Note: strength parameter removed - SD3.5 is text-to-image only
-        
+
         # Model and sampling parameters (model selection now handled by SD35ModelManager)
-        
+
         self._node.add_parameter(
             Parameter(
-                            name="scheduler",
-            default_value="FlowMatchEulerDiscreteScheduler",
+                name="scheduler",
+                default_value="FlowMatchEulerDiscreteScheduler",
                 input_types=["str"],
                 type="str",
                 tooltip="Scheduler/sampler for denoising process",
                 traits={Options(choices=self.AVAILABLE_SCHEDULERS)},
-                allowed_modes={ParameterMode.PROPERTY}
+                allowed_modes={ParameterMode.PROPERTY},
             )
         )
-        
+
         self._node.add_parameter(
             Parameter(
                 name="quantization",
@@ -125,10 +124,10 @@ class SD3PipelineParameters:
                 type="str",
                 tooltip="Memory optimization via quantization",
                 traits={Options(choices=["none", "4bit", "8bit"])},
-                allowed_modes={ParameterMode.PROPERTY}
+                allowed_modes={ParameterMode.PROPERTY},
             )
         )
-        
+
         # Batch generation
         self._node.add_parameter(
             Parameter(
@@ -137,11 +136,11 @@ class SD3PipelineParameters:
                 input_types=["int"],
                 type="int",
                 tooltip="Number of images to generate per prompt",
-                ui_options={"min": 1, "max": 8}
+                ui_options={"min": 1, "max": 8},
             )
         )
-        
-        # Advanced parameters  
+
+        # Advanced parameters
         self._node.add_parameter(
             Parameter(
                 name="max_sequence_length",
@@ -149,10 +148,10 @@ class SD3PipelineParameters:
                 input_types=["int"],
                 type="int",
                 tooltip="Maximum sequence length for text encoders",
-                ui_options={"min": 77, "max": 512}
+                ui_options={"min": 77, "max": 512},
             )
         )
-        
+
         # Add seed parameters
         self._seed_parameter.add_input_parameters()
 
@@ -166,7 +165,7 @@ class SD3PipelineParameters:
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
-        
+
         # Note: used_seed removed - seed parameter already has output pin
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
@@ -176,12 +175,12 @@ class SD3PipelineParameters:
     def validate_before_node_run(self) -> list[Exception] | None:
         """Validate parameters before node execution."""
         errors = []
-        
+
         # Check if prompt is provided
         prompt = self.get_prompt()
         if not prompt.strip():
             errors.append(Exception("Prompt cannot be empty"))
-            
+
         # Validate dimensions
         width = self.get_width()
         height = self.get_height()
@@ -189,7 +188,7 @@ class SD3PipelineParameters:
             errors.append(Exception(f"Width must be multiple of 64, got {width}"))
         if height % 64 != 0:
             errors.append(Exception(f"Height must be multiple of 64, got {height}"))
-            
+
         return errors or None
 
     def preprocess(self) -> None:
@@ -201,7 +200,7 @@ class SD3PipelineParameters:
 
     def get_negative_prompt(self) -> str:
         return str(self._node.get_parameter_value("negative_prompt"))
-        
+
     def get_input_image(self) -> Any | None:
         return self._node.get_parameter_value("input_image")
 
@@ -216,13 +215,13 @@ class SD3PipelineParameters:
 
     def get_guidance_scale(self) -> float:
         return float(self._node.get_parameter_value("guidance_scale"))
-        
+
     def get_strength(self) -> float:
         return float(self._node.get_parameter_value("strength"))
 
     def get_num_images_per_prompt(self) -> int:
         return int(self._node.get_parameter_value("num_images_per_prompt"))
-        
+
     def get_max_sequence_length(self) -> int:
         return int(self._node.get_parameter_value("max_sequence_length"))
 
@@ -251,17 +250,15 @@ class SD3PipelineParameters:
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
         self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
-    def latents_to_image_pil(self, pipe, latents: Any) -> Image:
+    def latents_to_image_pil(self, pipe: Any, latents: Any) -> Image:
         """Convert latents to PIL image for preview."""
-        width = self.get_width()
-        height = self.get_height()
         # SD3 latent processing
         latents = (latents / pipe.vae.config.scaling_factor) + pipe.vae.config.shift_factor
         image = pipe.vae.decode(latents, return_dict=False)[0]
         intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
         return intermediate_pil_image
 
-    def publish_output_image_preview_latents(self, pipe, latents: Any) -> None:
+    def publish_output_image_preview_latents(self, pipe: Any, latents: Any) -> None:
         """Publish intermediate latents as preview image."""
         preview_image_pil = self.latents_to_image_pil(pipe, latents)
         preview_image_artifact = pil_to_image_artifact(preview_image_pil)
@@ -279,4 +276,7 @@ class SD3PipelineParameters:
         # For now, just publish the first image
         if output_images:
             self.publish_output_image(output_images[0])
-            logger.warning(f"Batch generation produced {len(output_images)} images, but only first one is returned. Batch output not yet implemented.") 
+            logger.warning(
+                "Batch generation produced %d images, but only first one is returned. Batch output not yet implemented.",
+                len(output_images),
+            )

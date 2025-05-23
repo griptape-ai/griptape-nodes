@@ -1,4 +1,6 @@
-from .sd35_pipeline_parameters import SD35PipelineParameters
-from .sd35_model_manager import SD35ModelManager
+"""Stable Diffusion 3.5 helper classes."""
 
-__all__ = ["SD35PipelineParameters", "SD35ModelManager"] 
+from .sd35_model_manager import SD3ModelManager
+from .sd35_pipeline_parameters import SD3PipelineParameters
+
+__all__ = ["SD3ModelManager", "SD3PipelineParameters"]
