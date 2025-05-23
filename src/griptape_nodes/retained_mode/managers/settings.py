@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from xdg_base_dirs import xdg_data_home
@@ -96,3 +96,4 @@ class Settings(BaseModel):
         }
     )
     log_level: str = Field(default="INFO")
+    storage_backend: Literal["local", "gtc"] = Field(default="local")
