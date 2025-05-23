@@ -191,7 +191,7 @@
       "class_name": "StableDiffusion35Pipeline",
       "file_path": "diffusers_nodes_library/pipelines/stabilityai/stable_diffusion_35/stable_diffusion_35_node.py",
       "metadata": {
-        "category": "image/stabilityai",
+        "category": "image/StabilityAI",
         "description": "Generate Images with Stable Diffusion 3.5 (Large/Medium) via 🤗 Diffusers.",
         "display_name": "Stable Diffusion 3.5"
       }
