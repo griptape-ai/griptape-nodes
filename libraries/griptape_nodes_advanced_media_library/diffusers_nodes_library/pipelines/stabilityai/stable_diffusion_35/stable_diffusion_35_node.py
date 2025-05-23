@@ -71,6 +71,8 @@ class StableDiffusion35Pipeline(ControlNode):
         
         def callback_on_step_end(pipe, step: int, _timestep, callback_kwargs) -> dict:
             if step < num_inference_steps - 1:
+                # Publish intermediate results for progress
+                self.pipe_params.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
                 self.log_params.append_to_logs(f"Inference step {step + 2} of {num_inference_steps}...\n")
             return {}
         
