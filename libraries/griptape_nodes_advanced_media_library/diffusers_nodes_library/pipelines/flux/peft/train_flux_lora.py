@@ -3,10 +3,13 @@ import json
 import logging
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import sys
 import tempfile
+
+from xdg_base_dirs import xdg_data_home
 from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
     LogParameter,  # type: ignore[reportMissingImports]
 )
@@ -41,8 +44,9 @@ class TrainFluxLora(ControlNode):
         self.log_params.clear_logs()
         with tempfile.TemporaryDirectory() as tmpdir:
             cwd = Path(__file__).parent / "training"
-            model_name="black-forest-labs/FLUX.1-schnell"
-            instance_data_dir = Path(tmpdir) / "sylphluxnix"
+            repo, revision = self.train_params.get_repo_revision()
+            model_name=repo  # TODO: get from the thing
+            instance_data_dir = Path(tmpdir) / "training-data"
             output_dir = Path(tmpdir) / "trained-flux-lora"
 
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -50,23 +54,38 @@ class TrainFluxLora(ControlNode):
             # Copy the dataset to the temporary directory
             shutil.copytree(self.train_params.get_training_data_directory(), instance_data_dir)
 
-            env = os.environ.copy()
-
             # Convert current sys.path entries to resolved Path objects and join them
             current_python_paths = [str(Path(p).resolve()) for p in sys.path if p]
             new_python_path = os.pathsep.join([str(cwd)] + current_python_paths)
 
             # Create a copy of the current environment and update PYTHONPATH
+            library_name = "griptape_nodes_advanced_media_library"
+            python_version = platform.python_version()
+            library_venv_path = (
+                xdg_data_home()
+                / "griptape_nodes"
+                / "venvs"
+                / python_version
+                / library_name.replace(" ", "_").strip()
+            )
+            library_venv_scripts_path = library_venv_path / "Scripts"
+            accelerate_path = library_venv_scripts_path / "accelerate.exe"
+
+            print(f"{str(library_venv_scripts_path)=}")
+        
             env = os.environ.copy()
             env["PYTHONPATH"] = new_python_path
+            # env["PATH"] = str(library_venv_scripts_path) + os.pathsep + env["PATH"]
 
             process = subprocess.Popen(
                 [
-                    "accelerate",
+                    str(accelerate_path),
                     "launch",
                     "accelerate_main.py",
                     f"--pretrained_model_name_or_path={model_name}",
+                    f"--revision={revision}",
                     f"--instance_data_dir={instance_data_dir}",
+                    f"--repeats={self.train_params.get_repeats()}",
                     f"--output_dir={output_dir}",
                     '--mixed_precision=no',
                     '--instance_prompt="glorp"', # We are going to rely on txt caption files next to the image files
@@ -93,6 +112,7 @@ class TrainFluxLora(ControlNode):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding='utf-8',
                 bufsize=1,
                 env=env,
             )

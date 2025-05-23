@@ -51,6 +51,16 @@ class TrainFluxLoraParameters:
         )
         self._node.add_parameter(
             Parameter(
+                name="repeats",
+                input_types=["int"],
+                type="int",
+                tooltip="repeats",
+                default_value=10,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
                 name="resolution",
                 input_types=["int"],
                 type="int",
@@ -130,6 +140,9 @@ class TrainFluxLoraParameters:
     
     def get_training_data_directory(self) -> str:
         return str(self._node.get_parameter_value("training_data_directory"))
+    
+    def get_repeats(self) -> int:
+        return int(self._node.get_parameter_value("repeats"))
     
     def get_resolution(self) -> int:
         return int(self._node.get_parameter_value("resolution"))
