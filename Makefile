@@ -100,7 +100,7 @@ check/spell:
 	@uv run typos 
 
 .PHONY: test  ## Run all tests.
-test: test/unit test/integration
+test: test/unit test/integration test/workflows
 
 .PHONY: test/unit
 test/unit: ## Run unit tests.
@@ -111,6 +111,10 @@ test/unit: ## Run unit tests.
 test/integration: ## Run integration tests.
 	@uv run pytest -n auto tests/integration
 	@uv run pytest -n auto libraries/griptape_nodes_library/tests/integration
+
+.PHONY: test/workflows
+test/workflows: ## Run workflow tests.
+	@uv run pytest -s tests/workflows
 
 .PHONY: docs
 docs: ## Build documentation.
