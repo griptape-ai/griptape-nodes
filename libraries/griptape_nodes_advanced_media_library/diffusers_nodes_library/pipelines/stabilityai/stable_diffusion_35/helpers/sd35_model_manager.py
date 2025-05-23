@@ -24,9 +24,9 @@ def print_sd3_pipeline_memory_footprint(pipe: diffusers.StableDiffusion3Pipeline
         pipe,
         [
             "vae",
-            "text_encoder",
-            "text_encoder_2",
-            "text_encoder_3",
+            "text_encoder",      # CLIP-L
+            "text_encoder_2",    # CLIP-G  
+            "text_encoder_3",    # T5-XXL
             "transformer",
         ],
     )
@@ -99,6 +99,13 @@ class SD3ModelManager:
             local_files_only=True,
         )
 
+        # Configure the selected scheduler
+        scheduler_name = self.get_scheduler_name()
+        if scheduler_name == "FlowMatchHeunDiscreteScheduler":
+            pipe.scheduler = diffusers.FlowMatchHeunDiscreteScheduler.from_config(pipe.scheduler.config)
+        elif scheduler_name == "FlowMatchEulerDiscreteScheduler":
+            pipe.scheduler = diffusers.FlowMatchEulerDiscreteScheduler.from_config(pipe.scheduler.config)
+
         # Apply memory optimizations
         optimize_sd3_pipeline_memory_footprint(pipe)
 
@@ -112,9 +119,7 @@ class SD3ModelManager:
         """Get the selected model repo and revision."""
         return self._repo_param.get_repo_revision()
 
-    def get_quantization_config(self) -> str:
-        """Get the quantization configuration."""
-        return str(self._node.get_parameter_value("quantization"))
+
 
     def get_scheduler_name(self) -> str:
         """Get the selected scheduler name."""

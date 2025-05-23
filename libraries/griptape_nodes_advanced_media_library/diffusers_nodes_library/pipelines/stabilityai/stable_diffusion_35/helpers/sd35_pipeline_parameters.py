@@ -116,17 +116,7 @@ class SD3PipelineParameters:
             )
         )
 
-        self._node.add_parameter(
-            Parameter(
-                name="quantization",
-                default_value="none",
-                input_types=["str"],
-                type="str",
-                tooltip="Memory optimization via quantization",
-                traits={Options(choices=["none", "4bit", "8bit"])},
-                allowed_modes={ParameterMode.PROPERTY},
-            )
-        )
+
 
         # Batch generation
         self._node.add_parameter(
@@ -140,17 +130,7 @@ class SD3PipelineParameters:
             )
         )
 
-        # Advanced parameters
-        self._node.add_parameter(
-            Parameter(
-                name="max_sequence_length",
-                default_value=512,
-                input_types=["int"],
-                type="int",
-                tooltip="Maximum sequence length for text encoders",
-                ui_options={"min": 77, "max": 512},
-            )
-        )
+
 
         # Add seed parameters
         self._seed_parameter.add_input_parameters()
@@ -201,8 +181,7 @@ class SD3PipelineParameters:
     def get_negative_prompt(self) -> str:
         return str(self._node.get_parameter_value("negative_prompt"))
 
-    def get_input_image(self) -> Any | None:
-        return self._node.get_parameter_value("input_image")
+
 
     def get_width(self) -> int:
         return int(self._node.get_parameter_value("width"))
@@ -216,18 +195,8 @@ class SD3PipelineParameters:
     def get_guidance_scale(self) -> float:
         return float(self._node.get_parameter_value("guidance_scale"))
 
-    def get_strength(self) -> float:
-        return float(self._node.get_parameter_value("strength"))
-
     def get_num_images_per_prompt(self) -> int:
         return int(self._node.get_parameter_value("num_images_per_prompt"))
-
-    def get_max_sequence_length(self) -> int:
-        return int(self._node.get_parameter_value("max_sequence_length"))
-
-    def is_img2img_mode(self) -> bool:
-        """Check if we're in image-to-image mode."""
-        return self.get_input_image() is not None
 
     def get_pipe_kwargs(self) -> dict:
         """Get pipeline kwargs for generation."""
@@ -239,7 +208,6 @@ class SD3PipelineParameters:
             "num_inference_steps": self.get_num_inference_steps(),
             "guidance_scale": self.get_guidance_scale(),
             "num_images_per_prompt": self.get_num_images_per_prompt(),
-            "max_sequence_length": self.get_max_sequence_length(),
             "generator": self._seed_parameter.get_generator(),
         }
 
