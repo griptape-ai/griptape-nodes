@@ -194,6 +194,7 @@ class NodeManager:
     def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
+        parent_flow = None
         if parent_flow_name is None:
             # Try to get the current context flow
             if not GriptapeNodes.ContextManager().has_current_flow():
@@ -202,16 +203,18 @@ class NodeManager:
                 )
                 logger.error(details)
                 return CreateNodeResultFailure()
-            parent_flow_name = GriptapeNodes.ContextManager().get_current_flow_name()
+            parent_flow = GriptapeNodes.ContextManager().get_current_flow()
+            parent_flow_name = parent_flow.name
 
         # Does this flow actually exist?
-        flow_mgr = GriptapeNodes.FlowManager()
-        try:
-            flow = flow_mgr.get_flow_by_name(parent_flow_name)
-        except KeyError as err:
-            details = f"Could not create Node of type '{request.node_type}'. Error: {err}"
-            logger.error(details)
-            return CreateNodeResultFailure()
+        if parent_flow is None:
+            flow_mgr = GriptapeNodes.FlowManager()
+            try:
+                parent_flow = flow_mgr.get_flow_by_name(parent_flow_name)
+            except KeyError as err:
+                details = f"Could not create Node of type '{request.node_type}'. Error: {err}"
+                logger.error(details)
+                return CreateNodeResultFailure()
 
         # Now ensure that we're giving a valid name.
         obj_mgr = GriptapeNodes.ObjectManager()
@@ -239,7 +242,7 @@ class NodeManager:
             return CreateNodeResultFailure()
 
         # Add it to the Flow.
-        flow.add_node(node)
+        parent_flow.add_node(node)
 
         # Record keeping.
         obj_mgr.add_object_by_name(node.name, node)
@@ -256,7 +259,7 @@ class NodeManager:
 
         # See if we want to push this into the context of the current flow.
         if request.set_as_new_context:
-            GriptapeNodes.ContextManager().push_node(final_node_name)
+            GriptapeNodes.ContextManager().push_node(node=node)
 
         # Success message based on whether we used Current Context or explicit flow
         if request.override_parent_flow_name is None:
@@ -331,6 +334,7 @@ class NodeManager:
 
     def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911 (complex logic, lots of edge cases)
         node_name = request.node_name
+        node = None
         if node_name is None:
             # Get from the current context.
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -340,18 +344,16 @@ class NodeManager:
                 logger.error(details)
                 return DeleteNodeResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+        if node is None:
+            node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to delete a Node '{node_name}', but no such Node was found."
+            logger.error(details)
+            return DeleteNodeResultFailure()
 
-        with GriptapeNodes.ContextManager().node(node_name=node_name):
-            # Does this node exist?
-            obj_mgr = GriptapeNodes.ObjectManager()
-
-            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
-            if node is None:
-                details = f"Attempted to delete a Node '{node_name}', but no such Node was found."
-                logger.error(details)
-                return DeleteNodeResultFailure()
-
+        with GriptapeNodes.ContextManager().node(node=node):
             parent_flow_name = self._name_to_parent_flow_name[node_name]
             try:
                 parent_flow = GriptapeNodes.FlowManager().get_flow_by_name(parent_flow_name)
@@ -403,7 +405,7 @@ class NodeManager:
         parent_flow.remove_node(node.name)
 
         # Now remove the record keeping
-        obj_mgr.del_obj_by_name(node_name)
+        GriptapeNodes.ObjectManager().del_obj_by_name(node_name)
         del self._name_to_parent_flow_name[node_name]
 
         # If we were part of the Current Context, pop it.
@@ -417,6 +419,7 @@ class NodeManager:
 
     def on_get_node_resolution_state_request(self, request: GetNodeResolutionStateRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
         if node_name is None:
             # Get from the current context.
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -424,17 +427,18 @@ class NodeManager:
                 logger.error(details)
                 return GetNodeResolutionStateResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
-        # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to get resolution state for a Node '{node_name}', but no such Node was found."
-            logger.error(details)
-            result = GetNodeResolutionStateResultFailure()
-            return result
+            # Does this node exist?
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to get resolution state for a Node '{node_name}', but no such Node was found."
+                logger.error(details)
+                result = GetNodeResolutionStateResultFailure()
+                return result
 
         node_state = node.state
 
@@ -448,6 +452,7 @@ class NodeManager:
 
     def on_get_node_metadata_request(self, request: GetNodeMetadataRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
         if node_name is None:
             # Get from the current context.
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -455,18 +460,20 @@ class NodeManager:
                 logger.error(details)
                 return GetNodeMetadataResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to get metadata for a Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
 
-            result = GetNodeMetadataResultFailure()
-            return result
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to get metadata for a Node '{node_name}', but no such Node was found."
+                logger.error(details)
+
+                result = GetNodeMetadataResultFailure()
+                return result
 
         metadata = node.metadata
         details = f"Successfully retrieved metadata for a Node '{node_name}'."
@@ -479,6 +486,7 @@ class NodeManager:
 
     def on_set_node_metadata_request(self, request: SetNodeMetadataRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
         if node_name is None:
             # Get from the current context.
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -486,18 +494,21 @@ class NodeManager:
                 logger.error(details)
                 return SetNodeMetadataResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to set metadata for a Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
 
-            result = SetNodeMetadataResultFailure()
-            return result
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to set metadata for a Node '{node_name}', but no such Node was found."
+                logger.error(details)
+
+                result = SetNodeMetadataResultFailure()
+                return result
+
         # We can't completely overwrite metadata.
         for key, value in request.metadata.items():
             node.metadata[key] = value
@@ -509,6 +520,7 @@ class NodeManager:
 
     def on_list_connections_for_node_request(self, request: ListConnectionsForNodeRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
         if node_name is None:
             # Get from the current context.
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -516,18 +528,20 @@ class NodeManager:
                 logger.error(details)
                 return ListConnectionsForNodeResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to list Connections for a Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
 
-            result = ListConnectionsForNodeResultFailure()
-            return result
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to list Connections for a Node '{node_name}', but no such Node was found."
+                logger.error(details)
+
+                result = ListConnectionsForNodeResultFailure()
+                return result
 
         parent_flow_name = self._name_to_parent_flow_name[node_name]
         try:
@@ -581,6 +595,7 @@ class NodeManager:
 
     def on_list_parameters_on_node_request(self, request: ListParametersOnNodeRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
 
         if node_name is None:
             # Get from the current context.
@@ -589,17 +604,19 @@ class NodeManager:
                 logger.error(details)
                 return ListParametersOnNodeResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to list Parameters for a Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to list Parameters for a Node '{node_name}', but no such Node was found."
+                logger.error(details)
 
-            result = ListParametersOnNodeResultFailure()
-            return result
+                result = ListParametersOnNodeResultFailure()
+                return result
 
         ret_list = [param.name for param in node.parameters]
 
@@ -613,6 +630,7 @@ class NodeManager:
 
     def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
+        node = None
 
         if node_name is None:
             # Get from the current context.
@@ -621,18 +639,19 @@ class NodeManager:
                 logger.error(details)
                 return AddParameterToNodeResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to add Parameter '{request.parameter_name}' to a Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to add Parameter '{request.parameter_name}' to a Node '{node_name}', but no such Node was found."
+                logger.error(details)
 
-            result = AddParameterToNodeResultFailure()
-            return result
+                result = AddParameterToNodeResultFailure()
+                return result
 
         if request.parent_container_name and not request.initial_setup:
             parameter = node.get_parameter_by_name(request.parent_container_name)
@@ -745,6 +764,7 @@ class NodeManager:
 
     def on_remove_parameter_from_node_request(self, request: RemoveParameterFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
+        node = None
 
         if node_name is None:
             # Get the Current Context
@@ -755,18 +775,19 @@ class NodeManager:
                 result = RemoveParameterFromNodeResultFailure()
                 return result
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to remove Parameter '{request.parameter_name}' from a Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to remove Parameter '{request.parameter_name}' from a Node '{node_name}', but no such Node was found."
+                logger.error(details)
 
-            result = RemoveParameterFromNodeResultFailure()
-            return result
+                result = RemoveParameterFromNodeResultFailure()
+                return result
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(request.parameter_name)
@@ -852,6 +873,8 @@ class NodeManager:
 
     def on_get_parameter_details_request(self, request: GetParameterDetailsRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
+
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = f"Attempted to get details for Parameter '{request.parameter_name}' from a Node, but no Current Context was found."
@@ -859,18 +882,19 @@ class NodeManager:
 
                 result = GetParameterDetailsResultFailure()
                 return result
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to get details for Parameter '{request.parameter_name}' from a Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to get details for Parameter '{request.parameter_name}' from a Node '{node_name}', but no such Node was found."
+                logger.error(details)
 
-            result = GetParameterDetailsResultFailure()
-            return result
+                result = GetParameterDetailsResultFailure()
+                return result
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(request.parameter_name)
@@ -910,23 +934,26 @@ class NodeManager:
 
     def on_get_node_element_details_request(self, request: GetNodeElementDetailsRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
+
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = f"Attempted to get element details for element '{request.specific_element_id}` from a Node, but no Current Context was found."
                 logger.error(details)
 
                 return GetNodeElementDetailsResultFailure()
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to get element details for Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to get element details for Node '{node_name}', but no such Node was found."
+                logger.error(details)
 
-            return GetNodeElementDetailsResultFailure()
+                return GetNodeElementDetailsResultFailure()
 
         # Did they ask for a specific element ID?
         if request.specific_element_id is None:
@@ -1017,6 +1044,7 @@ class NodeManager:
 
     def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
 
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -1024,16 +1052,18 @@ class NodeManager:
                 logger.error(details)
 
                 return AlterParameterDetailsResultFailure()
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}', but no such Node was found."
+                logger.error(details)
 
-            return AlterParameterDetailsResultFailure()
+                return AlterParameterDetailsResultFailure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(request.parameter_name)
@@ -1073,6 +1103,7 @@ class NodeManager:
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
 
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -1080,20 +1111,20 @@ class NodeManager:
                 logger.error(details)
 
                 return GetParameterValueResultFailure()
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
-
-        # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Parse the parameter name to check for list indexing
         param_name = request.parameter_name
 
-        # Get the node
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+        # Does this node exist?
         if node is None:
-            details = f'"{node_name}" not found'
-            logger.error(details)
-            return GetParameterValueResultFailure()
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f'"{node_name}" not found'
+                logger.error(details)
+                return GetParameterValueResultFailure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
@@ -1128,25 +1159,27 @@ class NodeManager:
     # added ignoring C901 since this method is overly long because of granular error checking, not actual complexity.
     def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
+        node = None
+
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = f"Attempted to set parameter '{request.parameter_name}' value. Failed because no Node was found in the Current Context."
                 logger.error(details)
                 return SetParameterValueResultFailure()
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
-
-        # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Parse the parameter name to check for list indexing
         param_name = request.parameter_name
 
-        # Get the node
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+        # Does this node exist?
         if node is None:
-            details = f"Attempted to set parameter '{param_name}' value on node '{node_name}'. Failed because no such Node could be found."
-            logger.error(details)
-            return SetParameterValueResultFailure()
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to set parameter '{param_name}' value on node '{node_name}'. Failed because no such Node could be found."
+                logger.error(details)
+                return SetParameterValueResultFailure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
@@ -1180,6 +1213,8 @@ class NodeManager:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             logger.error(details)
             return SetParameterValueResultFailure()
+
+        obj_mgr = GriptapeNodes.ObjectManager()
         parent_flow = obj_mgr.attempt_get_object_by_name_as_type(parent_flow_name, ControlFlow)
         if not parent_flow:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
@@ -1257,6 +1292,8 @@ class NodeManager:
     # make debugger use friendly.
     def on_get_all_node_info_request(self, request: GetAllNodeInfoRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
         node_name = request.node_name
+        node = None
+
         # Get from the current context.
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -1264,18 +1301,19 @@ class NodeManager:
                 logger.error(details)
                 return GetAllNodeInfoResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to get all info for Node named '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to get all info for Node named '{node_name}', but no such Node was found."
+                logger.error(details)
 
-            result = GetAllNodeInfoResultFailure()
-            return result
+                result = GetAllNodeInfoResultFailure()
+                return result
 
         get_metadata_request = GetNodeMetadataRequest(node_name=node_name)
         get_metadata_result = self.on_get_node_metadata_request(get_metadata_request)
@@ -1350,20 +1388,24 @@ class NodeManager:
 
     def on_get_compatible_parameters_request(self, request: GetCompatibleParametersRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
+        node = None
+
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to get compatible parameters for node, but no current node was found."
                 logger.error(details)
                 return GetCompatibleParametersResultFailure()
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Vet the node
-        try:
-            node = self.get_node_by_name(node_name)
-        except ValueError as err:
-            details = f"Attempted to get compatible parameters for node '{node_name}', but that node does not exist. Error: {err}."
-            logger.error(details)
-            return GetCompatibleParametersResultFailure()
+        if node is None:
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to get compatible parameters for node '{node_name}', but that node does not exist."
+                logger.error(details)
+                return GetCompatibleParametersResultFailure()
 
         # Vet the parameter.
         request_param = node.get_parameter_by_name(request.parameter_name)
@@ -1579,23 +1621,27 @@ class NodeManager:
 
     def on_serialize_node_to_commands(self, request: SerializeNodeToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0912
         node_name = request.node_name
+        node = None
+
         if node_name is None:
-            if GriptapeNodes.ContextManager().has_current_node():
-                node_name = GriptapeNodes.ContextManager().get_current_node_name()
-            else:
+            if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to serialize a Node to commands from the Current Context. Failed because the Current Context is empty."
                 logger.error(details)
                 return SerializeNodeToCommandsResultFailure()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to serialize Node '{node_name}' to commands. Failed because no Node with that name could be found."
-            logger.error(details)
-            return SerializeNodeToCommandsResultFailure()
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to serialize Node '{node_name}' to commands. Failed because no Node with that name could be found."
+                logger.error(details)
+                return SerializeNodeToCommandsResultFailure()
 
         # This is our current dude.
-        with GriptapeNodes.ContextManager().node(node_name=node_name):
+        with GriptapeNodes.ContextManager().node(node=node):
             # Get the library and version details.
             library_used = node.metadata["library"]
             # Get the library metadata so we can get the version.
@@ -1684,7 +1730,12 @@ class NodeManager:
 
         # Adopt the newly-created node as our current context.
         node_name = create_node_result.node_name
-        with GriptapeNodes.ContextManager().node(node_name=node_name):
+        node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to get node '{node_name}'."
+            logger.error(details)
+            return DeserializeNodeFromCommandsResultFailure()
+        with GriptapeNodes.ContextManager().node(node=node):
             for element_command in request.serialized_node_commands.element_modification_commands:
                 if isinstance(
                     element_command, (AlterParameterDetailsRequest, AddParameterToNodeRequest)
@@ -1803,7 +1854,11 @@ class NodeManager:
                 logger.error("Attempted to deserialize node but ran into an error on node serialization.")
                 return DeserializeSelectedNodesFromCommandsResultFailure()
             node_uuid_to_name[node_command.node_uuid] = result.node_name
-            with GriptapeNodes.ContextManager().node(result.node_name):
+            node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(result.node_name, BaseNode)
+            if node is None:
+                logger.error("Attempted to deserialize node but ran into an error on node serialization.")
+                return DeserializeSelectedNodesFromCommandsResultFailure()
+            with GriptapeNodes.ContextManager().node(node=node):
                 parameter_commands = commands.set_parameter_value_commands[node_command.node_uuid]
                 for parameter_command in parameter_commands:
                     param_request = parameter_command.set_parameter_value_command
