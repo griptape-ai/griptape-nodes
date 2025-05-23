@@ -40,10 +40,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             }
         )
 
-        if bucket_id is None:
-            self.bucket_id = self._provision_bucket()
-        else:
-            self.bucket_id = bucket_id
+        self.bucket_id = bucket_id
 
     def create_signed_upload_url(self, file_name: str) -> CreateSignedUploadUrlResponse:
         self._create_asset(file_name)
@@ -108,15 +105,3 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             raise ValueError(msg) from e
 
         return response.json()["name"]
-
-    def _provision_bucket(self) -> str:
-        url = urljoin(self.base_url, "/api/buckets")
-        try:
-            response = httpx.post(url=url, json={"name": "griptape-nodes"}, headers=self.headers)
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            msg = str(e)
-            logger.error(msg)
-            raise ValueError(msg) from e
-
-        return response.json()["bucket_id"]

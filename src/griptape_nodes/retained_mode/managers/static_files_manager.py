@@ -49,10 +49,11 @@ class StaticFilesManager:
         match storage_backend:
             case "gtc":
                 self.storage_driver = GriptapeCloudStorageDriver(
-                    bucket_id=secrets_manager.get_secret("GT_CLOUD_BUCKET_ID", should_error_on_not_found=False),
+                    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1332
+                    # Automatically provision a bucket if it doesn't exist
+                    bucket_id=secrets_manager.get_secret("GT_CLOUD_BUCKET_ID"),
                     api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"),
                 )
-                secrets_manager.set_secret("GT_CLOUD_BUCKET_ID", self.storage_driver.bucket_id)
             case "local":
                 self.storage_driver = LocalStorageDriver()
             case _:
