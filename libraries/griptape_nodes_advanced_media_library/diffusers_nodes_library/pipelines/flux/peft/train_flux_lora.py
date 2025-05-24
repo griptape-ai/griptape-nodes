@@ -69,7 +69,12 @@ class TrainFluxLora(ControlNode):
                 / library_name.replace(" ", "_").strip()
             )
             library_venv_scripts_path = library_venv_path / "Scripts"
+
+            
             accelerate_path = library_venv_scripts_path / "accelerate.exe"
+
+            if platform.system() == "Windows":
+                accelerate_path = accelerate_path.with_suffix(".exe")
 
             print(f"{str(library_venv_scripts_path)=}")
         
