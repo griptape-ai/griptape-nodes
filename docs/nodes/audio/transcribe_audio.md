@@ -40,18 +40,18 @@ Use this node when you want to:
 A complete workflow for recording and transcribing audio:
 
 1. Add a Microphone node to capture audio
-2. Connect the Microphone's "audio" output to the TranscribeAudio node's "audio" input
-3. Select your preferred transcription model
-4. Run the workflow
-5. The transcribed text will be available in the "output" parameter
+1. Connect the Microphone's "audio" output to the TranscribeAudio node's "audio" input
+1. Select your preferred transcription model
+1. Run the workflow
+1. The transcribed text will be available in the "output" parameter
 
 ## Important Notes
 
 - The node requires a valid OpenAI API key set up in your environment as `OPENAI_API_KEY`
 - Available models include:
-  - gpt-4o-mini-transcribe
-  - gpt-4o-transcribe
-  - whisper-1
+    - gpt-4o-mini-transcribe
+    - gpt-4o-transcribe
+    - whisper-1
 - You can provide your own agent configuration for more customized behavior
 - The quality of transcription depends on the audio quality and the selected model
 
@@ -60,4 +60,4 @@ A complete workflow for recording and transcribing audio:
 - **Missing API Key**: Ensure your OpenAI API key is properly set up as the environment variable
 - **No Audio Provided**: Make sure you've connected a valid audio source to the "audio" input
 - **Poor Transcription Quality**: Try using a different model or improving the audio quality
-- **Processing Errors**: Very long audio files or poor audio quality might result in less accurate transcriptions 
+- **Processing Errors**: Very long audio files or poor audio quality might result in less accurate transcriptions

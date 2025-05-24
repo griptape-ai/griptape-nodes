@@ -43,4 +43,4 @@ Imagine you've captured audio with the Microphone node and now want to use it el
 ## Common Issues
 
 - **No Audio Showing**: Make sure you've properly connected an audio source to this node
-- **Wrong Audio Type**: Make sure you're connecting an AudioArtifact or AudioUrlArtifact to this node 
+- **Wrong Audio Type**: Make sure you're connecting an AudioArtifact or AudioUrlArtifact to this node

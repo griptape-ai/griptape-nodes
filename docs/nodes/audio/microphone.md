@@ -35,9 +35,9 @@ Use this node when you want to:
 A simple workflow to record and transcribe audio:
 
 1. Add a Microphone node to your workflow
-2. Record your audio input
-3. Connect the "audio" output to a TranscribeAudio node
-4. The transcription will be available in the TranscribeAudio node's output
+1. Record your audio input
+1. Connect the "audio" output to a TranscribeAudio node
+1. The transcription will be available in the TranscribeAudio node's output
 
 ## Important Notes
 
@@ -50,4 +50,4 @@ A simple workflow to record and transcribe audio:
 
 - **No Microphone Access**: Ensure your browser has permission to access your microphone
 - **Poor Audio Quality**: Check your microphone settings and system audio configuration
-- **Recording Not Starting**: Make sure no other application is using the microphone 
+- **Recording Not Starting**: Make sure no other application is using the microphone
