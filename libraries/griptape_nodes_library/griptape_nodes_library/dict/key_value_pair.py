@@ -13,7 +13,7 @@ class KeyValuePair(DataNode):
         # Add dictionary output parameter
         self.add_parameter(
             Parameter(
-                name="my_key",
+                name="key",
                 input_types=["str"],
                 default_value="",
                 type="str",
@@ -22,7 +22,7 @@ class KeyValuePair(DataNode):
         )
         self.add_parameter(
             Parameter(
-                name="my_value",
+                name="value",
                 input_types=["str"],
                 default_value="",
                 type="str",
@@ -40,11 +40,11 @@ class KeyValuePair(DataNode):
         )
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        if parameter.name in {"my_key", "my_value"}:
+        if parameter.name in {"key", "value"}:
             new_dict = {}
 
-            new_key = self.get_parameter_value("my_key")
-            new_value = self.get_parameter_value("my_value")
+            new_key = self.get_parameter_value("key")
+            new_value = self.get_parameter_value("value")
 
             new_dict = {new_key: new_value}
 
@@ -57,8 +57,8 @@ class KeyValuePair(DataNode):
 
     def process(self) -> None:
         """Process the node by creating a key-value pair dictionary."""
-        key = self.get_parameter_value("my_key")
-        value = self.get_parameter_value("my_value")
+        key = self.get_parameter_value("key")
+        value = self.get_parameter_value("value")
 
         # Set output value
         self.parameter_output_values["dictionary"] = {key: value}
