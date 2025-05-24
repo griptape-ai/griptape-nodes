@@ -15,7 +15,7 @@ class KeyValuePair(DataNode):
             Parameter(
                 name="my_key",
                 input_types=["str"],
-                default_value="",
+                default_value="key",
                 type="str",
                 tooltip="Key for the dictionary",
             )
@@ -24,7 +24,7 @@ class KeyValuePair(DataNode):
             Parameter(
                 name="my_value",
                 input_types=["str"],
-                default_value="",
+                default_value="value",
                 type="str",
                 tooltip="Value for the dictionary",
             )
@@ -34,7 +34,7 @@ class KeyValuePair(DataNode):
                 name="dictionary",
                 type="dict",
                 default_value={"key": "value"},
-                allowed_modes={ParameterMode.OUTPUT},
+                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 tooltip="Dictionary containing the key-value pair",
             )
         )
