@@ -209,6 +209,15 @@
       }
     },
     {
+      "class_name": "TranscribeAudio",
+      "file_path": "griptape_nodes_library/audio/transcribe_audio.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Transcribe audio files into text.\nRequires an OpenAI API key.",
+        "display_name": "Transcribe Audio"
+      }
+    },
+    {
       "class_name": "Microphone",
       "file_path": "griptape_nodes_library/audio/microphone.py",
       "metadata": {
