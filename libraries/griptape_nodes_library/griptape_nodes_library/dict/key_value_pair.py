@@ -15,6 +15,7 @@ class KeyValuePair(DataNode):
             Parameter(
                 name="my_key",
                 input_types=["str"],
+                default_value="",
                 type="str",
                 tooltip="Key for the dictionary",
             )
@@ -23,6 +24,7 @@ class KeyValuePair(DataNode):
             Parameter(
                 name="my_value",
                 input_types=["str"],
+                default_value="",
                 type="str",
                 tooltip="Value for the dictionary",
             )
@@ -30,8 +32,9 @@ class KeyValuePair(DataNode):
         self.add_parameter(
             Parameter(
                 name="dictionary",
-                output_type="dict",
-                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+                type="dict",
+                default_value={"key": "value"},
+                allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Dictionary containing the key-value pair",
             )
         )
@@ -46,7 +49,10 @@ class KeyValuePair(DataNode):
             new_dict = {new_key: new_value}
 
             self.parameter_output_values["dictionary"] = new_dict
+            self.set_parameter_value("dictionary", new_dict)
             modified_parameters_set.add("dictionary")
+            self.show_parameter_by_name("dictionary")
+
         return super().after_value_set(parameter, value, modified_parameters_set)
 
     def process(self) -> None:
