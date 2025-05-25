@@ -130,6 +130,7 @@ nav:
               - Load Text: nodes/text/load_text.md
               - Merge Texts: nodes/text/merge_texts.md
               - Save Text: nodes/text/save_text.md
+              - Search Replace Text: nodes/text/search_replace_text.md
           - Tools:
               - Calculator: nodes/tools/calculator_tool.md
               - Date Time: nodes/tools/date_time_tool.md

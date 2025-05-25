@@ -712,6 +712,15 @@
         "description": "Use a published workflow within your graph",
         "display_name": "Published Workflow"
       }
+    },
+    {
+      "class_name": "SearchReplaceText",
+      "file_path": "griptape_nodes_library/text/search_replace_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "Perform search and replace operations on text content with support for regex and case sensitivity",
+        "display_name": "Search Replace Text"
+      }
     }
   ],
   "workflows": [
