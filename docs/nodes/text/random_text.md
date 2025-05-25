@@ -21,7 +21,9 @@ The Random Text node allows you to select random content from input text or gene
 ### Selection Type
 
 - **Type**: String
+
 - **Mode**: Property
+
 - **Description**: The type of content to select or generate:
 
     - `character`: Selects a random character
