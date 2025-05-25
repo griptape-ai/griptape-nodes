@@ -125,12 +125,13 @@ nav:
               - Ruleset: nodes/rules/create_ruleset.md
               - Ruleset List: nodes/rules/ruleset_list.md
           - Text:
-              - Text Input: nodes/text/create_multiline_text.md
               - Display Text: nodes/text/display_text.md
               - Load Text: nodes/text/load_text.md
               - Merge Texts: nodes/text/merge_texts.md
+              - Random Text: nodes/text/random_text.md
               - Save Text: nodes/text/save_text.md
               - Search Replace Text: nodes/text/search_replace_text.md
+              - Text Input: nodes/text/create_multiline_text.md
           - Tools:
               - Calculator: nodes/tools/calculator_tool.md
               - Date Time: nodes/tools/date_time_tool.md
