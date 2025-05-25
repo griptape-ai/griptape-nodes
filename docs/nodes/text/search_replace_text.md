@@ -19,11 +19,11 @@ Use the SearchReplaceText node when:
 ### Basic Setup
 
 1. Add a SearchReplaceText node to your workflow
-2. Connect or set the input text (can be multiline)
-3. Set the search pattern
-4. Set the replacement text (can be multiline)
-5. Configure additional options as needed
-6. Connect the output to nodes that accept text input
+1. Connect or set the input text (can be multiline)
+1. Set the search pattern
+1. Set the replacement text (can be multiline)
+1. Configure additional options as needed
+1. Connect the output to nodes that accept text input
 
 ### Parameters
 
@@ -43,39 +43,40 @@ Use the SearchReplaceText node when:
 ### Simple Text Replacement
 
 1. Add a SearchReplaceText node to your workflow
-2. Set the input text to:
-   ```
-   Hello World
-   Welcome to Griptape
-   ```
-3. Set the search pattern to: "World"
-4. Set the replacement text to: "Griptape"
-5. The output will be:
-   ```
-   Hello Griptape
-   Welcome to Griptape
-   ```
+1. Set the input text to:
+    ```
+    Hello World
+    Welcome to Griptape
+    ```
+1. Set the search pattern to: "World"
+1. Set the replacement text to: "Griptape"
+1. The output will be:
+    ```
+    Hello Griptape
+    Welcome to Griptape
+    ```
 
 ### Case-Insensitive Replacement
 
 1. Add a SearchReplaceText node to your workflow
-2. Set the input text to:
-   ```
-   Hello WORLD
-   Welcome to the WORLD
-   ```
-3. Set the search pattern to: "world"
-4. Set the replacement text to: "Griptape"
-5. Set case_sensitive to: false
-6. The output will be:
-   ```
-   Hello Griptape
-   Welcome to the Griptape
-   ```
+1. Set the input text to:
+    ```
+    Hello WORLD
+    Welcome to the WORLD
+    ```
+1. Set the search pattern to: "world"
+1. Set the replacement text to: "Griptape"
+1. Set case_sensitive to: false
+1. The output will be:
+    ```
+    Hello Griptape
+    Welcome to the Griptape
+    ```
 
 ### Regular Expression Examples
 
 !!! example "Basic Regex Patterns"
+
     ```
     Input: "Line 1\nLine 2\nLine 3"
     Search Pattern: "Line \\d"
@@ -83,9 +84,11 @@ Use the SearchReplaceText node when:
     Use Regex: true
     Output: "Item\nItem\nItem"
     ```
+
     This pattern matches "Line" followed by any digit (`\d`).
 
 !!! example "Removing Numbers"
+
     ```
     Input: "Product123, Item456, Order789"
     Search Pattern: "\\d+"
@@ -93,9 +96,11 @@ Use the SearchReplaceText node when:
     Use Regex: true
     Output: "Product, Item, Order"
     ```
+
     This pattern matches one or more digits (`\d+`).
 
 !!! example "Word Boundaries"
+
     ```
     Input: "cat in the hat"
     Search Pattern: "\\bcat\\b"
@@ -103,9 +108,11 @@ Use the SearchReplaceText node when:
     Use Regex: true
     Output: "dog in the hat"
     ```
+
     This pattern matches the word "cat" only when it appears as a complete word.
 
 !!! example "Multiple Lines"
+
     ```
     Input: "First line\nSecond line\nThird line"
     Search Pattern: "^.*$"
@@ -113,28 +120,32 @@ Use the SearchReplaceText node when:
     Use Regex: true
     Output: "New line\nNew line\nNew line"
     ```
+
     This pattern matches entire lines (`^` start, `.*` any characters, `$` end).
 
 ## Regex Reference
 
 !!! note "Common Regex Patterns"
-    | Pattern | Description | Example |
-    |---------|-------------|---------|
-    | `\n` | Match a newline | `Line 1\nLine 2` |
-    | `\s` | Match any whitespace | `Hello\sWorld` |
-    | `\d` | Match any digit | `\d+` matches "123" |
-    | `[a-z]` | Match any lowercase letter | `[a-z]+` matches "hello" |
-    | `[A-Z]` | Match any uppercase letter | `[A-Z]+` matches "WORLD" |
-    | `.` | Match any character | `a.c` matches "abc" |
-    | `*` | Match 0 or more | `a*` matches "", "a", "aa" |
-    | `+` | Match 1 or more | `a+` matches "a", "aa" |
-    | `?` | Match 0 or 1 | `a?` matches "", "a" |
-    | `\b` | Word boundary | `\bcat\b` matches "cat" but not "catch" |
+
+    | Pattern | Description                | Example                                 |
+    | ------- | -------------------------- | --------------------------------------- |
+    | `\n`    | Match a newline            | `Line 1\nLine 2`                        |
+    | `\s`    | Match any whitespace       | `Hello\sWorld`                          |
+    | `\d`    | Match any digit            | `\d+` matches "123"                     |
+    | `[a-z]` | Match any lowercase letter | `[a-z]+` matches "hello"                |
+    | `[A-Z]` | Match any uppercase letter | `[A-Z]+` matches "WORLD"                |
+    | `.`     | Match any character        | `a.c` matches "abc"                     |
+    | `*`     | Match 0 or more            | `a*` matches "", "a", "aa"              |
+    | `+`     | Match 1 or more            | `a+` matches "a", "aa"                  |
+    | `?`     | Match 0 or 1               | `a?` matches "", "a"                    |
+    | `\b`    | Word boundary              | `\bcat\b` matches "cat" but not "catch" |
 
 !!! warning "Regex Mode"
+
     When using regex mode, special characters in the search pattern are treated as regex syntax. Make sure to escape special characters if you want to match them literally.
 
 !!! tip "Plain Text Mode"
+
     When not using regex mode, the search pattern is treated as literal text, and special characters are escaped automatically. This is safer for simple text replacements.
 
 ## Important Notes
@@ -160,4 +171,4 @@ For more comprehensive regex examples and patterns, check out:
 
 - [Python Regular Expression HOWTO](https://docs.python.org/3/howto/regex.html)
 - [Regex101](https://regex101.com/) - Interactive regex testing and debugging
-- [Regular-Expressions.info](https://www.regular-expressions.info/) - Detailed regex tutorials 
+- [Regular-Expressions.info](https://www.regular-expressions.info/) - Detailed regex tutorials
