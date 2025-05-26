@@ -457,13 +457,11 @@ class LibraryManager:
         # Install node library dependencies
         try:
             site_packages = None
-            if library_data.metadata.dependencies:
+            if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
                 pip_install_flags = library_data.metadata.dependencies.pip_install_flags
                 if pip_install_flags is None:
                     pip_install_flags = []
                 pip_dependencies = library_data.metadata.dependencies.pip_dependencies
-                if pip_dependencies is None:
-                    pip_dependencies = []
 
                 # Create a virtual environment for the library
                 python_version = platform.python_version()
