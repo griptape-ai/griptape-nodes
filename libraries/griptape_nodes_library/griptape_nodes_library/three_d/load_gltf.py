@@ -4,7 +4,6 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes_library.utils.gltf_utils import dict_to_gltf_url_artifact
 
 
 class LoadGLTF(DataNode):
@@ -30,6 +29,7 @@ class LoadGLTF(DataNode):
                 variant="none",
                 name="help_message",
                 value='To output an image of the model, click "Save Snapshot".',
+                ui_options={"text_align": "text-center"},
             )
         )
         image_parameter = Parameter(
@@ -56,6 +56,8 @@ class LoadGLTF(DataNode):
         return super().after_value_set(parameter, value, modified_parameters_set)
 
     def process(self) -> None:
+        from griptape_nodes_library.utils.gltf_utils import dict_to_gltf_url_artifact
+
         gltf = self.get_parameter_value("gltf")
         image = self.get_parameter_value("image")
 
