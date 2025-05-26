@@ -39,4 +39,4 @@ Use this node when you want to:
 
 - **No Model Showing**: Make sure you have properly connected a GLTF source to this node or selected a valid file.
 - **Invalid File Type**: Ensure you are providing a valid GLTF file or URL.
-- **Image Output Not Available**: The image output is only generated when explicitly saving a snapshot from the UI. Ensure you have triggered this action. 
+- **Image Output Not Available**: The image output is only generated when explicitly saving a snapshot from the UI. Ensure you have triggered this action.
