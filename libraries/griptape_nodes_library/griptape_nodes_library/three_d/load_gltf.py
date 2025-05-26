@@ -1,7 +1,10 @@
 from typing import Any
 
+from griptape.artifacts import ImageUrlArtifact
+
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes_library.utils.gltf_utils import dict_to_gltf_url_artifact
 
 
 class LoadGLTF(DataNode):
@@ -35,26 +38,31 @@ class LoadGLTF(DataNode):
             default_value=None,
             tooltip="The image of the GLTF file.",
             allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-            ui_options={"hide": True},
         )
         self.add_parameter(image_parameter)
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         if parameter.name == "gltf":
-            image_url = value.get("imageUrl")
+            image_url = value.get("metadata", {}).get("imageUrl")
             if image_url:
-                self.set_parameter_value("image", image_url)
-                self.parameter_output_values["image"] = image_url
-                self.show_parameter_by_name("image")
+                image_artifact = ImageUrlArtifact(value=image_url)
+                self.set_parameter_value("image", image_artifact)
+                self.parameter_output_values["image"] = image_artifact
                 self.hide_message_by_name("help_message")
             else:
                 self.show_message_by_name("help_message")
-                self.hide_parameter_by_name("image")
 
             modified_parameters_set.add("image")
         return super().after_value_set(parameter, value, modified_parameters_set)
 
     def process(self) -> None:
         gltf = self.get_parameter_value("gltf")
-        self.parameter_output_values["gltf"] = gltf
-        self.parameter_output_values["image"] = gltf.get("imageUrl")
+        image = self.get_parameter_value("image")
+
+        if isinstance(gltf, dict):
+            gltf_artifact = dict_to_gltf_url_artifact(gltf)
+        else:
+            gltf_artifact = gltf
+
+        self.parameter_output_values["image"] = image
+        self.parameter_output_values["gltf"] = gltf_artifact
