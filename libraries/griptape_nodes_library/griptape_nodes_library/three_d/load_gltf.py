@@ -3,8 +3,6 @@ from typing import Any
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 
-# from griptape_nodes_library.utils.gltf_utils import dict_to_gltf_url_artifact
-
 
 class LoadGLTF(DataNode):
     def __init__(self, **kwargs) -> None:
