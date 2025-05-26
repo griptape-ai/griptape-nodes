@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterable
 from enum import StrEnum, auto
 from typing import Any, TypeVar
 
@@ -17,6 +17,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterDictionary,
     ParameterGroup,
     ParameterList,
+    ParameterMessage,
     ParameterMode,
     ParameterTypeBuiltin,
 )
@@ -204,6 +205,11 @@ class BaseNode(ABC):
         # Default behavior is to do nothing, and indicate no other modified Parameters.
         return None  # noqa: RET501
 
+    def after_settings_changed(self, modified_parameters_set: set[str]) -> None:  # noqa: ARG002
+        """Callback for when the settings of this Node are changed."""
+        # Waiting for https://github.com/griptape-ai/griptape-nodes/issues/1309
+        return
+
     def on_griptape_event(self, event: BaseEvent) -> None:  # noqa: ARG002
         """Callback for when a Griptape Event comes destined for this Node."""
         return
@@ -264,6 +270,34 @@ class BaseNode(ABC):
             parameter = self.get_parameter_by_name(name)
             if parameter is not None:
                 parameter._ui_options["hide"] = not visible
+
+    def get_message_by_name_or_element_id(self, element: str) -> ParameterMessage | None:
+        element_items = self.root_ui_element.find_elements_by_type(ParameterMessage)
+        for element_item in element_items:
+            if element in (element_item.name, element_item.element_id):
+                return element_item
+        return None
+
+    def _set_message_visibility(self, names: str | list[str], *, visible: bool) -> None:
+        """Sets the visibility of one or more messages.
+
+        Args:
+            names (str or list of str): The message name(s) to update.
+            visible (bool): Whether to show (True) or hide (False) the messages.
+        """
+        if isinstance(names, str):
+            names = [names]
+
+        for name in names:
+            message = self.get_message_by_name_or_element_id(name)
+            if message is not None:
+                message.ui_options["hide"] = not visible
+
+    def hide_message_by_name(self, names: str | list[str]) -> None:
+        self._set_message_visibility(names, visible=False)
+
+    def show_message_by_name(self, names: str | list[str]) -> None:
+        self._set_message_visibility(names, visible=True)
 
     def hide_parameter_by_name(self, names: str | list[str]) -> None:
         """Hides one or more parameters by name."""
@@ -410,6 +444,26 @@ class BaseNode(ABC):
             if value:
                 return value
         return param.default_value if param else None
+
+    def get_parameter_list_value(self, param: str) -> list:
+        """Flattens the given param from self.params into a single list.
+
+        Args:
+            param (str): Name of the param key in self.params.
+
+        Returns:
+            list: Flattened list of items from the param.
+        """
+
+        def _flatten(items: Iterable[Any]) -> Generator[Any, None, None]:
+            for item in items:
+                if isinstance(item, Iterable) and not isinstance(item, (str, bytes)):
+                    yield from _flatten(item)
+                elif item:
+                    yield item
+
+        raw = self.get_parameter_value(param) or []  # ← Fallback for None
+        return list(_flatten(raw))
 
     def remove_parameter_value(self, param_name: str) -> None:
         parameter = self.get_parameter_by_name(param_name)

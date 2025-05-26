@@ -112,7 +112,6 @@ class DepthAnythingForDepthEstimation(ControlNode):
                         choices=list(map(DepthAnythingForDepthEstimation._repo_revision_to_key, self.repo_revisions)),
                     )
                 },
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="prompt",
             )
         )
@@ -121,7 +120,6 @@ class DepthAnythingForDepthEstimation(ControlNode):
                 name="input_image",
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="input_image",
             )
         )

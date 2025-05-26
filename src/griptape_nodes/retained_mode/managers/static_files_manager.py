@@ -1,17 +1,26 @@
 import base64
 import binascii
 import logging
-from pathlib import Path
 
+import httpx
 from xdg_base_dirs import xdg_config_home
 
+from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
+from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
 from griptape_nodes.retained_mode.events.static_file_events import (
+    CreateStaticFileDownloadUrlRequest,
+    CreateStaticFileDownloadUrlResultFailure,
+    CreateStaticFileDownloadUrlResultSuccess,
     CreateStaticFileRequest,
     CreateStaticFileResultFailure,
     CreateStaticFileResultSuccess,
+    CreateStaticFileUploadUrlRequest,
+    CreateStaticFileUploadUrlResultFailure,
+    CreateStaticFileUploadUrlResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -21,17 +30,46 @@ USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config
 class StaticFilesManager:
     """A class to manage the creation and management of static files."""
 
-    def __init__(self, config_manager: ConfigManager, event_manager: EventManager | None = None) -> None:
+    def __init__(
+        self,
+        config_manager: ConfigManager,
+        secrets_manager: SecretsManager,
+        event_manager: EventManager | None = None,
+    ) -> None:
         """Initialize the StaticFilesManager.
 
         Args:
             config_manager: The ConfigManager instance to use for accessing the workspace path.
             event_manager: The EventManager instance to use for event handling.
+            secrets_manager: The SecretsManager instance to use for accessing secrets.
         """
         self.config_manager = config_manager
+
+        storage_backend = config_manager.get_config_value("storage_backend", default="local")
+
+        match storage_backend:
+            case "gtc":
+                self.storage_driver = GriptapeCloudStorageDriver(
+                    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1332
+                    # Automatically provision a bucket if it doesn't exist
+                    bucket_id=secrets_manager.get_secret("GT_CLOUD_BUCKET_ID"),
+                    api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"),
+                )
+            case "local":
+                self.storage_driver = LocalStorageDriver()
+            case _:
+                msg = f"Invalid storage backend: {storage_backend}"
+                raise ValueError(msg)
+
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(
                 CreateStaticFileRequest, self.on_handle_create_static_file_request
+            )
+            event_manager.assign_manager_to_request_type(
+                CreateStaticFileUploadUrlRequest, self.on_handle_create_static_file_upload_url_request
+            )
+            event_manager.assign_manager_to_request_type(
+                CreateStaticFileDownloadUrlRequest, self.on_handle_create_static_file_download_url_request
             )
 
     def on_handle_create_static_file_request(
@@ -39,22 +77,68 @@ class StaticFilesManager:
         request: CreateStaticFileRequest,
     ) -> CreateStaticFileResultSuccess | CreateStaticFileResultFailure:
         file_name = request.file_name
+
         try:
-            url = self.save_static_file(base64.b64decode(request.content), file_name)
-        except binascii.Error:
-            msg = f"Invalid base64 encoding for file {file_name}."
+            content_bytes = base64.b64decode(request.content)
+        except (binascii.Error, ValueError) as e:
+            msg = f"Failed to decode base64 content for file {file_name}: {e}"
             logger.error(msg)
             return CreateStaticFileResultFailure(error=msg)
-        except (OSError, PermissionError) as e:
-            msg = f"Failed to write file {file_name} to {self.config_manager.workspace_path}: {e}"
-            logger.error(msg)
-            return CreateStaticFileResultFailure(error=msg)
+
+        try:
+            url = self.save_static_file(content_bytes, file_name)
         except ValueError as e:
-            msg = str(e)
+            msg = f"Failed to create static file for file {file_name}: {e}"
             logger.error(msg)
             return CreateStaticFileResultFailure(error=msg)
-        else:
-            return CreateStaticFileResultSuccess(url=url)
+
+        return CreateStaticFileResultSuccess(url=url)
+
+    def on_handle_create_static_file_upload_url_request(
+        self,
+        request: CreateStaticFileUploadUrlRequest,
+    ) -> CreateStaticFileUploadUrlResultSuccess | CreateStaticFileUploadUrlResultFailure:
+        """Handle the request to create a presigned URL for uploading a static file.
+
+        Args:
+            request: The request object containing the file name.
+
+        Returns:
+            A result object indicating success or failure.
+        """
+        file_name = request.file_name
+        try:
+            response = self.storage_driver.create_signed_upload_url(file_name)
+        except ValueError as e:
+            msg = f"Failed to create presigned URL for file {file_name}: {e}"
+            logger.error(msg)
+            return CreateStaticFileUploadUrlResultFailure(error=msg)
+
+        return CreateStaticFileUploadUrlResultSuccess(
+            url=response["url"], headers=response["headers"], method=response["method"]
+        )
+
+    def on_handle_create_static_file_download_url_request(
+        self,
+        request: CreateStaticFileDownloadUrlRequest,
+    ) -> CreateStaticFileDownloadUrlResultSuccess | CreateStaticFileDownloadUrlResultFailure:
+        """Handle the request to create a presigned URL for downloading a static file.
+
+        Args:
+            request: The request object containing the file name.
+
+        Returns:
+            A result object indicating success or failure.
+        """
+        file_name = request.file_name
+        try:
+            url = self.storage_driver.create_signed_download_url(file_name)
+        except ValueError as e:
+            msg = f"Failed to create presigned URL for file {file_name}: {e}"
+            logger.error(msg)
+            return CreateStaticFileDownloadUrlResultFailure(error=msg)
+
+        return CreateStaticFileDownloadUrlResultSuccess(url=url)
 
     def save_static_file(self, data: bytes, file_name: str) -> str:
         """Saves a static file to the workspace directory.
@@ -68,24 +152,21 @@ class StaticFilesManager:
         Returns:
             The URL of the saved file.
         """
-        from griptape_nodes.app.app import (
-            STATIC_SERVER_ENABLED,
-            STATIC_SERVER_HOST,
-            STATIC_SERVER_PORT,
-            STATIC_SERVER_URL,
-        )
+        response = self.storage_driver.create_signed_upload_url(file_name)
 
-        if not STATIC_SERVER_ENABLED:
-            msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
-            raise ValueError(msg)
+        try:
+            response = httpx.request(
+                response["method"],
+                response["url"],
+                content=data,
+                headers=response["headers"],
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = str(e.response.json())
+            logger.error(msg)
+            raise ValueError(msg) from e
 
-        file_path = Path(
-            self.config_manager.workspace_path / self.config_manager.merged_config["static_files_directory"]
-        )
-        if not file_path.exists():
-            file_path.mkdir(parents=True, exist_ok=True)
-        Path(file_path / file_name).write_bytes(data)
+        url = self.storage_driver.create_signed_download_url(file_name)
 
-        static_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}/{file_name}"
-
-        return static_url
+        return url

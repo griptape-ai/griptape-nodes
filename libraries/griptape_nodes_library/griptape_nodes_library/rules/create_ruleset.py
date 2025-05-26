@@ -45,7 +45,7 @@ class Ruleset(DataNode):
         params = self.parameter_values
         name = params.get("name", "Behavior")
         raw_rules = params.get("rules", "")
-        sep_rules = [Rule(rule) for rule in raw_rules.split("\n")]
+        sep_rules = [Rule(rule) for rule in raw_rules.split("\n\n")]
         ruleset = gtRuleset(name=name, rules=sep_rules)  # was in [], but made type validation bad for austin
 
         self.parameter_output_values["ruleset"] = ruleset

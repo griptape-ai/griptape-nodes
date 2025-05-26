@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, NamedTuple, Self, cast
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
-from griptape.mixins.singleton_mixin import SingletonMixin
 from pydantic import BaseModel
+
+from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
@@ -83,6 +84,8 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.1.0"
+
     name: str
     library_schema_version: str
     metadata: LibraryMetadata
@@ -94,18 +97,12 @@ class LibrarySchema(BaseModel):
     is_default_library: bool | None = None
 
 
-class LibraryRegistry(SingletonMixin):
+class LibraryRegistry(metaclass=SingletonMeta):
     """Singleton registry to manage many libraries."""
 
-    _libraries: dict[str, Library]
-
-    def __new__(cls) -> Self:
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._libraries = {}
-            cls._node_aliases = {}
-            cls._collision_node_names_to_library_names = {}
-        return cast("Self", cls._instance)
+    _libraries: ClassVar[dict[str, Library]] = {}
+    _node_aliases: ClassVar[dict[str, Library]] = {}
+    _collision_node_names_to_library_names: ClassVar[dict[str, list[str]]] = {}
 
     @classmethod
     def generate_new_library(

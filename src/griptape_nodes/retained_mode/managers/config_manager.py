@@ -168,8 +168,24 @@ class ConfigManager:
             self.merged_config = self.default_config
 
     def reset_user_config(self) -> None:
-        """Reset the user configuration to the default values."""
-        USER_CONFIG_PATH.write_text(json.dumps({}, indent=2))
+        """Reset the user configuration to the default values.
+
+        An exception is made for `workflows_to_register` since resetting it gives the appearance of the user losing their workflows.
+        """
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1241 need a better way to annotate fields to ignore.
+        workflows_to_register = self.get_config_value("app_events.on_app_initialization_complete.workflows_to_register")
+        USER_CONFIG_PATH.write_text(
+            json.dumps(
+                {
+                    "app_events": {
+                        "on_app_initialization_complete": {
+                            "workflows_to_register": workflows_to_register,
+                        }
+                    }
+                },
+                indent=2,
+            )
+        )
         self.load_configs()
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:

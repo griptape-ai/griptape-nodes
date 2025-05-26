@@ -27,7 +27,7 @@ from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint impor
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
 )
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.traits.options import Options
 
@@ -44,7 +44,6 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                 name="input_image",
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="input_image",
             )
         )
@@ -59,7 +58,6 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                 default_value=0.3,
                 input_types=["float"],
                 type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="strength (basically denoise) -- 0.0 is original image 1.0 is a completely new image -- impacts effective steps",
             )
         )
@@ -69,7 +67,6 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                 default_value=1024,
                 input_types=["int"],
                 type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip=(
                     "max_tile_size, "
                     "must be a multiple of 16, "
@@ -84,7 +81,6 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                 default_value=64,
                 input_types=["int"],
                 type="int",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="tile_overlap",
             )
         )
@@ -105,17 +101,23 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                         ]
                     )
                 },
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="tile_strategy",
             )
         )
         self.flux_params.add_output_parameters()
         self.log_params.add_output_parameters()
 
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        self.flux_params.after_value_set(parameter, value, modified_parameters_set)
+
+    def preprocess(self) -> None:
+        self.flux_params.preprocess()
+
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
     def _process(self) -> AsyncResult | None:  # noqa: PLR0915
+        self.preprocess()
         max_tile_size = int(self.get_parameter_value("max_tile_size"))
         input_image_artifact = self.get_parameter_value("input_image")
         tile_overlap = int(self.get_parameter_value("tile_overlap"))

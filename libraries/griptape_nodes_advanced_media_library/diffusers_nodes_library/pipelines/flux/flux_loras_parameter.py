@@ -7,7 +7,7 @@ import torch  # type: ignore[reportMissingImports]
 import torch.nn.functional  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.utils.torch_utils import get_best_device  # type: ignore[reportMissingImports]
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -20,11 +20,12 @@ class FluxLorasParameter:
 
     def add_input_parameters(self) -> None:
         self._node.add_parameter(
-            Parameter(
-                name=self._loras_parameter_name,
-                input_types=["dict"],
-                type="dict",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
+            ParameterList(
+                name="loras",
+                input_types=["loras", "dict"],
+                default_value=[],
+                type="loras",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
                 tooltip="loras",
             )
         )
@@ -34,7 +35,11 @@ class FluxLorasParameter:
         return hashlib.sha256(model_path.encode("utf-8")).hexdigest()
 
     def configure_loras(self, pipe: Any) -> None:
-        loras = self._node.get_parameter_value(self._loras_parameter_name)
+        loras_list = self._node.get_parameter_value(self._loras_parameter_name) or []
+
+        loras = {}
+        for lora in loras_list:
+            loras.update(lora)
 
         if not loras:
             pipe.disable_lora()

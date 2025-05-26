@@ -5,7 +5,7 @@ from griptape.loaders import ImageLoader
 from PIL.Image import Image
 from pillow_nodes_library.utils import image_artifact_to_pil
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
 
@@ -27,7 +27,6 @@ class UnionOneFluxControlNetParameters:
                 default_value=0.7,
                 input_types=["float"],
                 type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="controlnet_conditioning_scale",
             )
         )
@@ -37,7 +36,6 @@ class UnionOneFluxControlNetParameters:
                 default_value=0.8,
                 input_types=["float"],
                 type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="control_guidance_end",
             )
         )
@@ -52,7 +50,6 @@ class UnionOneFluxControlNetParameters:
                         choices=list(self._control_mode_by_name.keys()),
                     )
                 },
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="prompt",
             )
         )
@@ -61,7 +58,6 @@ class UnionOneFluxControlNetParameters:
                 name="control_image",
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="control_image",
             )
         )

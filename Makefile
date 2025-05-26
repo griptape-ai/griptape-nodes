@@ -30,10 +30,12 @@ version/commit: ## Commit version.
 
 .PHONY: version/publish
 version/publish: ## Create and push git tags.
+	@git fetch --tags --force
 	@git tag v$$(make version/get)
 	@git tag stable -f
 	@git push -f --tags
-	@git push
+	# Push to a release branch (e.g. release/v0.34).
+	@git push -u origin release/v$$(make version/get | awk -F. '{print $$1 "." $$2}')
 	
 .PHONY: run
 run: ## Run the project.
@@ -75,7 +77,7 @@ format: ## Format project.
 .PHONY: fix
 fix: ## Fix project.
 	@make format
-	@uv run ruff check --fix --unsafe-fixes --exclude "libraries/**/tests/**/*"
+	@uv run ruff check --fix --unsafe-fixes --exclude "libraries/**/tests/**/*" --exclude "libraries/griptape_nodes_library/workflows/templates/**/*"
 
 .PHONY: check
 check: check/format check/lint check/types check/spell ## Run all checks.
@@ -87,7 +89,7 @@ check/format:
 
 .PHONY: check/lint
 check/lint:
-	@uv run ruff check --exclude "libraries/**/tests/**/*"
+	@uv run ruff check --exclude "libraries/**/tests/**/*" --exclude "libraries/griptape_nodes_library/workflows/templates/**/*"
 
 .PHONY: check/types
 check/types:
