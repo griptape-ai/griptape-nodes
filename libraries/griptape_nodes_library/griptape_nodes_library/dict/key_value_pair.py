@@ -35,10 +35,10 @@ class KeyValuePair(DataNode):
             Parameter(
                 name="dictionary",
                 type="dict",
-                default_value={"": ""},
+                default_value={"key": "value"},
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Dictionary containing the key-value pair",
-                # ui_options={"hide_property": True},
+                ui_options={"display_name": "Key/Value Pair"},
             )
         )
 
