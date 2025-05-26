@@ -26,5 +26,5 @@ for payload_class_name, payload_class in payload_dict.items():
     else:
         logger.info("Skipping %s as it is not a RequestPayload.", payload_class_name)
 
-with Path("request_payload_schemas.json").open("w+") as file:
+with Path("request_payload_schemas.json").open("w+", encoding="utf-8") as file:
     file.write(json.dumps(list(payload_type_to_schema.values()), indent=2))

@@ -85,7 +85,7 @@ class StaticFilesManager:
             return CreateStaticFileResultFailure(error=msg)
 
         try:
-            url = self.storage_driver.create_static_file(content_bytes, file_name)
+            url = self.save_static_file(content_bytes, file_name)
         except ValueError as e:
             msg = f"Failed to create static file for file {file_name}: {e}"
             logger.error(msg)
@@ -151,4 +151,21 @@ class StaticFilesManager:
         Returns:
             The URL of the saved file.
         """
-        return self.storage_driver.create_static_file(data, file_name)
+        response = self.storage_driver.create_signed_upload_url(file_name)
+
+        try:
+            response = httpx.request(
+                response["method"],
+                response["url"],
+                content=data,
+                headers=response["headers"],
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = str(e.response.json())
+            logger.error(msg)
+            raise ValueError(msg) from e
+
+        url = self.storage_driver.create_signed_download_url(file_name)
+
+        return url

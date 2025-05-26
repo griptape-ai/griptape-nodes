@@ -544,7 +544,7 @@ def __init_system_config() -> None:
     for file_name in files_to_create:
         file_path = CONFIG_DIR / file_name[0]
         if not file_path.exists():
-            with Path.open(file_path, "w") as file:
+            with Path.open(file_path, "w", encoding="utf-8") as file:
                 file.write(file_name[1])
 
 
