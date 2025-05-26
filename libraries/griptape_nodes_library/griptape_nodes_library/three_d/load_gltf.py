@@ -28,7 +28,7 @@ class LoadGLTF(DataNode):
             ParameterMessage(
                 variant="none",
                 name="help_message",
-                value='To output an image, click "Save Snapshot".',
+                value='To output an image of the model, click "Save Snapshot".',
             )
         )
         image_parameter = Parameter(
@@ -48,7 +48,9 @@ class LoadGLTF(DataNode):
                 self.set_parameter_value("image", image_url)
                 self.parameter_output_values["image"] = image_url
                 self.show_parameter_by_name("image")
+                self.hide_message_by_name("help_message")
             else:
+                self.show_message_by_name("help_message")
                 self.hide_parameter_by_name("image")
 
             modified_parameters_set.add("image")

@@ -721,15 +721,7 @@
         "display_name": "Published Workflow"
       }
     },
-    {
-      "class_name": "DisplayGLTF",
-      "file_path": "griptape_nodes_library/three_d/display_gltf.py",
-      "metadata": {
-        "category": "3D",
-        "description": "Displays a GLTF model",
-        "display_name": "Display GLTF"
-      }
-    },
+    
     {
       "class_name": "LoadGLTF",
       "file_path": "griptape_nodes_library/three_d/load_gltf.py",
