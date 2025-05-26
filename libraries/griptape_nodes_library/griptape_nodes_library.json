@@ -69,6 +69,14 @@
       }
     },
     {
+      "3D": {
+        "color": "border-indigo-500",
+        "title": "3D",
+        "description": "3D model related nodes",
+        "icon": "Cube"
+      }
+    },
+    {
       "audio": {
         "color": "border-sky-500",
         "title": "Audio",
@@ -711,6 +719,24 @@
         "category": "workflows",
         "description": "Use a published workflow within your graph",
         "display_name": "Published Workflow"
+      }
+    },
+    {
+      "class_name": "DisplayGLTF",
+      "file_path": "griptape_nodes_library/three_d/display_gltf.py",
+      "metadata": {
+        "category": "3D",
+        "description": "Displays a GLTF model",
+        "display_name": "Display GLTF"
+      }
+    },
+    {
+      "class_name": "LoadGLTF",
+      "file_path": "griptape_nodes_library/three_d/load_gltf.py",
+      "metadata": {
+        "category": "3D",
+        "description": "Loads a GLTF file into your workflow",
+        "display_name": "Load GLTF"
       }
     }
   ],
