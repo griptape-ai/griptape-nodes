@@ -542,15 +542,6 @@
       }
     },
     {
-      "class_name": "TextInput",
-      "file_path": "griptape_nodes_library/text/create_multiline_text.py",
-      "metadata": {
-        "category": "text",
-        "description": "TextInput node",
-        "display_name": "Text Input"
-      }
-    },
-    {
       "class_name": "DisplayText",
       "file_path": "griptape_nodes_library/text/display_text.py",
       "metadata": {
@@ -587,12 +578,39 @@
       }
     },
     {
+      "class_name": "RandomText",
+      "file_path": "griptape_nodes_library/text/random_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "Selects a random character, word, sentence, or paragraph from input text, or generates random content if no input is provided.",
+        "display_name": "Random Text"
+      }
+    },
+    {
       "class_name": "SaveText",
       "file_path": "griptape_nodes_library/text/save_text.py",
       "metadata": {
         "category": "text",
         "description": "Save text to a file",
         "display_name": "Save Text"
+      }
+    },
+    {
+      "class_name": "SearchReplaceText",
+      "file_path": "griptape_nodes_library/text/search_replace_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "Perform search and replace operations on text content with support for regex and case sensitivity",
+        "display_name": "Search Replace Text"
+      }
+    },
+    {
+      "class_name": "TextInput",
+      "file_path": "griptape_nodes_library/text/create_multiline_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "TextInput node",
+        "display_name": "Text Input"
       }
     },
     {
