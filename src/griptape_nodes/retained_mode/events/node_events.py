@@ -62,7 +62,7 @@ class CreateNodeResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class DeleteNodeRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context.
-    node_name: str | None = None
+    node_id: str | None = None
 
 
 @dataclass

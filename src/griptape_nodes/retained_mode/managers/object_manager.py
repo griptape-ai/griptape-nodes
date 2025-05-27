@@ -2,7 +2,7 @@ from dataclasses import field
 import logging
 import re
 from re import Pattern
-from typing import Any
+from typing import Any, TypeVar, cast
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
@@ -38,7 +38,6 @@ logger = logging.getLogger("griptape_nodes")
 
 class ObjectManager:
     _id_to_objects: dict[str, object]
-    _existing_names_by_type: dict[type, list[str]] = field(default_factory= lambda: {ControlFlow:[], BaseNode:[], BaseNodeElement:[], Parameter:[]})
 
     def __init__(self, _event_manager: EventManager) -> None:
         self._id_to_objects = {}
@@ -227,11 +226,8 @@ class ObjectManager:
 
         return name_to_return
 
-    def add_object_by_name(self, name: str, obj: object) -> None:
-        if name in self._name_to_objects:
-            msg = f"Attempted to add an object with name '{name}' but an object with that name already exists. The Object Manager is sacrosanct in this regard."
-            raise ValueError(msg)
-        self._name_to_objects[name] = obj
+    def add_object_by_id(self, element_id: str, obj: object) -> None:
+        self._id_to_objects[element_id] = obj
 
     def get_object_by_name(self, name: str) -> object:
         return self._name_to_objects[name]
@@ -245,14 +241,6 @@ class ObjectManager:
             if getattr(item, "name", None) == name:
                 return item
         return None
-
-    def attempt_get_object_by_name_as_type[T](self, name: str, cast_type: type[T]) -> T | None:
-        if cast_type in self._existing_names_by_type and name in self._existing_names_by_type[cast_type]:
-            obj = self.attempt_get_object_by_name(name)
-            if obj is not None:
-                return obj
-        return None
-
     def del_obj(self, obj: object) -> None:
         # Does the object have any children? delete those
         element_id = getattr(obj, "element_id", None)
@@ -269,5 +257,8 @@ class ObjectManager:
         if element_id:
             del self._id_to_objects[element_id]
 
-    def get_obj_by_id(self, element_id: str) -> object | None:
-        return self._id_to_objects.get(element_id, None)
+    def get_object_by_id_as_type[T](self, element_id: str, cast_type: type[T]) -> T | None:
+        obj = self._id_to_objects.get(element_id, None)
+        if isinstance(obj, cast_type):
+            return obj
+        return None

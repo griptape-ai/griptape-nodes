@@ -38,7 +38,7 @@ class CreateFlowResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class DeleteFlowRequest(RequestPayload):
     # If None is passed, assumes we're deleting the flow in the Current Context.
-    flow_name: str | None = None
+    flow_id: str | None = None
 
 
 @dataclass
@@ -57,13 +57,13 @@ class DeleteFlowResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class ListNodesInFlowRequest(RequestPayload):
     # If None is passed, assumes we're using the flow in the Current Context.
-    flow_name: str | None = None
+    flow_id: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class ListNodesInFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    node_names: list[str]
+    node_ids: list[str]
 
 
 @dataclass
@@ -86,7 +86,7 @@ class ListFlowsInCurrentContextRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class ListFlowsInCurrentContextResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    flow_names: list[str]
+    flow_ids: list[str]
 
 
 @dataclass
@@ -100,13 +100,13 @@ class ListFlowsInCurrentContextResultFailure(WorkflowNotAlteredMixin, ResultPayl
 @PayloadRegistry.register
 class ListFlowsInFlowRequest(RequestPayload):
     # Pass in None to get the canvas.
-    parent_flow_name: str | None = None
+    parent_flow_id: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class ListFlowsInFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    flow_names: list[str]
+    flow_ids: list[str]
 
 
 @dataclass

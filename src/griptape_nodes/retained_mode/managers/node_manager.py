@@ -335,7 +335,7 @@ class NodeManager:
         return None
 
     def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911 (complex logic, lots of edge cases)
-        node_name = request.node_name
+        node_name = request.node_id
         node = None
         if node_name is None:
             # Get from the current context.
