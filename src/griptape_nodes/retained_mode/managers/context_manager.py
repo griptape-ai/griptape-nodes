@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.retained_mode.events.context_events import (
     GetWorkflowContextRequest,
     GetWorkflowContextSuccess,
@@ -15,7 +16,6 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from griptape_nodes.exe_types.core_types import BaseNodeElement
-    from griptape_nodes.exe_types.flow import ControlFlow
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.events.flow_events import SerializedFlowCommands
@@ -304,7 +304,9 @@ class ContextManager:
         """
         return self.WorkflowContext(self, workflow_name)
 
-    def flow(self, flow: ControlFlow) -> ContextManager.FlowContext:
+    def flow(self, flow: ControlFlow | str) -> ContextManager.FlowContext:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         """Create a context manager for a Flow context.
 
         Args:
@@ -313,9 +315,21 @@ class ContextManager:
         Returns:
             A context manager for the Flow context.
         """
+        if isinstance(flow, str):
+            try:
+                control_flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(flow, ControlFlow)
+                if control_flow is None:
+                    msg = f"Flow '{flow}' not found in current workflow."
+                    logger.error(msg)
+                    raise ValueError(msg)
+                flow = control_flow
+            except KeyError as e:
+                msg = f"Flow '{flow}' not found in current workflow."
+                logger.error(msg)
+                raise ValueError(msg) from e
         return self.FlowContext(self, flow)
 
-    def node(self, node: BaseNode) -> ContextManager.NodeContext:
+    def node(self, node: str | BaseNode) -> ContextManager.NodeContext:
         """Create a context manager for a Node context.
 
         Args:
@@ -324,9 +338,16 @@ class ContextManager:
         Returns:
             A context manager for the Node context.
         """
+        if isinstance(node, str):
+            try:
+                node = self.get_current_flow().nodes[node]
+            except KeyError as e:
+                msg = f"Node '{node}' not found in current flow."
+                logger.error(msg)
+                raise ValueError(msg) from e
         return self.NodeContext(self, node)
 
-    def element(self, element: BaseNodeElement) -> ContextManager.ElementContext:
+    def element(self, element: BaseNodeElement | str) -> ContextManager.ElementContext:
         """Create a context manager for an Element context.
 
         Args:
@@ -335,6 +356,18 @@ class ContextManager:
         Returns:
             A context manager for the Element context.
         """
+        if isinstance(element, str):
+            try:
+                node_element = self.get_current_node().root_ui_element.find_element_by_name(element)
+                if node_element is None:
+                    msg = f"Element '{element}' not found in current node."
+                    logger.error(msg)
+                    raise ValueError(msg)
+                element = node_element
+            except KeyError as e:
+                msg = f"Element '{element}' not found in current node."
+                logger.error(msg)
+                raise ValueError(msg) from e
         return self.ElementContext(self, element)
 
     def has_current_workflow(self) -> bool:

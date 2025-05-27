@@ -1403,7 +1403,9 @@ class NodeManager:
             obj_mgr = GriptapeNodes.ObjectManager()
             node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
             if node is None:
-                details = f"Attempted to get compatible parameters for node '{node_name}', but that node does not exist."
+                details = (
+                    f"Attempted to get compatible parameters for node '{node_name}', but that node does not exist."
+                )
                 logger.error(details)
                 return GetCompatibleParametersResultFailure()
 
@@ -1824,7 +1826,7 @@ class NodeManager:
         GriptapeNodes.ContextManager()._clipboard.parameter_uuid_to_values = unique_uuid_to_values
         return SerializeSelectedNodesToCommandsResultSuccess(final_result)
 
-    def on_deserialize_selected_nodes_from_commands(  # noqa: C901
+    def on_deserialize_selected_nodes_from_commands(  # noqa: C901, PLR0912
         self,
         request: DeserializeSelectedNodesFromCommandsRequest,
     ) -> ResultPayload:
