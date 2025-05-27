@@ -85,6 +85,7 @@ class Agent(ControlNode):
                 output_type="Agent",
                 tooltip="Create a new agent, or continue a chat with an existing agent.",
                 default_value=None,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
         # Selection for the Griptape Cloud model.
@@ -143,7 +144,7 @@ class Agent(ControlNode):
         self.add_parameter(
             ParameterList(
                 name="rulesets",
-                input_types=["Ruleset", "List[Ruleset]"],
+                input_types=["Ruleset"],
                 tooltip="Rulesets to apply to the agent to control its behavior.",
                 default_value=[],
                 allowed_modes={ParameterMode.INPUT},
@@ -158,7 +159,7 @@ class Agent(ControlNode):
                 default_value="",
                 tooltip="The final text response from the agent.",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"multiline": True, "placeholder_text": "Agent response", "markdown": True},
+                ui_options={"multiline": True, "placeholder_text": "Agent response", "markdown": False},
             )
         )
 
@@ -194,13 +195,21 @@ class Agent(ControlNode):
                 modified_parameters_set.add(param_name)
 
         if target_parameter.name == "model" and source_parameter.name == "prompt_model_config":
-            # Check and see if the incoming connection is from a prompt model config or an agent.
-            target_parameter.type = source_parameter.type
+            # Remove the options trait
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
 
+            # Check and see if the incoming connection is from a prompt model config or an agent.
+            target_parameter.type = source_parameter.type
+
+            # Remove ParameterMode.PROPERTY so it forces the node mark itself dirty & remove the value
+            target_parameter.allowed_modes = {ParameterMode.INPUT}
+
+            # Set the display name to be appropriate
             target_parameter._ui_options["display_name"] = source_parameter.ui_options.get(
                 "display_name", source_parameter.name
             )
+
+            # make sure we update the model
             modified_parameters_set.add("model")
 
         # If additional context is connected, prevent editing via property panel.
@@ -228,13 +237,21 @@ class Agent(ControlNode):
                 modified_parameters_set.add(param_name)
 
         if target_parameter.name == "model":
+            # Reset the parameter type
             target_parameter.type = "str"
-            target_parameter.add_trait(Options(choices=MODEL_CHOICES))
-            # Sometimes the value is not set to the default value - these are all attemnpts to get it to work.
+
+            # Enable PROPERTY so the user can set it
+            target_parameter.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY}
+
+            # Sometimes the value is not set to the default value - these are all attempts to get it to work.
             target_parameter.set_default_value(DEFAULT_MODEL)
             target_parameter.default_value = DEFAULT_MODEL
             self.set_parameter_value("model", DEFAULT_MODEL)
 
+            # Add the options trait
+            target_parameter.add_trait(Options(choices=MODEL_CHOICES))
+
+            # Change the display name to be appropriate
             target_parameter._ui_options["display_name"] = "prompt model"
 
             modified_parameters_set.add("model")
@@ -250,7 +267,6 @@ class Agent(ControlNode):
         )
 
     # --- Validation ---
-
     def validate_before_workflow_run(self) -> list[Exception] | None:
         """Performs pre-run validation checks for the node.
 
@@ -323,8 +339,6 @@ class Agent(ControlNode):
         Returns:
             An AsyncResult indicating the structure being processed (the agent).
         """
-        # Get the parameters from the node
-        params = self.parameter_values
         model_input = self.get_parameter_value("model")
         agent = None
         include_details = self.get_parameter_value("include_details")
@@ -337,13 +351,12 @@ class Agent(ControlNode):
 
         # Get any tools
         # tools = self.get_parameter_value("tools")  # noqa: ERA001
-        tools = [tool for tool in params.get("tools", []) if tool]
+        tools = self.get_parameter_list_value("tools")
         if include_details and tools:
             self.append_value_to_parameter("logs", f"[Tools]: {', '.join([tool.name for tool in tools])}\n")
 
         # Get any rulesets
-        # rulesets = self.get_parameter_value("rulesets")  # noqa: ERA001
-        rulesets = [ruleset for ruleset in params.get("rulesets", []) if ruleset]
+        rulesets = self.get_parameter_list_value("rulesets")
         if include_details and rulesets:
             self.append_value_to_parameter(
                 "logs",

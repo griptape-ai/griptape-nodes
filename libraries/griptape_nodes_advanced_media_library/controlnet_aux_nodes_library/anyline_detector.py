@@ -1,6 +1,10 @@
 import logging
+import warnings
 
-import controlnet_aux  # type: ignore[reportMissingImports]
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")  # Silence noisy but harmless warnings from controlnet_aux
+    import controlnet_aux  # type: ignore[reportMissingImports]
+
 import huggingface_hub
 import PIL.Image
 import torch  # type: ignore[reportMissingImports]
@@ -33,7 +37,6 @@ class AnylineDetector(ControlNode):
                 name="input_image",
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="input_image",
             )
         )

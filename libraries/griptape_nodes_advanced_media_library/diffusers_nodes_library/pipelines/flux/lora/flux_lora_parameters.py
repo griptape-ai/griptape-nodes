@@ -13,7 +13,6 @@ class FluxLoraParameters:
                 default_value=1.0,
                 input_types=["float"],
                 type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="prompt",
                 ui_options={"slider": {"min_val": 0.0, "max_val": 1.0}, "step": 0.01},
             )
@@ -24,8 +23,8 @@ class FluxLoraParameters:
             Parameter(
                 name="loras",
                 default_value=1.0,
-                input_types=["dict"],
-                type="dict",
+                type="loras",
+                output_type="loras",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="loras",
             )
