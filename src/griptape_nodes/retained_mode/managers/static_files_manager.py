@@ -2,6 +2,7 @@ import base64
 import binascii
 import logging
 
+import httpx
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
