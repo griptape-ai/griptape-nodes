@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
+from dataclasses import field
 from enum import StrEnum, auto
 from typing import Any, TypeVar
 
@@ -52,6 +54,8 @@ class NodeResolutionState(StrEnum):
 
 class BaseNode(ABC):
     # Owned by a flow
+    # non-changeable Node Id on creation.
+    element_id: str = field(default_factory= lambda: str(uuid.uuid4().hex))
     name: str
     metadata: dict[Any, Any]
 

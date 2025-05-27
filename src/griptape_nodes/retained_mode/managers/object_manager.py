@@ -1,3 +1,4 @@
+from dataclasses import field
 import logging
 import re
 from re import Pattern
@@ -36,10 +37,11 @@ logger = logging.getLogger("griptape_nodes")
 
 
 class ObjectManager:
-    _name_to_objects: dict[str, object]
+    _id_to_objects: dict[str, object]
+    _existing_names_by_type: dict[type, list[str]] = field(default_factory= lambda: {ControlFlow:[], BaseNode:[], BaseNodeElement:[], Parameter:[]})
 
     def __init__(self, _event_manager: EventManager) -> None:
-        self._name_to_objects = {}
+        self._id_to_objects = {}
         _event_manager.assign_manager_to_request_type(
             request_type=RenameObjectRequest, callback=self.on_rename_object_request
         )
@@ -239,17 +241,21 @@ class ObjectManager:
         return has_it
 
     def attempt_get_object_by_name(self, name: str) -> Any | None:
-        return self._name_to_objects.get(name, None)
-
-    def attempt_get_object_by_name_as_type[T](self, name: str, cast_type: type[T]) -> T | None:
-        obj = self.attempt_get_object_by_name(name)
-        if obj is not None and isinstance(obj, cast_type):
-            return obj
+        for item in self._id_to_objects.values():
+            if getattr(item, "name", None) == name:
+                return item
         return None
 
-    def del_obj_by_name(self, name: str) -> None:
+    def attempt_get_object_by_name_as_type[T](self, name: str, cast_type: type[T]) -> T | None:
+        if cast_type in self._existing_names_by_type and name in self._existing_names_by_type[cast_type]:
+            obj = self.attempt_get_object_by_name(name)
+            if obj is not None:
+                return obj
+        return None
+
+    def del_obj(self, obj: object) -> None:
         # Does the object have any children? delete those
-        obj = self._name_to_objects[name]
+        element_id = getattr(obj, "element_id", None)
         if isinstance(obj, BaseNodeElement):
             children = obj.find_elements_by_type(BaseNodeElement)
             for child in children:
@@ -260,4 +266,5 @@ class ObjectManager:
                 if isinstance(child, Parameter) and isinstance(obj, BaseNode):
                     GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, obj.name))
                     return
-        del self._name_to_objects[name]
+        if element_id:
+            del self._id_to_objects[element_id]
