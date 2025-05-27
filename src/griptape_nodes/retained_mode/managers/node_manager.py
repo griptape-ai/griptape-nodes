@@ -276,7 +276,9 @@ class NodeManager:
 
         logger.log(level=log_level, msg=details)
 
-        return CreateNodeResultSuccess(node_name=node.name)
+        return CreateNodeResultSuccess(
+            node_name=node.name, node_type=node.__class__.__name__, specific_library_name=request.specific_library_name
+        )
 
     def cancel_conditionally(
         self, parent_flow: ControlFlow, parent_flow_name: str, node: BaseNode

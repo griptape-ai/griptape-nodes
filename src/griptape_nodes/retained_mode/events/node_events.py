@@ -48,6 +48,8 @@ class CreateNodeRequest(RequestPayload):
 @PayloadRegistry.register
 class CreateNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     node_name: str
+    node_type: str
+    specific_library_name: str | None = None
 
 
 @dataclass

@@ -261,7 +261,7 @@ class WorkflowManager:
             list[re.Match[str]]: A list of regex matches for the specified metadata block.
 
         """
-        with workflow_file_path.open("r") as file:
+        with workflow_file_path.open("r", encoding="utf-8") as file:
             workflow_content = file.read()
 
         # Find the metadata block.
@@ -380,7 +380,7 @@ class WorkflowManager:
             GriptapeNodes.LibraryManager().load_all_libraries_from_config()
 
             # Now execute the workflow.
-            with Path(complete_file_path).open() as file:
+            with Path(complete_file_path).open(encoding="utf-8") as file:
                 workflow_content = file.read()
             exec(workflow_content)  # noqa: S102
         except Exception as e:
@@ -1058,7 +1058,7 @@ class WorkflowManager:
 
         relative_serialized_file_path = f"{file_name}.py"
         serialized_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_serialized_file_path)
-        with serialized_file_path.open("w") as file:
+        with serialized_file_path.open("w", encoding="utf-8") as file:
             file.write(final_code_output)
 
         # save the created workflow as an entry in the JSON config file.
@@ -1948,15 +1948,15 @@ class WorkflowManager:
                         '["REPLACE_LIBRARY_PATHS"]',
                         f"[{', '.join(library_paths)}]",
                     )
-                with temp_register_libraries_script_path.open("w") as register_libraries_script_file:
+                with temp_register_libraries_script_path.open("w", encoding="utf-8") as register_libraries_script_file:
                     register_libraries_script_file.write(register_libraries_script_contents)
 
                 config_file_path.parent.mkdir(parents=True, exist_ok=True)
-                with config_file_path.open("w") as config_file:
+                with config_file_path.open("w", encoding="utf-8") as config_file:
                     config_file.write(json.dumps(config, indent=4))
 
                 init_file_path.parent.mkdir(parents=True, exist_ok=True)
-                with init_file_path.open("w") as init_file:
+                with init_file_path.open("w", encoding="utf-8") as init_file:
                     init_file.write('"""This is a temporary __init__.py file for the structure."""\n')
 
                 shutil.copyfile(config_file_path, tmp_dir_path / "griptape_nodes_config.json")
@@ -1971,7 +1971,7 @@ class WorkflowManager:
             if source == "git" and commit_id is not None:
                 engine_version = commit_id
             requirements_file_path = tmp_dir_path / "requirements.txt"
-            with requirements_file_path.open("w") as requirements_file:
+            with requirements_file_path.open("w", encoding="utf-8") as requirements_file:
                 requirements_file.write(
                     f"griptape-nodes @ git+https://github.com/griptape-ai/griptape-nodes.git@{engine_version}\n"
                 )

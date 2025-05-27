@@ -133,9 +133,10 @@ def _get_args() -> argparse.Namespace:
         help="Set the Griptape Nodes workspace directory.",
         default=os.getenv("GTN_WORKSPACE_DIRECTORY", None),
     )
+    register_advanced_library = os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", None)
     init_parser.add_argument(
         "--register-advanced-library",
-        default=os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", "false").lower() == "true",
+        default=register_advanced_library.lower() == "true" if register_advanced_library is not None else None,
         help="Install the Griptape Nodes Advanced Image Library.",
     )
 
@@ -543,7 +544,7 @@ def __init_system_config() -> None:
     for file_name in files_to_create:
         file_path = CONFIG_DIR / file_name[0]
         if not file_path.exists():
-            with Path.open(file_path, "w") as file:
+            with Path.open(file_path, "w", encoding="utf-8") as file:
                 file.write(file_name[1])
 
 
