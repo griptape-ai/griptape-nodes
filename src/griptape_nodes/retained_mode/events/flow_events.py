@@ -16,7 +16,7 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @dataclass(kw_only=True)
 @PayloadRegistry.register
 class CreateFlowRequest(RequestPayload):
-    parent_flow_name: str | None
+    parent_flow_id: str | None
     flow_name: str | None = None
     # When True, this Flow will be pushed as the new Current Context.
     set_as_new_context: bool = True

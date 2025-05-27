@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import field
 import logging
 from queue import Queue
 from typing import TYPE_CHECKING, NamedTuple
+import uuid
 
 from griptape.events import EventBus
 
@@ -36,6 +38,7 @@ class ControlFlow:
     control_flow_machine: ControlFlowMachine
     single_node_resolution: bool
     flow_queue: Queue[BaseNode]
+    element_id: str = field(default_factory=lambda: str(uuid.uuid4().hex))
 
     def __init__(self, name: str) -> None:
         self.name = name

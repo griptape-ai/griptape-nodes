@@ -268,3 +268,6 @@ class ObjectManager:
                     return
         if element_id:
             del self._id_to_objects[element_id]
+
+    def get_obj_by_id(self, element_id: str) -> object | None:
+        return self._id_to_objects.get(element_id, None)

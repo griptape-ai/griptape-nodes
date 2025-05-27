@@ -99,7 +99,7 @@ logger = logging.getLogger("griptape_nodes")
 
 
 class FlowManager:
-    _name_to_parent_name: dict[str, str | None]
+    _id_to_parent_id: dict[str, str | None]
 
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(CreateFlowRequest, self.on_create_flow_request)
@@ -131,16 +131,16 @@ class FlowManager:
             DeserializeFlowFromCommandsRequest, self.on_deserialize_flow_from_commands
         )
 
-        self._name_to_parent_name = {}
+        self._id_to_parent_id = {}
 
-    def get_parent_flow(self, flow_name: str) -> str | None:
-        if flow_name in self._name_to_parent_name:
-            return self._name_to_parent_name[flow_name]
-        msg = f"Flow with name {flow_name} doesn't exist"
+    def get_parent_flow(self, flow_id: str) -> str | None:
+        if flow_id in self._id_to_parent_id:
+            return self._id_to_parent_id[flow_id]
+        msg = f"Flow with id {flow_id} doesn't exist"
         raise ValueError(msg)
 
     def on_get_top_level_flow_request(self, request: GetTopLevelFlowRequest) -> ResultPayload:  # noqa: ARG002 (the request has to be assigned to the method)
-        for flow_name, parent in self._name_to_parent_name.items():
+        for flow_name, parent in self._id_to_parent_id.items():
             if parent is None:
                 return GetTopLevelFlowResultSuccess(flow_name=flow_name)
         msg = "Attempted to get top level flow, but no such flow exists"
@@ -149,11 +149,10 @@ class FlowManager:
 
     def does_canvas_exist(self) -> bool:
         """Determines if there is already an existing flow with no parent flow.Returns True if there is an existing flow with no parent flow.Return False if there is no existing flow with no parent flow."""
-        return any([parent is None for parent in self._name_to_parent_name.values()])  # noqa: C419
+        return any([parent is None for parent in self._id_to_parent_id.values()])  # noqa: C419
 
     def on_create_flow_request(self, request: CreateFlowRequest) -> ResultPayload:
-        # Who is the parent?
-        parent_name = request.parent_flow_name
+        parent_id = request.parent_flow_id
 
         # This one's tricky. If they said "None" for the parent, they could either be saying:
         # 1. Use whatever the current context is to be the parent.
@@ -162,30 +161,23 @@ class FlowManager:
         # We'll explore #1 first by seeing if the Context Manager already has a current flow,
         # which would mean the canvas is already established:
         parent = None
-        if (parent_name is None) and (GriptapeNodes.ContextManager().has_current_flow()):
-            # Aha! Just use that.
-            parent = GriptapeNodes.ContextManager().get_current_flow()
-            parent_name = parent.name
 
-        # TODO: FIX THIS LOGIC MESS https://github.com/griptape-ai/griptape-nodes/issues/616
-
-        if parent_name is not None and parent is None:
-            parent = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(parent_name, ControlFlow)
-        if parent_name is None:
-            if self.does_canvas_exist():
-                # We're trying to create the canvas. Ensure that parent does NOT already exist.
-                details = "Attempted to create a Flow as the Canvas (top-level Flow with no parents), but the Canvas already exists."
-                logger.error(details)
-                result = CreateFlowResultFailure()
-                return result
-        # Now our parent exists, right?
-        elif parent is None:
-            details = f"Attempted to create a Flow with a parent '{request.parent_flow_name}', but no parent with that name could be found."
-            logger.error(details)
-
-            result = CreateFlowResultFailure()
-
-            return result
+        # Try to resolve the parent flow
+        if parent_id is None:
+            if GriptapeNodes.ContextManager().has_current_flow():
+                # Use current flow as parent if available
+                parent = GriptapeNodes.ContextManager().get_current_flow()
+            # No parent specified and no current flow - attempting to create canvas
+            elif self.does_canvas_exist():
+                logger.error("Cannot create Canvas: a top-level Flow already exists")
+                return CreateFlowResultFailure()
+        else:
+            # Specific parent ID was provided
+            parent = GriptapeNodes.ObjectManager().get_obj_by_id(parent_id)
+            if parent is None:
+                msg = f"Failed to create Flow: parent with ID '{parent_id}' not found"
+                logger.error(msg)
+                return CreateFlowResultFailure()
 
         # We need to have a current workflow context to proceed.
         if not GriptapeNodes.ContextManager().has_current_workflow():
@@ -199,7 +191,7 @@ class FlowManager:
         )
         flow = ControlFlow(name=final_flow_name)
         GriptapeNodes.ObjectManager().add_object_by_name(name=final_flow_name, obj=flow)
-        self._name_to_parent_name[final_flow_name] = parent_name
+        self._id_to_parent_id[final_flow_name] = parent_name
 
         # See if we need to push it as the current context.
         if request.set_as_new_context:
@@ -303,7 +295,7 @@ class FlowManager:
             # If we've made it this far, we have deleted all the children Flows and their nodes.
             # Remove the flow from our map.
             obj_mgr.del_obj_by_name(flow.name)
-            del self._name_to_parent_name[flow.name]
+            del self._id_to_parent_id[flow.name]
 
         details = f"Successfully deleted Flow '{flow_name}'."
         logger.debug(details)
@@ -372,7 +364,7 @@ class FlowManager:
 
         # Create a list of all child flow names that point DIRECTLY to us.
         ret_list = []
-        for flow_name, parent_name in self._name_to_parent_name.items():
+        for flow_name, parent_name in self._id_to_parent_id.items():
             if parent_name == request.parent_flow_name:
                 ret_list.append(flow_name)
 
@@ -393,14 +385,14 @@ class FlowManager:
 
     def handle_flow_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old flow name and its parent first.
-        parent = self._name_to_parent_name[old_name]
-        self._name_to_parent_name[new_name] = parent
-        del self._name_to_parent_name[old_name]
+        parent = self._id_to_parent_id[old_name]
+        self._id_to_parent_id[new_name] = parent
+        del self._id_to_parent_id[old_name]
 
         # Now iterate through everyone who pointed to the old one as a parent and update it.
-        for flow_name, parent_name in self._name_to_parent_name.items():
+        for flow_name, parent_name in self._id_to_parent_id.items():
             if parent_name == old_name:
-                self._name_to_parent_name[flow_name] = new_name
+                self._id_to_parent_id[flow_name] = new_name
 
         # Let the Node Manager know about the change, too.
         GriptapeNodes.NodeManager().handle_flow_rename(old_name=old_name, new_name=new_name)
@@ -446,6 +438,7 @@ class FlowManager:
             except ValueError as err:
                 details = f'Connection failed: "{target_node_name}" does not exist. Error: {err}.'
                 logger.error(details)
+
                 return CreateConnectionResultFailure()
 
         # The two nodes exist.
@@ -1113,7 +1106,7 @@ class FlowManager:
 
         # Create a list of all child flow names that point DIRECTLY to us.
         ret_list = []
-        for flow_name, parent_name in self._name_to_parent_name.items():
+        for flow_name, parent_name in self._id_to_parent_id.items():
             if parent_name == parent_flow_name:
                 ret_list.append(flow_name)
 
