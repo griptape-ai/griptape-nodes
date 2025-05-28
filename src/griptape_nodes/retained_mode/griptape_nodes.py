@@ -155,7 +155,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return cls()
 
     @classmethod
-    def handle_request(cls, request: RequestPayload) -> ResultPayload:
+    def handle_request(cls, request: RequestPayload):
         event_mgr = GriptapeNodes.EventManager()
         obj_depth_mgr = GriptapeNodes.OperationDepthManager()
         workflow_mgr = GriptapeNodes.WorkflowManager()
