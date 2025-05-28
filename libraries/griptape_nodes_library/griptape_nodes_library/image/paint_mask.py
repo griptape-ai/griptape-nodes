@@ -25,7 +25,7 @@ class PaintMask(DataNode):
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 tooltip="Optional base image to draw over.",
-                ui_options={"expander": True},
+                ui_options={"expander": True, "edit_mask": True},
             )
         )
 
@@ -35,7 +35,7 @@ class PaintMask(DataNode):
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageUrlArtifact",
                 tooltip="Output mask image.",
-                ui_options={"expander": True},
+                ui_options={"expander": True, "edit_mask": True},
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
