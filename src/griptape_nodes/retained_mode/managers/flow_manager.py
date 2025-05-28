@@ -810,16 +810,15 @@ class FlowManager:
 
     def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         # which flow
-        flow_name = request.flow_name
+        flow_id = request.flow_id
         debug_mode = request.debug_mode
-        if not flow_name:
-            details = "Must provide flow name to start a flow."
+        if not flow_id:
+            details = "Must provide flow ID to start a flow."
             logger.error(details)
-
             return StartFlowResultFailure(validation_exceptions=[])
         # get the flow by ID
         try:
-            flow = self.get_flow_by_name(flow_name)
+            flow = self.get_flow_by_id(flow_id)
         except KeyError as err:
             details = f"Cannot start flow. Error: {err}"
             logger.error(details)
@@ -830,18 +829,18 @@ class FlowManager:
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[])
         # A node has been provided to either start or to run up to.
-        if request.flow_node_name:
-            flow_node_name = request.flow_node_name
-            flow_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(flow_node_name, BaseNode)
+        if request.flow_node_id:
+            flow_node_id = request.flow_node_id
+            flow_node = GriptapeNodes.ObjectManager().get_object_by_id_as_type(flow_node_id, BaseNode)
             if not flow_node:
-                details = f"Provided node with name {flow_node_name} does not exist"
+                details = f"Provided node with ID {flow_node_id} does not exist"
                 logger.error(details)
                 return StartFlowResultFailure(validation_exceptions=[])
             # lets get the first control node in the flow!
             start_node = flow.get_start_node_from_node(flow_node)
             # if the start is not the node provided, set a breakpoint at the stop (we're running up until there)
             if not start_node:
-                details = f"Start node for node with name {flow_node_name} does not exist"
+                details = f"Start node for node with ID {flow_node_id} does not exist"
                 logger.error(details)
                 return StartFlowResultFailure(validation_exceptions=[])
             if start_node != flow_node:
@@ -853,47 +852,47 @@ class FlowManager:
             start_node = None
         # Run Validation before starting a flow
         result = self.on_validate_flow_dependencies_request(
-            ValidateFlowDependenciesRequest(flow_name=flow_name, flow_node_name=start_node.name if start_node else None)
+            ValidateFlowDependenciesRequest(flow_id=flow_id, flow_node_id=start_node.element_id if start_node else None)
         )
         try:
             if not result.succeeded():
-                details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed"
+                details = f"Couldn't start flow with ID {flow_id}. Flow Validation Failed"
                 logger.error(details)
                 return StartFlowResultFailure(validation_exceptions=[])
             result = cast("ValidateFlowDependenciesResultSuccess", result)
 
             if not result.validation_succeeded:
-                details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed."
+                details = f"Couldn't start flow with ID {flow_id}. Flow Validation Failed."
                 if len(result.exceptions) > 0:
                     for exception in result.exceptions:
                         details = f"{details}\n\t{exception}"
                 logger.error(details)
                 return StartFlowResultFailure(validation_exceptions=result.exceptions)
         except Exception as e:
-            details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed: {e}"
+            details = f"Couldn't start flow with ID {flow_id}. Flow Validation Failed: {e}"
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[e])
         # By now, it has been validated with no exceptions.
         try:
             flow.start_flow(start_node, debug_mode)
         except Exception as e:
-            details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
+            details = f"Failed to kick off flow with ID {flow_id}. Exception occurred: {e} "
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[e])
 
-        details = f"Successfully kicked off flow with name {flow_name}"
+        details = f"Successfully kicked off flow with ID {flow_id} (name: {flow.name})"
         logger.debug(details)
 
         return StartFlowResultSuccess()
 
     def on_get_flow_state_request(self, event: GetFlowStateRequest) -> ResultPayload:
-        flow_name = event.flow_name
-        if not flow_name:
-            details = "Could not get flow state. No flow name was provided."
+        flow_id = event.flow_id
+        if not flow_id:
+            details = "Could not get flow state. No flow ID was provided."
             logger.error(details)
             return GetFlowStateResultFailure()
         try:
-            flow = self.get_flow_by_name(flow_name)
+            flow = self.get_flow_by_id(flow_id)
         except KeyError as err:
             details = f"Could not get flow state. Error: {err}"
             logger.error(details)
@@ -901,52 +900,46 @@ class FlowManager:
         try:
             control_node, resolving_node = flow.flow_state()
         except Exception as e:
-            details = f"Failed to get flow state of flow with name {flow_name}. Exception occurred: {e} "
+            details = f"Failed to get flow state of flow with ID {flow_id}. Exception occurred: {e} "
             logger.exception(details)
             return GetFlowStateResultFailure()
-        details = f"Successfully got flow state for flow with name {flow_name}."
+        details = f"Successfully got flow state for flow with ID {flow_id} (name: {flow.name})."
         logger.debug(details)
         return GetFlowStateResultSuccess(control_node=control_node, resolving_node=resolving_node)
 
     def on_cancel_flow_request(self, request: CancelFlowRequest) -> ResultPayload:
-        flow_name = request.flow_name
-        if not flow_name:
-            details = "Could not cancel flow execution. No flow name was provided."
+        flow_id = request.flow_id
+        if not flow_id:
+            details = "Could not cancel flow execution. No flow ID was provided."
             logger.error(details)
-
             return CancelFlowResultFailure()
         try:
-            flow = self.get_flow_by_name(flow_name)
+            flow = self.get_flow_by_id(flow_id)
         except KeyError as err:
             details = f"Could not cancel flow execution. Error: {err}"
             logger.error(details)
-
             return CancelFlowResultFailure()
         try:
             flow.cancel_flow_run()
         except Exception as e:
             details = f"Could not cancel flow execution. Exception: {e}"
             logger.error(details)
-
             return CancelFlowResultFailure()
-        details = f"Successfully cancelled flow execution with name {flow_name}"
+        details = f"Successfully cancelled flow execution with ID {flow_id} (name: {flow.name})"
         logger.debug(details)
-
         return CancelFlowResultSuccess()
 
     def on_single_node_step_request(self, request: SingleNodeStepRequest) -> ResultPayload:
-        flow_name = request.flow_name
-        if not flow_name:
-            details = "Could not advance to the next step of a running workflow. No flow name was provided."
+        flow_id = request.flow_id
+        if not flow_id:
+            details = "Could not advance to the next step of a running workflow. No flow ID was provided."
             logger.error(details)
-
             return SingleNodeStepResultFailure(validation_exceptions=[])
         try:
-            flow = self.get_flow_by_name(flow_name)
+            flow = self.get_flow_by_id(flow_id)
         except KeyError as err:
-            details = f"Could not advance to the next step of a running workflow. No flow with name {flow_name} exists. Error: {err}"
+            details = f"Could not advance to the next step of a running workflow. No flow with ID {flow_id} exists. Error: {err}"
             logger.error(details)
-
             return SingleNodeStepResultFailure(validation_exceptions=[err])
         try:
             flow.single_node_step()
@@ -956,24 +949,21 @@ class FlowManager:
             return SingleNodeStepResultFailure(validation_exceptions=[])
 
         # All completed happily
-        details = f"Successfully advanced to the next step of a running workflow with name {flow_name}"
+        details = f"Successfully advanced to the next step of a running workflow with ID {flow_id} (name: {flow.name})"
         logger.debug(details)
-
         return SingleNodeStepResultSuccess()
 
     def on_single_execution_step_request(self, request: SingleExecutionStepRequest) -> ResultPayload:
-        flow_name = request.flow_name
-        if not flow_name:
-            details = "Could not advance to the next step of a running workflow. No flow name was provided."
+        flow_id = request.flow_id
+        if not flow_id:
+            details = "Could not advance to the next step of a running workflow. No flow ID was provided."
             logger.error(details)
-
             return SingleExecutionStepResultFailure()
         try:
-            flow = self.get_flow_by_name(flow_name)
+            flow = self.get_flow_by_id(flow_id)
         except KeyError as err:
             details = f"Could not advance to the next step of a running workflow. Error: {err}."
             logger.error(details)
-
             return SingleExecutionStepResultFailure()
         change_debug_mode = request.request_id is not None
         try:
@@ -986,28 +976,24 @@ class FlowManager:
             except Exception as e_inner:
                 details = f"Could not cancel flow execution. Exception: {e_inner}"
                 logger.error(details)
-
             details = f"Could not advance to the next step of a running workflow. Exception: {e}"
             logger.error(details)
             return SingleNodeStepResultFailure(validation_exceptions=[e])
-        details = f"Successfully advanced to the next step of a running workflow with name {flow_name}"
+        details = f"Successfully advanced to the next step of a running workflow with ID {flow_id} (name: {flow.name})"
         logger.debug(details)
-
         return SingleExecutionStepResultSuccess()
 
     def on_continue_execution_step_request(self, request: ContinueExecutionStepRequest) -> ResultPayload:
-        flow_name = request.flow_name
-        if not flow_name:
-            details = "Failed to continue execution step because no flow name was provided"
+        flow_id = request.flow_id
+        if not flow_id:
+            details = "Failed to continue execution step because no flow ID was provided"
             logger.error(details)
-
             return ContinueExecutionStepResultFailure()
         try:
-            flow = self.get_flow_by_name(flow_name)
+            flow = self.get_flow_by_id(flow_id)
         except KeyError as err:
             details = f"Failed to continue execution step. Error: {err}"
             logger.error(details)
-
             return ContinueExecutionStepResultFailure()
         try:
             flow.continue_executing()
@@ -1015,18 +1001,18 @@ class FlowManager:
             details = f"Failed to continue execution step. An exception occurred: {e}."
             logger.error(details)
             return ContinueExecutionStepResultFailure()
-        details = f"Successfully continued flow with name {flow_name}"
+        details = f"Successfully continued flow with ID {flow_id} (name: {flow.name})"
         logger.debug(details)
         return ContinueExecutionStepResultSuccess()
 
     def on_unresolve_flow_request(self, request: UnresolveFlowRequest) -> ResultPayload:
-        flow_name = request.flow_name
-        if not flow_name:
-            details = "Failed to unresolve flow because no flow name was provided"
+        flow_id = request.flow_id
+        if not flow_id:
+            details = "Failed to unresolve flow because no flow ID was provided"
             logger.error(details)
             return UnresolveFlowResultFailure()
         try:
-            flow = self.get_flow_by_name(flow_name)
+            flow = self.get_flow_by_id(flow_id)
         except KeyError as err:
             details = f"Failed to unresolve flow. Error: {err}"
             logger.error(details)
@@ -1037,24 +1023,24 @@ class FlowManager:
             details = f"Failed to unresolve flow. An exception occurred: {e}."
             logger.error(details)
             return UnresolveFlowResultFailure()
-        details = f"Unresolved flow with name {flow_name}"
+        details = f"Unresolved flow with ID {flow_id} (name: {flow.name})"
         logger.debug(details)
         return UnresolveFlowResultSuccess()
 
     def on_validate_flow_dependencies_request(self, request: ValidateFlowDependenciesRequest) -> ResultPayload:
-        flow_name = request.flow_name
-        # get the flow name
+        flow_id = request.flow_id
+        # get the flow by ID
         try:
-            flow = self.get_flow_by_name(flow_name)
+            flow = self.get_flow_by_id(flow_id)
         except KeyError as err:
             details = f"Failed to validate flow. Error: {err}"
             logger.error(details)
             return ValidateFlowDependenciesResultFailure()
-        if request.flow_node_name:
-            flow_node_name = request.flow_node_name
-            flow_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(flow_node_name, BaseNode)
+        if request.flow_node_id:
+            flow_node_id = request.flow_node_id
+            flow_node = GriptapeNodes.ObjectManager().get_object_by_id_as_type(flow_node_id, BaseNode)
             if not flow_node:
-                details = f"Provided node with name {flow_node_name} does not exist"
+                details = f"Provided node with ID {flow_node_id} does not exist"
                 logger.error(details)
                 return ValidateFlowDependenciesResultFailure()
             # Gets all nodes in that connected group to be ran
@@ -1078,38 +1064,38 @@ class FlowManager:
             return ListFlowsInCurrentContextResultFailure()
 
         parent_flow = GriptapeNodes.ContextManager().get_current_flow()
-        parent_flow_name = parent_flow.name
+        parent_flow_id = parent_flow.element_id
 
-        # Create a list of all child flow names that point DIRECTLY to us.
+        # Create a list of all child flow IDs that point DIRECTLY to us.
         ret_list = []
-        for flow_name, parent_name in self._id_to_parent_id.items():
-            if parent_name == parent_flow_name:
-                ret_list.append(flow_name)
+        for flow_id, parent_id in self._id_to_parent_id.items():
+            if parent_id == parent_flow_id:
+                ret_list.append(flow_id)
 
-        details = f"Successfully got the list of Flows in the Current Context (Flow '{parent_flow_name}')."
+        details = f"Successfully got the list of Flows in the Current Context (Flow '{parent_flow.name}')."
         logger.debug(details)
 
-        return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list)
+        return ListFlowsInCurrentContextResultSuccess(flow_ids=ret_list)
 
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/861
     # similar manager refactors: https://github.com/griptape-ai/griptape-nodes/issues/806
     def on_serialize_flow_to_commands(self, request: SerializeFlowToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
-        flow_name = request.flow_name
+        flow_id = request.flow_id
         flow = None
-        if flow_name is None:
+        if flow_id is None:
             if GriptapeNodes.ContextManager().has_current_flow():
                 flow = GriptapeNodes.ContextManager().get_current_flow()
-                flow_name = flow.name
+                flow_id = flow.element_id
             else:
                 details = "Attempted to serialize a Flow to commands from the Current Context. Failed because the Current Context was empty."
                 logger.error(details)
                 return SerializeFlowToCommandsResultFailure()
         if flow is None:
             # Does this flow exist?
-            flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+            flow = GriptapeNodes.ObjectManager().get_object_by_id_as_type(flow_id, ControlFlow)
             if flow is None:
                 details = (
-                    f"Attempted to serialize Flow '{flow_name}' to commands, but no Flow with that name could be found."
+                    f"Attempted to serialize Flow with ID '{flow_id}' to commands, but no Flow with that ID could be found."
                 )
                 logger.error(details)
                 return SerializeFlowToCommandsResultFailure()
@@ -1125,7 +1111,7 @@ class FlowManager:
         with GriptapeNodes.ContextManager().flow(flow):
             # The base flow creation, if desired.
             if request.include_create_flow_command:
-                create_flow_request = CreateFlowRequest(parent_flow_name=None)
+                create_flow_request = CreateFlowRequest(parent_flow_id=None)
             else:
                 create_flow_request = None
 
@@ -1133,21 +1119,21 @@ class FlowManager:
             set_parameter_value_commands_per_node = {}  # Maps a node UUID to a list of set parameter value commands
 
             # Now each of the child nodes in the flow.
-            node_name_to_uuid = {}
+            node_id_to_uuid = {}
             nodes_in_flow_request = ListNodesInFlowRequest()
             nodes_in_flow_result = GriptapeNodes().handle_request(nodes_in_flow_request)
             if not isinstance(nodes_in_flow_result, ListNodesInFlowResultSuccess):
                 details = (
-                    f"Attempted to serialize Flow '{flow_name}'. Failed while attempting to list Nodes in the Flow."
+                    f"Attempted to serialize Flow with ID '{flow_id}'. Failed while attempting to list Nodes in the Flow."
                 )
                 logger.error(details)
                 return SerializeFlowToCommandsResultFailure()
 
             # Serialize each node
-            for node_name in nodes_in_flow_result.node_names:
-                node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+            for node_id in nodes_in_flow_result.node_ids:
+                node = GriptapeNodes.ObjectManager().get_object_by_id_as_type(node_id, BaseNode)
                 if node is None:
-                    details = f"Attempted to serialize Flow '{flow_name}'. Failed while attempting to serialize Node '{node_name}' within the Flow."
+                    details = f"Attempted to serialize Flow with ID '{flow_id}'. Failed while attempting to serialize Node with ID '{node_id}' within the Flow."
                     logger.error(details)
                     return SerializeFlowToCommandsResultFailure()
                 with GriptapeNodes.ContextManager().node(node):
@@ -1159,14 +1145,14 @@ class FlowManager:
                     )
                     serialize_node_result = GriptapeNodes.handle_request(serialize_node_request)
                     if not isinstance(serialize_node_result, SerializeNodeToCommandsResultSuccess):
-                        details = f"Attempted to serialize Flow '{flow_name}'. Failed while attempting to serialize Node '{node_name}' within the Flow."
+                        details = f"Attempted to serialize Flow with ID '{flow_id}'. Failed while attempting to serialize Node with ID '{node_id}' within the Flow."
                         logger.error(details)
                         return SerializeFlowToCommandsResultFailure()
 
                     serialized_node = serialize_node_result.serialized_node_commands
 
                     # Store the serialized node's UUID for correlation to connections and setting parameter values later.
-                    node_name_to_uuid[node_name] = serialized_node.node_uuid
+                    node_id_to_uuid[node_id] = serialized_node.node_uuid
 
                     serialized_node_commands.append(serialized_node)
                     node_libraries_in_use.add(serialized_node.node_library_details)
@@ -1174,13 +1160,13 @@ class FlowManager:
                     set_value_commands_list = serialize_node_result.set_parameter_value_commands
                     set_parameter_value_commands_per_node[serialized_node.node_uuid] = set_value_commands_list
 
-            # We'll have to do a patch-up of all the connections, since we can't predict all of the node names being accurate
+            # We'll have to do a patch-up of all the connections, since we can't predict all of the node IDs being accurate
             # when we're restored.
             # Create all of the connections
             create_connection_commands = []
             for connection in flow.connections.connections.values():
-                source_node_uuid = node_name_to_uuid[connection.source_node.name]
-                target_node_uuid = node_name_to_uuid[connection.target_node.name]
+                source_node_uuid = node_id_to_uuid[connection.source_node.element_id]
+                target_node_uuid = node_id_to_uuid[connection.target_node.element_id]
                 create_connection_command = SerializedFlowCommands.IndirectConnectionSerialization(
                     source_node_uuid=source_node_uuid,
                     source_parameter_name=connection.source_parameter.name,
@@ -1191,52 +1177,57 @@ class FlowManager:
 
             # Now sub-flows.
             parent_flow = GriptapeNodes.ContextManager().get_current_flow()
-            parent_flow_name = parent_flow.name
-            flows_in_flow_request = ListFlowsInFlowRequest(parent_flow_name=parent_flow_name)
+            parent_flow_id = parent_flow.element_id
+            flows_in_flow_request = ListFlowsInFlowRequest(parent_flow_id=parent_flow_id)
             flows_in_flow_result = GriptapeNodes().handle_request(flows_in_flow_request)
             if not isinstance(flows_in_flow_result, ListFlowsInFlowResultSuccess):
-                details = f"Attempted to serialize Flow '{flow_name}'. Failed while attempting to list child Flows in the Flow."
+                details = f"Attempted to serialize Flow with ID '{flow_id}'. Failed while attempting to list child Flows in the Flow."
                 logger.error(details)
                 return SerializeFlowToCommandsResultFailure()
 
             sub_flow_commands = []
-            for child_flow in flows_in_flow_result.flow_names:
-                flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(child_flow, ControlFlow)
+            for child_flow_id in flows_in_flow_result.flow_ids:
+                flow = GriptapeNodes.ObjectManager().get_object_by_id_as_type(child_flow_id, ControlFlow)
                 if flow is None:
-                    details = f"Attempted to serialize Flow '{flow_name}', but no Flow with that name could be found."
+                    details = f"Attempted to serialize Flow with ID '{flow_id}', but no Flow with that ID could be found."
                     logger.error(details)
                     return SerializeFlowToCommandsResultFailure()
                 with GriptapeNodes.ContextManager().flow(flow=flow):
                     child_flow_request = SerializeFlowToCommandsRequest()
                     child_flow_result = GriptapeNodes().handle_request(child_flow_request)
                     if not isinstance(child_flow_result, SerializeFlowToCommandsResultSuccess):
-                        details = f"Attempted to serialize parent flow '{flow_name}'. Failed while serializing child flow '{child_flow}'."
+                        details = f"Attempted to serialize Flow with ID '{flow_id}'. Failed while attempting to serialize child Flow with ID '{child_flow_id}'."
                         logger.error(details)
                         return SerializeFlowToCommandsResultFailure()
-                    serialized_flow = child_flow_result.serialized_flow_commands
-                    sub_flow_commands.append(serialized_flow)
+                    # Store the command for this sub-flow
+                    sub_flow_commands.append(child_flow_result.serialized_flow_commands)
+                    # Add in any libraries that were referenced by this flow
+                    node_libraries_in_use.union(child_flow_result.node_libraries_used)
 
-                    # Merge in all child flow library details.
-                    node_libraries_in_use.union(serialized_flow.node_libraries_used)
+            # Create a serialization structure to return to the caller.
+            serialized_flow_commands = SerializedFlowCommands(
+                create_flow_command=create_flow_request,
+                serialized_node_commands=serialized_node_commands,
+                create_connection_commands=create_connection_commands,
+                serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                set_parameter_value_commands_per_node=set_parameter_value_commands_per_node,
+                sub_flow_commands=sub_flow_commands,
+            )
 
-        serialized_flow = SerializedFlowCommands(
-            create_flow_command=create_flow_request,
-            serialized_node_commands=serialized_node_commands,
-            serialized_connections=create_connection_commands,
-            unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
-            set_parameter_value_commands=set_parameter_value_commands_per_node,
-            sub_flows_commands=sub_flow_commands,
-            node_libraries_used=node_libraries_in_use,
-        )
-        details = f"Successfully serialized Flow '{flow_name}' into commands."
-        result = SerializeFlowToCommandsResultSuccess(serialized_flow_commands=serialized_flow)
-        return result
+            # Return the serialized flow result
+            result = SerializeFlowToCommandsResultSuccess(
+                serialized_flow_commands=serialized_flow_commands,
+                node_libraries_in_use=node_libraries_in_use,
+            )
+            return result
 
     def on_deserialize_flow_from_commands(self, request: DeserializeFlowFromCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (I am big and complicated and have a lot of negative edge-cases)
         # Do we want to create a NEW Flow to deserialize into, or use the one in the Current Context?
         if request.serialized_flow_commands.create_flow_command is None:
             if GriptapeNodes.ContextManager().has_current_flow():
                 flow = GriptapeNodes.ContextManager().get_current_flow()
+                flow_id = flow.element_id
                 flow_name = flow.name
             else:
                 details = "Attempted to deserialize a set of Flow Creation commands into the Current Context. Failed because the Current Context was empty."
