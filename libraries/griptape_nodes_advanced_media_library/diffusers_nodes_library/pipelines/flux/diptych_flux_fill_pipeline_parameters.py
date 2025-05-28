@@ -167,7 +167,7 @@ class DiptychFluxFillPipelineParameters:
 
     def get_prompt_2(self) -> str:
         prompt_2 = self._node.get_parameter_value("prompt_2")
-        if prompt_2 is None:
+        if not prompt_2:
             return self.get_prompt()
         return (
             "A diptych with two side-by-side images of the same scene. "
