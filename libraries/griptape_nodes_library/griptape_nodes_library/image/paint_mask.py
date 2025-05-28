@@ -72,7 +72,6 @@ class PaintMask(DataNode):
             self.parameter_output_values["output_mask"] = mask_artifact
             self.set_parameter_value("output_mask", mask_artifact)
             modified_parameters_set.add("output_mask")
-            self.show_parameter_by_name("output_mask")
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
