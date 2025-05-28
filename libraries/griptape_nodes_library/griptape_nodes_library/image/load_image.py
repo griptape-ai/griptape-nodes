@@ -26,7 +26,13 @@ class LoadImage(DataNode):
 
     def _to_image_artifact(self, image: Any) -> Any:
         if isinstance(image, dict):
-            return dict_to_image_url_artifact(image)
+            # Preserve any existing metadata
+            metadata = image.get("metadata", {})
+            artifact = dict_to_image_url_artifact(image)
+            if metadata:
+                # Return a dictionary with metadata
+                return {"type": "ImageUrlArtifact", "value": artifact.value, "metadata": metadata}
+            return artifact
         return image
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:

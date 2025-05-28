@@ -26,7 +26,7 @@ class PaintMask(DataNode):
                 output_type="ImageArtifact",
                 type="ImageArtifact",
                 tooltip="The image to display",
-                ui_options={"hide_property": False},
+                ui_options={"hide_property": True},
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             )
         )
@@ -88,14 +88,14 @@ class PaintMask(DataNode):
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         if parameter.name == "input_image":
             if value is not None:
+                # Normalize input image to ImageUrlArtifact if needed
+                image_artifact = value
+                if isinstance(value, dict):
+                    image_artifact = dict_to_image_url_artifact(value)
+
                 # Check and see if the output_mask is set
                 output_mask_value = self.get_parameter_value("output_mask")
                 if output_mask_value is None:
-                    # Normalize dict input to ImageUrlArtifact if needed
-                    image_artifact = value
-                    if isinstance(value, dict):
-                        image_artifact = dict_to_image_url_artifact(value)
-
                     # Create a new mask for output_mask and set that value
                     output_mask_value = self.generate_initial_mask(image_artifact)
                     output_mask_artifact = save_pil_image_to_static_file(output_mask_value)
@@ -114,18 +114,15 @@ class PaintMask(DataNode):
                     self.set_parameter_value("output_image", value)
                     modified_parameters_set.add("output_image")
                 else:
-                    # Use the existing mask from output_mask_value
-                    # Normalize input image to ImageUrlArtifact if needed
-                    image_artifact = value
-                    if isinstance(value, dict):
-                        image_artifact = dict_to_image_url_artifact(value)
-
                     # Update the metadata of the existing mask to reference the new input image
                     if isinstance(output_mask_value, dict):
                         # Update metadata in the existing dict
                         if "metadata" not in output_mask_value:
                             output_mask_value["metadata"] = {}
                         output_mask_value["metadata"]["source_image_url"] = image_artifact.value
+                        # Update the mask value to ensure changes are saved
+                        self.set_parameter_value("output_mask", output_mask_value)
+                        modified_parameters_set.add("output_mask")
                     else:
                         # Convert ImageUrlArtifact to dict with metadata
                         mask_dict = {
@@ -134,6 +131,7 @@ class PaintMask(DataNode):
                             "metadata": {"source_image_url": image_artifact.value},
                         }
                         self.set_parameter_value("output_mask", mask_dict)
+                        modified_parameters_set.add("output_mask")
 
                     # Apply the mask to input image
                     self._apply_mask_to_input(image_artifact, output_mask_value)
