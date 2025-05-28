@@ -170,7 +170,7 @@ class GetFlowStateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetIsFlowRunningRequest(RequestPayload):
-    flow_name: str
+    flow_id: str
 
 
 @dataclass

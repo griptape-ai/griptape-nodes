@@ -212,7 +212,7 @@ class FlowManager:
         return result
 
     # This needs to have a lot of branches to check the flow in all possible situations. In Current Context, or when the name is passed in.
-    def on_delete_flow_request(self, request: DeleteFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    def on_delete_flow_request(self, request: DeleteFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
         flow_id = request.flow_id
         flow = None
         if flow_id is None:
@@ -263,13 +263,13 @@ class FlowManager:
                 logger.error(details)
                 result = DeleteFlowResultFailure()
                 return result
-            flow_names = list_flows_result.flow_ids
+            flow_ids = list_flows_result.flow_ids
             obj_mgr = GriptapeNodes.ObjectManager()
-            for child_flow_name in flow_names:
-                child_flow = obj_mgr.attempt_get_object_by_name_as_type(child_flow_name, ControlFlow)
+            for child_flow_id in flow_ids:
+                child_flow = obj_mgr.get_object_by_id_as_type(child_flow_id, ControlFlow)
                 if child_flow is None:
                     details = (
-                        f"Attempted to delete Flow '{child_flow_name}', but no Flow with that name could be found."
+                        f"Attempted to delete Flow '{child_flow_id}', but no Flow with that name could be found."
                     )
                     logger.error(details)
                     result = DeleteFlowResultFailure()
@@ -289,32 +289,31 @@ class FlowManager:
             obj_mgr.del_obj(flow)
             del self._id_to_parent_id[flow.element_id]
 
-        details = f"Successfully deleted Flow '{flow_name}'."
+        details = f"Successfully deleted Flow '{flow.name}'."
         logger.debug(details)
         result = DeleteFlowResultSuccess()
         return result
 
     def on_get_is_flow_running_request(self, request: GetIsFlowRunningRequest) -> ResultPayload:
         obj_mgr = GriptapeNodes.ObjectManager()
-        flow = obj_mgr.attempt_get_object_by_name_as_type(request.flow_name, ControlFlow)
+        flow = obj_mgr.get_object_by_id_as_type(request.flow_id, ControlFlow)
         if flow is None:
-            details = f"Attempted to get Flow '{request.flow_name}', but no Flow with that name could be found."
+            details = f"Attempted to get Flow '{request.flow_id}', but no Flow with that name could be found."
             logger.error(details)
             result = GetIsFlowRunningResultFailure()
             return result
         try:
             is_running = flow.check_for_existing_running_flow()
         except Exception:
-            details = f"Error while trying to get status of '{request.flow_name}'."
+            details = f"Error while trying to get status of '{request.flow_id}'."
             logger.error(details)
             result = GetIsFlowRunningResultFailure()
             return result
         return GetIsFlowRunningResultSuccess(is_running=is_running)
 
     def on_list_nodes_in_flow_request(self, request: ListNodesInFlowRequest) -> ResultPayload:
-        flow_name = request.flow_name
-        flow = None
-        if flow_name is None:
+        flow_id = request.flow_id
+        if flow_id is None:
             # First check if we have a current flow
             if not GriptapeNodes.ContextManager().has_current_flow():
                 details = "Attempted to list Nodes in a Flow in the Current Context. Failed because the Current Context was empty."
@@ -323,77 +322,70 @@ class FlowManager:
                 return result
             # Get the current flow from context
             flow = GriptapeNodes.ContextManager().get_current_flow()
-            flow_name = flow.name
-        # Does this Flow even exist?
-        if flow is None:
+        else:
             obj_mgr = GriptapeNodes.ObjectManager()
-            flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+            flow = obj_mgr.get_object_by_id_as_type(flow_id, ControlFlow)
         if flow is None:
             details = (
-                f"Attempted to list Nodes in Flow '{flow_name}'. Failed because no Flow with that name could be found."
+                f"Attempted to list Nodes in Flow '{flow_id}'. Failed because no Flow with that name could be found."
             )
             logger.error(details)
             result = ListNodesInFlowResultFailure()
             return result
 
         ret_list = list(flow.nodes.keys())
-        details = f"Successfully got the list of Nodes within Flow '{flow_name}'."
+        details = f"Successfully got the list of Nodes within Flow '{flow_id}'."
         logger.debug(details)
 
-        result = ListNodesInFlowResultSuccess(node_names=ret_list)
+        result = ListNodesInFlowResultSuccess(node_ids=ret_list)
         return result
 
     def on_list_flows_in_flow_request(self, request: ListFlowsInFlowRequest) -> ResultPayload:
-        if request.parent_flow_name is not None:
+        parent_flow_id = request.parent_flow_id
+        if parent_flow_id is not None:
             # Does this Flow even exist?
             obj_mgr = GriptapeNodes.ObjectManager()
-            flow = obj_mgr.attempt_get_object_by_name_as_type(request.parent_flow_name, ControlFlow)
+            flow = obj_mgr.get_object_by_id_as_type(parent_flow_id, ControlFlow)
             if flow is None:
-                details = f"Attempted to list Flows that are children of Flow '{request.parent_flow_name}', but no Flow with that name could be found."
+                details = f"Attempted to list Flows that are children of Flow '{parent_flow_id}', but no Flow with that ID could be found."
                 logger.error(details)
                 result = ListFlowsInFlowResultFailure()
                 return result
 
-        # Create a list of all child flow names that point DIRECTLY to us.
+        # Create a list of all child flow IDs that point DIRECTLY to us.
         ret_list = []
-        for flow_name, parent_name in self._id_to_parent_id.items():
-            if parent_name == request.parent_flow_name:
-                ret_list.append(flow_name)
+        for flow_id, parent_id in self._id_to_parent_id.items():
+            if parent_id == parent_flow_id:
+                ret_list.append(flow_id)
 
-        details = f"Successfully got the list of Flows that are direct children of Flow '{request.parent_flow_name}'."
+        details = f"Successfully got the list of Flows that are direct children of Flow '{parent_flow_id}'."
         logger.debug(details)
 
-        result = ListFlowsInFlowResultSuccess(flow_names=ret_list)
+        result = ListFlowsInFlowResultSuccess(flow_ids=ret_list)
         return result
 
     def get_flow_by_name(self, flow_name: str) -> ControlFlow:
         obj_mgr = GriptapeNodes.ObjectManager()
-        flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
-        if flow is None:
+        obj = obj_mgr.attempt_get_object_by_name(flow_name)
+        if obj is None or not isinstance(obj, ControlFlow):
             msg = f"Flow with name {flow_name} doesn't exist"
             raise KeyError(msg)
 
-        return flow
+        return obj
 
-    def handle_flow_rename(self, old_name: str, new_name: str) -> None:
-        # Replace the old flow name and its parent first.
-        parent = self._id_to_parent_id[old_name]
-        self._id_to_parent_id[new_name] = parent
-        del self._id_to_parent_id[old_name]
-
-        # Now iterate through everyone who pointed to the old one as a parent and update it.
-        for flow_name, parent_name in self._id_to_parent_id.items():
-            if parent_name == old_name:
-                self._id_to_parent_id[flow_name] = new_name
-
-        # Let the Node Manager know about the change, too.
-        GriptapeNodes.NodeManager().handle_flow_rename(old_name=old_name, new_name=new_name)
+    def get_flow_by_id(self, flow_id: str) -> ControlFlow:
+        obj_mgr = GriptapeNodes.ObjectManager()
+        obj = obj_mgr.get_object_by_id_as_type(flow_id, ControlFlow)
+        if obj is None:
+            msg = f"Flow with id {flow_id} doesn't exist"
+            raise KeyError(msg)
+        return obj
 
     def on_create_connection_request(self, request: CreateConnectionRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
         # Vet the two nodes first.
-        source_node_name = request.source_node_name
+        source_node_id = request.source_node_id
         source_node = None
-        if source_node_name is None:
+        if source_node_id is None:
             # First check if we have a current node
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to create a Connection with a source node from the Current Context. Failed because the Current Context was empty."
@@ -402,19 +394,18 @@ class FlowManager:
 
             # Get the current node from context
             source_node = GriptapeNodes.ContextManager().get_current_node()
-            source_node_name = source_node.name
-        if source_node is None:
+        else:
             try:
-                source_node = GriptapeNodes.NodeManager().get_node_by_name(source_node_name)
+                source_node = GriptapeNodes.ObjectManager().get_object_by_id_as_type(source_node_id, BaseNode)
             except ValueError as err:
-                details = f'Connection failed: "{source_node_name}" does not exist. Error: {err}.'
+                details = f'Connection failed: "{source_node_id}" does not exist. Error: {err}.'
                 logger.error(details)
 
                 return CreateConnectionResultFailure()
 
-        target_node_name = request.target_node_name
+        target_node_id = request.target_node_id
         target_node = None
-        if target_node_name is None:
+        if target_node_id is None:
             # First check if we have a current node
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to create a Connection with the target node from the Current Context. Failed because the Current Context was empty."
@@ -423,12 +414,11 @@ class FlowManager:
 
             # Get the current node from context
             target_node = GriptapeNodes.ContextManager().get_current_node()
-            target_node_name = target_node.name
-        if target_node is None:
+        else:
             try:
-                target_node = GriptapeNodes.NodeManager().get_node_by_name(target_node_name)
+                target_node = GriptapeNodes.NodeManager().get_node_by_name(target_node_id)
             except ValueError as err:
-                details = f'Connection failed: "{target_node_name}" does not exist. Error: {err}.'
+                details = f'Connection failed: "{target_node_id}" does not exist. Error: {err}.'
                 logger.error(details)
 
                 return CreateConnectionResultFailure()

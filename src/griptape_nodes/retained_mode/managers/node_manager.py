@@ -179,18 +179,6 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(DuplicateSelectedNodesRequest, self.on_duplicate_selected_nodes)
 
-    def handle_node_rename(self, old_name: str, new_name: str) -> None:
-        # Replace the old node name and its parent.
-        parent = self._name_to_parent_flow_name[old_name]
-        self._name_to_parent_flow_name[new_name] = parent
-        del self._name_to_parent_flow_name[old_name]
-
-    def handle_flow_rename(self, old_name: str, new_name: str) -> None:
-        # Find all instances where a node had the old parent and update it to the new one.
-        for node_name, parent_flow_name in self._name_to_parent_flow_name.items():
-            if parent_flow_name == old_name:
-                self._name_to_parent_flow_name[node_name] = new_name
-
     def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name

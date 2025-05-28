@@ -76,21 +76,8 @@ class ObjectManager:
             # We'll use the next available name.
             final_name = next_name
 
-            # Let the object's manager know. TODO: https://github.com/griptape-ai/griptape-nodes/issues/869
-        match source_obj:
-            case ControlFlow():
-                GriptapeNodes.FlowManager().handle_flow_rename(old_name=request.object_name, new_name=final_name)
-            case BaseNode():
-                GriptapeNodes.NodeManager().handle_node_rename(old_name=request.object_name, new_name=final_name)
-            case _:
-                details = f"Attempted to rename an object named '{request.object_name}', but that object wasn't of a type supported for rename."
-                logger.error(details)
-                return RenameObjectResultFailure(next_available_name=None)
-
-        # Update the object table.
-        self._name_to_objects[final_name] = source_obj
-        del self._name_to_objects[request.object_name]
-
+            # Let the object's manager know. TODO: https://github.com/griptape-ai/griptape-nodes/issues/86
+        source_obj.name = final_name
         details = f"Successfully renamed object '{request.object_name}' to '{final_name}`."
         log_level = logging.DEBUG
         if final_name != request.requested_name:
