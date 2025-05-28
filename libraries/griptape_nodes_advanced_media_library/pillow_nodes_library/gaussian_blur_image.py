@@ -23,7 +23,6 @@ class GaussianBlurImage(ControlNode):
                 name="input_image",
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="input_image",
             )
         )
@@ -33,7 +32,6 @@ class GaussianBlurImage(ControlNode):
                 default_value=5,
                 input_types=["float"],
                 type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="radius",
             )
         )

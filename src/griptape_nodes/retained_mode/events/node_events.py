@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
-from typing import Any, NewType
+from enum import Enum, auto
+from typing import Any, NamedTuple, NewType
 from uuid import uuid4
 
 from griptape_nodes.exe_types.node_types import NodeResolutionState
@@ -18,6 +19,13 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+
+class NewPosition(NamedTuple):
+    """The X and Y position for the node to be copied to. Updates in the node metadata."""
+
+    x: float
+    y: float
 
 
 @dataclass
@@ -40,6 +48,8 @@ class CreateNodeRequest(RequestPayload):
 @PayloadRegistry.register
 class CreateNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     node_name: str
+    node_type: str
+    specific_library_name: str | None = None
 
 
 @dataclass
@@ -216,6 +226,56 @@ class SerializedNodeCommands:
 
 
 @dataclass
+class SerializedParameterValueTracker:
+    """Tracks the serialization state of parameter value hashes.
+
+    This class manages the relationship between value hashes and their unique UUIDs,
+    indicating whether a value is serializable or not. It allows the addition of both
+    serializable and non-serializable value hashes and provides methods to retrieve
+    the serialization state and unique UUIDs for given value hashes.
+
+    Attributes:
+        _value_hash_to_unique_value_uuid (dict[Any, SerializedNodeCommands.UniqueParameterValueUUID]):
+            A dictionary mapping value hashes to their unique UUIDs when they are serializable.
+        _non_serializable_value_hashes (set[Any]):
+            A set of value hashes that are not serializable.
+    """
+
+    class TrackerState(Enum):
+        """State of a value hash in the tracker."""
+
+        NOT_IN_TRACKER = auto()
+        SERIALIZABLE = auto()
+        NOT_SERIALIZABLE = auto()
+
+    _value_hash_to_unique_value_uuid: dict[Any, SerializedNodeCommands.UniqueParameterValueUUID] = field(
+        default_factory=dict
+    )
+    _non_serializable_value_hashes: set[Any] = field(default_factory=set)
+
+    def get_tracker_state(self, value_hash: Any) -> TrackerState:
+        if value_hash in self._non_serializable_value_hashes:
+            return SerializedParameterValueTracker.TrackerState.NOT_SERIALIZABLE
+        if value_hash in self._value_hash_to_unique_value_uuid:
+            return SerializedParameterValueTracker.TrackerState.SERIALIZABLE
+        return SerializedParameterValueTracker.TrackerState.NOT_IN_TRACKER
+
+    def add_as_serializable(
+        self, value_hash: Any, unique_value_uuid: SerializedNodeCommands.UniqueParameterValueUUID
+    ) -> None:
+        self._value_hash_to_unique_value_uuid[value_hash] = unique_value_uuid
+
+    def add_as_not_serializable(self, value_hash: Any) -> None:
+        self._non_serializable_value_hashes.add(value_hash)
+
+    def get_uuid_for_value_hash(self, value_hash: Any) -> SerializedNodeCommands.UniqueParameterValueUUID:
+        return self._value_hash_to_unique_value_uuid[value_hash]
+
+    def get_serializable_count(self) -> int:
+        return len(self._value_hash_to_unique_value_uuid)
+
+
+@dataclass
 @PayloadRegistry.register
 class SerializeNodeToCommandsRequest(RequestPayload):
     """Request payload to serialize a node into a sequence of commands.
@@ -225,17 +285,17 @@ class SerializeNodeToCommandsRequest(RequestPayload):
         unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Mapping of
             UUIDs to unique parameter values. Serialization will check a parameter's value against these, inserting
             new values if necessary. NOTE that it modifies the dict in-place.
-        value_hash_to_unique_value_uuid (dict[Any, SerializedNodeCommands.UniqueParameterValueUUID]): Mapping of hash
-            values to unique parameter value UUIDs. If serialization adds new unique values, they are added to this map.
-            NOTE that it modifies the dict in-place.
+        serialized_parameter_value_tracker (SerializedParameterValueTracker): Mapping of hash values to unique parameter
+            value UUIDs. If serialization adds new unique values, they are added to this map. Unserializable values
+            are preserved to prevent duplicate serialization attempts.
     """
 
     node_name: str | None = None
     unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] = field(
         default_factory=dict
     )
-    value_hash_to_unique_value_uuid: dict[Any, SerializedNodeCommands.UniqueParameterValueUUID] = field(
-        default_factory=dict
+    serialized_parameter_value_tracker: SerializedParameterValueTracker = field(
+        default_factory=SerializedParameterValueTracker
     )
 
 
@@ -261,6 +321,72 @@ class SerializeNodeToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 
 
 @dataclass
+class SerializedSelectedNodesCommands:
+    @dataclass
+    class IndirectConnectionSerialization:
+        """Companion class to create connections from node IDs in a serialization, since we can't predict the names.
+
+        These are UUIDs referencing into the serialized_node_commands we maintain.
+
+        Attributes:
+            source_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the source node, as stored within the serialization.
+            source_parameter_name (str): Name of the source parameter.
+            target_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the target node.
+            target_parameter_name (str): Name of the target parameter.
+        """
+
+        source_node_uuid: SerializedNodeCommands.NodeUUID
+        source_parameter_name: str
+        target_node_uuid: SerializedNodeCommands.NodeUUID
+        target_parameter_name: str
+
+    serialized_node_commands: list[SerializedNodeCommands]
+    set_parameter_value_commands: dict[
+        SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
+    ]
+    serialized_connection_commands: list[IndirectConnectionSerialization]
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeSelectedNodesToCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
+    # They will be passed with node_name, timestamp
+    nodes_to_serialize: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeSelectedNodesToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    # They will be passed with node_name, timestamp
+    # Could be a flow command if it's all nodes in a flow.
+    serialized_selected_node_commands: SerializedSelectedNodesCommands
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeSelectedNodesToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeSelectedNodesFromCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
+    positions: list[NewPosition] | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeSelectedNodesFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    node_names: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeSelectedNodesFromCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
+
+
+@dataclass
 @PayloadRegistry.register
 class DeserializeNodeFromCommandsRequest(RequestPayload):
     serialized_node_commands: SerializedNodeCommands
@@ -275,4 +401,22 @@ class DeserializeNodeFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPaylo
 @dataclass
 @PayloadRegistry.register
 class DeserializeNodeFromCommandsResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DuplicateSelectedNodesRequest(WorkflowNotAlteredMixin, RequestPayload):
+    nodes_to_duplicate: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class DuplicateSelectedNodesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    node_names: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class DuplicateSelectedNodesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass

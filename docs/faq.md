@@ -124,3 +124,39 @@ You can connect with us through several channels:
 - [GitHub](https://github.com/griptape-ai/griptape-nodes) - Submit issues or contribute to the codebase
 
 These same links are also available as the three icons in the footer (bottom right) of every documentation page.
+
+## How can I test out unreleased features?
+
+If you're interested in testing out unreleased features, you can install the pre-release builds of Griptape Nodes.
+Updates are now published to the [latest](https://github.com/griptape-ai/griptape-nodes/releases/tag/latest) tag twice a day.
+
+!!! warning
+
+    Pre-release builds are not guaranteed to be stable and may contain bugs or incomplete features. Use them at your own risk.
+
+To switch to the pre-release update channel, run the following commands:
+
+```
+uv tool uninstall griptape-nodes
+uv tool install git+https://github.com/griptape-ai/griptape-nodes.git@latest --reinstall --force --python 3.12
+```
+
+This will uninstall the current version of Griptape Nodes and install the latest pre-release build from the GitHub repository.
+
+!!! info
+
+    Uninstalling using `uv tool uninstall griptape-nodes` will not remove your existing projects or settings. It only removes the Griptape Nodes engine itself.
+
+You can confirm it went through by running `gtn self version`. Your version number should show a reference to a git commit:
+
+```
+gtn self version
+v0.31.0 (git - e172e80)
+```
+
+To switch back to the stable release channel, run the following commands:
+
+```
+uv tool uninstall griptape-nodes
+uv tool install griptape-nodes
+```

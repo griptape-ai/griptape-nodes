@@ -9,11 +9,11 @@ with console.status("Loading Griptape Nodes...") as status:
     import argparse
     import importlib.metadata
     import json
+    import os
     import shutil
     import sys
     import tarfile
     import tempfile
-    import webbrowser
     from pathlib import Path
     from typing import Literal
 
@@ -25,6 +25,7 @@ with console.status("Loading Griptape Nodes...") as status:
     from xdg_base_dirs import xdg_config_home, xdg_data_home
 
     from griptape_nodes.app import start_app
+    from griptape_nodes.retained_mode.griptape_nodes import engine_version
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -61,28 +62,37 @@ def main() -> None:
 
 
 def _run_init(
-    *, api_key: str | None = None, workspace_directory: str | None = None, register_advanced_library: bool | None = None
+    *, workspace_directory: str | None = None, api_key: str | None = None, register_advanced_library: bool | None = None
 ) -> None:
-    """Runs through the engine init steps, optionally skipping prompts if the user provided `--api-key`."""
+    """Runs through the engine init steps.
+
+    Args:
+        workspace_directory (str | None): The workspace directory to set.
+        api_key (str | None): The API key to set.
+        register_advanced_library (bool | None): Whether to register the advanced library.
+    """
     __init_system_config()
-    _prompt_for_workspace(workspace_directory_arg=workspace_directory)
+    _prompt_for_workspace(workspace_directory=workspace_directory)
     _prompt_for_api_key(api_key=api_key)
     _prompt_for_libraries_to_register(register_advanced_library=register_advanced_library)
     _sync_assets()
     console.print("[bold green]Initialization complete![/bold green]")
 
 
-def _start_engine(*, no_update: bool) -> None:
+def _start_engine(*, no_update: bool = False) -> None:
     """Starts the Griptape Nodes engine.
 
     Args:
-        no_update: If True, skips the auto-update check.
+        no_update (bool): If True, skips the auto-update check.
     """
     if not CONFIG_DIR.exists():
         # Default init flow if there is no config directory
         console.print("[bold green]Config directory not found. Initializing...[/bold green]")
-        _run_init()
-        webbrowser.open(NODES_APP_URL)
+        _run_init(
+            workspace_directory=os.getenv("GTN_WORKSPACE_DIRECTORY"),
+            api_key=os.getenv("GTN_API_KEY"),
+            register_advanced_library=os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", "false").lower() == "true",
+        )
 
     # Confusing double negation -- If `no_update` is set, we want to skip the update
     if not no_update:
@@ -116,15 +126,17 @@ def _get_args() -> argparse.Namespace:
     init_parser.add_argument(
         "--api-key",
         help="Set the Griptape Nodes API key.",
+        default=os.getenv("GTN_API_KEY", None),
     )
     init_parser.add_argument(
         "--workspace-directory",
         help="Set the Griptape Nodes workspace directory.",
+        default=os.getenv("GTN_WORKSPACE_DIRECTORY", None),
     )
+    register_advanced_library = os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", None)
     init_parser.add_argument(
         "--register-advanced-library",
-        action="store_true",
-        default=None,
+        default=register_advanced_library.lower() == "true" if register_advanced_library is not None else None,
         help="Install the Griptape Nodes Advanced Image Library.",
     )
 
@@ -182,58 +194,60 @@ def _prompt_for_api_key(api_key: str | None = None) -> None:
         Once the key is generated, copy and paste its value here to proceed."""
         console.print(Panel(explainer, expand=False))
 
-    default_key = api_key or secrets_manager.get_secret("GT_CLOUD_API_KEY", should_error_on_not_found=False)
-    # If api_key is provided via --api-key, we don't want to prompt for it
-    current_key = api_key
-    while current_key is None:
-        current_key = Prompt.ask(
-            "Griptape API Key",
-            default=default_key,
-            show_default=True,
-        )
-
-    secrets_manager.set_secret("GT_CLOUD_API_KEY", current_key)
-
-
-def _prompt_for_workspace(*, workspace_directory_arg: str | None) -> None:
-    """Prompts the user for their workspace directory and stores it in config directory."""
-    explainer = """[bold cyan]Workspace Directory[/bold cyan]
-    Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows.
-    You may enter a custom directory or press Return to accept the default workspace directory"""
-    console.print(Panel(explainer, expand=False))
-
-    valid_workspace = False
-    default_workspace_directory = workspace_directory_arg or config_manager.get_config_value("workspace_directory")
-    while not valid_workspace:
-        try:
-            workspace_directory = Prompt.ask(
-                "Workspace Directory",
-                default=default_workspace_directory,
+        default_api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY", should_error_on_not_found=False)
+        while api_key is None:
+            api_key = Prompt.ask(
+                "Griptape API Key",
+                default=default_api_key,
                 show_default=True,
             )
-            workspace_path = Path(workspace_directory).expanduser().resolve()
 
-            config_manager.workspace_path = workspace_path
-            config_manager.set_config_value("workspace_directory", str(workspace_path))
+    secrets_manager.set_secret("GT_CLOUD_API_KEY", api_key)
+    console.print("[bold green]Griptape API Key set")
 
-            valid_workspace = True
-        except OSError as e:
-            console.print(f"[bold red]Invalid workspace directory: {e}[/bold red]")
-        except json.JSONDecodeError as e:
-            console.print(f"[bold red]Error reading config file: {e}[/bold red]")
+
+def _prompt_for_workspace(*, workspace_directory: str | None) -> None:
+    """Prompts the user for their workspace directory and stores it in config directory."""
+    if workspace_directory is None:
+        explainer = """[bold cyan]Workspace Directory[/bold cyan]
+        Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows.
+        You may enter a custom directory or press Return to accept the default workspace directory"""
+        console.print(Panel(explainer, expand=False))
+
+        default_workspace_directory = workspace_directory or config_manager.get_config_value("workspace_directory")
+        while workspace_directory is None:
+            try:
+                workspace_to_test = Prompt.ask(
+                    "Workspace Directory",
+                    default=default_workspace_directory,
+                    show_default=True,
+                )
+                # Try to resolve the path to check if it exists
+                if workspace_to_test is not None:
+                    Path(workspace_to_test).expanduser().resolve()
+                workspace_directory = workspace_to_test
+            except OSError as e:
+                console.print(f"[bold red]Invalid workspace directory: {e}[/bold red]")
+            except json.JSONDecodeError as e:
+                console.print(f"[bold red]Error reading config file: {e}[/bold red]")
+
+    workspace_path = Path(workspace_directory).expanduser().resolve()
+    config_manager.set_config_value("workspace_directory", str(workspace_path))
+
     console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
 
 
 def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None = None) -> None:
     """Prompts the user for the libraries to register and stores them in config directory."""
-    explainer = """[bold cyan]Advanced Media Library[/bold cyan]
-    Would you like to install the Griptape Nodes Advanced Media Library?
-    This node library makes advanced media generation and manipulation nodes available.
-    For example, nodes are available for Flux AI image upscaling, or to leverage CUDA for GPU-accelerated image generation.
-    CAVEAT: Installing this library requires additional dependencies to download and install, which can take several minutes.
-    The Griptape Nodes Advanced Media Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
-    """
-    console.print(Panel(explainer, expand=False))
+    if register_advanced_library is None:
+        explainer = """[bold cyan]Advanced Media Library[/bold cyan]
+        Would you like to install the Griptape Nodes Advanced Media Library?
+        This node library makes advanced media generation and manipulation nodes available.
+        For example, nodes are available for Flux AI image upscaling, or to leverage CUDA for GPU-accelerated image generation.
+        CAVEAT: Installing this library requires additional dependencies to download and install, which can take several minutes.
+        The Griptape Nodes Advanced Media Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
+        """
+        console.print(Panel(explainer, expand=False))
 
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/929
     key = "app_events.on_app_initialization_complete.libraries_to_register"
@@ -349,7 +363,7 @@ def _sync_assets() -> None:
     else:
         version = LATEST_TAG
 
-    console.print(f"[bold cyan]Fetching Griptape Nodes assets ({version})…[/bold cyan]")
+    console.print(f"[bold cyan]Fetching Griptape Nodes assets ({version})...[/bold cyan]")
 
     tar_url = NODES_TARBALL_URL.format(tag=version)
     console.print(f"[green]Downloading from {tar_url}[/green]")
@@ -427,6 +441,7 @@ def _uninstall_self() -> None:
     # Remove config and data directories
     console.print("[bold]Removing config and data directories...[/bold]")
     dirs = [(CONFIG_DIR, "Config Dir"), (DATA_DIR, "Data Dir")]
+    caveats = []
     for dir_path, dir_name in dirs:
         if dir_path.exists():
             console.print(f"[bold]Removing {dir_name} '{dir_path}'...[/bold]")
@@ -434,10 +449,12 @@ def _uninstall_self() -> None:
                 shutil.rmtree(dir_path)
             except OSError as exc:
                 console.print(f"[red]Error removing {dir_name} '{dir_path}': {exc}[/red]")
+                caveats.append(
+                    f"- [red]Error removing {dir_name} '{dir_path}'. You may want remove this directory manually.[/red]"
+                )
         else:
             console.print(f"[yellow]{dir_name} '{dir_path}' does not exist; skipping.[/yellow]")
 
-    caveats = []
     # Handle any remaining config files not removed by design
     remaining_config_files = config_manager.config_files
     if remaining_config_files:
@@ -459,8 +476,8 @@ def _uninstall_self() -> None:
 def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
     if args.command == "init":
         _run_init(
-            api_key=args.api_key,
             workspace_directory=args.workspace_directory,
+            api_key=args.api_key,
             register_advanced_library=args.register_advanced_library,
         )
     elif args.command == "engine":
@@ -489,9 +506,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
 
 def __get_current_version() -> str:
     """Returns the current version of the Griptape Nodes package."""
-    version = importlib.metadata.version("griptape_nodes")
-
-    return f"v{version}"
+    return f"v{engine_version}"
 
 
 def __get_install_source() -> tuple[Literal["git", "file", "pypi"], str | None]:
@@ -529,7 +544,7 @@ def __init_system_config() -> None:
     for file_name in files_to_create:
         file_path = CONFIG_DIR / file_name[0]
         if not file_path.exists():
-            with Path.open(file_path, "w") as file:
+            with Path.open(file_path, "w", encoding="utf-8") as file:
                 file.write(file_name[1])
 
 
