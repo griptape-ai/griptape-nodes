@@ -1,3 +1,4 @@
+import hashlib
 from io import BytesIO
 from typing import Any
 
@@ -16,6 +17,7 @@ from griptape_nodes_library.utils.image_utils import (
 class PaintMask(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+        self._last_image_hash: str | None = None
 
         self.add_parameter(
             Parameter(
@@ -42,9 +44,16 @@ class PaintMask(DataNode):
         # Get input image
         image = self.get_parameter_value("image")
 
+        if image is None:
+            return
+
         # Normalize dict input to ImageUrlArtifact
         if isinstance(image, dict):
             image = dict_to_image_url_artifact(image)
+
+        # Check if we need to regenerate the mask
+        if not self._needs_mask_regeneration(image):
+            return
 
         # Generate mask (extract alpha channel)
         mask_pil = self.generate_initial_mask(image)
@@ -62,18 +71,32 @@ class PaintMask(DataNode):
             if isinstance(value, dict):
                 value = dict_to_image_url_artifact(value)
 
-            # Generate mask (extract alpha channel)
-            mask_pil = self.generate_initial_mask(value)
+            # Check if we need to regenerate the mask
+            if self._needs_mask_regeneration(value):
+                # Generate mask (extract alpha channel)
+                mask_pil = self.generate_initial_mask(value)
 
-            # Save mask to static folder and wrap in ImageUrlArtifact
-            mask_artifact = save_pil_image_to_static_file(mask_pil)
+                # Save mask to static folder and wrap in ImageUrlArtifact
+                mask_artifact = save_pil_image_to_static_file(mask_pil)
 
-            # Set output
-            self.parameter_output_values["output_mask"] = mask_artifact
-            self.set_parameter_value("output_mask", mask_artifact)
-            modified_parameters_set.add("output_mask")
+                # Set output
+                self.parameter_output_values["output_mask"] = mask_artifact
+                self.set_parameter_value("output_mask", mask_artifact)
+                modified_parameters_set.add("output_mask")
 
         return super().after_value_set(parameter, value, modified_parameters_set)
+
+    def _compute_image_hash(self, image_artifact: ImageUrlArtifact) -> str:
+        """Compute a hash of the image URL to detect changes."""
+        return hashlib.sha256(image_artifact.value.encode("utf-8")).hexdigest()
+
+    def _needs_mask_regeneration(self, image_artifact: ImageUrlArtifact) -> bool:
+        """Check if mask needs to be regenerated based on image hash."""
+        current_hash = self._compute_image_hash(image_artifact)
+        if current_hash != self._last_image_hash:
+            self._last_image_hash = current_hash
+            return True
+        return False
 
     def generate_initial_mask(self, image_artifact: ImageUrlArtifact) -> Image.Image:
         """Extract the alpha channel from a URL-based image."""
