@@ -59,7 +59,7 @@ class EventManager:
 
     def handle_request(
         self, request: RP, operation_depth_mgr: "OperationDepthManager", workflow_mgr: "WorkflowManager"
-    ):
+    ) -> ResultPayload:
         """Publish an event to the manager assigned to its type.
 
         Args:

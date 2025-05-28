@@ -277,15 +277,16 @@ class NodeManager:
             list_connections_for_node_response = GriptapeNodes.handle_request(list_connections_for_node_request)
 
             # Loop over all the old incoming connections and remake them
-            for incoming_connection in list_connections_for_node_response.incoming_connections:
-                create_old_incoming_connections_request = CreateConnectionRequest(
-                    source_node_name=incoming_connection.source_node_name,
-                    source_parameter_name=incoming_connection.source_parameter_name,
-                    target_node_name=final_node_name,
-                    target_parameter_name=incoming_connection.target_parameter_name,
-                )
+            if isinstance(list_connections_for_node_response, ListConnectionsForNodeResultSuccess):
+                for incoming_connection in list_connections_for_node_response.incoming_connections:
+                    create_old_incoming_connections_request = CreateConnectionRequest(
+                        source_node_name=incoming_connection.source_node_name,
+                        source_parameter_name=incoming_connection.source_parameter_name,
+                        target_node_name=final_node_name,
+                        target_parameter_name=incoming_connection.target_parameter_name,
+                    )
 
-                GriptapeNodes.handle_request(create_old_incoming_connections_request)
+                    GriptapeNodes.handle_request(create_old_incoming_connections_request)
 
         logger.log(level=log_level, msg=details)
 
