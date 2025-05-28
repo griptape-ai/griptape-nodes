@@ -269,7 +269,24 @@ class NodeManager:
         log_level = logging.DEBUG
         if remapped_requested_node_name:
             log_level = logging.WARNING
-            details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
+            details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed. Also, will keep the connections of the original node."
+            # Since it is a duplicate, it makes sense to remake all the old incoming connections the original had
+
+            # List the old incoming connections
+            list_connections_for_node_request = ListConnectionsForNodeRequest(request.node_name)
+            list_connections_for_node_response = GriptapeNodes.handle_request(list_connections_for_node_request)
+
+            # Loop over all the old incoming connections and remake them
+            for incoming_connection in list_connections_for_node_response.incoming_connections:
+
+                create_old_incoming_connections_request = CreateConnectionRequest(
+                    source_node_name=incoming_connection.source_node_name,
+                    source_parameter_name=incoming_connection.source_parameter_name,
+                    target_node_name=final_node_name,
+                    target_parameter_name=incoming_connection.target_parameter_name,
+                )
+
+                GriptapeNodes.handle_request(create_old_incoming_connections_request)
 
         logger.log(level=log_level, msg=details)
 
