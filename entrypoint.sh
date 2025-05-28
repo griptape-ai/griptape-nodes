@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
-/griptape-nodes/.venv/bin/griptape-nodes init
+if [ "$GTN_INIT" = "true" ]; then
+    /griptape-nodes/.venv/bin/griptape-nodes init
+fi
 
 exec "$@"
