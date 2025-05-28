@@ -17,7 +17,7 @@ class EndFlow(EndNode):
         self.add_parameter(
             ParameterList(
                 name="image",
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
+                input_types=["image"],
                 default_value=None,
                 tooltip="",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
