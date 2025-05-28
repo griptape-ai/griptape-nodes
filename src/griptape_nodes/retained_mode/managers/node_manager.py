@@ -193,7 +193,7 @@ class NodeManager:
 
     def remake_duplicates(self, old_node_name: str | None, new_node_name: str) -> None:
         # Check if old_node_name exists
-        if old_node_name == None:
+        if old_node_name is None:
             return
         # Since it is a duplicate, it makes sense to remake all the old incoming connections the original had
 
