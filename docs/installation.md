@@ -118,7 +118,7 @@ Griptape API Key (YOUR-KEY-HERE):
 
 ## 4. Start Your Engine
 
-Your installation is now complete and your ready to proceed to creating your first Workflow or trying out one of the sample workflows. To get started, return to your terminal and run `griptape-nodes` or `gtn`, then return to your browser. Your browser tab at [https://nodes.griptape.ai](https://nodes.griptape.ai) will update to show *Create from scratch*, allowing you to start from a blank canvas, together with several sample Griptape Nodes workflows that you can experiment with!
+Your installation is now complete and you're ready to proceed to creating your first Workflow or trying out one of the sample workflows. To get started, return to your terminal and run `griptape-nodes` or `gtn`, then return to your browser. Your browser tab at [https://nodes.griptape.ai](https://nodes.griptape.ai) will update to show *Create from scratch*, allowing you to start from a blank canvas, together with several sample Griptape Nodes workflows that you can experiment with!
 
 ![A Blank Griptape_nodes_ editor](assets/img/getting_started/getting_started-blank_editor.png)
 
