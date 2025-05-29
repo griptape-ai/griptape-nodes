@@ -85,6 +85,14 @@
       }
     },
     {
+      "video": {
+        "color": "border-pink-500",
+        "title": "Video",
+        "description": "Video related nodes",
+        "icon": "Video"
+      }
+    },
+    {
       "image": {
         "color": "border-purple-500",
         "title": "Image",
@@ -232,6 +240,33 @@
         "category": "audio",
         "description": "Can record audio from your microphone.",
         "display_name": "Microphone"
+      }
+    },
+    {
+      "class_name": "LoadVideo",
+      "file_path": "griptape_nodes_library/video/load_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Loads video files into your workflow",
+        "display_name": "Load Video"
+      }
+    },
+    {
+      "class_name": "DisplayVideo",
+      "file_path": "griptape_nodes_library/video/display_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Display a video",
+        "display_name": "Display Video"
+      }
+    },
+    {
+      "class_name": "SaveVideo",
+      "file_path": "griptape_nodes_library/video/save_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Save a video to a file",
+        "display_name": "Save Video"
       }
     },
     {
