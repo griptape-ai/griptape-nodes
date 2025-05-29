@@ -496,6 +496,15 @@
       }
     },
     {
+      "class_name": "PaintMask",
+      "file_path": "griptape_nodes_library/image/paint_mask.py",
+      "metadata": {
+        "category": "image",
+        "description": "Paint a mask on an image.",
+        "display_name": "Paint Mask"
+      }
+    },
+    {
       "class_name": "Webcam",
       "file_path": "griptape_nodes_library/image/webcam.py",
       "metadata": {
