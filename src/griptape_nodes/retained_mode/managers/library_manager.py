@@ -457,13 +457,11 @@ class LibraryManager:
         # Install node library dependencies
         try:
             site_packages = None
-            if library_data.metadata.dependencies:
+            if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
                 pip_install_flags = library_data.metadata.dependencies.pip_install_flags
                 if pip_install_flags is None:
                     pip_install_flags = []
                 pip_dependencies = library_data.metadata.dependencies.pip_dependencies
-                if pip_dependencies is None:
-                    pip_dependencies = []
 
                 # Create a virtual environment for the library
                 python_version = platform.python_version()
@@ -1103,16 +1101,17 @@ class LibraryManager:
 
         if libraries_to_register_category is not None:
             for library_to_register in libraries_to_register_category:
-                if library_to_register.endswith(".json"):
-                    library_load_request = RegisterLibraryFromFileRequest(
-                        file_path=library_to_register,
-                        load_as_default_library=load_as_default_library,
-                    )
-                else:
-                    library_load_request = RegisterLibraryFromRequirementSpecifierRequest(
-                        requirement_specifier=library_to_register
-                    )
-                GriptapeNodes.handle_request(library_load_request)
+                if library_to_register:
+                    if library_to_register.endswith(".json"):
+                        library_load_request = RegisterLibraryFromFileRequest(
+                            file_path=library_to_register,
+                            load_as_default_library=load_as_default_library,
+                        )
+                    else:
+                        library_load_request = RegisterLibraryFromRequirementSpecifierRequest(
+                            requirement_specifier=library_to_register
+                        )
+                    GriptapeNodes.handle_request(library_load_request)
 
     def _remove_missing_libraries_from_config(self, config_category: str) -> None:
         # Now remove all libraries that were missing from the user's config.
