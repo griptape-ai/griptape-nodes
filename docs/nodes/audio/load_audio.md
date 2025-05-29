@@ -29,17 +29,14 @@ Use this node when you want to:
 
 ## Example
 
-Imagine you've captured audio with the Microphone node and now want to use it elsewhere:
+Imagine you've recorded some audio and have it saved on your computer, and you'd like to use it elsewhere:
 
-1. Connect the "audio" output from your Microphone node to the "audio" input of the LoadAudio
+1. Create a LoadAudio node
+1. Click on the load audio button, and choose your audio file from disk 
 1. The LoadAudio will make the audio available to use in the rest of your workflow
 
 ## Important Notes
 
 - The LoadAudio simply passes the audio through - it doesn't change the audio itself
 - You can click the file browser icon to select an audio file from your computer
-- The audio preview can be expanded by clicking the expander icon
-
-## Common Issues
-
-- **No Audio Showing**: Make sure you've properly connected an audio source to this node
+- The audio can be played by clicking the play button

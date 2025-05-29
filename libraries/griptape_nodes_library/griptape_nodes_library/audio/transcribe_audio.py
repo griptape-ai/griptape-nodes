@@ -144,7 +144,6 @@ class TranscribeAudio(ControlNode):
             target_parameter.type = "str"
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             target_parameter.set_default_value(DEFAULT_MODEL)
-            target_parameter.default_value = DEFAULT_MODEL
             target_parameter._ui_options["display_name"] = "text to speech model"
             self.set_parameter_value("model", DEFAULT_MODEL)
 
