@@ -2,7 +2,7 @@ import base64
 import uuid
 
 
-def dict_to_video_url_artifact(video_dict: dict, video_format: str | None = None):
+def dict_to_video_url_artifact(video_dict: dict, video_format: str | None = None) -> None:
     """Convert a dictionary representation of video to a VideoUrlArtifact."""
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
