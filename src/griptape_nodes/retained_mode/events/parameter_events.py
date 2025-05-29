@@ -93,7 +93,7 @@ class SetParameterValueRequest(RequestPayload):
     parameter_name: str
     value: Any
     # If node name is None, use the Current Context
-    node_name: str | None = None
+    node_id: str | None = None
     data_type: str | None = None
     # initial_setup prevents unnecessary work when we are loading a workflow from a file.
     initial_setup: bool = False

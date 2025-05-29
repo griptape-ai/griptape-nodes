@@ -317,7 +317,7 @@ class ContextManager:
         """
         if isinstance(flow, str):
             try:
-                control_flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(flow, ControlFlow)
+                control_flow = GriptapeNodes.ObjectManager().get_object_by_id_as_type(flow, ControlFlow)
                 if control_flow is None:
                     msg = f"Flow '{flow}' not found in current workflow."
                     logger.error(msg)

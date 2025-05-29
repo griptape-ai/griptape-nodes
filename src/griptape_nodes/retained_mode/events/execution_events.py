@@ -36,8 +36,8 @@ class ResolveNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class StartFlowRequest(RequestPayload):
-    flow_name: str
-    flow_node_name: str | None = None
+    flow_id: str
+    flow_node_id: str | None = None
     debug_mode: bool = False
 
 
@@ -56,7 +56,7 @@ class StartFlowResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class CancelFlowRequest(RequestPayload):
-    flow_name: str
+    flow_id: str
 
 
 @dataclass
@@ -74,7 +74,7 @@ class CancelFlowResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class UnresolveFlowRequest(RequestPayload):
-    flow_name: str
+    flow_id: str
 
 
 @dataclass

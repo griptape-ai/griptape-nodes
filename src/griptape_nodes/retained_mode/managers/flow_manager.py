@@ -401,7 +401,10 @@ class FlowManager:
                 details = f'Connection failed: "{source_node_id}" does not exist. Error: {err}.'
                 logger.error(details)
                 return CreateConnectionResultFailure()
-
+        if source_node is None:
+            details = "Attempted to create a Connection. Failed because source node didn't exist."
+            logger.error(details)
+            return CreateConnectionResultFailure()
         target_node_id = request.target_node_id
         if target_node_id is None:
             # First check if we have a current node
@@ -420,7 +423,10 @@ class FlowManager:
                 details = f'Connection failed: "{target_node_id}" does not exist. Error: {err}.'
                 logger.error(details)
                 return CreateConnectionResultFailure()
-
+        if target_node is None:
+            details = "Attempted to create a Connection. Failed because target node didn't exist."
+            logger.error(details)
+            return CreateConnectionResultFailure()
         # The two nodes exist.
         # Get the parent flows.
         source_flow_id = None
@@ -429,7 +435,7 @@ class FlowManager:
             source_flow_id = GriptapeNodes.NodeManager().get_node_parent_flow_by_id(source_node_id)
             source_flow = self.get_flow_by_id(flow_id=source_flow_id)
         except KeyError as err:
-            details = f'Connection "{source_node.name}.{request.source_parameter_id}" to "{target_node.name}.{request.target_parameter_id}" failed: {err}.'
+            details = f'Connection "{source_node.name}.{request.source_parameter_name}" to "{target_node.name}.{request.target_parameter_name}" failed: {err}.'
             logger.error(details)
             return CreateConnectionResultFailure()
 
@@ -438,7 +444,7 @@ class FlowManager:
             target_flow_id = GriptapeNodes.NodeManager().get_node_parent_flow_by_id(target_node_id)
             target_flow = self.get_flow_by_id(flow_id=target_flow_id)
         except KeyError as err:
-            details = f'Connection "{source_node.name}.{request.source_parameter_id}" to "{target_node.name}.{request.target_parameter_id}" failed: {err}.'
+            details = f'Connection "{source_node.name}.{request.source_parameter_name}" to "{target_node.name}.{request.target_parameter_name}" failed: {err}.'
             logger.error(details)
             return CreateConnectionResultFailure()
 
@@ -461,7 +467,7 @@ class FlowManager:
             details = f'Connection failed: "{target_node.name}.{request.target_parameter_name}" not found'
             logger.error(details)
             return CreateConnectionResultFailure()
-        
+
         # Validate parameter modes accept this type of connection.
         source_modes_allowed = source_param.allowed_modes
         if ParameterMode.OUTPUT not in source_modes_allowed:
@@ -672,7 +678,10 @@ class FlowManager:
                 details = f'Connection not deleted "{source_node_id}.{request.source_parameter_name}" to "{target_node_id}.{request.target_parameter_name}". Error: {err}'
                 logger.error(details)
                 return DeleteConnectionResultFailure()
-
+        if source_node is None:
+            details = "Attempted to delete a Connection. Failed because source node didn't exist."
+            logger.error(details)
+            return DeleteConnectionResultFailure()
         target_node_id = request.target_node_id
         if target_node_id is None:
             # First check if we have a current node
@@ -691,9 +700,12 @@ class FlowManager:
                 details = f'Connection not deleted "{source_node.name}.{request.source_parameter_name}" to "{target_node_id}.{request.target_parameter_name}". Error: {err}'
                 logger.error(details)
                 return DeleteConnectionResultFailure()
-
         # The two nodes exist.
         # Get the parent flows.
+        if target_node is None:
+            details = "Attempted to delete a Connection. Failed because target node didn't exist."
+            logger.error(details)
+            return DeleteConnectionResultFailure()
         source_flow_id = None
         source_flow = None
         try:

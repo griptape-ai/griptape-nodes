@@ -14,8 +14,8 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @PayloadRegistry.register
 class ValidateFlowDependenciesRequest(RequestPayload):
     # Same inputs as StartFlow
-    flow_name: str
-    flow_node_name: str | None = None
+    flow_id: str
+    flow_node_id: str | None = None
 
 
 @dataclass
