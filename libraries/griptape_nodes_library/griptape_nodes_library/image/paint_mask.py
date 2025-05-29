@@ -27,7 +27,7 @@ class PaintMask(DataNode):
                 type="ImageArtifact",
                 tooltip="The image to display",
                 ui_options={"hide_property": True},
-                allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+                allowed_modes={ParameterMode.INPUT},
             )
         )
 
@@ -137,18 +137,17 @@ class PaintMask(DataNode):
                     self._apply_mask_to_input(image_artifact, output_mask_value)
                     modified_parameters_set.add("output_image")
 
-        elif parameter.name == "output_mask":
-            if value is not None:
-                # Get the input image
-                input_image = self.get_parameter_value("input_image")
-                if input_image is not None:
-                    # Normalize input image to ImageUrlArtifact if needed
-                    if isinstance(input_image, dict):
-                        input_image = dict_to_image_url_artifact(input_image)
+        elif parameter.name == "output_mask" and value is not None:
+            # Get the input image
+            input_image = self.get_parameter_value("input_image")
+            if input_image is not None:
+                # Normalize input image to ImageUrlArtifact if needed
+                if isinstance(input_image, dict):
+                    input_image = dict_to_image_url_artifact(input_image)
 
-                    # Apply the mask to input image
-                    self._apply_mask_to_input(input_image, value)
-                    modified_parameters_set.add("output_image")
+                # Apply the mask to input image
+                self._apply_mask_to_input(input_image, value)
+                modified_parameters_set.add("output_image")
 
         logger.info(f"modified_parameters_set: {modified_parameters_set}")
         return super().after_value_set(parameter, value, modified_parameters_set)
@@ -178,10 +177,7 @@ class PaintMask(DataNode):
             stored_source_url = metadata.get("source_image_url") if isinstance(metadata, dict) else None
 
         # If source image URL has changed, regenerate mask
-        if stored_source_url != input_image.value:
-            return True
-
-        return False
+        return stored_source_url != input_image.value
 
     def generate_initial_mask(self, image_artifact: ImageUrlArtifact) -> Image.Image:
         """Extract the alpha channel from a URL-based image."""
