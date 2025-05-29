@@ -60,12 +60,12 @@ class DeleteConnectionResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class ListConnectionsForNodeRequest(RequestPayload):
     # If node name is None, use the Current Context
-    node_name: str | None = None
+    node_id: str | None = None
 
 
 @dataclass
 class IncomingConnection:
-    source_node_name: str
+    source_node_id: str
     source_parameter_name: str
     target_parameter_name: str
 
@@ -73,7 +73,7 @@ class IncomingConnection:
 @dataclass
 class OutgoingConnection:
     source_parameter_name: str
-    target_node_name: str
+    target_node_id: str
     target_parameter_name: str
 
 

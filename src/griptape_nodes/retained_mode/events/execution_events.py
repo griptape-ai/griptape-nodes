@@ -17,7 +17,7 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @dataclass
 @PayloadRegistry.register
 class ResolveNodeRequest(RequestPayload):
-    node_name: str
+    node_id: str
     debug_mode: bool = False
 
 

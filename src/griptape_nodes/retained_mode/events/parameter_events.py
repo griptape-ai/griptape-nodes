@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 @PayloadRegistry.register
 class AddParameterToNodeRequest(RequestPayload):
     # If node name is None, use the Current Context
-    node_name: str | None = None
+    node_id: str | None = None
     parameter_name: str | None = None
     default_value: Any | None = None
     tooltip: str | list[dict] | None = None
@@ -58,7 +58,7 @@ class AddParameterToNodeRequest(RequestPayload):
 class AddParameterToNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     parameter_name: str
     type: str
-    node_name: str
+    node_id: str
 
 
 @dataclass
@@ -71,8 +71,8 @@ class AddParameterToNodeResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class RemoveParameterFromNodeRequest(RequestPayload):
     parameter_name: str
-    # If node name is None, use the Current Context
-    node_name: str | None = None
+    # If node id is None, use the Current Context
+    node_id: str | None = None
 
 
 @dataclass
@@ -119,7 +119,7 @@ class SetParameterValueResultFailure(ResultPayloadFailure):
 class GetParameterDetailsRequest(RequestPayload):
     parameter_name: str
     # If node name is None, use the Current Context
-    node_name: str | None = None
+    node_id: str | None = None
 
 
 @dataclass
@@ -152,7 +152,7 @@ class GetParameterDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 class AlterParameterDetailsRequest(RequestPayload):
     parameter_name: str
     # If node name is None, use the Current Context
-    node_name: str | None = None
+    node_id: str | None = None
     type: str | None = None
     input_types: list[str] | None = None
     output_type: str | None = None
@@ -222,8 +222,8 @@ class AlterParameterDetailsResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class GetParameterValueRequest(RequestPayload):
     parameter_name: str
-    # If node name is None, use the Current Context
-    node_name: str | None = None
+    # If node id is None, use the Current Context
+    node_id: str | None = None
 
 
 @dataclass
@@ -255,8 +255,8 @@ class OnParameterValueChanged(WorkflowAlteredMixin, ResultPayloadSuccess):
 class GetCompatibleParametersRequest(RequestPayload):
     parameter_name: str
     is_output: bool
-    # If node name is None, use the Current Context
-    node_name: str | None = None
+    # If node id is None, use the Current Context
+    node_id: str | None = None
 
 
 class ParameterAndMode(NamedTuple):
@@ -280,7 +280,7 @@ class GetCompatibleParametersResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 @PayloadRegistry.register
 class GetNodeElementDetailsRequest(RequestPayload):
     # If node name is None, use the Current Context
-    node_name: str | None = None
+    node_id: str | None = None
     specific_element_id: str | None = None  # Pass None to use the root
 
 

@@ -36,7 +36,7 @@ class ValidateFlowDependenciesResultFailure(WorkflowNotAlteredMixin, ResultPaylo
 @PayloadRegistry.register
 class ValidateNodeDependenciesRequest(RequestPayload):
     # Same inputs as StartFlow
-    node_name: str
+    node_id: str
 
 
 @dataclass

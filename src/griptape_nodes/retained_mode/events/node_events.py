@@ -35,7 +35,7 @@ class CreateNodeRequest(RequestPayload):
     specific_library_name: str | None = None
     node_name: str | None = None
     # If None is passed, assumes we're using the flow in the Current Context
-    override_parent_flow_name: str | None = None
+    override_parent_flow_id: str | None = None
     metadata: dict | None = None
     resolution: str = NodeResolutionState.UNRESOLVED.value
     # initial_setup prevents unnecessary work when we are loading a workflow from a file.
@@ -49,6 +49,7 @@ class CreateNodeRequest(RequestPayload):
 class CreateNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     node_name: str
     node_type: str
+    node_id: str
     specific_library_name: str | None = None
 
 
@@ -81,7 +82,7 @@ class DeleteNodeResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class GetNodeResolutionStateRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context
-    node_name: str | None = None
+    node_id: str | None = None
 
 
 @dataclass
@@ -100,7 +101,7 @@ class GetNodeResolutionStateResultFailure(WorkflowNotAlteredMixin, ResultPayload
 @PayloadRegistry.register
 class ListParametersOnNodeRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context
-    node_name: str | None = None
+    node_id: str | None = None
 
 
 @dataclass
@@ -119,7 +120,7 @@ class ListParametersOnNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 @PayloadRegistry.register
 class GetNodeMetadataRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context
-    node_name: str | None = None
+    node_id: str | None = None
 
 
 @dataclass
@@ -139,7 +140,7 @@ class GetNodeMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 class SetNodeMetadataRequest(RequestPayload):
     metadata: dict
     # If None is passed, assumes we're using the Node in the Current Context
-    node_name: str | None = None
+    node_id: str | None = None
 
 
 @dataclass
@@ -160,7 +161,7 @@ class SetNodeMetadataResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class GetAllNodeInfoRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context
-    node_name: str | None = None
+    node_id: str | None = None
 
 
 @dataclass
@@ -290,7 +291,7 @@ class SerializeNodeToCommandsRequest(RequestPayload):
             are preserved to prevent duplicate serialization attempts.
     """
 
-    node_name: str | None = None
+    node_id: str | None = None
     unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] = field(
         default_factory=dict
     )
@@ -377,7 +378,7 @@ class DeserializeSelectedNodesFromCommandsRequest(WorkflowNotAlteredMixin, Reque
 @dataclass
 @PayloadRegistry.register
 class DeserializeSelectedNodesFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    node_names: list[str]
+    node_ids: list[str]
 
 
 @dataclass
@@ -396,6 +397,7 @@ class DeserializeNodeFromCommandsRequest(RequestPayload):
 @PayloadRegistry.register
 class DeserializeNodeFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     node_name: str
+    node_id: str
 
 
 @dataclass
