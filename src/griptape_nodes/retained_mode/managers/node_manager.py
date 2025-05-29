@@ -182,8 +182,6 @@ class NodeManager:
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
         node = self.get_node_by_name(old_name)
-        # update the old name to have the new name.
-        node.name = new_name
         # Get all connections for this node and update them.
         flow_name = self.get_node_parent_flow_by_name(old_name)
         flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
