@@ -51,7 +51,6 @@ event_queue = Queue()
 
 # Global WebSocket connection for sending events
 ws_connection_for_sending = None
-ws_send_lock = asyncio.Lock()
 event_loop = None
 
 # Whether to enable the static server
@@ -377,12 +376,13 @@ async def __emit_message(event_type: str, payload: str) -> None:
         logger.warning("WebSocket connection not available for sending message")
         return
 
-    body = {"type": event_type, "payload": json.loads(payload) if payload else {}}
-    async with ws_send_lock:
-        try:
-            await ws_connection_for_sending.send(json.dumps(body))
-        except WebSocketException as e:
-            logger.error("Error sending event to Nodes API: %s", e)
+    try:
+        body = {"type": event_type, "payload": json.loads(payload) if payload else {}}
+        await ws_connection_for_sending.send(json.dumps(body))
+    except WebSocketException as e:
+        logger.error("Error sending event to Nodes API: %s", e)
+    except Exception as e:
+        logger.error("Unexpected error while sending event to Nodes API: %s", e)
 
 
 async def __send_heartbeat(*, session_id: str | None, request: dict, ws_connection: Any) -> None:
@@ -404,6 +404,8 @@ async def __send_heartbeat(*, session_id: str | None, request: dict, ws_connecti
         )
     except WebSocketException as e:
         logger.error("Error sending heartbeat response: %s", e)
+    except Exception as e:
+        logger.error("Unexpected error while sending heartbeat response: %s", e)
 
 
 def __schedule_async_task(coro: Any) -> None:
