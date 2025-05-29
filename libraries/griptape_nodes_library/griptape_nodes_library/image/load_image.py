@@ -18,7 +18,7 @@ class LoadImage(DataNode):
             type="ImageArtifact",
             output_type="ImageUrlArtifact",
             default_value=None,
-            ui_options={"clickable_file_browser": True, "expander": True},
+            ui_options={"clickable_file_browser": True, "expander": True, "edit_mask": True},
             tooltip="The image that has been generated.",
         )
         self.add_parameter(image_parameter)
