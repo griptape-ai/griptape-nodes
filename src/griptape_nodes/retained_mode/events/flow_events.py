@@ -25,7 +25,7 @@ class CreateFlowRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class CreateFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    flow_name: str
+    flow_id: str
 
 
 @dataclass
@@ -124,7 +124,7 @@ class GetTopLevelFlowRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetTopLevelFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    flow_name: str | None
+    flow_id: str | None
 
 
 # A Flow's state can be serialized into a sequence of commands that the engine then runs.
@@ -191,7 +191,7 @@ class SerializeFlowToCommandsRequest(RequestPayload):
             Copy/paste can make use of this.
     """
 
-    flow_name: str | None = None
+    flow_id: str | None = None
     include_create_flow_command: bool = True
 
 
@@ -216,7 +216,7 @@ class DeserializeFlowFromCommandsRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class DeserializeFlowFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    flow_name: str
+    flow_id: str
 
 
 @dataclass

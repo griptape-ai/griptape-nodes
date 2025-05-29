@@ -96,7 +96,7 @@ class UnresolveFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class SingleExecutionStepRequest(RequestPayload):
-    flow_name: str
+    flow_id: str
 
 
 @dataclass
@@ -114,7 +114,7 @@ class SingleExecutionStepResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class SingleNodeStepRequest(RequestPayload):
-    flow_name: str
+    flow_id: str
 
 
 @dataclass
@@ -133,7 +133,7 @@ class SingleNodeStepResultFailure(ResolveNodeResultFailure):
 @dataclass
 @PayloadRegistry.register
 class ContinueExecutionStepRequest(RequestPayload):
-    flow_name: str
+    flow_id: str
 
 
 @dataclass
@@ -151,7 +151,7 @@ class ContinueExecutionStepResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetFlowStateRequest(RequestPayload):
-    flow_name: str
+    flow_id: str
 
 
 @dataclass

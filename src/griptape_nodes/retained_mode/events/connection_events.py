@@ -13,8 +13,8 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @dataclass
 @PayloadRegistry.register
 class CreateConnectionRequest(RequestPayload):
-    source_parameter_id: str
-    target_parameter_id: str
+    source_parameter_name: str
+    target_parameter_name: str
     # If node name is None, use the Current Context
     source_node_id: str | None = None
     target_node_id: str | None = None
