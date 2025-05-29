@@ -26,6 +26,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     SingleExecutionStepRequest,
     SingleNodeStepRequest,
     StartFlowRequest,
+    StartFlowResultFailure,
     UnresolveFlowRequest,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
@@ -60,6 +61,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.exe_types.flow import ControlFlow
 
 MIN_NODES = 2
 
@@ -204,27 +206,47 @@ class RetainedMode:
 
     @classmethod
     def get_metadata_for_node(cls, node_name: str) -> ResultPayload:
-        request = GetNodeMetadataRequest(node_name=node_name)
-        result = GriptapeNodes.handle_request(request)
-        return result
+        node = GriptapeNodes.ObjectManager().get_object_by_name(node_name)
+        if node is not None:
+            node_id = node.element_id
+            request = GetNodeMetadataRequest(node_id=node_id)
+            result = GriptapeNodes.handle_request(request)
+            return result
+        from griptape_nodes.retained_mode.events.node_events import GetNodeMetadataResultFailure
+        return GetNodeMetadataResultFailure()
 
     @classmethod
     def set_metadata_for_node(cls, node_name: str, metadata: dict[Any, Any]) -> ResultPayload:
-        request = SetNodeMetadataRequest(node_name=node_name, metadata=metadata)
-        result = GriptapeNodes.handle_request(request)
-        return result
+        node = GriptapeNodes.ObjectManager().get_object_by_name(node_name)
+        if node is not None:
+            node_id = node.element_id
+            request = SetNodeMetadataRequest(node_id=node_id, metadata=metadata)
+            result = GriptapeNodes.handle_request(request)
+            return result
+        from griptape_nodes.retained_mode.events.node_events import SetNodeMetadataResultFailure
+        return SetNodeMetadataResultFailure()
 
     @classmethod
     def get_connections_for_node(cls, node_name: str) -> ResultPayload:
-        request = ListConnectionsForNodeRequest(node_name=node_name)
-        result = GriptapeNodes.handle_request(request)
-        return result
+        node = GriptapeNodes.ObjectManager().get_object_by_name(node_name)
+        if node is not None:
+            node_id = node.element_id
+            request = ListConnectionsForNodeRequest(node_id=node_id)
+            result = GriptapeNodes.handle_request(request)
+            return result
+        from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeResultFailure
+        return ListConnectionsForNodeResultFailure()
 
     @classmethod
     def list_params(cls, node: str) -> ResultPayload:
-        request = ListParametersOnNodeRequest(node_name=node)
-        result = GriptapeNodes.handle_request(request)
-        return result.parameter_names
+        node_obj = GriptapeNodes.ObjectManager().get_object_by_name(node)
+        if node_obj is not None:
+            node_id = node_obj.element_id
+            request = ListParametersOnNodeRequest(node_id=node_id)
+            result = GriptapeNodes.handle_request(request)
+            return result.parameter_names
+        from griptape_nodes.retained_mode.events.node_events import ListParametersOnNodeResultFailure
+        return ListParametersOnNodeResultFailure().parameter_names
 
     @classmethod
     def add_param(  # noqa: PLR0913
@@ -246,10 +268,16 @@ class RetainedMode:
         mode_allowed_output: bool = True,  # noqa: FBT001, FBT002
         **kwargs,  # noqa: ARG003
     ) -> ResultPayload:
+        node = GriptapeNodes.ObjectManager().get_object_by_name(node_name)
+        if node is None:
+            from griptape_nodes.retained_mode.events.parameter_events import AlterParameterDetailsResultFailure
+            return AlterParameterDetailsResultFailure()
+            
+        node_id = node.element_id
         if edit:
             request = AlterParameterDetailsRequest(
                 parameter_name=parameter_name,
-                node_name=node_name,
+                node_id=node_id,
                 default_value=default_value,
                 tooltip=tooltip,
                 type=type,
@@ -266,7 +294,7 @@ class RetainedMode:
         else:
             request = AddParameterToNodeRequest(
                 parameter_name=parameter_name,
-                node_name=node_name,
+                node_id=node_id,
                 default_value=default_value,
                 tooltip=tooltip,
                 type=type,
@@ -286,9 +314,14 @@ class RetainedMode:
     # remove_parameter_from_node
     @classmethod
     def del_param(cls, node_name: str, parameter_name: str) -> ResultPayload:
-        request = RemoveParameterFromNodeRequest(parameter_name=parameter_name, node_name=node_name)
-        result = GriptapeNodes.handle_request(request)
-        return result
+        node = GriptapeNodes.ObjectManager().get_object_by_name(node_name)
+        if node is not None:
+            node_id = node.element_id
+            request = RemoveParameterFromNodeRequest(parameter_name=parameter_name, node_id=node_id)
+            result = GriptapeNodes.handle_request(request)
+            return result
+        from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeResultFailure
+        return RemoveParameterFromNodeResultFailure()
 
     """
     @classmethod
@@ -310,9 +343,14 @@ class RetainedMode:
             param: Name of the parameter
             **kwargs: Additional arguments
         """
-        request = GetParameterDetailsRequest(parameter_name=param, node_name=node)
-        result = GriptapeNodes.handle_request(request)
-        return result
+        node_obj = GriptapeNodes.ObjectManager().get_object_by_name(node)
+        if node_obj is not None:
+            node_id = node_obj.element_id
+            request = GetParameterDetailsRequest(parameter_name=param, node_id=node_id)
+            result = GriptapeNodes.handle_request(request)
+            return result
+        from griptape_nodes.retained_mode.events.parameter_events import GetParameterDetailsResultFailure
+        return GetParameterDetailsResultFailure()
 
     @classmethod
     def exists(cls, node: str) -> bool:
@@ -504,10 +542,17 @@ class RetainedMode:
 
         # Chop up the param name to see if there are any indices/keys in there.
         base_param_name, indices = cls.parse_indexed_variable(param)
-
+        
+        # Get the node ID from the name
+        node_obj = GriptapeNodes.ObjectManager().get_object_by_name(node)
+        if node_obj is None:
+            from griptape_nodes.retained_mode.events.parameter_events import GetParameterValueResultFailure
+            return GetParameterValueResultFailure()
+            
+        node_id = node_obj.element_id
         request = GetParameterValueRequest(
             parameter_name=base_param_name,
-            node_name=node,
+            node_id=node_id,
         )
         result = GriptapeNodes.handle_request(request)
 
@@ -571,12 +616,20 @@ class RetainedMode:
 
         # Chop up the param name to see if there are any indices/keys in there.
         base_param_name, indices = cls.parse_indexed_variable(param)
+        
+        # Get the node ID from the name
+        node_obj = GriptapeNodes.ObjectManager().get_object_by_name(node)
+        if node_obj is None:
+            from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueResultFailure
+            return SetParameterValueResultFailure()
+            
+        node_id = node_obj.element_id
 
-        # If we have no indices, set the value directly.
+        # If no indices, set directly
         if len(indices) == 0:
             request = SetParameterValueRequest(
                 parameter_name=base_param_name,
-                node_name=node,
+                node_id=node_id,
                 value=value,
             )
             result = GriptapeNodes.handle_request(request)
@@ -585,7 +638,7 @@ class RetainedMode:
             # We have indices. Get the value of the container first, then attempt to move all the way up to the end.
             request = GetParameterValueRequest(
                 parameter_name=base_param_name,
-                node_name=node,
+                node_id=node_id,
             )
             result = GriptapeNodes.handle_request(request)
 
@@ -635,7 +688,7 @@ class RetainedMode:
                         # Actually attempt to set the value, which should do type validation, etc.
                         request = SetParameterValueRequest(
                             parameter_name=base_param_name,
-                            node_name=node,
+                            node_id=node_id,
                             value=base_container,  # Re-assign the entire updated container.
                         )
                         result = GriptapeNodes.handle_request(request)
@@ -657,11 +710,22 @@ class RetainedMode:
     def connect(cls, source: str, destination: str) -> ResultPayload:
         src_node, src_param = node_param_split(source)
         dst_node, dst_param = node_param_split(destination)
+        
+        # Get node IDs from names
+        source_node_obj = GriptapeNodes.ObjectManager().get_object_by_name(src_node)
+        target_node_obj = GriptapeNodes.ObjectManager().get_object_by_name(dst_node)
+        
+        if source_node_obj is None or target_node_obj is None:
+            from griptape_nodes.retained_mode.events.connection_events import CreateConnectionResultFailure
+            return CreateConnectionResultFailure()
+            
+        source_node_id = source_node_obj.element_id
+        target_node_id = target_node_obj.element_id
 
         request = CreateConnectionRequest(
-            source_node_name=src_node,
+            source_node_id=source_node_id,
             source_parameter_name=src_param,
-            target_node_name=dst_node,
+            target_node_id=target_node_id,
             target_parameter_name=dst_param,
         )
         return GriptapeNodes.handle_request(request)
@@ -688,10 +752,23 @@ class RetainedMode:
             source_node = node_names[i]
             target_node = node_names[i + 1]
 
+            source_node_obj = GriptapeNodes.ObjectManager().get_object_by_name(source_node)
+            target_node_obj = GriptapeNodes.ObjectManager().get_object_by_name(target_node)
+            
+            if source_node_obj is None or target_node_obj is None:
+                from griptape_nodes.retained_mode.events.connection_events import CreateConnectionResultFailure
+                result = CreateConnectionResultFailure()
+                results[f"{source_node} -> {target_node}"] = result
+                failures.append(f"{source_node} -> {target_node}")
+                continue
+                
+            source_node_id = source_node_obj.element_id
+            target_node_id = target_node_obj.element_id
+            
             request = CreateConnectionRequest(
-                source_node_name=source_node,
+                source_node_id=source_node_id,
                 source_parameter_name="exec_out",
-                target_node_name=target_node,
+                target_node_id=target_node_id,
                 target_parameter_name="exec_in",
             )
 
@@ -716,10 +793,21 @@ class RetainedMode:
         target_node_name: str,
         target_param_name: str,
     ) -> ResultPayload:
+        # Get node IDs from names
+        source_node_obj = GriptapeNodes.ObjectManager().get_object_by_name(source_node_name)
+        target_node_obj = GriptapeNodes.ObjectManager().get_object_by_name(target_node_name)
+        
+        if source_node_obj is None or target_node_obj is None:
+            from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionResultFailure
+            return DeleteConnectionResultFailure()
+            
+        source_node_id = source_node_obj.element_id
+        target_node_id = target_node_obj.element_id
+        
         request = DeleteConnectionRequest(
-            source_node_name=source_node_name,
+            source_node_id=source_node_id,
             source_parameter_name=source_param_name,
-            target_node_name=target_node_name,
+            target_node_id=target_node_id,
             target_parameter_name=target_param_name,
         )
         result = GriptapeNodes.handle_request(request)
@@ -747,45 +835,90 @@ class RetainedMode:
     # FLOW OPERATIONS
     @classmethod
     def run_flow(cls, flow_name: str) -> ResultPayload:
-        request = StartFlowRequest(flow_name=flow_name, debug_mode=False)
-        result = GriptapeNodes.handle_request(request)
-        return result
+        flow = GriptapeNodes.ObjectManager().get_object_by_name(flow_name)
+        if flow is not None and isinstance(flow, ControlFlow):
+            flow_id = flow.element_id
+            request = StartFlowRequest(flow_id=flow_id, debug_mode=False)
+            result = GriptapeNodes.handle_request(request)
+            return result
+        return StartFlowResultFailure(validation_exceptions=[])
 
     @classmethod
     def run_node(cls, node_name: str) -> ResultPayload:
-        request = ResolveNodeRequest(node_name=node_name)
-        result = GriptapeNodes.handle_request(request)
-        return result
+        node = GriptapeNodes.ObjectManager().get_object_by_name(node_name)
+        if node is not None:
+            node_id = node.element_id
+            request = ResolveNodeRequest(node_id=node_id)
+            result = GriptapeNodes.handle_request(request)
+            return result
+        from griptape_nodes.retained_mode.events.execution_events import ResolveNodeResultFailure
+        return ResolveNodeResultFailure(validation_exceptions=[])
 
     @classmethod
     def single_step(cls, flow_name: str) -> ResultPayload:
-        request = SingleNodeStepRequest(flow_name=flow_name)
-        return GriptapeNodes.handle_request(request)
+        flow = GriptapeNodes.ObjectManager().get_object_by_name(flow_name)
+        if flow is not None and isinstance(flow, ControlFlow):
+            flow_id = flow.element_id
+            request = SingleNodeStepRequest(flow_id=flow_id)
+            result = GriptapeNodes.handle_request(request)
+            return result
+        from griptape_nodes.retained_mode.events.execution_events import SingleNodeStepResultFailure
+        return SingleNodeStepResultFailure(validation_exceptions=[])
 
     @classmethod
     def single_execution_step(cls, flow_name: str) -> ResultPayload:
-        request = SingleExecutionStepRequest(flow_name=flow_name)
-        return GriptapeNodes.handle_request(request)
+        flow = GriptapeNodes.ObjectManager().get_object_by_name(flow_name)
+        if flow is not None and isinstance(flow, ControlFlow):
+            flow_id = flow.element_id
+            request = SingleExecutionStepRequest(flow_id=flow_id)
+            result = GriptapeNodes.handle_request(request)
+            return result
+        from griptape_nodes.retained_mode.events.execution_events import SingleExecutionStepResultFailure
+        return SingleExecutionStepResultFailure()
 
     @classmethod
     def continue_flow(cls, flow_name: str) -> ResultPayload:
-        request = ContinueExecutionStepRequest(flow_name=flow_name)
-        return GriptapeNodes.handle_request(request)
+        flow = GriptapeNodes.ObjectManager().get_object_by_name(flow_name)
+        if flow is not None and isinstance(flow, ControlFlow):
+            flow_id = flow.element_id
+            request = ContinueExecutionStepRequest(flow_id=flow_id)
+            result = GriptapeNodes.handle_request(request)
+            return result
+        from griptape_nodes.retained_mode.events.execution_events import ContinueExecutionStepResultFailure
+        return ContinueExecutionStepResultFailure()
 
     @classmethod
     def reset_flow(cls, flow_name: str) -> ResultPayload:
-        request = UnresolveFlowRequest(flow_name=flow_name)
-        return GriptapeNodes.handle_request(request)
+        flow = GriptapeNodes.ObjectManager().get_object_by_name(flow_name)
+        if flow is not None and isinstance(flow, ControlFlow):
+            flow_id = flow.element_id
+            request = UnresolveFlowRequest(flow_id=flow_id)
+            result = GriptapeNodes.handle_request(request)
+            return result
+        from griptape_nodes.retained_mode.events.execution_events import UnresolveFlowResultFailure
+        return UnresolveFlowResultFailure()
 
     @classmethod
     def cancel_flow(cls, flow_name: str) -> ResultPayload:
-        request = CancelFlowRequest(flow_name=flow_name)
-        return GriptapeNodes.handle_request(request)
+        flow = GriptapeNodes.ObjectManager().get_object_by_name(flow_name)
+        if flow is not None and isinstance(flow, ControlFlow):
+            flow_id = flow.element_id
+            request = CancelFlowRequest(flow_id=flow_id)
+            result = GriptapeNodes.handle_request(request)
+            return result
+        from griptape_nodes.retained_mode.events.execution_events import CancelFlowResultFailure
+        return CancelFlowResultFailure()
 
     @classmethod
     def get_flow_state(cls, flow_name: str) -> ResultPayload:
-        request = GetFlowStateRequest(flow_name=flow_name)
-        return GriptapeNodes.handle_request(request)
+        flow = GriptapeNodes.ObjectManager().get_object_by_name(flow_name)
+        if flow is not None and isinstance(flow, ControlFlow):
+            flow_id = flow.element_id
+            request = GetFlowStateRequest(flow_id=flow_id)
+            result = GriptapeNodes.handle_request(request)
+            return result
+        from griptape_nodes.retained_mode.events.execution_events import GetFlowStateResultFailure
+        return GetFlowStateResultFailure()
 
     # ARBITRARY PYTHON EXECUTION
     @classmethod
