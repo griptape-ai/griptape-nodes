@@ -39,7 +39,6 @@ class LoadImage(DataNode):
         if parameter.name == "image":
             image_artifact = self._to_image_artifact(value)
             self.parameter_output_values["image"] = image_artifact
-            modified_parameters_set.add("image")
         return super().after_value_set(parameter, value, modified_parameters_set)
 
     def process(self) -> None:
