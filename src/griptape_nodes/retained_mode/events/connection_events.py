@@ -20,6 +20,30 @@ class CreateConnectionRequest(RequestPayload):
     target_node_id: str | None = None
     # initial_setup prevents unnecessary work when we are loading a workflow from a file.
     initial_setup: bool = False
+    
+    @property
+    def source_node_name(self) -> str | None:
+        """Get the source node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the source node if source_node_id is provided, otherwise None
+        """
+        if self.source_node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.source_node_id)
+        
+    @property
+    def target_node_name(self) -> str | None:
+        """Get the target node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the target node if target_node_id is provided, otherwise None
+        """
+        if self.target_node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.target_node_id)
 
 
 @dataclass
@@ -42,6 +66,30 @@ class DeleteConnectionRequest(RequestPayload):
     # If node id is None, use the Current Context
     source_node_id: str | None = None
     target_node_id: str | None = None
+    
+    @property
+    def source_node_name(self) -> str | None:
+        """Get the source node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the source node if source_node_id is provided, otherwise None
+        """
+        if self.source_node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.source_node_id)
+        
+    @property
+    def target_node_name(self) -> str | None:
+        """Get the target node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the target node if target_node_id is provided, otherwise None
+        """
+        if self.target_node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.target_node_id)
 
 
 @dataclass
@@ -61,6 +109,18 @@ class DeleteConnectionResultFailure(ResultPayloadFailure):
 class ListConnectionsForNodeRequest(RequestPayload):
     # If node name is None, use the Current Context
     node_id: str | None = None
+    
+    @property
+    def node_name(self) -> str | None:
+        """Get the node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the node if node_id is provided, otherwise None
+        """
+        if self.node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.node_id)
 
 
 @dataclass

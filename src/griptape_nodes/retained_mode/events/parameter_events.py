@@ -41,6 +41,18 @@ class AddParameterToNodeRequest(RequestPayload):
     parent_container_name: str | None = None
     # initial_setup prevents unnecessary work when we are loading a workflow from a file.
     initial_setup: bool = False
+    
+    @property
+    def node_name(self) -> str | None:
+        """Get the node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the node if node_id is provided, otherwise None
+        """
+        if self.node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.node_id)
 
     @classmethod
     def create(cls, **kwargs) -> AddParameterToNodeRequest:
@@ -73,6 +85,18 @@ class RemoveParameterFromNodeRequest(RequestPayload):
     parameter_name: str
     # If node id is None, use the Current Context
     node_id: str | None = None
+    
+    @property
+    def node_name(self) -> str | None:
+        """Get the node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the node if node_id is provided, otherwise None
+        """
+        if self.node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.node_id)
 
 
 @dataclass
@@ -99,6 +123,18 @@ class SetParameterValueRequest(RequestPayload):
     initial_setup: bool = False
     # is_output is true when the value being saved is from an output value. Used when loading a workflow from a file.
     is_output: bool = False
+    
+    @property
+    def node_name(self) -> str | None:
+        """Get the node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the node if node_id is provided, otherwise None
+        """
+        if self.node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.node_id)
 
 
 @dataclass
@@ -120,6 +156,18 @@ class GetParameterDetailsRequest(RequestPayload):
     parameter_name: str
     # If node name is None, use the Current Context
     node_id: str | None = None
+    
+    @property
+    def node_name(self) -> str | None:
+        """Get the node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the node if node_id is provided, otherwise None
+        """
+        if self.node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.node_id)
 
 
 @dataclass
@@ -151,7 +199,6 @@ class GetParameterDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 @PayloadRegistry.register
 class AlterParameterDetailsRequest(RequestPayload):
     parameter_name: str
-    # If node name is None, use the Current Context
     node_id: str | None = None
     type: str | None = None
     input_types: list[str] | None = None
@@ -166,8 +213,19 @@ class AlterParameterDetailsRequest(RequestPayload):
     mode_allowed_output: bool | None = None
     ui_options: dict | None = None
     traits: set[str] | None = None
-    # initial_setup prevents unnecessary work when we are loading a workflow from a file.
     initial_setup: bool = False
+    
+    @property
+    def node_name(self) -> str | None:
+        """Get the node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the node if node_id is provided, otherwise None
+        """
+        if self.node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.node_id)
 
     @classmethod
     def create(cls, **kwargs) -> AlterParameterDetailsRequest:
@@ -224,6 +282,18 @@ class GetParameterValueRequest(RequestPayload):
     parameter_name: str
     # If node id is None, use the Current Context
     node_id: str | None = None
+    
+    @property
+    def node_name(self) -> str | None:
+        """Get the node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the node if node_id is provided, otherwise None
+        """
+        if self.node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.node_id)
 
 
 @dataclass
@@ -279,9 +349,21 @@ class GetCompatibleParametersResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 @dataclass
 @PayloadRegistry.register
 class GetNodeElementDetailsRequest(RequestPayload):
-    # If node name is None, use the Current Context
+    # If node id is None, use the Current Context
     node_id: str | None = None
     specific_element_id: str | None = None  # Pass None to use the root
+    
+    @property
+    def node_name(self) -> str | None:
+        """Get the node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the node if node_id is provided, otherwise None
+        """
+        if self.node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.node_id)
 
 
 @dataclass

@@ -229,19 +229,19 @@ class GriptapeNodes(metaclass=SingletonMeta):
         while more_flows:
             flows = GriptapeNodes.ObjectManager().get_filtered_subset(type=ControlFlow)
             found_orphan = False
-            for flow_name in flows:
+            for flow_id in flows:
                 try:
-                    parent = GriptapeNodes.FlowManager().get_parent_flow(flow_name)
+                    parent = GriptapeNodes.FlowManager().get_parent_flow(flow_id)
                 except Exception as e:
                     raise RuntimeError(e) from e
                 if not parent:
-                    event = DeleteFlowRequest(flow_name=flow_name)
+                    event = DeleteFlowRequest(flow_id=flow_id)
                     GriptapeNodes.handle_request(event)
                     found_orphan = True
                     break
             if not flows or not found_orphan:
                 more_flows = False
-        if GriptapeNodes.ObjectManager()._name_to_objects:
+        if GriptapeNodes.ObjectManager()._id_to_objects:
             msg = "Failed to successfully delete all objects"
             raise ValueError(msg)
 
@@ -283,26 +283,29 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return AppGetSessionResultSuccess(session_id=BaseEvent._session_id)
 
 
-def create_flows_in_order(flow_name: str, flow_manager: FlowManager, created_flows: list, file: IO) -> list | None:
+def create_flows_in_order(flow_id: str, flow_manager: FlowManager, created_flows: list, file: IO) -> list | None:
     """Creates flows in the correct order based on their dependencies."""
     # If this flow is already created, we can return
-    if flow_name in created_flows:
+    if flow_id in created_flows:
         return None
 
     # Get the parent of this flow
-    parent = flow_manager.get_parent_flow(flow_name)
+    parent = flow_manager.get_parent_flow(flow_id)
 
     # If there's a parent, create it first
     if parent:
         create_flows_in_order(parent, flow_manager, created_flows, file)
 
     # Now create this flow (only if not already created)
-    if flow_name not in created_flows:
+    if flow_id not in created_flows:
+        # Get the flow object to access its name
+        flow = GriptapeNodes.ObjectManager().get_object_by_id_as_type(flow_id, ControlFlow)
         # Here you would actually send the request and handle response
-        creation_request = CreateFlowRequest(flow_name=flow_name, parent_flow_name=parent)
-        code_string = f"GriptapeNodes.handle_request({creation_request})"
-        file.write(code_string + "\n")
-        created_flows.append(flow_name)
+        if flow is not None:
+            creation_request = CreateFlowRequest(flow_name=flow.name, parent_flow_id=parent)
+            code_string = f"GriptapeNodes.handle_request({creation_request})"
+            file.write(code_string + "\n")
+            created_flows.append(flow_id)
 
     return created_flows
 
@@ -311,14 +314,14 @@ def handle_flow_saving(file: TextIO, obj_manager: ObjectManager, created_flows: 
     """Handles the creation and saving of flows."""
     flow_manager = GriptapeNodes.FlowManager()
     connection_request_workflows = ""
-    for flow_name, flow in obj_manager.get_filtered_subset(type=ControlFlow).items():
-        create_flows_in_order(flow_name, flow_manager, created_flows, file)
+    for flow_id, flow in obj_manager.get_filtered_subset(type=ControlFlow).items():
+        create_flows_in_order(flow_id, flow_manager, created_flows, file)
         # While creating flows - let's create all of our connections
         for connection in flow.connections.connections.values():
             creation_request = CreateConnectionRequest(
-                source_node_name=connection.source_node.name,
+                source_node_id=connection.source_node.element_id,
                 source_parameter_name=connection.source_parameter.name,
-                target_node_name=connection.target_node.name,
+                target_node_id=connection.target_node.element_id,
                 target_parameter_name=connection.target_parameter.name,
                 initial_setup=True,
             )
@@ -337,7 +340,7 @@ def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tu
             param_dict = parameter.to_dict()
             # Create the parameter, or alter it on the existing node
             if isinstance(parameter, Parameter) and parameter.user_defined:
-                param_dict["node_name"] = node.name
+                param_dict["node_id"] = node.element_id
                 param_dict["initial_setup"] = True
                 creation_request = AddParameterToNodeRequest.create(**param_dict)
                 code_string = f"GriptapeNodes.handle_request({creation_request})\n"
@@ -351,7 +354,7 @@ def handle_parameter_creation_saving(node: BaseNode, values_created: dict) -> tu
                         relevant = True
                         break
                 if relevant:
-                    diff["node_name"] = node.name
+                    diff["node_id"] = node.element_id
                     diff["parameter_name"] = parameter.name
                     diff["initial_setup"] = True
                     creation_request = AlterParameterDetailsRequest.create(**diff)
@@ -414,7 +417,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_c
         if value_id in values_created:
             var_name = values_created[value_id]
             # We've already created this object. we're all good.
-            return f"GriptapeNodes.handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True, is_output={is_output}))"
+            return f"GriptapeNodes.handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_id='{node.element_id}', value={var_name}, initial_setup=True, is_output={is_output}))"
         # Set it up as a object in the code
         imports = []
         var_name = f"{node.name}_{parameter.name}_value"
@@ -425,7 +428,7 @@ def handle_parameter_value_saving(parameter: Parameter, node: BaseNode, values_c
             # Add the request handling code
             final_code = (
                 reconstruction_code
-                + f"GriptapeNodes.handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_name='{node.name}', value={var_name}, initial_setup=True, is_output={is_output}))"
+                + f"GriptapeNodes.handle_request(SetParameterValueRequest(parameter_name='{parameter.name}', node_id='{node.element_id}', value={var_name}, initial_setup=True, is_output={is_output}))"
             )
             # Combine imports and code
             import_statements = ""

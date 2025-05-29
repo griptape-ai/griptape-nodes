@@ -19,6 +19,16 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 class ResolveNodeRequest(RequestPayload):
     node_id: str
     debug_mode: bool = False
+    
+    @property
+    def node_name(self) -> str | None:
+        """Get the node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the node
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.node_id)
 
 
 @dataclass
@@ -39,6 +49,16 @@ class StartFlowRequest(RequestPayload):
     flow_id: str
     flow_node_id: str | None = None
     debug_mode: bool = False
+    
+    @property
+    def flow_name(self) -> str | None:
+        """Get the flow name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the flow
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.flow_id)
 
 
 @dataclass
@@ -57,6 +77,16 @@ class StartFlowResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class CancelFlowRequest(RequestPayload):
     flow_id: str
+    
+    @property
+    def flow_name(self) -> str | None:
+        """Get the flow name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the flow
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.flow_id)
 
 
 @dataclass
@@ -75,6 +105,16 @@ class CancelFlowResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class UnresolveFlowRequest(RequestPayload):
     flow_id: str
+    
+    @property
+    def flow_name(self) -> str | None:
+        """Get the flow name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the flow
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.flow_id)
 
 
 @dataclass
@@ -97,6 +137,16 @@ class UnresolveFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class SingleExecutionStepRequest(RequestPayload):
     flow_id: str
+    
+    @property
+    def flow_name(self) -> str | None:
+        """Get the flow name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the flow
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.flow_id)
 
 
 @dataclass
@@ -115,6 +165,16 @@ class SingleExecutionStepResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class SingleNodeStepRequest(RequestPayload):
     flow_id: str
+    
+    @property
+    def flow_name(self) -> str | None:
+        """Get the flow name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the flow
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.flow_id)
 
 
 @dataclass
@@ -134,6 +194,16 @@ class SingleNodeStepResultFailure(ResolveNodeResultFailure):
 @PayloadRegistry.register
 class ContinueExecutionStepRequest(RequestPayload):
     flow_id: str
+    
+    @property
+    def flow_name(self) -> str | None:
+        """Get the flow name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the flow
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.flow_id)
 
 
 @dataclass
@@ -152,6 +222,16 @@ class ContinueExecutionStepResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class GetFlowStateRequest(RequestPayload):
     flow_id: str
+    
+    @property
+    def flow_name(self) -> str | None:
+        """Get the flow name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the flow
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.flow_id)
 
 
 @dataclass

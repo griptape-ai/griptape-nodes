@@ -405,9 +405,9 @@ class NodeManager:
         return DeleteNodeResultSuccess()
 
     def on_get_node_resolution_state_request(self, request: GetNodeResolutionStateRequest) -> ResultPayload:
-        node_name = request.node_name
+        node_id = request.node_id
         node = None
-        if node_name is None:
+        if node_id is None:
             # Get from the current context.
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to get resolution state for a Node from the Current Context. Failed because the Current Context is empty."
@@ -415,21 +415,20 @@ class NodeManager:
                 return GetNodeResolutionStateResultFailure()
 
             node = GriptapeNodes.ContextManager().get_current_node()
-            node_name = node.name
-
-        if node is None:
+            node_id = node.element_id
+        else:
             # Does this node exist?
             obj_mgr = GriptapeNodes.ObjectManager()
-            node = obj_mgr.get_object_by_id_as_type(node_name, BaseNode)
-            if node is None:
-                details = f"Attempted to get resolution state for a Node '{node_name}', but no such Node was found."
-                logger.error(details)
-                result = GetNodeResolutionStateResultFailure()
-                return result
+            node = obj_mgr.get_object_by_id_as_type(node_id, BaseNode)
+        if node is None:
+            details = f"Attempted to get resolution state for a Node '{node_id}', but no such Node was found."
+            logger.error(details)
+            result = GetNodeResolutionStateResultFailure()
+            return result
 
         node_state = node.state
 
-        details = f"Successfully got resolution state for Node '{node_name}'."
+        details = f"Successfully got resolution state for Node '{node.name}'."
         logger.debug(details)
 
         result = GetNodeResolutionStateResultSuccess(

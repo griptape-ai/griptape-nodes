@@ -26,6 +26,7 @@ class CreateFlowRequest(RequestPayload):
 @PayloadRegistry.register
 class CreateFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     flow_id: str
+    flow_name: str
 
 
 @dataclass
@@ -39,6 +40,18 @@ class CreateFlowResultFailure(ResultPayloadFailure):
 class DeleteFlowRequest(RequestPayload):
     # If None is passed, assumes we're deleting the flow in the Current Context.
     flow_id: str | None = None
+    
+    @property
+    def flow_name(self) -> str | None:
+        """Get the flow name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the flow if flow_id is provided, otherwise None
+        """
+        if self.flow_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.flow_id)
 
 
 @dataclass
@@ -58,6 +71,18 @@ class DeleteFlowResultFailure(ResultPayloadFailure):
 class ListNodesInFlowRequest(RequestPayload):
     # If None is passed, assumes we're using the flow in the Current Context.
     flow_id: str | None = None
+    
+    @property
+    def flow_name(self) -> str | None:
+        """Get the flow name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the flow if flow_id is provided, otherwise None
+        """
+        if self.flow_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.flow_id)
 
 
 @dataclass
@@ -101,6 +126,18 @@ class ListFlowsInCurrentContextResultFailure(WorkflowNotAlteredMixin, ResultPayl
 class ListFlowsInFlowRequest(RequestPayload):
     # Pass in None to get the canvas.
     parent_flow_id: str | None = None
+    
+    @property
+    def parent_flow_name(self) -> str | None:
+        """Get the parent flow name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the parent flow if parent_flow_id is provided, otherwise None
+        """
+        if self.parent_flow_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.parent_flow_id)
 
 
 @dataclass

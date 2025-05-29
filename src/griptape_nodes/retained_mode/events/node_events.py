@@ -42,6 +42,18 @@ class CreateNodeRequest(RequestPayload):
     initial_setup: bool = False
     # When True, this Node will be pushed as the current Node within the Current Context.
     set_as_new_context: bool = False
+    
+    @property
+    def override_parent_flow_name(self) -> str | None:
+        """Get the override parent flow name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the override parent flow if override_parent_flow_id is provided, otherwise None
+        """
+        if self.override_parent_flow_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.override_parent_flow_id)
 
 
 @dataclass
@@ -64,6 +76,18 @@ class CreateNodeResultFailure(ResultPayloadFailure):
 class DeleteNodeRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context.
     node_id: str | None = None
+    
+    @property
+    def node_name(self) -> str | None:
+        """Get the node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the node if node_id is provided, otherwise None
+        """
+        if self.node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.node_id)
 
 
 @dataclass
@@ -83,6 +107,18 @@ class DeleteNodeResultFailure(ResultPayloadFailure):
 class GetNodeResolutionStateRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context
     node_id: str | None = None
+    
+    @property
+    def node_name(self) -> str | None:
+        """Get the node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the node if node_id is provided, otherwise None
+        """
+        if self.node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.node_id)
 
 
 @dataclass
@@ -102,6 +138,17 @@ class GetNodeResolutionStateResultFailure(WorkflowNotAlteredMixin, ResultPayload
 class ListParametersOnNodeRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context
     node_id: str | None = None
+    @property
+    def node_name(self) -> str | None:
+        """Get the node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the node if node_id is provided, otherwise None
+        """
+        if self.node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.node_id)
 
 
 @dataclass
@@ -121,6 +168,18 @@ class ListParametersOnNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 class GetNodeMetadataRequest(RequestPayload):
     # If None is passed, assumes we're using the Node in the Current Context
     node_id: str | None = None
+    
+    @property
+    def node_name(self) -> str | None:
+        """Get the node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the node if node_id is provided, otherwise None
+        """
+        if self.node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.node_id)
 
 
 @dataclass
@@ -141,6 +200,18 @@ class SetNodeMetadataRequest(RequestPayload):
     metadata: dict
     # If None is passed, assumes we're using the Node in the Current Context
     node_id: str | None = None
+    
+    @property
+    def node_name(self) -> str | None:
+        """Get the node name for backward compatibility with operation_manager.
+        
+        Returns:
+            The name of the node if node_id is provided, otherwise None
+        """
+        if self.node_id is None:
+            return None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        return GriptapeNodes.ObjectManager().get_name_by_id(self.node_id)
 
 
 @dataclass

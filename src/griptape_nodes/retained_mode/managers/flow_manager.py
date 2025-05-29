@@ -145,10 +145,10 @@ class FlowManager:
                 flow = GriptapeNodes.ObjectManager().get_object_by_id_as_type(flow_id, ControlFlow)
                 if flow is None:
                     continue
-                return GetTopLevelFlowResultSuccess(flow_name=flow.name)
+                return GetTopLevelFlowResultSuccess(flow_id=flow.element_id)
         msg = "Attempted to get top level flow, but no such flow exists"
         logger.debug(msg)
-        return GetTopLevelFlowResultSuccess(flow_name=None)
+        return GetTopLevelFlowResultSuccess(flow_id=None)
 
     def does_canvas_exist(self) -> bool:
         """Determines if there is already an existing flow with no parent flow.Returns True if there is an existing flow with no parent flow.Return False if there is no existing flow with no parent flow."""
@@ -208,7 +208,7 @@ class FlowManager:
         details = f"Successfully created Flow '{final_flow_name}'."
         log_level = logging.DEBUG
         logger.log(level=log_level, msg=details)
-        result = CreateFlowResultSuccess(flow_name=final_flow_name)
+        result = CreateFlowResultSuccess(flow_name=final_flow_name, flow_id=flow.element_id)
         return result
 
     # This needs to have a lot of branches to check the flow in all possible situations. In Current Context, or when the name is passed in.
@@ -550,13 +550,13 @@ class FlowManager:
             if delete_old_result.failed():
                 old_source_node = GriptapeNodes.ObjectManager().get_object_by_id_as_type(old_source_node_id, BaseNode)
                 old_target_node = GriptapeNodes.ObjectManager().get_object_by_id_as_type(old_target_node_id, BaseNode)
-                details = f"Attempted to connect '{source_node.name}.{request.source_parameter_name}'. Failed because there was a previous connection from '{old_source_node.name}.{old_source_param_name}' to '{old_target_node.name}.{old_target_param_name}' that could not be deleted."
+                details = f"Attempted to connect '{source_node.name}.{request.source_parameter_name}'. Failed because there was a previous connection from '{old_source_node.name if old_source_node else old_source_node_id}.{old_source_param_name}' to '{old_target_node.name if old_target_node else old_target_node_id}.{old_target_param_name}' that could not be deleted."
                 logger.error(details)
                 return CreateConnectionResultFailure()
 
             old_source_node = GriptapeNodes.ObjectManager().get_object_by_id_as_type(old_source_node_id, BaseNode)
             old_target_node = GriptapeNodes.ObjectManager().get_object_by_id_as_type(old_target_node_id, BaseNode)
-            details = f"Deleted the previous connection from '{old_source_node.name}.{old_source_param_name}' to '{old_target_node.name}.{old_target_param_name}' to make room for the new connection."
+            details = f"Deleted the previous connection from '{old_source_node.name if old_source_node else old_source_node_id}.{old_source_param_name}' to '{old_target_node.name if old_target_node else old_target_node_id}.{old_target_param_name}' to make room for the new connection."
             logger.debug(details)
         try:
             # Actually create the Connection.

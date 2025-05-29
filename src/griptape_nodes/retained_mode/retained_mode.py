@@ -139,26 +139,27 @@ class RetainedMode:
         flow_name: str | None = None,
         parent_flow_name: str | None = None,
     ) -> ResultPayload:
+
         request = CreateFlowRequest(parent_flow_name=parent_flow_name, flow_name=flow_name)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def delete_flow(cls, flow_name: str) -> ResultPayload:
         request = DeleteFlowRequest(flow_name=flow_name)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def get_flows(cls, parent_flow_name: str | None = None) -> ResultPayload:
         request = ListFlowsInFlowRequest(parent_flow_name=parent_flow_name)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def get_nodes_in_flow(cls, flow_name: str) -> ResultPayload:
         request = ListNodesInFlowRequest(flow_name=flow_name)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     # NODE OPERATIONS
@@ -178,7 +179,7 @@ class RetainedMode:
             override_parent_flow_name=parent_flow_name,
             metadata=metadata,
         )
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         # Check if result is successful before accessing node_name
         if hasattr(result, "node_name"):
             return result.node_name
@@ -192,37 +193,37 @@ class RetainedMode:
         node_name: str,
     ) -> ResultPayload:
         request = DeleteNodeRequest(node_name=node_name)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def get_resolution_state_for_node(cls, node_name: str) -> ResultPayload:
         request = GetNodeResolutionStateRequest(node_name=node_name)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def get_metadata_for_node(cls, node_name: str) -> ResultPayload:
         request = GetNodeMetadataRequest(node_name=node_name)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def set_metadata_for_node(cls, node_name: str, metadata: dict[Any, Any]) -> ResultPayload:
         request = SetNodeMetadataRequest(node_name=node_name, metadata=metadata)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def get_connections_for_node(cls, node_name: str) -> ResultPayload:
         request = ListConnectionsForNodeRequest(node_name=node_name)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def list_params(cls, node: str) -> ResultPayload:
         request = ListParametersOnNodeRequest(node_name=node)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result.parameter_names
 
     @classmethod
@@ -279,14 +280,14 @@ class RetainedMode:
                 mode_allowed_output=mode_allowed_output,
                 ui_options=ui_options,
             )
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     # remove_parameter_from_node
     @classmethod
     def del_param(cls, node_name: str, parameter_name: str) -> ResultPayload:
         request = RemoveParameterFromNodeRequest(parameter_name=parameter_name, node_name=node_name)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     """
@@ -295,7 +296,7 @@ class RetainedMode:
         event = GetParameterDetailsRequest(
             parameter_name=parameter_name, node_name=node_name
         )
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
     """
 
@@ -310,7 +311,7 @@ class RetainedMode:
             **kwargs: Additional arguments
         """
         request = GetParameterDetailsRequest(parameter_name=param, node_name=node)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
@@ -390,7 +391,7 @@ class RetainedMode:
             parameter_name=base_param_name,
             node_name=node_name,
         )
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
 
         if not result.succeeded():
             return False, result
@@ -438,14 +439,14 @@ class RetainedMode:
                 node_name=node_name,
                 value=value,
             )
-            return GriptapeNodes().handle_request(request)
+            return GriptapeNodes.handle_request(request)
 
         # Get the container value
         request = GetParameterValueRequest(
             parameter_name=base_param_name,
             node_name=node_name,
         )
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
 
         if not result.succeeded():
             return result
@@ -491,7 +492,7 @@ class RetainedMode:
             node_name=node_name,
             value=container,
         )
-        return GriptapeNodes().handle_request(set_request)
+        return GriptapeNodes.handle_request(set_request)
 
     @classmethod
     def get_value(cls, *args, **kwargs) -> Any:
@@ -508,7 +509,7 @@ class RetainedMode:
             parameter_name=base_param_name,
             node_name=node,
         )
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
 
         if result.succeeded():
             # Now see if there were any indices specified.
@@ -578,7 +579,7 @@ class RetainedMode:
                 node_name=node,
                 value=value,
             )
-            result = GriptapeNodes().handle_request(request)
+            result = GriptapeNodes.handle_request(request)
             logger.info("\nD:%s", f"{result=}")
         else:
             # We have indices. Get the value of the container first, then attempt to move all the way up to the end.
@@ -586,7 +587,7 @@ class RetainedMode:
                 parameter_name=base_param_name,
                 node_name=node,
             )
-            result = GriptapeNodes().handle_request(request)
+            result = GriptapeNodes.handle_request(request)
 
             if not result.succeeded():
                 logger.error(
@@ -637,7 +638,7 @@ class RetainedMode:
                             node_name=node,
                             value=base_container,  # Re-assign the entire updated container.
                         )
-                        result = GriptapeNodes().handle_request(request)
+                        result = GriptapeNodes.handle_request(request)
                         return result
                     # Advance.
                     curr_pos_value = curr_pos_value[idx_or_key_as_int]
@@ -663,7 +664,7 @@ class RetainedMode:
             target_node_name=dst_node,
             target_parameter_name=dst_param,
         )
-        return GriptapeNodes().handle_request(request)
+        return GriptapeNodes.handle_request(request)
 
     @classmethod
     def exec_chain(cls, *node_names) -> dict:
@@ -694,7 +695,7 @@ class RetainedMode:
                 target_parameter_name="exec_in",
             )
 
-            result = GriptapeNodes().handle_request(request)
+            result = GriptapeNodes.handle_request(request)
             results[f"{source_node} -> {target_node}"] = result
 
             # Track failures without halting execution
@@ -721,101 +722,101 @@ class RetainedMode:
             target_node_name=target_node_name,
             target_parameter_name=target_param_name,
         )
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     # LIBRARY OPERATIONS
     @classmethod
     def get_available_libraries(cls) -> ResultPayload:
         request = ListRegisteredLibrariesRequest()
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def get_node_types_in_library(cls, library_name: str) -> ResultPayload:
         request = ListNodeTypesInLibraryRequest(library=library_name)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def get_node_metadata_from_library(cls, library_name: str, node_type_name: str) -> ResultPayload:
         request = GetNodeMetadataFromLibraryRequest(library=library_name, node_type=node_type_name)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     # FLOW OPERATIONS
     @classmethod
     def run_flow(cls, flow_name: str) -> ResultPayload:
         request = StartFlowRequest(flow_name=flow_name, debug_mode=False)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def run_node(cls, node_name: str) -> ResultPayload:
         request = ResolveNodeRequest(node_name=node_name)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def single_step(cls, flow_name: str) -> ResultPayload:
         request = SingleNodeStepRequest(flow_name=flow_name)
-        return GriptapeNodes().handle_request(request)
+        return GriptapeNodes.handle_request(request)
 
     @classmethod
     def single_execution_step(cls, flow_name: str) -> ResultPayload:
         request = SingleExecutionStepRequest(flow_name=flow_name)
-        return GriptapeNodes().handle_request(request)
+        return GriptapeNodes.handle_request(request)
 
     @classmethod
     def continue_flow(cls, flow_name: str) -> ResultPayload:
         request = ContinueExecutionStepRequest(flow_name=flow_name)
-        return GriptapeNodes().handle_request(request)
+        return GriptapeNodes.handle_request(request)
 
     @classmethod
     def reset_flow(cls, flow_name: str) -> ResultPayload:
         request = UnresolveFlowRequest(flow_name=flow_name)
-        return GriptapeNodes().handle_request(request)
+        return GriptapeNodes.handle_request(request)
 
     @classmethod
     def cancel_flow(cls, flow_name: str) -> ResultPayload:
         request = CancelFlowRequest(flow_name=flow_name)
-        return GriptapeNodes().handle_request(request)
+        return GriptapeNodes.handle_request(request)
 
     @classmethod
     def get_flow_state(cls, flow_name: str) -> ResultPayload:
         request = GetFlowStateRequest(flow_name=flow_name)
-        return GriptapeNodes().handle_request(request)
+        return GriptapeNodes.handle_request(request)
 
     # ARBITRARY PYTHON EXECUTION
     @classmethod
     def run_arbitrary_python(cls, python_str: str) -> ResultPayload:
         request = RunArbitraryPythonStringRequest(python_string=python_str)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     # CONFIG MANAGER
     @classmethod
     def get_config_value(cls, category_and_key: str) -> ResultPayload:
         request = GetConfigValueRequest(category_and_key=category_and_key)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def set_config_value(cls, category_and_key: str, value: Any) -> ResultPayload:
         request = SetConfigValueRequest(category_and_key=category_and_key, value=value)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def get_config_category(cls, category: str | None) -> ResultPayload:
         request = GetConfigCategoryRequest(category=category)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
     def set_config_category(cls, category: str | None, contents: dict[str, Any]) -> ResultPayload:
         request = SetConfigCategoryRequest(category=category, contents=contents)
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod
@@ -825,7 +826,7 @@ class RetainedMode:
             requested_name=requested_name,
             allow_next_closest_name_available=True,
         )
-        result = GriptapeNodes().handle_request(request)
+        result = GriptapeNodes.handle_request(request)
         return result
 
     @classmethod

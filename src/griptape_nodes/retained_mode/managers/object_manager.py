@@ -1,8 +1,7 @@
-from dataclasses import field
 import logging
 import re
 from re import Pattern
-from typing import Any, TypeVar, cast
+from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
@@ -95,11 +94,11 @@ class ObjectManager:
         # Let's try and clear it all.
         # Cancel any running flows.
         flows = self.get_filtered_subset(type=ControlFlow)
-        for flow_name, flow in flows.items():
+        for flow_id, flow in flows.items():
             if flow.check_for_existing_running_flow():
-                result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow_name))
+                result = GriptapeNodes.handle_request(CancelFlowRequest(flow_id=flow_id))
                 if not result.succeeded():
-                    details = f"Attempted to clear all object state and delete everything. Failed because running flow '{flow_name}' could not cancel."
+                    details = f"Attempted to clear all object state and delete everything. Failed because running flow '{flow_id}' could not cancel."
                     logger.error(details)
                     return ClearAllObjectStateResultFailure()
 
@@ -146,7 +145,7 @@ class ObjectManager:
         if name and isinstance(name, str):
             name = re.compile(name)
 
-        for key, value in self._name_to_objects.items():
+        for key, value in self._id_to_objects.items():
             # Check key pattern if provided
             key_match = True
             if name:
@@ -178,7 +177,7 @@ class ObjectManager:
         if requested_name is None:
             # 1. If no name was requested, use the type name + first free integer.
             incremental_prefix = f"{type_name}_"
-        elif requested_name not in self._name_to_objects:
+        elif self.attempt_get_object_by_name(requested_name) is None:
             # 2. If a name was requested and no collision, use it as-is.
             name_to_return = requested_name
         else:
@@ -199,7 +198,13 @@ class ObjectManager:
             done = False
             while not done:
                 test_name = f"{incremental_prefix}{curr_idx}"
-                if test_name not in self._name_to_objects:
+                # Check if name already exists by scanning values
+                name_exists = False
+                for obj in self._id_to_objects.values():
+                    if getattr(obj, "name", None) == test_name:
+                        name_exists = True
+                        break
+                if not name_exists:
                     # Found it.
                     name_to_return = test_name
                     done = True
@@ -217,11 +222,14 @@ class ObjectManager:
         self._id_to_objects[element_id] = obj
 
     def get_object_by_name(self, name: str) -> object:
-        return self._name_to_objects[name]
+        obj = self.attempt_get_object_by_name(name)
+        if obj is None:
+            msg = f"No object found with name '{name}'"
+            raise KeyError(msg)
+        return obj
 
     def has_object_with_name(self, name: str) -> bool:
-        has_it = name in self._name_to_objects
-        return has_it
+        return self.attempt_get_object_by_name(name) is not None
 
     def attempt_get_object_by_name(self, name: str) -> Any | None:
         for item in self._id_to_objects.values():
@@ -236,10 +244,10 @@ class ObjectManager:
             for child in children:
                 obj.remove_child(child)
                 if isinstance(child, BaseNode):
-                    GriptapeNodes.handle_request(DeleteNodeRequest(child.name))
+                    GriptapeNodes.handle_request(DeleteNodeRequest(node_id=child.element_id))
                     return
                 if isinstance(child, Parameter) and isinstance(obj, BaseNode):
-                    GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, obj.name))
+                    GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(parameter_name=child.name, node_id=obj.element_id))
                     return
         if element_id:
             del self._id_to_objects[element_id]
@@ -249,3 +257,17 @@ class ObjectManager:
         if isinstance(obj, cast_type):
             return obj
         return None
+        
+    def get_name_by_id(self, element_id: str) -> str | None:
+        """Get an object's name by its ID.
+        
+        Args:
+            element_id: The ID of the object
+            
+        Returns:
+            The name of the object, or None if the object doesn't exist or doesn't have a name attribute
+        """
+        obj = self._id_to_objects.get(element_id, None)
+        if obj is None:
+            return None
+        return getattr(obj, "name", None)
