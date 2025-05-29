@@ -230,6 +230,8 @@ class ControlFlowCancelledEvent(ExecutionPayload):
 class NodeResolvedEvent(ExecutionPayload):
     node_name: str
     parameter_output_values: dict
+    node_type: str
+    specific_library_name: str | None = None
 
 
 @dataclass

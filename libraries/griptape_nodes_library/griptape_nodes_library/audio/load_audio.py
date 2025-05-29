@@ -15,13 +15,14 @@ class LoadAudio(DataNode):
             input_types=["AudioArtifact", "AudioUrlArtifact"],
             type="AudioArtifact",
             output_type="AudioUrlArtifact",
+            default_value=None,
             ui_options={"clickable_file_browser": True, "expander": True},
             tooltip="The audio that has been generated.",
         )
         self.add_parameter(audio_parameter)
 
     def process(self) -> None:
-        audio = self.parameter_values["audio"]
+        audio = self.get_parameter_value("audio")
 
         if isinstance(audio, dict):
             audio_artifact = dict_to_audio_url_artifact(audio)

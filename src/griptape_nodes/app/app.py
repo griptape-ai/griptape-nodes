@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import binascii
 import json
 import logging
 import os
 import signal
 import sys
 import threading
+from pathlib import Path
 from queue import Queue
 from time import sleep
 from typing import Any, cast
@@ -14,7 +16,7 @@ from urllib.parse import urljoin
 import httpx
 import uvicorn
 from dotenv import get_key
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from griptape.events import (
@@ -122,9 +124,13 @@ def _serve_static_server() -> None:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai"), "http://localhost:5173"],
+        allow_origins=[
+            os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai"),
+            "https://nodes-staging.griptape.ai",
+            "http://localhost:5173",
+        ],
         allow_credentials=True,
-        allow_methods=["GET", "POST"],
+        allow_methods=["OPTIONS", "GET", "POST", "PUT"],
         allow_headers=["*"],
     )
 
@@ -133,6 +139,43 @@ def _serve_static_server() -> None:
         StaticFiles(directory=static_dir),
         name="static",
     )
+
+    @app.post("/static-upload-urls")
+    async def create_static_file_upload_url(request: Request) -> dict:
+        """Create a URL for uploading a static file.
+
+        Similar to a presigned URL, but for uploading files to the static server.
+        """
+        base_url = request.base_url
+        body = await request.json()
+        file_name = body["file_name"]
+        url = urljoin(str(base_url), f"/static-uploads/{file_name}")
+
+        return {"url": url}
+
+    @app.put("/static-uploads/{file_name:str}")
+    async def create_static_file(request: Request, file_name: str) -> dict:
+        """Upload a static file to the static server."""
+        if not STATIC_SERVER_ENABLED:
+            msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
+            raise ValueError(msg)
+
+        if not static_dir.exists():
+            static_dir.mkdir(parents=True, exist_ok=True)
+        data = await request.body()
+        try:
+            Path(static_dir / file_name).write_bytes(data)
+        except binascii.Error as e:
+            msg = f"Invalid base64 encoding for file {file_name}."
+            logger.error(msg)
+            raise HTTPException(status_code=400, detail=msg) from e
+        except (OSError, PermissionError) as e:
+            msg = f"Failed to write file {file_name} to {config_manager.workspace_path}: {e}"
+            logger.error(msg)
+            raise HTTPException(status_code=500, detail=msg) from e
+
+        static_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}/{file_name}"
+        return {"url": static_url}
 
     @app.post("/engines/request")
     async def create_event(request: Request) -> None:
@@ -182,10 +225,9 @@ def _listen_for_api_events() -> None:
     init = False
     endpoint = urljoin(os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/engines/stream")
     nodes_app_url = os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai")
+    logger.info("Listening for events from Nodes API at %s", endpoint)
     while True:
         try:
-            logger.info("Listening for events from Nodes API at %s", endpoint)
-
             with httpx.stream("get", endpoint, auth=__build_authorized_request, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout
                 __check_api_key_validity(response)
 
@@ -212,9 +254,10 @@ def _listen_for_api_events() -> None:
                             except Exception:
                                 logger.exception("Error processing event, skipping.")
 
+        except httpx.RemoteProtocolError as e:
+            logger.debug("Server closed connection, this is expected. Reconnecting... %s", e)
         except Exception as e:
-            details = f"Error while listening for events. Retrying in 2 seconds.: {e}"
-            logger.error(details)
+            logger.error("Error while listening for events. Retrying in 2 seconds... %s", e)
             sleep(2)
 
 

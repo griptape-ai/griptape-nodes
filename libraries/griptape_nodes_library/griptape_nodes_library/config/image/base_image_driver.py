@@ -45,6 +45,7 @@ class BaseImageDriver(BaseDriver):
         if driver_parameter is not None:
             driver_parameter.name = "image_model_config"
             driver_parameter.output_type = "Image Generation Driver"
+            driver_parameter._ui_options = {"display_name": "image model config"}
 
         # --- Common Prompt Driver Parameters ---
         # These parameters represent settings frequently used by Image Generation drivers.

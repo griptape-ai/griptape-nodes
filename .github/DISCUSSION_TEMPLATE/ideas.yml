@@ -1,0 +1,80 @@
+title: "[New Idea] Your idea title"
+labels: [""]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 🧠 Title Tip
+        When filling in the title, consider using a helpful prefix based on your selection. Here are some examples:
+        - `[New Node] An image diff node`
+        - `[New Feature] Add a way to group nodes together and label them`
+        - `[New Library] I'd love a node library for image processing`
+        - `[Tooling Improvement] Improve build times`
+        - `[Docs/Examples] Add more usage examples`
+        - `[Other] Your idea title`
+
+        This helps us scan and categorize things faster. You can always change it later if you want!
+
+  - type: dropdown
+    id: idea_type
+    attributes:
+      label: What kind of idea is this?
+      description: Help us categorize your idea quickly
+      options:
+        - New Node
+        - New Feature
+        - New Library
+        - Tooling Improvement
+        - Docs/Examples
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the idea
+      description: What should it do? Why would this be useful? What problem does it solve?
+      placeholder: |
+        Please describe:
+        - What this idea is
+        - Why it's useful or necessary
+        - Any inspiration or references you have
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots to help explain your problem
+      placeholder: Drag and drop images here
+    validations:
+      required: false
+
+  - type: input
+    id: video
+    attributes:
+      label: Video Link
+      description: If applicable, provide a link to a video demonstrating the issue
+      placeholder: e.g., https://www.loom.com/share/your-video-id
+    validations:
+      required: false
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Current workaround (if any)
+      description: Are you doing something now to work around the absence of this feature?
+      placeholder: |
+        e.g., I currently use a generic tool node and manually enter the inputs...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checkboxes
+    attributes:
+      label: Would you be interested in contributing this?
+      options:
+        - label: I might be able to help build this
+        - label: I'd love to test and give feedback

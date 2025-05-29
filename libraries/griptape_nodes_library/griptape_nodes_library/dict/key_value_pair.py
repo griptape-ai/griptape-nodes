@@ -10,48 +10,58 @@ class KeyValuePair(DataNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
 
-        # Add key parameter
+        # Add dictionary output parameter
         self.add_parameter(
             Parameter(
                 name="key",
                 input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="",
-                tooltip="Key for the key-value pair",
+                type="str",
+                tooltip="Key for the dictionary",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
-
-        # Add value parameter
         self.add_parameter(
             Parameter(
                 name="value",
                 input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="",
-                tooltip="Value for the key-value pair",
-                ui_options={"multiline": True},
+                type="str",
+                tooltip="Value for the dictionary",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
-
-        # Add dictionary output parameter
         self.add_parameter(
             Parameter(
                 name="dictionary",
-                output_type="dict",
+                type="dict",
+                default_value={"key": "value"},
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Dictionary containing the key-value pair",
+                ui_options={"display_name": "Key/Value Pair"},
             )
         )
 
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        if parameter.name in {"key", "value"}:
+            new_dict = {}
+
+            new_key = self.get_parameter_value("key")
+            new_value = self.get_parameter_value("value")
+
+            new_dict = {new_key: new_value}
+
+            self.parameter_output_values["dictionary"] = new_dict
+            self.set_parameter_value("dictionary", new_dict)
+            modified_parameters_set.add("dictionary")
+            self.show_parameter_by_name("dictionary")
+
+        return super().after_value_set(parameter, value, modified_parameters_set)
+
     def process(self) -> None:
         """Process the node by creating a key-value pair dictionary."""
-        key = self.parameter_values.get("key", "")
-        value = self.parameter_values.get("value", "")
-
-        # Create dictionary with the key-value pair
-        result_dict = {key: value}
+        key = self.get_parameter_value("key")
+        value = self.get_parameter_value("value")
 
         # Set output value
-        self.parameter_output_values["dictionary"] = result_dict
+        self.parameter_output_values["dictionary"] = {key: value}

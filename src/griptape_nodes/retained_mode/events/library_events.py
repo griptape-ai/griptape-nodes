@@ -87,6 +87,25 @@ class RegisterLibraryFromFileResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class RegisterLibraryFromRequirementSpecifierRequest(RequestPayload):
+    requirement_specifier: str
+    library_config_name: str = "griptape_nodes_library.json"
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterLibraryFromRequirementSpecifierResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    library_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterLibraryFromRequirementSpecifierResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
 class ListCategoriesInLibraryRequest(RequestPayload):
     library: str
 

@@ -36,6 +36,7 @@ class BaseDriver(DataNode):
                 default_value=None,
                 tooltip="",
                 allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"display_name": "model config"},
             )
         )
 

@@ -15,6 +15,7 @@ class LoadImage(DataNode):
             input_types=["ImageArtifact", "ImageUrlArtifact"],
             type="ImageArtifact",
             output_type="ImageUrlArtifact",
+            default_value=None,
             ui_options={"clickable_file_browser": True, "expander": True},
             tooltip="The image that has been generated.",
         )
@@ -22,7 +23,7 @@ class LoadImage(DataNode):
         # Add input parameter for model selection
 
     def process(self) -> None:
-        image = self.parameter_values["image"]
+        image = self.get_parameter_value("image")
 
         if isinstance(image, dict):
             image_artifact = dict_to_image_url_artifact(image)

@@ -129,11 +129,9 @@ Let's create some nodes using the first technique mentioned above - dragging and
 1. A **TextInput** ( text > TextInput )
     \- A node to input text
 
-```
 <p align="center">
   <img src="../assets/nodes_in_workspace.png" alt="Node on the workspace">
 </p>
-```
 
 Experiment with connections by dragging from ports on both input nodes to various ports on the Agent. Try multiple combinations and observe that not all connections succeed.
 

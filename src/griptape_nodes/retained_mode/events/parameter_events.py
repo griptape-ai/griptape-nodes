@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from pydantic import Field
 
@@ -15,6 +15,9 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+if TYPE_CHECKING:
+    from griptape_nodes.exe_types.node_types import BaseNode
 
 
 @dataclass
@@ -299,6 +302,7 @@ class GetNodeElementDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 class AlterParameterEvent(ExecutionPayload):
     node_name: str
     element_id: str
+    parameter_name: str
     type: str
     input_types: list[str]
     output_type: str
@@ -312,13 +316,15 @@ class AlterParameterEvent(ExecutionPayload):
     mode_allowed_output: bool
     is_user_defined: bool
     ui_options: dict | None
+    value: Any
 
     # TODO: Get known_attrs dynamically, instead of setting manually. https://github.com/griptape-ai/griptape-nodes/issues/1039
     @classmethod
-    def create(cls, node_name: str, parameter: Parameter) -> AlterParameterEvent:
+    def create(cls, node: BaseNode, parameter: Parameter) -> AlterParameterEvent:
         known_attrs = {
-            "node_name": node_name,
+            "node_name": node.name,
             "element_id": parameter.element_id,
+            "parameter_name": parameter.name,
             "type": parameter.type,
             "input_types": parameter.input_types,
             "output_type": parameter.output_type,
@@ -332,6 +338,7 @@ class AlterParameterEvent(ExecutionPayload):
             "mode_allowed_output": ParameterMode.OUTPUT in parameter.allowed_modes,
             "is_user_defined": parameter.user_defined,
             "ui_options": parameter.ui_options,
+            "value": node.get_parameter_value(parameter.name),
         }
         # Create instance with known attributes and extra_attrs dict
         instance = cls(**known_attrs)

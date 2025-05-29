@@ -19,7 +19,11 @@ We welcome contributions to the Griptape Nodes project! Whether it's bug fixes, 
 
     ```shell
     uv sync --all-groups --all-extras
-    # or
+    ```
+
+    Or use the Makefile shortcut:
+
+    ```shell
     make install
     ```
 
@@ -32,37 +36,80 @@ When developing, you typically want to run the engine using your local source co
 **Key Development Commands:**
 
 - **Run the Engine:** Use `uv run` to execute the engine script (`gtn` or `griptape-nodes`) within the virtual environment managed by `uv`.
+
     ```shell
     uv run gtn
-    # or
+    ```
+
+    Or use the Makefile shortcut:
+
+    ```shell
     uv run griptape-nodes engine
     ```
+
+- **Run the Engine In Watch Mode:** This command will automatically restart the engine when you make changes to the source code. This is useful for rapid development and testing.
+
+    ```shell
+    uv run src/griptape_nodes/app/watch.py
+    ```
+
+    Or use the Makefile shortcut:
+
+    ```shell
+    make run/watch
+    ```
+
 - **Run Initialization:** To trigger the initial setup prompts (API Key, Workspace Directory) using the local code:
+
     ```shell
     uv run gtn init
     ```
+
 - **Run Tests:**
+
     ```shell
     uv run pytest
-    # or use the Makefile shortcut
+    ```
+
+    Or use the Makefile shortcut:
+
+    ```shell
     make test/unit
     ```
+
 - **Check Code (Linting & Formatting):**
+
     ```shell
     uv run ruff check . && uv run ruff format . --check && uv run pyright
-    # or use the Makefile shortcut
+    ```
+
+    Or use the Makefile shortcut:
+
+    ```shell
     make check
     ```
+
 - **Format Code:**
+
     ```shell
     uv run ruff format .
-    # or use the Makefile shortcut
+    ```
+
+    Or use the Makefile shortcut:
+
+    ```shell
     make format
     ```
+
 - **Fix Code Automatically (Format + Lint):**
+
     ```shell
     uv run ruff check . --fix && uv run ruff format .
-    # or use the Makefile shortcut
+    ```
+
+    Or use the Makefile shortcut:
+
+    ```shell
     make fix
     ```
 
@@ -127,17 +174,29 @@ Griptape Nodes uses a variety of environment variables for influencing its low-l
 
 The documentation website ([docs.griptapenodes.com](https://docs.griptapenodes.com)) is built using MkDocs with the Material theme.
 
-1. **Setup:** Ensure you've installed dependencies using `uv sync -p --all-extras` (this includes the `docs` group).
+1. **Setup:** Ensure you've installed dependencies using `make install`.
 
 1. **Source Files:** Documentation source files are located in the `/docs` directory in Markdown format. The site structure is defined in `mkdocs.yml` in the project root.
 
-1. **Serving Locally:** To preview your changes live, run the MkDocs development server:
+1. **Serving Locally:** To preview your changes live, first ensure that you have run:
+
+    ```shell
+    make install
+    ```
+
+    Then run the MkDocs development server:
 
     ```shell
     uv run mkdocs serve
     ```
 
-    This will start a local webserver (usually at `http://127.0.0.1:8000/`). The site will automatically reload when you save changes to the documentation files or `mkdocs.yml`.
+    Or use the Makefile shortcut:
+
+    ```shell
+    make docs/serve
+    ```
+
+This will start a local webserver (usually at `http://127.0.0.1:8000/`). The site will automatically reload when you save changes to the documentation files or `mkdocs.yml`.
 
 1. **Making Changes:** Edit the Markdown files in the `/docs` directory. Add new pages by creating new `.md` files and updating the `nav` section in `mkdocs.yml`.
 

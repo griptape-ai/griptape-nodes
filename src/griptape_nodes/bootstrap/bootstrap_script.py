@@ -12,7 +12,12 @@ from dotenv import load_dotenv
 from griptape.artifacts import TextArtifact
 from griptape.drivers.event_listener.griptape_cloud_event_listener_driver import GriptapeCloudEventListenerDriver
 from griptape.events import BaseEvent, EventBus, EventListener, FinishStructureRunEvent
+from register_libraries_script import (  # type: ignore[import] - This import is used in the runtime environment
+    PATHS,
+    register_libraries,
+)
 
+from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import EndNode, StartNode
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
@@ -22,7 +27,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ProgressEvent,
 )
 from griptape_nodes.retained_mode.events.execution_events import SingleExecutionStepRequest, StartFlowRequest
-from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileRequest
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -60,9 +64,9 @@ def _load_user_workflow(path_to_workflow: str) -> None:
     spec.loader.exec_module(module)
 
 
-def _load_flow_for_workflow() -> str:
+def _load_flow_for_workflow() -> ControlFlow:
     context_manager = GriptapeNodes.ContextManager()
-    return context_manager.get_current_flow_name()
+    return context_manager.get_current_flow()
 
 
 def _set_workflow_context(workflow_name: str) -> None:
@@ -199,22 +203,14 @@ def run(workflow_name: str, flow_input: Any) -> None:
     )
 
     # Register all of our relevant libraries
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/951
-    # These should all come from the customer's published script and installed
-    # along with other dependencies.
-    library_path = "libraries/griptape_nodes_library/griptape_nodes_library.json"
-    register_library_request = RegisterLibraryFromFileRequest(file_path=library_path)
-    register_library_result = GriptapeNodes.handle_request(register_library_request)
-
-    if register_library_result.failed():
-        msg = f"Failed to register library from {library_path}"
-        raise ValueError(msg)
+    register_libraries(PATHS)
 
     # Required to set the workflow_context before loading the workflow
     # or nothing works. The name can be anything, but how about the workflow_name.
     _set_workflow_context(workflow_name=workflow_name)
     _load_user_workflow("workflow.py")
-    flow_name = _load_flow_for_workflow()
+    flow = _load_flow_for_workflow()
+    flow_name = flow.name
     # Now let's set the input to the flow
     _set_input_for_flow(flow_name=flow_name, flow_input=flow_input)
 

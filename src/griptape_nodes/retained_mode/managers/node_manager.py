@@ -1,5 +1,8 @@
+import copy
 import logging
+import pickle
 from typing import Any, cast
+from uuid import uuid4
 
 from griptape.events import EventBus
 
@@ -21,6 +24,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayloadFailure,
 )
 from griptape_nodes.retained_mode.events.connection_events import (
+    CreateConnectionRequest,
     DeleteConnectionRequest,
     DeleteConnectionResultFailure,
     IncomingConnection,
@@ -54,6 +58,12 @@ from griptape_nodes.retained_mode.events.node_events import (
     DeserializeNodeFromCommandsRequest,
     DeserializeNodeFromCommandsResultFailure,
     DeserializeNodeFromCommandsResultSuccess,
+    DeserializeSelectedNodesFromCommandsRequest,
+    DeserializeSelectedNodesFromCommandsResultFailure,
+    DeserializeSelectedNodesFromCommandsResultSuccess,
+    DuplicateSelectedNodesRequest,
+    DuplicateSelectedNodesResultFailure,
+    DuplicateSelectedNodesResultSuccess,
     GetAllNodeInfoRequest,
     GetAllNodeInfoResultFailure,
     GetAllNodeInfoResultSuccess,
@@ -67,9 +77,13 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
     SerializedNodeCommands,
+    SerializedParameterValueTracker,
+    SerializedSelectedNodesCommands,
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultFailure,
     SerializeNodeToCommandsResultSuccess,
+    SerializeSelectedNodesToCommandsRequest,
+    SerializeSelectedNodesToCommandsResultSuccess,
     SetNodeMetadataRequest,
     SetNodeMetadataResultFailure,
     SetNodeMetadataResultSuccess,
@@ -157,6 +171,13 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(
             DeserializeNodeFromCommandsRequest, self.on_deserialize_node_from_commands
         )
+        event_manager.assign_manager_to_request_type(
+            SerializeSelectedNodesToCommandsRequest, self.on_serialize_selected_nodes_to_commands
+        )
+        event_manager.assign_manager_to_request_type(
+            DeserializeSelectedNodesFromCommandsRequest, self.on_deserialize_selected_nodes_from_commands
+        )
+        event_manager.assign_manager_to_request_type(DuplicateSelectedNodesRequest, self.on_duplicate_selected_nodes)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Replace the old node name and its parent.
@@ -173,6 +194,7 @@ class NodeManager:
     def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
+        parent_flow = None
         if parent_flow_name is None:
             # Try to get the current context flow
             if not GriptapeNodes.ContextManager().has_current_flow():
@@ -181,16 +203,18 @@ class NodeManager:
                 )
                 logger.error(details)
                 return CreateNodeResultFailure()
-            parent_flow_name = GriptapeNodes.ContextManager().get_current_flow_name()
+            parent_flow = GriptapeNodes.ContextManager().get_current_flow()
+            parent_flow_name = parent_flow.name
 
         # Does this flow actually exist?
-        flow_mgr = GriptapeNodes.FlowManager()
-        try:
-            flow = flow_mgr.get_flow_by_name(parent_flow_name)
-        except KeyError as err:
-            details = f"Could not create Node of type '{request.node_type}'. Error: {err}"
-            logger.error(details)
-            return CreateNodeResultFailure()
+        if parent_flow is None:
+            flow_mgr = GriptapeNodes.FlowManager()
+            try:
+                parent_flow = flow_mgr.get_flow_by_name(parent_flow_name)
+            except KeyError as err:
+                details = f"Could not create Node of type '{request.node_type}'. Error: {err}"
+                logger.error(details)
+                return CreateNodeResultFailure()
 
         # Now ensure that we're giving a valid name.
         obj_mgr = GriptapeNodes.ObjectManager()
@@ -218,7 +242,7 @@ class NodeManager:
             return CreateNodeResultFailure()
 
         # Add it to the Flow.
-        flow.add_node(node)
+        parent_flow.add_node(node)
 
         # Record keeping.
         obj_mgr.add_object_by_name(node.name, node)
@@ -235,7 +259,7 @@ class NodeManager:
 
         # See if we want to push this into the context of the current flow.
         if request.set_as_new_context:
-            GriptapeNodes.ContextManager().push_node(final_node_name)
+            GriptapeNodes.ContextManager().push_node(node=node)
 
         # Success message based on whether we used Current Context or explicit flow
         if request.override_parent_flow_name is None:
@@ -252,7 +276,9 @@ class NodeManager:
 
         logger.log(level=log_level, msg=details)
 
-        return CreateNodeResultSuccess(node_name=node.name)
+        return CreateNodeResultSuccess(
+            node_name=node.name, node_type=node.__class__.__name__, specific_library_name=request.specific_library_name
+        )
 
     def cancel_conditionally(
         self, parent_flow: ControlFlow, parent_flow_name: str, node: BaseNode
@@ -310,6 +336,7 @@ class NodeManager:
 
     def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911 (complex logic, lots of edge cases)
         node_name = request.node_name
+        node = None
         if node_name is None:
             # Get from the current context.
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -319,18 +346,16 @@ class NodeManager:
                 logger.error(details)
                 return DeleteNodeResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+        if node is None:
+            node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to delete a Node '{node_name}', but no such Node was found."
+            logger.error(details)
+            return DeleteNodeResultFailure()
 
-        with GriptapeNodes.ContextManager().node(node_name=node_name):
-            # Does this node exist?
-            obj_mgr = GriptapeNodes.ObjectManager()
-
-            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
-            if node is None:
-                details = f"Attempted to delete a Node '{node_name}', but no such Node was found."
-                logger.error(details)
-                return DeleteNodeResultFailure()
-
+        with GriptapeNodes.ContextManager().node(node=node):
             parent_flow_name = self._name_to_parent_flow_name[node_name]
             try:
                 parent_flow = GriptapeNodes.FlowManager().get_flow_by_name(parent_flow_name)
@@ -382,7 +407,7 @@ class NodeManager:
         parent_flow.remove_node(node.name)
 
         # Now remove the record keeping
-        obj_mgr.del_obj_by_name(node_name)
+        GriptapeNodes.ObjectManager().del_obj_by_name(node_name)
         del self._name_to_parent_flow_name[node_name]
 
         # If we were part of the Current Context, pop it.
@@ -396,6 +421,7 @@ class NodeManager:
 
     def on_get_node_resolution_state_request(self, request: GetNodeResolutionStateRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
         if node_name is None:
             # Get from the current context.
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -403,17 +429,18 @@ class NodeManager:
                 logger.error(details)
                 return GetNodeResolutionStateResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
-        # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to get resolution state for a Node '{node_name}', but no such Node was found."
-            logger.error(details)
-            result = GetNodeResolutionStateResultFailure()
-            return result
+            # Does this node exist?
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to get resolution state for a Node '{node_name}', but no such Node was found."
+                logger.error(details)
+                result = GetNodeResolutionStateResultFailure()
+                return result
 
         node_state = node.state
 
@@ -427,6 +454,7 @@ class NodeManager:
 
     def on_get_node_metadata_request(self, request: GetNodeMetadataRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
         if node_name is None:
             # Get from the current context.
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -434,18 +462,20 @@ class NodeManager:
                 logger.error(details)
                 return GetNodeMetadataResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to get metadata for a Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
 
-            result = GetNodeMetadataResultFailure()
-            return result
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to get metadata for a Node '{node_name}', but no such Node was found."
+                logger.error(details)
+
+                result = GetNodeMetadataResultFailure()
+                return result
 
         metadata = node.metadata
         details = f"Successfully retrieved metadata for a Node '{node_name}'."
@@ -458,6 +488,7 @@ class NodeManager:
 
     def on_set_node_metadata_request(self, request: SetNodeMetadataRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
         if node_name is None:
             # Get from the current context.
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -465,18 +496,21 @@ class NodeManager:
                 logger.error(details)
                 return SetNodeMetadataResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to set metadata for a Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
 
-            result = SetNodeMetadataResultFailure()
-            return result
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to set metadata for a Node '{node_name}', but no such Node was found."
+                logger.error(details)
+
+                result = SetNodeMetadataResultFailure()
+                return result
+
         # We can't completely overwrite metadata.
         for key, value in request.metadata.items():
             node.metadata[key] = value
@@ -488,6 +522,7 @@ class NodeManager:
 
     def on_list_connections_for_node_request(self, request: ListConnectionsForNodeRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
         if node_name is None:
             # Get from the current context.
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -495,18 +530,20 @@ class NodeManager:
                 logger.error(details)
                 return ListConnectionsForNodeResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to list Connections for a Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
 
-            result = ListConnectionsForNodeResultFailure()
-            return result
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to list Connections for a Node '{node_name}', but no such Node was found."
+                logger.error(details)
+
+                result = ListConnectionsForNodeResultFailure()
+                return result
 
         parent_flow_name = self._name_to_parent_flow_name[node_name]
         try:
@@ -560,6 +597,7 @@ class NodeManager:
 
     def on_list_parameters_on_node_request(self, request: ListParametersOnNodeRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
 
         if node_name is None:
             # Get from the current context.
@@ -568,17 +606,19 @@ class NodeManager:
                 logger.error(details)
                 return ListParametersOnNodeResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to list Parameters for a Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to list Parameters for a Node '{node_name}', but no such Node was found."
+                logger.error(details)
 
-            result = ListParametersOnNodeResultFailure()
-            return result
+                result = ListParametersOnNodeResultFailure()
+                return result
 
         ret_list = [param.name for param in node.parameters]
 
@@ -592,6 +632,7 @@ class NodeManager:
 
     def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
+        node = None
 
         if node_name is None:
             # Get from the current context.
@@ -600,18 +641,19 @@ class NodeManager:
                 logger.error(details)
                 return AddParameterToNodeResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to add Parameter '{request.parameter_name}' to a Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to add Parameter '{request.parameter_name}' to a Node '{node_name}', but no such Node was found."
+                logger.error(details)
 
-            result = AddParameterToNodeResultFailure()
-            return result
+                result = AddParameterToNodeResultFailure()
+                return result
 
         if request.parent_container_name and not request.initial_setup:
             parameter = node.get_parameter_by_name(request.parent_container_name)
@@ -724,6 +766,7 @@ class NodeManager:
 
     def on_remove_parameter_from_node_request(self, request: RemoveParameterFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
+        node = None
 
         if node_name is None:
             # Get the Current Context
@@ -734,18 +777,19 @@ class NodeManager:
                 result = RemoveParameterFromNodeResultFailure()
                 return result
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to remove Parameter '{request.parameter_name}' from a Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to remove Parameter '{request.parameter_name}' from a Node '{node_name}', but no such Node was found."
+                logger.error(details)
 
-            result = RemoveParameterFromNodeResultFailure()
-            return result
+                result = RemoveParameterFromNodeResultFailure()
+                return result
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(request.parameter_name)
@@ -831,6 +875,8 @@ class NodeManager:
 
     def on_get_parameter_details_request(self, request: GetParameterDetailsRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
+
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = f"Attempted to get details for Parameter '{request.parameter_name}' from a Node, but no Current Context was found."
@@ -838,18 +884,19 @@ class NodeManager:
 
                 result = GetParameterDetailsResultFailure()
                 return result
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to get details for Parameter '{request.parameter_name}' from a Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to get details for Parameter '{request.parameter_name}' from a Node '{node_name}', but no such Node was found."
+                logger.error(details)
 
-            result = GetParameterDetailsResultFailure()
-            return result
+                result = GetParameterDetailsResultFailure()
+                return result
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(request.parameter_name)
@@ -889,23 +936,26 @@ class NodeManager:
 
     def on_get_node_element_details_request(self, request: GetNodeElementDetailsRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
+
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = f"Attempted to get element details for element '{request.specific_element_id}` from a Node, but no Current Context was found."
                 logger.error(details)
 
                 return GetNodeElementDetailsResultFailure()
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to get element details for Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to get element details for Node '{node_name}', but no such Node was found."
+                logger.error(details)
 
-            return GetNodeElementDetailsResultFailure()
+                return GetNodeElementDetailsResultFailure()
 
         # Did they ask for a specific element ID?
         if request.specific_element_id is None:
@@ -996,6 +1046,7 @@ class NodeManager:
 
     def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
 
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -1003,16 +1054,18 @@ class NodeManager:
                 logger.error(details)
 
                 return AlterParameterDetailsResultFailure()
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}', but no such Node was found."
+                logger.error(details)
 
-            return AlterParameterDetailsResultFailure()
+                return AlterParameterDetailsResultFailure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(request.parameter_name)
@@ -1052,6 +1105,7 @@ class NodeManager:
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:
         node_name = request.node_name
+        node = None
 
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -1059,20 +1113,20 @@ class NodeManager:
                 logger.error(details)
 
                 return GetParameterValueResultFailure()
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
-
-        # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Parse the parameter name to check for list indexing
         param_name = request.parameter_name
 
-        # Get the node
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+        # Does this node exist?
         if node is None:
-            details = f'"{node_name}" not found'
-            logger.error(details)
-            return GetParameterValueResultFailure()
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f'"{node_name}" not found'
+                logger.error(details)
+                return GetParameterValueResultFailure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
@@ -1105,27 +1159,29 @@ class NodeManager:
         return result
 
     # added ignoring C901 since this method is overly long because of granular error checking, not actual complexity.
-    def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
+    def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
+        node = None
+
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = f"Attempted to set parameter '{request.parameter_name}' value. Failed because no Node was found in the Current Context."
                 logger.error(details)
                 return SetParameterValueResultFailure()
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
-
-        # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Parse the parameter name to check for list indexing
         param_name = request.parameter_name
 
-        # Get the node
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+        # Does this node exist?
         if node is None:
-            details = f"Attempted to set parameter '{param_name}' value on node '{node_name}'. Failed because no such Node could be found."
-            logger.error(details)
-            return SetParameterValueResultFailure()
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to set parameter '{param_name}' value on node '{node_name}'. Failed because no such Node could be found."
+                logger.error(details)
+                return SetParameterValueResultFailure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
@@ -1159,17 +1215,20 @@ class NodeManager:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             logger.error(details)
             return SetParameterValueResultFailure()
+
+        obj_mgr = GriptapeNodes.ObjectManager()
         parent_flow = obj_mgr.attempt_get_object_by_name_as_type(parent_flow_name, ControlFlow)
         if not parent_flow:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             logger.error(details)
             return SetParameterValueResultFailure()
-        try:
-            parent_flow.connections.unresolve_future_nodes(node)
-        except Exception as err:
-            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
-            logger.error(details)
-            return SetParameterValueResultFailure()
+        if not request.initial_setup:
+            try:
+                parent_flow.connections.unresolve_future_nodes(node)
+            except Exception as err:
+                details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
+                logger.error(details)
+                return SetParameterValueResultFailure()
 
         # Values are actually stored on the NODE.
         try:
@@ -1224,7 +1283,7 @@ class NodeManager:
             for modified_parameter_name in modified_parameters:
                 modified_parameter = node.get_parameter_by_name(modified_parameter_name)
                 if modified_parameter is not None:
-                    modified_request = AlterParameterEvent.create(node_name=node.name, parameter=modified_parameter)
+                    modified_request = AlterParameterEvent.create(node=node, parameter=modified_parameter)
                     EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
         return finalized_value
 
@@ -1235,6 +1294,8 @@ class NodeManager:
     # make debugger use friendly.
     def on_get_all_node_info_request(self, request: GetAllNodeInfoRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
         node_name = request.node_name
+        node = None
+
         # Get from the current context.
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
@@ -1242,18 +1303,19 @@ class NodeManager:
                 logger.error(details)
                 return GetAllNodeInfoResultFailure()
 
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        obj_mgr = GriptapeNodes.ObjectManager()
-
-        node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to get all info for Node named '{node_name}', but no such Node was found."
-            logger.error(details)
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to get all info for Node named '{node_name}', but no such Node was found."
+                logger.error(details)
 
-            result = GetAllNodeInfoResultFailure()
-            return result
+                result = GetAllNodeInfoResultFailure()
+                return result
 
         get_metadata_request = GetNodeMetadataRequest(node_name=node_name)
         get_metadata_result = self.on_get_node_metadata_request(get_metadata_request)
@@ -1328,20 +1390,26 @@ class NodeManager:
 
     def on_get_compatible_parameters_request(self, request: GetCompatibleParametersRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
+        node = None
+
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to get compatible parameters for node, but no current node was found."
                 logger.error(details)
                 return GetCompatibleParametersResultFailure()
-            node_name = GriptapeNodes.ContextManager().get_current_node_name()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Vet the node
-        try:
-            node = self.get_node_by_name(node_name)
-        except ValueError as err:
-            details = f"Attempted to get compatible parameters for node '{node_name}', but that node does not exist. Error: {err}."
-            logger.error(details)
-            return GetCompatibleParametersResultFailure()
+        if node is None:
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = (
+                    f"Attempted to get compatible parameters for node '{node_name}', but that node does not exist."
+                )
+                logger.error(details)
+                return GetCompatibleParametersResultFailure()
 
         # Vet the parameter.
         request_param = node.get_parameter_by_name(request.parameter_name)
@@ -1557,23 +1625,27 @@ class NodeManager:
 
     def on_serialize_node_to_commands(self, request: SerializeNodeToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0912
         node_name = request.node_name
+        node = None
+
         if node_name is None:
-            if GriptapeNodes.ContextManager().has_current_node():
-                node_name = GriptapeNodes.ContextManager().get_current_node_name()
-            else:
+            if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to serialize a Node to commands from the Current Context. Failed because the Current Context is empty."
                 logger.error(details)
                 return SerializeNodeToCommandsResultFailure()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
 
         # Does this node exist?
-        node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
         if node is None:
-            details = f"Attempted to serialize Node '{node_name}' to commands. Failed because no Node with that name could be found."
-            logger.error(details)
-            return SerializeNodeToCommandsResultFailure()
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to serialize Node '{node_name}' to commands. Failed because no Node with that name could be found."
+                logger.error(details)
+                return SerializeNodeToCommandsResultFailure()
 
         # This is our current dude.
-        with GriptapeNodes.ContextManager().node(node_name=node_name):
+        with GriptapeNodes.ContextManager().node(node=node):
             # Get the library and version details.
             library_used = node.metadata["library"]
             # Get the library metadata so we can get the version.
@@ -1592,7 +1664,9 @@ class NodeManager:
                 node_type=node.__class__.__name__,
                 node_name=node_name,
                 specific_library_name=library_details.library_name,
-                metadata=node.metadata,
+                metadata=copy.deepcopy(node.metadata),
+                # If it is actively resolving, mark as unresolved.
+                resolution=node.state.value,
             )
 
             # We're going to compare this node instance vs. a canonical one. Rez that one up.
@@ -1605,7 +1679,6 @@ class NodeManager:
                 if parameter.user_defined:
                     # Add a user-defined Parameter.
                     param_dict = parameter.to_dict()
-                    param_dict["node_name"] = node.name
                     param_dict["initial_setup"] = True
                     add_param_request = AddParameterToNodeRequest.create(**param_dict)
                     element_modification_commands.append(add_param_request)
@@ -1618,7 +1691,6 @@ class NodeManager:
                             relevant = True
                             break
                     if relevant:
-                        diff["node_name"] = node.name
                         diff["parameter_name"] = parameter.name
                         diff["initial_setup"] = True
                         alter_param_request = AlterParameterDetailsRequest.create(**diff)
@@ -1628,14 +1700,14 @@ class NodeManager:
             set_value_commands = []
             for parameter in node.parameters:
                 # SetParameterValueRequest event
-                set_param_value_request = NodeManager._handle_parameter_value_saving(
+                set_param_value_requests = NodeManager._handle_parameter_value_saving(
                     parameter=parameter,
                     node=node,
-                    value_hash_to_unique_value_index=request.value_hash_to_unique_value_index,
-                    unique_values=request.unique_parameter_values_list,
+                    unique_parameter_uuid_to_values=request.unique_parameter_uuid_to_values,
+                    serialized_parameter_value_tracker=request.serialized_parameter_value_tracker,
                 )
-                if set_param_value_request is not None:
-                    set_value_commands.append(set_param_value_request)
+                if set_param_value_requests is not None:
+                    set_value_commands.extend(set_param_value_requests)
 
         # Hooray
         serialized_node_commands = SerializedNodeCommands(
@@ -1662,8 +1734,17 @@ class NodeManager:
 
         # Adopt the newly-created node as our current context.
         node_name = create_node_result.node_name
-        with GriptapeNodes.ContextManager().node(node_name=node_name):
+        node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to get node '{node_name}'."
+            logger.error(details)
+            return DeserializeNodeFromCommandsResultFailure()
+        with GriptapeNodes.ContextManager().node(node=node):
             for element_command in request.serialized_node_commands.element_modification_commands:
+                if isinstance(
+                    element_command, (AlterParameterDetailsRequest, AddParameterToNodeRequest)
+                ):  # are there more types of requests we could encounter here?
+                    element_command.node_name = node_name
                 element_result = GriptapeNodes().handle_request(element_command)
                 if element_result.failed():
                     details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to execute an element command for node '{node_name}'."
@@ -1673,6 +1754,165 @@ class NodeManager:
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         logger.debug(details)
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)
+
+    def on_serialize_selected_nodes_to_commands(
+        self, request: SerializeSelectedNodesToCommandsRequest
+    ) -> ResultPayload:
+        """This will take the selected nodes in the Object manager and serialize them into commands."""
+        # These have already been sorted by the time they were selected.
+        nodes_to_serialize = request.nodes_to_serialize
+        # This is node_uuid to the serialization command.
+        node_commands = {}
+        # Node Name to UUID
+        node_name_to_uuid = {}
+        connections_to_serialize = []
+        # This is also node_uuid to the parameter serialization command.
+        parameter_commands = {}
+        # I need to store node names and parameter names to UUID
+        unique_uuid_to_values = {}
+        # And track how values map into that map.
+        serialized_parameter_value_tracker = SerializedParameterValueTracker()
+        selected_node_names = [values[0] for values in nodes_to_serialize]
+        for node_name, _ in nodes_to_serialize:
+            result = self.on_serialize_node_to_commands(
+                SerializeNodeToCommandsRequest(
+                    node_name=node_name,
+                    unique_parameter_uuid_to_values=unique_uuid_to_values,
+                    serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                )
+            )
+            if not isinstance(result, SerializeNodeToCommandsResultSuccess):
+                details = f"Attempted to serialize a selection of Nodes. Failed to serialize {node_name}."
+                logger.error(details)
+                return SerializeNodeToCommandsResultFailure()
+            node_commands[node_name] = result.serialized_node_commands
+            node_name_to_uuid[node_name] = result.serialized_node_commands.node_uuid
+            parameter_commands[result.serialized_node_commands.node_uuid] = result.set_parameter_value_commands
+            try:
+                flow_name = self.get_node_parent_flow_by_name(node_name)
+                flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+            except Exception:
+                details = f"Attempted to serialize a selection of Nodes. Failed to get the flow of node {node_name}. Cannot serialize connections for this node."
+                logger.warning(details)
+                continue
+            if node_name in flow.connections.outgoing_index:
+                node_connections = [
+                    flow.connections.connections[connection_id]
+                    for category_dict in flow.connections.outgoing_index[node_name].values()
+                    for connection_id in category_dict
+                ]
+                for connection in node_connections:
+                    if connection.target_node.name not in selected_node_names:
+                        continue
+                    connections_to_serialize.append(connection)
+        serialized_connections = []
+        for connection in connections_to_serialize:
+            source_node_uuid = node_name_to_uuid[connection.source_node.name]
+            target_node_uuid = node_name_to_uuid[connection.target_node.name]
+            serialized_connections.append(
+                SerializedSelectedNodesCommands.IndirectConnectionSerialization(
+                    source_node_uuid=source_node_uuid,
+                    source_parameter_name=connection.source_parameter.name,
+                    target_node_uuid=target_node_uuid,
+                    target_parameter_name=connection.target_parameter.name,
+                )
+            )
+        # Final result for serialized node commands
+        final_result = SerializedSelectedNodesCommands(
+            serialized_node_commands=list(node_commands.values()),
+            serialized_connection_commands=serialized_connections,
+            set_parameter_value_commands=parameter_commands,
+        )
+        # Set everything in the clipboard!
+        GriptapeNodes.ContextManager()._clipboard.node_commands = final_result
+        GriptapeNodes.ContextManager()._clipboard.parameter_uuid_to_values = unique_uuid_to_values
+        return SerializeSelectedNodesToCommandsResultSuccess(final_result)
+
+    def on_deserialize_selected_nodes_from_commands(  # noqa: C901, PLR0912
+        self,
+        request: DeserializeSelectedNodesFromCommandsRequest,
+    ) -> ResultPayload:
+        commands = GriptapeNodes.ContextManager()._clipboard.node_commands
+        if commands is None:
+            return DeserializeSelectedNodesFromCommandsResultFailure()
+        connections = commands.serialized_connection_commands
+        node_uuid_to_name = {}
+        # Enumerate because positions is in the same order as the node commands.
+        for i, node_command in enumerate(commands.serialized_node_commands):
+            # Create a deepcopy of the metadata so the nodes don't all share the same position.
+            node_command.create_node_command.metadata = copy.deepcopy(node_command.create_node_command.metadata)
+            if request.positions is not None and len(request.positions) > i:
+                if node_command.create_node_command.metadata is None:
+                    node_command.create_node_command.metadata = {
+                        "position": {"x": request.positions[i][0], "y": request.positions[i][1]}
+                    }
+                else:
+                    node_command.create_node_command.metadata["position"] = {
+                        "x": request.positions[i][0],
+                        "y": request.positions[i][1],
+                    }
+            result = self.on_deserialize_node_from_commands(
+                DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command)
+            )
+            if not isinstance(result, DeserializeNodeFromCommandsResultSuccess):
+                logger.error("Attempted to deserialize node but ran into an error on node serialization.")
+                return DeserializeSelectedNodesFromCommandsResultFailure()
+            node_uuid_to_name[node_command.node_uuid] = result.node_name
+            node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(result.node_name, BaseNode)
+            if node is None:
+                logger.error("Attempted to deserialize node but ran into an error on node serialization.")
+                return DeserializeSelectedNodesFromCommandsResultFailure()
+            with GriptapeNodes.ContextManager().node(node=node):
+                parameter_commands = commands.set_parameter_value_commands[node_command.node_uuid]
+                for parameter_command in parameter_commands:
+                    param_request = parameter_command.set_parameter_value_command
+                    # Set the Node name
+                    param_request.node_name = result.node_name
+                    # Set the new value
+                    table = GriptapeNodes.ContextManager()._clipboard.parameter_uuid_to_values
+                    if table and parameter_command.unique_value_uuid in table:
+                        value = table[parameter_command.unique_value_uuid]
+                        # Using try-except-pass instead of contextlib.suppress because it's clearer.
+                        try:  # noqa: SIM105
+                            # If we're pasting multiple times - we need to create a new copy for each paste so they don't all have the same reference.
+                            value = copy.deepcopy(value)
+                        except Exception:  # noqa: S110
+                            pass
+                        param_request.value = value
+                        set_parameter_result = GriptapeNodes.handle_request(
+                            parameter_command.set_parameter_value_command
+                        )
+                        if not set_parameter_result.succeeded():
+                            details = f"Failed to set parameter value for {param_request.parameter_name} on node {param_request.node_name}"
+                            logger.warning(details)
+        # create Connections
+        for connection_command in connections:
+            connection_request = CreateConnectionRequest(
+                source_node_name=node_uuid_to_name[connection_command.source_node_uuid],
+                source_parameter_name=connection_command.source_parameter_name,
+                target_node_name=node_uuid_to_name[connection_command.target_node_uuid],
+                target_parameter_name=connection_command.target_parameter_name,
+            )
+            result = GriptapeNodes.handle_request(connection_request)
+            if not result.succeeded():
+                details = f"Failed to create a connection between {connection_request.source_node_name} and {connection_request.target_node_name}"
+                logger.warning(details)
+        return DeserializeSelectedNodesFromCommandsResultSuccess(node_names=list(node_uuid_to_name.values()))
+
+    def on_duplicate_selected_nodes(self, request: DuplicateSelectedNodesRequest) -> ResultPayload:
+        result = GriptapeNodes.handle_request(
+            SerializeSelectedNodesToCommandsRequest(nodes_to_serialize=request.nodes_to_duplicate)
+        )
+        if not result.succeeded():
+            details = "Failed to serialized selected nodes."
+            logger.error(details)
+            return DuplicateSelectedNodesResultFailure()
+        result = GriptapeNodes.handle_request(DeserializeSelectedNodesFromCommandsRequest(positions=None))
+        if not isinstance(result, DeserializeSelectedNodesFromCommandsResultSuccess):
+            details = "Failed to deserialize selected nodes."
+            logger.error(details)
+            return DuplicateSelectedNodesResultFailure()
+        return DuplicateSelectedNodesResultSuccess(result.node_names)
 
     @staticmethod
     def _manage_alter_details(parameter: Parameter, base_node_obj: BaseNode) -> dict:
@@ -1684,51 +1924,15 @@ class NodeManager:
         return diff
 
     @staticmethod
-    def _handle_parameter_value_saving(
-        parameter: Parameter,
-        node: BaseNode,
-        value_hash_to_unique_value_index: dict[Any, int],
-        unique_values: list[Any],
-    ) -> SerializedNodeCommands.IndexedSetParameterValueCommand | None:
-        """Generates code to save a parameter value for a node in a Griptape workflow.
-
-        This function handles the process of creating commands that will reconstruct and set
-        parameter values for nodes. It performs the following steps:
-        1. Retrieves the parameter value from the node's parameter values or output values
-        2. Checks if the value has already been created in our list of unique values
-        3. If so, it records the index for later correlation.
-        4. If not, it adds the value to the uniques list and records the new index.
-        5. Creates a SetParameterValueRequest to reconstruct this for the node
-
-        Args:
-            parameter (Parameter): The parameter object containing metadata
-            node (BaseNode): The node object that contains the parameter
-            value_hash_to_unique_value_index (dict[Any, int]): Dictionary mapping value hashes to indices in unique_values list
-            unique_values (list[Any]): List of unique values
-
-        Returns:
-            None (if no value to be serialized) or an IndexedSetParameterValueCommand linking the value to the unique value list
-
-        Notes:
-            - Parameter output values take precedence over regular parameter values
-            - For values that can be hashed, the value itself is used as the key in values_created
-            - For unhashable values, the object's id is used as the key
-            - The function will reuse already created values to avoid duplication
-        """
-        if parameter.name in node.parameter_output_values:
-            # Output values are more important.
-            value = node.parameter_output_values[parameter.name]
-            is_output = True
-        elif parameter.name in node.parameter_values:
-            # Check the internal parameter values
-            value = node.get_parameter_value(parameter.name)
-            is_output = False
-        else:
-            # No value set; bail.
-            return None
-
-        # We have a value. Attempt to get a hash for it to see if it matches one
-        # we've already indexed.
+    def _handle_value_hashing(  # noqa: PLR0913
+        value: Any,
+        serialized_parameter_value_tracker: SerializedParameterValueTracker,
+        unique_parameter_uuid_to_values: dict,
+        parameter_name: str,
+        node_name: str,
+        *,
+        is_output: bool,
+    ) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:
         try:
             hash(value)
             value_id = value
@@ -1736,24 +1940,120 @@ class NodeManager:
             # Couldn't get a hash. Use the object's ID
             value_id = id(value)
 
-        if value_id in value_hash_to_unique_value_index:
-            # We have a match on this value. We're all good.
-            unique_index = value_hash_to_unique_value_index[value_id]
-        else:
-            # This one is new for us. Append it to the list of uniques.
-            unique_index = len(unique_values)
-            value_hash_to_unique_value_index[value_id] = unique_index
-            unique_values.append(value)
+        tracker_status = serialized_parameter_value_tracker.get_tracker_state(value_id)
+        match tracker_status:
+            case SerializedParameterValueTracker.TrackerState.SERIALIZABLE:
+                # We have a match on this value. We're all good.
+                unique_uuid = serialized_parameter_value_tracker.get_uuid_for_value_hash(value_id)
+            case SerializedParameterValueTracker.TrackerState.NOT_SERIALIZABLE:
+                # This value is not serializable. Bail.
+                return None
+            case SerializedParameterValueTracker.TrackerState.NOT_IN_TRACKER:
+                # This value is new for us.
+
+                # Confirm that the author wants this parameter and/or class to be serialized.
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1179 ID a method for classes and/or parameters to be flagged for NOT serializability.
+
+                # Check if we can serialize it.
+                try:
+                    pickle.dumps(value)
+                except Exception:
+                    # Not serializable; don't waste time on future attempts.
+                    serialized_parameter_value_tracker.add_as_not_serializable(value_id)
+                    # Bail.
+                    return None
+                # The value should be serialized. Add it to the map of uniques.
+                unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
+                try:
+                    unique_parameter_uuid_to_values[unique_uuid] = copy.deepcopy(value)
+                except Exception:
+                    details = f"Attempted to serialize parameter '{parameter_name}` on node '{node_name}'. The parameter value could not be copied. It will be serialized by value. If problems arise from this, ensure the type '{type(value)}' works with copy.deepcopy()."
+                    logger.warning(details)
+                    unique_parameter_uuid_to_values[unique_uuid] = value
+                serialized_parameter_value_tracker.add_as_serializable(value_id, unique_uuid)
 
         # Serialize it
         set_value_command = SetParameterValueRequest(
-            parameter_name=parameter.name,
+            parameter_name=parameter_name,
             value=None,  # <- this will get overridden when instantiated
             is_output=is_output,
             initial_setup=True,
         )
-        indexed_set_value_command = SerializedNodeCommands.IndexedSetParameterValueCommand(
+        indirect_set_value_command = SerializedNodeCommands.IndirectSetParameterValueCommand(
             set_parameter_value_command=set_value_command,
-            unique_value_index=unique_index,
+            unique_value_uuid=unique_uuid,
         )
-        return indexed_set_value_command
+        return indirect_set_value_command
+
+    @staticmethod
+    def _handle_parameter_value_saving(
+        parameter: Parameter,
+        node: BaseNode,
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        serialized_parameter_value_tracker: SerializedParameterValueTracker,
+    ) -> list[SerializedNodeCommands.IndirectSetParameterValueCommand] | None:
+        """Generates code to save a parameter value for a node in a Griptape workflow.
+
+        This function handles the process of creating commands that will reconstruct and set
+        parameter values for nodes. It performs the following steps:
+        1. Retrieves the parameter value from the node's parameter values or output values
+        2. Checks if the value has already been created in our map of unique values
+        3. If so, it records the unique value UUID for later correlation.
+        4. If not, confirm that the value will serialize reliably. If so,it adds the value to the uniques map and records the new UUID.
+        5. Creates a SetParameterValueRequest to reconstruct this for the node
+
+        Args:
+            parameter (Parameter): The parameter object containing metadata
+            node (BaseNode): The node object that contains the parameter
+            unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Dictionary mapping unique value UUIDs to values
+            serialized_parameter_value_tracker (SerializedParameterValueTracker): Object mapping maintaining value hashes to unique value UUIDs, and non-serializable values
+
+        Returns:
+            None (if no value to be serialized) or an IndirectSetParameterValueCommand linking the value to the unique value map
+
+        Notes:
+            - Parameter output values take precedence over regular parameter values
+            - For values that can be hashed, the value itself is used as the key in values_created
+            - For unhashable values, the object's id is used as the key
+            - The function will reuse already created values to avoid duplication
+        """
+        output_value = None
+        internal_value = None
+        if parameter.name in node.parameter_output_values and node.state == NodeResolutionState.RESOLVED:
+            # Output values are more important.
+            output_value = node.parameter_output_values[parameter.name]
+        if parameter.name in node.parameter_values:
+            # Check the internal parameter values
+            internal_value = node.get_parameter_value(parameter.name)
+        # We have a value. Attempt to get a hash for it to see if it matches one
+        # we've already indexed.
+        commands = []
+        if internal_value is not None:
+            internal_command = NodeManager._handle_value_hashing(
+                value=internal_value,
+                serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                is_output=False,
+                parameter_name=parameter.name,
+                node_name=node.name,
+            )
+            if internal_command is None:
+                details = f"Attempted to serialize set value for parameter'{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable."
+                logger.warning(details)
+            else:
+                commands.append(internal_command)
+        if output_value is not None:
+            output_command = NodeManager._handle_value_hashing(
+                value=output_value,
+                serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                is_output=True,
+                parameter_name=parameter.name,
+                node_name=node.name,
+            )
+            if output_command is None:
+                details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable."
+                logger.warning(details)
+            else:
+                commands.append(output_command)
+        return commands if commands else None

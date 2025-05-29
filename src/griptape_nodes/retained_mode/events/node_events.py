@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
-from typing import Any
+from enum import Enum, auto
+from typing import Any, NamedTuple, NewType
+from uuid import uuid4
 
 from griptape_nodes.exe_types.node_types import NodeResolutionState
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
@@ -17,6 +19,13 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+
+class NewPosition(NamedTuple):
+    """The X and Y position for the node to be copied to. Updates in the node metadata."""
+
+    x: float
+    y: float
 
 
 @dataclass
@@ -39,6 +48,8 @@ class CreateNodeRequest(RequestPayload):
 @PayloadRegistry.register
 class CreateNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     node_name: str
+    node_type: str
+    specific_library_name: str | None = None
 
 
 @dataclass
@@ -185,24 +196,83 @@ class SerializedNodeCommands:
         create_node_command (CreateNodeRequest): The command to create the node.
         element_modification_commands (list[RequestPayload]): A list of commands to create or modify the elements (including Parameters) of the node.
         node_library_details (LibraryNameAndVersion): Details of the library and version used by the node.
+        node_uuid (NodeUUID): The UUID of this particular node. During deserialization, this UUID will be used to correlate this node's instance
+            with the connections and parameter values necessary. We cannot use node name because Griptape Nodes enforces unique names, and we cannot
+            predict the name that will be selected upon instantiation. Similarly, the same serialized node may be deserialized multiple times, such
+            as during copy/paste or duplicate.
     """
 
+    # Have to use str instead of the UUID class because it's not JSON serializable >:-/
+    NodeUUID = NewType("NodeUUID", str)
+    UniqueParameterValueUUID = NewType("UniqueParameterValueUUID", str)
+
     @dataclass
-    class IndexedSetParameterValueCommand:
-        """Companion class to assign parameter values from our unique values list into node indices, since we can't predict the names.
+    class IndirectSetParameterValueCommand:
+        """Companion class to assign parameter values from our unique values collection, since we can't predict the names.
 
         Attributes:
             set_parameter_value_command (SetParameterValueRequest): The base set parameter command.
-            unique_value_index (int): The index into the unique values list that must be provided when serializing/deserializing,
-                used to assign values upon deserialization.
+            unique_value_uuid (SerializedNodeCommands.UniqueParameterValue.UniqueParameterValueUUID): The UUID into the
+                unique values dictionary that must be provided when serializing/deserializing, used to assign values upon deserialization.
         """
 
         set_parameter_value_command: SetParameterValueRequest
-        unique_value_index: int
+        unique_value_uuid: "SerializedNodeCommands.UniqueParameterValueUUID"
 
     create_node_command: CreateNodeRequest
     element_modification_commands: list[RequestPayload]
     node_library_details: LibraryNameAndVersion
+    node_uuid: NodeUUID = field(default_factory=lambda: SerializedNodeCommands.NodeUUID(str(uuid4())))
+
+
+@dataclass
+class SerializedParameterValueTracker:
+    """Tracks the serialization state of parameter value hashes.
+
+    This class manages the relationship between value hashes and their unique UUIDs,
+    indicating whether a value is serializable or not. It allows the addition of both
+    serializable and non-serializable value hashes and provides methods to retrieve
+    the serialization state and unique UUIDs for given value hashes.
+
+    Attributes:
+        _value_hash_to_unique_value_uuid (dict[Any, SerializedNodeCommands.UniqueParameterValueUUID]):
+            A dictionary mapping value hashes to their unique UUIDs when they are serializable.
+        _non_serializable_value_hashes (set[Any]):
+            A set of value hashes that are not serializable.
+    """
+
+    class TrackerState(Enum):
+        """State of a value hash in the tracker."""
+
+        NOT_IN_TRACKER = auto()
+        SERIALIZABLE = auto()
+        NOT_SERIALIZABLE = auto()
+
+    _value_hash_to_unique_value_uuid: dict[Any, SerializedNodeCommands.UniqueParameterValueUUID] = field(
+        default_factory=dict
+    )
+    _non_serializable_value_hashes: set[Any] = field(default_factory=set)
+
+    def get_tracker_state(self, value_hash: Any) -> TrackerState:
+        if value_hash in self._non_serializable_value_hashes:
+            return SerializedParameterValueTracker.TrackerState.NOT_SERIALIZABLE
+        if value_hash in self._value_hash_to_unique_value_uuid:
+            return SerializedParameterValueTracker.TrackerState.SERIALIZABLE
+        return SerializedParameterValueTracker.TrackerState.NOT_IN_TRACKER
+
+    def add_as_serializable(
+        self, value_hash: Any, unique_value_uuid: SerializedNodeCommands.UniqueParameterValueUUID
+    ) -> None:
+        self._value_hash_to_unique_value_uuid[value_hash] = unique_value_uuid
+
+    def add_as_not_serializable(self, value_hash: Any) -> None:
+        self._non_serializable_value_hashes.add(value_hash)
+
+    def get_uuid_for_value_hash(self, value_hash: Any) -> SerializedNodeCommands.UniqueParameterValueUUID:
+        return self._value_hash_to_unique_value_uuid[value_hash]
+
+    def get_serializable_count(self) -> int:
+        return len(self._value_hash_to_unique_value_uuid)
 
 
 @dataclass
@@ -212,15 +282,21 @@ class SerializeNodeToCommandsRequest(RequestPayload):
 
     Attributes:
         node_name (str | None): The name of the node to serialize. If None, the node in the current context is used.
-        unique_parameter_values_list (list[Any]): List of unique parameter values. Serialization will check a
-            parameter's value against these, appending new values if necessary. NOTE that it modifies the list in-place.
-        value_hash_to_unique_value_index (dict[Any, int]): Mapping of hash values to unique parameter value indices.
-            If serialization adds new unique values, they are added to this map. NOTE that it modifies the list in-place.
+        unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Mapping of
+            UUIDs to unique parameter values. Serialization will check a parameter's value against these, inserting
+            new values if necessary. NOTE that it modifies the dict in-place.
+        serialized_parameter_value_tracker (SerializedParameterValueTracker): Mapping of hash values to unique parameter
+            value UUIDs. If serialization adds new unique values, they are added to this map. Unserializable values
+            are preserved to prevent duplicate serialization attempts.
     """
 
     node_name: str | None = None
-    unique_parameter_values_list: list[Any] = field(default_factory=list)
-    value_hash_to_unique_value_index: dict[Any, int] = field(default_factory=dict)
+    unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] = field(
+        default_factory=dict
+    )
+    serialized_parameter_value_tracker: SerializedParameterValueTracker = field(
+        default_factory=SerializedParameterValueTracker
+    )
 
 
 @dataclass
@@ -230,17 +306,83 @@ class SerializeNodeToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloa
 
     Attributes:
         serialized_node_commands (SerializedNodeCommands): The serialized commands representing the node.
-        set_parameter_value_commands (list[SerializedNodeCommands.IndexedSetParameterValueCommand]): A list of
-            commands to set parameter values, indexed into the unique values list.
+        set_parameter_value_commands (list[SerializedNodeCommands.IndirectSetParameterValueCommand]): A list of
+            commands to set parameter values, keyed into the unique values dictionary.
     """
 
     serialized_node_commands: SerializedNodeCommands
-    set_parameter_value_commands: list[SerializedNodeCommands.IndexedSetParameterValueCommand]
+    set_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand]
 
 
 @dataclass
 @PayloadRegistry.register
 class SerializeNodeToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
+
+
+@dataclass
+class SerializedSelectedNodesCommands:
+    @dataclass
+    class IndirectConnectionSerialization:
+        """Companion class to create connections from node IDs in a serialization, since we can't predict the names.
+
+        These are UUIDs referencing into the serialized_node_commands we maintain.
+
+        Attributes:
+            source_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the source node, as stored within the serialization.
+            source_parameter_name (str): Name of the source parameter.
+            target_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the target node.
+            target_parameter_name (str): Name of the target parameter.
+        """
+
+        source_node_uuid: SerializedNodeCommands.NodeUUID
+        source_parameter_name: str
+        target_node_uuid: SerializedNodeCommands.NodeUUID
+        target_parameter_name: str
+
+    serialized_node_commands: list[SerializedNodeCommands]
+    set_parameter_value_commands: dict[
+        SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
+    ]
+    serialized_connection_commands: list[IndirectConnectionSerialization]
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeSelectedNodesToCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
+    # They will be passed with node_name, timestamp
+    nodes_to_serialize: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeSelectedNodesToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    # They will be passed with node_name, timestamp
+    # Could be a flow command if it's all nodes in a flow.
+    serialized_selected_node_commands: SerializedSelectedNodesCommands
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeSelectedNodesToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeSelectedNodesFromCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
+    positions: list[NewPosition] | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeSelectedNodesFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    node_names: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeSelectedNodesFromCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
@@ -259,4 +401,22 @@ class DeserializeNodeFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPaylo
 @dataclass
 @PayloadRegistry.register
 class DeserializeNodeFromCommandsResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DuplicateSelectedNodesRequest(WorkflowNotAlteredMixin, RequestPayload):
+    nodes_to_duplicate: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class DuplicateSelectedNodesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    node_names: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class DuplicateSelectedNodesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass

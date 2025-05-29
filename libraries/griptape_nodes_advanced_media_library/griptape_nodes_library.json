@@ -4,8 +4,8 @@
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
-    "library_version": "0.1.0",
-    "engine_version": "0.1.0",
+    "library_version": "0.34.0",
+    "engine_version": "0.34.0",
     "tags": [
       "Griptape",
       "AI"
@@ -13,8 +13,11 @@
     "dependencies": {
       "pip_dependencies": [
         "accelerate>=1.6.0",
+        "controlnet-aux>=0.0.9",
+        "imageio-ffmpeg>=0.6.0",
         "diffusers>=0.33.1",
         "numpy>=2.2.4",
+        "opencv-python>=4.11.0.86",
         "peft>=0.15.2",
         "pillow>=11.2.1",
         "protobuf>=6.30.2",
@@ -33,21 +36,156 @@
   ],
   "nodes": [
     {
-      "class_name": "FluxPipeline",
-      "file_path": "diffusers_nodes_library/flux_pipeline.py",
+      "class_name": "GrayscaleConvertImage",
+      "file_path": "pillow_nodes_library/grayscale_convert_image.py",
       "metadata": {
         "category": "image",
-        "description": "FluxPipeline node.",
-        "display_name": "Generate Image with Flux"
+        "description": "Desaturate an image via the 🛏️ pillow python package. Pairs well with ControlNet Image Generation in grayscale mode.",
+        "display_name": "Desaturate"
+      }
+    },
+    {
+      "class_name": "GaussianBlurImage",
+      "file_path": "pillow_nodes_library/gaussian_blur_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Apply a gaussian blur to an image with the 🛏️ pillow python package. Pairs well with ControlNet Image Generation in blur or tile mode.",
+        "display_name": "Gaussian Blur"
+      }
+    },
+    {
+      "class_name": "DepthAnythingForDepthEstimation",
+      "file_path": "transformers_nodes_library/depth_anything_for_depth_estimation.py",
+      "metadata": {
+        "category": "image/depth",
+        "description": "Generate a Depth Map with Depth Anything V2 and 🤗 Transformers Pairs well with ControlNet Image Generation in depth mode.",
+        "display_name": "Depth Anything V2"
+      }
+    },
+    {
+      "class_name": "CannyConvertImage",
+      "file_path": "opencv_nodes_library/canny_convert_image.py",
+      "metadata": {
+        "category": "image/edge",
+        "description": "Detect Edges with OpenCV. Pairs well with ControlNet Image Generation in edge mode.",
+        "display_name": "Detect Edges with OpenCV"
+      }
+    },
+    {
+      "class_name": "AnylineDetector",
+      "file_path": "controlnet_aux_nodes_library/anyline_detector.py",
+      "metadata": {
+        "category": "image/edge",
+        "description": "Detect Edges with Anyline. Pairs well with ControlNet Image Generation in edge mode.",
+        "display_name": "Detect Edges with Anyline"
+      }
+    },
+    {
+      "class_name": "FluxPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/flux_pipeline.py",
+      "metadata": {
+        "category": "image/flux",
+        "description": "Generate an Image with Flux via 🤗 Diffusers.",
+        "display_name": "Flux"
+      }
+    },
+    {
+      "class_name": "FluxFillPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/flux_fill_pipeline.py",
+      "metadata": {
+        "category": "image/flux",
+        "description": "Generate an umasked portion of an Image with Flux via 🤗 Diffusers.",
+        "display_name": "Flux Fill"
+      }
+    },
+    {
+      "class_name": "DiptychFluxFillPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/diptych_flux_fill_pipeline.py",
+      "metadata": {
+        "category": "image/flux",
+        "description": "Generate a pompt-controlled Image Variation with Flux via 🤗 Diffusers. Pairs best with the RiverZ Flux Lora. Project page (paper, demos, gallery): https://river-zhang.github.io/ICEdit-gh-pages/",
+        "display_name": "Flux ICEdit "
+      }
+    },
+    {
+      "class_name": "UnionFluxControlNetPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/controlnet/union_flux_control_net_pipeline.py",
+      "metadata": {
+        "category": "image/flux/controlnet",
+        "description": "Generate a Image with Flux + ControlNet via 🤗 Diffusers. 🤗 Model Card: https://huggingface.co/InstantX/FLUX.1-dev-Controlnet-Union",
+        "display_name": "Flux CN Union"
+      }
+    },
+    {
+      "class_name": "UnionProFluxControlNetPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/controlnet/union_pro_flux_control_net_pipeline.py",
+      "metadata": {
+        "category": "image/flux/controlnet",
+        "description": "Generate a Image with Flux + ControlNet via 🤗 Diffusers. 🤗 Model Card: https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro",
+        "display_name": "Flux CN Union Pro"
+      }
+    },
+    {
+      "class_name": "UnionProTwoFluxControlNetPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/controlnet/union_pro_two_flux_control_net_pipeline.py",
+      "metadata": {
+        "category": "image/flux/controlnet",
+        "description": "Generate a Image with Flux + ControlNet via 🤗 Diffusers. 🤗 Model Card: https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0",
+        "display_name": "Flux CN Union Pro 2"
+      }
+    },
+    {
+      "class_name": "FluxLoraFromFile",
+      "file_path": "diffusers_nodes_library/pipelines/flux/lora/flux_lora_from_file.py",
+      "metadata": {
+        "category": "image/flux/loras",
+        "description": "Load Flux Lora from File for use with 🤗 Diffusers based Flux Nodes. Path must be on the engine's filesystem.",
+        "display_name": "Flux Lora File"
+      }
+    },
+    {
+      "class_name": "LumatalesFluxLora",
+      "file_path": "diffusers_nodes_library/pipelines/flux/lora/lumatales_flux_lora.py",
+      "metadata": {
+        "category": "image/flux/loras",
+        "description": "Load the Flux Lora for use with 🤗 Diffusers based Flux Nodes. 🤗 Model Card: https://huggingface.co/Shakker-Labs/Lumatales-FL",
+        "display_name": "Flux Lora: Lumatales-FL "
+      }
+    },
+    {
+      "class_name": "MicroLandscapeOnPhoneFluxLora",
+      "file_path": "diffusers_nodes_library/pipelines/flux/lora/micro_landscape_on_phone_flux_lora.py",
+      "metadata": {
+        "category": "image/flux/loras",
+        "description": "Load the Flux Lora for use with 🤗 Diffusers based Flux Nodes. 🤗 Model Card: https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-Micro-landscape-on-Mobile-Phone",
+        "display_name": "Flux Lora: Micro Landscape on Mobile Phone"
+      }
+    },
+    {
+      "class_name": "MiniatureWorldFluxLora",
+      "file_path": "diffusers_nodes_library/pipelines/flux/lora/miniature_world_flux_lora.py",
+      "metadata": {
+        "category": "image/flux/loras",
+        "description": "Load the Flux Lora for use with 🤗 Diffusers based Flux Nodes. 🤗 Model Card: https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-Miniature-World",
+        "display_name": "Flux Lora: Miniature World"
+      }
+    },
+    {
+      "class_name": "RiverZNormalDiptychFluxFillLora",
+      "file_path": "diffusers_nodes_library/pipelines/flux/lora/river_z_normal_diptych_flux_fill_lora.py",
+      "metadata": {
+        "category": "image/flux/loras",
+        "description": "Load the Flux Lora for use with the ICEdit Image with Flux Node. 🤗 Model Card:https://huggingface.co/RiverZ/normal-lora",
+        "display_name": "Flux ICEdit Lora: RiverZ Normal"
       }
     },
     {
       "class_name": "TilingFluxImg2ImgPipeline",
-      "file_path": "diffusers_nodes_library/tiling_flux_img_2_img_pipeline.py",
+      "file_path": "diffusers_nodes_library/pipelines/flux/tiling_flux_img_2_img_pipeline.py",
       "metadata": {
         "category": "image/upscale",
-        "description": "TilingFluxImg2ImgPipeline node. Useful as a 2nd pass when upscaling.",
-        "display_name": "Generate Image Variation with Flux and Tiling"
+        "description": "Generate Image Variation with Flux via 🤗 Diffusers using a tiling strategy that allows efficient processing of hi-res images. Without the tiling the quadratic cost of transformer models will consume your GPU and time.",
+        "display_name": "Flux Post-Upscale"
       }
     },
     {
@@ -55,17 +193,18 @@
       "file_path": "pillow_nodes_library/rescale_image.py",
       "metadata": {
         "category": "image/upscale",
-        "description": "RescaleImage node. Useful to select resampling strategy when upscaling.",
+        "description": "Rescales an image using the 🛏️ pillow python package.",
         "display_name": "Rescale Image"
       }
     },
+    
     {
       "class_name": "TilingSPAN",
       "file_path": "spandrel_nodes_library/tiling_span.py",
       "metadata": {
         "category": "image/upscale",
-        "description": "TilingSPAN node. Useful as a 1st pass with upscaling.",
-        "display_name": "Upscale Image with SPAN and Tiling"
+        "description": "Upscales an image using the SPAN model via the 🥞 spandrel python package. Pairs well with Generate Image Variation with Flux + Tiling.",
+        "display_name": "SPAN Upscale"
       }
     }
   ]

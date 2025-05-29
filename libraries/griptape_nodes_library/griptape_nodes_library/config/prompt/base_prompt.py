@@ -54,6 +54,7 @@ class BasePrompt(BaseDriver):
         if driver_parameter is not None:
             driver_parameter.name = "prompt_model_config"
             driver_parameter.output_type = "Prompt Model Config"
+            driver_parameter._ui_options = {"display_name": "prompt model config"}
 
         # --- Common Prompt Driver Parameters ---
         # These parameters represent settings frequently used by LLM prompt drivers.

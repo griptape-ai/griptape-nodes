@@ -23,7 +23,7 @@ class SaveDictionary(ControlNode):
                 input_types=["dict"],
                 allowed_modes={ParameterMode.INPUT},
                 tooltip="The dictionary content to save to file",
-                ui_options={"multiline": True, "placeholder_text": "Dictionary to save to a file..."},
+                ui_options={"hide_property": True},
             )
         )
 

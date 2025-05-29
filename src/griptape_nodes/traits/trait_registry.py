@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
-from griptape.mixins.singleton_mixin import SingletonMixin
+from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Trait
 
 
 # This should probably register upon creation
-class TraitRegistry(SingletonMixin):
+class TraitRegistry(metaclass=SingletonMeta):
     # I'm going to create a dictionary that stores all of the created traits we have so far?
     # Traits will be associated with certain key words
     key_to_trait: ClassVar[dict[str, list[Trait.__class__]]] = {}

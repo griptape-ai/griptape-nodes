@@ -22,7 +22,7 @@ class MergeKeyValuePairs(DataNode):
                 input_types=["dict"],
                 default_value=None,
                 tooltip="Key Value Pair",
-                allowed_modes={ParameterMode.INPUT},
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
 
@@ -33,6 +33,7 @@ class MergeKeyValuePairs(DataNode):
                 output_type="dict",
                 default_value="",
                 tooltip="The merged key value pair result.",
+                ui_options={"hide_property": True},
             )
         )
 

@@ -1,4 +1,5 @@
 import logging
+from functools import cache
 
 import numpy as np
 import PIL.Image
@@ -16,6 +17,7 @@ class SpandrelPipeline:
         self.model = model
 
     @classmethod
+    @cache
     def from_hf_file(cls, repo_id: str, revision: str, filename: str) -> "SpandrelPipeline":
         if repo_id != "skbhadra/ClearRealityV1" or filename != "4x-ClearRealityV1.pth":
             logger.exception("Unsupported (repo_id: %s filename: %s) pair", repo_id, filename)
@@ -32,7 +34,7 @@ class SpandrelPipeline:
 
         return SpandrelPipeline(model)
 
-    def __call__(self, input_image_pil: Image) -> Image:
+    def __call__(self, input_image_pil: Image, *_) -> Image:
         # Will fail if not RGB (like RGBA), I think it actually just
         # needs to be 3 channels, not sure what will happen if you
         # do for example BurGeR.

@@ -46,7 +46,7 @@ class SaveText(ControlNode):
         full_output_file = self.parameter_values.get("output_path", "griptape_output.txt")
 
         try:
-            with Path(full_output_file).open("w") as f:
+            with Path(full_output_file).open("w", encoding="utf-8") as f:
                 f.write(text)
             success_msg = f"Saved file: {full_output_file}"
             logger.info(success_msg)

@@ -19,15 +19,11 @@ class RescaleImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self.category = "image/upscale"
-        self.description = "RescaleImage node."
-
         self.add_parameter(
             Parameter(
                 name="input_image",
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="input_image",
             )
         )
@@ -37,7 +33,6 @@ class RescaleImage(ControlNode):
                 default_value=2.0,
                 input_types=["float"],
                 type="float",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="scale",
             )
         )
@@ -59,7 +54,6 @@ class RescaleImage(ControlNode):
                         ]
                     )
                 },
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
                 tooltip="resample_strategy",
             )
         )

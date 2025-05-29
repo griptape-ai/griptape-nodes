@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import importlib.metadata
 import logging
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import IO, TYPE_CHECKING, Any, ClassVar, TextIO
+from typing import IO, TYPE_CHECKING, Any, TextIO
 
 from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, ParameterContainer, ParameterGroup
 from griptape_nodes.exe_types.flow import ControlFlow
@@ -34,6 +35,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     AlterParameterDetailsRequest,
 )
+from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
@@ -61,6 +63,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
+engine_version = importlib.metadata.version("griptape_nodes")
+
+
 @dataclass
 class Version:
     major: int
@@ -77,15 +82,6 @@ class Version:
 
     def __str__(self) -> str:
         return f"{self.major}.{self.minor}.{self.patch}"
-
-
-class SingletonMeta(type):
-    _instances: ClassVar[dict] = {}
-
-    def __call__(cls, *args, **kwargs) -> Any:
-        if cls not in cls._instances:
-            cls._instances[cls] = super().__call__(*args, **kwargs)
-        return cls._instances[cls]
 
 
 class GriptapeNodes(metaclass=SingletonMeta):
@@ -140,7 +136,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._workflow_manager = WorkflowManager(self._event_manager)
             self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
             self._operation_depth_manager = OperationDepthManager(self._config_manager)
-            self._static_files_manager = StaticFilesManager(self._config_manager, self._event_manager)
+            self._static_files_manager = StaticFilesManager(
+                self._config_manager, self._secrets_manager, self._event_manager
+            )
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -248,19 +246,15 @@ class GriptapeNodes(metaclass=SingletonMeta):
             raise ValueError(msg)
 
     def handle_engine_version_request(self, request: GetEngineVersionRequest) -> ResultPayload:  # noqa: ARG002
-        import importlib.metadata
-
         try:
-            engine_version_str = importlib.metadata.version("griptape_nodes")
-
-            engine_ver = Version.from_string(engine_version_str)
+            engine_ver = Version.from_string(engine_version)
             if engine_ver:
                 return GetEngineVersionResultSuccess(
                     major=engine_ver.major,
                     minor=engine_ver.minor,
                     patch=engine_ver.patch,
                 )
-            details = f"Attempted to get engine version. Failed because version string '{engine_version_str}' wasn't in expected major.minor.patch format."
+            details = f"Attempted to get engine version. Failed because version string '{engine_ver}' wasn't in expected major.minor.patch format."
             logger.error(details)
             return GetEngineVersionResultFailure()
         except Exception as err:

@@ -105,7 +105,6 @@ class ObjectManager:
             )
             return ClearAllObjectStateResultFailure()
         # Let's try and clear it all.
-
         # Cancel any running flows.
         flows = self.get_filtered_subset(type=ControlFlow)
         for flow_name, flow in flows.items():
@@ -124,7 +123,7 @@ class ObjectManager:
             logger.error(details)
             return ClearAllObjectStateResultFailure()
 
-        # Clare the current context.
+        # Clear the current context.
         context_mgr = GriptapeNodes.ContextManager()
         while context_mgr.has_current_workflow():
             while context_mgr.has_current_flow():
@@ -134,7 +133,7 @@ class ObjectManager:
                     context_mgr.pop_node()
                 context_mgr.pop_flow()
             context_mgr.pop_workflow()
-
+        context_mgr._clipboard.clear()
         details = "Successfully cleared all object state (deleted everything)."
         logger.debug(details)
         return ClearAllObjectStateResultSuccess()
