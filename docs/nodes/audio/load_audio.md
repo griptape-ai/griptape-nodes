@@ -32,7 +32,7 @@ Use this node when you want to:
 Imagine you've recorded some audio and have it saved on your computer, and you'd like to use it elsewhere:
 
 1. Create a LoadAudio node
-1. Click on the load audio button, and choose your audio file from disk 
+1. Click on the load audio button, and choose your audio file from disk
 1. The LoadAudio will make the audio available to use in the rest of your workflow
 
 ## Important Notes
