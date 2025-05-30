@@ -360,7 +360,7 @@ def __create_async_websocket_connection() -> Any:
 
     endpoint = urljoin(
         os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai").replace("http", "ws"),
-        "/api/ws/engine",
+        "/ws/engines/events?publish_channel=responses&subscribe_channel=requests",
     )
 
     return connect(
