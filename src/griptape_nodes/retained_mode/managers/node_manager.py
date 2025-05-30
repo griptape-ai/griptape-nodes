@@ -191,32 +191,6 @@ class NodeManager:
             if parent_flow_name == old_name:
                 self._name_to_parent_flow_name[node_name] = new_name
 
-    def remake_duplicates(self, old_node_name: str | None, new_node_name: str) -> None:
-        # Check if old_node_name exists
-        if old_node_name is None:
-            return
-        # Since it is a duplicate, it makes sense to remake all the old incoming connections the original had
-
-        # List the old incoming connections
-        list_connections_for_node_request = ListConnectionsForNodeRequest(old_node_name)
-        list_connections_for_node_response = GriptapeNodes.handle_request(list_connections_for_node_request)
-
-        # Only get incoming connections if it returns the proper type
-        incoming_connections = []
-        if isinstance(list_connections_for_node_response, ListConnectionsForNodeResultSuccess):
-            incoming_connections = list_connections_for_node_response.incoming_connections
-
-        # If there are any incoming connections, loop over them
-        for incoming_connection in incoming_connections:
-            create_old_incoming_connections_request = CreateConnectionRequest(
-                source_node_name=incoming_connection.source_node_name,
-                source_parameter_name=incoming_connection.source_parameter_name,
-                target_node_name=new_node_name,
-                target_parameter_name=incoming_connection.target_parameter_name,
-            )
-
-            GriptapeNodes.handle_request(create_old_incoming_connections_request)
-
     def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
@@ -298,8 +272,7 @@ class NodeManager:
         log_level = logging.DEBUG
         if remapped_requested_node_name:
             log_level = logging.WARNING
-            details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed. Also, will keep the connections of the original node."
-            NodeManager.remake_duplicates(self, request.node_name, final_node_name)
+            details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
 
         logger.log(level=log_level, msg=details)
 
@@ -1750,6 +1723,32 @@ class NodeManager:
         )
         return result
 
+    def remake_duplicates(self, old_node_name: str | None, new_node_name: str | None) -> None:
+        # Check if old_node_name and new_node_name exist
+        if (old_node_name is None) | (new_node_name is None):
+            return
+        # Since it is a duplicate, it makes sense to remake all the old incoming connections the original had
+
+        # List the old incoming connections
+        list_connections_for_node_request = ListConnectionsForNodeRequest(old_node_name)
+        list_connections_for_node_response = GriptapeNodes.handle_request(list_connections_for_node_request)
+
+        # Only get incoming connections if it returns the proper type
+        incoming_connections = []
+        if isinstance(list_connections_for_node_response, ListConnectionsForNodeResultSuccess):
+            incoming_connections = list_connections_for_node_response.incoming_connections
+
+        # If there are any incoming connections, loop over them
+        for incoming_connection in incoming_connections:
+            create_old_incoming_connections_request = CreateConnectionRequest(
+                source_node_name=incoming_connection.source_node_name,
+                source_parameter_name=incoming_connection.source_parameter_name,
+                target_node_name=new_node_name,
+                target_parameter_name=incoming_connection.target_parameter_name,
+            )
+
+            GriptapeNodes.handle_request(create_old_incoming_connections_request)
+
     def on_deserialize_node_from_commands(self, request: DeserializeNodeFromCommandsRequest) -> ResultPayload:
         # Issue the creation command first.
         create_node_request = request.serialized_node_commands.create_node_command
@@ -1780,6 +1779,8 @@ class NodeManager:
 
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         logger.debug(details)
+        # Remake duplicate connections of node
+        NodeManager.remake_duplicates(self, request.serialized_node_commands.create_node_command.node_name, node_name)
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)
 
     def on_serialize_selected_nodes_to_commands(
