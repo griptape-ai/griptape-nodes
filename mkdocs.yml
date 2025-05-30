@@ -67,14 +67,16 @@ nav:
       - Overview: index.md
       - Getting Started:
           - Installation: installation.md
-          - New Users Start here:
-              - Lesson Overview: ftue/FTUE.md
+          - Beginner's Guide:
+              - Tutorial Overview: ftue/FTUE.md
               - 1. Getting Started: ftue/00_tour/FTUE_00_tour.md
               - 2. Prompt an Image: ftue/01_prompt_an_image/FTUE_01_prompt_an_image.md
               - 3. Coordinating Agents: ftue/02_coordinating_agents/FTUE_02_coordinating_agents.md
               - 4. Compare Prompts: ftue/03_compare_prompts/FTUE_03_compare_prompts.md
               - 5. Build a Photography Team: ftue/04_photography_team/FTUE_04_photography_team.md
       - Engine Configuration: configuration.md
+      - Command Line Interface: command_line_interface.md
+      - Scripting: retained_mode.md
   - How-To:
       - Making Custom Nodes: how_to/making_custom_nodes.md
       - Making Custom Scripts: how_to/making_custom_scripts.md
@@ -84,12 +86,8 @@ nav:
               - Grok: how_to/keys/grok.md
           - Installs:
               - Hugging Face: how_to/installs/hugging_face.md
-
   - FAQ: faq.md
-  - Reference:
-      - Glossary: reference/glossary.md
-      - Scripting: reference/retained_mode.md
-      - Command Line Interface: reference/command_line_interface.md
+  - Nodes Reference:
       - Nodes:
           - Overview: nodes/overview.md
           - Misc:
@@ -152,3 +150,4 @@ nav:
               - End Flow: nodes/execution/end_flow.md
           - 3D:
               - Load GLTF: nodes/three_d/load_gltf.md
+  - Glossary: glossary.md
