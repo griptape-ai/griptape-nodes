@@ -62,7 +62,7 @@ class FluxLorasParameter:
             lora_path = item["path"]
             msg = f"Loading lora weights: {lora_path}"
             logger.info(msg)
-            state_dict = safetensors.torch.load_file(lora_path)
+            state_dict = safetensors.torch.load_file(lora_path)  # type: ignore[reportAttributeAccessIssue]
             pipe.load_lora_weights(state_dict, adapter_name=item["name"])
 
         if loras_to_load and get_best_device(quiet=True) == torch.device("cuda"):
