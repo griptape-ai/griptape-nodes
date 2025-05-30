@@ -217,7 +217,7 @@ class NodeManager:
             if parent_flow_name == old_name:
                 self._name_to_parent_flow_name[node_name] = new_name
 
-    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:
+    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
         parent_flow = None
@@ -238,14 +238,32 @@ class NodeManager:
             try:
                 parent_flow = flow_mgr.get_flow_by_name(parent_flow_name)
             except KeyError as err:
-                details = f"Could not create Node of type '{request.node_type}'. Error: {err}"
+                details = f"Attempted to create Node of type '{request.node_type}'. Failed when attempting to find the parent Flow. Error: {err}"
                 logger.error(details)
                 return CreateNodeResultFailure()
 
         # Now ensure that we're giving a valid name.
+        requested_node_name = request.node_name
+        if requested_node_name is None:
+            # The ask is to use the node's DISPLAY name if no name was specified. If that's blank, we'll use the node type.
+            try:
+                dest_library = LibraryRegistry.get_library_for_node_type(
+                    node_type=request.node_type, specific_library_name=request.specific_library_name
+                )
+            except KeyError as err:
+                details = f"Attempted to create Node of type '{request.node_type}'. Failed when attempting to find the library this node type was in. Error: {err}"
+                logger.error(details)
+                return CreateNodeResultFailure()
+
+            node_metadata = dest_library.get_node_metadata(request.node_type)
+            requested_node_name = node_metadata.display_name
+            if not requested_node_name:
+                # Fall back to the class name
+                requested_node_name = request.node_type
+
         obj_mgr = GriptapeNodes.ObjectManager()
         final_node_name = obj_mgr.generate_name_for_object(
-            type_name=request.node_type, requested_name=request.node_name
+            type_name=request.node_type, requested_name=requested_node_name
         )
         remapped_requested_node_name = (request.node_name is not None) and (request.node_name != final_node_name)
 
