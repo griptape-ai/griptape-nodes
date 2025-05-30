@@ -30,13 +30,15 @@ class CurrentNodes(NamedTuple):
 
 # The flow will own all of the nodes and the connections
 class ControlFlow:
+    name: str
     connections: Connections
     nodes: dict[str, BaseNode]
     control_flow_machine: ControlFlowMachine
     single_node_resolution: bool
     flow_queue: Queue[BaseNode]
 
-    def __init__(self) -> None:
+    def __init__(self, name: str) -> None:
+        self.name = name
         self.connections = Connections()
         self.nodes = {}
         self.control_flow_machine = ControlFlowMachine(self)
