@@ -22,7 +22,7 @@ def to_human_readable_size(size_in_bytes: float) -> str:
 
 def human_readable_memory_footprint(model: torch.nn.Module) -> str:
     """Return a human-readable memory footprint."""
-    return to_human_readable_size(model.get_memory_footprint())
+    return to_human_readable_size(model.get_memory_footprint())  # type: ignore[reportAttributeAccessIssue]
 
 
 def print_pipeline_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> None:
