@@ -125,7 +125,12 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         strength = float(self.get_parameter_value("strength"))
 
         if isinstance(input_image_artifact, ImageUrlArtifact):
-            input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
+            try:
+                image_bytes = input_image_artifact.to_bytes()
+            except Exception as err:
+                details = f"Failed to download image at '{input_image_artifact.value}'. If this workflow was shared from another engine installation, that image file will need to be regenerated. Error: {err}"
+                raise ValueError(details) from err
+            input_image_artifact = ImageLoader().parse(image_bytes)
         input_image_pil = image_artifact_to_pil(input_image_artifact)
         input_image_pil = input_image_pil.convert("RGB")
 
