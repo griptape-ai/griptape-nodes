@@ -13,18 +13,20 @@
     "dependencies": {
       "pip_dependencies": [
         "accelerate>=1.6.0",
+        "git+ssh://git@github.com/resemble-ai/chatterbox.git",
         "controlnet-aux>=0.0.9",
         "imageio-ffmpeg>=0.6.0",
-        "diffusers>=0.33.1",
-        "numpy>=2.2.4",
+        "diffusers==0.29.0",
+        "numpy==1.26.0",
         "opencv-python>=4.11.0.86",
         "peft>=0.15.2",
         "pillow>=11.2.1",
         "protobuf>=6.30.2",
         "sentencepiece>=0.2.0",
         "spandrel>=0.4.1",
-        "torch>=2.7.0",
-        "transformers>=4.51.2"
+        "torch==2.6.0",
+        "torchaudio==2.6.0",
+        "transformers==4.46.3"
       ],
       "pip_install_flags": [
         "--preview",
@@ -205,6 +207,15 @@
         "category": "image/upscale",
         "description": "Upscales an image using the SPAN model via the 🥞 spandrel python package. Pairs well with Generate Image Variation with Flux + Tiling.",
         "display_name": "SPAN Upscale"
+      }
+    },
+    {
+      "class_name": "ChatterboxTTS",
+      "file_path": "chatterbox_tts_nodes_library/chatterbox_tts.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Generate Text to Speech with Chatterbox TTS via the chatterbox-tts python package.",
+        "display_name": "Chatterbox TTS"
       }
     }
   ]
