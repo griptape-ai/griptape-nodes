@@ -1231,6 +1231,8 @@ class NodeManager:
                 return SetParameterValueResultFailure()
 
         # Values are actually stored on the NODE.
+        current_set_value = node.get_parameter_value(request.parameter_name)
+        current_output_value = node.parameter_output_values.get(request.parameter_name, None)
         try:
             finalized_value = self._set_and_pass_through_values(request, node)
         except Exception as err:
@@ -1238,7 +1240,8 @@ class NodeManager:
             logger.error(details)
             return SetParameterValueResultFailure()
         # Mark node as unresolved
-        if request.initial_setup is False and not request.is_output:
+        # Logs shouldn't mark unresolved:
+        if request.initial_setup is False and not request.is_output and finalized_value not in (current_set_value, current_output_value):
             # Mark node as unresolved, broadcast an event
             node.make_node_unresolved(
                 current_states_to_trigger_change_event=set(
