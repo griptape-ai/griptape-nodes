@@ -180,6 +180,32 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(DuplicateSelectedNodesRequest, self.on_duplicate_selected_nodes)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
+        # Get the node itself
+        node = self.get_node_by_name(old_name)
+        # Get all connections for this node and update them.
+        flow_name = self.get_node_parent_flow_by_name(old_name)
+        flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+        # Get all incoming and outgoing connections and update them.
+        if old_name in flow.connections.incoming_index:
+            incoming_connections = flow.connections.incoming_index[old_name]
+            for connection_ids in incoming_connections.values():
+                for connection_id in connection_ids:
+                    connection = flow.connections.connections[connection_id]
+                    connection.target_node.name = new_name
+            temp = flow.connections.incoming_index.pop(old_name)
+            flow.connections.incoming_index[new_name] = temp
+        if old_name in flow.connections.outgoing_index:
+            outgoing_connections = flow.connections.outgoing_index[old_name]
+            for connection_ids in outgoing_connections.values():
+                for connection_id in connection_ids:
+                    connection = flow.connections.connections[connection_id]
+                    connection.source_node.name = new_name
+            temp = flow.connections.outgoing_index.pop(old_name)
+            flow.connections.outgoing_index[new_name] = temp
+        # update the node in the flow!
+        flow.remove_node(old_name)
+        node.name = new_name
+        flow.add_node(node)
         # Replace the old node name and its parent.
         parent = self._name_to_parent_flow_name[old_name]
         self._name_to_parent_flow_name[new_name] = parent

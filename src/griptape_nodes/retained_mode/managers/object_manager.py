@@ -49,6 +49,8 @@ class ObjectManager:
 
     def on_rename_object_request(self, request: RenameObjectRequest) -> ResultPayload:
         # Does the source object exist?
+        if request.object_name == request.requested_name:
+            return RenameObjectResultSuccess(final_name=request.requested_name)
         source_obj = self.attempt_get_object_by_name(request.object_name)
         if source_obj is None:
             details = f"Attempted to rename object '{request.object_name}', but no object of that name could be found."
