@@ -2,7 +2,7 @@
 # dependencies = []
 #
 # [tool.griptape-nodes]
-# name = "coordinating_agents_1"
+# name = "coordinating_agents"
 # schema_version = "0.3.0"
 # description = "Multiple agents, with different jobs."
 # image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/libraries/griptape_nodes_library/workflows/templates/thumbnail_coordinating_agents.webp"
