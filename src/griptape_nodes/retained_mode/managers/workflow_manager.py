@@ -15,6 +15,7 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from importlib import resources
+from inspect import getmodule, isclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, TypeVar, cast
 from urllib.parse import urljoin
@@ -1139,6 +1140,13 @@ class WorkflowManager:
             # Encode the bytes as a string using latin1
             unique_parameter_byte_str = unique_parameter_bytes.decode("latin1")
             unique_parameter_dict[uuid] = unique_parameter_byte_str
+
+            # Add import for the unique parameter value's class/module.
+            value_type = type(unique_parameter_value)
+            if isclass(value_type):
+                module = getmodule(value_type)
+                if module:
+                    import_recorder.add_from_import(module.__name__, value_type.__name__)
 
         # Generate a comment explaining what we're doing:
         comment_text = (
