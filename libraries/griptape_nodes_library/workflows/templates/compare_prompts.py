@@ -2,7 +2,7 @@
 # dependencies = []
 #
 # [tool.griptape-nodes]
-# name = "compare_prompts_1"
+# name = "compare_prompts"
 # schema_version = "0.3.0"
 # description = "See how 3 different approaches to prompts affect image generation."
 # image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/libraries/griptape_nodes_library/workflows/templates/thumbnail_compare_prompts.webp"
