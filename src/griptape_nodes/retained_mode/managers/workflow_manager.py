@@ -10,6 +10,7 @@ import pkgutil
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
@@ -1133,6 +1134,9 @@ class WorkflowManager:
 
         import_recorder.add_import("pickle")
 
+        # Get the list of manually-curated, globally available modules
+        global_modules_set = {"builtins", "__main__"}
+
         # Serialize the unique values as pickled strings.
         unique_parameter_dict = {}
         for uuid, unique_parameter_value in unique_parameter_uuid_to_values.items():
@@ -1141,11 +1145,11 @@ class WorkflowManager:
             unique_parameter_byte_str = unique_parameter_bytes.decode("latin1")
             unique_parameter_dict[uuid] = unique_parameter_byte_str
 
-            # Add import for the unique parameter value's class/module.
+            # Add import for the unique parameter value's class/module. But not globals.
             value_type = type(unique_parameter_value)
             if isclass(value_type):
                 module = getmodule(value_type)
-                if module:
+                if module and module.__name__ not in global_modules_set:
                     import_recorder.add_from_import(module.__name__, value_type.__name__)
 
         # Generate a comment explaining what we're doing:
