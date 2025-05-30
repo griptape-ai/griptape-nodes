@@ -1241,7 +1241,11 @@ class NodeManager:
             return SetParameterValueResultFailure()
         # Mark node as unresolved
         # Logs shouldn't mark unresolved:
-        if request.initial_setup is False and not request.is_output and finalized_value not in (current_set_value, current_output_value):
+        if (
+            request.initial_setup is False
+            and not request.is_output
+            and finalized_value not in (current_set_value, current_output_value)
+        ):
             # Mark node as unresolved, broadcast an event
             node.make_node_unresolved(
                 current_states_to_trigger_change_event=set(
