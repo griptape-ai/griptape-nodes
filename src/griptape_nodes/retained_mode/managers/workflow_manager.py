@@ -10,7 +10,6 @@ import pkgutil
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
