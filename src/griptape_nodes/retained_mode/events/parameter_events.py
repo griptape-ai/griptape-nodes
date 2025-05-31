@@ -311,8 +311,7 @@ class AlterElementEvent(ExecutionPayload):
         if "name" in element_dict and isinstance(element, Parameter):
             element_dict["parameter_name"] = element_dict["name"]
             element_dict.pop("name")
-        known_attrs = {
-            "element_details": element_dict
-        }
+            element_dict["value"] = node.get_parameter_value(element_dict["parameter_name"])
+        known_attrs = {"element_details": element_dict}
         instance = cls(**known_attrs)
         return instance
