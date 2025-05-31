@@ -1,4 +1,4 @@
-# Lesson Overview
+# Tutorial Overview
 
 Welcome to your journey with Griptape Nodes! This learning path will guide you through everything from basic setup to creating complex, coordinated workflows with multiple agents.
 

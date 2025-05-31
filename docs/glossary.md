@@ -1,10 +1,10 @@
-# Griptape Nodes Glossary for Artists
+# Griptape Nodes Glossary for Artists & Creators
 
 ## What is Griptape Nodes?
 
-Griptape Nodes is a creative toolkit (built with Python) that helps artists and creators build AI-powered projects without needing deep technical expertise. Think of it like a set of building blocks that you can connect together to create art, generate images, process text, or even build other workhorse applications.
+Griptape Nodes is a toolkit that enables artists and creators to build AI-powered projects without the need for deep technical expertise. You can think of Griptape Nodes as a set of building blocks that you can connect together to create art, generate images, process text, or even build other workflow-centric applications.
 
-### The Big Ones in the Griptape Nodes world
+### Core Griptape Nodes Concepts
 
 - **Workflow**: A document containing nodes, connections, and values. While technically a Workflow is also a Script, avoid calling them Scripts, so that the term Script can communicate a clearly different thing than the term Workflow. This is also what we call the saved file.
 
