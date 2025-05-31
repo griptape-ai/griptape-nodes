@@ -521,7 +521,7 @@ class Parameter(BaseNodeElement):
         # Get the parent's version first.
         our_dict = super().to_dict()
         # Add in our deltas.
-        our_dict["parameter_name"] = self.name
+        our_dict["name"] = self.name
         our_dict["type"] = self.type
         our_dict["input_types"] = self.input_types
         our_dict["output_type"] = self.output_type

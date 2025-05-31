@@ -1325,7 +1325,7 @@ class NodeManager:
         # If any parameters were dependent on that value, we're calling this details request to emit the result to the editor.
         if modified_parameters:
             for modified_parameter_name in modified_parameters:
-                modified_parameter = node.get_parameter_by_name(modified_parameter_name)
+                modified_parameter = node.root_ui_element.find_element_by_name(modified_parameter_name)
                 if modified_parameter is not None:
                     modified_request = AlterElementEvent.create(node=node, element=modified_parameter)
                     EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))

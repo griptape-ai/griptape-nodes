@@ -308,6 +308,9 @@ class AlterElementEvent(ExecutionPayload):
         # Get the element's dictionary and add the node_name to it
         element_dict = element.to_dict()
         element_dict["node_name"] = node.name
+        if "name" in element_dict and isinstance(element, Parameter):
+            element_dict["parameter_name"] = element_dict["name"]
+            element_dict.pop("name")
         known_attrs = {
             "element_details": element_dict
         }
