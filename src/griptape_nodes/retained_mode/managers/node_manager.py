@@ -1,7 +1,7 @@
 import copy
 import logging
 import pickle
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 from uuid import uuid4
 
 from griptape.events import EventBus
@@ -1202,6 +1202,12 @@ class NodeManager:
         )
         return result
 
+    class ModifiedReturnValue(NamedTuple):
+        """Wrapper for a value and a boolean indicating if it was modified."""
+
+        value: Any
+        modified: bool
+
     # added ignoring C901 since this method is overly long because of granular error checking, not actual complexity.
     def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
@@ -1266,23 +1272,20 @@ class NodeManager:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             logger.error(details)
             return SetParameterValueResultFailure()
-        if not request.initial_setup:
+        try:
+            finalized_value, modified = self._set_and_pass_through_values(request, node)
+        except Exception as err:
+            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
+            logger.error(details)
+            return SetParameterValueResultFailure()
+        if not request.initial_setup and modified:
             try:
                 parent_flow.connections.unresolve_future_nodes(node)
             except Exception as err:
                 details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
                 logger.error(details)
                 return SetParameterValueResultFailure()
-
-        # Values are actually stored on the NODE.
-        try:
-            finalized_value = self._set_and_pass_through_values(request, node)
-        except Exception as err:
-            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
-            logger.error(details)
-            return SetParameterValueResultFailure()
-        # Mark node as unresolved
-        if request.initial_setup is False and not request.is_output:
+        if request.initial_setup is False and not request.is_output and modified:
             # Mark node as unresolved, broadcast an event
             node.make_node_unresolved(
                 current_states_to_trigger_change_event=set(
@@ -1310,18 +1313,27 @@ class NodeManager:
         result = SetParameterValueResultSuccess(finalized_value=finalized_value, data_type=parameter.type)
         return result
 
-    def _set_and_pass_through_values(self, request: SetParameterValueRequest, node: BaseNode) -> Any:
+    def _set_and_pass_through_values(self, request: SetParameterValueRequest, node: BaseNode) -> ModifiedReturnValue:
         """Set the parameter value on the node according to the specifications."""
+        modified = False
         object_created = request.value
         # If the value should be set on the output dictionary:
         if request.is_output:
             # set it to output values
+            if (
+                request.parameter_name in node.parameter_output_values
+                and node.parameter_output_values[request.parameter_name] != object_created
+            ):
+                modified = True
             node.parameter_output_values[request.parameter_name] = object_created
-            return object_created
+            return NodeManager.ModifiedReturnValue(object_created, modified)
         # Otherwise use set_parameter_value. This calls our converters and validators.
+        old_value = node.get_parameter_value(request.parameter_name)
         modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
         # Get the "converted" value here.
         finalized_value = node.get_parameter_value(request.parameter_name)
+        if old_value != finalized_value:
+            modified = True
         # If any parameters were dependent on that value, we're calling this details request to emit the result to the editor.
         if modified_parameters:
             for modified_parameter_name in modified_parameters:
@@ -1329,7 +1341,7 @@ class NodeManager:
                 if modified_parameter is not None:
                     modified_request = AlterParameterEvent.create(node=node, parameter=modified_parameter)
                     EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
-        return finalized_value
+        return NodeManager.ModifiedReturnValue(finalized_value, modified)
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     # For PLR0911 (too many return statements): don't want to do a ton of nested chains of success,
