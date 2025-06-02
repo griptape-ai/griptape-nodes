@@ -553,7 +553,7 @@ class FluxLoraTrainingScript:
             msg = "Accelerator must be configured before determining number of scheduler steps."
             raise RuntimeError(msg)
 
-        if self.accelerator.num_processes1:
+        if self.accelerator.num_processes != 1:
             msg = (
                 "We assume a single process in the train flux lora parameters script. "
                 "I don't see why this would be useful with the current scope of training"
