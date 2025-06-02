@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 
 from diffusers_nodes_library.common.utils.option_utils import update_option_choices
-from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
 
@@ -40,6 +40,18 @@ class HuggingFaceModelParameter(ABC):
     def add_input_parameters(self) -> None:
         self._repo_revisions = self.fetch_repo_revisions()
         choices = self.get_choices()
+
+        if not choices:
+            self._node.add_node_element(
+                ParameterMessage(
+                    name="huggingface_repo_parameter_message",
+                    title="Huggingface Model Download Required",
+                    variant="warning",
+                    value=self.get_help_message(),
+                )
+            )
+            return
+
         self._node.add_parameter(
             Parameter(
                 name=self._parameter_name,
@@ -73,12 +85,31 @@ class HuggingFaceModelParameter(ABC):
     def get_repo_revision(self) -> tuple[str, str]:
         value = self._node.get_parameter_value(self._parameter_name)
         if value is None:
-            raise RuntimeError(self.get_help_message())
+            msg = "Model download required!"
+            raise RuntimeError(msg)
         base_repo_id, base_revision = self._key_to_repo_revision(value)
         return base_repo_id, base_revision
+
+    def get_help_message(self) -> str:
+        download_commands = "\n".join([f"  - `{cmd}`" for cmd in self.get_download_commands()])
+        return (
+            "📥 How to download the models:\n"
+            "1. Setup huggingface-cli as per our docs: https://docs.griptapenodes.com/en/stable/how_to/installs/hugging_face/ \n"
+            "2. Download at least one model:\n"
+            f"{download_commands}\n"
+            "3. Save, close, then open the again workflow. (❌ Do not just reload the page)\n"
+            "\n"
+            "✅ If successful, you should see a dropdown with the available models.\n"
+            "❌ If not successful because download fails then check huggingface-cli docs.\n"
+            "❌ If not successful for some other reason then reach out to us on Discord or GitHub.\n"
+            "\n"
+            "Note: Currently this is the only supported method for downloading models. \n"
+            "Hopefully this gets more intuitive (and customizable) soon!\n"
+            "- from ✊📼🍜 with ❤️\n"
+        )
 
     @abstractmethod
     def fetch_repo_revisions(self) -> list[tuple[str, str]]: ...
 
     @abstractmethod
-    def get_help_message(self) -> str: ...
+    def get_download_commands(self) -> list[str]: ...
