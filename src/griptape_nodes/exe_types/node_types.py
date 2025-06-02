@@ -620,6 +620,14 @@ class EndNode(BaseNode):
         self.add_parameter(ControlParameterInput())
 
 
+class StartLoopNode(ControlNode):
+    """Creating class for Start Loop Node in order to implement loop functionality in execution."""
+
+
+class EndLoopNode(ControlNode):
+    """Creating class for Start Loop Node in order to implement loop functionality in execution."""
+
+
 class Connection:
     source_node: BaseNode
     target_node: BaseNode
