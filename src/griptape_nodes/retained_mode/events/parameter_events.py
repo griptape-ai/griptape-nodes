@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from pydantic import Field
 
-from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, ParameterMessage, ParameterMode
+from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, ParameterMode
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     RequestPayload,
