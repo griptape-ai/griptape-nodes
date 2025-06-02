@@ -65,10 +65,10 @@ When developing, you typically want to run the engine using your local source co
     uv run gtn init
     ```
 
-- **Run Tests:**
+- **Run Unit Tests:**
 
     ```shell
-    uv run pytest
+    uv run pytest test/unit
     ```
 
     Or use the Makefile shortcut:
@@ -76,6 +76,9 @@ When developing, you typically want to run the engine using your local source co
     ```shell
     make test/unit
     ```
+
+    > Other test targets (e.g. `test/integration` and `test/workflow`) require
+    > a `.env` in the repo root with all keys found in `.env.example` to run.
 
 - **Check Code (Linting & Formatting):**
 
