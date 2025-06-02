@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import binascii
 import json
 import logging
@@ -9,11 +10,9 @@ import sys
 import threading
 from pathlib import Path
 from queue import Queue
-from time import sleep
 from typing import Any, cast
 from urllib.parse import urljoin
 
-import httpx
 import uvicorn
 from dotenv import get_key
 from fastapi import FastAPI, HTTPException, Request
@@ -27,9 +26,9 @@ from rich.align import Align
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
+from websockets.asyncio.client import connect
+from websockets.exceptions import ConnectionClosed, WebSocketException
 from xdg_base_dirs import xdg_config_home
-
-from griptape_nodes.app.nodes_api_socket_manager import NodesApiSocketManager
 
 # This import is necessary to register all events, even if not technically used
 from griptape_nodes.retained_mode.events import app_events, execution_events
@@ -49,6 +48,10 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 # This is a global event queue that will be used to pass events between threads
 event_queue = Queue()
+
+# Global WebSocket connection for sending events
+ws_connection_for_sending = None
+event_loop = None
 
 # Whether to enable the static server
 STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
@@ -83,7 +86,7 @@ griptape_nodes_logger.addHandler(RichHandler(show_time=True, show_path=False, ma
 griptape_nodes_logger.setLevel(logging.INFO)
 
 # Logger for this module. Important that this is not the same as the griptape_nodes logger or else we'll have infinite log events.
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes_app")
 console = Console()
 
 
@@ -92,11 +95,6 @@ def start_app() -> None:
 
     Starts the event loop and listens for events from the Nodes API.
     """
-    global socket_manager  # noqa: PLW0603 # Need to initialize the socket lazily here to avoid auth-ing too early
-
-    # Listen for SSE events from the Nodes API in a separate thread
-    socket_manager = NodesApiSocketManager()
-
     _init_event_listeners()
 
     # Listen for any signals to exit the app
@@ -220,45 +218,50 @@ def _init_event_listeners() -> None:
     )
 
 
-def _listen_for_api_events() -> None:
-    """Listen for events from the Nodes API and process them."""
-    init = False
-    endpoint = urljoin(os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai"), "/api/engines/stream")
+async def _alisten_for_api_requests() -> None:
+    """Listen for events from the Nodes API and process them asynchronously."""
+    global ws_connection_for_sending, event_loop  # noqa: PLW0603
+    event_loop = asyncio.get_running_loop()  # Store the event loop reference
     nodes_app_url = os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai")
-    logger.info("Listening for events from Nodes API at %s", endpoint)
-    while True:
+    logger.info("Listening for events from Nodes API via async WebSocket")
+
+    # Auto reconnect https://websockets.readthedocs.io/en/stable/reference/asyncio/client.html#opening-a-connection
+    connection_stream = __create_async_websocket_connection()
+    initialized = False
+    async for ws_connection in connection_stream:
         try:
-            with httpx.stream("get", endpoint, auth=__build_authorized_request, timeout=None) as response:  # noqa: S113 We intentionally want to never timeout
-                __check_api_key_validity(response)
+            ws_connection_for_sending = ws_connection  # Store for sending events
+            if not initialized:
+                __broadcast_app_initialization_complete(nodes_app_url)
+                initialized = True
 
-                response.raise_for_status()
+            async for message in ws_connection:
+                try:
+                    data = json.loads(message)
 
-                for line in response.iter_lines():
-                    if line.startswith("data:"):
-                        data = line.removeprefix("data:").strip()
-                        if data == "START":
-                            if not init:
-                                __broadcast_app_initialization_complete(nodes_app_url)
-                                init = True
-                        else:
-                            try:
-                                event = json.loads(data)
-                                # With heartbeat events, we skip the regular processing and just send the heartbeat
-                                # Technically no longer needed since https://github.com/griptape-ai/griptape-nodes/pull/369
-                                # but we don't have a proper EventRequest for it yet.
-                                if event.get("request_type") == "Heartbeat":
-                                    session_id = GriptapeNodes.get_session_id()
-                                    socket_manager.heartbeat(session_id=session_id, request=event["request"])
-                                else:
-                                    __process_api_event(event)
-                            except Exception:
-                                logger.exception("Error processing event, skipping.")
-
-        except httpx.RemoteProtocolError as e:
-            logger.debug("Server closed connection, this is expected. Reconnecting... %s", e)
+                    payload = data.get("payload", {})
+                    # With heartbeat events, we skip the regular processing and just send the heartbeat
+                    # Technically no longer needed since https://github.com/griptape-ai/griptape-nodes/pull/369
+                    # but we don't have a proper EventRequest for it yet.
+                    if payload.get("request_type") == "Heartbeat":
+                        session_id = GriptapeNodes.get_session_id()
+                        await __send_heartbeat(
+                            session_id=session_id, request=payload["request"], ws_connection=ws_connection
+                        )
+                    else:
+                        __process_api_event(payload)
+                except Exception:
+                    logger.exception("Error processing event, skipping.")
+        except ConnectionClosed:
+            continue
         except Exception as e:
             logger.error("Error while listening for events. Retrying in 2 seconds... %s", e)
-            sleep(2)
+            await asyncio.sleep(2)
+
+
+def _listen_for_api_events() -> None:
+    """Run the async WebSocket listener in an event loop."""
+    asyncio.run(_alisten_for_api_requests())
 
 
 def __process_node_event(event: GriptapeNodeEvent) -> None:
@@ -275,7 +278,7 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
 
     # Don't send events over the wire that don't have a request_id set (e.g. engine-internal events)
     event_json = result_event.json()
-    socket_manager.emit(dest_socket, event_json)
+    __schedule_async_task(__emit_message(dest_socket, event_json))
 
 
 def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
@@ -297,8 +300,7 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
             msg = "Node start and finish do not match."
             raise KeyError(msg) from None
         GriptapeNodes.EventManager().current_active_node = None
-    # Set the node name here so I am not double importing
-    socket_manager.emit("execution_event", event_json)
+    __schedule_async_task(__emit_message("execution_event", event_json))
 
 
 def __process_progress_event(gt_event: ProgressEvent) -> None:
@@ -310,7 +312,7 @@ def __process_progress_event(gt_event: ProgressEvent) -> None:
             node_name=node_name, parameter_name=gt_event.parameter_name, type=type(gt_event).__name__, value=value
         )
         event_to_emit = ExecutionEvent(payload=payload)
-        socket_manager.emit("execution_event", event_to_emit.json())
+        __schedule_async_task(__emit_message("execution_event", event_to_emit.json()))
 
 
 def __process_app_event(event: AppEvent) -> None:
@@ -318,7 +320,7 @@ def __process_app_event(event: AppEvent) -> None:
     # Let Griptape Nodes broadcast it.
     GriptapeNodes.broadcast_app_event(event.payload)
 
-    socket_manager.emit("app_event", event.json())
+    __schedule_async_task(__emit_message("app_event", event.json()))
 
 
 def _process_event_queue() -> None:
@@ -339,7 +341,8 @@ def _process_event_queue() -> None:
         event_queue.task_done()
 
 
-def __build_authorized_request(request: httpx.Request) -> httpx.Request:
+def __create_async_websocket_connection() -> Any:
+    """Create an async WebSocket connection to the Nodes API."""
     api_key = get_key(xdg_config_home() / "griptape_nodes" / ".env", "GT_CLOUD_API_KEY")
     if api_key is None:
         message = Panel(
@@ -354,33 +357,63 @@ def __build_authorized_request(request: httpx.Request) -> httpx.Request:
         )
         console.print(message)
         sys.exit(1)
-    request.headers.update(
-        {
-            "Accept": "text/event-stream",
-            "Authorization": f"Bearer {api_key}",
-        }
+
+    endpoint = urljoin(
+        os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai").replace("http", "ws"),
+        "/ws/engines/events?publish_channel=responses&subscribe_channel=requests",
     )
-    return request
+
+    return connect(
+        endpoint,
+        additional_headers={"Authorization": f"Bearer {api_key}"},
+    )
 
 
-def __check_api_key_validity(response: httpx.Response) -> None:
-    """Check if the API key is valid by checking the response status code.
+async def __emit_message(event_type: str, payload: str) -> None:
+    """Send a message via WebSocket asynchronously."""
+    global ws_connection_for_sending  # noqa: PLW0602
+    if ws_connection_for_sending is None:
+        logger.warning("WebSocket connection not available for sending message")
+        return
 
-    If the API key is invalid, print an error message and exit the program.
-    """
-    if response.status_code in {401, 403}:
-        message = Panel(
-            Align.center(
-                "[bold red]Nodes API key is invalid, please run [code]gtn init[/code] with a valid key: [/bold red]"
-                "[code]gtn init --api-key <your key>[/code]\n"
-                "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
-            ),
-            title="🔑 ❌ Invalid Nodes API Key",
-            border_style="red",
-            padding=(1, 4),
+    try:
+        body = {"type": event_type, "payload": json.loads(payload) if payload else {}}
+        await ws_connection_for_sending.send(json.dumps(body))
+    except WebSocketException as e:
+        logger.error("Error sending event to Nodes API: %s", e)
+    except Exception as e:
+        logger.error("Unexpected error while sending event to Nodes API: %s", e)
+
+
+async def __send_heartbeat(*, session_id: str | None, request: dict, ws_connection: Any) -> None:
+    """Send a heartbeat response via WebSocket."""
+    heartbeat_response = {
+        "request": request,
+        "result": {},
+        "request_type": "Heartbeat",
+        "event_type": "EventResultSuccess",
+        "result_type": "HeartbeatSuccess",
+        **({"session_id": session_id} if session_id is not None else {}),
+    }
+
+    body = {"type": "success_result", "payload": heartbeat_response}
+    try:
+        await ws_connection.send(json.dumps(body))
+        logger.debug(
+            "Responded to heartbeat request with session: %s and request: %s", session_id, request.get("request_id")
         )
-        console.print(message)
-        sys.exit(1)
+    except WebSocketException as e:
+        logger.error("Error sending heartbeat response: %s", e)
+    except Exception as e:
+        logger.error("Unexpected error while sending heartbeat response: %s", e)
+
+
+def __schedule_async_task(coro: Any) -> None:
+    """Schedule an async coroutine to run in the event loop from a sync context."""
+    if event_loop and event_loop.is_running():
+        asyncio.run_coroutine_threadsafe(coro, event_loop)
+    else:
+        logger.warning("Event loop not available for scheduling async task")
 
 
 def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
@@ -414,7 +447,7 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
     console.print(message)
 
 
-def __process_api_event(data: Any) -> None:
+def __process_api_event(data: dict) -> None:
     """Process API events and send them to the event queue."""
     try:
         data["request"]
