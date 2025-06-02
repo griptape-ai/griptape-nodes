@@ -216,8 +216,8 @@ class ExecuteNodeState(State):
                             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
                             modified_parameter = current_node.get_parameter_by_name(modified_parameter_name)
                             if modified_parameter is not None:
-                                modified_request = AlterElementEvent.create(
-                                    node=current_node, element=modified_parameter
+                                modified_request = AlterElementEvent(
+                                    element_details=modified_parameter.to_event(current_node)
                                 )
                                 EventBus.publish_event(
                                     ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request))

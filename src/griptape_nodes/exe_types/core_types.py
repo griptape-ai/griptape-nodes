@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from types import TracebackType
 
+    from griptape_nodes.exe_types.node_types import BaseNode
 T = TypeVar("T", bound="Parameter")
 N = TypeVar("N", bound="BaseNodeElement")
 
@@ -271,6 +272,16 @@ class BaseNodeElement:
         """Return the element on top of the stack, or None if no active element."""
         return cls._stack[-1] if cls._stack else None
 
+    def to_event(self, node: BaseNode) -> dict:
+        event_data = {
+            "element_id": self.element_id,
+            "element_type": self.element_type,
+            "name": self.name,
+            "node_name": node.name,
+            "children": [child.to_event(node) for child in self.children],
+        }
+        return event_data
+
 
 @dataclass(kw_only=True)
 class ParameterMessage(BaseNodeElement):
@@ -327,6 +338,13 @@ class ParameterMessage(BaseNodeElement):
 
         return data
 
+    def to_event(self, node: BaseNode) -> dict:
+        event_data = super().to_event(node)
+        dict_data = self.to_dict()
+        # Combine them both to get what we need for the UI.
+        event_data.update(dict_data)
+        return event_data
+
 
 @dataclass(kw_only=True)
 class ParameterGroup(BaseNodeElement):
@@ -358,6 +376,11 @@ class ParameterGroup(BaseNodeElement):
         our_dict["name"] = self.name
         our_dict["ui_options"] = self.ui_options
         return our_dict
+
+    def to_event(self, node: BaseNode) -> dict:
+        event_data = super().to_event(node)
+        event_data["ui_options"] = self.ui_options
+        return event_data
 
     def equals(self, other: ParameterGroup) -> dict:
         self_dict = {"name": self.name, "ui_options": self.ui_options}
@@ -544,6 +567,18 @@ class Parameter(BaseNodeElement):
         our_dict["parent_container_name"] = self.parent_container_name
 
         return our_dict
+
+    def to_event(self, node: BaseNode) -> dict:
+        event_dict = self.to_dict()
+        event_data = super().to_event(node)
+        event_dict.update(event_data)
+        # Update for our name with the right values
+        name = event_dict.pop("name")
+        event_dict["parameter_name"] = name
+        # Update with value
+        if node is not None:
+            event_dict["value"] = node.get_parameter_value(self.name)
+        return event_dict
 
     @property
     def type(self) -> str:

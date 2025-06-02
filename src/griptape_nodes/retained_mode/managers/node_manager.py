@@ -1327,7 +1327,7 @@ class NodeManager:
             for modified_parameter_name in modified_parameters:
                 modified_parameter = node.root_ui_element.find_element_by_name(modified_parameter_name)
                 if modified_parameter is not None:
-                    modified_request = AlterElementEvent.create(node=node, element=modified_parameter)
+                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(node))
                     EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
         return finalized_value
 

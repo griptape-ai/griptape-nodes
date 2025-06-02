@@ -629,14 +629,14 @@ class FlowManager:
                 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
                 modified_parameter = source_node.get_parameter_by_name(modified_parameter_name)
                 if modified_parameter is not None:
-                    modified_request = AlterElementEvent.create(node=source_node, element=modified_parameter)
+                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(source_node))
                     EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
         if modified_target_parameters:
             for modified_parameter_name in modified_target_parameters:
                 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
                 modified_parameter = target_node.get_parameter_by_name(modified_parameter_name)
                 if modified_parameter is not None:
-                    modified_request = AlterElementEvent.create(node=target_node, element=modified_parameter)
+                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(target_node))
                     EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
 
         details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
@@ -823,14 +823,14 @@ class FlowManager:
                 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
                 modified_parameter = source_node.get_parameter_by_name(modified_parameter_name)
                 if modified_parameter is not None:
-                    modified_request = AlterElementEvent.create(node=source_node, element=modified_parameter)
+                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(source_node))
                     EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
         if modified_target_parameters:
             for modified_parameter_name in modified_target_parameters:
                 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
                 modified_parameter = target_node.get_parameter_by_name(modified_parameter_name)
                 if modified_parameter is not None:
-                    modified_request = AlterElementEvent.create(node=target_node, element=modified_parameter)
+                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(target_node))
                     EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
 
         details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" deleted.'

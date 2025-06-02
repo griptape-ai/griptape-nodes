@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import Any, NamedTuple
 
 from pydantic import Field
 
-from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     RequestPayload,
@@ -15,9 +15,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-
-if TYPE_CHECKING:
-    from griptape_nodes.exe_types.node_types import BaseNode
 
 
 @dataclass
@@ -301,17 +298,3 @@ class GetNodeElementDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 @PayloadRegistry.register
 class AlterElementEvent(ExecutionPayload):
     element_details: dict[str, Any]
-
-    # TODO: Get known_attrs dynamically, instead of setting manually. https://github.com/griptape-ai/griptape-nodes/issues/1039
-    @classmethod
-    def create(cls, node: BaseNode, element: BaseNodeElement) -> AlterElementEvent:
-        # Get the element's dictionary and add the node_name to it
-        element_dict = element.to_dict()
-        element_dict["node_name"] = node.name
-        if "name" in element_dict and isinstance(element, Parameter):
-            element_dict["parameter_name"] = element_dict["name"]
-            element_dict.pop("name")
-            element_dict["value"] = node.get_parameter_value(element_dict["parameter_name"])
-        known_attrs = {"element_details": element_dict}
-        instance = cls(**known_attrs)
-        return instance
