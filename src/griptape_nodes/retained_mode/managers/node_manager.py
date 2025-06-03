@@ -1780,6 +1780,23 @@ class NodeManager:
         )
         return result
 
+    # Helper function for remake_duplicates in order to check whether response is of a particular type before getting attribute
+    def check_response(self, response: object, class_to_check: type, attribute_to_retrieve: Any) -> Any:
+        attribute = None
+        if isinstance(response, class_to_check):
+            attribute = getattr(response, attribute_to_retrieve)
+        return attribute
+
+    # Helper function to remove duplicate parameter info code in remake_duplicates
+    def parameter_info(self, source_parameter_name: str, source_node_name: str) -> str:
+        connection_info_request = GetParameterDetailsRequest(source_parameter_name, source_node_name)
+        connection_info_response = GriptapeNodes.handle_request(connection_info_request)
+        # only get value if it succeeds
+        connection_type = NodeManager.check_response(
+            self, connection_info_response, GetParameterDetailsResultSuccess, "type"
+        )
+        return connection_type
+
     def remake_duplicates(self, old_node_names: list[str], new_node_names: list[str]) -> None:
         # Since it is a duplicate, it makes sense to remake all the old incoming connections the original had
         for old_node_name, new_node_name in zip(old_node_names, new_node_names, strict=True):
@@ -1788,28 +1805,22 @@ class NodeManager:
             list_connections_for_node_response = GriptapeNodes.handle_request(list_connections_for_node_request)
 
             # Only get incoming/outgoing connections if it returns the proper type
-            incoming_connections = []
-            outgoing_connections = []
-
-            if isinstance(list_connections_for_node_response, ListConnectionsForNodeResultSuccess):
-                incoming_connections = list_connections_for_node_response.incoming_connections
-            if isinstance(list_connections_for_node_response, ListConnectionsForNodeResultSuccess):
-                outgoing_connections = list_connections_for_node_response.outgoing_connections
+            incoming_connections = NodeManager.check_response(
+                self, list_connections_for_node_response, ListConnectionsForNodeResultSuccess, "incoming_connections"
+            )
+            outgoing_connections = NodeManager.check_response(
+                self, list_connections_for_node_response, ListConnectionsForNodeResultSuccess, "outgoing_connections"
+            )
 
             # If there are any incoming connections, loop over them
             for incoming_connection in incoming_connections:
                 # Define some variables to reduce verbosity
-                create_old_incoming_connections_request = None
                 source_parameter_name = incoming_connection.source_parameter_name
                 source_node_name = incoming_connection.source_node_name
                 target_parameter_name = incoming_connection.target_parameter_name
 
                 # Get info about parameter
-                connection_info_request = GetParameterDetailsRequest(source_parameter_name, source_node_name)
-                connection_info_response = GriptapeNodes.handle_request(connection_info_request)
-                connection_type = None
-                if isinstance(connection_info_response, GetParameterDetailsResultSuccess):
-                    connection_type = connection_info_response.type
+                connection_type = NodeManager.parameter_info(self, source_parameter_name, source_node_name)
 
                 # Skip control connections when it's incoming
                 if connection_type != "parametercontroltype":
@@ -1819,35 +1830,26 @@ class NodeManager:
                         target_node_name=new_node_name,
                         target_parameter_name=target_parameter_name,
                     )
-
-                if isinstance(create_old_incoming_connections_request, RequestPayload):
                     GriptapeNodes.handle_request(create_old_incoming_connections_request)
 
             # If there are any outgoing connections, loop over them
             for outgoing_connection in outgoing_connections:
                 # Define some variables to reduce verbosity
-                create_old_outgoing_connections_request = None
                 source_parameter_name = outgoing_connection.source_parameter_name
                 target_node_name = outgoing_connection.target_node_name
                 target_parameter_name = outgoing_connection.target_parameter_name
 
                 # Get info about parameter
-                connection_info_request = GetParameterDetailsRequest(source_parameter_name, new_node_name)
-                connection_info_response = GriptapeNodes.handle_request(connection_info_request)
-                connection_type = None
-                if isinstance(connection_info_response, GetParameterDetailsResultSuccess):
-                    connection_type = connection_info_response.type
+                connection_type = NodeManager.parameter_info(self, source_parameter_name, new_node_name)
 
                 # Only remake control connections when its outgoing
                 if connection_type == "parametercontroltype":
                     create_old_outgoing_connections_request = CreateConnectionRequest(
                         source_node_name=new_node_name,
                         source_parameter_name=outgoing_connection.source_parameter_name,
-                        target_node_name=outgoing_connection.target_node_name,
+                        target_node_name=target_node_name,
                         target_parameter_name=outgoing_connection.target_parameter_name,
                     )
-
-                if isinstance(create_old_outgoing_connections_request, RequestPayload):
                     GriptapeNodes.handle_request(create_old_outgoing_connections_request)
 
     def on_deserialize_node_from_commands(self, request: DeserializeNodeFromCommandsRequest) -> ResultPayload:
