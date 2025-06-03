@@ -1798,15 +1798,26 @@ class NodeManager:
 
             # If there are any incoming connections, loop over them
             for incoming_connection in incoming_connections:
+                # Define some variables to reduce verbosity
                 create_old_incoming_connections_request = None
+                source_parameter_name = incoming_connection.source_parameter_name
+                source_node_name = incoming_connection.source_node_name
+                target_parameter_name = incoming_connection.target_parameter_name
+
+                # Get info about parameter
+                connection_info_request = GetParameterDetailsRequest(source_parameter_name, source_node_name)
+                connection_info_response = GriptapeNodes.handle_request(connection_info_request)
+                connection_type = None
+                if isinstance(connection_info_response, GetParameterDetailsResultSuccess):
+                    connection_type = connection_info_response.type
 
                 # Skip control connections when it's incoming
-                if incoming_connection.source_parameter_name != "exec_out":
+                if connection_type != "parametercontroltype":
                     create_old_incoming_connections_request = CreateConnectionRequest(
-                        source_node_name=incoming_connection.source_node_name,
-                        source_parameter_name=incoming_connection.source_parameter_name,
+                        source_node_name=source_node_name,
+                        source_parameter_name=source_parameter_name,
                         target_node_name=new_node_name,
-                        target_parameter_name=incoming_connection.target_parameter_name,
+                        target_parameter_name=target_parameter_name,
                     )
 
                 if isinstance(create_old_incoming_connections_request, RequestPayload):
@@ -1814,10 +1825,21 @@ class NodeManager:
 
             # If there are any outgoing connections, loop over them
             for outgoing_connection in outgoing_connections:
+                # Define some variables to reduce verbosity
                 create_old_outgoing_connections_request = None
+                source_parameter_name = outgoing_connection.source_parameter_name
+                target_node_name = outgoing_connection.target_node_name
+                target_parameter_name = outgoing_connection.target_parameter_name
+
+                # Get info about parameter
+                connection_info_request = GetParameterDetailsRequest(source_parameter_name, new_node_name)
+                connection_info_response = GriptapeNodes.handle_request(connection_info_request)
+                connection_type = None
+                if isinstance(connection_info_response, GetParameterDetailsResultSuccess):
+                    connection_type = connection_info_response.type
 
                 # Only remake control connections when its outgoing
-                if outgoing_connection.source_parameter_name == "exec_out":
+                if connection_type == "parametercontroltype":
                     create_old_outgoing_connections_request = CreateConnectionRequest(
                         source_node_name=new_node_name,
                         source_parameter_name=outgoing_connection.source_parameter_name,
