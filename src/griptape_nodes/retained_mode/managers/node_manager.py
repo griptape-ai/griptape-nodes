@@ -1797,7 +1797,9 @@ class NodeManager:
                 outgoing_connections = list_connections_for_node_response.outgoing_connections
 
             # If there are any connections, loop over them
-            for incoming_connection, outgoing_connection in zip(incoming_connections, outgoing_connections, strict=True):
+            for incoming_connection, outgoing_connection in zip(
+                incoming_connections, outgoing_connections, strict=True
+            ):
                 create_old_incoming_connections_request = None
                 create_old_outgoing_connections_request = None
 
