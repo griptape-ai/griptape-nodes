@@ -20,7 +20,6 @@ from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, 
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
-    RequestPayload,
     ResultPayload,
     ResultPayloadFailure,
 )
