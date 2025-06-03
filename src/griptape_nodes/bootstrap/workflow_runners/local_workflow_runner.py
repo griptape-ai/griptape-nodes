@@ -164,7 +164,7 @@ class LocalWorkflowRunner(WorkflowRunner):
 
         return output
 
-    def run(self, workflow_path: str, workflow_name: str, flow_input: Any, storage_backend: str) -> None:
+    def run(self, workflow_path: str, workflow_name: str, flow_input: Any, storage_backend: str = "local") -> None:
         """Executes a published workflow.
 
         Executes a workflow by setting up event listeners, registering libraries,

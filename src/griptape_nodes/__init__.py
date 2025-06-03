@@ -19,9 +19,11 @@ with console.status("Loading Griptape Nodes...") as status:
 
     import httpx
     from dotenv import load_dotenv
+    from rich.box import HEAVY_EDGE
     from rich.panel import Panel
     from rich.progress import Progress
     from rich.prompt import Confirm, Prompt
+    from rich.table import Table
     from xdg_base_dirs import xdg_config_home, xdg_data_home
 
     from griptape_nodes.app import start_app
@@ -40,6 +42,7 @@ NODES_APP_URL = "https://nodes.griptape.ai"
 NODES_TARBALL_URL = "https://github.com/griptape-ai/griptape-nodes/archive/refs/tags/{tag}.tar.gz"
 PYPI_UPDATE_URL = "https://pypi.org/pypi/{package}/json"
 GITHUB_UPDATE_URL = "https://api.github.com/repos/griptape-ai/{package}/git/refs/tags/{revision}"
+GT_CLOUD_BASE_URL = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
 
 
 config_manager = ConfigManager()
@@ -62,18 +65,27 @@ def main() -> None:
 
 
 def _run_init(
-    *, workspace_directory: str | None = None, api_key: str | None = None, register_advanced_library: bool | None = None
+    *,
+    workspace_directory: str | None = None,
+    api_key: str | None = None,
+    storage_backend: str | None = None,
+    storage_backend_bucket_id: str | None = None,
+    register_advanced_library: bool | None = None,
 ) -> None:
     """Runs through the engine init steps.
 
     Args:
         workspace_directory (str | None): The workspace directory to set.
         api_key (str | None): The API key to set.
+        storage_backend (str | None): The storage backend to set.
+        storage_backend_bucket_id (str | None): The storage backend bucket ID to set.
         register_advanced_library (bool | None): Whether to register the advanced library.
     """
     __init_system_config()
     _prompt_for_workspace(workspace_directory=workspace_directory)
     _prompt_for_api_key(api_key=api_key)
+    _prompt_for_storage_backend(storage_backend=storage_backend)
+    _prompt_for_storage_backend_bucket_id(storage_backend_bucket_id=storage_backend_bucket_id)
     _prompt_for_libraries_to_register(register_advanced_library=register_advanced_library)
     _sync_assets()
     console.print("[bold green]Initialization complete![/bold green]")
@@ -91,6 +103,8 @@ def _start_engine(*, no_update: bool = False) -> None:
         _run_init(
             workspace_directory=os.getenv("GTN_WORKSPACE_DIRECTORY"),
             api_key=os.getenv("GTN_API_KEY"),
+            storage_backend=os.getenv("GTN_STORAGE_BACKEND"),
+            storage_backend_bucket_id=os.getenv("GT_CLOUD_BUCKET_ID"),
             register_advanced_library=os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", "false").lower() == "true",
         )
 
@@ -235,6 +249,98 @@ def _prompt_for_workspace(*, workspace_directory: str | None) -> None:
     config_manager.set_config_value("workspace_directory", str(workspace_path))
 
     console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
+
+
+def _prompt_for_storage_backend(*, storage_backend: str | None) -> None:
+    """Prompts the user for their storage backend and stores it in config directory."""
+    if storage_backend is None:
+        explainer = """[bold cyan]Storage Backend[/bold cyan]
+Select the storage backend. This is where Griptape Nodes will store your static files.
+Enter 'gtc' to use Griptape Cloud Bucket Storage, or press Return to accept the default of the local static file server."""
+        console.print(Panel(explainer, expand=False))
+
+        # If config already has a value, use it; otherwise default to "local"
+        default_storage_backend = config_manager.get_config_value("storage_backend") or "local"
+
+        while storage_backend is None:
+            try:
+                storage_to_test = Prompt.ask(
+                    "Storage Backend",
+                    choices=["gtc", "local"],
+                    default=default_storage_backend,
+                    show_default=True,
+                )
+                storage_backend = storage_to_test
+            except json.JSONDecodeError as e:
+                console.print(f"[bold red]Error reading config file: {e}[/bold red]")
+
+    # Persist the chosen backend
+    config_manager.set_config_value("storage_backend", storage_backend)
+    console.print(
+        f"[bold green]Storage backend set to: {config_manager.get_config_value('storage_backend')}[/bold green]"
+    )
+
+
+def _get_griptape_cloud_bucket_ids_and_display_table() -> tuple[list[str], Table]:
+    """Fetches the list of Griptape Cloud Bucket IDs from the API."""
+    url = f"{GT_CLOUD_BASE_URL}/api/buckets"
+    headers = {
+        "Authorization": f"Bearer {secrets_manager.get_secret('GT_CLOUD_API_KEY')}",
+    }
+    bucket_ids: list[str] = []
+
+    table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True, expand=True)
+    table.add_column("Bucket Name", style="green")
+    table.add_column("Bucket ID", style="green")
+
+    with httpx.Client() as client:
+        response = client.get(url, headers=headers)
+        try:
+            response.raise_for_status()
+            data = response.json()
+            for bucket in data["buckets"]:
+                bucket_ids.append(bucket["bucket_id"])
+                table.add_row(bucket["name"], bucket["bucket_id"])
+
+        except httpx.HTTPStatusError as e:
+            console.print(f"[red]Error fetching bucket IDs: {e}[/red]")
+
+    return bucket_ids, table
+
+
+def _prompt_for_storage_backend_bucket_id(*, storage_backend_bucket_id: str | None) -> None:
+    """Prompts the user for their storage backend bucket ID and stores it as a secret."""
+    configured_storage_backend = config_manager.get_config_value("storage_backend")
+    if configured_storage_backend == "gtc":
+        if storage_backend_bucket_id is None:
+            explainer = """[bold cyan]Storage Backend Bucket ID[/bold cyan]
+    Enter the Griptape Cloud Bucket ID to use for Griptape Cloud Storage. This is the location where Griptape Nodes will store your static files."""
+            console.print(Panel(explainer, expand=False))
+
+            choices, table = _get_griptape_cloud_bucket_ids_and_display_table()
+
+            # This should not be possible
+            if len(choices) < 1:
+                msg = "No Griptape Cloud Buckets found!"
+                raise RuntimeError(msg)
+
+            console.print(table)
+
+            while storage_backend_bucket_id is None:
+                try:
+                    storage_backend_bucket_id = Prompt.ask(
+                        "Storage Backend Bucket ID",
+                        default=storage_backend_bucket_id,
+                        show_default=True,
+                        choices=choices,
+                    )
+                except json.JSONDecodeError as e:
+                    console.print(f"[bold red]Error reading config file: {e}[/bold red]")
+
+        secrets_manager.set_secret("GT_CLOUD_BUCKET_ID", storage_backend_bucket_id)
+        console.print(
+            f"[bold green]Storage backend bucket ID set to: {secrets_manager.get_secret('GT_CLOUD_BUCKET_ID')}[/bold green]"
+        )
 
 
 def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None = None) -> None:
