@@ -56,6 +56,15 @@ class LocalWorkflowRunner(WorkflowRunner):
         context_manager = GriptapeNodes.ContextManager()
         return context_manager.get_current_flow().name
 
+    def _set_storage_backend(self, storage_backend: str) -> None:
+        from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+
+        config_manager = ConfigManager()
+        config_manager.set_config_value(
+            key="storage_backend",
+            value=storage_backend,
+        )
+
     def _register_libraries(self) -> None:
         if not self.registered_libraries:
             register_libraries([str(p) for p in self.libraries])
@@ -155,7 +164,7 @@ class LocalWorkflowRunner(WorkflowRunner):
 
         return output
 
-    def run(self, workflow_path: str, workflow_name: str, flow_input: Any) -> None:
+    def run(self, workflow_path: str, workflow_name: str, flow_input: Any, storage_backend: str) -> None:
         """Executes a published workflow.
 
         Executes a workflow by setting up event listeners, registering libraries,
@@ -173,6 +182,9 @@ class LocalWorkflowRunner(WorkflowRunner):
                 on_event=self._handle_event,
             )
         )
+
+        # Set the storage backend
+        self._set_storage_backend(storage_backend=storage_backend)
 
         # Register all of our relevant libraries
         self._register_libraries()
@@ -197,9 +209,11 @@ class LocalWorkflowRunner(WorkflowRunner):
 
         # Wait for the control flow to finish
         is_flow_finished = False
+        error: Exception | None = None
         while not is_flow_finished:
             try:
                 event = self.queue.get(block=True)
+
                 if isinstance(event, ExecutionGriptapeNodeEvent):
                     result_event = event.wrapped_event
 
@@ -207,9 +221,17 @@ class LocalWorkflowRunner(WorkflowRunner):
                         self._submit_output(self._get_output_for_flow(flow_name=flow_name))
                         is_flow_finished = True
                         logger.info("Workflow finished!")
+                    elif type(result_event.payload).__name__ == "ControlFlowCancelledEvent":
+                        msg = "Control flow cancelled"
+                        is_flow_finished = True
+                        logger.error(msg)
+                        error = ValueError(msg)
 
                 self.queue.task_done()
 
             except Exception as e:
                 msg = f"Error handling queue event: {e}"
                 logger.info(msg)
+
+        if error is not None:
+            raise error
