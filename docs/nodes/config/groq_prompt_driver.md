@@ -30,27 +30,27 @@ The Groq Prompt Driver supports the following models:
 
 The Groq Prompt Driver supports the following configuration parameters:
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| model | string | gemma2-9b-it | The Groq model to use for text generation |
-| temperature | float | 0.7 | Controls randomness in the output (0.0 to 1.0) |
-| top_p | float | 0.9 | Controls diversity via nucleus sampling (0.0 to 1.0) |
-| max_tokens | integer | 2048 | Maximum number of tokens to generate |
-| stream | boolean | false | Whether to stream the response |
-| max_attempts | integer | 3 | Maximum number of retry attempts for failed requests |
+| Parameter    | Type    | Default      | Description                                          |
+| ------------ | ------- | ------------ | ---------------------------------------------------- |
+| model        | string  | gemma2-9b-it | The Groq model to use for text generation            |
+| temperature  | float   | 0.7          | Controls randomness in the output (0.0 to 1.0)       |
+| top_p        | float   | 0.9          | Controls diversity via nucleus sampling (0.0 to 1.0) |
+| max_tokens   | integer | 2048         | Maximum number of tokens to generate                 |
+| stream       | boolean | false        | Whether to stream the response                       |
+| max_attempts | integer | 3            | Maximum number of retry attempts for failed requests |
 
 ## Usage
 
 1. Add the Groq Prompt Driver node to your workflow
 1. Make sure to get an API key here: [Groq API Keys](https://console.groq.com/keys)
-2. Configure your `GROQ_API_KEY` in the Griptape Configuration settings
-3. Select your desired model from the available options
-4. Adjust the generation parameters as needed
-5. Connect the node to other nodes in your workflow
+1. Configure your `GROQ_API_KEY` in the Griptape Configuration settings
+1. Select your desired model from the available options
+1. Adjust the generation parameters as needed
+1. Connect the node to other nodes in your workflow
 
 ## Notes
 
 - The Groq Prompt Driver uses the OpenAI-compatible API endpoint at `https://api.groq.com/openai/v1`
 - Preview models are intended for evaluation purposes and may be discontinued at short notice
 - Production models are recommended for production environments
-- The node automatically handles API key validation before workflow execution 
+- The node automatically handles API key validation before workflow execution
