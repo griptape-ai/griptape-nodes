@@ -12,9 +12,8 @@ class ForEachEndNode(EndLoopNode):
     """
     start_node_finished: bool
 
-    def __init__(self, name: str, loop_id:str, metadata: dict[Any, Any] | None = None) -> None:
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
-        self.loop_id = loop_id
         self.start_node_finished = False
         self.output = ParameterList(
             name="output",

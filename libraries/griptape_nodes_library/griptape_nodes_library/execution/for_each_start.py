@@ -1,3 +1,4 @@
+from types import NoneType
 from typing import Any, Optional, override
 
 from griptape_nodes.exe_types.core_types import (
@@ -20,13 +21,13 @@ class ForEachStartNode(StartLoopNode):
     This node iterates through each item in the input list and runs the connected flow for each item.
     It provides the current item to the next node in the flow and keeps track of the iteration state.
     """
-    for_each_end: ForEachEndNode
+    for_each_end: ForEachEndNode | None
     _current_index: int
     _items: list[Any]
 
-    def __init__(self, name: str, for_each_end: ForEachEndNode, metadata: dict[Any, Any] | None = None) -> None:
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
-        self.for_each_end = for_each_end
+        self.for_each_end = None
         self._current_index = 0
         self._items = []
         self.items_list = ParameterList(
@@ -84,4 +85,10 @@ class ForEachStartNode(StartLoopNode):
         ):
             # Update the current_item output type to match the input type
             self.current_item.output_type = source_parameter.output_type
+
+
+    @override
+    def after_incoming_connection(self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter, modified_parameters_set: set[str]) -> None:
+        if target_parameter.
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter, modified_parameters_set)
 
