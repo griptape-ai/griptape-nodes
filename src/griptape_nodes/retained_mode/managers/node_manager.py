@@ -1782,7 +1782,7 @@ class NodeManager:
 
     def remake_duplicates(self, old_node_names: list[str], new_node_names: list[str]) -> None:
         # Since it is a duplicate, it makes sense to remake all the old incoming connections the original had
-        for old_node_name, new_node_name in zip(old_node_names, new_node_names):
+        for old_node_name, new_node_name in zip(old_node_names, new_node_names, strict=True):
             # List the old incoming connections
             list_connections_for_node_request = ListConnectionsForNodeRequest(old_node_name)
             list_connections_for_node_response = GriptapeNodes.handle_request(list_connections_for_node_request)
@@ -1797,7 +1797,7 @@ class NodeManager:
                 outgoing_connections = list_connections_for_node_response.outgoing_connections
 
             # If there are any connections, loop over them
-            for incoming_connection, outgoing_connection in zip(incoming_connections, outgoing_connections):
+            for incoming_connection, outgoing_connection in zip(incoming_connections, outgoing_connections, strict=True):
                 create_old_incoming_connections_request = None
                 create_old_outgoing_connections_request = None
 
