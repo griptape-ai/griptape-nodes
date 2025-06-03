@@ -2,7 +2,7 @@
 # dependencies = []
 #
 # [tool.griptape-nodes]
-# name = "photography_team_1"
+# name = "photography_team"
 # schema_version = "0.3.0"
 # description = "A team of experts develop a prompt."
 # image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/libraries/griptape_nodes_library/workflows/templates/thumbnail_photography_team.webp"

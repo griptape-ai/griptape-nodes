@@ -24,7 +24,13 @@
         "sentencepiece>=0.2.0",
         "spandrel>=0.4.1",
         "torch>=2.7.0",
-        "transformers>=4.51.2"
+        "torchvision>=0.22.0",
+        "torchaudio>=2.7.0",
+        "transformers>=4.51.2",
+        "tqdm>=4.67.1",
+        "protobuf>=6.31.0",
+        "prodigyopt>=1.1.2; sys_platform == 'win32'",
+        "bitsandbytes>=0.46.0; sys_platform == 'win32'"
       ],
       "pip_install_flags": [
         "--preview",
@@ -205,6 +211,15 @@
         "category": "image/upscale",
         "description": "Upscales an image using the SPAN model via the 🥞 spandrel python package. Pairs well with Generate Image Variation with Flux + Tiling.",
         "display_name": "SPAN Upscale"
+      }
+    },
+    {
+      "class_name": "TrainFluxLora",
+      "file_path": "diffusers_nodes_library/pipelines/flux/peft/train_flux_lora.py",
+      "metadata": {
+        "category": "image/flux/loras",
+        "description": "TrainFluxLora node.",
+        "display_name": "Train Flux Lora"
       }
     }
   ]

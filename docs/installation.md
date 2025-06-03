@@ -69,7 +69,7 @@ After typing and running `griptape-nodes` or `gtn` in the terminal *for the firs
 
 ## 3. Configuration
 
-**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape Nodes engine will save [project files](./reference/glossary.md#project-files), and [generated assets](./reference/glossary.md#generated-assets). It will also contain a [.env](./reference/glossary.md#.env) for your Griptape Nodes [secret keys](./reference/glossary.md#secret-keys).
+**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape Nodes engine will save [project files](./glossary.md#project-files), and [generated assets](./glossary.md#generated-assets). It will also contain a [.env](./glossary.md#.env) for your Griptape Nodes [secret keys](./glossary.md#secret-keys).
 
 ```
 ╭───────────────────────────────────────────────────────────────────╮

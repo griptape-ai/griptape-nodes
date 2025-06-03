@@ -1,7 +1,7 @@
 import copy
 import logging
 import pickle
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 from uuid import uuid4
 
 from griptape.events import EventBus
@@ -180,6 +180,32 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(DuplicateSelectedNodesRequest, self.on_duplicate_selected_nodes)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
+        # Get the node itself
+        node = self.get_node_by_name(old_name)
+        # Get all connections for this node and update them.
+        flow_name = self.get_node_parent_flow_by_name(old_name)
+        flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+        # Get all incoming and outgoing connections and update them.
+        if old_name in flow.connections.incoming_index:
+            incoming_connections = flow.connections.incoming_index[old_name]
+            for connection_ids in incoming_connections.values():
+                for connection_id in connection_ids:
+                    connection = flow.connections.connections[connection_id]
+                    connection.target_node.name = new_name
+            temp = flow.connections.incoming_index.pop(old_name)
+            flow.connections.incoming_index[new_name] = temp
+        if old_name in flow.connections.outgoing_index:
+            outgoing_connections = flow.connections.outgoing_index[old_name]
+            for connection_ids in outgoing_connections.values():
+                for connection_id in connection_ids:
+                    connection = flow.connections.connections[connection_id]
+                    connection.source_node.name = new_name
+            temp = flow.connections.outgoing_index.pop(old_name)
+            flow.connections.outgoing_index[new_name] = temp
+        # update the node in the flow!
+        flow.remove_node(old_name)
+        node.name = new_name
+        flow.add_node(node)
         # Replace the old node name and its parent.
         parent = self._name_to_parent_flow_name[old_name]
         self._name_to_parent_flow_name[new_name] = parent
@@ -191,7 +217,7 @@ class NodeManager:
             if parent_flow_name == old_name:
                 self._name_to_parent_flow_name[node_name] = new_name
 
-    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:
+    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
         parent_flow = None
@@ -212,14 +238,32 @@ class NodeManager:
             try:
                 parent_flow = flow_mgr.get_flow_by_name(parent_flow_name)
             except KeyError as err:
-                details = f"Could not create Node of type '{request.node_type}'. Error: {err}"
+                details = f"Attempted to create Node of type '{request.node_type}'. Failed when attempting to find the parent Flow. Error: {err}"
                 logger.error(details)
                 return CreateNodeResultFailure()
 
         # Now ensure that we're giving a valid name.
+        requested_node_name = request.node_name
+        if requested_node_name is None:
+            # The ask is to use the node's DISPLAY name if no name was specified. If that's blank, we'll use the node type.
+            try:
+                dest_library = LibraryRegistry.get_library_for_node_type(
+                    node_type=request.node_type, specific_library_name=request.specific_library_name
+                )
+            except KeyError as err:
+                details = f"Attempted to create Node of type '{request.node_type}'. Failed when attempting to find the library this node type was in. Error: {err}"
+                logger.error(details)
+                return CreateNodeResultFailure()
+
+            node_metadata = dest_library.get_node_metadata(request.node_type)
+            requested_node_name = node_metadata.display_name
+            if not requested_node_name:
+                # Fall back to the class name
+                requested_node_name = request.node_type
+
         obj_mgr = GriptapeNodes.ObjectManager()
         final_node_name = obj_mgr.generate_name_for_object(
-            type_name=request.node_type, requested_name=request.node_name
+            type_name=request.node_type, requested_name=requested_node_name
         )
         remapped_requested_node_name = (request.node_name is not None) and (request.node_name != final_node_name)
 
@@ -1158,6 +1202,12 @@ class NodeManager:
         )
         return result
 
+    class ModifiedReturnValue(NamedTuple):
+        """Wrapper for a value and a boolean indicating if it was modified."""
+
+        value: Any
+        modified: bool
+
     # added ignoring C901 since this method is overly long because of granular error checking, not actual complexity.
     def on_set_parameter_value_request(self, request: SetParameterValueRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
@@ -1222,23 +1272,20 @@ class NodeManager:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             logger.error(details)
             return SetParameterValueResultFailure()
-        if not request.initial_setup:
+        try:
+            finalized_value, modified = self._set_and_pass_through_values(request, node)
+        except Exception as err:
+            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
+            logger.error(details)
+            return SetParameterValueResultFailure()
+        if not request.initial_setup and modified:
             try:
                 parent_flow.connections.unresolve_future_nodes(node)
             except Exception as err:
                 details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
                 logger.error(details)
                 return SetParameterValueResultFailure()
-
-        # Values are actually stored on the NODE.
-        try:
-            finalized_value = self._set_and_pass_through_values(request, node)
-        except Exception as err:
-            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
-            logger.error(details)
-            return SetParameterValueResultFailure()
-        # Mark node as unresolved
-        if request.initial_setup is False and not request.is_output:
+        if request.initial_setup is False and not request.is_output and modified:
             # Mark node as unresolved, broadcast an event
             node.make_node_unresolved(
                 current_states_to_trigger_change_event=set(
@@ -1266,18 +1313,27 @@ class NodeManager:
         result = SetParameterValueResultSuccess(finalized_value=finalized_value, data_type=parameter.type)
         return result
 
-    def _set_and_pass_through_values(self, request: SetParameterValueRequest, node: BaseNode) -> Any:
+    def _set_and_pass_through_values(self, request: SetParameterValueRequest, node: BaseNode) -> ModifiedReturnValue:
         """Set the parameter value on the node according to the specifications."""
+        modified = False
         object_created = request.value
         # If the value should be set on the output dictionary:
         if request.is_output:
             # set it to output values
+            if (
+                request.parameter_name in node.parameter_output_values
+                and node.parameter_output_values[request.parameter_name] != object_created
+            ):
+                modified = True
             node.parameter_output_values[request.parameter_name] = object_created
-            return object_created
+            return NodeManager.ModifiedReturnValue(object_created, modified)
         # Otherwise use set_parameter_value. This calls our converters and validators.
+        old_value = node.get_parameter_value(request.parameter_name)
         modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
         # Get the "converted" value here.
         finalized_value = node.get_parameter_value(request.parameter_name)
+        if old_value != finalized_value:
+            modified = True
         # If any parameters were dependent on that value, we're calling this details request to emit the result to the editor.
         if modified_parameters:
             for modified_parameter_name in modified_parameters:
@@ -1285,7 +1341,7 @@ class NodeManager:
                 if modified_parameter is not None:
                     modified_request = AlterParameterEvent.create(node=node, parameter=modified_parameter)
                     EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
-        return finalized_value
+        return NodeManager.ModifiedReturnValue(finalized_value, modified)
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     # For PLR0911 (too many return statements): don't want to do a ton of nested chains of success,
