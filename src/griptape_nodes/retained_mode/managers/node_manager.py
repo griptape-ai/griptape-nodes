@@ -1783,13 +1783,11 @@ class NodeManager:
         """Helper function for remake_duplicates to check whether response is of a particular type before getting an attribute.
 
         Args:
-
             response (object): The response object to retrieve the attribute from.
             class_to_check (type): The class the response needs to be part of in order to retrieve the attribute.
             attribute_to_retrieve (Any): The attribute the function will retrieve if it matches the type.
 
         Returns:
-
             attribute (Any): The attribute retrieved by the function, none if no attributes are retrieved.
         """
         attribute = None
@@ -1801,7 +1799,6 @@ class NodeManager:
         """Helper function to get type of a parameter in remake_duplicates.
 
         Args:
-
             source_parameter_name (str): The name of the parameter to get info from.
             source_node_name (str): The name of the node the parameter is part of.
 
@@ -1819,10 +1816,10 @@ class NodeManager:
 
     def remake_connections(self, old_node_names: list[str], new_node_names: list[str]) -> None:
         """Remakes the incoming data connections and outgoing control connections.
+        
         for a list of new_node_names, using the connections from the corresponding old_node_names.
 
         Args:
-
             old_node_names (list[str]): The old node names the connections are taken from.
             new_node_names (list[str]): The new node names the duplicate connections will be added to.
 
