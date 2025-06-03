@@ -14,7 +14,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState, StartLoopNode
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
@@ -123,6 +123,8 @@ from griptape_nodes.retained_mode.events.validation_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+
+from libraries.griptape_nodes_library.griptape_nodes_library.execution.for_each_start import ForEachStartNode
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -284,7 +286,13 @@ class NodeManager:
             details = f"Could not create Node '{final_node_name}' of type '{request.node_type}': {err}"
             logger.error(details)
             return CreateNodeResultFailure()
-
+        if isinstance(node, ForEachStartNode):
+            node.for_each_end = LibraryRegistry.create_node(
+                name=final_node_name,
+                node_type=request.node_type,
+                specific_library_name=request.specific_library_name,
+                metadata=request.metadata,
+            )
         # Add it to the Flow.
         parent_flow.add_node(node)
 
