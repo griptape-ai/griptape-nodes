@@ -92,10 +92,10 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     AddParameterToNodeResultFailure,
     AddParameterToNodeResultSuccess,
+    AlterElementEvent,
     AlterParameterDetailsRequest,
     AlterParameterDetailsResultFailure,
     AlterParameterDetailsResultSuccess,
-    AlterParameterEvent,
     GetCompatibleParametersRequest,
     GetCompatibleParametersResultFailure,
     GetCompatibleParametersResultSuccess,
@@ -1337,9 +1337,9 @@ class NodeManager:
         # If any parameters were dependent on that value, we're calling this details request to emit the result to the editor.
         if modified_parameters:
             for modified_parameter_name in modified_parameters:
-                modified_parameter = node.get_parameter_by_name(modified_parameter_name)
+                modified_parameter = node.root_ui_element.find_element_by_name(modified_parameter_name)
                 if modified_parameter is not None:
-                    modified_request = AlterParameterEvent.create(node=node, parameter=modified_parameter)
+                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(node))
                     EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
         return NodeManager.ModifiedReturnValue(finalized_value, modified)
 
