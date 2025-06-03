@@ -625,7 +625,10 @@ class StartLoopNode(ControlNode):
 
 
 class EndLoopNode(ControlNode):
+    # Is the connected StartLoopNode finished processing?
     start_node_finished: bool
+    # List of child parameters of the output for the loop
+    _children: list[Parameter]
     """Creating class for Start Loop Node in order to implement loop functionality in execution."""
 
 

@@ -14,7 +14,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import BaseNode, EndLoopNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
@@ -791,6 +791,8 @@ class NodeManager:
                 parameter_parent = node.get_parameter_by_name(request.parent_container_name)
                 if parameter_parent is not None:
                     parameter_parent.add_child(new_param)
+                    if isinstance(node, EndLoopNode):
+                        node._children.append(new_param)
             else:
                 logger.info(new_param.name)
                 node.add_parameter(new_param)
