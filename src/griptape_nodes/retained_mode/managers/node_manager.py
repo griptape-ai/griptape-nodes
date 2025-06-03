@@ -1796,12 +1796,9 @@ class NodeManager:
             if isinstance(list_connections_for_node_response, ListConnectionsForNodeResultSuccess):
                 outgoing_connections = list_connections_for_node_response.outgoing_connections
 
-            # If there are any connections, loop over them
-            for incoming_connection, outgoing_connection in zip(
-                incoming_connections, outgoing_connections, strict=True
-            ):
+            # If there are any incoming connections, loop over them
+            for incoming_connection in incoming_connections:
                 create_old_incoming_connections_request = None
-                create_old_outgoing_connections_request = None
 
                 # Skip control connections when it's incoming
                 if incoming_connection.source_parameter_name != "exec_out":
@@ -1812,6 +1809,13 @@ class NodeManager:
                         target_parameter_name=incoming_connection.target_parameter_name,
                     )
 
+                if isinstance(create_old_incoming_connections_request, RequestPayload):
+                    GriptapeNodes.handle_request(create_old_incoming_connections_request)
+
+            # If there are any outgoing connections, loop over them
+            for outgoing_connection in outgoing_connections:
+                create_old_outgoing_connections_request = None
+
                 # Only remake control connections when its outgoing
                 if outgoing_connection.source_parameter_name == "exec_out":
                     create_old_outgoing_connections_request = CreateConnectionRequest(
@@ -1820,10 +1824,6 @@ class NodeManager:
                         target_node_name=outgoing_connection.target_node_name,
                         target_parameter_name=outgoing_connection.target_parameter_name,
                     )
-
-                # Actually make the requests
-                if isinstance(create_old_incoming_connections_request, RequestPayload):
-                    GriptapeNodes.handle_request(create_old_incoming_connections_request)
 
                 if isinstance(create_old_outgoing_connections_request, RequestPayload):
                     GriptapeNodes.handle_request(create_old_outgoing_connections_request)
