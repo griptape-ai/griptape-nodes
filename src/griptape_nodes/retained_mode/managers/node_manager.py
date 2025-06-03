@@ -1779,15 +1779,28 @@ class NodeManager:
         )
         return result
 
-    # Helper function for remake_duplicates in order to check whether response is of a particular type before getting attribute
     def check_response(self, response: object, class_to_check: type, attribute_to_retrieve: Any) -> Any:
+        """Helper function for remake_duplicates to check whether response is of a particular type before getting an attribute.
+        Args:
+            response (object): The response object to retrieve the attribute from.
+            class_to_check (type): The class the response needs to be part of in order to retrieve the attribute.
+            attribute_to_retrieve (Any): The attribute the function will retrieve if it matches the type.
+        Returns:
+            attribute (Any): The attribute retrieved by the function, none if no attributes are retrieved.
+        """
         attribute = None
         if isinstance(response, class_to_check):
             attribute = getattr(response, attribute_to_retrieve)
         return attribute
 
-    # Helper function to remove duplicate parameter info code in remake_duplicates
-    def parameter_info(self, source_parameter_name: str, source_node_name: str) -> str:
+    def parameter_type(self, source_parameter_name: str, source_node_name: str) -> str:
+        """Helper function to get type of a parameter in remake_duplicates.
+        Args:
+            source_parameter_name (str): The name of the parameter to get info from.
+            source_node_name (str): The name of the node the parameter is part of.
+        Returns:
+            The type of the connection is returned, or None if the request fails."""
+
         connection_info_request = GetParameterDetailsRequest(source_parameter_name, source_node_name)
         connection_info_response = GriptapeNodes.handle_request(connection_info_request)
         # only get value if it succeeds
@@ -1796,7 +1809,15 @@ class NodeManager:
         )
         return connection_type
 
-    def remake_duplicates(self, old_node_names: list[str], new_node_names: list[str]) -> None:
+    def remake_connections(self, old_node_names: list[str], new_node_names: list[str]) -> None:
+        """Remakes the incoming data connections and outgoing control connections
+        for a list of new_node_names, using the connections from the corresponding old_node_names.
+        Args:
+            old_node_names (list[str]): The old node names the connections are taken from.
+            new_node_names (list[str]): The new node names the duplicate connections will be added to.
+        Returns:
+            None"""
+
         # Since it is a duplicate, it makes sense to remake all the old incoming connections the original had
         for old_node_name, new_node_name in zip(old_node_names, new_node_names, strict=True):
             # List the old incoming connections
@@ -1811,6 +1832,12 @@ class NodeManager:
                 self, list_connections_for_node_response, ListConnectionsForNodeResultSuccess, "outgoing_connections"
             )
 
+            # Check if none to prevent an error in the for loops
+            if incoming_connections == None:
+                incoming_connections = []
+            if outgoing_connections == None:
+                outgoing_connections = []
+
             # If there are any incoming connections, loop over them
             for incoming_connection in incoming_connections:
                 # Define some variables to reduce verbosity
@@ -1819,7 +1846,7 @@ class NodeManager:
                 target_parameter_name = incoming_connection.target_parameter_name
 
                 # Get info about parameter
-                connection_type = NodeManager.parameter_info(self, source_parameter_name, source_node_name)
+                connection_type = NodeManager.parameter_type(self, source_parameter_name, source_node_name)
 
                 # Skip control connections when it's incoming
                 if connection_type != ParameterTypeBuiltin.CONTROL_TYPE:
@@ -1839,7 +1866,7 @@ class NodeManager:
                 target_parameter_name = outgoing_connection.target_parameter_name
 
                 # Get info about parameter
-                connection_type = NodeManager.parameter_info(self, source_parameter_name, new_node_name)
+                connection_type = NodeManager.parameter_type(self, source_parameter_name, new_node_name)
 
                 # Only remake control connections when its outgoing
                 if connection_type == ParameterTypeBuiltin.CONTROL_TYPE:
@@ -2046,7 +2073,7 @@ class NodeManager:
         # This list comprehension gets the first element in each sublist in order to generate the old_node_names
         initial_nodes = [sublist[0] for sublist in request.nodes_to_duplicate]
 
-        NodeManager.remake_duplicates(self, new_node_names=result.node_names, old_node_names=initial_nodes)
+        NodeManager.remake_connections(self, new_node_names=result.node_names, old_node_names=initial_nodes)
         return DuplicateSelectedNodesResultSuccess(result.node_names)
 
     @staticmethod
