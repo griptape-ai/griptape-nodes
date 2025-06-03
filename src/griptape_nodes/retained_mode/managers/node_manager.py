@@ -1781,11 +1781,15 @@ class NodeManager:
 
     def check_response(self, response: object, class_to_check: type, attribute_to_retrieve: Any) -> Any:
         """Helper function for remake_duplicates to check whether response is of a particular type before getting an attribute.
+
         Args:
+
             response (object): The response object to retrieve the attribute from.
             class_to_check (type): The class the response needs to be part of in order to retrieve the attribute.
             attribute_to_retrieve (Any): The attribute the function will retrieve if it matches the type.
+
         Returns:
+
             attribute (Any): The attribute retrieved by the function, none if no attributes are retrieved.
         """
         attribute = None
@@ -1795,12 +1799,16 @@ class NodeManager:
 
     def parameter_type(self, source_parameter_name: str, source_node_name: str) -> str:
         """Helper function to get type of a parameter in remake_duplicates.
+
         Args:
+
             source_parameter_name (str): The name of the parameter to get info from.
             source_node_name (str): The name of the node the parameter is part of.
-        Returns:
-            The type of the parameter is returned, or None if the request fails."""
 
+        Returns:
+            The type of the parameter is returned, or None if the request fails.
+
+        """
         connection_info_request = GetParameterDetailsRequest(source_parameter_name, source_node_name)
         connection_info_response = GriptapeNodes.handle_request(connection_info_request)
         # only get value if it succeeds
@@ -1810,14 +1818,18 @@ class NodeManager:
         return connection_type
 
     def remake_connections(self, old_node_names: list[str], new_node_names: list[str]) -> None:
-        """Remakes the incoming data connections and outgoing control connections
+        """Remakes the incoming data connections and outgoing control connections.
         for a list of new_node_names, using the connections from the corresponding old_node_names.
+
         Args:
+
             old_node_names (list[str]): The old node names the connections are taken from.
             new_node_names (list[str]): The new node names the duplicate connections will be added to.
-        Returns:
-            None"""
 
+        Returns:
+            None
+
+        """
         # Since it is a duplicate, it makes sense to remake all the old incoming connections the original had
         for old_node_name, new_node_name in zip(old_node_names, new_node_names, strict=True):
             # List the old incoming connections
@@ -1833,9 +1845,9 @@ class NodeManager:
             )
 
             # Check if none to prevent an error in the for loops
-            if incoming_connections == None:
+            if incoming_connections is None:
                 incoming_connections = []
-            if outgoing_connections == None:
+            if outgoing_connections is None:
                 outgoing_connections = []
 
             # If there are any incoming connections, loop over them
