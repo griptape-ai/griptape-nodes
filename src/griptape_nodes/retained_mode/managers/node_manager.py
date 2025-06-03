@@ -1799,7 +1799,7 @@ class NodeManager:
             source_parameter_name (str): The name of the parameter to get info from.
             source_node_name (str): The name of the node the parameter is part of.
         Returns:
-            The type of the connection is returned, or None if the request fails."""
+            The type of the parameter is returned, or None if the request fails."""
 
         connection_info_request = GetParameterDetailsRequest(source_parameter_name, source_node_name)
         connection_info_response = GriptapeNodes.handle_request(connection_info_request)
