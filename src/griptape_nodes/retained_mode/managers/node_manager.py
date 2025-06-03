@@ -20,6 +20,7 @@ from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, 
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
+    RequestPayload,
     ResultPayload,
     ResultPayloadFailure,
 )
@@ -1779,31 +1780,51 @@ class NodeManager:
         )
         return result
 
-    #def remake_duplicates(self, old_node_name: str | None, new_node_name: str | None) -> None:
-    #    # Check if old_node_name and new_node_name exist
-    #    if (old_node_name is None) | (new_node_name is None):
-    #        return
-    #    # Since it is a duplicate, it makes sense to remake all the old incoming connections the original had
+    def remake_duplicates(self, old_node_names: list[str], new_node_names: list[str]) -> None:
+        # Since it is a duplicate, it makes sense to remake all the old incoming connections the original had
+        for old_node_name, new_node_name in zip(old_node_names, new_node_names):
+            # List the old incoming connections
+            list_connections_for_node_request = ListConnectionsForNodeRequest(old_node_name)
+            list_connections_for_node_response = GriptapeNodes.handle_request(list_connections_for_node_request)
 
-        # List the old incoming connections
-    #    list_connections_for_node_request = ListConnectionsForNodeRequest(old_node_name)
-    #    list_connections_for_node_response = GriptapeNodes.handle_request(list_connections_for_node_request)
+            # Only get incoming/outgoing connections if it returns the proper type
+            incoming_connections = []
+            outgoing_connections = []
 
-        # Only get incoming connections if it returns the proper type
-    #    incoming_connections = []
-    #    if isinstance(list_connections_for_node_response, ListConnectionsForNodeResultSuccess):
-    #        incoming_connections = list_connections_for_node_response.incoming_connections
+            if isinstance(list_connections_for_node_response, ListConnectionsForNodeResultSuccess):
+                incoming_connections = list_connections_for_node_response.incoming_connections
+            if isinstance(list_connections_for_node_response, ListConnectionsForNodeResultSuccess):
+                outgoing_connections = list_connections_for_node_response.outgoing_connections
 
-        # If there are any incoming connections, loop over them
-    #    for incoming_connection in incoming_connections:
-    #        create_old_incoming_connections_request = CreateConnectionRequest(
-    #            source_node_name=incoming_connection.source_node_name,
-    #            source_parameter_name=incoming_connection.source_parameter_name,
-    #            target_node_name=new_node_name,
-    #            target_parameter_name=incoming_connection.target_parameter_name,
-    #        )
+            # If there are any connections, loop over them
+            for incoming_connection, outgoing_connection in zip(incoming_connections, outgoing_connections):
+                create_old_incoming_connections_request = None
+                create_old_outgoing_connections_request = None
 
-    #        GriptapeNodes.handle_request(create_old_incoming_connections_request)
+                # Skip control connections when it's incoming
+                if incoming_connection.source_parameter_name != "exec_out":
+                    create_old_incoming_connections_request = CreateConnectionRequest(
+                        source_node_name=incoming_connection.source_node_name,
+                        source_parameter_name=incoming_connection.source_parameter_name,
+                        target_node_name=new_node_name,
+                        target_parameter_name=incoming_connection.target_parameter_name,
+                    )
+
+                # Only remake control connections when its outgoing
+                if outgoing_connection.source_parameter_name == "exec_out":
+                    create_old_outgoing_connections_request = CreateConnectionRequest(
+                        source_node_name=new_node_name,
+                        source_parameter_name=outgoing_connection.source_parameter_name,
+                        target_node_name=outgoing_connection.target_node_name,
+                        target_parameter_name=outgoing_connection.target_parameter_name,
+                    )
+
+                # Actually make the requests
+                if isinstance(create_old_incoming_connections_request, RequestPayload):
+                    GriptapeNodes.handle_request(create_old_incoming_connections_request)
+
+                if isinstance(create_old_outgoing_connections_request, RequestPayload):
+                    GriptapeNodes.handle_request(create_old_outgoing_connections_request)
 
     def on_deserialize_node_from_commands(self, request: DeserializeNodeFromCommandsRequest) -> ResultPayload:
         # Issue the creation command first.
@@ -1835,8 +1856,6 @@ class NodeManager:
 
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         logger.debug(details)
-        # Remake duplicate connections of node
-        # NodeManager.remake_duplicates(self, request.serialized_node_commands.create_node_command.node_name, node_name)
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)
 
     def on_serialize_selected_nodes_to_commands(
@@ -1996,6 +2015,13 @@ class NodeManager:
             details = "Failed to deserialize selected nodes."
             logger.error(details)
             return DuplicateSelectedNodesResultFailure()
+
+        # Remake duplicate connections of node
+        # request.nodes_to_duplicate is in this format: ['nodes_to_duplicate1', 'time'], ['nodes_to_duplicate2', 'time']
+        # This list comprehension gets the first element in each sublist in order to generate the old_node_names
+        initial_nodes = [sublist[0] for sublist in request.nodes_to_duplicate]
+
+        NodeManager.remake_duplicates(self, new_node_names=result.node_names, old_node_names=initial_nodes)
         return DuplicateSelectedNodesResultSuccess(result.node_names)
 
     @staticmethod
