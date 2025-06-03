@@ -625,6 +625,7 @@ class StartLoopNode(ControlNode):
 
 
 class EndLoopNode(ControlNode):
+    start_node_finished: bool
     """Creating class for Start Loop Node in order to implement loop functionality in execution."""
 
 
