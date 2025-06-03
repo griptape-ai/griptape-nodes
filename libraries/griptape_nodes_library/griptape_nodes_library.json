@@ -93,6 +93,14 @@
       }
     },
     {
+      "video/wan": {
+        "color": "border-pink-500",
+        "title": "video/wan",
+        "description": "",
+        "icon": "Video"
+      }
+    },
+    {
       "image": {
         "color": "border-purple-500",
         "title": "Image",
