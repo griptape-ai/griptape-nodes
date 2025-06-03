@@ -53,6 +53,14 @@
       }
     },
     {
+      "tasks": {
+        "color": "border-cyan-500",
+        "title": "Tasks",
+        "description": "Run various tasks",
+        "icon": "Config"
+      }
+    },
+    {
       "tools": {
         "color": "border-cyan-500",
         "title": "Tools",
@@ -799,6 +807,15 @@
         "category": "workflows",
         "description": "Use a published workflow within your graph",
         "display_name": "Published Workflow"
+      }
+    },
+    {
+      "class_name": "SummarizeText",
+      "file_path": "griptape_nodes_library/tasks/summarize_text_task.py",
+      "metadata": {
+        "category": "tasks",
+        "description": "Summarize text",
+        "display_name": "Summarize Text"
       }
     },
     
