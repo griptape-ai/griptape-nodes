@@ -1816,7 +1816,7 @@ class NodeManager:
 
     def remake_connections(self, old_node_names: list[str], new_node_names: list[str]) -> None:
         """Remakes the incoming data connections and outgoing control connections.
-        
+
         for a list of new_node_names, using the connections from the corresponding old_node_names.
 
         Args:
