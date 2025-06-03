@@ -1822,7 +1822,7 @@ class NodeManager:
                 connection_type = NodeManager.parameter_info(self, source_parameter_name, source_node_name)
 
                 # Skip control connections when it's incoming
-                if connection_type != "parametercontroltype":
+                if connection_type != ParameterTypeBuiltin.CONTROL_TYPE:
                     create_old_incoming_connections_request = CreateConnectionRequest(
                         source_node_name=source_node_name,
                         source_parameter_name=source_parameter_name,
@@ -1842,7 +1842,7 @@ class NodeManager:
                 connection_type = NodeManager.parameter_info(self, source_parameter_name, new_node_name)
 
                 # Only remake control connections when its outgoing
-                if connection_type == "parametercontroltype":
+                if connection_type == ParameterTypeBuiltin.CONTROL_TYPE:
                     create_old_outgoing_connections_request = CreateConnectionRequest(
                         source_node_name=new_node_name,
                         source_parameter_name=outgoing_connection.source_parameter_name,
