@@ -273,6 +273,21 @@ class BaseNodeElement:
         return cls._stack[-1] if cls._stack else None
 
     def to_event(self, node: BaseNode) -> dict:
+        """Serializes the node element and its children into a dictionary representation.
+
+        This method is used to create a data payload for AlterElementEvent to communicate changes or the current state of an element.
+        The resulting dictionary includes the element's ID, type, name, the name of the
+        provided BaseNode, and a recursively serialized list of its children.
+
+        For new BaseNodeElement types that require different serialization logic and fields, this method should be overridden to provide the necessary data.
+
+        Args:
+            node: The BaseNode instance to which this element is associated.
+                  Used to include the node's name in the event data.
+
+        Returns:
+            A dictionary containing the serialized data of the element and its children.
+        """
         event_data = {
             "element_id": self.element_id,
             "element_type": self.element_type,
