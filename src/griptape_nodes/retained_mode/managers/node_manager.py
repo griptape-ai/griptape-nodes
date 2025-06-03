@@ -1836,7 +1836,7 @@ class NodeManager:
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         logger.debug(details)
         # Remake duplicate connections of node
-        NodeManager.remake_duplicates(self, request.serialized_node_commands.create_node_command.node_name, node_name)
+        #NodeManager.remake_duplicates(self, request.serialized_node_commands.create_node_command.node_name, node_name)
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)
 
     def on_serialize_selected_nodes_to_commands(
