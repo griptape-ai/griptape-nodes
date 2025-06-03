@@ -775,6 +775,24 @@
       }
     },
     {
+      "class_name": "ForEachStartNode",
+      "file_path": "griptape_nodes_library/execution/for_each_start.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Start node for iterating through a list of items and running a flow for each one",
+        "display_name": "ForEach Start"
+      }
+    },
+    {
+      "class_name": "ForEachEndNode",
+      "file_path": "griptape_nodes_library/execution/for_each_end.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "End node that completes a loop iteration and connects back to the ForEachStartNode",
+        "display_name": "ForEach End"
+      }
+    },
+    {
       "class_name": "AgentToTool",
       "file_path": "griptape_nodes_library/convert/agent_to_tool.py",
       "metadata": {
