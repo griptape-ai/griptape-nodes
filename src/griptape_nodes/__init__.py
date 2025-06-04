@@ -44,6 +44,13 @@ PYPI_UPDATE_URL = "https://pypi.org/pypi/{package}/json"
 GITHUB_UPDATE_URL = "https://api.github.com/repos/griptape-ai/{package}/git/refs/tags/{revision}"
 GT_CLOUD_BASE_URL = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
 
+# Environment variable defaults for init configuration
+ENV_WORKSPACE_DIRECTORY = os.getenv("GTN_WORKSPACE_DIRECTORY")
+ENV_API_KEY = os.getenv("GTN_API_KEY")
+ENV_STORAGE_BACKEND = os.getenv("GTN_STORAGE_BACKEND")
+ENV_STORAGE_BACKEND_BUCKET_ID = os.getenv("GTN_STORAGE_BACKEND_BUCKET_ID")
+ENV_REGISTER_ADVANCED_LIBRARY = os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", "false").lower() == "true"
+
 
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
@@ -64,8 +71,9 @@ def main() -> None:
     _process_args(args)
 
 
-def _run_init(
+def _run_init(  # noqa: PLR0913
     *,
+    interactive: bool = True,
     workspace_directory: str | None = None,
     api_key: str | None = None,
     storage_backend: str | None = None,
@@ -75,6 +83,7 @@ def _run_init(
     """Runs through the engine init steps.
 
     Args:
+        interactive (bool): If True, prompts the user for input; otherwise uses provided values.
         workspace_directory (str | None): The workspace directory to set.
         api_key (str | None): The API key to set.
         storage_backend (str | None): The storage backend to set.
@@ -82,11 +91,43 @@ def _run_init(
         register_advanced_library (bool | None): Whether to register the advanced library.
     """
     __init_system_config()
-    _prompt_for_workspace(workspace_directory=workspace_directory)
-    _prompt_for_api_key(api_key=api_key)
-    _prompt_for_storage_backend(storage_backend=storage_backend)
-    _prompt_for_storage_backend_bucket_id(storage_backend_bucket_id=storage_backend_bucket_id)
-    _prompt_for_libraries_to_register(register_advanced_library=register_advanced_library)
+
+    if interactive:
+        workspace_directory = _prompt_for_workspace(default_workspace_directory=workspace_directory)
+        api_key = _prompt_for_api_key(default_api_key=api_key)
+        storage_backend = _prompt_for_storage_backend(default_storage_backend=storage_backend)
+        if storage_backend == "gtc":
+            storage_backend_bucket_id = _prompt_for_storage_backend_bucket_id(
+                default_storage_backend_bucket_id=storage_backend_bucket_id
+            )
+        register_advanced_library = _prompt_for_advanced_media_library(
+            default_prompt_for_advanced_media_library=register_advanced_library
+        )
+        libraries_to_register = __build_libraries_list(register_advanced_library=register_advanced_library)
+
+    if workspace_directory is not None:
+        config_manager.set_config_value("workspace_directory", workspace_directory)
+        console.print(f"[bold green]Workspace directory set to: {workspace_directory}[/bold green]")
+
+    if api_key is not None:
+        secrets_manager.set_secret("GT_CLOUD_API_KEY", api_key)
+        console.print("[bold green]Griptape API Key set")
+
+    if storage_backend is not None:
+        config_manager.set_config_value("storage_backend", storage_backend)
+        console.print(f"[bold green]Storage backend set to: {storage_backend}")
+
+    if storage_backend_bucket_id is not None:
+        secrets_manager.set_secret("GT_CLOUD_BUCKET_ID", storage_backend_bucket_id)
+        console.print(f"[bold green]Storage backend bucket ID set to: {storage_backend_bucket_id}[/bold green]")
+
+    if register_advanced_library is not None:
+        libraries_to_register = __build_libraries_list(register_advanced_library=register_advanced_library)
+        config_manager.set_config_value(
+            "app_events.on_app_initialization_complete.libraries_to_register", libraries_to_register
+        )
+        console.print(f"[bold green]Libraries to register set to: {', '.join(libraries_to_register)}[/bold green]")
+
     _sync_assets()
     console.print("[bold green]Initialization complete![/bold green]")
 
@@ -101,11 +142,12 @@ def _start_engine(*, no_update: bool = False) -> None:
         # Default init flow if there is no config directory
         console.print("[bold green]Config directory not found. Initializing...[/bold green]")
         _run_init(
-            workspace_directory=os.getenv("GTN_WORKSPACE_DIRECTORY"),
-            api_key=os.getenv("GTN_API_KEY"),
-            storage_backend=os.getenv("GTN_STORAGE_BACKEND"),
-            storage_backend_bucket_id=os.getenv("GT_CLOUD_BUCKET_ID"),
-            register_advanced_library=os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", "false").lower() == "true",
+            workspace_directory=ENV_WORKSPACE_DIRECTORY,
+            api_key=ENV_API_KEY,
+            storage_backend=ENV_STORAGE_BACKEND,
+            storage_backend_bucket_id=ENV_STORAGE_BACKEND_BUCKET_ID,
+            register_advanced_library=ENV_REGISTER_ADVANCED_LIBRARY,
+            interactive=True,
         )
 
     # Confusing double negation -- If `no_update` is set, we want to skip the update
@@ -140,18 +182,33 @@ def _get_args() -> argparse.Namespace:
     init_parser.add_argument(
         "--api-key",
         help="Set the Griptape Nodes API key.",
-        default=os.getenv("GTN_API_KEY", None),
+        default=ENV_API_KEY,
     )
     init_parser.add_argument(
         "--workspace-directory",
         help="Set the Griptape Nodes workspace directory.",
-        default=os.getenv("GTN_WORKSPACE_DIRECTORY", None),
+        default=ENV_WORKSPACE_DIRECTORY,
     )
-    register_advanced_library = os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", None)
+    init_parser.add_argument(
+        "--storage-backend",
+        help="Set the storage backend ('local' or 'gtc').",
+        choices=["local", "gtc"],
+        default=ENV_STORAGE_BACKEND,
+    )
+    init_parser.add_argument(
+        "--storage-backend-bucket-id",
+        help="Set the Griptape Cloud bucket ID (only used with 'gtc' storage backend).",
+        default=ENV_STORAGE_BACKEND_BUCKET_ID,
+    )
     init_parser.add_argument(
         "--register-advanced-library",
-        default=register_advanced_library.lower() == "true" if register_advanced_library is not None else None,
         help="Install the Griptape Nodes Advanced Image Library.",
+        default=ENV_REGISTER_ADVANCED_LIBRARY,
+    )
+    init_parser.add_argument(
+        "--no-interactive",
+        action="store_true",
+        help="Run init in non-interactive mode (no prompts).",
     )
 
     # engine
@@ -197,88 +254,80 @@ def _get_args() -> argparse.Namespace:
     return args
 
 
-def _prompt_for_api_key(api_key: str | None = None) -> None:
+def _prompt_for_api_key(default_api_key: str | None = None) -> str:
     """Prompts the user for their GT_CLOUD_API_KEY unless it's provided."""
-    if api_key is None:
-        explainer = f"""[bold cyan]Griptape API Key[/bold cyan]
-        A Griptape API Key is needed to proceed.
-        This key allows the Griptape Nodes Engine to communicate with the Griptape Nodes Editor.
-        In order to get your key, return to the [link={NODES_APP_URL}]{NODES_APP_URL}[/link] tab in your browser and click the button
-        "Generate API Key".
-        Once the key is generated, copy and paste its value here to proceed."""
-        console.print(Panel(explainer, expand=False))
-
+    if default_api_key is None:
         default_api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY", should_error_on_not_found=False)
-        while api_key is None:
-            api_key = Prompt.ask(
-                "Griptape API Key",
-                default=default_api_key,
+    explainer = f"""[bold cyan]Griptape API Key[/bold cyan]
+    A Griptape API Key is needed to proceed.
+    This key allows the Griptape Nodes Engine to communicate with the Griptape Nodes Editor.
+    In order to get your key, return to the [link={NODES_APP_URL}]{NODES_APP_URL}[/link] tab in your browser and click the button
+    "Generate API Key".
+    Once the key is generated, copy and paste its value here to proceed."""
+    console.print(Panel(explainer, expand=False))
+
+    while True:
+        api_key = Prompt.ask(
+            "Griptape API Key",
+            default=default_api_key,
+            show_default=True,
+        )
+        if api_key:
+            break
+
+    return api_key
+
+
+def _prompt_for_workspace(*, default_workspace_directory: str | None = None) -> str:
+    """Prompts the user for their workspace directory."""
+    if default_workspace_directory is None:
+        default_workspace_directory = config_manager.get_config_value("workspace_directory")
+    explainer = """[bold cyan]Workspace Directory[/bold cyan]
+    Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows.
+    You may enter a custom directory or press Return to accept the default workspace directory"""
+    console.print(Panel(explainer, expand=False))
+
+    while True:
+        try:
+            workspace_to_test = Prompt.ask(
+                "Workspace Directory",
+                default=default_workspace_directory,
                 show_default=True,
             )
+            if workspace_to_test:
+                workspace_directory = str(Path(workspace_to_test).expanduser().resolve())
+                break
+        except OSError as e:
+            console.print(f"[bold red]Invalid workspace directory: {e}[/bold red]")
+        except json.JSONDecodeError as e:
+            console.print(f"[bold red]Error reading config file: {e}[/bold red]")
 
-    secrets_manager.set_secret("GT_CLOUD_API_KEY", api_key)
-    console.print("[bold green]Griptape API Key set")
-
-
-def _prompt_for_workspace(*, workspace_directory: str | None) -> None:
-    """Prompts the user for their workspace directory and stores it in config directory."""
-    if workspace_directory is None:
-        explainer = """[bold cyan]Workspace Directory[/bold cyan]
-        Select the workspace directory. This is the location where Griptape Nodes will store your saved workflows.
-        You may enter a custom directory or press Return to accept the default workspace directory"""
-        console.print(Panel(explainer, expand=False))
-
-        default_workspace_directory = workspace_directory or config_manager.get_config_value("workspace_directory")
-        while workspace_directory is None:
-            try:
-                workspace_to_test = Prompt.ask(
-                    "Workspace Directory",
-                    default=default_workspace_directory,
-                    show_default=True,
-                )
-                # Try to resolve the path to check if it exists
-                if workspace_to_test is not None:
-                    Path(workspace_to_test).expanduser().resolve()
-                workspace_directory = workspace_to_test
-            except OSError as e:
-                console.print(f"[bold red]Invalid workspace directory: {e}[/bold red]")
-            except json.JSONDecodeError as e:
-                console.print(f"[bold red]Error reading config file: {e}[/bold red]")
-
-    workspace_path = Path(workspace_directory).expanduser().resolve()
-    config_manager.set_config_value("workspace_directory", str(workspace_path))
-
-    console.print(f"[bold green]Workspace directory set to: {config_manager.workspace_path}[/bold green]")
+    return workspace_directory
 
 
-def _prompt_for_storage_backend(*, storage_backend: str | None) -> None:
-    """Prompts the user for their storage backend and stores it in config directory."""
-    if storage_backend is None:
-        explainer = """[bold cyan]Storage Backend[/bold cyan]
+def _prompt_for_storage_backend(*, default_storage_backend: str | None = None) -> str:
+    """Prompts the user for their storage backend."""
+    if default_storage_backend is None:
+        default_storage_backend = config_manager.get_config_value("storage_backend")
+    explainer = """[bold cyan]Storage Backend[/bold cyan]
 Select the storage backend. This is where Griptape Nodes will store your static files.
 Enter 'gtc' to use Griptape Cloud Bucket Storage, or press Return to accept the default of the local static file server."""
-        console.print(Panel(explainer, expand=False))
+    console.print(Panel(explainer, expand=False))
 
-        # If config already has a value, use it; otherwise default to "local"
-        default_storage_backend = config_manager.get_config_value("storage_backend") or "local"
+    while True:
+        try:
+            storage_backend = Prompt.ask(
+                "Storage Backend",
+                choices=["gtc", "local"],
+                default=default_storage_backend,
+                show_default=True,
+            )
+            if storage_backend:
+                break
+        except json.JSONDecodeError as e:
+            console.print(f"[bold red]Error reading config file: {e}[/bold red]")
 
-        while storage_backend is None:
-            try:
-                storage_to_test = Prompt.ask(
-                    "Storage Backend",
-                    choices=["gtc", "local"],
-                    default=default_storage_backend,
-                    show_default=True,
-                )
-                storage_backend = storage_to_test
-            except json.JSONDecodeError as e:
-                console.print(f"[bold red]Error reading config file: {e}[/bold red]")
-
-    # Persist the chosen backend
-    config_manager.set_config_value("storage_backend", storage_backend)
-    console.print(
-        f"[bold green]Storage backend set to: {config_manager.get_config_value('storage_backend')}[/bold green]"
-    )
+    return storage_backend
 
 
 def _get_griptape_cloud_bucket_ids_and_display_table() -> tuple[list[str], Table]:
@@ -308,83 +357,88 @@ def _get_griptape_cloud_bucket_ids_and_display_table() -> tuple[list[str], Table
     return bucket_ids, table
 
 
-def _prompt_for_storage_backend_bucket_id(*, storage_backend_bucket_id: str | None) -> None:
-    """Prompts the user for their storage backend bucket ID and stores it as a secret."""
-    configured_storage_backend = config_manager.get_config_value("storage_backend")
-    if configured_storage_backend == "gtc":
-        if storage_backend_bucket_id is None:
-            explainer = """[bold cyan]Storage Backend Bucket ID[/bold cyan]
-    Enter the Griptape Cloud Bucket ID to use for Griptape Cloud Storage. This is the location where Griptape Nodes will store your static files."""
-            console.print(Panel(explainer, expand=False))
-
-            choices, table = _get_griptape_cloud_bucket_ids_and_display_table()
-
-            # This should not be possible
-            if len(choices) < 1:
-                msg = "No Griptape Cloud Buckets found!"
-                raise RuntimeError(msg)
-
-            console.print(table)
-
-            while storage_backend_bucket_id is None:
-                try:
-                    storage_backend_bucket_id = Prompt.ask(
-                        "Storage Backend Bucket ID",
-                        default=storage_backend_bucket_id,
-                        show_default=True,
-                        choices=choices,
-                    )
-                except json.JSONDecodeError as e:
-                    console.print(f"[bold red]Error reading config file: {e}[/bold red]")
-
-        secrets_manager.set_secret("GT_CLOUD_BUCKET_ID", storage_backend_bucket_id)
-        console.print(
-            f"[bold green]Storage backend bucket ID set to: {secrets_manager.get_secret('GT_CLOUD_BUCKET_ID')}[/bold green]"
+def _prompt_for_storage_backend_bucket_id(*, default_storage_backend_bucket_id: str | None = None) -> str:
+    """Prompts the user for their storage backend bucket ID."""
+    if default_storage_backend_bucket_id is None:
+        default_storage_backend_bucket_id = secrets_manager.get_secret(
+            "GT_CLOUD_BUCKET_ID", should_error_on_not_found=False
         )
+    explainer = """[bold cyan]Storage Backend Bucket ID[/bold cyan]
+Enter the Griptape Cloud Bucket ID to use for Griptape Cloud Storage. This is the location where Griptape Nodes will store your static files."""
+    console.print(Panel(explainer, expand=False))
+
+    choices, table = _get_griptape_cloud_bucket_ids_and_display_table()
+
+    # This should not be possible
+    if len(choices) < 1:
+        msg = "No Griptape Cloud Buckets found!"
+        raise RuntimeError(msg)
+
+    console.print(table)
+
+    while True:
+        try:
+            storage_backend_bucket_id = Prompt.ask(
+                "Storage Backend Bucket ID",
+                default=default_storage_backend_bucket_id,
+                show_default=True,
+                choices=choices,
+            )
+            if storage_backend_bucket_id:
+                break
+        except json.JSONDecodeError as e:
+            console.print(f"[bold red]Error reading config file: {e}[/bold red]")
+
+    return storage_backend_bucket_id
 
 
-def _prompt_for_libraries_to_register(*, register_advanced_library: bool | None = None) -> None:
-    """Prompts the user for the libraries to register and stores them in config directory."""
-    if register_advanced_library is None:
-        explainer = """[bold cyan]Advanced Media Library[/bold cyan]
-        Would you like to install the Griptape Nodes Advanced Media Library?
-        This node library makes advanced media generation and manipulation nodes available.
-        For example, nodes are available for Flux AI image upscaling, or to leverage CUDA for GPU-accelerated image generation.
-        CAVEAT: Installing this library requires additional dependencies to download and install, which can take several minutes.
-        The Griptape Nodes Advanced Media Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
-        """
-        console.print(Panel(explainer, expand=False))
+def _prompt_for_advanced_media_library(*, default_prompt_for_advanced_media_library: bool | None = None) -> bool:
+    """Prompts the user whether to register the advanced media library."""
+    if default_prompt_for_advanced_media_library is None:
+        default_prompt_for_advanced_media_library = False
+    explainer = """[bold cyan]Advanced Media Library[/bold cyan]
+    Would you like to install the Griptape Nodes Advanced Media Library?
+    This node library makes advanced media generation and manipulation nodes available.
+    For example, nodes are available for Flux AI image upscaling, or to leverage CUDA for GPU-accelerated image generation.
+    CAVEAT: Installing this library requires additional dependencies to download and install, which can take several minutes.
+    The Griptape Nodes Advanced Media Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
+    """
+    console.print(Panel(explainer, expand=False))
 
+    return Confirm.ask("Register Advanced Media Library?", default=default_prompt_for_advanced_media_library)
+
+
+def __build_libraries_list(*, register_advanced_library: bool) -> list[str]:
+    """Builds the list of libraries to register based on the advanced library setting."""
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/929
-    key = "app_events.on_app_initialization_complete.libraries_to_register"
+    libraries_key = "app_events.on_app_initialization_complete.libraries_to_register"
+    library_base_dir = xdg_data_home() / "griptape_nodes/libraries"
+
     current_libraries = config_manager.get_config_value(
-        key,
+        libraries_key,
         config_source="user_config",
-        default=config_manager.get_config_value(key, config_source="default_config", default=[]),
+        default=config_manager.get_config_value(libraries_key, config_source="default_config", default=[]),
     )
-    default_library = str(
-        xdg_data_home() / "griptape_nodes/libraries/griptape_nodes_library/griptape_nodes_library.json"
+    new_libraries = current_libraries
+
+    default_library = str(library_base_dir / "griptape_nodes_library/griptape_nodes_library.json")
+    # If somehow the user removed the default library, add it back
+    if default_library not in current_libraries:
+        current_libraries.append(default_library)
+
+    advanced_media_library = str(
+        library_base_dir / "griptape_nodes_advanced_media_library/griptape_nodes_advanced_media_library.json"
     )
-    extra_libraries = [
-        str(
-            xdg_data_home()
-            / "griptape_nodes/libraries/griptape_nodes_advanced_media_library/griptape_nodes_library.json"
-        )
-    ]
-    libraries_to_merge = [default_library]
+    if register_advanced_library:
+        # If the advanced media library is not registered, add it
+        if advanced_media_library not in current_libraries:
+            new_libraries.append(advanced_media_library)
+    else:  # noqa: PLR5501 easier to reason about this way
+        # If the advanced media library is registered, remove it
+        if advanced_media_library in current_libraries:
+            new_libraries.remove(advanced_media_library)
 
-    if register_advanced_library is None:
-        register_extras = Confirm.ask("Register Advanced Media Library?", default=False)
-    else:
-        register_extras = register_advanced_library
-
-    if register_extras:
-        libraries_to_merge.extend(extra_libraries)
-
-    # Remove duplicates
-    merged_libraries = list(set(current_libraries + libraries_to_merge))
-
-    config_manager.set_config_value("app_events.on_app_initialization_complete.libraries_to_register", merged_libraries)
+    return new_libraries
 
 
 def _get_latest_version(package: str, install_source: str) -> str:
@@ -582,8 +636,11 @@ def _uninstall_self() -> None:
 def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
     if args.command == "init":
         _run_init(
+            interactive=not args.no_interactive,
             workspace_directory=args.workspace_directory,
             api_key=args.api_key,
+            storage_backend=args.storage_backend,
+            storage_backend_bucket_id=args.storage_backend_bucket_id,
             register_advanced_library=args.register_advanced_library,
         )
     elif args.command == "engine":
