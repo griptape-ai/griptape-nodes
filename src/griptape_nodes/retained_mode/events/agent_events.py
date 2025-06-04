@@ -49,17 +49,18 @@ class GetConversationMemoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 
 @dataclass
 @PayloadRegistry.register
-class ResetAgentRequest(RequestPayload):
+class ConfigureAgentRequest(RequestPayload):
+    reset_conversation_memory: bool = False
+    model: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class ConfigureAgentResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class ResetAgentResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    pass
-
-
-@dataclass
-@PayloadRegistry.register
-class ResetAgentResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+class ConfigureAgentResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass

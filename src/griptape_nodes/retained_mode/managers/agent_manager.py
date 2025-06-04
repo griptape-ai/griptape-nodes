@@ -2,15 +2,16 @@ import logging
 
 from griptape.structures import Agent
 from griptape.drivers import GriptapeCloudPromptDriver
+from griptape.memory.structure import ConversationMemory
 
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.agent_events import (
     RunAgentRequest,
     RunAgentResultFailure,
     RunAgentResultSuccess,
-    ResetAgentRequest,
-    ResetAgentResultSuccess,
-    ResetAgentResultFailure,
+    ConfigureAgentRequest,
+    ConfigureAgentResultSuccess,
+    ConfigureAgentResultFailure,
     GetConversationMemoryRequest,
     GetConversationMemoryResultSuccess,
     GetConversationMemoryResultFailure,
@@ -30,17 +31,23 @@ secrets_manager = SecretsManager(config_manager)
 
 class AgentManager:
     def __init__(self, event_manager: EventManager | None = None) -> None:
+        self.agent = Agent(prompt_driver=GriptapeCloudPromptDriver(api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY")))
+        self._configure_agent()
+
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(RunAgentRequest, self.on_handle_run_agent_request)
-            event_manager.assign_manager_to_request_type(ResetAgentRequest, self.on_handle_reset_agent_request)
+            event_manager.assign_manager_to_request_type(ConfigureAgentRequest, self.on_handle_reset_agent_request)
             event_manager.assign_manager_to_request_type(
                 GetConversationMemoryRequest, self.on_handle_get_conversation_memory_request
             )
 
-        self.agent = self._create_agent()
+    def _configure_agent(self, request: ConfigureAgentRequest = ConfigureAgentRequest()) -> None:
+        logger.warning("Configuring agent with request: %s", request)
+        if request.model:
+            self.agent.prompt_driver.model = request.model
 
-    def _create_agent(self) -> Agent:
-        return Agent(prompt_driver=GriptapeCloudPromptDriver(api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY")))
+        if request.reset_conversation_memory:
+            self.agent.conversation_memory = ConversationMemory()
 
     def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         try:
@@ -52,15 +59,15 @@ class AgentManager:
         finally:
             return RunAgentResultSuccess()
 
-    def on_handle_reset_agent_request(self, request: ResetAgentRequest) -> ResultPayload:
+    def on_handle_reset_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
         try:
-            self.agent = self._create_agent()
+            self._configure_agent(request)
         except Exception as e:
-            details = f"Error resetting agent: {e}"
+            details = f"Error configuring agent: {e}"
             logger.error(details)
-            return ResetAgentResultFailure()
+            return ConfigureAgentResultFailure()
         finally:
-            return ResetAgentResultSuccess()
+            return ConfigureAgentResultSuccess()
 
     def on_handle_get_conversation_memory_request(self, request: GetConversationMemoryRequest) -> ResultPayload:
         try:
