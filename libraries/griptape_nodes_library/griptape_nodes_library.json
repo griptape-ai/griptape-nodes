@@ -101,6 +101,14 @@
       }
     },
     {
+      "video/wan/loras": {
+        "color": "border-pink-500",
+        "title": "video/wan/loras",
+        "description": "",
+        "icon": "Video"
+      }
+    },
+    {
       "image": {
         "color": "border-purple-500",
         "title": "Image",

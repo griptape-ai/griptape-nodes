@@ -228,17 +228,35 @@
       "file_path": "diffusers_nodes_library/pipelines/wan/wan_pipeline.py",
       "metadata": {
         "category": "video/wan",
-        "description": "Generate videos with Wan",
-        "display_name": "Wan"
+        "description": "Generate videos from text with Wan",
+        "display_name": "Wan T2V"
       }
     },
     {
-      "class_name": "Kijai13bWanLora",
-      "file_path": "diffusers_nodes_library/pipelines/wan/lora/kijai_13b_wan_lora.py",
+      "class_name": "Kijai1Dot3BWanLora",
+      "file_path": "diffusers_nodes_library/pipelines/wan/lora/kijai_1_dot_3_b_wan_lora.py",
+      "metadata": {
+        "category": "video/wan/loras",
+        "description": "Experimental LoRA extractions from CausVid finetunes. Enables generating videos in 2-8 steps.",
+        "display_name": "Kijai CausVid 1.3B"
+      }
+    },
+    {
+      "class_name": "Kijai14BWanLora",
+      "file_path": "diffusers_nodes_library/pipelines/wan/lora/kijai_14_b_wan_lora.py",
+      "metadata": {
+        "category": "video/wan/loras",
+        "description": "Experimental LoRA extractions from CausVid finetunes. Enables generating videos in 2-8 steps.",
+        "display_name": "Kijai CausVid 14B"
+      }
+    },
+    {
+      "class_name": "WanImageToVideoPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/wan/wan_image_to_video_pipeline.py",
       "metadata": {
         "category": "video/wan",
-        "description": "Generate videos with Wan - Faster! from 50 steps to 6 whoa",
-        "display_name": "Kijai 1.3B"
+        "description": "Generate videos from image and text with Wan",
+        "display_name": "Wan I2V"
       }
     }
   ]

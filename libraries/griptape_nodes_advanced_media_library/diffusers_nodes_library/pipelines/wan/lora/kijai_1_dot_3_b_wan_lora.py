@@ -8,7 +8,7 @@ from diffusers_nodes_library.pipelines.wan.lora.huggingface_wan_lora import (
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class Kijai13bWanLora(HuggingFaceWanLora):
+class Kijai1Dot3BWanLora(HuggingFaceWanLora):
     @override
     def get_repo_id(self) -> str:
         return "Kijai/WanVideo_comfy"
