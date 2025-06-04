@@ -30,11 +30,12 @@ secrets_manager = SecretsManager(config_manager)
 
 class AgentManager:
     def __init__(self, event_manager: EventManager | None = None) -> None:
-
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(RunAgentRequest, self.on_handle_run_agent_request)
             event_manager.assign_manager_to_request_type(ResetAgentRequest, self.on_handle_reset_agent_request)
-            event_manager.assign_manager_to_request_type(GetConversationMemoryRequest, self.on_handle_get_conversation_memory_request)
+            event_manager.assign_manager_to_request_type(
+                GetConversationMemoryRequest, self.on_handle_get_conversation_memory_request
+            )
 
         self.agent = self._create_agent()
 
