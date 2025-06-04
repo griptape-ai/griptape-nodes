@@ -49,7 +49,11 @@ ENV_WORKSPACE_DIRECTORY = os.getenv("GTN_WORKSPACE_DIRECTORY")
 ENV_API_KEY = os.getenv("GTN_API_KEY")
 ENV_STORAGE_BACKEND = os.getenv("GTN_STORAGE_BACKEND")
 ENV_STORAGE_BACKEND_BUCKET_ID = os.getenv("GTN_STORAGE_BACKEND_BUCKET_ID")
-ENV_REGISTER_ADVANCED_LIBRARY = os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", "false").lower() == "true"
+ENV_REGISTER_ADVANCED_LIBRARY = (
+    os.getenv("GTN_REGISTER_ADVANCED_LIBRARY", "false").lower() == "true"
+    if os.getenv("GTN_REGISTER_ADVANCED_LIBRARY") is not None
+    else None
+)
 
 
 config_manager = ConfigManager()
