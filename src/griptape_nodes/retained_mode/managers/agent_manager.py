@@ -31,7 +31,9 @@ secrets_manager = SecretsManager(config_manager)
 
 class AgentManager:
     def __init__(self, event_manager: EventManager | None = None) -> None:
-        self.agent = Agent(prompt_driver=GriptapeCloudPromptDriver(api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY")))
+        self.agent = Agent(
+            prompt_driver=GriptapeCloudPromptDriver(api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"))
+        )
         self._configure_agent()
 
         if event_manager is not None:
@@ -42,7 +44,6 @@ class AgentManager:
             )
 
     def _configure_agent(self, request: ConfigureAgentRequest = ConfigureAgentRequest()) -> None:
-        logger.warning("Configuring agent with request: %s", request)
         if request.model:
             self.agent.prompt_driver.model = request.model
 
