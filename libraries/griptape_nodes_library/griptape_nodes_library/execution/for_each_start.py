@@ -20,7 +20,7 @@ class ForEachStartNode(StartLoopNode):
     for_each_end: EndLoopNode | None
     _current_index: int
     _items: list[Any]
-    _flow: ControlFlow
+    _flow: ControlFlow | None = None
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
@@ -31,7 +31,7 @@ class ForEachStartNode(StartLoopNode):
             name="items",
             tooltip="List of items to iterate through",
             input_types=[ParameterTypeBuiltin.ANY.value],
-            allowed_modes={ParameterMode.INPUT},
+            allowed_modes={ParameterMode.INPUT}
         )
         self.add_parameter(self.items_list)
 
@@ -43,17 +43,10 @@ class ForEachStartNode(StartLoopNode):
             allowed_modes={ParameterMode.OUTPUT},
         )
         self.add_parameter(self.current_item)
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        flow = GriptapeNodes.ObjectManager().get_object_by_name(
-            GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
-        )
-        if isinstance(flow, ControlFlow):
-            self._flow = flow
 
     def process(self) -> None:
         # Reset state when the node is first processed
-        if self.for_each_end is None:
+        if self.for_each_end is None or self._flow is None:
             return
         if self._current_index == 0:
             # Initialize everything!
@@ -75,15 +68,35 @@ class ForEachStartNode(StartLoopNode):
 
     # This node cannot run unless it's connected to a start node.
     def validate_before_workflow_run(self) -> list[Exception] | None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        exceptions = []
+        try:
+            flow = GriptapeNodes.ObjectManager().get_object_by_name(
+                GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
+            )
+            if isinstance(flow, ControlFlow):
+                self._flow = flow
+        except Exception as e:
+            exceptions.append(e)
         if self.for_each_end is None:
-            return [Exception("ForEachEndNode does not exist")]
-        return super().validate_before_workflow_run()
+            exceptions.append([Exception("ForEachEndNode does not exist")])
+        return exceptions
 
     # This node cannot be run unless it's connected to an end node.
     def validate_before_node_run(self) -> list[Exception] | None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        exceptions = []
+        try:
+            flow = GriptapeNodes.ObjectManager().get_object_by_name(
+                GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
+            )
+            if isinstance(flow, ControlFlow):
+                self._flow = flow
+        except Exception as e:
+            exceptions.append(e)
         if self.for_each_end is None:
-            return [Exception("ForEachEndNode does not exist")]
-        return super().validate_before_node_run()
+            exceptions.append([Exception("ForEachEndNode does not exist")])
+        return exceptions
 
     def after_outgoing_connection(
         self,
