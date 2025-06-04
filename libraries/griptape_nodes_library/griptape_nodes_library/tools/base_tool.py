@@ -1,12 +1,13 @@
 from griptape.tools import BaseTool as GtBaseTool
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.node_types import DataNode
 
 
-class BaseTool(ControlNode):
-    """Base tool node for creating Griptape tools that can run on their own.
+class BaseTool(DataNode):
+    """Base tool node for creating Griptape tools.
 
-    This node provides a generic implementation for creating.
+    This node provides a generic implementation for initializing Griptape tools with configurable parameters.
 
     Attributes:
         off_prompt (bool): Indicates whether the tool should operate in off-prompt mode.
@@ -15,16 +16,7 @@ class BaseTool(ControlNode):
 
     def __init__(self, name: str, metadata: dict | None = None) -> None:
         super().__init__(name, metadata)
-        self.add_parameter(
-            Parameter(
-                name="prompt",
-                input_types=["str"],
-                type="str",
-                output_type="str",
-                default_value="",
-                tooltip="",
-            )
-        )
+
         self.add_parameter(
             Parameter(
                 name="tool",

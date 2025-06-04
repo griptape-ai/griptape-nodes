@@ -2,10 +2,13 @@ from typing import Any
 
 from griptape.artifacts import BaseArtifact
 from griptape.engines import PromptSummaryEngine
-from griptape.events import ActionChunkEvent, FinishStructureRunEvent, StartStructureRunEvent, TextChunkEvent
+from griptape.events import TextChunkEvent
 from griptape.structures import Agent, Structure
 from griptape.tasks import TextSummaryTask
+from griptape.utils import Stream
 
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.traits.options import Options
 from griptape_nodes_library.tasks.base_task import BaseTask
 
 SERVICE = "griptape_cloud"
@@ -21,37 +24,44 @@ class SummarizeText(BaseTask):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+        self.add_parameter(
+            Parameter(
+                name="prompt",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value="",
+                tooltip="",
+                ui_options={"multiline": True, "placeholder_text": "Input text to process"},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="model",
+                type="str",
+                default_value="gpt-4.1-mini",
+                tooltip="The model to use for the task.",
+                traits={Options(choices=["gpt-4.1", "gpt-4.1-preview", "gpt-4.1-mini", "gpt-4.1-mini-preview"])},
+                ui_options={"hidden": True},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="output",
+                type="str",
+                output_type="str",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="The output of the task.",
+                ui_options={"multiline": True, "placeholder_text": "Task output"},
+            )
+        )
 
     def _process(self, agent: Agent, prompt: BaseArtifact | str) -> Structure:
-        include_details = self.get_parameter_value("include_details")
-
         args = [prompt] if prompt else []
-        structure_id_stack = []
-        active_structure_id = None
-        for event in agent.run_stream(
-            *args, event_types=[StartStructureRunEvent, TextChunkEvent, ActionChunkEvent, FinishStructureRunEvent]
-        ):
-            if isinstance(event, StartStructureRunEvent):
-                active_structure_id = event.structure_id
-                structure_id_stack.append(active_structure_id)
-            if isinstance(event, FinishStructureRunEvent):
-                structure_id_stack.pop()
-                active_structure_id = structure_id_stack[-1] if structure_id_stack else None
-
-            # If an Agent uses other Agents (via `StructureRunTool`), we will receive those events too.
-            # We want to ignore those events and only show the events for this node's Agent.
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/984
-            if agent.id == active_structure_id:
-                # If the artifact is a TextChunkEvent, append it to the output parameter.
-                if isinstance(event, TextChunkEvent):
-                    self.append_value_to_parameter("output", value=event.token)
-                    if include_details:
-                        self.append_value_to_parameter("logs", value=event.token)
-
-                # If the artifact is an ActionChunkEvent, append it to the logs parameter.
-                if include_details and isinstance(event, ActionChunkEvent) and event.name:
-                    self.append_value_to_parameter("logs", f"\n[Using tool {event.name}: ({event.path})]\n")
-
+        for artifact in Stream(agent).run(args):
+            if isinstance(artifact, TextChunkEvent):
+                self.append_value_to_parameter("output", value=artifact.token)
         return agent
 
     def process(self) -> Any:
@@ -62,6 +72,3 @@ class SummarizeText(BaseTask):
         if prompt and not prompt.isspace():
             # Run the agent asynchronously
             yield lambda: self._process(agent, prompt)
-
-        # agent.run(self.get_parameter_value("prompt"))
-        # self.parameter_output_values["output"] = agent.output
