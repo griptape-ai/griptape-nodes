@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from griptape.memory.structure import Run
+
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -7,8 +9,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-
-from griptape.memory.structure import Run
 
 
 @dataclass

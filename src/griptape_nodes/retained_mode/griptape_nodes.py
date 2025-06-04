@@ -39,6 +39,7 @@ from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
+    from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
     from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
         ArbitraryCodeExecManager,
     )
@@ -101,6 +102,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _agent_manager: AgentManager
 
     def __init__(self) -> None:
+        from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
         from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
             ArbitraryCodeExecManager,
         )
@@ -122,7 +124,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.workflow_manager import (
             WorkflowManager,
         )
-        from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
 
         # Initialize only if our managers haven't been created yet
         if not hasattr(self, "_event_manager"):

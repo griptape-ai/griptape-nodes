@@ -1,23 +1,23 @@
 import logging
 
-from griptape.structures import Agent
 from griptape.drivers import GriptapeCloudPromptDriver
 from griptape.memory.structure import ConversationMemory
+from griptape.structures import Agent
 
-from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.agent_events import (
+    ConfigureAgentRequest,
+    ConfigureAgentResultFailure,
+    ConfigureAgentResultSuccess,
+    GetConversationMemoryRequest,
+    GetConversationMemoryResultFailure,
+    GetConversationMemoryResultSuccess,
     RunAgentRequest,
     RunAgentResultFailure,
     RunAgentResultSuccess,
-    ConfigureAgentRequest,
-    ConfigureAgentResultSuccess,
-    ConfigureAgentResultFailure,
-    GetConversationMemoryRequest,
-    GetConversationMemoryResultSuccess,
-    GetConversationMemoryResultFailure,
 )
-from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -32,9 +32,9 @@ secrets_manager = SecretsManager(config_manager)
 class AgentManager:
     def __init__(self, event_manager: EventManager | None = None) -> None:
         self.agent = Agent(
-            prompt_driver=GriptapeCloudPromptDriver(api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"))
+            prompt_driver=GriptapeCloudPromptDriver(api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"))  # type: ignore [reportArgumentType]
         )
-        self._configure_agent()
+        self._configure_agent(ConfigureAgentRequest())
 
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(RunAgentRequest, self.on_handle_run_agent_request)
@@ -43,9 +43,9 @@ class AgentManager:
                 GetConversationMemoryRequest, self.on_handle_get_conversation_memory_request
             )
 
-    def _configure_agent(self, request: ConfigureAgentRequest = ConfigureAgentRequest()) -> None:
+    def _configure_agent(self, request: ConfigureAgentRequest) -> None:
         if request.model:
-            self.agent.prompt_driver.model = request.model
+            self.agent.prompt_driver.model = request.model  # type: ignore [reportOptionalMemberAccess]
 
         if request.reset_conversation_memory:
             self.agent.conversation_memory = ConversationMemory()
@@ -57,8 +57,7 @@ class AgentManager:
             details = f"Error running agent: {e}"
             logger.error(details)
             return RunAgentResultFailure()
-        finally:
-            return RunAgentResultSuccess()
+        return RunAgentResultSuccess()
 
     def on_handle_reset_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
         try:
@@ -67,15 +66,13 @@ class AgentManager:
             details = f"Error configuring agent: {e}"
             logger.error(details)
             return ConfigureAgentResultFailure()
-        finally:
-            return ConfigureAgentResultSuccess()
+        return ConfigureAgentResultSuccess()
 
-    def on_handle_get_conversation_memory_request(self, request: GetConversationMemoryRequest) -> ResultPayload:
+    def on_handle_get_conversation_memory_request(self, _: GetConversationMemoryRequest) -> ResultPayload:
         try:
-            conversation_memory = self.agent.conversation_memory.runs
+            conversation_memory = self.agent.conversation_memory.runs  # type: ignore [reportOptionalMemberAccess]
         except Exception as e:
             details = f"Error getting conversation memory: {e}"
             logger.error(details)
             return GetConversationMemoryResultFailure()
-        finally:
-            return GetConversationMemoryResultSuccess(runs=conversation_memory)
+        return GetConversationMemoryResultSuccess(runs=conversation_memory)
