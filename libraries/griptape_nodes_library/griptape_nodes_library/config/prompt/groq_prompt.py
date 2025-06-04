@@ -26,6 +26,8 @@ MODEL_CHOICES = [
     "llama3-8b-8192",
     "allam-2-7b",
     "deepseek-r1-distill-llama-70b",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
 ]
 DEFAULT_MODEL = MODEL_CHOICES[0]
 
