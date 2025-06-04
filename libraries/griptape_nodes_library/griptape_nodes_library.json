@@ -433,6 +433,15 @@
       }
     },
     {
+      "class_name": "GroqPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/groq_prompt.py",
+      "metadata": {
+        "category": "prompt_models",
+        "description": "Prompt Models available from Groq",
+        "display_name": "Groq Prompt"
+      }
+    },
+    {
       "class_name": "OpenAiPrompt",
       "file_path": "griptape_nodes_library/config/prompt/openai_prompt.py",
       "metadata": {

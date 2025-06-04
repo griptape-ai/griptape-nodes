@@ -106,6 +106,7 @@ nav:
         - Griptape Cloud Prompt: nodes/config/griptape_cloud_prompt_driver.md
         - Grok Image: nodes/config/grok_image_driver.md
         - Grok Prompt: nodes/config/grok_prompt_driver.md
+        - Groq Prompt: nodes/config/groq_prompt_driver.md
         - OpenAI Image: nodes/config/openai_image_driver.md
         - OpenAI Prompt: nodes/config/openai_prompt_driver.md
     - Dict:
