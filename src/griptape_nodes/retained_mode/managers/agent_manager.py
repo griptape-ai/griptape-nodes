@@ -1,5 +1,6 @@
 import logging
 
+from griptape.artifacts import ErrorArtifact
 from griptape.drivers import GriptapeCloudPromptDriver
 from griptape.memory.structure import ConversationMemory
 from griptape.tasks import PromptTask
@@ -53,12 +54,11 @@ class AgentManager:
             self.conversation_memory = ConversationMemory()
 
     def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
-        try:
-            PromptTask(
-                request.input, prompt_driver=self.prompt_driver, conversation_memory=self.conversation_memory
-            ).run()
-        except Exception as e:
-            details = f"Error running agent: {e}"
+        task_output = PromptTask(
+            request.input, prompt_driver=self.prompt_driver, conversation_memory=self.conversation_memory
+        ).run()
+        if isinstance(task_output, ErrorArtifact):
+            details = f"Error running agent: {task_output.value}"
             logger.error(details)
             return RunAgentResultFailure()
         return RunAgentResultSuccess()
