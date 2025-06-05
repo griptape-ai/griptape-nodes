@@ -581,6 +581,190 @@ class BaseNode(ABC):
             msg = f"Parameter '{parameter_name} doesn't exist on {self.name}'"
             raise RuntimeError(msg)
 
+    def reorder_parameters(self, parameter_order: list[str | int]) -> None:
+        """Reorder the parameters of this node.
+
+        Args:
+            parameter_order: A list of parameter names or indices in the desired order.
+                           Can mix names and indices. Names take precedence over indices.
+
+        Example:
+            # Reorder by names
+            node.reorder_parameters(["param1", "param2", "param3"])
+
+            # Reorder by indices
+            node.reorder_parameters([0, 2, 1])
+
+            # Mix names and indices
+            node.reorder_parameters(["param1", 2, "param3"])
+        """
+        # Get current parameters
+        current_params = self.parameters
+
+        # Create a new ordered list of parameters
+        ordered_params = []
+        for item in parameter_order:
+            if isinstance(item, str):
+                # Find parameter by name
+                param = self.get_parameter_by_name(item)
+                if param is None:
+                    raise ValueError(f"Parameter '{item}' not found")
+                ordered_params.append(param)
+            elif isinstance(item, int):
+                # Get parameter by index
+                if item < 0 or item >= len(current_params):
+                    raise ValueError(f"Parameter index {item} out of range")
+                ordered_params.append(current_params[item])
+            else:
+                raise TypeError("Parameter order must contain strings (names) or integers (indices)")
+
+        # Verify we have all parameters
+        if len(ordered_params) != len(current_params):
+            raise ValueError("Parameter order must include all parameters exactly once")
+
+        # Remove all parameters from root_ui_element
+        for param in current_params:
+            self.root_ui_element.remove_child(param)
+
+        # Add parameters back in the new order
+        for param in ordered_params:
+            self.root_ui_element.add_child(param)
+
+    def move_parameter_to_position(self, parameter: str | int, position: int) -> None:
+        """Move a single parameter to a specific position in the parameter list.
+
+        Args:
+            parameter: The parameter to move, specified by name or index
+            position: The target position (0-based index) to move the parameter to
+
+        Example:
+            # Move parameter by name
+            node.move_parameter_to_position("param1", 2)
+
+            # Move parameter by index
+            node.move_parameter_to_position(0, 2)
+        """
+        current_params = self.parameters
+
+        # Get the parameter to move
+        if isinstance(parameter, str):
+            param = self.get_parameter_by_name(parameter)
+            if param is None:
+                raise ValueError(f"Parameter '{parameter}' not found")
+        elif isinstance(parameter, int):
+            if parameter < 0 or parameter >= len(current_params):
+                raise ValueError(f"Parameter index {parameter} out of range")
+            param = current_params[parameter]
+        else:
+            raise TypeError("Parameter must be a string (name) or integer (index)")
+
+        # Validate target position
+        if position < 0 or position >= len(current_params):
+            raise ValueError(f"Target position {position} out of range")
+
+        # Remove parameter from current position
+        self.root_ui_element.remove_child(param)
+
+        # Add parameter at new position
+        if position == 0:
+            # Insert at beginning
+            self.root_ui_element._children.insert(0, param)
+        else:
+            # Insert after the parameter at position-1
+            self.root_ui_element._children.insert(position, param)
+
+    def swap_parameters(self, param1: str | int, param2: str | int) -> None:
+        """Swap the positions of two parameters.
+
+        Args:
+            param1: First parameter to swap, specified by name or index
+            param2: Second parameter to swap, specified by name or index
+
+        Example:
+            # Swap by names
+            node.swap_parameters("param1", "param2")
+
+            # Swap by indices
+            node.swap_parameters(0, 2)
+
+            # Mix names and indices
+            node.swap_parameters("param1", 2)
+        """
+        current_params = self.parameters
+
+        # Get both parameters
+        def get_param(p: str | int) -> Parameter:
+            if isinstance(p, str):
+                param = self.get_parameter_by_name(p)
+                if param is None:
+                    raise ValueError(f"Parameter '{p}' not found")
+                return param
+            if isinstance(p, int):
+                if p < 0 or p >= len(current_params):
+                    raise ValueError(f"Parameter index {p} out of range")
+                return current_params[p]
+            raise TypeError("Parameters must be strings (names) or integers (indices)")
+
+        p1 = get_param(param1)
+        p2 = get_param(param2)
+
+        # Get current positions
+        pos1 = self.root_ui_element._children.index(p1)
+        pos2 = self.root_ui_element._children.index(p2)
+
+        # Swap positions
+        self.root_ui_element._children[pos1], self.root_ui_element._children[pos2] = (
+            self.root_ui_element._children[pos2],
+            self.root_ui_element._children[pos1],
+        )
+
+    def move_parameter_up_down(self, parameter: str | int, *, up: bool = True) -> None:
+        """Move a parameter up or down one position in the parameter list.
+
+        Args:
+            parameter: The parameter to move, specified by name or index
+            up: If True, move parameter up one position. If False, move down one position.
+
+        Example:
+            # Move parameter up by name
+            node.move_parameter_up_down("param1", up=True)
+
+            # Move parameter down by index
+            node.move_parameter_up_down(0, up=False)
+        """
+        current_params = self.parameters
+
+        # Get the parameter to move
+        if isinstance(parameter, str):
+            param = self.get_parameter_by_name(parameter)
+            if param is None:
+                raise ValueError(f"Parameter '{parameter}' not found")
+        elif isinstance(parameter, int):
+            if parameter < 0 or parameter >= len(current_params):
+                raise ValueError(f"Parameter index {parameter} out of range")
+            param = current_params[parameter]
+        else:
+            raise TypeError("Parameter must be a string (name) or integer (index)")
+
+        # Get current position
+        current_pos = self.root_ui_element._children.index(param)
+
+        # Calculate target position
+        if up:
+            if current_pos == 0:
+                raise ValueError("Parameter is already at the top")
+            target_pos = current_pos - 1
+        else:
+            if current_pos == len(current_params) - 1:
+                raise ValueError("Parameter is already at the bottom")
+            target_pos = current_pos + 1
+
+        # Swap with target position
+        self.root_ui_element._children[current_pos], self.root_ui_element._children[target_pos] = (
+            self.root_ui_element._children[target_pos],
+            self.root_ui_element._children[current_pos],
+        )
+
 
 class ControlNode(BaseNode):
     # Control Nodes may have one Control Input Port and at least one Control Output Port

@@ -23,7 +23,7 @@ class FileManager(BaseTool):
                 traits={Options(choices=["local", "GriptapeCloud"])},
             )
         )
-        self.parameters.sort(key=lambda p: p.name)
+        self.move_parameter_up_down("tool", up=False)
         self.hide_parameter_by_name("off_prompt")
 
     def process(self) -> None:
