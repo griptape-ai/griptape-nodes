@@ -257,6 +257,23 @@
         "category": "video/wan",
         "description": "Generate videos from image and text with Wan",
         "display_name": "Wan I2V"
+    },
+    {
+      "class_name": "Kandinsky3Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/kandinsky3/kandinsky3_pipeline.py",
+      "metadata": {
+        "category": "image/kandinsky3",
+        "description": "Generate an Image with Kandinsky 3 via 🤗 Diffusers.",
+        "display_name": "Kandinsky 3"
+      }
+    },
+    {
+      "class_name": "AllegroPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/allegro/allegro_pipeline.py",
+      "metadata": {
+        "category": "video/allegro",
+        "description": "Generate a video with Allegro via 🤗 Diffusers.",
+        "display_name": "Allegro"
       }
     }
   ]

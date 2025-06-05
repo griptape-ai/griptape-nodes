@@ -110,6 +110,7 @@ Use `LogParameter` utilities and placeholder previews exactly like the Flux impl
 
 ### 6.10 CUDA-Only Assumption  
 All optimisation helpers error if `torch.cuda.is_available()` is `False`.
+All optimisation should just perform `pipe.to(device)` and nothing else initially.
 
 ## 7. Milestone Checklist
 - [ ] Create directory tree (Appendix A) with docstring-only `__init__.py`.  
