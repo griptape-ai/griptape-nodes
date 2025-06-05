@@ -18,6 +18,7 @@ dependencies = [
   "uvicorn>=0.34.2",
   "packaging>=25.0",
   "python-multipart>=0.0.20",
+  "json-repair>=0.46.1",
 ]
 
 [dependency-groups]

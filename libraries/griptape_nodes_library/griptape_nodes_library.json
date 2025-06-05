@@ -549,6 +549,15 @@
       }
     },
     {
+      "class_name": "Askulator",
+      "file_path": "griptape_nodes_library/number/askulator.py",
+      "metadata": {
+        "category": "number",
+        "description": "Askulator was once a humble desk calculator in a university math lab. One day, lightning struck the building during a particularly spicy differential equations final. Now imbued with the power of language... and attitude... it nodes among us. Solving math, interpreting riddles, and offering just a hint of sarcasm.",
+        "display_name": "Askulator"
+      }
+    },
+    {
       "class_name": "FloatInput",
       "file_path": "griptape_nodes_library/number/create_float.py",
       "metadata": {
@@ -557,6 +566,14 @@
         "display_name": "Float Input"
       }
     },
+    {
+      "class_name": "Math",
+      "file_path": "griptape_nodes_library/number/math.py",
+      "metadata": {
+        "category": "number",
+        "description": "Perform mathematical operations on numbers",
+        "display_name": "Math"
+      }},
     {
       "class_name": "IntegerInput",
       "file_path": "griptape_nodes_library/number/create_int.py",
@@ -672,6 +689,15 @@
         "category": "text",
         "description": "Save text to a file",
         "display_name": "Save Text"
+      }
+    },
+    {
+      "class_name": "ScrapeWeb",
+      "file_path": "griptape_nodes_library/text/scrape_web.py",
+      "metadata": {
+        "category": "text",
+        "description": "Scrape the web for information",
+        "display_name": "Scrape Web"
       }
     },
     {
@@ -834,35 +860,6 @@
         "category": "workflows",
         "description": "Use a published workflow within your graph",
         "display_name": "Published Workflow"
-      }
-    },
-    {
-      "class_name": "Calculate",
-      "file_path": "griptape_nodes_library/tasks/calculate.py",
-      "metadata": {
-        "category": "tasks",
-        "description": "Calculate a value",
-        "display_name": "Calculate"
-      }
-    },
-    
-    
-    {
-      "class_name": "SearchWeb",
-      "file_path": "griptape_nodes_library/tasks/search_web.py",
-      "metadata": {
-        "category": "tasks",
-        "description": "Search the web for information",
-        "display_name": "Search Web"
-      }
-    },
-    {
-      "class_name": "ScrapeWeb",
-      "file_path": "griptape_nodes_library/tasks/scrape_web.py",
-      "metadata": {
-        "category": "tasks",
-        "description": "Scrape the web for information",
-        "display_name": "Scrape Web"
       }
     },
     {
