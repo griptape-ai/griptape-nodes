@@ -5,7 +5,7 @@ import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
 import torch  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
-from griptape.loaders import ImageLoader
+from utils.image_utils import load_image_from_url_artifact
 from PIL.Image import Image
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,  # type: ignore[reportMissingImports]
@@ -125,12 +125,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         strength = float(self.get_parameter_value("strength"))
 
         if isinstance(input_image_artifact, ImageUrlArtifact):
-            try:
-                image_bytes = input_image_artifact.to_bytes()
-            except Exception as err:
-                details = f"Failed to download image at '{input_image_artifact.value}'. If this workflow was shared from another engine installation, that image file will need to be regenerated. Error: {err}"
-                raise ValueError(details) from err
-            input_image_artifact = ImageLoader().parse(image_bytes)
+            input_image_artifact = load_image_from_url_artifact(input_image_artifact)
         input_image_pil = image_artifact_to_pil(input_image_artifact)
         input_image_pil = input_image_pil.convert("RGB")
 

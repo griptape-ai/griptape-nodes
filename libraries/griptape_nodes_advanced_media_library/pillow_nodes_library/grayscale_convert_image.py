@@ -1,7 +1,7 @@
 import logging
 
 from griptape.artifacts import ImageUrlArtifact
-from griptape.loaders import ImageLoader
+from utils.image_utils import load_image_from_url_artifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -41,12 +41,7 @@ class GrayscaleConvertImage(ControlNode):
         input_image_artifact = self.get_parameter_value("input_image")
 
         if isinstance(input_image_artifact, ImageUrlArtifact):
-            try:
-                image_bytes = input_image_artifact.to_bytes()
-            except Exception as err:
-                details = f"Failed to download image at '{input_image_artifact.value}'. If this workflow was shared from another engine installation, that image file will need to be regenerated. Error: {err}"
-                raise ValueError(details) from err
-            input_image_artifact = ImageLoader().parse(image_bytes)
+            input_image_artifact = load_image_from_url_artifact(input_image_artifact)
 
         input_image_pil = image_artifact_to_pil(input_image_artifact)
         output_image_pil = input_image_pil.convert("L")
