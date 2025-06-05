@@ -134,6 +134,7 @@ nav:
         - Save Text: nodes/text/save_text.md
         - Search Replace Text: nodes/text/search_replace_text.md
         - Text Input: nodes/text/create_multiline_text.md
+        - Evaluate Text Result: nodes/text/evaluate_text_result.md
     - Tools:
         - Calculator: nodes/tools/calculator_tool.md
         - Date Time: nodes/tools/date_time_tool.md

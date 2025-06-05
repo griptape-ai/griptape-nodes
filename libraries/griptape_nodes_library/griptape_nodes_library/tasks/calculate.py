@@ -1,13 +1,14 @@
-from griptape.artifacts import ListArtifact
-from griptape.tasks import PromptTask
-from griptape.tools import WebScraperTool as GtWebScraperTool
+from typing import Any
+
+from griptape.structures import Agent
+from griptape.tools import CalculatorTool as GtCalculatorTool
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.tasks.base_task import BaseTask
 
 
-class ScrapeWeb(BaseTask):
+class Calculate(BaseTask):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.add_parameter(
@@ -16,7 +17,7 @@ class ScrapeWeb(BaseTask):
                 type="str",
                 default_value=None,
                 tooltip="URL to scrape",
-                ui_options={"placeholder_text": "Enter the URL to scrape."},
+                ui_options={"placeholder_text": "Enter something to calculate."},
             )
         )
         self.add_parameter(
@@ -38,27 +39,21 @@ class ScrapeWeb(BaseTask):
                 output_type="str",
                 default_value="",
                 tooltip="",
-                ui_options={"multiline": True, "placeholder_text": "Output from the web scraper."},
+                ui_options={"multiline": True, "placeholder_text": "Output from the calculator."},
             )
         )
 
-    def process(self) -> None:
+    def process(self) -> Any:
         prompt = self.get_parameter_value("prompt")
         model = self.get_parameter_value("model")
 
         # Create the tool
-        tool = GtWebScraperTool()
-        scrape_task = PromptTask(
-            tools=[tool],
-            reflect_on_tool_use=False,
-            prompt_driver=self.create_driver(model=model),
-        )
+        tool = GtCalculatorTool()
 
         # Run the task
-        output = ""
-        response = scrape_task.run(f"Scrape the web for information about: {prompt}")
-        if isinstance(response, ListArtifact):
-            output += str(response[0].value[0].value)
+        agent = Agent(tools=[tool], prompt_driver=self.create_driver(model=model))
+        user_input = f"Give me the answer for: {prompt}\nOnly return the answer, no other text."
 
-        # Set the output
-        self.parameter_output_values["output"] = output
+        if prompt and not prompt.isspace():
+            # Run the agent asynchronously
+            yield lambda: self._process(agent, user_input)

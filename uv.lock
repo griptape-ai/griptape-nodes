@@ -240,6 +240,23 @@ wheels = [
 ]
 
 [[package]]
+name = "exa-py"
+version = "1.14.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "openai" },
+    { name = "pydantic" },
+    { name = "pytest-mock" },
+    { name = "requests" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e5/e1/6171e246b8a5aa57a3f089aaa2a4f7d0f195abd65e27b042e700009d8b94/exa_py-1.14.2.tar.gz", hash = "sha256:b1b6e18949c33a60fd67a895b6eca4a1f48c49f085e67860d0eac60d6a6ec88e", size = 28347, upload-time = "2025-06-04T04:14:02.383Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/28/bd/23f7c0d93840a5c9a6ed5735dea5c4630a44e1d246b79a89bf50991df536/exa_py-1.14.2-py3-none-any.whl", hash = "sha256:26aff3464d29eade1f45496b8cea8a7f4d11e886d2b5fd8f7c43b1692049047c", size = 35717, upload-time = "2025-06-04T04:14:00.888Z" },
+]
+
+[[package]]
 name = "execnet"
 version = "2.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -381,6 +398,9 @@ drivers-web-scraper-trafilatura = [
 drivers-web-search-duckduckgo = [
     { name = "duckduckgo-search" },
 ]
+drivers-web-search-exa = [
+    { name = "exa-py" },
+]
 loaders-image = [
     { name = "pillow" },
 ]
@@ -391,7 +411,7 @@ version = "0.35.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
-    { name = "griptape", extra = ["drivers-prompt-amazon-bedrock", "drivers-prompt-anthropic", "drivers-prompt-cohere", "drivers-prompt-ollama", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "loaders-image"] },
+    { name = "griptape", extra = ["drivers-prompt-amazon-bedrock", "drivers-prompt-anthropic", "drivers-prompt-cohere", "drivers-prompt-ollama", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "drivers-web-search-exa", "loaders-image"] },
     { name = "httpx" },
     { name = "packaging" },
     { name = "pydantic" },
@@ -430,7 +450,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "griptape", extras = ["drivers-prompt-cohere", "drivers-prompt-anthropic", "drivers-prompt-ollama", "drivers-prompt-amazon-bedrock", "loaders-image", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo"], specifier = ">=1.7.1" },
+    { name = "griptape", extras = ["drivers-prompt-cohere", "drivers-prompt-anthropic", "drivers-prompt-ollama", "drivers-prompt-amazon-bedrock", "loaders-image", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "drivers-web-search-exa"], specifier = ">=1.7.1" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "packaging", specifier = ">=25.0" },
     { name = "pydantic", specifier = ">=2.10.6" },

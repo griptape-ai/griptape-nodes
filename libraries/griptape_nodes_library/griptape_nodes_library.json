@@ -603,12 +603,30 @@
       }
     },
     {
+      "class_name": "DateAndTime",
+      "file_path": "griptape_nodes_library/text/date_and_time.py",
+      "metadata": {
+        "category": "text",
+        "description": "Get the date and time",
+        "display_name": "Date and Time"
+      }
+    },
+    {
       "class_name": "DisplayText",
       "file_path": "griptape_nodes_library/text/display_text.py",
       "metadata": {
         "category": "text",
         "description": "DisplayText node",
         "display_name": "Display Text"
+      }
+    },
+    {
+      "class_name": "EvaluateTextResult",
+      "file_path": "griptape_nodes_library/text/evaluate_text_result.py",
+      "metadata": {
+        "category": "text",
+        "description": "Evaluate the results of some text against some criteria",
+        "display_name": "Evaluate Text Result"
       }
     },
     {
@@ -663,6 +681,15 @@
         "category": "text",
         "description": "Perform search and replace operations on text content with support for regex and case sensitivity",
         "display_name": "Search Replace Text"
+      }
+    },
+    {
+      "class_name": "SummarizeText",
+      "file_path": "griptape_nodes_library/text/summarize_text_task.py",
+      "metadata": {
+        "category": "text",
+        "description": "Summarize text",
+        "display_name": "Summarize Text"
       }
     },
     {
@@ -810,15 +837,34 @@
       }
     },
     {
-      "class_name": "SummarizeText",
-      "file_path": "griptape_nodes_library/tasks/summarize_text_task.py",
+      "class_name": "Calculate",
+      "file_path": "griptape_nodes_library/tasks/calculate.py",
       "metadata": {
         "category": "tasks",
-        "description": "Summarize text",
-        "display_name": "Summarize Text"
+        "description": "Calculate a value",
+        "display_name": "Calculate"
       }
     },
     
+    
+    {
+      "class_name": "SearchWeb",
+      "file_path": "griptape_nodes_library/tasks/search_web.py",
+      "metadata": {
+        "category": "tasks",
+        "description": "Search the web for information",
+        "display_name": "Search Web"
+      }
+    },
+    {
+      "class_name": "ScrapeWeb",
+      "file_path": "griptape_nodes_library/tasks/scrape_web.py",
+      "metadata": {
+        "category": "tasks",
+        "description": "Scrape the web for information",
+        "display_name": "Scrape Web"
+      }
+    },
     {
       "class_name": "LoadGLTF",
       "file_path": "griptape_nodes_library/three_d/load_gltf.py",

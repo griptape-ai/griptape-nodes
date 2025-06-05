@@ -1,4 +1,7 @@
+from griptape.artifacts import BaseArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
+from griptape.events import ActionChunkEvent, FinishStructureRunEvent, StartStructureRunEvent, TextChunkEvent
+from griptape.structures import Agent, Structure
 
 from griptape_nodes.exe_types.node_types import ControlNode
 
@@ -16,6 +19,16 @@ class BaseTask(ControlNode):
         return GriptapeCloudPromptDriver(
             model=model, api_key=self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR), stream=True
         )
+
+    def _process(self, agent: Agent, prompt: BaseArtifact | str) -> Structure:
+        args = [prompt] if prompt else []
+        for event in agent.run_stream(
+            *args, event_types=[StartStructureRunEvent, TextChunkEvent, ActionChunkEvent, FinishStructureRunEvent]
+        ):
+            if isinstance(event, TextChunkEvent):
+                self.append_value_to_parameter("output", value=event.token)
+
+        return agent
 
     def process(self) -> None:
         # Create the task
