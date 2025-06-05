@@ -2,7 +2,7 @@ import logging
 
 from griptape.drivers import GriptapeCloudPromptDriver
 from griptape.memory.structure import ConversationMemory
-from griptape.structures import Agent
+from griptape.tasks import PromptTask
 
 from griptape_nodes.retained_mode.events.agent_events import (
     ConfigureAgentRequest,
@@ -31,10 +31,8 @@ secrets_manager = SecretsManager(config_manager)
 
 class AgentManager:
     def __init__(self, event_manager: EventManager | None = None) -> None:
-        self.agent = Agent(
-            prompt_driver=GriptapeCloudPromptDriver(api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"))  # type: ignore [reportArgumentType]
-        )
-        self._configure_agent(ConfigureAgentRequest())
+        self.conversation_memory = ConversationMemory()
+        self.prompt_driver = GriptapeCloudPromptDriver(api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"))  # type: ignore [reportArgumentType]
 
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(RunAgentRequest, self.on_handle_run_agent_request)
@@ -45,14 +43,16 @@ class AgentManager:
 
     def _configure_agent(self, request: ConfigureAgentRequest) -> None:
         if request.model:
-            self.agent.prompt_driver.model = request.model  # type: ignore [reportOptionalMemberAccess]
+            self.prompt_driver.model = request.model
 
         if request.reset_conversation_memory:
-            self.agent.conversation_memory = ConversationMemory()
+            self.conversation_memory = ConversationMemory()
 
     def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         try:
-            self.agent.run(request.input)
+            PromptTask(
+                request.input, prompt_driver=self.prompt_driver, conversation_memory=self.conversation_memory
+            ).run()
         except Exception as e:
             details = f"Error running agent: {e}"
             logger.error(details)
@@ -70,7 +70,7 @@ class AgentManager:
 
     def on_handle_get_conversation_memory_request(self, _: GetConversationMemoryRequest) -> ResultPayload:
         try:
-            conversation_memory = self.agent.conversation_memory.runs  # type: ignore [reportOptionalMemberAccess]
+            conversation_memory = self.conversation_memory.runs
         except Exception as e:
             details = f"Error getting conversation memory: {e}"
             logger.error(details)
