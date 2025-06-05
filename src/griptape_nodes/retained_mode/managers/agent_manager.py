@@ -6,9 +6,12 @@ from griptape.memory.structure import ConversationMemory
 from griptape.tasks import PromptTask
 
 from griptape_nodes.retained_mode.events.agent_events import (
-    ConfigureAgentRequest,
-    ConfigureAgentResultFailure,
-    ConfigureAgentResultSuccess,
+    ConfigureAgentConversationMemoryRequest,
+    ConfigureAgentConversationMemoryResultFailure,
+    ConfigureAgentConversationMemoryResultSuccess,
+    ConfigureAgentPromptDriverRequest,
+    ConfigureAgentPromptDriverResultFailure,
+    ConfigureAgentPromptDriverResultSuccess,
     GetConversationMemoryRequest,
     GetConversationMemoryResultFailure,
     GetConversationMemoryResultSuccess,
@@ -41,17 +44,15 @@ class AgentManager:
 
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(RunAgentRequest, self.on_handle_run_agent_request)
-            event_manager.assign_manager_to_request_type(ConfigureAgentRequest, self.on_handle_reset_agent_request)
+            event_manager.assign_manager_to_request_type(
+                ConfigureAgentPromptDriverRequest, self.on_handle_configure_agent_prompt_driver_request
+            )
+            event_manager.assign_manager_to_request_type(
+                ConfigureAgentConversationMemoryRequest, self.on_handle_configure_agent_conversation_memory_request
+            )
             event_manager.assign_manager_to_request_type(
                 GetConversationMemoryRequest, self.on_handle_get_conversation_memory_request
             )
-
-    def _configure_agent(self, request: ConfigureAgentRequest) -> None:
-        if request.model:
-            self.prompt_driver.model = request.model
-
-        if request.reset_conversation_memory:
-            self.conversation_memory = ConversationMemory()
 
     def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         task_output = PromptTask(
@@ -60,17 +61,32 @@ class AgentManager:
         if isinstance(task_output, ErrorArtifact):
             details = f"Error running agent: {task_output.value}"
             logger.error(details)
-            return RunAgentResultFailure()
-        return RunAgentResultSuccess()
+            return RunAgentResultFailure(error=task_output.to_json())
+        return RunAgentResultSuccess(output=task_output.to_json())
 
-    def on_handle_reset_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
+    def on_handle_configure_agent_prompt_driver_request(
+        self, request: ConfigureAgentPromptDriverRequest
+    ) -> ResultPayload:
         try:
-            self._configure_agent(request)
+            if request.model:
+                self.prompt_driver.model = request.model
         except Exception as e:
             details = f"Error configuring agent: {e}"
             logger.error(details)
-            return ConfigureAgentResultFailure()
-        return ConfigureAgentResultSuccess()
+            return ConfigureAgentPromptDriverResultFailure()
+        return ConfigureAgentPromptDriverResultSuccess()
+
+    def on_handle_configure_agent_conversation_memory_request(
+        self, request: ConfigureAgentConversationMemoryRequest
+    ) -> ResultPayload:
+        try:
+            if request.reset_conversation_memory:
+                self.conversation_memory = ConversationMemory()
+        except Exception as e:
+            details = f"Error configuring agent: {e}"
+            logger.error(details)
+            return ConfigureAgentConversationMemoryResultFailure()
+        return ConfigureAgentConversationMemoryResultSuccess()
 
     def on_handle_get_conversation_memory_request(self, _: GetConversationMemoryRequest) -> ResultPayload:
         try:

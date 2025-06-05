@@ -20,13 +20,13 @@ class RunAgentRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class RunAgentResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    pass
+    output: str
 
 
 @dataclass
 @PayloadRegistry.register
 class RunAgentResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    error: str
 
 
 @dataclass
@@ -49,18 +49,35 @@ class GetConversationMemoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 
 @dataclass
 @PayloadRegistry.register
-class ConfigureAgentRequest(RequestPayload):
-    reset_conversation_memory: bool = False
+class ConfigureAgentPromptDriverRequest(RequestPayload):
     model: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
-class ConfigureAgentResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+class ConfigureAgentPromptDriverResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class ConfigureAgentResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+class ConfigureAgentPromptDriverResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class ConfigureAgentConversationMemoryRequest(RequestPayload):
+    reset_conversation_memory: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class ConfigureAgentConversationMemoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class ConfigureAgentConversationMemoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
