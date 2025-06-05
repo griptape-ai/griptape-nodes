@@ -67,17 +67,17 @@ class ConfigureAgentPromptDriverResultFailure(WorkflowNotAlteredMixin, ResultPay
 
 @dataclass
 @PayloadRegistry.register
-class ConfigureAgentConversationMemoryRequest(RequestPayload):
-    reset_conversation_memory: bool = False
-
-
-@dataclass
-@PayloadRegistry.register
-class ConfigureAgentConversationMemoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+class ResetAgentConversationMemoryRequest(RequestPayload):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class ConfigureAgentConversationMemoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+class ResetAgentConversationMemoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetAgentConversationMemoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass

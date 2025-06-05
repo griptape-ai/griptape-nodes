@@ -6,9 +6,9 @@ from griptape.memory.structure import ConversationMemory
 from griptape.tasks import PromptTask
 
 from griptape_nodes.retained_mode.events.agent_events import (
-    ConfigureAgentConversationMemoryRequest,
-    ConfigureAgentConversationMemoryResultFailure,
-    ConfigureAgentConversationMemoryResultSuccess,
+    ResetAgentConversationMemoryRequest,
+    ResetAgentConversationMemoryResultFailure,
+    ResetAgentConversationMemoryResultSuccess,
     ConfigureAgentPromptDriverRequest,
     ConfigureAgentPromptDriverResultFailure,
     ConfigureAgentPromptDriverResultSuccess,
@@ -48,7 +48,7 @@ class AgentManager:
                 ConfigureAgentPromptDriverRequest, self.on_handle_configure_agent_prompt_driver_request
             )
             event_manager.assign_manager_to_request_type(
-                ConfigureAgentConversationMemoryRequest, self.on_handle_configure_agent_conversation_memory_request
+                ResetAgentConversationMemoryRequest, self.on_handle_reset_agent_conversation_memory_request
             )
             event_manager.assign_manager_to_request_type(
                 GetConversationMemoryRequest, self.on_handle_get_conversation_memory_request
@@ -76,17 +76,16 @@ class AgentManager:
             return ConfigureAgentPromptDriverResultFailure()
         return ConfigureAgentPromptDriverResultSuccess()
 
-    def on_handle_configure_agent_conversation_memory_request(
-        self, request: ConfigureAgentConversationMemoryRequest
+    def on_handle_reset_agent_conversation_memory_request(
+        self, _: ResetAgentConversationMemoryRequest
     ) -> ResultPayload:
         try:
-            if request.reset_conversation_memory:
-                self.conversation_memory = ConversationMemory()
+            self.conversation_memory = ConversationMemory()
         except Exception as e:
-            details = f"Error configuring agent: {e}"
+            details = f"Error resetting agent conversation memory: {e}"
             logger.error(details)
-            return ConfigureAgentConversationMemoryResultFailure()
-        return ConfigureAgentConversationMemoryResultSuccess()
+            return ResetAgentConversationMemoryResultFailure()
+        return ResetAgentConversationMemoryResultSuccess()
 
     def on_handle_get_conversation_memory_request(self, _: GetConversationMemoryRequest) -> ResultPayload:
         try:
