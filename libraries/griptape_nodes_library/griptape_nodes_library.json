@@ -558,6 +558,15 @@
       }
     },
     {
+      "class_name": "Math",
+      "file_path": "griptape_nodes_library/number/math.py",
+      "metadata": {
+        "category": "number",
+        "description": "Perform mathematical operations on numbers",
+        "display_name": "Math"
+      }
+    },
+    {
       "class_name": "FloatInput",
       "file_path": "griptape_nodes_library/number/create_float.py",
       "metadata": {
@@ -566,14 +575,6 @@
         "display_name": "Float Input"
       }
     },
-    {
-      "class_name": "Math",
-      "file_path": "griptape_nodes_library/number/math.py",
-      "metadata": {
-        "category": "number",
-        "description": "Perform mathematical operations on numbers",
-        "display_name": "Math"
-      }},
     {
       "class_name": "IntegerInput",
       "file_path": "griptape_nodes_library/number/create_int.py",
