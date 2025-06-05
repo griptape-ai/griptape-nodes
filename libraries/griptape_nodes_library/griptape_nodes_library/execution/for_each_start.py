@@ -1,4 +1,4 @@
-from typing import Any, override
+from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -31,7 +31,7 @@ class ForEachStartNode(StartLoopNode):
             name="items",
             tooltip="List of items to iterate through",
             input_types=[ParameterTypeBuiltin.ANY.value],
-            allowed_modes={ParameterMode.INPUT}
+            allowed_modes={ParameterMode.INPUT},
         )
         self.add_parameter(self.items_list)
 
@@ -69,7 +69,10 @@ class ForEachStartNode(StartLoopNode):
     # This node cannot run unless it's connected to a start node.
     def validate_before_workflow_run(self) -> list[Exception] | None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         exceptions = []
+        self._current_index = 0
+        self._items = []
         try:
             flow = GriptapeNodes.ObjectManager().get_object_by_name(
                 GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
@@ -85,7 +88,10 @@ class ForEachStartNode(StartLoopNode):
     # This node cannot be run unless it's connected to an end node.
     def validate_before_node_run(self) -> list[Exception] | None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         exceptions = []
+        self._current_index = 0
+        self._items = []
         try:
             flow = GriptapeNodes.ObjectManager().get_object_by_name(
                 GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
@@ -110,23 +116,21 @@ class ForEachStartNode(StartLoopNode):
             output_param = target_node.get_parameter_by_name("output")
             if not isinstance(output_param, ParameterList):
                 return None
-            item_list = self.get_parameter_value("items")
-            if isinstance(item_list, list):
-                for _ in range(len(item_list)):
-                    output_param.add_child_parameter()
-            modified_parameters_set.add("output")
+            for _ in range(len(self.items_list._children) - len(output_param._children)):
+                new_child = output_param.add_child_parameter()
+                target_node._children.append(new_child)
         return super().after_outgoing_connection(
             source_parameter, target_node, target_parameter, modified_parameters_set
         )
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        if parameter.name == "items":
-            output_param = self.get_parameter_by_name("output")
-            if not isinstance(output_param, ParameterList):
-                return None
-            for _ in range(len(parameter._children) - len(output_param._children)):
-                output_param.add_child_parameter()
-            modified_parameters_set.add("output")
+        if self.for_each_end is None:
+            return None
+        output_param = self.for_each_end.get_parameter_by_name("output")
+        if not isinstance(output_param, ParameterList):
+            return None
+        for _ in range(len(parameter._children) - len(output_param._children)):
+            self.for_each_end._children.append(output_param.add_child_parameter())
         return super().after_value_set(parameter, value, modified_parameters_set)
 
     def after_outgoing_connection_removed(

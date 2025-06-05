@@ -42,16 +42,27 @@ class ForEachEndNode(EndLoopNode):
         self.add_parameter(self.current_item)
         # Add control input parameter
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        self._index = 0
+        self.start_node_finished = False
+        return super().validate_before_node_run()
+
+    @override
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        self._index = 0
+        self.start_node_finished = False
+        return super().validate_before_workflow_run()
+
     def process(self) -> None:
         if self._index == len(self._children):
             child = self.output.add_child_parameter()
             self._children.append(child)
         else:
             child = self._children[self._index]
-        self.set_parameter_value(child.name,self.get_parameter_value("current_item"))
+        self.set_parameter_value(child.name, self.get_parameter_value("current_item"))
         self._index += 1
         if self.start_node_finished:
-            while self._index < len(self._children)-1:
+            while self._index < len(self._children) - 1:
                 self.output.remove_child(self._children[self._index])
                 self._children.pop(self._index)
                 self._index += 1
@@ -67,3 +78,19 @@ class ForEachEndNode(EndLoopNode):
             self.start_node_finished = False
             return self.get_parameter_by_name("exec_out")
         return self.get_parameter_by_name("exec_in")
+
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        modified_parameters_set.add("output")
+        return super().after_value_set(parameter, value, modified_parameters_set)
+
+    def after_incoming_connection(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+        modified_parameters_set: set[str],
+    ) -> None:
+        modified_parameters_set.add("output")
+        return super().after_incoming_connection(
+            source_node, source_parameter, target_parameter, modified_parameters_set
+        )
