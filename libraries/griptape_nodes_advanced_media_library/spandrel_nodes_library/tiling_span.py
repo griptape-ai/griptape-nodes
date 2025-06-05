@@ -13,12 +13,12 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from griptape.artifacts import ImageUrlArtifact
-from griptape.loaders import ImageLoader
 from PIL.Image import Image
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
     pil_to_image_artifact,
 )
+from utils.image_utils import load_image_from_url_artifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -122,7 +122,7 @@ class TilingSPAN(ControlNode):
         tile_strategy = str(self.get_parameter_value("tile_strategy"))
 
         if isinstance(input_image_artifact, ImageUrlArtifact):
-            input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
+            input_image_artifact = load_image_from_url_artifact(input_image_artifact)
         input_image_pil = image_artifact_to_pil(input_image_artifact)
         input_image_pil = input_image_pil.convert("RGB")
 

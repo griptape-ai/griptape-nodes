@@ -1,7 +1,6 @@
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
-from griptape.loaders import ImageLoader
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -10,7 +9,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.button import Button
-from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
+from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_image_from_url_artifact
 
 DEFAULT_FILENAME = "griptape_nodes.png"
 
@@ -60,7 +59,7 @@ class SaveImage(ControlNode):
             return
 
         if isinstance(image, ImageUrlArtifact):
-            image = ImageLoader().parse(image.to_bytes())
+            image = load_image_from_url_artifact(image)
 
         output_file = self.parameter_values.get("output_path", DEFAULT_FILENAME)
 

@@ -1,7 +1,6 @@
 from griptape.artifacts import ImageUrlArtifact
 from griptape.drivers.prompt.base_prompt_driver import BasePromptDriver
 from griptape.drivers.prompt.griptape_cloud_prompt_driver import GriptapeCloudPromptDriver
-from griptape.loaders import ImageLoader
 from griptape.structures import Structure
 from griptape.tasks import PromptTask
 
@@ -10,6 +9,7 @@ from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNo
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
+from griptape_nodes_library.utils.image_utils import load_image_from_url_artifact
 
 SERVICE = "Griptape"
 API_KEY_URL = "https://cloud.griptape.ai/configuration/api-keys"
@@ -202,7 +202,7 @@ class DescribeImage(ControlNode):
         image_artifact = params.get("image", None)
 
         if isinstance(image_artifact, ImageUrlArtifact):
-            image_artifact = ImageLoader().parse(image_artifact.to_bytes())
+            image_artifact = load_image_from_url_artifact(image_artifact)
         if image_artifact is None:
             self.parameter_output_values["output"] = "No image provided"
             return
