@@ -337,7 +337,7 @@ class ConfigManager:
             return GetConfigCategoryResultFailure()
 
         details = f"Successfully returned the config dictionary for section '{request.category}'."
-        logger.info(details)
+        logger.debug(details)
         return GetConfigCategoryResultSuccess(contents=find_results)
 
     def on_handle_set_config_category_request(self, request: SetConfigCategoryRequest) -> ResultPayload:
@@ -351,7 +351,7 @@ class ConfigManager:
             # Assign the whole shebang.
             self._write_user_config_delta(request.contents)
             details = "Successfully assigned the entire config dictionary."
-            logger.info(details)
+            logger.debug(details)
             return SetConfigCategoryResultSuccess()
 
         self.set_config_value(key=request.category, value=request.contents)
@@ -363,7 +363,7 @@ class ConfigManager:
             self._update_secret_from_env_var(after_env_var)
 
         details = f"Successfully assigned the config dictionary for section '{request.category}'."
-        logger.info(details)
+        logger.debug(details)
         return SetConfigCategoryResultSuccess()
 
     def on_handle_get_config_value_request(self, request: GetConfigValueRequest) -> ResultPayload:
@@ -380,7 +380,7 @@ class ConfigManager:
             return GetConfigValueResultFailure()
 
         details = f"Successfully returned the config value for section '{request.category_and_key}'."
-        logger.info(details)
+        logger.debug(details)
         return GetConfigValueResultSuccess(value=find_results)
 
     def on_handle_get_config_path_request(self, request: GetConfigPathRequest) -> ResultPayload:  # noqa: ARG002
@@ -472,7 +472,7 @@ class ConfigManager:
         else:
             details = f"Successfully assigned the config value for '{request.category_and_key}':\n\tFROM '{old_value_copy}'\n\tTO: '{request.value}'"
 
-        logger.info(details)
+        logger.debug(details)
         return SetConfigValueResultSuccess()
 
     def _write_user_config_delta(self, user_config_delta: dict) -> None:
