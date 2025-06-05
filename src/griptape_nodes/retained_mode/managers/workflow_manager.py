@@ -1707,10 +1707,9 @@ class WorkflowManager:
         for node in nodes:
             for param in node.parameters:
                 # Expose only the parameters that are relevant for workflow input and output.
-                # Those parameters are not of type CONTROL_TYPE, and are builtin types.
-                if param.type != ParameterTypeBuiltin.CONTROL_TYPE.value and param.type in [
-                    t.value for t in ParameterTypeBuiltin
-                ]:
+                # Excluding list types as the individual parameters are exposed in the workflow shape.
+                # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1090): This is a temporary solution until we know how to handle container types.
+                if param.type != ParameterTypeBuiltin.CONTROL_TYPE.value and not param.type.startswith("list"):
                     if node.name in workflow_shape[workflow_shape_type]:
                         cast("dict", workflow_shape[workflow_shape_type][node.name])[param.name] = (
                             self._convert_parameter_to_minimal_dict(param)

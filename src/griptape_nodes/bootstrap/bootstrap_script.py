@@ -29,10 +29,17 @@ if __name__ == "__main__":
         default=None,
         help="The input to the flow",
     )
+    parser.add_argument(
+        "-s",
+        "--storage-backend",
+        default="local",
+        help="The storage backend to use",
+    )
 
     args = parser.parse_args()
     workflow_name = args.workflow_name
     flow_input = args.input
+    storage_backend = args.storage_backend
 
     try:
         flow_input = json.loads(flow_input) if flow_input else {}
@@ -42,4 +49,6 @@ if __name__ == "__main__":
         raise
 
     workflow_runner = BootstrapWorkflowRunner()
-    workflow_runner.run(workflow_path="workflow.py", workflow_name=workflow_name, flow_input=flow_input)
+    workflow_runner.run(
+        workflow_path="workflow.py", workflow_name=workflow_name, flow_input=flow_input, storage_backend=storage_backend
+    )

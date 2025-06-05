@@ -32,12 +32,12 @@ class SubprocessWorkflowRunner(WorkflowRunner):
         try:
             threading.Thread(target=_serve_static_server, daemon=True).start()
             workflow_runner = LocalWorkflowRunner(libraries)
-            workflow_runner.run(workflow_path, workflow_name, flow_input)
+            workflow_runner.run(workflow_path, workflow_name, flow_input, "local")
         except Exception as e:
             exception_queue.put(e)
             raise
 
-    def run(self, workflow_path: str, workflow_name: str, flow_input: Any) -> None:
+    def run(self, workflow_path: str, workflow_name: str, flow_input: Any, storage_backend: str = "local") -> None:  # noqa: ARG002
         exception_queue = Queue()
         process = Process(
             target=self._subprocess_entry,

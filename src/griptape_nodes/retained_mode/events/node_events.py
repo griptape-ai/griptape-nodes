@@ -351,7 +351,7 @@ class SerializedSelectedNodesCommands:
 @PayloadRegistry.register
 class SerializeSelectedNodesToCommandsRequest(WorkflowNotAlteredMixin, RequestPayload):
     # They will be passed with node_name, timestamp
-    nodes_to_serialize: list[str]
+    nodes_to_serialize: list[list[str]]
 
 
 @dataclass
@@ -407,7 +407,7 @@ class DeserializeNodeFromCommandsResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class DuplicateSelectedNodesRequest(WorkflowNotAlteredMixin, RequestPayload):
-    nodes_to_duplicate: list[str]
+    nodes_to_duplicate: list[list[str]]
 
 
 @dataclass

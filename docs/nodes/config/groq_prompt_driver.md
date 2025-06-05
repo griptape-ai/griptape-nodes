@@ -20,6 +20,8 @@ The Groq Prompt Driver supports the following models:
 - [llama-3.1-8b-instant](https://console.groq.com/docs/model/llama-3.1-8b-instant) - Meta's fast 8B parameter model
 - [llama3-70b-8192](https://console.groq.com/docs/model/llama3-70b-8192) - Meta's 70B parameter model with 8K context
 - [llama3-8b-8192](https://console.groq.com/docs/model/llama3-8b-8192) - Meta's 8B parameter model with 8K context
+- [meta-llama/llama-4-scout-17b-16e-instruct](https://console.groq.com/docs/model/llama-4-scout-17b-16e-instruct) - Meta's vision model with 16K context, compatible with the Image Description node
+- [meta-llama/llama-4-maverick-17b-128e-instruct](https://console.groq.com/docs/model/llama-4-maverick-17b-128e-instruct) - Meta's vision model with 128K context, compatible with the Image Description node
 
 #### Preview Models
 
