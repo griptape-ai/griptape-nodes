@@ -321,7 +321,7 @@ class ConfigManager:
             # Return the whole shebang. Start with the defaults and then layer on the user config.
             contents = self.merged_config
             details = "Successfully returned the entire config dictionary."
-            logger.info(details)
+            logger.debug(details)
             return GetConfigCategoryResultSuccess(contents=contents)
 
         # See if we got something valid.
