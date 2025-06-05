@@ -5,12 +5,12 @@ import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
 import torch  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
-from utils.image_utils import load_image_from_url_artifact
 from PIL.Image import Image
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,  # type: ignore[reportMissingImports]
     pil_to_image_artifact,  # type: ignore[reportMissingImports]
 )
+from utils.image_utils import load_image_from_url_artifact
 
 from diffusers_nodes_library.common.misc.tiling_image_processor import (
     TilingImageProcessor,  # type: ignore[reportMissingImports]

@@ -1,8 +1,8 @@
 import logging
 
 from griptape.artifacts import ImageUrlArtifact
-from utils.image_utils import load_image_from_url_artifact
 from PIL.Image import Resampling
+from utils.image_utils import load_image_from_url_artifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode

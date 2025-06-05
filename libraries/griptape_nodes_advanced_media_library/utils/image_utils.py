@@ -6,15 +6,14 @@ from requests.exceptions import RequestException
 
 
 def load_image_from_url_artifact(image_url_artifact: ImageUrlArtifact) -> ImageArtifact:
-    """
-    Load an ImageArtifact from an ImageUrlArtifact with proper error handling.
-    
+    """Load an ImageArtifact from an ImageUrlArtifact with proper error handling.
+
     Args:
         image_url_artifact: The ImageUrlArtifact to load
-        
+
     Returns:
         ImageArtifact: The loaded image artifact
-        
+
     Raises:
         ValueError: If image download fails with descriptive error message
     """
@@ -28,5 +27,5 @@ def load_image_from_url_artifact(image_url_artifact: ImageUrlArtifact) -> ImageA
             f"Error: {err}"
         )
         raise ValueError(details) from err
-    
+
     return ImageLoader().parse(image_bytes)

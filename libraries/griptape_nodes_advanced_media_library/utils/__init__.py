@@ -1,1 +1,1 @@
-# Utils for the Advanced Media Library
+"""Util nodes package."""
