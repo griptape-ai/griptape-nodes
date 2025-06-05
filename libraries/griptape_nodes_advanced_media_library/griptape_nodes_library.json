@@ -38,8 +38,7 @@
       ]
     }
   },
-  "categories": [
-  ],
+  "categories": [],
   "nodes": [
     {
       "class_name": "GrayscaleConvertImage",
@@ -195,6 +194,15 @@
       }
     },
     {
+      "class_name": "StableDiffusion35Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stabilityai/stable_diffusion_35/stable_diffusion_35_node.py",
+      "metadata": {
+        "category": "image/StabilityAI",
+        "description": "Generate Images with Stable Diffusion 3.5 (Large/Medium) via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion 3.5"
+      }
+    },
+    {
       "class_name": "RescaleImage",
       "file_path": "pillow_nodes_library/rescale_image.py",
       "metadata": {
@@ -203,7 +211,6 @@
         "display_name": "Rescale Image"
       }
     },
-    
     {
       "class_name": "TilingSPAN",
       "file_path": "spandrel_nodes_library/tiling_span.py",
