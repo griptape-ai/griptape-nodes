@@ -6,15 +6,15 @@ from griptape.memory.structure import ConversationMemory
 from griptape.tasks import PromptTask
 
 from griptape_nodes.retained_mode.events.agent_events import (
-    ResetAgentConversationMemoryRequest,
-    ResetAgentConversationMemoryResultFailure,
-    ResetAgentConversationMemoryResultSuccess,
-    ConfigureAgentPromptDriverRequest,
-    ConfigureAgentPromptDriverResultFailure,
-    ConfigureAgentPromptDriverResultSuccess,
+    ConfigureAgentRequest,
+    ConfigureAgentResultFailure,
+    ConfigureAgentResultSuccess,
     GetConversationMemoryRequest,
     GetConversationMemoryResultFailure,
     GetConversationMemoryResultSuccess,
+    ResetAgentConversationMemoryRequest,
+    ResetAgentConversationMemoryResultFailure,
+    ResetAgentConversationMemoryResultSuccess,
     RunAgentRequest,
     RunAgentResultFailure,
     RunAgentResultSuccess,
@@ -44,9 +44,7 @@ class AgentManager:
 
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(RunAgentRequest, self.on_handle_run_agent_request)
-            event_manager.assign_manager_to_request_type(
-                ConfigureAgentPromptDriverRequest, self.on_handle_configure_agent_prompt_driver_request
-            )
+            event_manager.assign_manager_to_request_type(ConfigureAgentRequest, self.on_handle_configure_agent_request)
             event_manager.assign_manager_to_request_type(
                 ResetAgentConversationMemoryRequest, self.on_handle_reset_agent_conversation_memory_request
             )
@@ -64,17 +62,15 @@ class AgentManager:
             return RunAgentResultFailure(error=task_output.to_json())
         return RunAgentResultSuccess(output=task_output.to_json())
 
-    def on_handle_configure_agent_prompt_driver_request(
-        self, request: ConfigureAgentPromptDriverRequest
-    ) -> ResultPayload:
+    def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
         try:
-            if request.model:
-                self.prompt_driver.model = request.model
+            for key, value in request.prompt_driver.items():
+                setattr(self.prompt_driver, key, value)
         except Exception as e:
             details = f"Error configuring agent: {e}"
             logger.error(details)
-            return ConfigureAgentPromptDriverResultFailure()
-        return ConfigureAgentPromptDriverResultSuccess()
+            return ConfigureAgentResultFailure()
+        return ConfigureAgentResultSuccess()
 
     def on_handle_reset_agent_conversation_memory_request(
         self, _: ResetAgentConversationMemoryRequest

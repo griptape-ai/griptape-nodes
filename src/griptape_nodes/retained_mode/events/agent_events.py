@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from griptape.memory.structure import Run
 
@@ -49,19 +49,19 @@ class GetConversationMemoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 
 @dataclass
 @PayloadRegistry.register
-class ConfigureAgentPromptDriverRequest(RequestPayload):
-    model: str | None = None
+class ConfigureAgentRequest(RequestPayload):
+    prompt_driver: dict = field(default_factory=dict)
 
 
 @dataclass
 @PayloadRegistry.register
-class ConfigureAgentPromptDriverResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+class ConfigureAgentResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     pass
 
 
 @dataclass
 @PayloadRegistry.register
-class ConfigureAgentPromptDriverResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+class ConfigureAgentResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
