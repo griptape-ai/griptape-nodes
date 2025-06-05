@@ -32,7 +32,11 @@ secrets_manager = SecretsManager(config_manager)
 class AgentManager:
     def __init__(self, event_manager: EventManager | None = None) -> None:
         self.conversation_memory = ConversationMemory()
-        self.prompt_driver = GriptapeCloudPromptDriver(api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"))  # type: ignore [reportArgumentType]
+        api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
+        if not api_key:
+            msg = f"Secret '{API_KEY_ENV_VAR}' not found"
+            raise ValueError(msg)
+        self.prompt_driver = GriptapeCloudPromptDriver(api_key=api_key)
 
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(RunAgentRequest, self.on_handle_run_agent_request)
