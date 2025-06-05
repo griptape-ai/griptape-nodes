@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, override
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -107,9 +107,27 @@ class ForEachStartNode(StartLoopNode):
     ) -> None:
         if isinstance(target_node, EndLoopNode) and self.for_each_end is None:
             self.for_each_end = target_node
+            output_param = target_node.get_parameter_by_name("output")
+            if not isinstance(output_param, ParameterList):
+                return None
+            item_list = self.get_parameter_value("items")
+            if isinstance(item_list, list):
+                for _ in range(len(item_list)):
+                    output_param.add_child_parameter()
+            modified_parameters_set.add("output")
         return super().after_outgoing_connection(
             source_parameter, target_node, target_parameter, modified_parameters_set
         )
+
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        if parameter.name == "items":
+            output_param = self.get_parameter_by_name("output")
+            if not isinstance(output_param, ParameterList):
+                return None
+            for _ in range(len(parameter._children) - len(output_param._children)):
+                output_param.add_child_parameter()
+            modified_parameters_set.add("output")
+        return super().after_value_set(parameter, value, modified_parameters_set)
 
     def after_outgoing_connection_removed(
         self,
