@@ -4,6 +4,7 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterList,
     ParameterMode,
+    ParameterType,
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
@@ -27,6 +28,15 @@ class ForEachStartNode(StartLoopNode):
         self.for_each_end = None
         self._current_index = 0
         self._items = []
+        self.index_count = Parameter(
+            name="index",
+            tooltip="Current index of the iteration",
+            type=ParameterTypeBuiltin.INT.value,
+            allowed_modes={ParameterMode.PROPERTY},
+            settable=False,
+            default_value=0
+        )
+        self.add_parameter(self.index_count)
         self.items_list = ParameterList(
             name="items",
             tooltip="List of items to iterate through",
@@ -57,6 +67,8 @@ class ForEachStartNode(StartLoopNode):
         self._flow.connections.unresolve_future_nodes(self)
         current_item_value = self._items[self._current_index]
         self.parameter_output_values["current_item"] = current_item_value
+        self.set_parameter_value("index", self._current_index)
+        self.publish_update_to_parameter("index", self._current_index)
         self._current_index += 1
         # Check if we're done.
         if self._current_index == len(self._items):
@@ -90,8 +102,6 @@ class ForEachStartNode(StartLoopNode):
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         exceptions = []
-        self._current_index = 0
-        self._items = []
         try:
             flow = GriptapeNodes.ObjectManager().get_object_by_name(
                 GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)

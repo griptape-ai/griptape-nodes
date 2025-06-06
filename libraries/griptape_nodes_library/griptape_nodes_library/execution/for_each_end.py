@@ -1,6 +1,7 @@
 from typing import Any, override
 
 from griptape_nodes.exe_types.core_types import (
+    ControlParameterOutput,
     Parameter,
     ParameterList,
     ParameterMode,
@@ -17,7 +18,7 @@ class ForEachEndNode(EndLoopNode):
     """
 
     start_node_finished: bool
-    output: ParameterList
+    output: Parameter
     _index: int
     _children: list[Parameter]
 
@@ -26,10 +27,15 @@ class ForEachEndNode(EndLoopNode):
         self.start_node_finished = False
         self._index = 0
         self._children = []
-        self.output = ParameterList(
+        self.continue_loop = ControlParameterOutput(
+            tooltip = "Continue to the next iteration",
+            name="Continue"
+        )
+        self.add_parameter(self.continue_loop)
+        self.output = Parameter(
             name="output",
             tooltip="Output parameter for the loop iteration",
-            output_type=ParameterTypeBuiltin.ALL.value,
+            output_type="list",
             allowed_modes={ParameterMode.OUTPUT},
         )
         self.add_parameter(self.output)
@@ -54,14 +60,11 @@ class ForEachEndNode(EndLoopNode):
         return super().validate_before_workflow_run()
 
     def process(self) -> None:
-        if self._index == len(self._children):
-            child = self.output.add_child_parameter()
-            self._children.append(child)
-        else:
-            child = self._children[self._index]
-        self.set_parameter_value(child.name, self.get_parameter_value("current_item"))
+        output_list = self.get_parameter_value("output")
+        output_list.append(self.get_parameter_value("current_item"))
         self._index += 1
         if self.start_node_finished:
+            self.parameter_output_values["output"] = self.get_parameter_value
             while self._index < len(self._children) - 1:
                 self.output.remove_child(self._children[self._index])
                 self._children.pop(self._index)
