@@ -88,7 +88,7 @@ class Math(BaseNode):
         import math
 
         ops = {"sqrt": math.sqrt, "abs": abs, "round": round, "ceil": math.ceil, "floor": math.floor, "sin": math.sin}
-        return ops.get(operation, lambda x: 0.0)(value)
+        return ops.get(operation, lambda: 0.0)(value)
 
     def _handle_binary(self, operation: str, a: float, b: float) -> float:
         ops = {
@@ -105,7 +105,7 @@ class Math(BaseNode):
         import statistics
 
         ops = {"average": statistics.mean, "min": min, "max": max}
-        return ops.get(operation, lambda x: 0.0)(values)
+        return ops.get(operation, lambda: 0.0)(values)
 
     def calculate_operation(self) -> float:
         choice = self.get_parameter_value("operation")
