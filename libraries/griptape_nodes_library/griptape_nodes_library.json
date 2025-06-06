@@ -207,6 +207,15 @@
   ],
   "nodes": [
     {
+      "class_name": "DisplayList",
+      "file_path": "griptape_nodes_library/utils/display_list.py",
+      "metadata": {
+        "category": "utils",
+        "description": "Takes a list input and creates output parameters for each item in the list",
+        "display_name": "Display List"
+      }
+    },
+    {
       "class_name": "Agent",
       "file_path": "griptape_nodes_library/agents/agent.py",
       "metadata": {
@@ -819,7 +828,6 @@
         "display_name": "Published Workflow"
       }
     },
-    
     {
       "class_name": "LoadGLTF",
       "file_path": "griptape_nodes_library/three_d/load_gltf.py",

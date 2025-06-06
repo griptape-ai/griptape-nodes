@@ -119,7 +119,7 @@ class ForEachStartNode(StartLoopNode):
         if self.finished:
             self.finished = False
             return self.exec_out
-        if self.current_index == len(self._items):
+        if self.current_index == len(self._items) - 1:
             # This is the last iteration of the loop
             self.finished = True
             # reset the node.
@@ -136,7 +136,11 @@ class ForEachStartNode(StartLoopNode):
     ) -> None:
         if target_parameter == self.items_list or target_parameter.parent_container_name == "items":
             self.current_item.type = source_parameter.type
+            param = self.items_list.add_child_parameter()
+            param.type = "str"
+            param.default_value = "test"
             modified_parameters_set.add("current_item")
+            modified_parameters_set.add("items")
         if target_parameter == self.exec_in and isinstance(source_node, EndLoopNode):
             self.end_node = source_node
         return super().after_incoming_connection(

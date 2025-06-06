@@ -28,7 +28,7 @@ class ForEachEndNode(EndLoopNode):
             name="Continue",
             allowed_modes={ParameterMode.OUTPUT, ParameterMode.INPUT},
         )
-        self.continue_loop.ui_options = {"display_name": "Continue"}
+        self.continue_loop.ui_options = {"display_name": "Continue", "hide":True}
         self.add_parameter(self.continue_loop)
         self.output = Parameter(
             name="output",
@@ -60,14 +60,16 @@ class ForEachEndNode(EndLoopNode):
     def process(self) -> None:
         if self.start_node is None:
             return
-        if self.start_node.current_index == 0:
+        # This means this is the first item in the loop.
+        output_list = self.get_parameter_value("output")
+        if self.start_node.current_index == 1:
             try:
                 self.remove_parameter_value("output")
             except Exception:
                 pass
-        output_list = self.get_parameter_value("output")
         if output_list is None:
             output_list = []
+            self.set_parameter_value("output",output_list)
         output_list.append(self.get_parameter_value("current_item"))
         if self.start_node.finished:
             self.parameter_output_values["output"] = self.get_parameter_value("output")

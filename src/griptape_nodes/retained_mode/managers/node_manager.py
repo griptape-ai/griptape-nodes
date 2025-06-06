@@ -324,7 +324,6 @@ class NodeManager:
             end_loop = GriptapeNodes.handle_request(
                 CreateNodeRequest(
                     node_type="ForEachEndNode",
-                    node_name=request.node_name + "_end" if request.node_name is not None else node.name + "_end",
                     override_parent_flow_name=parent_flow_name,
                 )
             )
