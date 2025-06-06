@@ -26,7 +26,7 @@ RUN groupadd --gid 1000 appuser && \
     useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser
 
 # Create app directory structure and set permissions for volume mount points
-RUN mkdir -p /app/models && \
+RUN mkdir -p /app && \
     chown -R appuser:appuser /app
 
 # Copy the environment with proper ownership
@@ -41,14 +41,10 @@ RUN chmod +x /entrypoint.sh
 
 # Switch to non-root user and set working directory
 USER appuser
-WORKDIR /home/appuser
+WORKDIR /app
 
 # Ensure XDG directories and Python user base point to the user's home
-ENV HOME=/home/appuser
-ENV XDG_CONFIG_HOME=/home/appuser/.config
-ENV XDG_DATA_HOME=/home/appuser/.local/share
-ENV XDG_CACHE_HOME=/home/appuser/.cache
-ENV PYTHONUSERBASE=/home/appuser/.local
+ENV HOME=/app
 
 EXPOSE 8124
 ENTRYPOINT ["/entrypoint.sh"]
