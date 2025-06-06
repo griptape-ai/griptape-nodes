@@ -1,8 +1,8 @@
+import contextlib
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
     ControlParameter,
-    ControlParameterOutput,
     Parameter,
     ParameterMode,
     ParameterTypeBuiltin,
@@ -28,7 +28,7 @@ class ForEachEndNode(EndLoopNode):
             name="Continue",
             allowed_modes={ParameterMode.OUTPUT, ParameterMode.INPUT},
         )
-        self.continue_loop.ui_options = {"display_name": "Continue", "hide":True}
+        self.continue_loop.ui_options = {"display_name": "Continue", "hide": True}
         self.add_parameter(self.continue_loop)
         self.output = Parameter(
             name="output",
@@ -63,13 +63,11 @@ class ForEachEndNode(EndLoopNode):
         # This means this is the first item in the loop.
         output_list = self.get_parameter_value("output")
         if self.start_node.current_index == 1:
-            try:
+            with contextlib.suppress(Exception):
                 self.remove_parameter_value("output")
-            except Exception:
-                pass
         if output_list is None:
             output_list = []
-            self.set_parameter_value("output",output_list)
+            self.set_parameter_value("output", output_list)
         output_list.append(self.get_parameter_value("current_item"))
         if self.start_node.finished:
             self.parameter_output_values["output"] = self.get_parameter_value("output")
@@ -85,7 +83,7 @@ class ForEachEndNode(EndLoopNode):
 
     def after_outgoing_connection(
         self,
-        source_parameter: Parameter,  # noqa: ARG002
+        source_parameter: Parameter,
         target_node: BaseNode,
         target_parameter: Parameter,
         modified_parameters_set: set[str],  # noqa: ARG002

@@ -1,8 +1,8 @@
-from typing import Any, Dict
+from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
-
 from griptape.events import EventBus
+
 from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
@@ -22,7 +22,7 @@ class DisplayList(ControlNode):
 
     dynamic_params: list[Parameter]
 
-    def __init__(self, name: str, metadata: Dict[Any, Any] | None = None) -> None:
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
         # Add input list parameter
         self.items_list = Parameter(
@@ -59,6 +59,7 @@ class DisplayList(ControlNode):
                 output_param = self.dynamic_params[i]
                 output_param.output_type = item_type
             from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+
             modified_request = AlterElementEvent(element_details=output_param.to_event(self))
             EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
             # Set the value of the output parameter
