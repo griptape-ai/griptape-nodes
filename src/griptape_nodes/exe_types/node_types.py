@@ -618,11 +618,13 @@ class BaseNode(ABC):
                     raise ValueError(msg)
                 ordered_elements.append(current_elements[item])
             else:
-                raise TypeError("Element order must contain strings (names) or integers (indices)")
+                msg = "Element order must contain strings (names) or integers (indices)"
+                raise TypeError(msg)
 
         # Verify we have all elements
         if len(ordered_elements) != len(current_elements):
-            raise ValueError("Element order must include all elements exactly once")
+            msg = "Element order must include all elements exactly once"
+            raise ValueError(msg)
 
         # Remove all elements from root_ui_element
         for element in current_elements:
