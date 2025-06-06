@@ -3,7 +3,7 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import ActionChunkEvent, FinishStructureRunEvent, StartStructureRunEvent, TextChunkEvent
 from griptape.structures import Agent, Structure
 
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
@@ -30,6 +30,9 @@ class BaseTask(ControlNode):
 
         return agent
 
-    def process(self) -> None:
-        # Create the task
-        pass
+    def process(self) -> AsyncResult[Structure]:
+        # Base implementation returns an empty Agent
+        def _process() -> Structure:
+            return Agent()
+
+        yield _process

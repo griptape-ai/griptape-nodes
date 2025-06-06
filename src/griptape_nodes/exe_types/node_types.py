@@ -716,7 +716,7 @@ class BaseNode(ABC):
         current_elements = self.root_ui_element._children
 
         # Get both elements
-        def get_elem(e: str | int):
+        def get_elem(e: str | int) -> BaseNodeElement:
             if isinstance(e, str):
                 elem = self.root_ui_element.find_element_by_name(e)
                 if elem is None:
