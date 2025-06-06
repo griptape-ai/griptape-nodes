@@ -14,7 +14,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import BaseNode, EndLoopNode, NodeResolutionState, StartLoopNode
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
@@ -284,7 +284,6 @@ class NodeManager:
             details = f"Could not create Node '{final_node_name}' of type '{request.node_type}': {err}"
             logger.error(details)
             return CreateNodeResultFailure()
-
         # Add it to the Flow.
         parent_flow.add_node(node)
 
@@ -319,6 +318,30 @@ class NodeManager:
             details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
 
         logger.log(level=log_level, msg=details)
+
+        if isinstance(node, StartLoopNode) and not request.initial_setup:
+            # If it's StartLoop, create an EndLoop and connect it to the StartLoop.
+            end_loop = GriptapeNodes.handle_request(
+                CreateNodeRequest(
+                    node_type="ForEachEndNode",
+                    override_parent_flow_name=parent_flow_name,
+                )
+            )
+            if isinstance(end_loop, CreateNodeResultSuccess):
+                # Create Loop between output and input to the start node.
+                GriptapeNodes.handle_request(
+                    CreateConnectionRequest(
+                        source_node_name=end_loop.node_name,
+                        source_parameter_name="Continue",
+                        target_node_name=node.name,
+                        target_parameter_name="exec_in",
+                    )
+                )
+                end_node = self.get_node_by_name(end_loop.node_name)
+                if isinstance(end_node, EndLoopNode):
+                    # create the connection bt them
+                    node.end_node = end_node
+                    end_node.start_node = node
 
         return CreateNodeResultSuccess(
             node_name=node.name, node_type=node.__class__.__name__, specific_library_name=request.specific_library_name

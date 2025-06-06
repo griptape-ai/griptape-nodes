@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState
+from griptape_nodes.exe_types.node_types import BaseNode, Connection, EndLoopNode, NodeResolutionState, StartLoopNode
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -99,8 +99,39 @@ class Connections:
         )
         return connection is None
 
+    def _get_connected_node_for_end_loop_control(
+        self, end_loop_node: EndLoopNode, control_parameter: Parameter
+    ) -> tuple[BaseNode, Parameter] | None:
+        """For an EndLoopNode and its control parameter, finds the connected node and parameter.
+
+        It checks both outgoing connections (where EndLoopNode's parameter is a source)
+        and incoming connections (where EndLoopNode's parameter is a target).
+        """
+        # Check if the EndLoopNode's control parameter is a source for an outgoing connection
+        if ParameterMode.OUTPUT in control_parameter.allowed_modes:
+            outgoing_connections_for_node = self.outgoing_index.get(end_loop_node.name, {})
+            connection_ids_as_source = outgoing_connections_for_node.get(control_parameter.name, [])
+            if connection_ids_as_source:
+                connection_id = connection_ids_as_source[0]
+                connection = self.connections.get(connection_id)
+                if connection:
+                    return connection.target_node, connection.target_parameter
+        elif ParameterMode.INPUT in control_parameter.allowed_modes:
+            # Check if the EndLoopNode's control parameter is a target for an incoming connection
+            incoming_connections_for_node = self.incoming_index.get(end_loop_node.name, {})
+            connection_ids_as_target = incoming_connections_for_node.get(control_parameter.name, [])
+            if connection_ids_as_target:
+                for connection_id in connection_ids_as_target:
+                    connection = self.connections.get(connection_id)
+                    if connection and isinstance(connection.source_node, StartLoopNode):
+                        return connection.source_node, connection.source_parameter
+        return None  # No connection found for this control parameter
+
     def get_connected_node(self, node: BaseNode, parameter: Parameter) -> tuple[BaseNode, Parameter] | None:
         # Check to see if we should be getting the next connection or the previous connection based on the parameter.
+        # Override this method for EndLoopNodes - these might have to go backwards or forwards.
+        if isinstance(node, EndLoopNode) and ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
+            return self._get_connected_node_for_end_loop_control(node, parameter)
         if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
             connections = self.outgoing_index
         else:

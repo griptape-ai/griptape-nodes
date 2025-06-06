@@ -8,7 +8,7 @@ from griptape.events import EventBus
 
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import NodeResolutionState, StartNode
+from griptape_nodes.exe_types.node_types import NodeResolutionState, StartLoopNode, StartNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import ControlFlowCancelledEvent
@@ -313,7 +313,7 @@ class ControlFlow:
                         has_control_connection = True
                         break
             # if there is a connection coming in, isn't a start.
-            if has_control_connection:
+            if has_control_connection and not isinstance(node, StartLoopNode):
                 continue
             # Does it have an outgoing connection?
             if node.name in cn_mgr.outgoing_index:
