@@ -7,8 +7,8 @@ from griptape_nodes.traits.options import Options
 operations = [
     ("add", "A + B"),
     ("subtract", "A - B"),
-    ("multiply", "A × B"),
-    ("divide", "A ÷ B"),
+    ("multiply", "A * B"),
+    ("divide", "A / B"),
     ("modulo", "A % B"),
     ("power", "A ^ B"),
     ("sqrt", "√A"),
@@ -99,7 +99,7 @@ class Math(BaseNode):
             "modulo": lambda x, y: x % y if y != 0 else float("inf"),
             "power": lambda x, y: x**y,
         }
-        return ops.get(operation, lambda x, y: 0.0)(a, b)
+        return ops.get(operation, lambda: 0.0)(a, b)
 
     def _handle_list_ops(self, operation: str, values: list[float]) -> float:
         import statistics
