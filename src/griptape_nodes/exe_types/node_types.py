@@ -660,13 +660,16 @@ class BaseNode(ABC):
         if isinstance(element, str):
             elem = self.root_ui_element.find_element_by_name(element)
             if elem is None:
-                raise ValueError(f"Element '{element}' not found")
+                msg = f"Element '{element}' not found"
+                raise ValueError(msg)
         elif isinstance(element, int):
             if element < 0 or element >= len(current_elements):
-                raise ValueError(f"Element index {element} out of range")
+                msg = f"Element index {element} out of range"
+                raise ValueError(msg)
             elem = current_elements[element]
         else:
-            raise TypeError("Element must be a string (name) or integer (index)")
+            msg = "Element must be a string (name) or integer (index)"
+            raise TypeError(msg)
 
         # Handle special position values
         if position == "first":
@@ -675,10 +678,12 @@ class BaseNode(ABC):
             target_pos = len(current_elements) - 1
         elif isinstance(position, int):
             if position < 0 or position >= len(current_elements):
-                raise ValueError(f"Target position {position} out of range")
+                msg = f"Target position {position} out of range"
+                raise ValueError(msg)
             target_pos = position
         else:
-            raise TypeError("Position must be 'first', 'last', or an integer index")
+            msg = "Position must be 'first', 'last', or an integer index"
+            raise TypeError(msg)
 
         # Remove element from current position
         self.root_ui_element.remove_child(elem)
@@ -715,13 +720,16 @@ class BaseNode(ABC):
             if isinstance(e, str):
                 elem = self.root_ui_element.find_element_by_name(e)
                 if elem is None:
-                    raise ValueError(f"Element '{e}' not found")
+                    msg = f"Element '{e}' not found"
+                    raise ValueError(msg)
                 return elem
             if isinstance(e, int):
                 if e < 0 or e >= len(current_elements):
-                    raise ValueError(f"Element index {e} out of range")
+                    msg = f"Element index {e} out of range"
+                    raise ValueError(msg)
                 return current_elements[e]
-            raise TypeError("Elements must be strings (names) or integers (indices)")
+            msg = "Elements must be strings (names) or integers (indices)"
+            raise TypeError(msg)
 
         e1 = get_elem(elem1)
         e2 = get_elem(elem2)
@@ -756,13 +764,16 @@ class BaseNode(ABC):
         if isinstance(element, str):
             elem = self.root_ui_element.find_element_by_name(element)
             if elem is None:
-                raise ValueError(f"Element '{element}' not found")
+                msg = f"Element '{element}' not found"
+                raise ValueError(msg)
         elif isinstance(element, int):
             if element < 0 or element >= len(current_elements):
-                raise ValueError(f"Element index {element} out of range")
+                msg = f"Element index {element} out of range"
+                raise ValueError(msg)
             elem = current_elements[element]
         else:
-            raise TypeError("Element must be a string (name) or integer (index)")
+            msg = "Element must be a string (name) or integer (index)"
+            raise TypeError(msg)
 
         # Get current position
         current_pos = self.root_ui_element._children.index(elem)
@@ -770,11 +781,13 @@ class BaseNode(ABC):
         # Calculate target position
         if up:
             if current_pos == 0:
-                raise ValueError("Element is already at the top")
+                msg = "Element is already at the top"
+                raise ValueError(msg)
             target_pos = current_pos - 1
         else:
             if current_pos == len(current_elements) - 1:
-                raise ValueError("Element is already at the bottom")
+                msg = "Element is already at the bottom"
+                raise ValueError(msg)
             target_pos = current_pos + 1
 
         # Swap with target position
