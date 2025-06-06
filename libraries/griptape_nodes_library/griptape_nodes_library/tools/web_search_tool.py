@@ -4,7 +4,6 @@ from griptape.drivers import DuckDuckGoWebSearchDriver, ExaWebSearchDriver, Goog
 from griptape.tools import WebSearchTool
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
-from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.tools.base_tool import BaseTool
 
@@ -68,6 +67,8 @@ class WebSearch(BaseTool):
     def check_api_keys(self) -> bool:
         search_engine = self.get_parameter_value("search_engine")
         api_keys = SEARCH_ENGINE_MAP[search_engine]["api_keys"]
+        if api_keys is None:
+            return True
         for api_key in api_keys:
             if not self.get_config_value(service=search_engine, value=api_key):
                 return False
@@ -112,6 +113,5 @@ class WebSearch(BaseTool):
         # Create the tool
         tool = WebSearchTool(off_prompt=off_prompt, web_search_driver=driver)
 
-        logger.info(f"WebSearchTool created: {tool}")
         # Set the output
         self.parameter_output_values["tool"] = tool

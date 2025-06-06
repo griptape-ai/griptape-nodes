@@ -105,6 +105,8 @@ class SearchWeb(BaseTask):
     def check_api_keys(self) -> bool:
         search_engine = self.get_parameter_value("search_engine")
         api_keys = SEARCH_ENGINE_MAP[search_engine]["api_keys"]
+        if api_keys is None:
+            return True
         for api_key in api_keys:
             if not self.get_config_value(service=search_engine, value=api_key):
                 return False
