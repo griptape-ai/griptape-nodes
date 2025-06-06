@@ -21,17 +21,17 @@ jobs:
       - name: uv Build
         run: uv build
       - name: uv Publish
-        run: uv publish --token ${{ secrets.PYPI_TOKEN }} 
-
+        run: uv publish --token ${{ secrets.PYPI_TOKEN }}
 
   push_to_registries:
-    name: Push Docker image to multiple registries
+    name: Push Docker images to multiple registries
     runs-on: ubuntu-latest
     permissions:
       packages: write
       contents: read
       attestations: write
       id-token: write
+
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
@@ -42,7 +42,7 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Log in to the Container registry
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -57,18 +57,64 @@ jobs:
             griptape/griptape-nodes
             ghcr.io/${{ github.repository }}
 
-      - name: Build and push Docker images
-        id: push
+      - name: Generate GPU tags
+        id: meta_gpu
+        run: |
+          # Read the comma‐separated list of CPU tags from metadata-action
+          CPU_TAGS="${{ steps.meta.outputs.tags }}"
+
+          # Split into array
+          IFS=',' read -r -a TAG_ARRAY <<< "$CPU_TAGS"
+
+          # Append "-gpu" to each tag name
+          GPU_TAGS=""
+          for full_ref in "${TAG_ARRAY[@]}"; do
+            # full_ref has form "repo:tag"
+            image_name="${full_ref%%:*}"
+            image_tag="${full_ref##*:}"
+            gpu_ref="${image_name}:${image_tag}-gpu"
+
+            if [ -z "$GPU_TAGS" ]; then
+              GPU_TAGS="$gpu_ref"
+            else
+              GPU_TAGS="$GPU_TAGS,$gpu_ref"
+            fi
+          done
+
+          echo "tags=$GPU_TAGS" >> $GITHUB_OUTPUT
+
+      - name: Build and push CPU image
+        id: push_cpu
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
+          build-args: |
+            BUILD_TYPE=cpu
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Generate artifact attestation
+      - name: Build and push GPU image
+        id: push_gpu
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            BUILD_TYPE=gpu
+          tags: ${{ steps.meta_gpu.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Generate CPU artifact attestation
         uses: actions/attest-build-provenance@v2
         with:
           subject-name: ghcr.io/${{ github.repository }}
-          subject-digest: ${{ steps.push.outputs.digest }}
+          subject-digest: ${{ steps.push_cpu.outputs.digest }}
+          push-to-registry: true
+
+      - name: Generate GPU artifact attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.push_gpu.outputs.digest }}
           push-to-registry: true
