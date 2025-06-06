@@ -23,10 +23,12 @@ class FileManager(BaseTool):
 
         self.api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
         self.bucket_list = self.get_bucket_list()
-        self.bucket_map = {name: id for name, id in self.bucket_list}
+        self.bucket_map = dict(self.bucket_list)
+        self.workdir = GriptapeNodes.ConfigManager().get_config_value("workspace_directory")
 
         self.update_tool_info(
-            value="The FileManager tool can be given to an agent to help it perform file operations.",
+            value=f"""The FileManager tool can be given to an agent to help it perform file operations and uses your Workspace Directory by default.\n
+({self.workdir}).""",
             title="FileManager Tool",
         )
 
@@ -38,7 +40,7 @@ class FileManager(BaseTool):
                 tooltip="The location of the files to be used by the tool.",
                 default_value=LOCATIONS[0],
                 traits={Options(choices=LOCATIONS)},
-                ui_options={"hidden": True},
+                ui_options={"hide": True},
             )
         )
         """
