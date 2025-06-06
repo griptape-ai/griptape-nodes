@@ -654,30 +654,23 @@ class BaseNode(ABC):
             # Move element to specific position
             node.move_element_to_position("element1", 2)
         """
-        current_elements = self.root_ui_element._children
+        # Get list of all element names
+        element_names = [child.name for child in self.root_ui_element._children]
 
-        # Get the element to move
-        if isinstance(element, str):
-            elem = self.root_ui_element.find_element_by_name(element)
-            if elem is None:
-                msg = f"Element '{element}' not found"
-                raise ValueError(msg)
-        elif isinstance(element, int):
-            if element < 0 or element >= len(current_elements):
-                msg = f"Element index {element} out of range"
-                raise ValueError(msg)
-            elem = current_elements[element]
-        else:
-            msg = "Element must be a string (name) or integer (index)"
-            raise TypeError(msg)
+        # Convert element index to name if needed
+        element = self._get_element_name(element, element_names)
+
+        # Create new order with moved element
+        new_order = element_names.copy()
+        idx = new_order.index(element)
 
         # Handle special position values
         if position == "first":
             target_pos = 0
         elif position == "last":
-            target_pos = len(current_elements) - 1
+            target_pos = len(new_order) - 1
         elif isinstance(position, int):
-            if position < 0 or position >= len(current_elements):
+            if position < 0 or position >= len(new_order):
                 msg = f"Target position {position} out of range"
                 raise ValueError(msg)
             target_pos = position
@@ -685,16 +678,32 @@ class BaseNode(ABC):
             msg = "Position must be 'first', 'last', or an integer index"
             raise TypeError(msg)
 
-        # Remove element from current position
-        self.root_ui_element.remove_child(elem)
+        # Remove element from current position and insert at target position
+        new_order.pop(idx)
+        new_order.insert(target_pos, element)
 
-        # Add element at new position
-        if target_pos == 0:
-            # Insert at beginning
-            self.root_ui_element._children.insert(0, elem)
-        else:
-            # Insert after the element at position-1
-            self.root_ui_element._children.insert(target_pos, elem)
+        # Use reorder_elements to apply the move
+        self.reorder_elements(list(new_order))
+
+    def _get_element_name(self, element: str | int, element_names: list[str]) -> str:
+        """Convert an element identifier (name or index) to its name.
+
+        Args:
+            element: Element identifier, either a name (str) or index (int)
+            element_names: List of all element names
+
+        Returns:
+            The element name
+
+        Raises:
+            ValueError: If index is out of range
+        """
+        if isinstance(element, int):
+            if element < 0 or element >= len(element_names):
+                msg = f"Element index {element} out of range"
+                raise ValueError(msg)
+            return element_names[element]
+        return element
 
     def swap_elements(self, elem1: str | int, elem2: str | int) -> None:
         """Swap the positions of two elements.
@@ -713,36 +722,21 @@ class BaseNode(ABC):
             # Mix names and indices
             node.swap_elements("element1", 2)
         """
-        current_elements = self.root_ui_element._children
+        # Get list of all element names
+        element_names = [child.name for child in self.root_ui_element._children]
 
-        # Get both elements
-        def get_elem(e: str | int) -> BaseNodeElement:
-            if isinstance(e, str):
-                elem = self.root_ui_element.find_element_by_name(e)
-                if elem is None:
-                    msg = f"Element '{e}' not found"
-                    raise ValueError(msg)
-                return elem
-            if isinstance(e, int):
-                if e < 0 or e >= len(current_elements):
-                    msg = f"Element index {e} out of range"
-                    raise ValueError(msg)
-                return current_elements[e]
-            msg = "Elements must be strings (names) or integers (indices)"
-            raise TypeError(msg)
+        # Convert indices to names if needed
+        elem1 = self._get_element_name(elem1, element_names)
+        elem2 = self._get_element_name(elem2, element_names)
 
-        e1 = get_elem(elem1)
-        e2 = get_elem(elem2)
+        # Create new order with swapped elements
+        new_order = element_names.copy()
+        idx1 = new_order.index(elem1)
+        idx2 = new_order.index(elem2)
+        new_order[idx1], new_order[idx2] = new_order[idx2], new_order[idx1]
 
-        # Get current positions
-        pos1 = self.root_ui_element._children.index(e1)
-        pos2 = self.root_ui_element._children.index(e2)
-
-        # Swap positions
-        self.root_ui_element._children[pos1], self.root_ui_element._children[pos2] = (
-            self.root_ui_element._children[pos2],
-            self.root_ui_element._children[pos1],
-        )
+        # Use reorder_elements to apply the swap
+        self.reorder_elements(list(new_order))
 
     def move_element_up_down(self, element: str | int, *, up: bool = True) -> None:
         """Move an element up or down one position in the element list.
@@ -758,43 +752,29 @@ class BaseNode(ABC):
             # Move element down by index
             node.move_element_up_down(0, up=False)
         """
-        current_elements = self.root_ui_element._children
+        # Get list of all element names
+        element_names = [child.name for child in self.root_ui_element._children]
 
-        # Get the element to move
-        if isinstance(element, str):
-            elem = self.root_ui_element.find_element_by_name(element)
-            if elem is None:
-                msg = f"Element '{element}' not found"
-                raise ValueError(msg)
-        elif isinstance(element, int):
-            if element < 0 or element >= len(current_elements):
-                msg = f"Element index {element} out of range"
-                raise ValueError(msg)
-            elem = current_elements[element]
-        else:
-            msg = "Element must be a string (name) or integer (index)"
-            raise TypeError(msg)
+        # Convert index to name if needed
+        element = self._get_element_name(element, element_names)
 
-        # Get current position
-        current_pos = self.root_ui_element._children.index(elem)
+        # Create new order with moved element
+        new_order = element_names.copy()
+        idx = new_order.index(element)
 
-        # Calculate target position
         if up:
-            if current_pos == 0:
+            if idx == 0:
                 msg = "Element is already at the top"
                 raise ValueError(msg)
-            target_pos = current_pos - 1
+            new_order[idx], new_order[idx - 1] = new_order[idx - 1], new_order[idx]
         else:
-            if current_pos == len(current_elements) - 1:
+            if idx == len(new_order) - 1:
                 msg = "Element is already at the bottom"
                 raise ValueError(msg)
-            target_pos = current_pos + 1
+            new_order[idx], new_order[idx + 1] = new_order[idx + 1], new_order[idx]
 
-        # Swap with target position
-        self.root_ui_element._children[current_pos], self.root_ui_element._children[target_pos] = (
-            self.root_ui_element._children[target_pos],
-            self.root_ui_element._children[current_pos],
-        )
+        # Use reorder_elements to apply the move
+        self.reorder_elements(list(new_order))
 
 
 class ControlNode(BaseNode):
