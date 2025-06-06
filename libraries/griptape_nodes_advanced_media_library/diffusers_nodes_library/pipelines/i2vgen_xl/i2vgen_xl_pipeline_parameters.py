@@ -16,7 +16,7 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     pil_to_image_artifact,
 )
 
-from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
+from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter

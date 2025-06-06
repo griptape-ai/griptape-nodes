@@ -5,7 +5,7 @@ from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes_library.utils.audio_utils import dict_to_audio_url_artifact  # type: ignore[reportMissingImports]
+from artifact_utils.audio_utils import dict_to_audio_url_artifact  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("diffusers_nodes_library")
 

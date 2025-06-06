@@ -177,7 +177,7 @@ class PiaPipelineParameters:
         pass
 
     def publish_output_video(self, output_video_path: str) -> None:
-        from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
+        from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
         
         output_video_artifact = VideoUrlArtifact(value=output_video_path)
         self._node.publish_parameter_value("output_video", output_video_artifact)

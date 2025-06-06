@@ -2,7 +2,7 @@ import logging
 from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
-from video_nodes_library.utils import frames_to_video_artifact  # type: ignore[reportMissingImports]
+from artifact_utils.video_utils import frames_to_video_artifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter

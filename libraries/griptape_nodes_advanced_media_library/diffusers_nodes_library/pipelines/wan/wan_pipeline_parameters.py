@@ -9,7 +9,7 @@ import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
 from PIL.Image import Image
 
-from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
+from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter

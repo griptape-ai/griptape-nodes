@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 import uuid
 
-from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
+from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter  # type: ignore[reportMissingImports]

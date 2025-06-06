@@ -5,7 +5,7 @@ import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
 from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
-from griptape_nodes_library.utils.video_utils import frames_to_video_artifact  # type: ignore[reportMissingImports]
+from artifact_utils.video_utils import frames_to_video_artifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter

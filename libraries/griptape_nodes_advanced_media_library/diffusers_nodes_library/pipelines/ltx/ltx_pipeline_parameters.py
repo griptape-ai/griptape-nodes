@@ -2,7 +2,7 @@ import logging
 from typing import Any
 
 import numpy as np
-from video_nodes_library.utils import numpy_video_to_video_artifact  # type: ignore[reportMissingImports]
+from artifact_utils.video_utils import numpy_video_to_video_artifact  # type: ignore[reportMissingImports]
 
 import diffusers  # type: ignore[reportMissingImports]
 
