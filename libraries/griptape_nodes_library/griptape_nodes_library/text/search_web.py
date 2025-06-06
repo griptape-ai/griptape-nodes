@@ -1,12 +1,15 @@
 from typing import Any
 
 from griptape.drivers import DuckDuckGoWebSearchDriver, ExaWebSearchDriver, GoogleWebSearchDriver
+from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
+from griptape.structures import Agent, Structure
+from griptape.tasks import PromptTask
 from griptape.tools import WebSearchTool
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.exe_types.node_types import AsyncResult
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.tools.base_tool import BaseTool
+from griptape_nodes_library.tasks.base_task import BaseTask
 
 SEARCH_ENGINE_MAP = {
     "DuckDuckGo": {
@@ -22,12 +25,36 @@ SEARCH_ENGINE_MAP = {
 SEARCH_ENGINES = list(SEARCH_ENGINE_MAP.keys())
 
 
-class WebSearch(BaseTool):
+class SearchWeb(BaseTask):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.update_tool_info(
-            value="The WebSearch tool can be given to an agent to help search the web.\n\nIt uses DuckDuckGo by default, but can be configured to use other search engines with their API keys.",
-            title="WebSearch Tool",
+        self.add_parameter(
+            Parameter(
+                name="prompt",
+                type="str",
+                default_value=None,
+                tooltip="Search the web for information",
+                ui_options={"placeholder_text": "Enter the search query."},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="summarize",
+                type="bool",
+                default_value=False,
+                tooltip="Summarize the results",
+                ui_options={"hide": False},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="model",
+                type="str",
+                default_value="gpt-4.1-mini",
+                tooltip="The model to use for the task.",
+                traits={Options(choices=["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano"])},
+                ui_options={"hide": True},
+            )
         )
         self.add_parameter(
             Parameter(
@@ -48,8 +75,18 @@ class WebSearch(BaseTool):
                 ui_options={"hide": True},
             )
         )
-        self.move_element_to_position("tool", position="last")
-        self.hide_parameter_by_name("off_prompt")
+
+        self.add_parameter(
+            Parameter(
+                name="output",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value="",
+                tooltip="",
+                ui_options={"multiline": True, "placeholder_text": "Output from the web search."},
+            )
+        )
 
     def _duck_duck_go_driver(self) -> DuckDuckGoWebSearchDriver:
         return DuckDuckGoWebSearchDriver()
@@ -95,8 +132,8 @@ class WebSearch(BaseTool):
             return [ValueError("Please ensure you have set appropriate API keys for the selected search engine.")]
         return None
 
-    def process(self) -> None:
-        off_prompt = self.get_parameter_value("off_prompt")
+    def process(self) -> AsyncResult[Structure]:
+        prompt = self.get_parameter_value("prompt")
         search_engine = self.get_parameter_value("search_engine")
 
         if search_engine == "DuckDuckGo":
@@ -110,8 +147,18 @@ class WebSearch(BaseTool):
             raise ValueError(msg)
 
         # Create the tool
-        tool = WebSearchTool(off_prompt=off_prompt, web_search_driver=driver)
+        tool = WebSearchTool(web_search_driver=driver)
+        task = PromptTask(
+            tools=[tool],
+            reflect_on_tool_use=self.get_parameter_value("summarize"),
+            prompt_driver=GriptapeCloudPromptDriver(model=self.get_parameter_value("model"), stream=True),
+        )
 
-        logger.info(f"WebSearchTool created: {tool}")
-        # Set the output
-        self.parameter_output_values["tool"] = tool
+        agent = Agent(tasks=[task])
+        # Run the task
+        user_input = f"Search the web for {prompt}"
+        if prompt and not prompt.isspace():
+            # Run the agent asynchronously
+            yield lambda: self._process(agent, user_input)
+
+        self.parameter_output_values["output"] = str(agent.output)

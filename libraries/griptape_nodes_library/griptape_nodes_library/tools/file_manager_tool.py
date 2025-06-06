@@ -54,7 +54,7 @@ class FileManager(BaseTool):
                  ui_options={"hidden": True},
              )
          )
-        self.swap_parameters("tool", "bucket_id")
+        self.swap_elements("tool", "bucket_id")
         """
         self.hide_parameter_by_name("off_prompt")
 

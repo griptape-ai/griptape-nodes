@@ -459,15 +459,6 @@
       }
     },
     {
-      "class_name": "DuckDuckGo",
-      "file_path": "griptape_nodes_library/config/web_search/web_search_drivers.py",
-      "metadata": {
-        "category": "tools/config",
-        "description": "WebSearch driver for DuckDuckGo",
-        "display_name": "Duck Duck Go"
-      }
-    },
-    {
       "class_name": "GenerateImage",
       "file_path": "griptape_nodes_library/image/create_image.py",
       "metadata": {
@@ -699,6 +690,15 @@
         "category": "text",
         "description": "Scrape the web for information",
         "display_name": "Scrape Web"
+      }
+    },
+    {
+      "class_name": "SearchWeb",
+      "file_path": "griptape_nodes_library/text/search_web.py",
+      "metadata": {
+        "category": "text",
+        "description": "Search the web for information",
+        "display_name": "Search Web"
       }
     },
     {
