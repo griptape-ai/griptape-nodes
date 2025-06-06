@@ -107,7 +107,7 @@ class Askulator(BaseTask):
                     "If given a prompt you don't have a number for, make something up that seems appropriate. Ex: Gajillion = 1,000,000,0000,0000"
                 ),
                 Rule(
-                    "If there is unsufficient information to answer the question, like a missing variable or something, use some likely number and explain why in your reasoning."
+                    "If there is insufficient information to answer the question, like a missing variable or something, use some likely number and explain why in your reasoning."
                 ),
                 Rule("You try your best to answer the question, your reasoning can be creative an interesting."),
                 Rule("Feel free to use newlines in your reasoning to make it more readable."),
