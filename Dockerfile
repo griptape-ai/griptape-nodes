@@ -41,7 +41,7 @@ RUN chmod +x /entrypoint.sh
 
 # Switch to non-root user and set working directory
 USER appuser
-WORKDIR /app
+WORKDIR /home/appuser
 
 # Ensure XDG directories and Python user base point to the user's home
 ENV HOME=/home/appuser
