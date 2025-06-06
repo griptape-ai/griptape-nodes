@@ -233,21 +233,21 @@
       }
     },
     {
-      "class_name": "TranscribeAudio",
-      "file_path": "griptape_nodes_library/audio/transcribe_audio.py",
-      "metadata": {
-        "category": "audio",
-        "description": "Transcribe audio files into text.\nRequires an OpenAI API key.",
-        "display_name": "Transcribe Audio"
-      }
-    },
-    {
       "class_name": "Microphone",
       "file_path": "griptape_nodes_library/audio/microphone.py",
       "metadata": {
         "category": "audio",
         "description": "Can record audio from your microphone.",
         "display_name": "Microphone"
+      }
+    },
+    {
+      "class_name": "TranscribeAudio",
+      "file_path": "griptape_nodes_library/audio/transcribe_audio.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Transcribe audio files into text.\nRequires an OpenAI API key.",
+        "display_name": "Transcribe Audio"
       }
     },
     {
@@ -459,21 +459,21 @@
       }
     },
     {
-      "class_name": "GenerateImage",
-      "file_path": "griptape_nodes_library/image/create_image.py",
-      "metadata": {
-        "category": "image",
-        "description": "Generates an image using Griptape Cloud, or other provided image generation models",
-        "display_name": "Generate Image"
-      }
-    },
-    {
       "class_name": "DescribeImage",
       "file_path": "griptape_nodes_library/image/describe_image.py",
       "metadata": {
         "category": "image",
         "description": "Can be used to describe an image",
         "display_name": "Describe Image"
+      }
+    },
+    {
+      "class_name": "CompareImages",
+      "file_path": "griptape_nodes_library/image/compare_images.py",
+      "metadata": {
+        "category": "image",
+        "description": "Can be used to compare two images",
+        "display_name": "Compare Images"
       }
     },
     {
@@ -486,12 +486,12 @@
       }
     },
     {
-      "class_name": "CompareImages",
-      "file_path": "griptape_nodes_library/image/compare_images.py",
+      "class_name": "GenerateImage",
+      "file_path": "griptape_nodes_library/image/create_image.py",
       "metadata": {
         "category": "image",
-        "description": "Can be used to compare two images",
-        "display_name": "Compare Images"
+        "description": "Generates an image using Griptape Cloud, or other provided image generation models",
+        "display_name": "Generate Image"
       }
     },
     {
@@ -513,21 +513,21 @@
       }
     },
     {
-      "class_name": "Webcam",
-      "file_path": "griptape_nodes_library/image/webcam.py",
-      "metadata": {
-        "category": "image",
-        "description": "Capture an image using the device's camera",
-        "display_name": "Webcam"
-      }
-    },
-    {
       "class_name": "SaveImage",
       "file_path": "griptape_nodes_library/image/save_image.py",
       "metadata": {
         "category": "image",
         "description": "Save an image to a file",
         "display_name": "Save Image"
+      }
+    },
+    {
+      "class_name": "Webcam",
+      "file_path": "griptape_nodes_library/image/webcam.py",
+      "metadata": {
+        "category": "image",
+        "description": "Capture an image using the device's camera",
+        "display_name": "Webcam"
       }
     },
     {
@@ -546,15 +546,6 @@
         "category": "number",
         "description": "Askulator was once a humble desk calculator in a university math lab. One day, lightning struck the building during a particularly spicy differential equations final. Now imbued with the power of language... and attitude... it nodes among us. Solving math, interpreting riddles, and offering just a hint of sarcasm.",
         "display_name": "Askulator"
-      }
-    },
-    {
-      "class_name": "Math",
-      "file_path": "griptape_nodes_library/number/math.py",
-      "metadata": {
-        "category": "number",
-        "description": "Perform mathematical operations on numbers",
-        "display_name": "Math"
       }
     },
     {
@@ -591,6 +582,15 @@
         "category": "number",
         "description": "Display an integer value",
         "display_name": "Display Integer"
+      }
+    },
+    {
+      "class_name": "Math",
+      "file_path": "griptape_nodes_library/number/math.py",
+      "metadata": {
+        "category": "number",
+        "description": "Perform mathematical operations on numbers",
+        "display_name": "Math"
       }
     },
     {
@@ -693,21 +693,21 @@
       }
     },
     {
-      "class_name": "SearchWeb",
-      "file_path": "griptape_nodes_library/text/search_web.py",
-      "metadata": {
-        "category": "text",
-        "description": "Search the web for information",
-        "display_name": "Search Web"
-      }
-    },
-    {
       "class_name": "SearchReplaceText",
       "file_path": "griptape_nodes_library/text/search_replace_text.py",
       "metadata": {
         "category": "text",
         "description": "Perform search and replace operations on text content with support for regex and case sensitivity",
         "display_name": "Search Replace Text"
+      }
+    },
+    {
+      "class_name": "SearchWeb",
+      "file_path": "griptape_nodes_library/text/search_web.py",
+      "metadata": {
+        "category": "text",
+        "description": "Search the web for information",
+        "display_name": "Search Web"
       }
     },
     {

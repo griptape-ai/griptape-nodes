@@ -127,14 +127,18 @@ nav:
         - Ruleset: nodes/rules/create_ruleset.md
         - Ruleset List: nodes/rules/ruleset_list.md
     - Text:
+        - Date and Time: nodes/text/date_and_time.md
         - Display Text: nodes/text/display_text.md
+        - Evaluate Text Result: nodes/text/evaluate_text_result.md
         - Load Text: nodes/text/load_text.md
         - Merge Texts: nodes/text/merge_texts.md
         - Random Text: nodes/text/random_text.md
         - Save Text: nodes/text/save_text.md
+        - Scrape Web: nodes/text/scrape_web.md
         - Search Replace Text: nodes/text/search_replace_text.md
+        - Search Web: nodes/text/search_web.md
+        - Summarize Text: nodes/text/summarize_text.md
         - Text Input: nodes/text/create_multiline_text.md
-        - Evaluate Text Result: nodes/text/evaluate_text_result.md
     - Tools:
         - Calculator: nodes/tools/calculator_tool.md
         - Date Time: nodes/tools/date_time_tool.md
