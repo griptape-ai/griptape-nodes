@@ -6,7 +6,7 @@
 #────────────────────────────
 ARG BUILD_TYPE=cpu
 ARG BASE_IMAGE_CPU=python:3.12-slim
-ARG BASE_IMAGE_GPU=nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
+ARG BASE_IMAGE_GPU=nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
 
 #────────────────────────────
 # 2) CPU builder stage
@@ -50,6 +50,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # 3) GPU builder stage
 #────────────────────────────
 FROM ${BASE_IMAGE_GPU} AS builder_gpu
+
+# Force noninteractive front‐end and set a dummy TZ so tzdata won’t prompt
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
 
 # 3.1) Install prerequisites and add Deadsnakes for Python 3.12
 RUN apt-get update \
