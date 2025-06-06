@@ -15,6 +15,7 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from importlib import resources
+from inspect import getmodule, isclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, TypeVar, cast
 from urllib.parse import urljoin
@@ -1132,6 +1133,9 @@ class WorkflowManager:
 
         import_recorder.add_import("pickle")
 
+        # Get the list of manually-curated, globally available modules
+        global_modules_set = {"builtins", "__main__"}
+
         # Serialize the unique values as pickled strings.
         unique_parameter_dict = {}
         for uuid, unique_parameter_value in unique_parameter_uuid_to_values.items():
@@ -1139,6 +1143,13 @@ class WorkflowManager:
             # Encode the bytes as a string using latin1
             unique_parameter_byte_str = unique_parameter_bytes.decode("latin1")
             unique_parameter_dict[uuid] = unique_parameter_byte_str
+
+            # Add import for the unique parameter value's class/module. But not globals.
+            value_type = type(unique_parameter_value)
+            if isclass(value_type):
+                module = getmodule(value_type)
+                if module and module.__name__ not in global_modules_set:
+                    import_recorder.add_from_import(module.__name__, value_type.__name__)
 
         # Generate a comment explaining what we're doing:
         comment_text = (
@@ -1696,10 +1707,9 @@ class WorkflowManager:
         for node in nodes:
             for param in node.parameters:
                 # Expose only the parameters that are relevant for workflow input and output.
-                # Those parameters are not of type CONTROL_TYPE, and are builtin types.
-                if param.type != ParameterTypeBuiltin.CONTROL_TYPE.value and param.type in [
-                    t.value for t in ParameterTypeBuiltin
-                ]:
+                # Excluding list types as the individual parameters are exposed in the workflow shape.
+                # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1090): This is a temporary solution until we know how to handle container types.
+                if param.type != ParameterTypeBuiltin.CONTROL_TYPE.value and not param.type.startswith("list"):
                     if node.name in workflow_shape[workflow_shape_type]:
                         cast("dict", workflow_shape[workflow_shape_type][node.name])[param.name] = (
                             self._convert_parameter_to_minimal_dict(param)

@@ -69,7 +69,7 @@ After typing and running `griptape-nodes` or `gtn` in the terminal *for the firs
 
 ## 3. Configuration
 
-**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape Nodes engine will save [project files](./reference/glossary.md#project-files), and [generated assets](./reference/glossary.md#generated-assets). It will also contain a [.env](./reference/glossary.md#.env) for your Griptape Nodes [secret keys](./reference/glossary.md#secret-keys).
+**First**, you'll be prompted to set your *workspace directory*. Your workspace directory is where the Griptape Nodes engine will save [project files](./glossary.md#project-files), and [generated assets](./glossary.md#generated-assets). It will also contain a [.env](./glossary.md#.env) for your Griptape Nodes [secret keys](./glossary.md#secret-keys).
 
 ```
 ╭───────────────────────────────────────────────────────────────────╮
@@ -118,7 +118,7 @@ Griptape API Key (YOUR-KEY-HERE):
 
 ## 4. Start Your Engine
 
-Your installation is now complete and your ready to proceed to creating your first Workflow. Run `griptape-nodes` or `gtn` and return to your browser. Your browser tab at [https://nodes.griptape.ai](https://nodes.griptape.ai) will be updated to an untitled workflow in Griptape Nodes!
+Your installation is now complete and you're ready to proceed to creating your first Workflow or trying out one of the sample workflows. To get started, return to your terminal and run `griptape-nodes` or `gtn`, then return to your browser. Your browser tab at [https://nodes.griptape.ai](https://nodes.griptape.ai) will update to show *Create from scratch*, allowing you to start from a blank canvas, together with several sample Griptape Nodes workflows that you can experiment with!
 
 ![A Blank Griptape_nodes_ editor](assets/img/getting_started/getting_started-blank_editor.png)
 

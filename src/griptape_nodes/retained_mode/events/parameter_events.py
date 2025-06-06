@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import Any, NamedTuple
 
 from pydantic import Field
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     RequestPayload,
@@ -15,9 +15,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-
-if TYPE_CHECKING:
-    from griptape_nodes.exe_types.node_types import BaseNode
 
 
 @dataclass
@@ -299,47 +296,5 @@ class GetNodeElementDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 # This is the same as getparameterelementdetailsrequest, might have to modify it a bit.
 @dataclass
 @PayloadRegistry.register
-class AlterParameterEvent(ExecutionPayload):
-    node_name: str
-    element_id: str
-    parameter_name: str
-    type: str
-    input_types: list[str]
-    output_type: str
-    default_value: Any | None
-    tooltip: str | list[dict]
-    tooltip_as_input: str | list[dict] | None
-    tooltip_as_property: str | list[dict] | None
-    tooltip_as_output: str | list[dict] | None
-    mode_allowed_input: bool
-    mode_allowed_property: bool
-    mode_allowed_output: bool
-    is_user_defined: bool
-    ui_options: dict | None
-    value: Any
-
-    # TODO: Get known_attrs dynamically, instead of setting manually. https://github.com/griptape-ai/griptape-nodes/issues/1039
-    @classmethod
-    def create(cls, node: BaseNode, parameter: Parameter) -> AlterParameterEvent:
-        known_attrs = {
-            "node_name": node.name,
-            "element_id": parameter.element_id,
-            "parameter_name": parameter.name,
-            "type": parameter.type,
-            "input_types": parameter.input_types,
-            "output_type": parameter.output_type,
-            "default_value": parameter.default_value,
-            "tooltip": parameter.tooltip,
-            "tooltip_as_input": parameter.tooltip_as_input,
-            "tooltip_as_property": parameter.tooltip_as_property,
-            "tooltip_as_output": parameter.tooltip_as_output,
-            "mode_allowed_input": ParameterMode.INPUT in parameter.allowed_modes,
-            "mode_allowed_property": ParameterMode.PROPERTY in parameter.allowed_modes,
-            "mode_allowed_output": ParameterMode.OUTPUT in parameter.allowed_modes,
-            "is_user_defined": parameter.user_defined,
-            "ui_options": parameter.ui_options,
-            "value": node.get_parameter_value(parameter.name),
-        }
-        # Create instance with known attributes and extra_attrs dict
-        instance = cls(**known_attrs)
-        return instance
+class AlterElementEvent(ExecutionPayload):
+    element_details: dict[str, Any]

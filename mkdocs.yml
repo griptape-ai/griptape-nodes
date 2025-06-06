@@ -67,14 +67,16 @@ nav:
       - Overview: index.md
       - Getting Started:
           - Installation: installation.md
-          - New Users Start here:
-              - Lesson Overview: ftue/FTUE.md
+          - Beginner's Guide:
+              - Tutorial Overview: ftue/FTUE.md
               - 1. Getting Started: ftue/00_tour/FTUE_00_tour.md
               - 2. Prompt an Image: ftue/01_prompt_an_image/FTUE_01_prompt_an_image.md
               - 3. Coordinating Agents: ftue/02_coordinating_agents/FTUE_02_coordinating_agents.md
               - 4. Compare Prompts: ftue/03_compare_prompts/FTUE_03_compare_prompts.md
               - 5. Build a Photography Team: ftue/04_photography_team/FTUE_04_photography_team.md
       - Engine Configuration: configuration.md
+      - Command Line Interface: command_line_interface.md
+      - Scripting: retained_mode.md
   - How-To:
       - Making Custom Nodes: how_to/making_custom_nodes.md
       - Making Custom Scripts: how_to/making_custom_scripts.md
@@ -84,67 +86,68 @@ nav:
               - Grok: how_to/keys/grok.md
           - Installs:
               - Hugging Face: how_to/installs/hugging_face.md
-
   - FAQ: faq.md
-  - Reference:
-      - Glossary: reference/glossary.md
-      - Scripting: reference/retained_mode.md
-      - Command Line Interface: reference/command_line_interface.md
-      - Nodes:
-          - Overview: nodes/overview.md
-          - Misc:
-              - Note: nodes/utils/note.md
-          - Execution:
-              - Reroute: nodes/execution/reroute.md
-          - Agents:
-              - Agent: nodes/agents/create_agent.md
-          - Configs:
-              - Anthropic Prompt: nodes/config/anthropic_prompt_driver.md
-              - Cohere Prompt: nodes/config/cohere_prompt_driver.md
-              - Griptape Cloud Image: nodes/config/griptape_cloud_image_driver.md
-              - Griptape Cloud Prompt: nodes/config/griptape_cloud_prompt_driver.md
-              - Grok Image: nodes/config/grok_image_driver.md
-              - Grok Prompt: nodes/config/grok_prompt_driver.md
-              - OpenAI Image: nodes/config/openai_image_driver.md
-              - OpenAI Prompt: nodes/config/openai_prompt_driver.md
-          - Dict:
-              - Dict: nodes/dict/create_dict.md
-              - Display Dict: nodes/dict/display_dict.md
-              - Key Value Pair: nodes/dict/key_value_pair.md
-              - Merge Key Value Pairs: nodes/dict/merge_key_value_pair.md
-          - Image:
-              - Load Image: nodes/image/load_image.md
-              - Generate Image: nodes/image/create_image.md
-              - Describe Image: nodes/image/describe_image.md
-          - Number:
-              - Float Input: nodes/number/create_float.md
-              - Int Input: nodes/number/create_int.md
-              - Display Float: nodes/number/display_float.md
-              - Display Int: nodes/number/display_int.md
-          - Rules:
-              - Ruleset: nodes/rules/create_ruleset.md
-              - Ruleset List: nodes/rules/ruleset_list.md
-          - Text:
-              - Display Text: nodes/text/display_text.md
-              - Load Text: nodes/text/load_text.md
-              - Merge Texts: nodes/text/merge_texts.md
-              - Random Text: nodes/text/random_text.md
-              - Save Text: nodes/text/save_text.md
-              - Search Replace Text: nodes/text/search_replace_text.md
-              - Text Input: nodes/text/create_multiline_text.md
-          - Tools:
-              - Calculator: nodes/tools/calculator_tool.md
-              - Date Time: nodes/tools/date_time_tool.md
-              - Info Retriever: nodes/tools/rag_tool.md
-              - Tool List: nodes/tools/tool_list.md
-              - Web Scraper: nodes/tools/web_scraper_tool.md
-          - Advanced Media Library:
-              - Flux Pipeline: nodes/advanced_media_library/flux_pipeline.md
-              - Pillow Resize: nodes/advanced_media_library/pillow_resize.md
-              - Tiling Flux img2img: nodes/advanced_media_library/tiling_flux_img_2_img_pipeline.md
-              - Tiling Spandrel Pipeline: nodes/advanced_media_library/tiling_spandrel_pipeline.md
-          - Workflows:
-              - Start Flow: nodes/execution/start_flow.md
-              - End Flow: nodes/execution/end_flow.md
-          - 3D:
-              - Load GLTF: nodes/three_d/load_gltf.md
+  - Nodes Reference:
+    - Overview: nodes/overview.md
+    - Misc:
+        - Note: nodes/utils/note.md
+    - Execution:
+        - Reroute: nodes/execution/reroute.md
+    - Agents:
+        - Agent: nodes/agents/create_agent.md
+    - Audio:
+        - Load Audio: nodes/audio/load_audio.md
+        - Microphone: nodes/audio/microphone.md
+        - Transcribe Audio: nodes/audio/transcribe_audio.md
+    - Configs:
+        - Anthropic Prompt: nodes/config/anthropic_prompt_driver.md
+        - Cohere Prompt: nodes/config/cohere_prompt_driver.md
+        - Griptape Cloud Image: nodes/config/griptape_cloud_image_driver.md
+        - Griptape Cloud Prompt: nodes/config/griptape_cloud_prompt_driver.md
+        - Grok Image: nodes/config/grok_image_driver.md
+        - Grok Prompt: nodes/config/grok_prompt_driver.md
+        - Groq Prompt: nodes/config/groq_prompt_driver.md
+        - OpenAI Image: nodes/config/openai_image_driver.md
+        - OpenAI Prompt: nodes/config/openai_prompt_driver.md
+    - Dict:
+        - Dict: nodes/dict/create_dict.md
+        - Display Dict: nodes/dict/display_dict.md
+        - Key Value Pair: nodes/dict/key_value_pair.md
+        - Merge Key Value Pairs: nodes/dict/merge_key_value_pair.md
+    - Image:
+        - Load Image: nodes/image/load_image.md
+        - Generate Image: nodes/image/create_image.md
+        - Describe Image: nodes/image/describe_image.md
+    - Number:
+        - Float Input: nodes/number/create_float.md
+        - Int Input: nodes/number/create_int.md
+        - Display Float: nodes/number/display_float.md
+        - Display Int: nodes/number/display_int.md
+    - Rules:
+        - Ruleset: nodes/rules/create_ruleset.md
+        - Ruleset List: nodes/rules/ruleset_list.md
+    - Text:
+        - Display Text: nodes/text/display_text.md
+        - Load Text: nodes/text/load_text.md
+        - Merge Texts: nodes/text/merge_texts.md
+        - Random Text: nodes/text/random_text.md
+        - Save Text: nodes/text/save_text.md
+        - Search Replace Text: nodes/text/search_replace_text.md
+        - Text Input: nodes/text/create_multiline_text.md
+    - Tools:
+        - Calculator: nodes/tools/calculator_tool.md
+        - Date Time: nodes/tools/date_time_tool.md
+        - Info Retriever: nodes/tools/rag_tool.md
+        - Tool List: nodes/tools/tool_list.md
+        - Web Scraper: nodes/tools/web_scraper_tool.md
+    - Advanced Media Library:
+        - Flux Pipeline: nodes/advanced_media_library/flux_pipeline.md
+        - Pillow Resize: nodes/advanced_media_library/pillow_resize.md
+        - Tiling Flux img2img: nodes/advanced_media_library/tiling_flux_img_2_img_pipeline.md
+        - Tiling Spandrel Pipeline: nodes/advanced_media_library/tiling_spandrel_pipeline.md
+    - Workflows:
+        - Start Flow: nodes/execution/start_flow.md
+        - End Flow: nodes/execution/end_flow.md
+    - 3D:
+        - Load GLTF: nodes/three_d/load_gltf.md
+  - Glossary: glossary.md

@@ -177,14 +177,9 @@ class LibraryRegistry(metaclass=SingletonMeta):
         return libraries
 
     @classmethod
-    def create_node(
-        cls,
-        node_type: str,
-        name: str,
-        metadata: dict[Any, Any] | None = None,
-        specific_library_name: str | None = None,
-    ) -> BaseNode:
+    def get_library_for_node_type(cls, node_type: str, specific_library_name: str | None = None) -> Library:
         instance = cls()
+
         if specific_library_name is None:
             # Find its library.
             libraries_with_node_type = LibraryRegistry.get_libraries_with_node_type(node_type)
@@ -200,6 +195,22 @@ class LibraryRegistry(metaclass=SingletonMeta):
         else:
             # See if the library exists.
             dest_library = instance.get_library(specific_library_name)
+
+        return dest_library
+
+    @classmethod
+    def create_node(
+        cls,
+        node_type: str,
+        name: str,
+        metadata: dict[Any, Any] | None = None,
+        specific_library_name: str | None = None,
+    ) -> BaseNode:
+        instance = cls()
+
+        dest_library = instance.get_library_for_node_type(
+            node_type=node_type, specific_library_name=specific_library_name
+        )
 
         # Ask the library to create the node.
         return dest_library.create_node(node_type=node_type, name=name, metadata=metadata)
