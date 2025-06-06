@@ -608,12 +608,14 @@ class BaseNode(ABC):
                 # Find element by name
                 element = self.root_ui_element.find_element_by_name(item)
                 if element is None:
-                    raise ValueError(f"Element '{item}' not found")
+                    msg = f"Element '{item}' not found"
+                    raise ValueError(msg)
                 ordered_elements.append(element)
             elif isinstance(item, int):
                 # Get element by index
                 if item < 0 or item >= len(current_elements):
-                    raise ValueError(f"Element index {item} out of range")
+                    msg = f"Element index {item} out of range"
+                    raise ValueError(msg)
                 ordered_elements.append(current_elements[item])
             else:
                 raise TypeError("Element order must contain strings (names) or integers (indices)")

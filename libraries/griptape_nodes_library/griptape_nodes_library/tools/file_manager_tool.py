@@ -50,7 +50,7 @@ class FileManager(BaseTool):
                  type="str",
                  tooltip="The location of the files to be used by the tool.",
                  default_value=self.bucket_list[0][0] if self.bucket_list else "",
-                 traits={Options(choices=[name for name, _ in self.bucket_list])},  
+                 traits={Options(choices=[name for name, _ in self.bucket_list])},
                  ui_options={"hidden": True},
              )
          )
