@@ -219,6 +219,534 @@
         "description": "Nodes for executing Workflows",
         "icon": "Workflow"
       }
+    },
+    {
+      "3d/shap_e": {
+        "color": "border-indigo-500",
+        "title": "3D/Shap-E",
+        "description": "3D object generation with Shap-E",
+        "icon": "Cube"
+      }
+    },
+    {
+      "audio/audioldm": {
+        "color": "border-sky-500",
+        "title": "Audio/AudioLDM",
+        "description": "Audio generation with AudioLDM",
+        "icon": "SpeakerWave"
+      }
+    },
+    {
+      "audio/audioldm2": {
+        "color": "border-sky-500",
+        "title": "Audio/AudioLDM2",
+        "description": "Audio generation with AudioLDM 2",
+        "icon": "SpeakerWave"
+      }
+    },
+    {
+      "audio/musicldm": {
+        "color": "border-sky-500",
+        "title": "Audio/MusicLDM",
+        "description": "Music generation with MusicLDM",
+        "icon": "SpeakerWave"
+      }
+    },
+    {
+      "audio/stable_audio": {
+        "color": "border-sky-500",
+        "title": "Audio/Stable Audio",
+        "description": "Audio generation with Stable Audio",
+        "icon": "SpeakerWave"
+      }
+    },
+    {
+      "image/amused": {
+        "color": "border-purple-500",
+        "title": "Image/aMUSEd",
+        "description": "Image generation with aMUSEd",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/aura_flow": {
+        "color": "border-purple-500",
+        "title": "Image/AuraFlow",
+        "description": "Image generation with AuraFlow",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/blip_diffusion": {
+        "color": "border-purple-500",
+        "title": "Image/BLIP-Diffusion",
+        "description": "Image generation with BLIP-Diffusion",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/cogview3": {
+        "color": "border-purple-500",
+        "title": "Image/CogView3",
+        "description": "Image generation with CogView3Plus",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/cogview4": {
+        "color": "border-purple-500",
+        "title": "Image/CogView4",
+        "description": "Image generation with CogView4",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/consistency_models": {
+        "color": "border-purple-500",
+        "title": "Image/Consistency Models",
+        "description": "Fast image generation with Consistency Models",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/controlnet": {
+        "color": "border-purple-500",
+        "title": "Image/ControlNet",
+        "description": "Controlled image generation with ControlNet",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/controlnet_hunyuandit": {
+        "color": "border-purple-500",
+        "title": "Image/ControlNet HunyuanDiT",
+        "description": "ControlNet with HunyuanDiT",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/controlnet_sd3": {
+        "color": "border-purple-500",
+        "title": "Image/ControlNet SD3",
+        "description": "ControlNet with Stable Diffusion 3",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/controlnet_xs": {
+        "color": "border-purple-500",
+        "title": "Image/ControlNet XS",
+        "description": "Efficient ControlNet-XS models",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/deprecated": {
+        "color": "border-gray-500",
+        "title": "Image/Deprecated",
+        "description": "Deprecated image generation pipelines",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/dit": {
+        "color": "border-purple-500",
+        "title": "Image/DiT",
+        "description": "Diffusion Transformer models",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/hidream_image": {
+        "color": "border-purple-500",
+        "title": "Image/HiDream",
+        "description": "Image generation with HiDream",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/hunyuandit": {
+        "color": "border-purple-500",
+        "title": "Image/HunyuanDiT",
+        "description": "Image generation with HunyuanDiT",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/kandinsky": {
+        "color": "border-purple-500",
+        "title": "Image/Kandinsky",
+        "description": "Image generation with Kandinsky",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/kandinsky2_2": {
+        "color": "border-purple-500",
+        "title": "Image/Kandinsky 2.2",
+        "description": "Image generation with Kandinsky 2.2",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/kandinsky3": {
+        "color": "border-purple-500",
+        "title": "Image/Kandinsky 3",
+        "description": "Image generation with Kandinsky 3",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/kolors": {
+        "color": "border-purple-500",
+        "title": "Image/Kolors",
+        "description": "Image generation with Kolors",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/latent_consistency_models": {
+        "color": "border-purple-500",
+        "title": "Image/Latent Consistency Models",
+        "description": "Fast generation with Latent Consistency Models",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/latent_diffusion": {
+        "color": "border-purple-500",
+        "title": "Image/Latent Diffusion",
+        "description": "Image generation with Latent Diffusion",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/ledits_pp": {
+        "color": "border-purple-500",
+        "title": "Image/LEDITS++",
+        "description": "Image editing with LEDITS++",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/lumina": {
+        "color": "border-purple-500",
+        "title": "Image/Lumina",
+        "description": "Image generation with Lumina",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/lumina2": {
+        "color": "border-purple-500",
+        "title": "Image/Lumina2",
+        "description": "Image generation with Lumina2",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/marigold": {
+        "color": "border-purple-500",
+        "title": "Image/Marigold",
+        "description": "Depth map generation with Marigold",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/omnigen": {
+        "color": "border-purple-500",
+        "title": "Image/OmniGen",
+        "description": "Multi-modal generation with OmniGen",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/pag": {
+        "color": "border-purple-500",
+        "title": "Image/PAG",
+        "description": "Perturbed-Attention Guidance",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/paint_by_example": {
+        "color": "border-purple-500",
+        "title": "Image/Paint by Example",
+        "description": "Example-guided image inpainting",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/pixart_alpha": {
+        "color": "border-purple-500",
+        "title": "Image/PixArt-α",
+        "description": "High-quality generation with PixArt-α",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/sana": {
+        "color": "border-purple-500",
+        "title": "Image/SANA",
+        "description": "Efficient high-resolution generation with SANA",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/semantic_stable_diffusion": {
+        "color": "border-purple-500",
+        "title": "Image/Semantic Stable Diffusion",
+        "description": "Semantic-guided image editing",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_cascade": {
+        "color": "border-purple-500",
+        "title": "Image/Stable Cascade",
+        "description": "High-quality generation with Stable Cascade",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion": {
+        "color": "border-purple-500",
+        "title": "Image/Stable Diffusion",
+        "description": "Image generation with Stable Diffusion",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_3": {
+        "color": "border-purple-500",
+        "title": "Image/Stable Diffusion 3",
+        "description": "Image generation with Stable Diffusion 3",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_attend_and_excite": {
+        "color": "border-purple-500",
+        "title": "Image/SD Attend and Excite",
+        "description": "Enhanced attention control",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_diffedit": {
+        "color": "border-purple-500",
+        "title": "Image/SD DiffEdit",
+        "description": "Image editing with DiffEdit",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_gligen": {
+        "color": "border-purple-500",
+        "title": "Image/SD GLIGEN",
+        "description": "Grounded generation with GLIGEN",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_k_diffusion": {
+        "color": "border-purple-500",
+        "title": "Image/SD K-Diffusion",
+        "description": "K-Diffusion samplers",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_ldm3d": {
+        "color": "border-purple-500",
+        "title": "Image/SD LDM3D",
+        "description": "RGB and depth generation",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_panorama": {
+        "color": "border-purple-500",
+        "title": "Image/SD Panorama",
+        "description": "Panoramic image generation",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_safe": {
+        "color": "border-purple-500",
+        "title": "Image/SD Safe",
+        "description": "Safe content generation",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_sag": {
+        "color": "border-purple-500",
+        "title": "Image/SD SAG",
+        "description": "Self-Attention Guidance",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_xl": {
+        "color": "border-purple-500",
+        "title": "Image/Stable Diffusion XL",
+        "description": "High-resolution with SDXL",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/t2i_adapter": {
+        "color": "border-purple-500",
+        "title": "Image/T2I-Adapter",
+        "description": "Conditioning with T2I-Adapter",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/unclip": {
+        "color": "border-purple-500",
+        "title": "Image/unCLIP",
+        "description": "Image generation with unCLIP",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/unidiffuser": {
+        "color": "border-purple-500",
+        "title": "Image/UniDiffuser",
+        "description": "Joint image and text generation",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/visualcloze": {
+        "color": "border-purple-500",
+        "title": "Image/VisualCloze",
+        "description": "Visual cloze completion",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/wuerstchen": {
+        "color": "border-purple-500",
+        "title": "Image/Wuerstchen",
+        "description": "Efficient generation with Wuerstchen",
+        "icon": "Image"
+      }
+    },
+    {
+      "video/allegro": {
+        "color": "border-pink-500",
+        "title": "Video/Allegro",
+        "description": "Video generation with Allegro",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/animatediff": {
+        "color": "border-pink-500",
+        "title": "Video/AnimateDiff",
+        "description": "Video generation with AnimateDiff",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/cogvideo": {
+        "color": "border-pink-500",
+        "title": "Video/CogVideo",
+        "description": "Video generation with CogVideo",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/consisid": {
+        "color": "border-pink-500",
+        "title": "Video/ConsisID",
+        "description": "Identity-preserving video generation",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/cosmos": {
+        "color": "border-pink-500",
+        "title": "Video/Cosmos",
+        "description": "Video generation with Cosmos",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/easyanimate": {
+        "color": "border-pink-500",
+        "title": "Video/EasyAnimate",
+        "description": "Video generation with EasyAnimate",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/hunyuan_video": {
+        "color": "border-pink-500",
+        "title": "Video/HunyuanVideo",
+        "description": "Video generation with HunyuanVideo",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/i2vgen_xl": {
+        "color": "border-pink-500",
+        "title": "Video/I2VGen-XL",
+        "description": "Image-to-video with I2VGen-XL",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/latte": {
+        "color": "border-pink-500",
+        "title": "Video/Latte",
+        "description": "Video generation with Latte",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/ltx": {
+        "color": "border-pink-500",
+        "title": "Video/LTX Video",
+        "description": "Video generation with LTX Video",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/mochi": {
+        "color": "border-pink-500",
+        "title": "Video/Mochi",
+        "description": "Video generation with Mochi",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/pia": {
+        "color": "border-pink-500",
+        "title": "Video/PIA",
+        "description": "Personalized Image Animator",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/stable_video_diffusion": {
+        "color": "border-pink-500",
+        "title": "Video/Stable Video Diffusion",
+        "description": "Image-to-video with Stable Video Diffusion",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/text_to_video_synthesis": {
+        "color": "border-pink-500",
+        "title": "Video/Text to Video Synthesis",
+        "description": "Text-to-video generation",
+        "icon": "Video"
+      }
     }
   ],
   "nodes": [

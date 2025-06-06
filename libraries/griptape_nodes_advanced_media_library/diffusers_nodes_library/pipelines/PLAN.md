@@ -1,7 +1,7 @@
 # PLAN: Mirror Hugging Face Diffusers Pipelines into `griptape_nodes_advanced_media_library`
 
 ## 1. Objective  
-Wrap **every** Hugging Face `diffusers` pipeline with a Griptape node so future additions are plug-and-play and no “shoehorning” is required.
+Wrap **every** Hugging Face `diffusers` pipeline with a Griptape node so future additions are plug-and-play and no "shoehorning" is required.
 
 ## 2. Target Location
 ```
@@ -20,11 +20,10 @@ Mirror the tree at
 For **each** upstream `pipeline_*.py`:
 
 1. Directory & filename identical to upstream.  
-2. Wrapper class named exactly like the upstream pipeline (no “Node” suffix).  
+2. Wrapper class named exactly like the upstream pipeline (no "Node" suffix).  
 3. Companion `parameters.py` plus any helpers.  
-4. Two helpers per family:  
-   • `optimize_<pipeline>_pipeline_memory_footprint.py`  
-   • `print_<pipeline>_pipeline_memory_footprint.py`  
+4. Memory-footprint helper file:  
+   • `<pipeline>_pipeline_memory_footprint.py` (contains both optimisation & printing utilities)  
 5. `__init__.py` containing only a module docstring.  
 6. JSON registry block appended to `griptape_nodes_library.json`.
 
@@ -37,6 +36,8 @@ Anything not required to wrap and register upstream pipelines.
 * `diffusers_nodes_library/pipelines/flux/flux_pipeline.py`  
 * `diffusers_nodes_library/pipelines/flux/flux_pipeline_parameters.py`  
 * `diffusers_nodes_library/pipelines/flux/flux_pipeline_memory_footprint.py`
+* `diffusers_nodes_library/pipelines/wan/wan_pipeline.py`  — good example for pipelines that output or operate on video  
+* `diffusers_nodes_library/pipelines/flux/flux_fill_pipeline.py`  — good example for pipelines that accept images as input
 
 ### 6.2 Import Style  
 * External:  
@@ -60,10 +61,8 @@ from diffusers_nodes_library.util.model_cache import model_cache  # type: ignore
 from diffusers_nodes_library.pipelines.kandinsky3.kandinsky3_pipeline_parameters import (  # type: ignore[reportMissingImports]
     Kandinsky3PipelineParameters,
 )
-from diffusers_nodes_library.pipelines.kandinsky3.optimize_kandinsky3_pipeline_memory_footprint import (  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.pipelines.kandinsky3.kandinsky3_pipeline_memory_footprint import (  # type: ignore[reportMissingImports]
     optimize_kandinsky3_pipeline_memory_footprint,
-)
-from diffusers_nodes_library.pipelines.kandinsky3.print_kandinsky3_pipeline_memory_footprint import (  # type: ignore[reportMissingImports]
     print_kandinsky3_pipeline_memory_footprint,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
@@ -83,15 +82,15 @@ Mirror `flux_pipeline_parameters.py`: add parameters, validation, preprocess hoo
 ### 6.5 Pipeline-Specific Model Loading  
 Consult the official diffusers **example scripts** for each pipeline and replicate any special-case steps (e.g., separate VAE loading, custom schedulers, text encoders).
 
-### 6.6 Optimisation Helper  
-* File: `optimize_<pipeline>_pipeline_memory_footprint.py`  
-* Use `@functools.cache`, assume CUDA, call `pipe.to(torch.device("cuda"))`, raise `RuntimeError` if CUDA is unavailable.
+### 6.6 Memory-Footprint Helper  
+* File: `<pipeline>_pipeline_memory_footprint.py`  
+* Exposes two functions:  
+  • `optimize_<pipeline>_pipeline_memory_footprint` (CUDA-only, `@functools.cache`, moves the pipeline to GPU).  
+    * Raise `RuntimeError` if CUDA is unavailable.
+  • `print_<pipeline>_pipeline_memory_footprint` (invokes `print_pipeline_memory_footprint` with a tailored list of sub-modules).  
 
-### 6.7 Memory-Footprint Printer  
-* File: `print_<pipeline>_pipeline_memory_footprint.py`  
-* Calls `print_pipeline_memory_footprint` with a tailored list of sub-modules.
 
-### 6.8 Registry Entry  
+### 6.7 Registry Entry  
 Add block:
 ```jsonc
 {
@@ -105,15 +104,16 @@ Add block:
 }
 ```
 
-### 6.9 Logging & Previews  
+### 6.8 Logging & Previews  
 Use `LogParameter` utilities and placeholder previews exactly like the Flux implementation.
 
-### 6.10 CUDA-Only Assumption  
-All optimisation helpers error if `torch.cuda.is_available()` is `False`.
+### 6.9 CUDA-Only Assumption  
+All optimization helpers error if `torch.cuda.is_available()` is `False`.
+All optimization should just perform `pipe.to(device)` and nothing else initially.
 
 ## 7. Milestone Checklist
 - [ ] Create directory tree (Appendix A) with docstring-only `__init__.py`.  
-- [ ] Implement wrapper, parameters, optimisation & print helpers.  
+- [ ] Implement wrapper, parameters & memory-footprint helper.  
 - [ ] Mirror diffusers example loading quirks (§6.5).  
 - [ ] Append registry JSON.  
 - [ ] Run linters & unit tests (existing ones must still pass).  

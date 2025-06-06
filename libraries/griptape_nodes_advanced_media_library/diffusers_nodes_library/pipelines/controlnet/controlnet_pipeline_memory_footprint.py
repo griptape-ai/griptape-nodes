@@ -1,0 +1,47 @@
+import logging
+from functools import cache
+
+import diffusers  # type: ignore[reportMissingImports]
+import torch  # type: ignore[reportMissingImports]
+
+from diffusers_nodes_library.common.utils.torch_utils import (  # type: ignore[reportMissingImports]
+    get_best_device,
+    print_pipeline_memory_footprint,
+)
+
+logger = logging.getLogger("diffusers_nodes_library")
+
+
+def print_controlnet_pipeline_memory_footprint(pipe: diffusers.StableDiffusionControlNetPipeline) -> None:
+    """Print pipeline memory footprint."""
+    print_pipeline_memory_footprint(
+        pipe,
+        [
+            "vae",
+            "text_encoder",
+            "unet",
+            "controlnet",
+        ],
+    )
+
+
+@cache
+def optimize_controlnet_pipeline_memory_footprint(pipe: diffusers.StableDiffusionControlNetPipeline) -> None:
+    """Optimize pipeline memory footprint."""
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is required for ControlNet pipeline optimization")
+    
+    device = get_best_device()
+    logger.info("Enabling sequential cpu offload")
+    pipe.enable_sequential_cpu_offload()
+    logger.info("Enabling attention slicing")
+    pipe.enable_attention_slicing()
+    if hasattr(pipe, "enable_vae_slicing"):
+        logger.info("Enabling vae slicing")
+        pipe.enable_vae_slicing()
+    elif hasattr(pipe, "vae"):
+        logger.info("Enabling vae slicing")
+        pipe.vae.enable_slicing()
+
+    logger.info("Final memory footprint:")
+    print_controlnet_pipeline_memory_footprint(pipe)

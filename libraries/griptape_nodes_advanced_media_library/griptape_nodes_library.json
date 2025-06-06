@@ -258,6 +258,600 @@
         "description": "Generate videos from image and text with Wan",
         "display_name": "Wan I2V"
       }
+    },
+    {
+      "class_name": "Kandinsky3Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/kandinsky3/kandinsky3_pipeline.py",
+      "metadata": {
+        "category": "image/kandinsky3",
+        "description": "Generate an Image with Kandinsky 3 via 🤗 Diffusers.",
+        "display_name": "Kandinsky 3"
+      }
+    },
+    {
+      "class_name": "AllegroPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/allegro/allegro_pipeline.py",
+      "metadata": {
+        "category": "video/allegro",
+        "description": "Generate a video with Allegro via 🤗 Diffusers.",
+        "display_name": "Allegro"
+      }
+    },
+    {
+      "class_name": "AmusedPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_pipeline.py",
+      "metadata": {
+        "category": "image/amused",
+        "description": "Generate an Image with aMUSEd via 🤗 Diffusers.",
+        "display_name": "aMUSEd"
+      }
+    },
+    {
+      "class_name": "AnimateDiffPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/animatediff/animatediff_pipeline.py",
+      "metadata": {
+        "category": "video/animatediff",
+        "description": "Generate a Video with AnimateDiff via 🤗 Diffusers.",
+        "display_name": "AnimateDiff"
+      }
+    },
+    {
+      "class_name": "AudioldmPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/audioldm/audioldm_pipeline.py",
+      "metadata": {
+        "category": "audio/audioldm",
+        "description": "Generate audio from text via 🤗 Diffusers.",
+        "display_name": "AudioLDM"
+      }
+    },
+    {
+      "class_name": "Audioldm2Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/audioldm2/audioldm2_pipeline.py",
+      "metadata": {
+        "category": "audio/audioldm2",
+        "description": "Generate audio from text via 🤗 Diffusers.",
+        "display_name": "AudioLDM 2"
+      }
+    },
+    {
+      "class_name": "AuraFlowPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/aura_flow/aura_flow_pipeline.py",
+      "metadata": {
+        "category": "image/aura_flow",
+        "description": "Generate an Image with AuraFlow via 🤗 Diffusers.",
+        "display_name": "AuraFlow"
+      }
+    },
+    {
+      "class_name": "BlipDiffusionPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/blip_diffusion/blip_diffusion_pipeline.py",
+      "metadata": {
+        "category": "image/blip_diffusion",
+        "description": "Generate an Image with BLIP-Diffusion via 🤗 Diffusers.",
+        "display_name": "BLIP-Diffusion"
+      }
+    },
+    {
+      "class_name": "CogvideoPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/cogvideo/cogvideo_pipeline.py",
+      "metadata": {
+        "category": "video/cogvideo",
+        "description": "Generate a Video with CogVideo via 🤗 Diffusers.",
+        "display_name": "CogVideo"
+      }
+    },
+    {
+      "class_name": "Cogview3Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/cogview3/cogview3_pipeline.py",
+      "metadata": {
+        "category": "image/cogview3",
+        "description": "Generate an Image with CogView3Plus via 🤗 Diffusers.",
+        "display_name": "CogView3Plus"
+      }
+    },
+    {
+      "class_name": "Cogview4Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/cogview4/cogview4_pipeline.py",
+      "metadata": {
+        "category": "image/cogview4",
+        "description": "Generate an Image with CogView4 via 🤗 Diffusers.",
+        "display_name": "CogView4"
+      }
+    },
+    {
+      "class_name": "ConsisidPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/consisid/consisid_pipeline.py",
+      "metadata": {
+        "category": "video/consisid",
+        "description": "Generate identity-preserving video from image and text via 🤗 Diffusers.",
+        "display_name": "ConsisID"
+      }
+    },
+    {
+      "class_name": "ConsistencyModelsPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/consistency_models/consistency_models_pipeline.py",
+      "metadata": {
+        "category": "image/consistency_models",
+        "description": "Generate images with fast one-step or multi-step Consistency Models via 🤗 Diffusers.",
+        "display_name": "Consistency Models"
+      }
+    },
+    {
+      "class_name": "ControlnetPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/controlnet/controlnet_pipeline.py",
+      "metadata": {
+        "category": "image/controlnet",
+        "description": "Generate images with ControlNet via 🤗 Diffusers.",
+        "display_name": "ControlNet"
+      }
+    },
+    {
+      "class_name": "ControlnetHunyuanditPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/controlnet_hunyuandit/controlnet_hunyuandit_pipeline.py",
+      "metadata": {
+        "category": "image/controlnet_hunyuandit",
+        "description": "Generate images with HunyuanDiT ControlNet via 🤗 Diffusers.",
+        "display_name": "ControlNet HunyuanDiT"
+      }
+    },
+    {
+      "class_name": "ControlnetSd3Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/controlnet_sd3/controlnet_sd3_pipeline.py",
+      "metadata": {
+        "category": "image/controlnet_sd3",
+        "description": "Generate images with SD3 ControlNet via 🤗 Diffusers.",
+        "display_name": "ControlNet SD3"
+      }
+    },
+    {
+      "class_name": "ControlnetXsPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/controlnet_xs/controlnet_xs_pipeline.py",
+      "metadata": {
+        "category": "image/controlnet_xs",
+        "description": "Generate images with ControlNet-XS via 🤗 Diffusers.",
+        "display_name": "ControlNet XS"
+      }
+    },
+    {
+      "class_name": "CosmosPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/cosmos/cosmos_pipeline.py",
+      "metadata": {
+        "category": "video/cosmos",
+        "description": "Generate videos from text with Cosmos via 🤗 Diffusers.",
+        "display_name": "Cosmos"
+      }
+    },
+    {
+      "class_name": "DeprecatedPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/deprecated/deprecated_pipeline.py",
+      "metadata": {
+        "category": "image/deprecated",
+        "description": "Generate images with deprecated diffusers pipelines via 🤗 Diffusers.",
+        "display_name": "Deprecated Pipeline"
+      }
+    },
+    {
+      "class_name": "DitPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/dit/dit_pipeline.py",
+      "metadata": {
+        "category": "image/dit",
+        "description": "Generate images with DiT (Diffusion Transformer) via 🤗 Diffusers.",
+        "display_name": "DiT"
+      }
+    },
+    {
+      "class_name": "EasyanimatePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/easyanimate/easyanimate_pipeline.py",
+      "metadata": {
+        "category": "video/easyanimate",
+        "description": "Generate videos with EasyAnimate via 🤗 Diffusers.",
+        "display_name": "EasyAnimate"
+      }
+    },
+    {
+      "class_name": "HidreamImagePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/hidream_image/hidream_image_pipeline.py",
+      "metadata": {
+        "category": "image/hidream_image",
+        "description": "Generate images with HiDream via 🤗 Diffusers.",
+        "display_name": "HiDream Image"
+      }
+    },
+    {
+      "class_name": "HunyuanVideoPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/hunyuan_video/hunyuan_video_pipeline.py",
+      "metadata": {
+        "category": "video/hunyuan_video",
+        "description": "Generate videos with HunyuanVideo via 🤗 Diffusers.",
+        "display_name": "HunyuanVideo"
+      }
+    },
+    {
+      "class_name": "HunyuanditPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/hunyuandit/hunyuandit_pipeline.py",
+      "metadata": {
+        "category": "image/hunyuandit",
+        "description": "Generate images with HunyuanDiT via 🤗 Diffusers.",
+        "display_name": "HunyuanDiT"
+      }
+    },
+    {
+      "class_name": "I2VGenXLPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/i2vgen_xl/i2vgen_xl_pipeline.py",
+      "metadata": {
+        "category": "video/i2vgen_xl",
+        "description": "Generate videos from images with I2VGen-XL via 🤗 Diffusers.",
+        "display_name": "I2VGen-XL"
+      }
+    },
+    {
+      "class_name": "KandinskyPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/kandinsky/kandinsky_pipeline.py",
+      "metadata": {
+        "category": "image/kandinsky",
+        "description": "Generate images with Kandinsky via 🤗 Diffusers.",
+        "display_name": "Kandinsky"
+      }
+    },
+    {
+      "class_name": "Kandinsky22Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/kandinsky2_2/kandinsky2_2_pipeline.py",
+      "metadata": {
+        "category": "image/kandinsky2_2",
+        "description": "Generate images with Kandinsky 2.2 via 🤗 Diffusers.",
+        "display_name": "Kandinsky 2.2"
+      }
+    },
+    {
+      "class_name": "KolorsPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/kolors/kolors_pipeline.py",
+      "metadata": {
+        "category": "image/kolors",
+        "description": "Generate images with Kolors via 🤗 Diffusers.",
+        "display_name": "Kolors"
+      }
+    },
+    {
+      "class_name": "LatentConsistencyModelsPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/latent_consistency_models/latent_consistency_models_pipeline.py",
+      "metadata": {
+        "category": "image/latent_consistency_models",
+        "description": "Generate images with fast one-step or multi-step Latent Consistency Models via 🤗 Diffusers.",
+        "display_name": "Latent Consistency Models"
+      }
+    },
+    {
+      "class_name": "LatentDiffusionPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/latent_diffusion/latent_diffusion_pipeline.py",
+      "metadata": {
+        "category": "image/latent_diffusion",
+        "description": "Generate images with Latent Diffusion via 🤗 Diffusers.",
+        "display_name": "Latent Diffusion"
+      }
+    },
+    {
+      "class_name": "LattePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/latte/latte_pipeline.py",
+      "metadata": {
+        "category": "video/latte",
+        "description": "Generate videos with Latte via 🤗 Diffusers.",
+        "display_name": "Latte"
+      }
+    },
+    {
+      "class_name": "LeditsPpPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/ledits_pp/ledits_pp_pipeline.py",
+      "metadata": {
+        "category": "image/ledits_pp",
+        "description": "Edit images with LEDITS++ via 🤗 Diffusers.",
+        "display_name": "LEDITS++"
+      }
+    },
+    {
+      "class_name": "LtxPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/ltx/ltx_pipeline.py",
+      "metadata": {
+        "category": "video/ltx",
+        "description": "Generate videos with LTX Video via 🤗 Diffusers.",
+        "display_name": "LTX Video"
+      }
+    },
+    {
+      "class_name": "LuminaPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/lumina/lumina_pipeline.py",
+      "metadata": {
+        "category": "image/lumina",
+        "description": "Generate images with Lumina via 🤗 Diffusers.",
+        "display_name": "Lumina"
+      }
+    },
+    {
+      "class_name": "Lumina2Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/lumina2/lumina2_pipeline.py",
+      "metadata": {
+        "category": "image/lumina2",
+        "description": "Generate images with Lumina2 via 🤗 Diffusers.",
+        "display_name": "Lumina2"
+      }
+    },
+    {
+      "class_name": "MarigoldPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/marigold/marigold_pipeline.py",
+      "metadata": {
+        "category": "image/marigold",
+        "description": "Generate depth maps from images with Marigold via 🤗 Diffusers.",
+        "display_name": "Marigold Depth"
+      }
+    },
+    {
+      "class_name": "MochiPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/mochi/mochi_pipeline.py",
+      "metadata": {
+        "category": "video/mochi",
+        "description": "Generate videos from text with Mochi via 🤗 Diffusers.",
+        "display_name": "Mochi"
+      }
+    },
+    {
+      "class_name": "OmnigenPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/omnigen/omnigen_pipeline.py",
+      "metadata": {
+        "category": "image/omnigen",
+        "description": "Generate images from text and images with OmniGen via 🤗 Diffusers.",
+        "display_name": "OmniGen"
+      }
+    },
+    {
+      "class_name": "PagPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/pag/pag_pipeline.py",
+      "metadata": {
+        "category": "image/pag",
+        "description": "Generate images with Perturbed-Attention Guidance (PAG) via 🤗 Diffusers.",
+        "display_name": "PAG"
+      }
+    },
+    {
+      "class_name": "PaintByExamplePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/paint_by_example/paint_by_example_pipeline.py",
+      "metadata": {
+        "category": "image/paint_by_example",
+        "description": "Inpaint images using example-guided generation via 🤗 Diffusers.",
+        "display_name": "Paint by Example"
+      }
+    },
+    {
+      "class_name": "PiaPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/pia/pia_pipeline.py",
+      "metadata": {
+        "category": "video/pia",
+        "description": "Animate images using text prompts with PIA (Personalized Image Animator) via 🤗 Diffusers.",
+        "display_name": "PIA (Personalized Image Animator)"
+      }
+    },
+    {
+      "class_name": "SanaPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/sana/sana_pipeline.py",
+      "metadata": {
+        "category": "image/sana",
+        "description": "Generate high-resolution images efficiently with SANA via 🤗 Diffusers.",
+        "display_name": "SANA"
+      }
+    },
+    {
+      "class_name": "SemanticStableDiffusionPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/semantic_stable_diffusion/semantic_stable_diffusion_pipeline.py",
+      "metadata": {
+        "category": "image/semantic_stable_diffusion",
+        "description": "Edit images with semantic guidance via 🤗 Diffusers.",
+        "display_name": "Semantic Stable Diffusion"
+      }
+    },
+    {
+      "class_name": "ShapEPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/shap_e/shap_e_pipeline.py",
+      "metadata": {
+        "category": "3d/shap_e",
+        "description": "Generate 3D objects from text prompts with Shap-E via 🤗 Diffusers.",
+        "display_name": "Shap-E"
+      }
+    },
+    {
+      "class_name": "StableCascadePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_cascade/stable_cascade_pipeline.py",
+      "metadata": {
+        "category": "image/stable_cascade",
+        "description": "Generate high-quality images with Stable Cascade via 🤗 Diffusers.",
+        "display_name": "Stable Cascade"
+      }
+    },
+    {
+      "class_name": "StableDiffusionAttendAndExcitePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_attend_and_excite/stable_diffusion_attend_and_excite_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_attend_and_excite",
+        "description": "Generate images with enhanced attention control via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion Attend and Excite"
+      }
+    },
+    {
+      "class_name": "StableDiffusionDiffeditPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_diffedit/stable_diffusion_diffedit_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_diffedit",
+        "description": "Edit images using DiffEdit technique via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion DiffEdit"
+      }
+    },
+    {
+      "class_name": "StableDiffusionGligenPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_gligen/stable_diffusion_gligen_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_gligen",
+        "description": "Generate grounded images with spatial control via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion GLIGEN"
+      }
+    },
+    {
+      "class_name": "StableDiffusionKDiffusionPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_k_diffusion/stable_diffusion_k_diffusion_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_k_diffusion",
+        "description": "Generate images with K-Diffusion samplers via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion K-Diffusion"
+      }
+    },
+    {
+      "class_name": "StableDiffusionLdm3dPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_ldm3d/stable_diffusion_ldm3d_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_ldm3d",
+        "description": "Generate RGB and depth images simultaneously via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion LDM3D"
+      }
+    },
+    {
+      "class_name": "StableDiffusionPanoramaPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_panorama/stable_diffusion_panorama_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_panorama",
+        "description": "Generate panoramic images via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion Panorama"
+      }
+    },
+    {
+      "class_name": "StableDiffusionSafePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_safe/stable_diffusion_safe_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_safe",
+        "description": "Generate safe content images with safety checking via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion Safe"
+      }
+    },
+    {
+      "class_name": "StableDiffusionSagPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_sag/stable_diffusion_sag_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_sag",
+        "description": "Generate images with Self-Attention Guidance (SAG) for improved quality via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion SAG"
+      }
+    },
+    {
+      "class_name": "T2IAdapterPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/t2i_adapter/t2i_adapter_pipeline.py",
+      "metadata": {
+        "category": "image/t2i_adapter",
+        "description": "Generate images with T2I-Adapter conditioning from control images via 🤗 Diffusers.",
+        "display_name": "T2I-Adapter"
+      }
+    },
+    {
+      "class_name": "TextToVideoSynthesisPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/text_to_video_synthesis/text_to_video_synthesis_pipeline.py",
+      "metadata": {
+        "category": "video/text_to_video_synthesis",
+        "description": "Generate videos from text prompts via 🤗 Diffusers.",
+        "display_name": "Text to Video Synthesis"
+      }
+    },
+    {
+      "class_name": "UnidiffuserPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/unidiffuser/unidiffuser_pipeline.py",
+      "metadata": {
+        "category": "image/unidiffuser",
+        "description": "Generate images and text jointly with UniDiffuser via 🤗 Diffusers.",
+        "display_name": "UniDiffuser"
+      }
+    },
+    {
+      "class_name": "VisualclozePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/visualcloze/visualcloze_pipeline.py",
+      "metadata": {
+        "category": "image/visualcloze",
+        "description": "Complete missing image regions using visual cloze techniques via 🤗 Diffusers.",
+        "display_name": "VisualCloze"
+      }
+    },
+    {
+      "class_name": "MusicldmPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/musicldm/musicldm_pipeline.py",
+      "metadata": {
+        "category": "audio/musicldm",
+        "description": "Generate music from text via 🤗 Diffusers.",
+        "display_name": "MusicLDM"
+      }
+    },
+    {
+      "class_name": "PixartAlphaPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/pixart_alpha/pixart_alpha_pipeline.py",
+      "metadata": {
+        "category": "image/pixart_alpha",
+        "description": "Generate high-quality images with PixArt-α via 🤗 Diffusers.",
+        "display_name": "PixArt-α"
+      }
+    },
+    {
+      "class_name": "StableAudioPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_audio/stable_audio_pipeline.py",
+      "metadata": {
+        "category": "audio/stable_audio",
+        "description": "Generate audio from text with Stable Audio via 🤗 Diffusers.",
+        "display_name": "Stable Audio"
+      }
+    },
+    {
+      "class_name": "StableDiffusionPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion/stable_diffusion_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion",
+        "description": "Generate images with Stable Diffusion via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion"
+      }
+    },
+    {
+      "class_name": "StableDiffusion3Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_3/stable_diffusion_3_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_3",
+        "description": "Generate images with Stable Diffusion 3 via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion 3"
+      }
+    },
+    {
+      "class_name": "StableDiffusionXLPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_xl/stable_diffusion_xl_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_xl",
+        "description": "Generate high-resolution images with Stable Diffusion XL via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion XL"
+      }
+    },
+    {
+      "class_name": "StableVideoDiffusionPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_video_diffusion/stable_video_diffusion_pipeline.py",
+      "metadata": {
+        "category": "video/stable_video_diffusion",
+        "description": "Generate videos from images with Stable Video Diffusion via 🤗 Diffusers.",
+        "display_name": "Stable Video Diffusion"
+      }
+    },
+    {
+      "class_name": "UnclipPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/unclip/unclip_pipeline.py",
+      "metadata": {
+        "category": "image/unclip",
+        "description": "Generate images with unCLIP via 🤗 Diffusers.",
+        "display_name": "unCLIP"
+      }
+    },
+    {
+      "class_name": "WuerstchenPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/wuerstchen/wuerstchen_pipeline.py",
+      "metadata": {
+        "category": "image/wuerstchen",
+        "description": "Generate images efficiently with Wuerstchen via 🤗 Diffusers.",
+        "display_name": "Wuerstchen"
+      }
     }
   ]
 }
