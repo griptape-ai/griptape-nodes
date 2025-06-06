@@ -1,45 +1,154 @@
-FROM python:3.12-slim AS builder
+# Single Dockerfile for both CPU and GPU type builds.
+# Use --build-arg BUILD_TYPE=cpu (default) or BUILD_TYPE=gpu to switch modes.
+
+#────────────────────────────
+# 1) ARGs and base‐image definitions
+#────────────────────────────
+ARG BUILD_TYPE=cpu
+ARG BASE_IMAGE_CPU=python:3.12-slim
+ARG BASE_IMAGE_GPU=nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
+
+#────────────────────────────
+# 2) CPU builder stage
+#────────────────────────────
+FROM ${BASE_IMAGE_CPU} AS builder_cpu
+
+# Bring in uv/uvx binaries from the official Astral SH image
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-# Install git
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
+# Install git (needed for uv to fetch dependencies)
+RUN apt-get update \
+ && apt-get install -y git \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
-# Install dependencies
+
+# 2.1) Install dependencies (without yet installing the project itself)
+#     - Use BuildKit cache mounts for pip/uv caches
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --no-install-project --no-editable
+
+# 2.2) Copy everything needed for the actual project sync
 COPY pyproject.toml pyproject.toml
 COPY uv.lock uv.lock
 COPY README.md README.md
 COPY src src
 COPY libraries libraries
-# Sync the project
+
+# 2.3) Install the project (puts it into a venv at /app/.venv)
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-editable
 
-FROM python:3.12-slim
-# Install git in the final image
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN groupadd --gid 1000 appuser && \
-    useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser
+#────────────────────────────
+# 3) GPU builder stage
+#────────────────────────────
+FROM ${BASE_IMAGE_GPU} AS builder_gpu
+
+# 3.1) Install prerequisites and add Deadsnakes for Python 3.12
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      software-properties-common \
+      wget \
+ && add-apt-repository ppa:deadsnakes/ppa \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+      python3.12 \
+      python3.12-venv \
+      python3-pip \
+      git \
+      ffmpeg libgl1 \
+      libjpeg-dev zlib1g-dev libpng-dev libwebp-dev \
+      build-essential \
+ && rm -rf /var/lib/apt/lists/*
+
+# Make python3.12 the default 'python3'
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
+
+# Install uv CLI into the global pip
+RUN python3 -m pip install --upgrade pip \
+ && python3 -m pip install uv
+
+WORKDIR /app
+
+# 3.1) Copy dependency files and create a venv
+COPY pyproject.toml pyproject.toml
+COPY uv.lock uv.lock
+
+RUN python3 -m venv .venv \
+ && ./.venv/bin/pip install --upgrade pip \
+ && ./.venv/bin/uv sync --locked --no-install-project --no-editable
+
+# 3.2) Copy the rest of the code and re-run uv so that the project itself is installed
+COPY README.md README.md
+COPY src src
+COPY libraries libraries
+
+RUN ./.venv/bin/uv sync --locked --no-editable
+
+
+#────────────────────────────
+# 4) "builder" alias: pick CPU or GPU builder based on BUILD_TYPE
+#────────────────────────────
+FROM builder_${BUILD_TYPE} AS builder
+
+
+#────────────────────────────
+# 5) CPU runtime stage
+#────────────────────────────
+FROM ${BASE_IMAGE_CPU} AS runtime_cpu
+
+# Install git (needed by entrypoint if it ever pulls from Git, etc.)
+RUN apt-get update \
+ && apt-get install -y git \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+
+#────────────────────────────
+# 6) GPU runtime stage
+#────────────────────────────
+FROM ${BASE_IMAGE_GPU} AS runtime_gpu
+
+# Install only the libraries needed at runtime
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      git ffmpeg libgl1 \
+      libjpeg-dev zlib1g-dev libpng-dev libwebp-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+
+#────────────────────────────
+# 7) Final stage: pick runtime_${BUILD_TYPE}, then add user / copy venv / entrypoint
+#────────────────────────────
+ARG BUILD_TYPE
+FROM runtime_${BUILD_TYPE} AS final
+
+# 7.1) Create a non-root user and prepare /app/models
+RUN groupadd --gid 1000 appuser \
+ && useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser 
 
 # Create app directory structure and set permissions for volume mount points
 RUN mkdir -p /app && \
     chown -R appuser:appuser /app
 
-# Copy the environment with proper ownership
+# 7.2) Copy the venv from the chosen builder into /app/.venv, preserving ownership
 COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 
 LABEL org.opencontainers.image.source="https://github.com/griptape-ai/griptape-nodes"
 LABEL org.opencontainers.image.description="Griptape Nodes."
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
+# 7.3) Copy entrypoint and make sure it’s executable
 COPY --chown=appuser:appuser entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Switch to non-root user and set working directory
+# 7.4) Switch to non-root user and set working directory
 USER appuser
 WORKDIR /app
 
@@ -47,5 +156,6 @@ WORKDIR /app
 ENV HOME=/app
 
 EXPOSE 8124
+
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/app/.venv/bin/griptape-nodes", "--no-update"]
