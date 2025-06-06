@@ -52,6 +52,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM ${BASE_IMAGE_GPU} AS builder_gpu
 
 # Force noninteractive front‐end and set a dummy TZ so tzdata won’t prompt
+# Bring in uv/uvx binaries from the official Astral SH image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 
@@ -75,26 +78,29 @@ RUN apt-get update \
 # Make python3.12 the default 'python3'
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
 
-# Install uv CLI into the global pip
-RUN python3 -m pip install --upgrade pip \
- && python3 -m pip install uv
-
 WORKDIR /app
 
-# 3.1) Copy dependency files and create a venv
+# Set virtual environment location outside of /app to avoid mount conflicts
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+
+# 3.2) Install dependencies (without yet installing the project itself)
+#     - Use BuildKit cache mounts for pip/uv caches
+ENV UV_LINK_MODE=copy
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-install-project --no-editable
+
+# 3.3) Copy everything needed for the actual project sync
 COPY pyproject.toml pyproject.toml
 COPY uv.lock uv.lock
-
-RUN python3 -m venv /opt/venv \
- && /opt/venv/bin/pip install --upgrade pip \
- && /opt/venv/bin/uv sync --locked --no-install-project --no-editable
-
-# 3.2) Copy the rest of the code and re-run uv so that the project itself is installed
 COPY README.md README.md
 COPY src src
 COPY libraries libraries
 
-RUN /opt/venv/bin/uv sync --locked --no-editable
+# 3.4) Install the project (puts it into a venv at /opt/venv)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-editable
 
 
 #────────────────────────────
