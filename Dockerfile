@@ -23,8 +23,12 @@ RUN apt-get update \
 
 WORKDIR /app
 
+# Set virtual environment location outside of /app to avoid mount conflicts
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+
 # 2.1) Install dependencies (without yet installing the project itself)
 #     - Use BuildKit cache mounts for pip/uv caches
+ENV UV_LINK_MODE=copy
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
@@ -77,16 +81,16 @@ WORKDIR /app
 COPY pyproject.toml pyproject.toml
 COPY uv.lock uv.lock
 
-RUN python3 -m venv .venv \
- && ./.venv/bin/pip install --upgrade pip \
- && ./.venv/bin/uv sync --locked --no-install-project --no-editable
+RUN python3 -m venv /opt/venv \
+ && /opt/venv/bin/pip install --upgrade pip \
+ && /opt/venv/bin/uv sync --locked --no-install-project --no-editable
 
 # 3.2) Copy the rest of the code and re-run uv so that the project itself is installed
 COPY README.md README.md
 COPY src src
 COPY libraries libraries
 
-RUN ./.venv/bin/uv sync --locked --no-editable
+RUN /opt/venv/bin/uv sync --locked --no-editable
 
 
 #────────────────────────────
@@ -134,11 +138,11 @@ RUN groupadd --gid 1000 appuser \
  && useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser 
 
 # Create app directory structure and set permissions for volume mount points
-RUN mkdir -p /app && \
-    chown -R appuser:appuser /app
+RUN mkdir -p /app /opt/venv && \
+    chown -R appuser:appuser /app /opt/venv
 
-# 7.2) Copy the venv from the chosen builder into /app/.venv, preserving ownership
-COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
+# 7.2) Copy the venv from the chosen builder into /opt/venv, preserving ownership
+COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
 
 LABEL org.opencontainers.image.source="https://github.com/griptape-ai/griptape-nodes"
 LABEL org.opencontainers.image.description="Griptape Nodes."
@@ -158,4 +162,4 @@ ENV HOME=/app
 EXPOSE 8124
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/app/.venv/bin/griptape-nodes", "--no-update"]
+CMD ["/opt/venv/bin/griptape-nodes", "--no-update"]
