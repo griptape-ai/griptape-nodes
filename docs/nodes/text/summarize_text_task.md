@@ -18,8 +18,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the Summarize Text Task tool to your workflow
-2. Configure the summarization parameters
-3. Connect its output to nodes that need summarization tasks
+1. Configure the summarization parameters
+1. Connect its output to nodes that need summarization tasks
 
 ### Parameters
 
@@ -34,8 +34,8 @@ Use this node when you want to:
 Imagine you want to create a summarization task for a long text:
 
 1. Add a Summarize Text Task tool to your workflow
-2. Connect the text input to your source text
-4. Connect the "output" to a node that can process the summarization task
+1. Connect the text input to your source text
+1. Connect the "output" to a node that can process the summarization task
 
 ## Implementation Details
 

@@ -17,7 +17,7 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the File Manager tool to your workflow
-2. Connect its output to nodes that need file operation capabilities (like an Agent)
+1. Connect its output to nodes that need file operation capabilities (like an Agent)
 
 ### Outputs
 
@@ -28,11 +28,11 @@ Use this node when you want to:
 Imagine you want to create an agent that can manage files:
 
 1. Add a File Manager tool to your workflow
-2. Connect the "tool" output to an Agent's "tools" input
-3. Now that agent can perform file operations when needed in conversations
+1. Connect the "tool" output to an Agent's "tools" input
+1. Now that agent can perform file operations when needed in conversations
 
 ## Implementation Details
 
 The File Manager tool is implemented using Griptape's `FileManagerTool` class with the `LocalFileManagerDriver`. The tool provides a simple interface for managing files in your workspace directory.
 
-Note: Cloud storage functionality is currently disabled and will be available in a future update. 
+Note: Cloud storage functionality is currently disabled and will be available in a future update.

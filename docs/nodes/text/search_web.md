@@ -18,7 +18,7 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the Search Web tool to your workflow
-2. Connect its output to nodes that need web search results
+1. Connect its output to nodes that need web search results
 
 ### Parameters
 
@@ -35,10 +35,10 @@ Use this node when you want to:
 Imagine you want to search for information about a specific topic:
 
 1. Add a Search Web tool to your workflow
-2. Set the search query
-3. Connect the "output to another node that needs the search results
-4. The tool will return the text content from the search results
+1. Set the search query
+1. Connect the "output to another node that needs the search results
+1. The tool will return the text content from the search results
 
 ## Implementation Details
 
-The Search Web tool uses web search capabilities to find relevant information and extracts text content from the search results. It's designed to help you gather information from the web in a structured way. 
+The Search Web tool uses web search capabilities to find relevant information and extracts text content from the search results. It's designed to help you gather information from the web in a structured way.

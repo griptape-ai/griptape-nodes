@@ -17,7 +17,7 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the Calculator to your workflow
-2. Connect its output to nodes that need calculation capabilities (like an Agent)
+1. Connect its output to nodes that need calculation capabilities (like an Agent)
 
 ### Outputs
 
@@ -28,8 +28,8 @@ Use this node when you want to:
 Imagine you want to create an agent that can perform calculations:
 
 1. Add a Calculator to your workflow
-2. Connect the "tool" output to an Agent's "tools" input
-3. Now that agent can perform calculations when needed in conversations
+1. Connect the "tool" output to an Agent's "tools" input
+1. Now that agent can perform calculations when needed in conversations
 
 ## Implementation Details
 

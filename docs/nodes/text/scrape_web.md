@@ -18,8 +18,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the Scrape Web tool to your workflow
-2. Configure the scraping parameters
-3. Connect its output to nodes that need the scraped content
+1. Configure the scraping parameters
+1. Connect its output to nodes that need the scraped content
 
 ### Parameters
 
@@ -34,9 +34,9 @@ Use this node when you want to:
 Imagine you want to extract content from a specific web page:
 
 1. Add a Scrape Web tool to your workflow
-2. Set the URL of the page you want to scrape
-4. Connect the "output" to another node that needs the scraped content
+1. Set the URL of the page you want to scrape
+1. Connect the "output" to another node that needs the scraped content
 
 ## Implementation Details
 
-The Scrape Web tool uses web scraping capabilities to extract text content from web pages. It can target specific content using CSS selectors and handles timeouts and errors gracefully. 
+The Scrape Web tool uses web scraping capabilities to extract text content from web pages. It can target specific content using CSS selectors and handles timeouts and errors gracefully.

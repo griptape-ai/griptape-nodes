@@ -18,8 +18,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the Date and Time tool to your workflow
-2. Configure the date/time parameters
-3. Connect its output to nodes that need formatted date/time text
+1. Configure the date/time parameters
+1. Connect its output to nodes that need formatted date/time text
 
 ### Parameters
 
@@ -35,9 +35,9 @@ Use this node when you want to:
 Imagine you want to format a date in a specific way:
 
 1. Add a Date and Time tool to your workflow
-2. Set the desired date format
-4. Connect the "output" to another node that needs the formatted date/time
+1. Set the desired date format
+1. Connect the "output" to another node that needs the formatted date/time
 
 ## Implementation Details
 
-The Date and Time tool provides flexible date and time formatting capabilities. It supports various format strings and timezone handling to generate properly formatted date/time text. 
+The Date and Time tool provides flexible date and time formatting capabilities. It supports various format strings and timezone handling to generate properly formatted date/time text.

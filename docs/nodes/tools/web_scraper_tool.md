@@ -18,7 +18,7 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the Web Scraper tool to your workflow
-2. Connect its output to nodes that need web scraping capabilities (like an Agent)
+1. Connect its output to nodes that need web scraping capabilities (like an Agent)
 
 ### Outputs
 
@@ -29,8 +29,8 @@ Use this node when you want to:
 Imagine you want to create an agent that can scrape web content:
 
 1. Add a Web Scraper tool to your workflow
-2. Connect the "tool" output to an Agent's "tools" input
-3. Now that agent can perform web scraping operations when needed in conversations
+1. Connect the "tool" output to an Agent's "tools" input
+1. Now that agent can perform web scraping operations when needed in conversations
 
 ## Implementation Details
 
