@@ -1,8 +1,10 @@
 from griptape.artifacts import ListArtifact
+from griptape.structures import Agent, Structure
 from griptape.tasks import PromptTask
 from griptape.tools import WebScraperTool as GtWebScraperTool
 
 from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.exe_types.node_types import AsyncResult
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.tasks.base_task import BaseTask
 
@@ -42,7 +44,7 @@ class ScrapeWeb(BaseTask):
             )
         )
 
-    def process(self) -> None:
+    def process(self) -> AsyncResult[Structure]:
         prompt = self.get_parameter_value("prompt")
         model = self.get_parameter_value("model")
 
@@ -54,11 +56,15 @@ class ScrapeWeb(BaseTask):
             prompt_driver=self.create_driver(model=model),
         )
 
-        # Run the task
-        output = ""
-        response = scrape_task.run(f"Scrape the web for information about: {prompt}")
-        if isinstance(response, ListArtifact):
-            output += str(response[0].value[0].value)
+        def _process() -> Structure:
+            # Run the task
+            output = ""
+            response = scrape_task.run(f"Scrape the web for information about: {prompt}")
+            if isinstance(response, ListArtifact):
+                output += str(response[0].value[0].value)
 
-        # Set the output
-        self.parameter_output_values["output"] = output
+            # Set the output
+            self.parameter_output_values["output"] = output
+            return Agent()  # Return a proper Structure instance
+
+        yield _process

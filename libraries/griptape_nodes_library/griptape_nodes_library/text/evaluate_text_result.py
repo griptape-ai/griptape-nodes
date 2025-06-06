@@ -1,8 +1,10 @@
 from typing import Any
 
 from griptape.engines import EvalEngine
+from griptape.structures import Agent, Structure
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
+from griptape_nodes.exe_types.node_types import AsyncResult
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.tasks.base_task import BaseTask
 
@@ -168,7 +170,7 @@ class EvaluateTextResult(BaseTask):
 
         return super().after_value_set(parameter, value, modified_parameters_set)
 
-    def process(self) -> None:
+    def process(self) -> AsyncResult[Structure]:
         criteria = self.get_parameter_value("criteria")
 
         engine = EvalEngine(
@@ -179,10 +181,14 @@ class EvaluateTextResult(BaseTask):
         expected_output = self.get_parameter_value("expected_output")
         actual_output = self.get_parameter_value("actual_output")
 
-        score, reason = engine.evaluate(
-            input=user_input,
-            expected_output=expected_output,
-            actual_output=actual_output,
-        )
-        self.parameter_output_values["score"] = score
-        self.parameter_output_values["reason"] = reason
+        def _process() -> Structure:
+            score, reason = engine.evaluate(
+                input=user_input,
+                expected_output=expected_output,
+                actual_output=actual_output,
+            )
+            self.parameter_output_values["score"] = score
+            self.parameter_output_values["reason"] = reason
+            return Agent()
+
+        yield _process
