@@ -1,6 +1,7 @@
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
+    ControlParameter,
     ControlParameterOutput,
     Parameter,
     ParameterMode,
@@ -22,7 +23,12 @@ class ForEachEndNode(EndLoopNode):
         super().__init__(name, metadata)
         self.start_node = None
         self._index = 0
-        self.continue_loop = ControlParameterOutput(tooltip="Continue to the next iteration", name="Continue")
+        self.continue_loop = ControlParameter(
+            tooltip="Continue to the next iteration",
+            name="Continue",
+            allowed_modes={ParameterMode.OUTPUT, ParameterMode.INPUT},
+        )
+        self.continue_loop.ui_options = {"display_name": "Continue"}
         self.add_parameter(self.continue_loop)
         self.output = Parameter(
             name="output",
@@ -55,8 +61,13 @@ class ForEachEndNode(EndLoopNode):
         if self.start_node is None:
             return
         if self.start_node.current_index == 0:
-            self.remove_parameter_value("output")
+            try:
+                self.remove_parameter_value("output")
+            except Exception:
+                pass
         output_list = self.get_parameter_value("output")
+        if output_list is None:
+            output_list = []
         output_list.append(self.get_parameter_value("current_item"))
         if self.start_node.finished:
             self.parameter_output_values["output"] = self.get_parameter_value("output")
@@ -77,5 +88,5 @@ class ForEachEndNode(EndLoopNode):
         target_parameter: Parameter,
         modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
-        if target_parameter is self.continue_loop and isinstance(target_node, StartLoopNode):
+        if source_parameter is self.continue_loop and isinstance(target_node, StartLoopNode):
             self.start_node = target_node

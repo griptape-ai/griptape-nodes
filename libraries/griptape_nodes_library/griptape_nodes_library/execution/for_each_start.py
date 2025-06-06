@@ -9,7 +9,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode, StartLoopNode
+from griptape_nodes.exe_types.node_types import BaseNode, EndLoopNode, StartLoopNode
 
 
 class ForEachStartNode(StartLoopNode):
@@ -58,11 +58,12 @@ class ForEachStartNode(StartLoopNode):
         self.add_parameter(self.current_item)
 
         self.loop = ControlParameterOutput(tooltip="Enter the For Each Loop", name="loop")
+        self.loop.ui_options = {"display_name": "Enter Loop"}
         self.add_parameter(self.loop)
 
     def process(self) -> None:
         # Reset state when the node is first processed
-        if self._flow is None:
+        if self._flow is None or self.finished:
             return
         if self.current_index == 0:
             # Initialize everything!
@@ -76,13 +77,6 @@ class ForEachStartNode(StartLoopNode):
         self.set_parameter_value("index", self.current_index)
         self.publish_update_to_parameter("index", self.current_index)
         self.current_index += 1
-        # Check if we're done.
-        if self.current_index == len(self._items):
-            # This is the last iteration of the loop
-            self.finished = True
-            # reset the node.
-            self.current_index = 0
-            self._items = []
 
     # This node cannot run unless it's connected to a start node.
     def validate_before_workflow_run(self) -> list[Exception] | None:
@@ -92,6 +86,8 @@ class ForEachStartNode(StartLoopNode):
         self.current_index = 0
         self._items = []
         self.finished = False
+        if self.end_node is None:
+            exceptions.append(Exception("End node not found or connected."))
         try:
             flow = GriptapeNodes.ObjectManager().get_object_by_name(
                 GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
@@ -107,6 +103,8 @@ class ForEachStartNode(StartLoopNode):
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         exceptions = []
+        if self.end_node is None:
+            exceptions.append(Exception("End node not found or connected."))
         try:
             flow = GriptapeNodes.ObjectManager().get_object_by_name(
                 GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
@@ -121,6 +119,12 @@ class ForEachStartNode(StartLoopNode):
         if self.finished:
             self.finished = False
             return self.exec_out
+        if self.current_index == len(self._items):
+            # This is the last iteration of the loop
+            self.finished = True
+            # reset the node.
+            self.current_index = 0
+            self._items = []
         return self.loop
 
     def after_incoming_connection(
@@ -133,6 +137,8 @@ class ForEachStartNode(StartLoopNode):
         if target_parameter == self.items_list or target_parameter.parent_container_name == "items":
             self.current_item.type = source_parameter.type
             modified_parameters_set.add("current_item")
+        if target_parameter == self.exec_in and isinstance(source_node, EndLoopNode):
+            self.end_node = source_node
         return super().after_incoming_connection(
             source_node, source_parameter, target_parameter, modified_parameters_set
         )

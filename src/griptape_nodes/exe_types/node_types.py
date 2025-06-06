@@ -623,11 +623,12 @@ class EndNode(BaseNode):
 class StartLoopNode(BaseNode):
     finished: bool
     current_index: int
+    end_node: EndLoopNode | None = None
     """Creating class for Start Loop Node in order to implement loop functionality in execution."""
 
 
 class EndLoopNode(BaseNode):
-    start_node: StartLoopNode | None
+    start_node: StartLoopNode | None = None
     """Creating class for Start Loop Node in order to implement loop functionality in execution."""
 
 
