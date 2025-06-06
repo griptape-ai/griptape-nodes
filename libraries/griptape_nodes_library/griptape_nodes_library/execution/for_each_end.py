@@ -1,13 +1,12 @@
-from typing import Any, override
+from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
     ControlParameterOutput,
     Parameter,
-    ParameterList,
     ParameterMode,
     ParameterTypeBuiltin,
 )
-from griptape_nodes.exe_types.node_types import BaseNode, EndLoopNode
+from griptape_nodes.exe_types.node_types import BaseNode, EndLoopNode, StartLoopNode
 
 
 class ForEachEndNode(EndLoopNode):
@@ -17,20 +16,13 @@ class ForEachEndNode(EndLoopNode):
     or to complete the loop if all items have been processed.
     """
 
-    start_node_finished: bool
     output: Parameter
-    _index: int
-    _children: list[Parameter]
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
-        self.start_node_finished = False
+        self.start_node = None
         self._index = 0
-        self._children = []
-        self.continue_loop = ControlParameterOutput(
-            tooltip = "Continue to the next iteration",
-            name="Continue"
-        )
+        self.continue_loop = ControlParameterOutput(tooltip="Continue to the next iteration", name="Continue")
         self.add_parameter(self.continue_loop)
         self.output = Parameter(
             name="output",
@@ -49,27 +41,25 @@ class ForEachEndNode(EndLoopNode):
         # Add control input parameter
 
     def validate_before_node_run(self) -> list[Exception] | None:
-        self._index = 0
-        self.start_node_finished = False
+        if self.start_node is None:
+            return [Exception("Start node is not set on End Node.")]
         return super().validate_before_node_run()
 
-    @override
     def validate_before_workflow_run(self) -> list[Exception] | None:
         self._index = 0
-        self.start_node_finished = False
-        return super().validate_before_workflow_run()
+        if self.start_node is None:
+            return [Exception("Start node is not set on End Node.")]
+        return super().validate_before_node_run()
 
     def process(self) -> None:
+        if self.start_node is None:
+            return
+        if self.start_node.current_index == 0:
+            self.remove_parameter_value("output")
         output_list = self.get_parameter_value("output")
         output_list.append(self.get_parameter_value("current_item"))
-        self._index += 1
-        if self.start_node_finished:
-            self.parameter_output_values["output"] = self.get_parameter_value
-            while self._index < len(self._children) - 1:
-                self.output.remove_child(self._children[self._index])
-                self._children.pop(self._index)
-                self._index += 1
-            self._index = 0
+        if self.start_node.finished:
+            self.parameter_output_values["output"] = self.get_parameter_value("output")
 
     def get_next_control_output(self) -> Parameter | None:
         """Return the loop_back parameter to continue the loop.
@@ -77,23 +67,15 @@ class ForEachEndNode(EndLoopNode):
         This should connect back to the ForEachStartNode's exec_in parameter.
         If the node is finished, it moves on to the completed parameter.
         """
-        if self.start_node_finished:
-            self.start_node_finished = False
-            return self.get_parameter_by_name("exec_out")
-        return self.get_parameter_by_name("exec_in")
+        # Go back to the start node now.
+        return self.get_parameter_by_name("Continue")
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        modified_parameters_set.add("output")
-        return super().after_value_set(parameter, value, modified_parameters_set)
-
-    def after_incoming_connection(
+    def after_outgoing_connection(
         self,
-        source_node: BaseNode,
-        source_parameter: Parameter,
+        source_parameter: Parameter,  # noqa: ARG002
+        target_node: BaseNode,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
+        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
-        modified_parameters_set.add("output")
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        if target_parameter is self.continue_loop and isinstance(target_node, StartLoopNode):
+            self.start_node = target_node

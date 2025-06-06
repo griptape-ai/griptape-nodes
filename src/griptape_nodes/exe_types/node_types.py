@@ -620,15 +620,14 @@ class EndNode(BaseNode):
         self.add_parameter(ControlParameterInput())
 
 
-class StartLoopNode(ControlNode):
+class StartLoopNode(BaseNode):
+    finished: bool
+    current_index: int
     """Creating class for Start Loop Node in order to implement loop functionality in execution."""
 
 
-class EndLoopNode(ControlNode):
-    # Is the connected StartLoopNode finished processing?
-    start_node_finished: bool
-    # List of child parameters of the output for the loop
-    _children: list[Parameter]
+class EndLoopNode(BaseNode):
+    start_node: StartLoopNode | None
     """Creating class for Start Loop Node in order to implement loop functionality in execution."""
 
 
