@@ -24,6 +24,8 @@ RUN apt-get update \
 WORKDIR /app
 
 # Set virtual environment location outside of /app to avoid mount conflicts
+ENV UV_PYTHON_INSTALL_DIR=/opt/python
+RUN uv python install python3.12
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 
 # 2.1) Install dependencies (without yet installing the project itself)
@@ -66,21 +68,18 @@ RUN apt-get update \
  && add-apt-repository ppa:deadsnakes/ppa \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
-      python3.12 \
-      python3.12-venv \
-      python3-pip \
       git \
       ffmpeg libgl1 \
       libjpeg-dev zlib1g-dev libpng-dev libwebp-dev \
       build-essential \
  && rm -rf /var/lib/apt/lists/*
 
-# Make python3.12 the default 'python3'
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
-
 WORKDIR /app
 
 # Set virtual environment location outside of /app to avoid mount conflicts
+# Install Python in a system-wide location accessible to all users
+ENV UV_PYTHON_INSTALL_DIR=/opt/python
+RUN uv python install python3.12
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 
 # 3.2) Install dependencies (without yet installing the project itself)
@@ -148,11 +147,14 @@ RUN groupadd --gid 1000 appuser \
  && useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser 
 
 # Create app directory structure and set permissions for volume mount points
-RUN mkdir -p /app /opt/venv && \
-    chown -R appuser:appuser /app /opt/venv
+RUN mkdir -p /app /opt/venv /opt/python && \
+    chown -R appuser:appuser /app /opt/venv /opt/python
 
 # 7.2) Copy the venv from the chosen builder into /opt/venv, preserving ownership
 COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
+
+# 7.2.1) Copy the Python installation from builder to /opt/python with proper ownership
+COPY --from=builder --chown=appuser:appuser /opt/python /opt/python
 
 LABEL org.opencontainers.image.source="https://github.com/griptape-ai/griptape-nodes"
 LABEL org.opencontainers.image.description="Griptape Nodes."
