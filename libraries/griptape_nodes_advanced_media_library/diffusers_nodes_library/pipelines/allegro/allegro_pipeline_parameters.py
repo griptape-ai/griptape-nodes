@@ -26,6 +26,9 @@ class AllegroPipelineParameters:
             node,
             repo_ids=[
                 "rhymes-ai/Allegro",
+                "rhymes-ai/Allegro-TI2V",
+                "rhymes-ai/Allegro-T2V-40x360P",
+                "rhymes-ai/Allegro-T2V-40x720P",
             ],
         )
         self._seed_parameter = SeedParameter(node)

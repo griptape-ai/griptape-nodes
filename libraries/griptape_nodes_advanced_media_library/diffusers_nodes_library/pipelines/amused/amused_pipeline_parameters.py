@@ -25,6 +25,10 @@ class AmusedPipelineParameters:
             repo_ids=[
                 "amused/amused-256",
                 "amused/amused-512",
+                "reza-alipour/ml-muse",
+                "reza-alipour/face-muse",
+                "reza-alipour/Muse-Face",
+                "suvadityamuk/amused-512-pokemon",
             ],
         )
         self._seed_parameter = SeedParameter(node)

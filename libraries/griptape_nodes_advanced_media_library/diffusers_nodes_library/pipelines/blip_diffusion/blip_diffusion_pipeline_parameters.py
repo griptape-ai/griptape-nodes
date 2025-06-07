@@ -27,6 +27,8 @@ class BlipDiffusionPipelineParameters:
             node,
             repo_ids=[
                 "Salesforce/blipdiffusion",
+                "ayushtues/blipdiffusion",
+                "ModelsLab/blipdiffusion",
             ],
         )
         self._seed_parameter = SeedParameter(node)

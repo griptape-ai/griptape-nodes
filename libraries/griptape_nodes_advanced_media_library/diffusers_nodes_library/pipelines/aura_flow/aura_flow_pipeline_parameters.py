@@ -23,6 +23,10 @@ class AuraFlowPipelineParameters:
             repo_ids=[
                 "fal/AuraFlow",
                 "fal/AuraFlow-v0.1",
+                "fal/AuraFlow-v0.2",
+                "fal/AuraFlow-v0.3",
+                "Vargol/auraflow0.2-fp16-diffusers",
+                "terminusresearch/auraflow-v0.3",
             ],
         )
         self._seed_parameter = SeedParameter(node)
