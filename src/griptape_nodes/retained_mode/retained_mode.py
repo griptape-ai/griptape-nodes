@@ -425,6 +425,7 @@ class RetainedMode:
             mode_allowed_input (bool, optional): Whether parameter can be used as input.
             mode_allowed_property (bool, optional): Whether parameter can be used as property.
             mode_allowed_output (bool, optional): Whether parameter can be used as output.
+            **kwargs: Additional keyword arguments that may be passed to the parameter creation/modification.
 
         Returns:
             ResultPayload: Contains the result of the parameter operation.
