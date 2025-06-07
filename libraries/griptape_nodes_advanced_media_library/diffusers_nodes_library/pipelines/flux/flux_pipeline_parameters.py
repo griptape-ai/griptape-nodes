@@ -33,7 +33,6 @@ class FluxPipelineParameters:
                 name="text_encoder",
                 input_types=["str"],
                 type="str",
-                allowed_modes=set(),
                 tooltip="text_encoder",
                 default_value="openai/clip-vit-large-patch14",
             )
@@ -43,7 +42,6 @@ class FluxPipelineParameters:
                 name="text_encoder_2",
                 input_types=["str"],
                 type="str",
-                allowed_modes=set(),
                 tooltip="text_encoder_2",
                 default_value="google/t5-v1_1-xxl",
             )
