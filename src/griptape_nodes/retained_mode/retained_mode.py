@@ -710,6 +710,31 @@ class RetainedMode:
 
     @classmethod
     def get_value(cls, *args, **kwargs) -> Any:
+        """Gets the value of a parameter on a node.
+
+        This method supports both direct parameter access and indexed access for list/array parameters.
+        The parameter can be specified either as a single string argument ("node.param") or as
+        keyword arguments (node="node", param="param").
+
+        Args:
+            *args: Optional positional arguments. If provided, first argument should be "node.param".
+            **kwargs: Keyword arguments:
+                node (str): Name of the node containing the parameter.
+                param (str): Name of the parameter to get value from.
+
+        Returns:
+            Any: The value of the parameter, or a failure result if the operation failed.
+
+        Example:
+            # Get value using node.param format
+            value = cmd.get_value("my_node.my_param")
+
+            # Get value using keyword arguments
+            value = cmd.get_value(node="my_node", param="my_param")
+
+            # Get value from a list parameter using indexing
+            value = cmd.get_value("my_node.my_list[0]")
+        """
         node = kwargs.pop("node", None)
         param = kwargs.pop("param", None)
         lrg = len(args)
@@ -764,6 +789,38 @@ class RetainedMode:
 
     @classmethod
     def set_value(cls, *args, **kwargs) -> Any:  # noqa: C901, PLR0912
+        """Sets the value of a parameter on a node.
+
+        This method supports both direct parameter access and indexed access for list/array parameters.
+        The parameter can be specified either as a single string argument ("node.param") or as
+        keyword arguments (node="node", param="param"). The value to set can be provided as
+        the second positional argument or as a keyword argument (value=value).
+
+        Args:
+            *args: Optional positional arguments:
+                - First argument can be "node.param" format
+                - Second argument can be the value to set
+            **kwargs: Keyword arguments:
+                node (str): Name of the node containing the parameter.
+                param (str): Name of the parameter to set value for.
+                value (Any): Value to set for the parameter.
+
+        Returns:
+            Any: Result of the set operation.
+
+        Example:
+            # Set value using node.param format
+            result = cmd.set_value("my_node.my_param", "new_value")
+
+            # Set value using keyword arguments
+            result = cmd.set_value(node="my_node", param="my_param", value="new_value")
+
+            # Set value in a list parameter using indexing
+            result = cmd.set_value("my_node.my_list[0]", "new_value")
+
+            # Set value in a nested list
+            result = cmd.set_value("my_node.my_list[0][1]", "new_value")
+        """
         node = kwargs.pop("node", None)
         param = kwargs.pop("param", None)
         value = kwargs.pop("value", None)
