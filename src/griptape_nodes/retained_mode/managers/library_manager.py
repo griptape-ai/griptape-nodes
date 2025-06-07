@@ -602,7 +602,7 @@ class LibraryManager:
             logger.debug("Virtual environment already exists at %s", library_venv_path)
         else:
             subprocess.run(  # noqa: S603
-                [sys.executable, "-m", "uv", "venv", library_venv_path, "--python", python_version],
+                [sys.executable, "-m", "uv", "venv", str(library_venv_path), "--python", python_version],
                 check=True,
                 text=True,
             )
