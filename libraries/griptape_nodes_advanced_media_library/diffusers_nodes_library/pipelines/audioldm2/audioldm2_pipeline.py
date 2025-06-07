@@ -22,7 +22,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class Audioldm2Pipeline(ControlNode):
     """Griptape wrapper around diffusers.pipelines.audioldm2.AudioLDM2Pipeline."""
-    
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.pipe_params = Audioldm2PipelineParameters(self)
@@ -65,23 +65,25 @@ class Audioldm2Pipeline(ControlNode):
         audio_length = self.pipe_params.get_audio_length_in_s()
 
         def callback_on_step_end(
-            pipe: diffusers.AudioLDM2Pipeline,
+            _pipe: diffusers.AudioLDM2Pipeline,
             i: int,
             _t: Any,
-            callback_kwargs: dict,
+            _callback_kwargs: dict,
         ) -> dict:
             if i < num_inference_steps - 1:
                 self.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")
             return {}
 
-        self.log_params.append_to_logs(f"Generating {audio_length}s audio with {num_inference_steps} inference steps...\n")
+        self.log_params.append_to_logs(
+            f"Generating {audio_length}s audio with {num_inference_steps} inference steps...\n"
+        )
         self.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")
-        
+
         result = pipe(
             **self.pipe_params.get_pipe_kwargs(),
             callback_on_step_end=callback_on_step_end,
         )
-        
+
         output_audio = result.audios[0]
         self.pipe_params.publish_output_audio(output_audio)
         self.log_params.append_to_logs("Audio generation complete.\n")

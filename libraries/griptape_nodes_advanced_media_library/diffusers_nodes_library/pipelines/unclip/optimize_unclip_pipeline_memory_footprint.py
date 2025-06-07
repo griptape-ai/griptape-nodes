@@ -28,7 +28,7 @@ def print_unclip_pipeline_memory_footprint(
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_unclip_pipeline_memory_footprint(
     pipe: diffusers.UnCLIPPipeline,  # type: ignore[reportMissingImports]
 ) -> None:

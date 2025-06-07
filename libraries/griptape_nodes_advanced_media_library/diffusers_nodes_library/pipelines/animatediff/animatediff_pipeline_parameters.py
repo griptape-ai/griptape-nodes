@@ -1,16 +1,14 @@
 import logging
+import uuid
 from pathlib import Path
 from typing import Any
-import uuid
 
-import PIL.Image
-from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
+from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -151,7 +149,7 @@ class AnimateDiffPipelineParameters:
     def get_num_inference_steps(self) -> int:
         return int(self._node.get_parameter_value("num_inference_steps"))
 
-    def get_generator(self):
+    def get_generator(self) -> Any:
         return self._seed_parameter.get_generator()
 
     def get_pipe_kwargs(self) -> dict:
@@ -166,10 +164,7 @@ class AnimateDiffPipelineParameters:
             "generator": self.get_generator(),
         }
 
-    # --------------------------------------------------------------
-    # Result publishing helpers
-    # --------------------------------------------------------------
     def publish_output_video(self, video_path: Path) -> None:
         filename = f"{uuid.uuid4()}{video_path.suffix}"
         url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), filename)
-        self._node.parameter_output_values["output_video"] = VideoUrlArtifact(url) 
+        self._node.parameter_output_values["output_video"] = VideoUrlArtifact(url)

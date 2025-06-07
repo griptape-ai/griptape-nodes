@@ -4,7 +4,9 @@ import logging
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.utils.torch_utils import print_pipeline_memory_footprint  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.utils.torch_utils import (
+    print_pipeline_memory_footprint,  # type: ignore[reportMissingImports]
+)
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -13,16 +15,12 @@ logger = logging.getLogger("diffusers_nodes_library")
 def optimize_consisid_pipeline_memory_footprint(pipe: diffusers.ConsisIDPipeline) -> None:
     """Optimize ConsisID pipeline memory footprint for CUDA."""
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is not available. Memory optimization requires CUDA.")
-    
-    logger.info("Optimizing ConsisID pipeline memory footprint")
-    device = torch.device("cuda")
-    pipe = pipe.to(device)
-    
-    # Enable memory optimizations
-    pipe.enable_model_cpu_offload()
-    pipe.vae.enable_slicing()
-    pipe.vae.enable_tiling()
+        msg = "CUDA is not available. Memory optimization requires CUDA."
+        raise RuntimeError(msg)
+
+    device = "cuda"
+    logger.info("Moving ConsisID pipeline to %s", device)
+    pipe.to(device)
 
 
 def print_consisid_pipeline_memory_footprint(pipe: diffusers.ConsisIDPipeline) -> None:

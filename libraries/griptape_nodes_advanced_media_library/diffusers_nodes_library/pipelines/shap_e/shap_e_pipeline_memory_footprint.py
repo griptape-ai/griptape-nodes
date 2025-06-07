@@ -30,7 +30,8 @@ def optimize_shap_e_pipeline_memory_footprint(pipe: diffusers.ShapEPipeline) -> 
     device = get_best_device()
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for memory optimization")
+        msg = "CUDA is required for memory optimization"
+        raise RuntimeError(msg)
 
     if device == torch.device("cuda"):
         logger.info("Enabling sequential cpu offload")

@@ -13,7 +13,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 def print_ltx_pipeline_memory_footprint(
-    pipe: diffusers.LTXVideoPipeline,  # type: ignore[reportMissingImports]
+    pipe: diffusers.LTXImageToVideoPipeline,  # type: ignore[reportMissingImports]
 ) -> None:
     """Print memory footprint for the main sub-modules of LTX Video pipelines."""
     print_pipeline_memory_footprint(
@@ -27,9 +27,9 @@ def print_ltx_pipeline_memory_footprint(
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_ltx_pipeline_memory_footprint(
-    pipe: diffusers.LTXVideoPipeline,  # type: ignore[reportMissingImports]
+    pipe: diffusers.LTXImageToVideoPipeline,  # type: ignore[reportMissingImports]
 ) -> None:
     """Apply a set of heuristics to minimise VRAM / RAM footprint at inference time.
 
@@ -39,7 +39,8 @@ def optimize_ltx_pipeline_memory_footprint(
     device = get_best_device()
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for LTX Video pipeline optimization")
+        msg = "CUDA is required for LTX Video pipeline optimization"
+        raise RuntimeError(msg)
 
     if device == torch.device("cuda"):
         # Avoid blindly moving the whole pipeline to CUDA. Instead rely on

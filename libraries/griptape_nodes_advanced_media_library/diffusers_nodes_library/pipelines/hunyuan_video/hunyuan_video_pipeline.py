@@ -10,7 +10,6 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.hunyuan_video.hunyuan_video_pipeline_memory_footprint import (  # type: ignore[reportMissingImports]
     optimize_hunyuan_video_pipeline_memory_footprint,
-    print_hunyuan_video_pipeline_memory_footprint,
 )
 from diffusers_nodes_library.pipelines.hunyuan_video.hunyuan_video_pipeline_parameters import (  # type: ignore[reportMissingImports]
     HunyuanVideoPipelineParameters,
@@ -66,10 +65,10 @@ class HunyuanVideoPipeline(ControlNode):
         num_inference_steps = self.pipe_params.get_num_inference_steps()
 
         def callback_on_step_end(
-            pipe: diffusers.HunyuanVideoPipeline,
+            _pipe: diffusers.HunyuanVideoPipeline,
             i: int,
             _t: Any,
-            callback_kwargs: dict,
+            _callback_kwargs: dict,
         ) -> dict:
             if i < num_inference_steps - 1:
                 self.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")

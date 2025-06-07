@@ -3,10 +3,7 @@ import logging
 from typing import Any
 
 import safetensors  # type: ignore[reportMissingImports]
-import torch  # type: ignore[reportMissingImports]
-import torch.nn.functional  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.utils.torch_utils import get_best_device  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.core_types import ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
@@ -62,9 +59,7 @@ class WanLorasParameter:
             lora_path = item["path"]
             msg = f"Loading lora weights: {lora_path}"
             logger.info(msg)
-            print(f"{lora_path=}")
             state_dict = safetensors.torch.load_file(lora_path)  # type: ignore[reportAttributeAccessIssue]
-            print(f"{len(state_dict.keys())=}")
             pipe.load_lora_weights(state_dict, adapter_name=item["name"])
 
         # if loras_to_load and get_best_device(quiet=True) == torch.device("cuda"):
@@ -72,21 +67,6 @@ class WanLorasParameter:
         #     # to bfloat16. For cuda, we enable the layerwise caching on the
         #     # transformer, but this isn't applied to the linear layers added
         #     # by the loras. Those are loaded as fp8, and cuda doesn't have
-        #     # all the right matrix operation kernels for fp8, so we need to
-        #     # cast to bfloat16. That's fine because there are a lot less lora
-        #     # weights when compared to the original transformer (so it won't
-        #     # take up that much space on the device).
-        #     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/849
-        #     logger.info("converting all lora_A and lora_B layers to bfloat16")
-        #     lora_modules = [
-        #         module
-        #         for name, module in pipe.transformer.named_modules()
-        #         if hasattr(module, "lora_A") or hasattr(module, "lora_B")
-        #     ]
-
-        #     logger.info("Converting %d lora related layers to bfloat16", len(lora_modules))
-        #     for module in lora_modules:
-        #         module.to(dtype=torch.bfloat16)
 
         # Use them with given weights.
         adapter_names = [v["name"] for v in lora_by_name.values()]

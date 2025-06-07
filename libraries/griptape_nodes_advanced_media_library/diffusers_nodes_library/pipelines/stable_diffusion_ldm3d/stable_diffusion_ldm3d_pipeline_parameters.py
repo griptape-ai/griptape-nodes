@@ -89,7 +89,7 @@ class StableDiffusionLdm3dPipelineParameters:
             Parameter(
                 name="output_rgb_image",
                 type="image",
-                output_types=["image"],
+                output_type="image",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Generated RGB image",
             )
@@ -98,31 +98,25 @@ class StableDiffusionLdm3dPipelineParameters:
             Parameter(
                 name="output_depth_image",
                 type="image",
-                output_types=["image"],
+                output_type="image",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Generated depth image",
             )
         )
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self._huggingface_repo_parameter.after_value_set(parameter, value, modified_parameters_set)
         self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
-        
+
         repo_errors = self._huggingface_repo_parameter.validate_before_node_run()
         if repo_errors:
             errors.extend(repo_errors)
-            
-        seed_errors = self._seed_parameter.validate_before_node_run()
-        if seed_errors:
-            errors.extend(seed_errors)
-            
+
         return errors or None
 
     def preprocess(self) -> None:
-        self._huggingface_repo_parameter.preprocess()
         self._seed_parameter.preprocess()
 
     def get_repo_revision(self) -> tuple[str, str]:
@@ -140,11 +134,11 @@ class StableDiffusionLdm3dPipelineParameters:
             "width": self._node.get_parameter_value("width"),
             "generator": self._seed_parameter.get_generator(),
         }
-        
+
         negative_prompt = self._node.get_parameter_value("negative_prompt")
         if negative_prompt:
             kwargs["negative_prompt"] = negative_prompt
-            
+
         return kwargs
 
     def publish_output_image_preview_placeholder(self) -> None:
@@ -162,13 +156,13 @@ class StableDiffusionLdm3dPipelineParameters:
             preview_image = (preview_image / 2 + 0.5).clamp(0, 1)
             preview_image = preview_image.cpu().permute(0, 2, 3, 1).float().numpy()
             preview_image = (preview_image * 255).round().astype("uint8")[0]
-            
+
             # For LDM3D, the latents contain both RGB and depth channels
-            if preview_image.shape[-1] >= 3:
+            if preview_image.shape[-1] >= 3:  # noqa: PLR2004
                 rgb_preview = PIL.Image.fromarray(preview_image[:, :, :3])
                 self._node.set_parameter_value("output_rgb_image", pil_to_image_artifact(rgb_preview))
-            
-            if preview_image.shape[-1] >= 4:
+
+            if preview_image.shape[-1] >= 4:  # noqa: PLR2004
                 # Use the 4th channel as depth, convert to grayscale for visualization
                 depth_channel = preview_image[:, :, 3]
                 depth_preview = PIL.Image.fromarray(depth_channel).convert("RGB")

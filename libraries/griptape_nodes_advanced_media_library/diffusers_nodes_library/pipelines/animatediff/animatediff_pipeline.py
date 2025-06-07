@@ -8,12 +8,12 @@ from diffusers.utils import export_to_video  # type: ignore[reportMissingImports
 
 from diffusers_nodes_library.common.parameters.log_parameter import LogParameter  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.pipelines.animatediff.animatediff_pipeline_parameters import (  # type: ignore[reportMissingImports]
-    AnimateDiffPipelineParameters,
-)
 from diffusers_nodes_library.pipelines.animatediff.animatediff_pipeline_memory_footprint import (  # type: ignore[reportMissingImports]
     optimize_animatediff_pipeline_memory_footprint,
     print_animatediff_pipeline_memory_footprint,
+)
+from diffusers_nodes_library.pipelines.animatediff.animatediff_pipeline_parameters import (  # type: ignore[reportMissingImports]
+    AnimateDiffPipelineParameters,
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -48,10 +48,10 @@ class AnimateDiffPipeline(ControlNode):
     # ------------------------------------------------------------------
     # Execution
     # ------------------------------------------------------------------
-    def process(self) -> AsyncResult | None:  # noqa: D401
+    def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
-    def _process(self) -> AsyncResult | None:  # noqa: C901, PLR0915
+    def _process(self) -> AsyncResult | None:
         self.preprocess()
         self.log_params.append_to_logs("Preparing models...\n")
 
@@ -97,7 +97,8 @@ class AnimateDiffPipeline(ControlNode):
         # Export video and publish
         # -------------------------------------------------------------
         with self.log_params.append_profile_to_logs("Exporting video"), self.log_params.append_logs_to_logs(logger):
-            temp_file = Path(tempfile.NamedTemporaryFile(suffix=".mp4", delete=False).name)
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file_obj:
+                temp_file = Path(temp_file_obj.name)
             try:
                 export_to_video(frames, str(temp_file), fps=8)
                 self.pipe_params.publish_output_video(temp_file)
@@ -108,4 +109,4 @@ class AnimateDiffPipeline(ControlNode):
         self.log_params.append_to_logs("Done.\n")
 
         logger.info("AnimateDiff memory footprint after inference:")
-        print_animatediff_pipeline_memory_footprint(pipe) 
+        print_animatediff_pipeline_memory_footprint(pipe)

@@ -12,7 +12,7 @@ from diffusers_nodes_library.common.utils.torch_utils import (  # type: ignore[r
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-def print_stable_diffusion_safe_pipeline_memory_footprint(pipe: diffusers.StableDiffusionSafePipeline) -> None:
+def print_stable_diffusion_safe_pipeline_memory_footprint(pipe: diffusers.StableDiffusionPipelineSafe) -> None:
     """Print pipeline memory footprint."""
     print_pipeline_memory_footprint(
         pipe,
@@ -26,21 +26,22 @@ def print_stable_diffusion_safe_pipeline_memory_footprint(pipe: diffusers.Stable
 
 
 @cache
-def optimize_stable_diffusion_safe_pipeline_memory_footprint(pipe: diffusers.StableDiffusionSafePipeline) -> None:
+def optimize_stable_diffusion_safe_pipeline_memory_footprint(pipe: diffusers.StableDiffusionPipelineSafe) -> None:
     """Optimize pipeline memory footprint."""
     device = get_best_device()
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for memory footprint optimization")
+        msg = "CUDA is required for memory footprint optimization"
+        raise RuntimeError(msg)
 
     if device == torch.device("cuda"):
         # Sequential cpu offload only makes sense for gpus (VRAM <-> RAM).
         logger.info("Enabling sequential cpu offload")
         pipe.enable_sequential_cpu_offload()
-    
+
     logger.info("Enabling attention slicing")
     pipe.enable_attention_slicing()
-    
+
     if hasattr(pipe, "enable_vae_slicing"):
         logger.info("Enabling vae slicing")
         pipe.enable_vae_slicing()

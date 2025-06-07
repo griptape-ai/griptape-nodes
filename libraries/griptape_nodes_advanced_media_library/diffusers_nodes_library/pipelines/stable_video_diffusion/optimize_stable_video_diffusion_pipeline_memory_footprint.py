@@ -26,7 +26,7 @@ def print_stable_video_diffusion_pipeline_memory_footprint(
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_stable_video_diffusion_pipeline_memory_footprint(
     pipe: diffusers.StableVideoDiffusionPipeline,  # type: ignore[reportMissingImports]
 ) -> None:

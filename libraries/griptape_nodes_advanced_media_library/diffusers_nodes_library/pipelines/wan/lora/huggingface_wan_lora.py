@@ -6,11 +6,11 @@ import huggingface_hub
 from diffusers_nodes_library.common.parameters.huggingface_repo_file_parameter import (
     HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
 )
-from diffusers_nodes_library.pipelines.wan.wan_pipeline_parameters import (
-    WanPipelineParameters,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.pipelines.wan.lora.wan_lora_parameters import (  # type: ignore[reportMissingImports]
     WanLoraParameters,  # type: ignore[reportMissingImports]
+)
+from diffusers_nodes_library.pipelines.wan.wan_pipeline_parameters import (
+    WanPipelineParameters,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode

@@ -5,7 +5,6 @@ import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.utils.torch_utils import (  # type: ignore[reportMissingImports]
-    get_best_device,
     print_pipeline_memory_footprint,
 )
 
@@ -28,21 +27,18 @@ def print_controlnet_hunyuandit_pipeline_memory_footprint(pipe: diffusers.Hunyua
 
 @cache
 def optimize_controlnet_hunyuandit_pipeline_memory_footprint(pipe: diffusers.HunyuanDiTControlNetPipeline) -> None:
-    """Optimize pipeline memory footprint."""
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for ControlNet HunyuanDiT pipeline optimization")
-    
-    device = get_best_device()
-    logger.info("Enabling sequential cpu offload")
-    pipe.enable_sequential_cpu_offload()
-    logger.info("Enabling attention slicing")
-    pipe.enable_attention_slicing()
-    if hasattr(pipe, "enable_vae_slicing"):
-        logger.info("Enabling vae slicing")
-        pipe.enable_vae_slicing()
-    elif hasattr(pipe, "vae"):
-        logger.info("Enabling vae slicing")
-        pipe.vae.enable_slicing()
+    """Optimize ControlNet HunyuanDiT pipeline memory footprint by moving to GPU.
 
-    logger.info("Final memory footprint:")
-    print_controlnet_hunyuandit_pipeline_memory_footprint(pipe)
+    Args:
+        pipe: The ControlNet HunyuanDiT pipeline to optimize
+
+    Raises:
+        RuntimeError: If CUDA is not available
+    """
+    if not torch.cuda.is_available():
+        msg = "CUDA is required for ControlNet HunyuanDiT pipeline optimization"
+        raise RuntimeError(msg)
+
+    device = "cuda"
+    logger.info("Moving ControlNet HunyuanDiT pipeline to %s", device)
+    pipe.to(device)

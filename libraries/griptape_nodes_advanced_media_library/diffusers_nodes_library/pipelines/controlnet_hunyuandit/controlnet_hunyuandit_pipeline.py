@@ -52,7 +52,7 @@ class ControlnetHunyuanditPipeline(ControlNode):
         with self.log_params.append_profile_to_logs("Loading model metadata"):
             base_repo_id, base_revision = self.pipe_params.get_repo_revision()
             controlnet_repo_id, controlnet_revision = self.pipe_params.get_controlnet_repo_revision()
-            
+
             controlnet = model_cache.from_pretrained(
                 diffusers.HunyuanDiTControlNetModel,
                 pretrained_model_name_or_path=controlnet_repo_id,
@@ -60,7 +60,7 @@ class ControlnetHunyuanditPipeline(ControlNode):
                 torch_dtype=torch.float16,
                 local_files_only=True,
             )
-            
+
             pipe = model_cache.from_pretrained(
                 diffusers.HunyuanDiTControlNetPipeline,
                 pretrained_model_name_or_path=base_repo_id,

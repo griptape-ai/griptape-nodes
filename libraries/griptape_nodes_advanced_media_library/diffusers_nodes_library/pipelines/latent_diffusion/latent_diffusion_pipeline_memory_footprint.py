@@ -26,7 +26,7 @@ def print_latent_diffusion_pipeline_memory_footprint(
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_latent_diffusion_pipeline_memory_footprint(
     pipe: diffusers.LDMTextToImagePipeline,  # type: ignore[reportMissingImports]
 ) -> None:
@@ -35,10 +35,11 @@ def optimize_latent_diffusion_pipeline_memory_footprint(
     The logic follows the same rationale as the optimisation helper for other
     diffusers pipelines but adapted to the component layout of Latent Diffusion.
     """
-    device = get_best_device()
+    get_best_device()
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for LatentDiffusion pipeline optimization")
+        msg = "CUDA is required for LatentDiffusion pipeline optimization"
+        raise RuntimeError(msg)
 
     logger.info("Enabling sequential CPU offload")
     pipe.enable_sequential_cpu_offload()

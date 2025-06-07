@@ -5,12 +5,12 @@ import diffusers  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.log_parameter import LogParameter  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.pipelines.amused.amused_pipeline_parameters import (  # type: ignore[reportMissingImports]
-    AmusedPipelineParameters,
-)
 from diffusers_nodes_library.pipelines.amused.amused_pipeline_memory_footprint import (  # type: ignore[reportMissingImports]
     optimize_amused_pipeline_memory_footprint,
     print_amused_pipeline_memory_footprint,
+)
+from diffusers_nodes_library.pipelines.amused.amused_pipeline_parameters import (  # type: ignore[reportMissingImports]
+    AmusedPipelineParameters,
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -45,10 +45,10 @@ class AmusedPipeline(ControlNode):
     # ------------------------------------------------------------------
     # Execution
     # ------------------------------------------------------------------
-    def process(self) -> AsyncResult | None:  # noqa: D401
+    def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
-    def _process(self) -> AsyncResult | None:  # noqa: C901
+    def _process(self) -> AsyncResult | None:
         self.preprocess()
         self.pipe_params.publish_output_image_preview_placeholder()
         self.log_params.append_to_logs("Preparing models...\n")
@@ -88,4 +88,4 @@ class AmusedPipeline(ControlNode):
 
         # Optionally dump a final memory report
         logger.info("Amused memory footprint after inference:")
-        print_amused_pipeline_memory_footprint(pipe) 
+        print_amused_pipeline_memory_footprint(pipe)

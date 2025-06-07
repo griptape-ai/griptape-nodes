@@ -21,7 +21,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class StableDiffusionSafePipeline(ControlNode):
-    """Griptape wrapper around diffusers.StableDiffusionSafePipeline."""
+    """Griptape wrapper around diffusers.StableDiffusionPipelineSafe."""
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -52,7 +52,7 @@ class StableDiffusionSafePipeline(ControlNode):
         with self.log_params.append_profile_to_logs("Loading model metadata"):
             base_repo_id, base_revision = self.pipe_params.get_repo_revision()
             pipe = model_cache.from_pretrained(
-                diffusers.StableDiffusionSafePipeline,
+                diffusers.StableDiffusionPipelineSafe,
                 pretrained_model_name_or_path=base_repo_id,
                 revision=base_revision,
                 torch_dtype=torch.float16,
@@ -65,7 +65,7 @@ class StableDiffusionSafePipeline(ControlNode):
         num_inference_steps = self.pipe_params.get_num_inference_steps()
 
         def callback_on_step_end(
-            pipe: diffusers.StableDiffusionSafePipeline,
+            pipe: diffusers.StableDiffusionPipelineSafe,
             i: int,
             _t: Any,
             callback_kwargs: dict,

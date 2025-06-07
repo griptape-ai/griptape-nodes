@@ -1,13 +1,16 @@
 import logging
+import uuid
+from pathlib import Path
 from typing import Any
 
-import diffusers  # type: ignore[reportMissingImports]
+from artifact_utils.video_url_artifact import VideoUrlArtifact
 from artifact_utils.video_utils import frames_to_video_artifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -119,6 +122,7 @@ class MochiPipelineParameters:
         num_frames = int(self._node.parameter_values["num_frames"])
         # Create a placeholder video with black frames
         import numpy as np
+
         placeholder_frames = [np.zeros((height, width, 3), dtype=np.uint8) for _ in range(num_frames)]
         placeholder_video_artifact = frames_to_video_artifact(placeholder_frames, fps=8)
         self._node.publish_update_to_parameter("output_video", placeholder_video_artifact)
@@ -156,7 +160,7 @@ class MochiPipelineParameters:
             "generator": self._seed_parameter.get_generator(),
         }
 
-    def publish_output_video(self, output_frames: list) -> None:
-        video_artifact = frames_to_video_artifact(output_frames, fps=8)
-        self._node.set_parameter_value("output_video", video_artifact)
-        self._node.parameter_output_values["output_video"] = video_artifact
+    def publish_output_video(self, video_path: Path) -> None:
+        filename = f"{uuid.uuid4()}{video_path.suffix}"
+        url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), filename)
+        self._node.parameter_output_values["output_video"] = VideoUrlArtifact(url)

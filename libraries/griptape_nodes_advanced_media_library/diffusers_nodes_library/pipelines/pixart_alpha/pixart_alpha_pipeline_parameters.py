@@ -2,6 +2,7 @@ import logging
 from typing import Any
 
 import PIL.Image
+import torch  # type: ignore[reportMissingImports]
 from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
@@ -110,9 +111,7 @@ class PixartAlphaPipelineParameters:
         errors = self._huggingface_repo_parameter.validate_before_node_run()
         return errors or None
 
-    def after_value_set(
-        self, parameter: Parameter, value: Any, modified_parameters_set: set[str]
-    ) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
 
     def preprocess(self) -> None:
@@ -142,7 +141,7 @@ class PixartAlphaPipelineParameters:
     def get_num_inference_steps(self) -> int:
         return int(self._node.get_parameter_value("num_inference_steps"))
 
-    def get_generator(self):
+    def get_generator(self) -> torch.Generator:
         return self._seed_parameter.get_generator()
 
     def get_pipe_kwargs(self) -> dict:
@@ -163,9 +162,7 @@ class PixartAlphaPipelineParameters:
         width = self.get_width()
         height = self.get_height()
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
-        self._node.publish_update_to_parameter(
-            "output_image", pil_to_image_artifact(preview_placeholder_image)
-        )
+        self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
     def publish_output_image(self, output_image_pil: Image) -> None:
         image_artifact = pil_to_image_artifact(output_image_pil)

@@ -20,14 +20,14 @@ def print_hunyuandit_pipeline_memory_footprint(
         pipe,
         [
             "text_encoder",
-            "text_encoder_2", 
+            "text_encoder_2",
             "transformer",
             "vae",
         ],
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_hunyuandit_pipeline_memory_footprint(
     pipe: diffusers.HunyuanDiTPipeline,  # type: ignore[reportMissingImports]
 ) -> None:
@@ -39,7 +39,8 @@ def optimize_hunyuandit_pipeline_memory_footprint(
     device = get_best_device()
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for HunyuanDiT pipeline optimization")
+        msg = "CUDA is required for HunyuanDiT pipeline optimization"
+        raise RuntimeError(msg)
 
     if device == torch.device("cuda"):
         # Avoid blindly moving the whole pipeline to CUDA. Instead rely on

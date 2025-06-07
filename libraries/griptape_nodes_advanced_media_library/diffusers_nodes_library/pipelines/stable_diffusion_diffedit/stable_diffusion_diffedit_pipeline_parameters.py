@@ -1,14 +1,15 @@
 import logging
-from typing import Any, Optional
+from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
+import torch  # type: ignore[reportMissingImports]
 from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -35,7 +36,6 @@ class StableDiffusionDiffeditPipelineParameters:
                 name="image",
                 input_types=["image"],
                 type="image",
-                allowed_modes={ParameterMode.REQUIRED},
                 tooltip="The input image to edit",
             )
         )
@@ -44,7 +44,6 @@ class StableDiffusionDiffeditPipelineParameters:
                 name="source_prompt",
                 input_types=["str"],
                 type="str",
-                allowed_modes={ParameterMode.REQUIRED},
                 tooltip="The source prompt describing the current image content",
                 default_value="",
             )
@@ -54,7 +53,6 @@ class StableDiffusionDiffeditPipelineParameters:
                 name="target_prompt",
                 input_types=["str"],
                 type="str",
-                allowed_modes={ParameterMode.REQUIRED},
                 tooltip="The target prompt describing the desired edited content",
                 default_value="",
             )
@@ -64,7 +62,6 @@ class StableDiffusionDiffeditPipelineParameters:
                 name="negative_prompt",
                 input_types=["str"],
                 type="str",
-                allowed_modes=set(),
                 tooltip="The prompt to not guide the image generation",
                 default_value="",
             )
@@ -74,7 +71,6 @@ class StableDiffusionDiffeditPipelineParameters:
                 name="mask_image",
                 input_types=["image"],
                 type="image",
-                allowed_modes=set(),
                 tooltip="Optional mask image specifying which regions to edit",
             )
         )
@@ -83,7 +79,6 @@ class StableDiffusionDiffeditPipelineParameters:
                 name="num_inference_steps",
                 input_types=["int"],
                 type="int",
-                allowed_modes=set(),
                 tooltip="The number of denoising steps",
                 default_value=50,
             )
@@ -93,7 +88,6 @@ class StableDiffusionDiffeditPipelineParameters:
                 name="guidance_scale",
                 input_types=["float"],
                 type="float",
-                allowed_modes=set(),
                 tooltip="Guidance scale for generation",
                 default_value=7.5,
             )
@@ -103,7 +97,6 @@ class StableDiffusionDiffeditPipelineParameters:
                 name="mask_generation_guidance_scale",
                 input_types=["float"],
                 type="float",
-                allowed_modes=set(),
                 tooltip="Guidance scale for mask generation",
                 default_value=7.5,
             )
@@ -113,7 +106,6 @@ class StableDiffusionDiffeditPipelineParameters:
                 name="inversion_steps",
                 input_types=["int"],
                 type="int",
-                allowed_modes=set(),
                 tooltip="Number of steps for DDIM inversion",
                 default_value=20,
             )
@@ -126,7 +118,6 @@ class StableDiffusionDiffeditPipelineParameters:
                 name="output_image",
                 input_types=[],
                 type="image",
-                allowed_modes=set(),
                 tooltip="Generated edited image",
             )
         )
@@ -135,30 +126,26 @@ class StableDiffusionDiffeditPipelineParameters:
                 name="output_mask",
                 input_types=[],
                 type="image",
-                allowed_modes=set(),
                 tooltip="Generated or used mask image",
             )
         )
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self._huggingface_repo_parameter.after_value_set(parameter, value, modified_parameters_set)
         self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
         errors.extend(self._huggingface_repo_parameter.validate_before_node_run() or [])
-        errors.extend(self._seed_parameter.validate_before_node_run() or [])
-        return errors or None
 
     def preprocess(self) -> None:
-        self._huggingface_repo_parameter.preprocess()
         self._seed_parameter.preprocess()
 
-    def get_repo_revision(self) -> tuple[str, Optional[str]]:
+    def get_repo_revision(self) -> tuple[str, str | None]:
         return self._huggingface_repo_parameter.get_repo_revision()
 
     def get_image(self) -> Image:
         from pillow_nodes_library.utils import image_artifact_to_pil  # type: ignore[reportMissingImports]
+
         image_artifact = self._node.get_parameter_value("image")
         return image_artifact_to_pil(image_artifact)
 
@@ -168,12 +155,13 @@ class StableDiffusionDiffeditPipelineParameters:
     def get_target_prompt(self) -> str:
         return self._node.get_parameter_value("target_prompt")
 
-    def get_negative_prompt(self) -> Optional[str]:
+    def get_negative_prompt(self) -> str | None:
         negative_prompt = self._node.get_parameter_value("negative_prompt")
         return negative_prompt if negative_prompt else None
 
-    def get_mask_image(self) -> Optional[Image]:
+    def get_mask_image(self) -> Image | None:
         from pillow_nodes_library.utils import image_artifact_to_pil  # type: ignore[reportMissingImports]
+
         mask_artifact = self._node.get_parameter_value("mask_image")
         if mask_artifact:
             return image_artifact_to_pil(mask_artifact)
@@ -191,7 +179,7 @@ class StableDiffusionDiffeditPipelineParameters:
     def get_inversion_steps(self) -> int:
         return self._node.get_parameter_value("inversion_steps")
 
-    def get_generator(self):
+    def get_generator(self) -> torch.Generator:
         return self._seed_parameter.get_generator()
 
     def get_mask_generation_kwargs(self) -> dict[str, Any]:
@@ -212,7 +200,7 @@ class StableDiffusionDiffeditPipelineParameters:
             "generator": self.get_generator(),
         }
 
-    def get_pipe_kwargs(self, mask_image: Image, latents) -> dict[str, Any]:
+    def get_pipe_kwargs(self, mask_image: Image, latents: Any) -> dict[str, Any]:
         kwargs = {
             "prompt": self.get_target_prompt(),
             "mask_image": mask_image,
@@ -221,11 +209,11 @@ class StableDiffusionDiffeditPipelineParameters:
             "guidance_scale": self.get_guidance_scale(),
             "generator": self.get_generator(),
         }
-        
+
         negative_prompt = self.get_negative_prompt()
         if negative_prompt:
             kwargs["negative_prompt"] = negative_prompt
-            
+
         return kwargs
 
     def publish_output_image_preview_placeholder(self) -> None:
@@ -235,7 +223,9 @@ class StableDiffusionDiffeditPipelineParameters:
         placeholder_artifact = pil_to_image_artifact(placeholder_image)
         self._node.set_parameter_value("output_image", placeholder_artifact)
 
-    def publish_output_image_preview_latents(self, pipe: diffusers.StableDiffusionDiffEditPipeline, latents) -> None:
+    def publish_output_image_preview_latents(
+        self, pipe: diffusers.StableDiffusionDiffEditPipeline, latents: Any
+    ) -> None:
         try:
             with pipe.vae.disable_tiling():
                 latents_scaled = 1 / pipe.vae.config.scaling_factor * latents
@@ -244,7 +234,7 @@ class StableDiffusionDiffeditPipelineParameters:
                 image_artifact = pil_to_image_artifact(image)
                 self._node.set_parameter_value("output_image", image_artifact)
         except Exception as e:
-            logger.warning(f"Failed to publish preview from latents: {e}")
+            logger.warning("Failed to publish preview from latents: %s", e)
 
     def publish_output_image(self, image: Image) -> None:
         image_artifact = pil_to_image_artifact(image)

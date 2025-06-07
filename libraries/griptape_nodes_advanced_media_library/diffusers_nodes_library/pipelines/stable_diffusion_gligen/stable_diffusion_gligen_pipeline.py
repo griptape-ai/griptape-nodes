@@ -8,11 +8,11 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.pipelines.stable_diffusion_gligen.stable_diffusion_gligen_pipeline_parameters import (
-    StableDiffusionGligenPipelineParameters,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.pipelines.stable_diffusion_gligen.stable_diffusion_gligen_pipeline_memory_footprint import (
     optimize_stable_diffusion_gligen_pipeline_memory_footprint,  # type: ignore[reportMissingImports]
+)
+from diffusers_nodes_library.pipelines.stable_diffusion_gligen.stable_diffusion_gligen_pipeline_parameters import (
+    StableDiffusionGligenPipelineParameters,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -65,10 +65,10 @@ class StableDiffusionGligenPipeline(ControlNode):
         num_inference_steps = self.pipe_params.get_num_inference_steps()
         phrases = self.pipe_params.get_gligen_phrases()
         boxes = self.pipe_params.get_gligen_boxes()
-        
+
         self.log_params.append_to_logs(f"Generating grounded image with {len(phrases)} objects...\n")
-        for i, (phrase, box) in enumerate(zip(phrases, boxes)):
-            self.log_params.append_to_logs(f"  {i+1}. '{phrase}' at {box}\n")
+        for i, (phrase, box) in enumerate(zip(phrases, boxes, strict=False)):
+            self.log_params.append_to_logs(f"  {i + 1}. '{phrase}' at {box}\n")
 
         def callback_on_step_end(
             pipe: diffusers.StableDiffusionGLIGENPipeline,

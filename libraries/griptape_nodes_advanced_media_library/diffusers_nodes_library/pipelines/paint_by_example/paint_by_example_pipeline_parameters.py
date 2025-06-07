@@ -27,59 +27,57 @@ class PaintByExamplePipelineParameters:
 
     def add_input_parameters(self) -> None:
         self._huggingface_repo_parameter.add_input_parameters()
-        
+
         self._node.add_parameter(
             Parameter(
                 name="image",
-                input_types=["ImageArtifact"],
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 allowed_modes={ParameterMode.INPUT},
                 tooltip="Input image to be inpainted",
             )
         )
-        
+
         self._node.add_parameter(
             Parameter(
-                name="mask_image", 
-                input_types=["ImageArtifact"],
+                name="mask_image",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 allowed_modes={ParameterMode.INPUT},
                 tooltip="Mask image indicating which areas to inpaint (white = inpaint, black = keep)",
             )
         )
-        
+
         self._node.add_parameter(
             Parameter(
                 name="example_image",
-                input_types=["ImageArtifact"],
-                type="ImageArtifact", 
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                type="ImageArtifact",
                 allowed_modes={ParameterMode.INPUT},
                 tooltip="Example image to guide the inpainting process",
             )
         )
-        
+
         self._node.add_parameter(
             Parameter(
                 name="num_inference_steps",
                 input_types=["int"],
                 type="int",
-                allowed_modes=set(),
                 tooltip="Number of denoising steps",
                 default_value=50,
             )
         )
-        
+
         self._node.add_parameter(
             Parameter(
                 name="guidance_scale",
                 input_types=["float"],
                 type="float",
-                allowed_modes=set(),
                 tooltip="Guidance scale for classifier-free guidance",
                 default_value=5.0,
             )
         )
-        
+
         self._seed_parameter.add_input_parameters()
 
     def add_output_parameters(self) -> None:
@@ -94,14 +92,14 @@ class PaintByExamplePipelineParameters:
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
-        
+
         if not self._node.get_parameter_value("image"):
             errors.append(ValueError("Input image is required"))
         if not self._node.get_parameter_value("mask_image"):
             errors.append(ValueError("Mask image is required"))
         if not self._node.get_parameter_value("example_image"):
             errors.append(ValueError("Example image is required"))
-            
+
         return errors if errors else None
 
     def preprocess(self) -> None:
@@ -136,12 +134,11 @@ class PaintByExamplePipelineParameters:
         return example_artifact.value
 
     def publish_output_image_preview_placeholder(self) -> None:
-        self._node.publish_parameter_value("output_image", None)
+        self._node.publish_update_to_parameter("output_image", None)
 
     def publish_output_image_preview_latents(self, pipe: diffusers.PaintByExamplePipeline, latents: Any) -> None:
-        """Publish preview of current latents during generation"""
-        pass
+        """Publish preview of current latents during generation."""
 
     def publish_output_image(self, output_image_pil: PIL.Image.Image) -> None:
         output_image_artifact = pil_to_image_artifact(output_image_pil)
-        self._node.publish_parameter_value("output_image", output_image_artifact)
+        self._node.parameter_output_values["output_image"] = output_image_artifact

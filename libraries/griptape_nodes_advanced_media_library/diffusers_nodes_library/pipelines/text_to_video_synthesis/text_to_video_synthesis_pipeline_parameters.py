@@ -1,22 +1,15 @@
 import logging
+import uuid
 from pathlib import Path
 from typing import Any
-import uuid
-import tempfile
-
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-import diffusers  # type: ignore[reportMissingImports]
-import PIL.Image
-from PIL.Image import Image
 
 from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
-from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -111,24 +104,18 @@ class TextToVideoSynthesisPipelineParameters:
         )
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self._huggingface_repo_parameter.after_value_set(parameter, value, modified_parameters_set)
         self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
-        
+
         repo_errors = self._huggingface_repo_parameter.validate_before_node_run()
         if repo_errors:
             errors.extend(repo_errors)
-            
-        seed_errors = self._seed_parameter.validate_before_node_run()
-        if seed_errors:
-            errors.extend(seed_errors)
-            
+
         return errors if errors else None
 
     def preprocess(self) -> None:
-        self._huggingface_repo_parameter.preprocess()
         self._seed_parameter.preprocess()
 
     def get_repo_revision(self) -> tuple[str, str]:
@@ -149,23 +136,7 @@ class TextToVideoSynthesisPipelineParameters:
             "generator": self._seed_parameter.get_generator(),
         }
 
-    def publish_output_video(self, frames: list[PIL.Image.Image]) -> None:
-        """Convert PIL frames to video and publish as output parameter."""
-        # Create temporary video file
-        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file:
-            temp_path = Path(temp_file.name)
-        
-        # Convert frames to video using imageio
-        import imageio
-        with imageio.get_writer(str(temp_path), fps=8) as writer:
-            for frame in frames:
-                writer.append_data(frame)
-        
-        # Create video artifact
-        video_artifact = VideoUrlArtifact(
-            value=str(temp_path),
-            url=str(temp_path),
-            name=f"text_to_video_{uuid.uuid4().hex[:8]}.mp4"
-        )
-        
-        self._node.set_parameter_value("video", video_artifact)
+    def publish_output_video(self, video_path: Path) -> None:
+        filename = f"{uuid.uuid4()}{video_path.suffix}"
+        url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), filename)
+        self._node.parameter_output_values["output_video"] = VideoUrlArtifact(url)

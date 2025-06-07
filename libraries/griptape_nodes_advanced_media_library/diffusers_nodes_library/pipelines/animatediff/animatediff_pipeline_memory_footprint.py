@@ -27,18 +27,19 @@ def print_animatediff_pipeline_memory_footprint(
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_animatediff_pipeline_memory_footprint(
     pipe: diffusers.AnimateDiffPipeline,  # type: ignore[reportMissingImports]
 ) -> None:
     """Apply optimizations to reduce memory usage.
-    
+
     Raises:
         RuntimeError: If CUDA is not available.
     """
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is not available")
-    
+        msg = "CUDA is not available"
+        raise RuntimeError(msg)
+
     device = get_best_device()
 
     if device == torch.device("cuda"):
@@ -56,4 +57,4 @@ def optimize_animatediff_pipeline_memory_footprint(
         pipe.vae.enable_slicing()  # type: ignore[attr-defined]
 
     logger.info("Final memory footprint:")
-    print_animatediff_pipeline_memory_footprint(pipe) 
+    print_animatediff_pipeline_memory_footprint(pipe)

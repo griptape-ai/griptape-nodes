@@ -1,13 +1,11 @@
 import logging
+import uuid
 from pathlib import Path
 from typing import Any
-import uuid
-
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
-from PIL.Image import Image
+from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 from griptape.loaders import ImageLoader
 from PIL.Image import Image
@@ -16,13 +14,11 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     pil_to_image_artifact,
 )
 
-from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
-from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
-
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -41,16 +37,6 @@ class WanImageToVideoPipelineParameters:
 
     def add_input_parameters(self) -> None:
         self._huggingface_repo_parameter.add_input_parameters()
-        # self._node.add_parameter(
-        #     Parameter(
-        #         name="text_encoder",
-        #         input_types=["str"],
-        #         type="str",
-        #         allowed_modes=set(),
-        #         tooltip="text_encoder",
-        #         default_value="todo",
-        #     )
-        # )
         self._node.add_parameter(
             Parameter(
                 name="input_image",
@@ -186,7 +172,7 @@ class WanImageToVideoPipelineParameters:
 
     def get_height(self) -> int:
         return int(self._node.get_parameter_value("height"))
-    
+
     def get_num_frames(self) -> int:
         return int(self._node.get_parameter_value("num_frames"))
 
@@ -200,17 +186,13 @@ class WanImageToVideoPipelineParameters:
         return {
             "prompt": self.get_prompt(),
             "negative_prompt": self.get_negative_prompt(),
-            # "width": self.get_width(),
-            # "height": self.get_height(),
             "num_frames": self.get_num_frames(),
             "num_inference_steps": self.get_num_inference_steps(),
             "guidance_scale": self.get_guidance_scale(),
             "generator": self._seed_parameter.get_generator(),
         }
 
-    def latents_to_image_pil(
-        self, pipe: diffusers.WanPipeline, latents: Any
-    ) -> Image:
+    def latents_to_image_pil(self, pipe: diffusers.WanPipeline, latents: Any) -> Image:
         width = int(self._node.parameter_values["width"])
         height = int(self._node.parameter_values["height"])
         latents = pipe._unpack_latents(latents, height, width, pipe.vae_scale_factor)
@@ -220,14 +202,12 @@ class WanImageToVideoPipelineParameters:
         intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
         return intermediate_pil_image
 
-    def publish_output_image_preview_latents(
-        self, pipe: diffusers.WanPipeline, latents: Any
-    ) -> None:
+    def publish_output_image_preview_latents(self, pipe: diffusers.WanPipeline, latents: Any) -> None:
         preview_image_pil = self.latents_to_image_pil(pipe, latents)
         preview_image_artifact = pil_to_image_artifact(preview_image_pil)
         self._node.publish_update_to_parameter("output_image", preview_image_artifact)
 
-    def publish_output_video(self, video_file: Path) -> None:
-        filename = f"{uuid.uuid4()}{video_file.suffix}"
-        url = GriptapeNodes.StaticFilesManager().save_static_file(video_file.read_bytes(), filename)
+    def publish_output_video(self, video_path: Path) -> None:
+        filename = f"{uuid.uuid4()}{video_path.suffix}"
+        url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), filename)
         self._node.parameter_output_values["output_video"] = VideoUrlArtifact(url)

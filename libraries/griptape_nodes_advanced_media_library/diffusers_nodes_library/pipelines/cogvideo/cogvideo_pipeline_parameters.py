@@ -1,17 +1,17 @@
 import logging
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
 
-import diffusers  # type: ignore[reportMissingImports]
+from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (
+    HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
+)
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
-from src.griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # type: ignore[reportMissingImports]
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -116,14 +116,14 @@ class CogvideoPipelineParameters:
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._huggingface_repo_parameter.validate_before_node_run()
-        
+
         # Validate that num_frames follows CogVideo requirements
         num_frames = self.get_num_frames()
         if (num_frames - 1) % 4 != 0:
             if errors is None:
                 errors = []
             errors.append(ValueError(f"num_frames must be divisible by 4 + 1, got {num_frames}"))
-        
+
         return errors or None
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
@@ -169,22 +169,14 @@ class CogvideoPipelineParameters:
             "guidance_scale": self.get_guidance_scale(),
             "generator": self._seed_parameter.get_generator(),
         }
-        
+
         negative_prompt = self.get_negative_prompt()
         if negative_prompt:
             kwargs["negative_prompt"] = negative_prompt
-            
+
         return kwargs
 
-    def publish_output_video(self, video_frames: Any) -> None:
-        temp_file = Path(tempfile.NamedTemporaryFile(suffix=".mp4", delete=False).name)
-        try:
-            fps = self.get_fps()
-            diffusers.utils.export_to_video(video_frames, str(temp_file), fps=fps)
-            
-            filename = f"{uuid.uuid4()}.mp4"
-            url = GriptapeNodes.StaticFilesManager().save_static_file(temp_file.read_bytes(), filename)
-            self._node.parameter_output_values["output_video"] = VideoUrlArtifact(url)
-        finally:
-            if temp_file.exists():
-                temp_file.unlink()
+    def publish_output_video(self, video_path: Path) -> None:
+        filename = f"{uuid.uuid4()}{video_path.suffix}"
+        url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), filename)
+        self._node.parameter_output_values["output_video"] = VideoUrlArtifact(url)

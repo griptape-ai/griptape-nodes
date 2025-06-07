@@ -26,7 +26,7 @@ def print_kandinsky_pipeline_memory_footprint(
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_kandinsky_pipeline_memory_footprint(
     pipe: diffusers.KandinskyPipeline | diffusers.KandinskyImg2ImgPipeline | diffusers.KandinskyInpaintPipeline,  # type: ignore[reportMissingImports]
 ) -> None:
@@ -38,7 +38,8 @@ def optimize_kandinsky_pipeline_memory_footprint(
     device = get_best_device()
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for Kandinsky pipeline optimization")
+        msg = "CUDA is required for Kandinsky pipeline optimization"
+        raise RuntimeError(msg)
 
     if device == torch.device("cuda"):
         # Avoid blindly moving the whole pipeline to CUDA. Instead rely on

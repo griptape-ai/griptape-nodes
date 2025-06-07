@@ -8,12 +8,12 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.pipelines.paint_by_example.paint_by_example_pipeline_parameters import (
-    PaintByExamplePipelineParameters,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.pipelines.paint_by_example.paint_by_example_pipeline_memory_footprint import (
     optimize_paint_by_example_pipeline_memory_footprint,
 )  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.pipelines.paint_by_example.paint_by_example_pipeline_parameters import (
+    PaintByExamplePipelineParameters,  # type: ignore[reportMissingImports]
+)
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 
@@ -22,7 +22,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class PaintByExamplePipeline(ControlNode):
     """Griptape wrapper around diffusers.pipelines.paint_by_example.PaintByExamplePipeline."""
-    
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.pipe_params = PaintByExamplePipelineParameters(self)

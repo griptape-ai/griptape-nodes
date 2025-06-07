@@ -10,7 +10,6 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.dit.dit_pipeline_memory_footprint import (  # type: ignore[reportMissingImports]
     optimize_dit_pipeline_memory_footprint,
-    print_dit_pipeline_memory_footprint,
 )
 from diffusers_nodes_library.pipelines.dit.dit_pipeline_parameters import (  # type: ignore[reportMissingImports]
     DitPipelineParameters,

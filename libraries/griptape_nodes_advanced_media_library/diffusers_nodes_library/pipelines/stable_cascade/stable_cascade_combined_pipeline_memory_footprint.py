@@ -12,7 +12,7 @@ from diffusers_nodes_library.common.utils.torch_utils import (  # type: ignore[r
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-def print_stable_cascade_pipeline_memory_footprint(pipe: diffusers.StableCascadePipeline) -> None:
+def print_stable_cascade_combined_pipeline_memory_footprint(pipe: diffusers.StableCascadeCombinedPipeline) -> None:
     """Print pipeline memory footprint."""
     print_pipeline_memory_footprint(
         pipe,
@@ -27,12 +27,13 @@ def print_stable_cascade_pipeline_memory_footprint(pipe: diffusers.StableCascade
 
 
 @cache
-def optimize_stable_cascade_pipeline_memory_footprint(pipe: diffusers.StableCascadePipeline) -> None:
+def optimize_stable_cascade_combined_pipeline_memory_footprint(pipe: diffusers.StableCascadeCombinedPipeline) -> None:
     """Optimize pipeline memory footprint."""
     device = get_best_device()
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for memory optimization")
+        msg = "CUDA is required for memory optimization"
+        raise RuntimeError(msg)
 
     if device == torch.device("cuda"):
         logger.info("Enabling sequential cpu offload")
@@ -49,7 +50,7 @@ def optimize_stable_cascade_pipeline_memory_footprint(pipe: diffusers.StableCasc
         pipe.vqgan.enable_slicing()
 
     logger.info("Final memory footprint:")
-    print_stable_cascade_pipeline_memory_footprint(pipe)
+    print_stable_cascade_combined_pipeline_memory_footprint(pipe)
 
     if device == torch.device("mps"):
         logger.info("Transferring model to MPS/GPU - may take minutes")

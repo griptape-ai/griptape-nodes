@@ -8,11 +8,11 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.pipelines.stable_diffusion_attend_and_excite.stable_diffusion_attend_and_excite_pipeline_parameters import (
-    StableDiffusionAttendAndExcitePipelineParameters,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.pipelines.stable_diffusion_attend_and_excite.stable_diffusion_attend_and_excite_pipeline_memory_footprint import (
     optimize_stable_diffusion_attend_and_excite_pipeline_memory_footprint,  # type: ignore[reportMissingImports]
+)
+from diffusers_nodes_library.pipelines.stable_diffusion_attend_and_excite.stable_diffusion_attend_and_excite_pipeline_parameters import (
+    StableDiffusionAttendAndExcitePipelineParameters,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode

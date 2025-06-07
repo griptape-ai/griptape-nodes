@@ -10,7 +10,6 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.hidream_image.hidream_image_pipeline_memory_footprint import (  # type: ignore[reportMissingImports]
     optimize_hidream_image_pipeline_memory_footprint,
-    print_hidream_image_pipeline_memory_footprint,
 )
 from diffusers_nodes_library.pipelines.hidream_image.hidream_image_pipeline_parameters import (  # type: ignore[reportMissingImports]
     HidreamImagePipelineParameters,

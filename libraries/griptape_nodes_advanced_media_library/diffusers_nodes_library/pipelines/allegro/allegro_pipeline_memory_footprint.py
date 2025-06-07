@@ -20,8 +20,9 @@ def optimize_allegro_pipeline_memory_footprint(pipe: diffusers.AllegroPipeline) 
         RuntimeError: If CUDA is not available.
     """
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is not available")
-    
+        msg = "CUDA is not available"
+        raise RuntimeError(msg)
+
     device = get_best_device()
 
     # Move to device early so that subsequent calls use the correct default device.

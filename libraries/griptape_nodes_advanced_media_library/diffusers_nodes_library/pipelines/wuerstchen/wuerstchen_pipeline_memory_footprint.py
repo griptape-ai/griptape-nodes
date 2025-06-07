@@ -29,8 +29,9 @@ def print_wuerstchen_pipeline_memory_footprint(pipe: diffusers.WuerstchenCombine
 def optimize_wuerstchen_pipeline_memory_footprint(pipe: diffusers.WuerstchenCombinedPipeline) -> None:
     """Optimize pipeline memory footprint."""
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for Wuerstchen pipeline optimization")
-    
+        msg = "CUDA is required for Wuerstchen pipeline optimization"
+        raise RuntimeError(msg)
+
     device = get_best_device()
 
     if device == torch.device("cuda"):
@@ -46,11 +47,11 @@ def optimize_wuerstchen_pipeline_memory_footprint(pipe: diffusers.WuerstchenComb
         # Sequential cpu offload only makes sense for gpus (VRAM <-> RAM).
         logger.info("Enabling sequential cpu offload")
         pipe.enable_sequential_cpu_offload()
-    
+
     # Enable attention slicing for memory efficiency
     logger.info("Enabling attention slicing")
     pipe.enable_attention_slicing()
-    
+
     # Enable VAE slicing if available
     if hasattr(pipe, "enable_vae_slicing"):
         logger.info("Enabling vae slicing")

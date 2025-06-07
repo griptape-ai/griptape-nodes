@@ -1,11 +1,14 @@
 import logging
 from typing import Any
 
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter  # type: ignore[reportMissingImports]
+from artifact_utils.audio_utils import dict_to_audio_url_artifact  # type: ignore[reportMissingImports]
+
+from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (
+    HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
+)
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from artifact_utils.audio_utils import dict_to_audio_url_artifact  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -118,48 +121,45 @@ class Audioldm2PipelineParameters:
             "guidance_scale": self.get_guidance_scale(),
             "generator": self._seed_parameter.get_generator(),
         }
-        
+
         negative_prompt = self.get_negative_prompt()
         if negative_prompt:
             kwargs["negative_prompt"] = negative_prompt
-            
+
         return kwargs
 
     def publish_output_audio(self, audio_data: Any) -> None:
-        import numpy as np
-        import scipy.io.wavfile
-        import io
         import base64
-        
+        import io
+
+        import numpy as np
+        import scipy.io.wavfile  # type: ignore[reportMissingImports]
+
         # Convert audio array to WAV format
         buffer = io.BytesIO()
         # AudioLDM2 typically outputs at 16kHz
         sample_rate = 16000
-        
+
         # Ensure audio is in the right format for scipy
         if isinstance(audio_data, list):
             audio_data = audio_data[0]  # Take first audio if batch
-        
+
         # Normalize and convert to int16
         audio_data = np.array(audio_data)
         if audio_data.dtype != np.int16:
             # Normalize to [-1, 1] then scale to int16 range
             audio_data = audio_data / np.max(np.abs(audio_data))
             audio_data = (audio_data * 32767).astype(np.int16)
-        
+
         scipy.io.wavfile.write(buffer, sample_rate, audio_data)
         buffer.seek(0)
-        
+
         # Convert to base64
         audio_bytes = buffer.getvalue()
         audio_b64 = base64.b64encode(audio_bytes).decode()
-        
+
         # Create audio artifact
-        audio_dict = {
-            "type": "audio/wav",
-            "value": f"data:audio/wav;base64,{audio_b64}"
-        }
-        
+        audio_dict = {"type": "audio/wav", "value": f"data:audio/wav;base64,{audio_b64}"}
+
         audio_artifact = dict_to_audio_url_artifact(audio_dict, "wav")
-        self._node.set_parameter_value("output_audio", audio_artifact)
         self._node.parameter_output_values["output_audio"] = audio_artifact

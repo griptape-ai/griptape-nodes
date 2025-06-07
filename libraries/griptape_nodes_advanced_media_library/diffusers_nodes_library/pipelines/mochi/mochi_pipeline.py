@@ -9,7 +9,6 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.mochi.mochi_pipeline_memory_footprint import (  # type: ignore[reportMissingImports]
     optimize_mochi_pipeline_memory_footprint,
-    print_mochi_pipeline_memory_footprint,
 )
 from diffusers_nodes_library.pipelines.mochi.mochi_pipeline_parameters import (  # type: ignore[reportMissingImports]
     MochiPipelineParameters,
@@ -64,10 +63,10 @@ class MochiPipeline(ControlNode):
         num_inference_steps = self.pipe_params.get_num_inference_steps()
 
         def callback_on_step_end(
-            pipe: diffusers.MochiPipeline,
+            pipe: diffusers.MochiPipeline,  # noqa: ARG001
             i: int,
             _t: Any,
-            callback_kwargs: dict,
+            _callback_kwargs: dict,
         ) -> dict:
             if i < num_inference_steps - 1:
                 self.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")

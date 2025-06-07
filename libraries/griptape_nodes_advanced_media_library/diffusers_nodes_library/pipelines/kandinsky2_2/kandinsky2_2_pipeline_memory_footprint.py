@@ -13,7 +13,9 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 def print_kandinsky2_2_pipeline_memory_footprint(
-    pipe: diffusers.KandinskyV22Pipeline | diffusers.KandinskyV22Img2ImgPipeline | diffusers.KandinskyV22InpaintPipeline,  # type: ignore[reportMissingImports]
+    pipe: diffusers.KandinskyV22Pipeline
+    | diffusers.KandinskyV22Img2ImgPipeline
+    | diffusers.KandinskyV22InpaintPipeline,  # type: ignore[reportMissingImports]
 ) -> None:
     """Print memory footprint for the main sub-modules of Kandinsky 2.2 pipelines."""
     print_pipeline_memory_footprint(
@@ -26,9 +28,11 @@ def print_kandinsky2_2_pipeline_memory_footprint(
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_kandinsky2_2_pipeline_memory_footprint(
-    pipe: diffusers.KandinskyV22Pipeline | diffusers.KandinskyV22Img2ImgPipeline | diffusers.KandinskyV22InpaintPipeline,  # type: ignore[reportMissingImports]
+    pipe: diffusers.KandinskyV22Pipeline
+    | diffusers.KandinskyV22Img2ImgPipeline
+    | diffusers.KandinskyV22InpaintPipeline,  # type: ignore[reportMissingImports]
 ) -> None:
     """Apply a set of heuristics to minimise VRAM / RAM footprint at inference time.
 
@@ -38,7 +42,8 @@ def optimize_kandinsky2_2_pipeline_memory_footprint(
     device = get_best_device()
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for Kandinsky 2.2 pipeline optimization")
+        msg = "CUDA is required for Kandinsky 2.2 pipeline optimization"
+        raise RuntimeError(msg)
 
     if device == torch.device("cuda"):
         # Avoid blindly moving the whole pipeline to CUDA. Instead rely on

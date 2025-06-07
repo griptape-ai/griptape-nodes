@@ -32,7 +32,7 @@ def optimize_ddpm_pipeline_memory_footprint(pipe: diffusers.DDPMPipeline) -> Non
         # Sequential cpu offload only makes sense for gpus (VRAM <-> RAM).
         logger.info("Enabling sequential cpu offload")
         pipe.enable_sequential_cpu_offload()
-    
+
     logger.info("Enabling attention slicing")
     pipe.enable_attention_slicing()
 

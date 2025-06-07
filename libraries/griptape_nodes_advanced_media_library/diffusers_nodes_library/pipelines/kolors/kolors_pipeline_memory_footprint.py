@@ -26,7 +26,7 @@ def print_kolors_pipeline_memory_footprint(
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_kolors_pipeline_memory_footprint(
     pipe: diffusers.KolorsPipeline,  # type: ignore[reportMissingImports]
 ) -> None:
@@ -35,10 +35,11 @@ def optimize_kolors_pipeline_memory_footprint(
     The logic follows the same rationale as the optimisation helper for other
     diffusers pipelines but adapted to the component layout of Kolors.
     """
-    device = get_best_device()
+    get_best_device()
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for Kolors pipeline optimization")
+        msg = "CUDA is required for Kolors pipeline optimization"
+        raise RuntimeError(msg)
 
     logger.info("Enabling sequential CPU offload")
     pipe.enable_sequential_cpu_offload()

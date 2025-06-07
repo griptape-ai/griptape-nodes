@@ -15,8 +15,6 @@ from diffusers_nodes_library.pipelines.deepfloyd_if.deepfloyd_if_pipeline_parame
 )
 from diffusers_nodes_library.pipelines.deepfloyd_if.optimize_deepfloyd_if_pipeline_memory_footprint import (
     optimize_deepfloyd_if_pipeline_memory_footprint,  # type: ignore[reportMissingImports]
-)
-from diffusers_nodes_library.pipelines.deepfloyd_if.optimize_deepfloyd_if_pipeline_memory_footprint import (
     print_deepfloyd_if_pipeline_memory_footprint,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.core_types import Parameter
@@ -40,9 +38,7 @@ class DeepfloydIfPipeline(ControlNode):
     # ------------------------------------------------------------------
     # Lifecycle hooks
     # ------------------------------------------------------------------
-    def after_value_set(
-        self, parameter: Parameter, value: Any, modified_parameters_set: set[str]
-    ) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         self.pipe_params.after_value_set(parameter, value, modified_parameters_set)
 
     def validate_before_node_run(self) -> list[Exception] | None:
@@ -91,12 +87,10 @@ class DeepfloydIfPipeline(ControlNode):
         def callback_on_step_end(
             step: int,
             _timestep: int,
-            callback_kwargs: dict,
+            _callback_kwargs: dict,
         ) -> dict:
             if step < num_inference_steps - 1:
-                self.log_params.append_to_logs(
-                    f"Starting inference step {step + 2} of {num_inference_steps}...\n"
-                )
+                self.log_params.append_to_logs(f"Starting inference step {step + 2} of {num_inference_steps}...\n")
             return {}
 
         self.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")

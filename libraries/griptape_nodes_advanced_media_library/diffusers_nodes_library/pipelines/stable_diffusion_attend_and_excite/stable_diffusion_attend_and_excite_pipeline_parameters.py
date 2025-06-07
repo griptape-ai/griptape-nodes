@@ -1,14 +1,15 @@
 import logging
-from typing import Any, List, Optional
+from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
+import torch  # type: ignore[reportMissingImports]
 from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -35,7 +36,6 @@ class StableDiffusionAttendAndExcitePipelineParameters:
                 name="prompt",
                 input_types=["str"],
                 type="str",
-                allowed_modes={ParameterMode.REQUIRED},
                 tooltip="The prompt to guide image generation",
                 default_value="",
             )
@@ -45,7 +45,6 @@ class StableDiffusionAttendAndExcitePipelineParameters:
                 name="negative_prompt",
                 input_types=["str"],
                 type="str",
-                allowed_modes=set(),
                 tooltip="The prompt to not guide the image generation",
                 default_value="",
             )
@@ -55,7 +54,6 @@ class StableDiffusionAttendAndExcitePipelineParameters:
                 name="height",
                 input_types=["int"],
                 type="int",
-                allowed_modes=set(),
                 tooltip="Height of generated image",
                 default_value=512,
             )
@@ -65,7 +63,6 @@ class StableDiffusionAttendAndExcitePipelineParameters:
                 name="width",
                 input_types=["int"],
                 type="int",
-                allowed_modes=set(),
                 tooltip="Width of generated image",
                 default_value=512,
             )
@@ -75,7 +72,6 @@ class StableDiffusionAttendAndExcitePipelineParameters:
                 name="num_inference_steps",
                 input_types=["int"],
                 type="int",
-                allowed_modes=set(),
                 tooltip="The number of denoising steps",
                 default_value=50,
             )
@@ -85,7 +81,6 @@ class StableDiffusionAttendAndExcitePipelineParameters:
                 name="guidance_scale",
                 input_types=["float"],
                 type="float",
-                allowed_modes=set(),
                 tooltip="Guidance scale for generation",
                 default_value=7.5,
             )
@@ -95,7 +90,6 @@ class StableDiffusionAttendAndExcitePipelineParameters:
                 name="token_indices",
                 input_types=["list"],
                 type="list",
-                allowed_modes=set(),
                 tooltip="Token indices to apply attention control to",
                 default_value=[],
             )
@@ -105,7 +99,6 @@ class StableDiffusionAttendAndExcitePipelineParameters:
                 name="attention_store_steps",
                 input_types=["int"],
                 type="int",
-                allowed_modes=set(),
                 tooltip="Number of steps to store attention maps",
                 default_value=10,
             )
@@ -115,7 +108,6 @@ class StableDiffusionAttendAndExcitePipelineParameters:
                 name="attention_res",
                 input_types=["int"],
                 type="int",
-                allowed_modes=set(),
                 tooltip="Attention resolution",
                 default_value=16,
             )
@@ -128,32 +120,27 @@ class StableDiffusionAttendAndExcitePipelineParameters:
                 name="output_image",
                 input_types=[],
                 type="image",
-                allowed_modes=set(),
                 tooltip="Generated image",
             )
         )
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self._huggingface_repo_parameter.after_value_set(parameter, value, modified_parameters_set)
         self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
         errors.extend(self._huggingface_repo_parameter.validate_before_node_run() or [])
-        errors.extend(self._seed_parameter.validate_before_node_run() or [])
-        return errors or None
 
     def preprocess(self) -> None:
-        self._huggingface_repo_parameter.preprocess()
         self._seed_parameter.preprocess()
 
-    def get_repo_revision(self) -> tuple[str, Optional[str]]:
+    def get_repo_revision(self) -> tuple[str, str | None]:
         return self._huggingface_repo_parameter.get_repo_revision()
 
     def get_prompt(self) -> str:
         return self._node.get_parameter_value("prompt")
 
-    def get_negative_prompt(self) -> Optional[str]:
+    def get_negative_prompt(self) -> str | None:
         negative_prompt = self._node.get_parameter_value("negative_prompt")
         return negative_prompt if negative_prompt else None
 
@@ -169,7 +156,7 @@ class StableDiffusionAttendAndExcitePipelineParameters:
     def get_guidance_scale(self) -> float:
         return self._node.get_parameter_value("guidance_scale")
 
-    def get_token_indices(self) -> List[int]:
+    def get_token_indices(self) -> list[int]:
         return self._node.get_parameter_value("token_indices")
 
     def get_attention_store_steps(self) -> int:
@@ -178,7 +165,7 @@ class StableDiffusionAttendAndExcitePipelineParameters:
     def get_attention_res(self) -> int:
         return self._node.get_parameter_value("attention_res")
 
-    def get_generator(self):
+    def get_generator(self) -> torch.Generator:
         return self._seed_parameter.get_generator()
 
     def get_pipe_kwargs(self) -> dict[str, Any]:
@@ -193,11 +180,11 @@ class StableDiffusionAttendAndExcitePipelineParameters:
             "attention_store_steps": self.get_attention_store_steps(),
             "attention_res": self.get_attention_res(),
         }
-        
+
         negative_prompt = self.get_negative_prompt()
         if negative_prompt:
             kwargs["negative_prompt"] = negative_prompt
-            
+
         return kwargs
 
     def publish_output_image_preview_placeholder(self) -> None:
@@ -205,7 +192,9 @@ class StableDiffusionAttendAndExcitePipelineParameters:
         placeholder_artifact = pil_to_image_artifact(placeholder_image)
         self._node.set_parameter_value("output_image", placeholder_artifact)
 
-    def publish_output_image_preview_latents(self, pipe: diffusers.StableDiffusionAttendAndExcitePipeline, latents) -> None:
+    def publish_output_image_preview_latents(
+        self, pipe: diffusers.StableDiffusionAttendAndExcitePipeline, latents: Any
+    ) -> None:
         try:
             with pipe.vae.disable_tiling():
                 latents_scaled = 1 / pipe.vae.config.scaling_factor * latents
@@ -214,7 +203,7 @@ class StableDiffusionAttendAndExcitePipelineParameters:
                 image_artifact = pil_to_image_artifact(image)
                 self._node.set_parameter_value("output_image", image_artifact)
         except Exception as e:
-            logger.warning(f"Failed to publish preview from latents: {e}")
+            logger.warning("Failed to publish preview from latents: %s", e)
 
     def publish_output_image(self, image: Image) -> None:
         image_artifact = pil_to_image_artifact(image)

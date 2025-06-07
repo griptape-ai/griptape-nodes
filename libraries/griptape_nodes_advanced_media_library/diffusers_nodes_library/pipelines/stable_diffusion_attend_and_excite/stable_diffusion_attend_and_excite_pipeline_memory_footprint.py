@@ -12,7 +12,9 @@ from diffusers_nodes_library.common.utils.torch_utils import (  # type: ignore[r
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-def print_stable_diffusion_attend_and_excite_pipeline_memory_footprint(pipe: diffusers.StableDiffusionAttendAndExcitePipeline) -> None:
+def print_stable_diffusion_attend_and_excite_pipeline_memory_footprint(
+    pipe: diffusers.StableDiffusionAttendAndExcitePipeline,
+) -> None:
     """Print pipeline memory footprint."""
     print_pipeline_memory_footprint(
         pipe,
@@ -26,12 +28,15 @@ def print_stable_diffusion_attend_and_excite_pipeline_memory_footprint(pipe: dif
 
 
 @cache
-def optimize_stable_diffusion_attend_and_excite_pipeline_memory_footprint(pipe: diffusers.StableDiffusionAttendAndExcitePipeline) -> None:
+def optimize_stable_diffusion_attend_and_excite_pipeline_memory_footprint(
+    pipe: diffusers.StableDiffusionAttendAndExcitePipeline,
+) -> None:
     """Optimize pipeline memory footprint."""
     device = get_best_device()
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for optimization but is not available")
+        msg = "CUDA is required for optimization but is not available"
+        raise RuntimeError(msg)
 
     if device == torch.device("cuda"):
         logger.info("Enabling sequential cpu offload")

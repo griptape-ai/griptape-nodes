@@ -5,17 +5,18 @@ from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
+from diffusers.utils import export_to_gif  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.pipelines.pia.pia_pipeline_parameters import (
-    PiaPipelineParameters,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.pipelines.pia.pia_pipeline_memory_footprint import (
     optimize_pia_pipeline_memory_footprint,
 )  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.pipelines.pia.pia_pipeline_parameters import (
+    PiaPipelineParameters,  # type: ignore[reportMissingImports]
+)
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 
@@ -24,7 +25,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class PiaPipeline(ControlNode):
     """Griptape wrapper around diffusers.pipelines.pia.PIAPipeline."""
-    
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.pipe_params = PiaPipelineParameters(self)
@@ -95,13 +96,13 @@ class PiaPipeline(ControlNode):
 
         # Save frames as video
         frames = output.frames[0]
-        
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=".gif") as temp_file:
             temp_path = temp_file.name
-            
+
         # Export frames to GIF using diffusers utility
-        from diffusers.utils import export_to_gif  # type: ignore[reportMissingImports]
+
         export_to_gif(frames, temp_path)
-        
-        self.pipe_params.publish_output_video(temp_path)
+
+        self.pipe_params.publish_output_video(Path(temp_path))
         self.log_params.append_to_logs("Done.\n")

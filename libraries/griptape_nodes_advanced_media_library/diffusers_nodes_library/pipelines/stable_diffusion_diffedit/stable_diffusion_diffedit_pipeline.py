@@ -8,11 +8,11 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.pipelines.stable_diffusion_diffedit.stable_diffusion_diffedit_pipeline_parameters import (
-    StableDiffusionDiffeditPipelineParameters,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.pipelines.stable_diffusion_diffedit.stable_diffusion_diffedit_pipeline_memory_footprint import (
     optimize_stable_diffusion_diffedit_pipeline_memory_footprint,  # type: ignore[reportMissingImports]
+)
+from diffusers_nodes_library.pipelines.stable_diffusion_diffedit.stable_diffusion_diffedit_pipeline_parameters import (
+    StableDiffusionDiffeditPipelineParameters,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -74,7 +74,7 @@ class StableDiffusionDiffeditPipeline(ControlNode):
                 mask_image = pipe.generate_mask(**self.pipe_params.get_mask_generation_kwargs())
         else:
             self.log_params.append_to_logs("Using provided mask...\n")
-        
+
         self.pipe_params.publish_output_mask(mask_image)
 
         # Perform DDIM inversion

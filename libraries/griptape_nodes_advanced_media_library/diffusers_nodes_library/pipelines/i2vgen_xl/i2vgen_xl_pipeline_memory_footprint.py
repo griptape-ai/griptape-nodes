@@ -27,7 +27,7 @@ def print_i2vgen_xl_pipeline_memory_footprint(
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_i2vgen_xl_pipeline_memory_footprint(
     pipe: diffusers.I2VGenXLPipeline,  # type: ignore[reportMissingImports]
 ) -> None:
@@ -39,7 +39,8 @@ def optimize_i2vgen_xl_pipeline_memory_footprint(
     device = get_best_device()
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for I2VGen-XL pipeline optimization")
+        msg = "CUDA is required for I2VGen-XL pipeline optimization"
+        raise RuntimeError(msg)
 
     if device == torch.device("cuda"):
         # Avoid blindly moving the whole pipeline to CUDA. Instead rely on

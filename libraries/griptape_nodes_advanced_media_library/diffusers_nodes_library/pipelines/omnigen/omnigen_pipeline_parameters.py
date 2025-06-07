@@ -48,10 +48,9 @@ class OmnigenPipelineParameters:
         self._node.add_parameter(
             Parameter(
                 name="input_images",
-                input_types=["ImageArtifact"],
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 tooltip="optional input images",
-                is_list=True,
             )
         )
         self._node.add_parameter(
@@ -137,6 +136,7 @@ class OmnigenPipelineParameters:
             input_images = [input_images]
         # Convert artifacts to PIL images
         from pillow_nodes_library.utils import image_artifact_to_pil  # type: ignore[reportMissingImports]
+
         return [image_artifact_to_pil(img) for img in input_images]
 
     def get_width(self) -> int:
@@ -161,26 +161,22 @@ class OmnigenPipelineParameters:
             "guidance_scale": self.get_guidance_scale(),
             "generator": self._seed_parameter.get_generator(),
         }
-        
+
         input_images = self.get_input_images()
         if input_images:
             kwargs["input_images"] = input_images
-            
+
         return kwargs
 
-    def latents_to_image_pil(
-        self, pipe: diffusers.OmnigenPipeline, latents: Any
-    ) -> Image:
-        width = int(self._node.parameter_values["width"])
-        height = int(self._node.parameter_values["height"])
+    def latents_to_image_pil(self, pipe: diffusers.OmniGenPipeline, latents: Any) -> Image:
+        int(self._node.parameter_values["width"])
+        int(self._node.parameter_values["height"])
         latents = latents / pipe.vae.config.scaling_factor
         image = pipe.vae.decode(latents, return_dict=False)[0]
         intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
         return intermediate_pil_image
 
-    def publish_output_image_preview_latents(
-        self, pipe: diffusers.OmnigenPipeline, latents: Any
-    ) -> None:
+    def publish_output_image_preview_latents(self, pipe: diffusers.OmniGenPipeline, latents: Any) -> None:
         preview_image_pil = self.latents_to_image_pil(pipe, latents)
         preview_image_artifact = pil_to_image_artifact(preview_image_pil)
         self._node.publish_update_to_parameter("output_image", preview_image_artifact)

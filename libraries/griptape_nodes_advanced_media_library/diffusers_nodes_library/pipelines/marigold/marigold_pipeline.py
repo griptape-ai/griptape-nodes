@@ -22,7 +22,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class MarigoldPipeline(ControlNode):
     """Griptape wrapper around diffusers.pipelines.marigold.MarigoldDepthPipeline."""
-    
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.pipe_params = MarigoldPipelineParameters(self)
@@ -65,10 +65,10 @@ class MarigoldPipeline(ControlNode):
         num_inference_steps = self.pipe_params.get_num_inference_steps()
 
         def callback_on_step_end(
-            pipe: diffusers.MarigoldDepthPipeline,
+            pipe: diffusers.MarigoldDepthPipeline,  # noqa: ARG001
             i: int,
             _t: Any,
-            callback_kwargs: dict,
+            _callback_kwargs: dict,
         ) -> dict:
             if i < num_inference_steps - 1:
                 self.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")
@@ -80,7 +80,7 @@ class MarigoldPipeline(ControlNode):
             output_type="pil",
             callback_on_step_end=callback_on_step_end,
         )
-        
+
         # Marigold outputs depth maps, not regular images
         depth_image = output.prediction
         self.pipe_params.publish_output_depth_image(depth_image)

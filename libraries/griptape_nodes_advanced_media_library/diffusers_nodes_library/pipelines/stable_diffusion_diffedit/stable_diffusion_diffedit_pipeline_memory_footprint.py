@@ -26,12 +26,15 @@ def print_stable_diffusion_diffedit_pipeline_memory_footprint(pipe: diffusers.St
 
 
 @cache
-def optimize_stable_diffusion_diffedit_pipeline_memory_footprint(pipe: diffusers.StableDiffusionDiffEditPipeline) -> None:
+def optimize_stable_diffusion_diffedit_pipeline_memory_footprint(
+    pipe: diffusers.StableDiffusionDiffEditPipeline,
+) -> None:
     """Optimize pipeline memory footprint."""
     device = get_best_device()
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for optimization but is not available")
+        msg = "CUDA is required for optimization but is not available"
+        raise RuntimeError(msg)
 
     if device == torch.device("cuda"):
         logger.info("Enabling sequential cpu offload")

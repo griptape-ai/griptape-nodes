@@ -1,13 +1,10 @@
 import logging
-from typing import Any
 import uuid
-
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
-import torch
-
+import torch  # type: ignore[reportMissingImports]
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
@@ -44,7 +41,7 @@ class VisualclozePipelineParameters:
             Parameter(
                 name="image",
                 default_value=None,
-                input_types=["ImageArtifact"],
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 tooltip="Input image with missing parts to fill in",
             )
@@ -53,7 +50,7 @@ class VisualclozePipelineParameters:
             Parameter(
                 name="mask_image",
                 default_value=None,
-                input_types=["ImageArtifact"],
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 tooltip="Mask indicating areas to fill (white = fill, black = keep)",
             )
@@ -108,32 +105,26 @@ class VisualclozePipelineParameters:
         )
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self._huggingface_repo_parameter.after_value_set(parameter, value, modified_parameters_set)
         self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
-        
+
         repo_errors = self._huggingface_repo_parameter.validate_before_node_run()
         if repo_errors:
             errors.extend(repo_errors)
-            
-        seed_errors = self._seed_parameter.validate_before_node_run()
-        if seed_errors:
-            errors.extend(seed_errors)
-            
+
         prompt = self._node.get_parameter_value("prompt")
         image = self._node.get_parameter_value("image")
-        
+
         if not prompt:
             errors.append(ValueError("Prompt is required"))
         if not image:
             errors.append(ValueError("Input image is required"))
-            
+
         return errors if errors else None
 
     def preprocess(self) -> None:
-        self._huggingface_repo_parameter.preprocess()
         self._seed_parameter.preprocess()
 
     def get_repo_revision(self) -> tuple[str, str]:
@@ -151,17 +142,17 @@ class VisualclozePipelineParameters:
             "strength": self._node.get_parameter_value("strength"),
             "generator": self._seed_parameter.get_generator(),
         }
-        
+
         # Add negative prompt if provided
         negative_prompt = self._node.get_parameter_value("negative_prompt")
         if negative_prompt:
             kwargs["negative_prompt"] = negative_prompt
-            
+
         # Add mask image if provided
         mask_image = self._node.get_parameter_value("mask_image")
         if mask_image:
             kwargs["mask_image"] = mask_image.value
-            
+
         return kwargs
 
     def publish_output_image_preview_placeholder(self) -> None:
@@ -176,7 +167,7 @@ class VisualclozePipelineParameters:
         """Publish intermediate latents as preview image."""
         try:
             with torch.no_grad():
-                if hasattr(pipe, 'vae') and pipe.vae is not None:
+                if hasattr(pipe, "vae") and pipe.vae is not None:
                     # Decode latents to image
                     latents = latents / pipe.vae.config.scaling_factor
                     image = pipe.vae.decode(latents, return_dict=False)[0]
@@ -188,7 +179,7 @@ class VisualclozePipelineParameters:
                     image_artifact.name = f"visualcloze_preview_{uuid.uuid4().hex[:8]}.png"
                     self._node.set_parameter_value("image", image_artifact)
         except Exception as e:
-            logger.warning(f"Failed to generate preview from latents: {e}")
+            logger.warning("Failed to generate preview from latents: %s", e)
 
     def publish_output_image(self, image: PIL.Image.Image) -> None:
         """Publish the final generated image."""

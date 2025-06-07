@@ -5,8 +5,6 @@ import PIL.Image
 from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
-import diffusers  # type: ignore[reportMissingImports]
-
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (  # type: ignore[reportMissingImports]
     HuggingFaceRepoParameter,
 )
@@ -141,7 +139,7 @@ class AmusedPipelineParameters:
     def get_num_inference_steps(self) -> int:
         return int(self._node.get_parameter_value("num_inference_steps"))
 
-    def get_generator(self):
+    def get_generator(self) -> Any:
         return self._seed_parameter.get_generator()
 
     def get_pipe_kwargs(self) -> dict:
@@ -166,5 +164,4 @@ class AmusedPipelineParameters:
 
     def publish_output_image(self, output_image_pil: Image) -> None:
         image_artifact = pil_to_image_artifact(output_image_pil)
-        self._node.set_parameter_value("output_image", image_artifact)
-        self._node.parameter_output_values["output_image"] = image_artifact 
+        self._node.parameter_output_values["output_image"] = image_artifact

@@ -81,10 +81,10 @@ class StableDiffusionLdm3dPipeline(ControlNode):
             output_type="pil",
             callback_on_step_end=callback_on_step_end,
         )
-        
+
         # LDM3D generates both RGB and depth images
         rgb_image = result.rgb[0]
         depth_image = result.depth[0]
-        
+
         self.pipe_params.publish_output_images(rgb_image, depth_image)
         self.log_params.append_to_logs("Done.\n")

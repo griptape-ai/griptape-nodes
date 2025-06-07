@@ -5,7 +5,6 @@ import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.utils.torch_utils import (  # type: ignore[reportMissingImports]
-    get_best_device,
     print_pipeline_memory_footprint,
 )
 
@@ -25,33 +24,18 @@ def print_dance_diffusion_pipeline_memory_footprint(pipe: diffusers.DanceDiffusi
 
 @cache
 def optimize_dance_diffusion_pipeline_memory_footprint(pipe: diffusers.DanceDiffusionPipeline) -> None:
-    """Optimize pipeline memory footprint."""
-    device = get_best_device()
+    """Optimize Dance Diffusion pipeline memory footprint by moving to GPU.
 
-    if device == torch.device("cuda"):
-        # Sequential cpu offload only makes sense for gpus (VRAM <-> RAM).
-        logger.info("Enabling sequential cpu offload")
-        pipe.enable_sequential_cpu_offload()
-    
-    logger.info("Enabling attention slicing")
-    pipe.enable_attention_slicing()
+    Args:
+        pipe: The Dance Diffusion pipeline to optimize
 
-    logger.info("Final memory footprint:")
-    print_dance_diffusion_pipeline_memory_footprint(pipe)
+    Raises:
+        RuntimeError: If CUDA is not available
+    """
+    if not torch.cuda.is_available():
+        msg = "CUDA is required for Dance Diffusion pipeline optimization"
+        raise RuntimeError(msg)
 
-    if device == torch.device("mps"):
-        # You must move the pipeline models to MPS if available to
-        # use it (otherwise you'll get the CPU).
-        logger.info("Transferring model to MPS/GPU - may take minutes")
-        pipe.to(device)
-
-    if device == torch.device("cuda"):
-        # We specifically do not call pipe.to(device) for gpus
-        # because it would move ALL the models in the pipe to the
-        # gpus, potentially causing us to exhaust available VRAM,
-        # and essentially undo all of the following VRAM pressure
-        # reducing optimizations in vain.
-        #
-        # TL;DR - DONT CALL `pipe.to(device)` FOR GPUS!
-        # (unless you checked pipe is small enough!)
-        pass
+    device = "cuda"
+    logger.info("Moving Dance Diffusion pipeline to %s", device)
+    pipe.to(device)

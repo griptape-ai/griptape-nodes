@@ -63,7 +63,7 @@ class ControlnetPipelineParameters:
         self._node.add_parameter(
             Parameter(
                 name="image",
-                input_types=["ImageArtifact"],
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 tooltip="Control image for ControlNet",
             )
@@ -145,8 +145,8 @@ class ControlnetPipelineParameters:
         return self._controlnet_repo_parameter.get_repo_revision()
 
     def publish_output_image_preview_placeholder(self) -> None:
-        width = int(self._node.parameter_values["width"])
-        height = int(self._node.parameter_values["height"])
+        width = self.get_width()
+        height = self.get_height()
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
         self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
@@ -158,6 +158,7 @@ class ControlnetPipelineParameters:
 
     def get_control_image(self) -> Image:
         from pillow_nodes_library.utils import image_artifact_to_pil  # type: ignore[reportMissingImports]
+
         image_artifact = self._node.get_parameter_value("image")
         return image_artifact_to_pil(image_artifact)
 
@@ -189,9 +190,7 @@ class ControlnetPipelineParameters:
             "generator": self._seed_parameter.get_generator(),
         }
 
-    def latents_to_image_pil(
-        self, pipe: diffusers.StableDiffusionControlNetPipeline, latents: Any
-    ) -> Image:
+    def latents_to_image_pil(self, pipe: diffusers.StableDiffusionControlNetPipeline, latents: Any) -> Image:
         latents = 1 / pipe.vae.config.scaling_factor * latents
         image = pipe.vae.decode(latents, return_dict=False)[0]
         intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
@@ -206,5 +205,4 @@ class ControlnetPipelineParameters:
 
     def publish_output_image(self, output_image_pil: Image) -> None:
         image_artifact = pil_to_image_artifact(output_image_pil)
-        self._node.set_parameter_value("output_image", image_artifact)
         self._node.parameter_output_values["output_image"] = image_artifact

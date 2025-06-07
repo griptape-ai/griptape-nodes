@@ -1,27 +1,22 @@
 import logging
+import uuid
 from pathlib import Path
 from typing import Any
-import uuid
 
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-import diffusers  # type: ignore[reportMissingImports]
-import PIL.Image
-from PIL.Image import Image
+import torch  # type: ignore[reportMissingImports]
+from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 from griptape.loaders import ImageLoader
 from PIL.Image import Image
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
-    pil_to_image_artifact,
 )
-
-from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -41,7 +36,7 @@ class I2VGenXLPipelineParameters:
 
     def add_input_parameters(self) -> None:
         self._huggingface_repo_parameter.add_input_parameters()
-        
+
         self._node.add_parameter(
             Parameter(
                 name="input_image",
@@ -124,9 +119,7 @@ class I2VGenXLPipelineParameters:
         errors = self._huggingface_repo_parameter.validate_before_node_run()
         return errors or None
 
-    def after_value_set(
-        self, parameter: Parameter, value: Any, modified_parameters_set: set[str]
-    ) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
 
     def preprocess(self) -> None:
@@ -142,11 +135,9 @@ class I2VGenXLPipelineParameters:
         input_image_artifact = self._node.get_parameter_value("input_image")
         if isinstance(input_image_artifact, ImageUrlArtifact):
             # Load from URL if it's an ImageUrlArtifact
-            loader = ImageLoader()
-            return loader.load(input_image_artifact.value).value
-        else:
-            # Convert from ImageArtifact to PIL
-            return image_artifact_to_pil(input_image_artifact)
+            input_image_artifact = ImageLoader().load(input_image_artifact.value)
+        # Convert from ImageArtifact to PIL
+        return image_artifact_to_pil(input_image_artifact)
 
     def get_prompt(self) -> str:
         return self._node.get_parameter_value("prompt")
@@ -166,7 +157,7 @@ class I2VGenXLPipelineParameters:
     def get_num_inference_steps(self) -> int:
         return int(self._node.get_parameter_value("num_inference_steps"))
 
-    def get_generator(self):
+    def get_generator(self) -> torch.Generator:
         return self._seed_parameter.get_generator()
 
     def get_pipe_kwargs(self) -> dict:
@@ -181,22 +172,7 @@ class I2VGenXLPipelineParameters:
             "generator": self.get_generator(),
         }
 
-    # ------------------------------------------------------------------
-    # Video output helpers
-    # ------------------------------------------------------------------
-    def publish_output_video(self, video_frames) -> None:
-        """Save video frames and publish as VideoUrlArtifact."""
-        # Create a temporary file for the video
-        temp_video_path = Path(tempfile.gettempdir()) / f"i2vgen_xl_output_{uuid.uuid4().hex}.mp4"
-        
-        # Save video using diffusers export_to_video utility
-        diffusers.utils.export_to_video(video_frames, str(temp_video_path), fps=self.get_target_fps())
-        
-        # Create VideoUrlArtifact and save to storage
-        video_artifact = VideoUrlArtifact(value=f"file://{temp_video_path}")
-        storage_driver = GriptapeNodes.get_storage_driver()
-        persistent_video_path = storage_driver.save_video_from_artifact(video_artifact)
-        final_video_artifact = VideoUrlArtifact(value=persistent_video_path)
-        
-        self._node.set_parameter_value("output_video", final_video_artifact)
-        self._node.parameter_output_values["output_video"] = final_video_artifact
+    def publish_output_video(self, video_path: Path) -> None:
+        filename = f"{uuid.uuid4()}{video_path.suffix}"
+        url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), filename)
+        self._node.parameter_output_values["output_video"] = VideoUrlArtifact(url)

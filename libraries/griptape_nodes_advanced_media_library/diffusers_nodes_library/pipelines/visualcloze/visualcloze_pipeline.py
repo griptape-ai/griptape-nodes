@@ -8,12 +8,11 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.pipelines.visualcloze.visualcloze_pipeline_parameters import (  # type: ignore[reportMissingImports]
-    VisualclozePipelineParameters,
-)
 from diffusers_nodes_library.pipelines.visualcloze.visualcloze_pipeline_memory_footprint import (  # type: ignore[reportMissingImports]
     optimize_visualcloze_pipeline_memory_footprint,
-    print_visualcloze_pipeline_memory_footprint,
+)
+from diffusers_nodes_library.pipelines.visualcloze.visualcloze_pipeline_parameters import (  # type: ignore[reportMissingImports]
+    VisualclozePipelineParameters,
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -82,6 +81,6 @@ class VisualclozePipeline(ControlNode):
             output_type="pil",
             callback_on_step_end=callback_on_step_end,
         ).images[0]
-        
+
         self.pipe_params.publish_output_image(output_image_pil)
         self.log_params.append_to_logs("Done.\n")

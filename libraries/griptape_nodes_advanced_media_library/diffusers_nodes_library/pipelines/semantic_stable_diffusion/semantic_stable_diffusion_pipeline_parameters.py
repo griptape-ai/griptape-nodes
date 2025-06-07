@@ -3,7 +3,6 @@ from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
-from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
@@ -142,70 +141,80 @@ class SemanticStableDiffusionPipelineParameters:
             Parameter(
                 name="image",
                 type="image",
-                allowed_modes=set([ParameterMode.OUTPUT]),
+                allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Generated image",
             )
         )
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        errors = []
+
+        huggingface_errors = self._huggingface_repo_parameter.validate_before_node_run()
+        if huggingface_errors:
+            errors.extend(huggingface_errors)
+
+        # Validate input image
+        input_image = self._node.get_parameter_value("input_image")
+        if input_image is None:
+            errors.append(ValueError("Input image is required"))
+
+        return errors if errors else None
+
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
+
+    def preprocess(self) -> None:
+        self._seed_parameter.preprocess()
 
     def get_repo_revision(self) -> tuple[str, str | None]:
         return self._huggingface_repo_parameter.get_repo_revision()
 
     def get_num_inference_steps(self) -> int:
-        return self._node.get_parameter("num_inference_steps").value
+        return self._node.get_parameter_value("num_inference_steps")
 
     def get_pipe_kwargs(self) -> dict[str, Any]:
         kwargs = {
-            "prompt": self._node.get_parameter("prompt").value,
-            "height": self._node.get_parameter("height").value,
-            "width": self._node.get_parameter("width").value,
-            "num_inference_steps": self._node.get_parameter("num_inference_steps").value,
-            "guidance_scale": self._node.get_parameter("guidance_scale").value,
+            "prompt": self._node.get_parameter_value("prompt"),
+            "height": self._node.get_parameter_value("height"),
+            "width": self._node.get_parameter_value("width"),
+            "num_inference_steps": self._node.get_parameter_value("num_inference_steps"),
+            "guidance_scale": self._node.get_parameter_value("guidance_scale"),
             "generator": self._seed_parameter.get_generator(),
         }
 
-        negative_prompt = self._node.get_parameter("negative_prompt").value
+        negative_prompt = self._node.get_parameter_value("negative_prompt")
         if negative_prompt:
             kwargs["negative_prompt"] = negative_prompt
 
-        editing_prompt = self._node.get_parameter("editing_prompt").value
+        editing_prompt = self._node.get_parameter_value("editing_prompt")
         if editing_prompt:
             kwargs["editing_prompt"] = editing_prompt
 
-        reverse_editing_direction = self._node.get_parameter("reverse_editing_direction").value
+        reverse_editing_direction = self._node.get_parameter_value("reverse_editing_direction")
         if reverse_editing_direction:
             kwargs["reverse_editing_direction"] = reverse_editing_direction
 
-        kwargs["edit_guidance_scale"] = self._node.get_parameter("edit_guidance_scale").value
-        kwargs["edit_warmup_steps"] = self._node.get_parameter("edit_warmup_steps").value
-        kwargs["edit_threshold"] = self._node.get_parameter("edit_threshold").value
-        kwargs["sem_guidance"] = self._node.get_parameter("sem_guidance").value
+        kwargs["edit_guidance_scale"] = self._node.get_parameter_value("edit_guidance_scale")
+        kwargs["edit_warmup_steps"] = self._node.get_parameter_value("edit_warmup_steps")
+        kwargs["edit_threshold"] = self._node.get_parameter_value("edit_threshold")
+        kwargs["sem_guidance"] = self._node.get_parameter_value("sem_guidance")
 
         return kwargs
 
     def publish_output_image_preview_placeholder(self) -> None:
         placeholder_image = PIL.Image.new("RGB", (512, 512), (128, 128, 128))
-        self._node.set_parameter("image", pil_to_image_artifact(placeholder_image))
+        self._node.publish_update_to_parameter("image", pil_to_image_artifact(placeholder_image))
 
-    def publish_output_image_preview_latents(self, pipe: diffusers.SemanticStableDiffusionPipeline, latents) -> None:
+    def publish_output_image_preview_latents(
+        self, pipe: diffusers.SemanticStableDiffusionPipeline, latents: Any
+    ) -> None:
         if hasattr(pipe, "vae"):
             with pipe.vae.disable_slicing():
                 images = pipe.vae.decode(latents / pipe.vae.config.scaling_factor, return_dict=False)[0]
                 images = (images / 2 + 0.5).clamp(0, 1)
                 images = images.cpu().permute(0, 2, 3, 1).float().numpy()
                 image = pipe.image_processor.numpy_to_pil(images)[0]
-                self._node.set_parameter("image", pil_to_image_artifact(image))
+                self._node.publish_update_to_parameter("image", pil_to_image_artifact(image))
 
     def publish_output_image(self, image: PIL.Image.Image) -> None:
-        self._node.set_parameter("image", pil_to_image_artifact(image))
-
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self._huggingface_repo_parameter.after_value_set(parameter, value, modified_parameters_set)
-
-    def validate_before_node_run(self) -> list[Exception]:
-        errors = []
-        errors.extend(self._huggingface_repo_parameter.validate_before_node_run())
-        return errors
-
-    def preprocess(self) -> None:
-        self._huggingface_repo_parameter.preprocess()
-        self._seed_parameter.preprocess()
+        self._node.publish_update_to_parameter("image", pil_to_image_artifact(image))

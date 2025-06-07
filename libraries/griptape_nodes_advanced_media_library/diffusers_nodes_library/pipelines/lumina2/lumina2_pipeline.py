@@ -22,7 +22,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class Lumina2Pipeline(ControlNode):
     """Griptape wrapper around diffusers.pipelines.lumina2.Lumina2Text2ImgPipeline."""
-    
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.pipe_params = Lumina2PipelineParameters(self)

@@ -10,14 +10,12 @@ from diffusers_nodes_library.common.parameters.log_parameter import (
 from diffusers_nodes_library.common.utils.huggingface_utils import (
     model_cache,  # type: ignore[reportMissingImports]
 )
-from diffusers_nodes_library.pipelines.kandinsky2_2.kandinsky2_2_pipeline_parameters import (
-    Kandinsky22PipelineParameters,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.pipelines.kandinsky2_2.kandinsky2_2_pipeline_memory_footprint import (
     optimize_kandinsky2_2_pipeline_memory_footprint,  # type: ignore[reportMissingImports]
-)
-from diffusers_nodes_library.pipelines.kandinsky2_2.kandinsky2_2_pipeline_memory_footprint import (
     print_kandinsky2_2_pipeline_memory_footprint,  # type: ignore[reportMissingImports]
+)
+from diffusers_nodes_library.pipelines.kandinsky2_2.kandinsky2_2_pipeline_parameters import (
+    Kandinsky22PipelineParameters,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -28,7 +26,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 class Kandinsky22Pipeline(ControlNode):
     """Griptape wrapper around diffusers.KandinskyV22Pipeline."""
 
-    def __init__(self, **kwargs) -> None:  # noqa: D401
+    def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.pipe_params = Kandinsky22PipelineParameters(self)
         self.log_params = LogParameter(self)
@@ -40,12 +38,10 @@ class Kandinsky22Pipeline(ControlNode):
     # ------------------------------------------------------------------
     # Lifecycle hooks
     # ------------------------------------------------------------------
-    def after_value_set(
-        self, parameter: Parameter, value: Any, modified_parameters_set: set[str]
-    ) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         self.pipe_params.after_value_set(parameter, value, modified_parameters_set)
 
-    def validate_before_node_run(self) -> list[Exception] | None:  # noqa: D401
+    def validate_before_node_run(self) -> list[Exception] | None:
         errors = self.pipe_params.validate_before_node_run()
         return errors or None
 
@@ -55,10 +51,10 @@ class Kandinsky22Pipeline(ControlNode):
     # ------------------------------------------------------------------
     # Execution
     # ------------------------------------------------------------------
-    def process(self) -> AsyncResult | None:  # noqa: D401
+    def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
-    def _process(self) -> AsyncResult | None:  # noqa: C901
+    def _process(self) -> AsyncResult | None:
         self.preprocess()
         self.pipe_params.publish_output_image_preview_placeholder()
         self.log_params.append_to_logs("Preparing models...\n")
@@ -68,7 +64,7 @@ class Kandinsky22Pipeline(ControlNode):
         # -------------------------------------------------------------
         with self.log_params.append_profile_to_logs("Loading model metadata"):
             repo_id, revision = self.pipe_params.get_repo_revision()
-            
+
             # Load the prior pipeline for text-to-image embeddings
             prior_pipe: diffusers.KandinskyV22PriorPipeline = model_cache.from_pretrained(
                 diffusers.KandinskyV22PriorPipeline,
@@ -76,7 +72,7 @@ class Kandinsky22Pipeline(ControlNode):
                 torch_dtype=torch.float16,
                 local_files_only=True,
             )
-            
+
             # Load the main pipeline for image generation
             pipe: diffusers.KandinskyV22Pipeline = model_cache.from_pretrained(
                 diffusers.KandinskyV22Pipeline,
@@ -97,7 +93,7 @@ class Kandinsky22Pipeline(ControlNode):
         # Inference - Two-stage process
         # -------------------------------------------------------------
         num_inference_steps = self.pipe_params.get_num_inference_steps()
-        
+
         # Stage 1: Generate image embeddings from text
         self.log_params.append_to_logs("Generating image embeddings from text...\n")
         image_embeds, negative_image_embeds = prior_pipe(
@@ -109,12 +105,10 @@ class Kandinsky22Pipeline(ControlNode):
         def callback_on_step_end(
             step: int,
             _timestep: int,
-            callback_kwargs: dict,
-        ) -> dict:  # noqa: D401
+            _callback_kwargs: dict,
+        ) -> dict:
             if step < num_inference_steps - 1:
-                self.log_params.append_to_logs(
-                    f"Starting inference step {step + 2} of {num_inference_steps}...\n"
-                )
+                self.log_params.append_to_logs(f"Starting inference step {step + 2} of {num_inference_steps}...\n")
             return {}
 
         # Stage 2: Generate image from embeddings

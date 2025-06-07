@@ -4,7 +4,10 @@ from typing import Any
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
 from PIL.Image import Image
-from pillow_nodes_library.utils import pil_to_image_artifact, image_artifact_to_pil  # type: ignore[reportMissingImports]
+from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
+    image_artifact_to_pil,
+    pil_to_image_artifact,
+)
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
@@ -62,7 +65,7 @@ class T2IAdapterPipelineParameters:
         self._node.add_parameter(
             Parameter(
                 name="adapter_conditioning_image",
-                input_types=["ImageArtifact"],
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 tooltip="Conditioning image for the T2I-Adapter (e.g., canny edge, depth map, sketch)",
             )
@@ -185,11 +188,11 @@ class T2IAdapterPipelineParameters:
             "adapter_conditioning_scale": self.get_adapter_conditioning_scale(),
             "generator": self._seed_parameter.get_generator(),
         }
-        
+
         negative_prompt = self.get_negative_prompt()
         if negative_prompt:
             kwargs["negative_prompt"] = negative_prompt
-            
+
         return kwargs
 
     def latents_to_image_pil(self, pipe: diffusers.StableDiffusionAdapterPipeline, latents: Any) -> Image:
@@ -198,7 +201,9 @@ class T2IAdapterPipelineParameters:
         intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
         return intermediate_pil_image
 
-    def publish_output_image_preview_latents(self, pipe: diffusers.StableDiffusionAdapterPipeline, latents: Any) -> None:
+    def publish_output_image_preview_latents(
+        self, pipe: diffusers.StableDiffusionAdapterPipeline, latents: Any
+    ) -> None:
         preview_image_pil = self.latents_to_image_pil(pipe, latents)
         preview_image_artifact = pil_to_image_artifact(preview_image_pil)
         self._node.publish_update_to_parameter("output_image", preview_image_artifact)

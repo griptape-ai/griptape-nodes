@@ -1,8 +1,6 @@
 import logging
 from typing import Any
 
-import diffusers  # type: ignore[reportMissingImports]
-
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
@@ -67,46 +65,54 @@ class ShapEPipelineParameters:
             Parameter(
                 name="mesh",
                 type="str",
-                allowed_modes=set([ParameterMode.OUTPUT]),
+                allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Generated 3D mesh data",
             )
         )
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        errors = []
+
+        huggingface_errors = self._huggingface_repo_parameter.validate_before_node_run()
+        if huggingface_errors:
+            errors.extend(huggingface_errors)
+
+        # Validate input image
+        input_image = self._node.get_parameter_value("input_image")
+        if input_image is None:
+            errors.append(ValueError("Input image is required"))
+
+        return errors if errors else None
+
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
+
+    def preprocess(self) -> None:
+        self._seed_parameter.preprocess()
 
     def get_repo_revision(self) -> tuple[str, str | None]:
         return self._huggingface_repo_parameter.get_repo_revision()
 
     def get_num_inference_steps(self) -> int:
-        return self._node.get_parameter("num_inference_steps").value
+        return self._node.get_parameter_value("num_inference_steps")
 
     def get_pipe_kwargs(self) -> dict[str, Any]:
         kwargs = {
-            "prompt": self._node.get_parameter("prompt").value,
-            "num_inference_steps": self._node.get_parameter("num_inference_steps").value,
-            "guidance_scale": self._node.get_parameter("guidance_scale").value,
-            "frame_size": self._node.get_parameter("frame_size").value,
+            "prompt": self._node.get_parameter_value("prompt"),
+            "num_inference_steps": self._node.get_parameter_value("num_inference_steps"),
+            "guidance_scale": self._node.get_parameter_value("guidance_scale"),
+            "frame_size": self._node.get_parameter_value("frame_size"),
             "generator": self._seed_parameter.get_generator(),
         }
         return kwargs
 
     def publish_output_mesh_preview_placeholder(self) -> None:
         placeholder_mesh = "# Placeholder mesh data"
-        self._node.set_parameter("mesh", placeholder_mesh)
+        self._node.publish_update_to_parameter("mesh", placeholder_mesh)
 
-    def publish_output_mesh(self, output) -> None:
+    def publish_output_mesh(self, output: Any) -> None:
         if hasattr(output, "images") and output.images:
             mesh_data = str(output.images[0])
         else:
             mesh_data = str(output)
-        self._node.set_parameter("mesh", mesh_data)
-
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self._huggingface_repo_parameter.after_value_set(parameter, value, modified_parameters_set)
-
-    def validate_before_node_run(self) -> list[Exception]:
-        errors = []
-        errors.extend(self._huggingface_repo_parameter.validate_before_node_run())
-        return errors
-
-    def preprocess(self) -> None:
-        self._huggingface_repo_parameter.preprocess()
-        self._seed_parameter.preprocess()
+        self._node.parameter_output_values["mesh"] = mesh_data

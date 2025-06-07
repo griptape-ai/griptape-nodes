@@ -1,6 +1,6 @@
 import logging
-from pathlib import Path
 import tempfile
+from pathlib import Path
 from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
@@ -8,12 +8,12 @@ import torch  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.log_parameter import LogParameter  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.pipelines.cosmos.cosmos_pipeline_parameters import (  # type: ignore[reportMissingImports]
-    CosmosPipelineParameters,
-)
 from diffusers_nodes_library.pipelines.cosmos.cosmos_pipeline_memory_footprint import (  # type: ignore[reportMissingImports]
     optimize_cosmos_pipeline_memory_footprint,
     print_cosmos_pipeline_memory_footprint,
+)
+from diffusers_nodes_library.pipelines.cosmos.cosmos_pipeline_parameters import (  # type: ignore[reportMissingImports]
+    CosmosPipelineParameters,
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -24,7 +24,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 class CosmosPipeline(ControlNode):
     """Griptape wrapper around diffusers.pipelines.cosmos.CosmosPipeline."""
 
-    def __init__(self, **kwargs) -> None:  # noqa: D401,D403
+    def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.pipe_params = CosmosPipelineParameters(self)
         self.log_params = LogParameter(self)
@@ -41,21 +41,21 @@ class CosmosPipeline(ControlNode):
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         self.pipe_params.after_value_set(parameter, value, modified_parameters_set)
 
-    def validate_before_node_run(self) -> list[Exception] | None:  # noqa: D401
+    def validate_before_node_run(self) -> list[Exception] | None:
         errors = self.pipe_params.validate_before_node_run()
         return errors or None
 
-    def preprocess(self) -> None:  # noqa: D401
+    def preprocess(self) -> None:
         self.pipe_params.preprocess()
 
     # ------------------------------------------------------------------
     # Execution
     # ------------------------------------------------------------------
 
-    def process(self) -> AsyncResult | None:  # noqa: D401
+    def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
-    def _process(self) -> AsyncResult | None:  # noqa: C901, D401
+    def _process(self) -> AsyncResult | None:
         self.preprocess()
 
         self.log_params.append_to_logs("Preparing models...\n")
@@ -106,7 +106,8 @@ class CosmosPipeline(ControlNode):
             self.log_params.append_logs_to_logs(logger),
             self.log_params.append_stdout_to_logs(),
         ):
-            temp_file = Path(tempfile.NamedTemporaryFile(suffix=".mp4", delete=False).name)
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file_obj:
+                temp_file = Path(temp_file_obj.name)
             try:
                 diffusers.utils.export_to_video(frames, str(temp_file), fps=24)
                 self.pipe_params.publish_output_video(temp_file)

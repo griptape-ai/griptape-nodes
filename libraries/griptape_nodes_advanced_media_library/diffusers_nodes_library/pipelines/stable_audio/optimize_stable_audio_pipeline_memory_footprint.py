@@ -26,7 +26,7 @@ def print_stable_audio_pipeline_memory_footprint(
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_stable_audio_pipeline_memory_footprint(
     pipe: diffusers.StableAudioPipeline,  # type: ignore[reportMissingImports]
 ) -> None:

@@ -25,7 +25,9 @@ def print_stable_diffusion_panorama_pipeline_memory_footprint(pipe: diffusers.St
 
 
 @cache
-def optimize_stable_diffusion_panorama_pipeline_memory_footprint(pipe: diffusers.StableDiffusionPanoramaPipeline) -> None:
+def optimize_stable_diffusion_panorama_pipeline_memory_footprint(
+    pipe: diffusers.StableDiffusionPanoramaPipeline,
+) -> None:
     """Optimize pipeline memory footprint."""
     device = get_best_device()
 
@@ -33,10 +35,10 @@ def optimize_stable_diffusion_panorama_pipeline_memory_footprint(pipe: diffusers
         # Sequential cpu offload only makes sense for gpus (VRAM <-> RAM).
         logger.info("Enabling sequential cpu offload")
         pipe.enable_sequential_cpu_offload()
-    
+
     logger.info("Enabling attention slicing")
     pipe.enable_attention_slicing()
-    
+
     if hasattr(pipe, "enable_vae_slicing"):
         logger.info("Enabling vae slicing")
         pipe.enable_vae_slicing()

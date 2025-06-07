@@ -22,7 +22,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class WuerstchenPipeline(ControlNode):
     """Griptape wrapper around diffusers.pipelines.wuerstchen.WuerstchenCombinedPipeline."""
-    
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.pipe_params = WuerstchenPipelineParameters(self)
@@ -65,10 +65,10 @@ class WuerstchenPipeline(ControlNode):
         num_inference_steps = self.pipe_params.get_num_inference_steps()
 
         def callback_on_step_end(
-            pipe: diffusers.WuerstchenCombinedPipeline,
+            _pipe: diffusers.WuerstchenCombinedPipeline,
             i: int,
             _t: Any,
-            callback_kwargs: dict,
+            _callback_kwargs: dict,
         ) -> dict:
             if i < num_inference_steps - 1:
                 # Skip latent previews for Wuerstchen due to complex latent space

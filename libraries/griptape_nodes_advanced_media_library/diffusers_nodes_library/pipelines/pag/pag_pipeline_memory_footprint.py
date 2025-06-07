@@ -32,15 +32,16 @@ def optimize_pag_pipeline_memory_footprint(pipe: diffusers.StableDiffusionXLPAGP
 
     if device == torch.device("cuda"):
         if not torch.cuda.is_available():
-            raise RuntimeError("CUDA is not available")
-        
+            msg = "CUDA is not available"
+            raise RuntimeError(msg)
+
         # Sequential cpu offload only makes sense for gpus (VRAM <-> RAM).
         logger.info("Enabling sequential cpu offload")
         pipe.enable_sequential_cpu_offload()
-    
+
     logger.info("Enabling attention slicing")
     pipe.enable_attention_slicing()
-    
+
     if hasattr(pipe, "enable_vae_slicing"):
         logger.info("Enabling vae slicing")
         pipe.enable_vae_slicing()

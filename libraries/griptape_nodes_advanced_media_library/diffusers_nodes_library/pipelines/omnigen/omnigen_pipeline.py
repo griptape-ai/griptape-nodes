@@ -10,7 +10,6 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.omnigen.omnigen_pipeline_memory_footprint import (  # type: ignore[reportMissingImports]
     optimize_omnigen_pipeline_memory_footprint,
-    print_omnigen_pipeline_memory_footprint,
 )
 from diffusers_nodes_library.pipelines.omnigen.omnigen_pipeline_parameters import (  # type: ignore[reportMissingImports]
     OmnigenPipelineParameters,
@@ -22,7 +21,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class OmnigenPipeline(ControlNode):
-    """Griptape wrapper around diffusers.pipelines.omnigen.OmnigenPipeline."""
+    """Griptape wrapper around diffusers.pipelines.omnigen.OmniGenPipeline."""
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -53,7 +52,7 @@ class OmnigenPipeline(ControlNode):
         with self.log_params.append_profile_to_logs("Loading model metadata"):
             base_repo_id, base_revision = self.pipe_params.get_repo_revision()
             pipe = model_cache.from_pretrained(
-                diffusers.OmnigenPipeline,
+                diffusers.OmniGenPipeline,
                 pretrained_model_name_or_path=base_repo_id,
                 revision=base_revision,
                 torch_dtype=torch.bfloat16,
@@ -66,7 +65,7 @@ class OmnigenPipeline(ControlNode):
         num_inference_steps = self.pipe_params.get_num_inference_steps()
 
         def callback_on_step_end(
-            pipe: diffusers.OmnigenPipeline,
+            pipe: diffusers.OmniGenPipeline,
             i: int,
             _t: Any,
             callback_kwargs: dict,

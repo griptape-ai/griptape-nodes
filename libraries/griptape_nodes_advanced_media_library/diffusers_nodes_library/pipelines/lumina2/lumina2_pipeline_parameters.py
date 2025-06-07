@@ -32,7 +32,6 @@ class Lumina2PipelineParameters:
                 name="prompt",
                 input_types=["str"],
                 type="str",
-                allowed_modes=set(),
                 tooltip="The text prompt to guide the image generation.",
                 default_value="A majestic lion in the savanna",
             )
@@ -42,7 +41,6 @@ class Lumina2PipelineParameters:
                 name="negative_prompt",
                 input_types=["str"],
                 type="str",
-                allowed_modes=set(),
                 tooltip="The text prompt to guide what not to include in image generation.",
                 default_value="",
             )
@@ -52,11 +50,8 @@ class Lumina2PipelineParameters:
                 name="num_inference_steps",
                 input_types=["int"],
                 type="int",
-                allowed_modes=set(),
                 tooltip="Number of denoising steps.",
                 default_value=20,
-                minimum=1,
-                maximum=1000,
             )
         )
         self._node.add_parameter(
@@ -64,11 +59,8 @@ class Lumina2PipelineParameters:
                 name="guidance_scale",
                 input_types=["float"],
                 type="float",
-                allowed_modes=set(),
                 tooltip="Guidance scale for classifier-free guidance.",
                 default_value=4.0,
-                minimum=0.0,
-                maximum=50.0,
             )
         )
         self._node.add_parameter(
@@ -76,12 +68,8 @@ class Lumina2PipelineParameters:
                 name="width",
                 input_types=["int"],
                 type="int",
-                allowed_modes=set(),
                 tooltip="Width of the generated image.",
                 default_value=1024,
-                minimum=64,
-                maximum=2048,
-                step=64,
             )
         )
         self._node.add_parameter(
@@ -89,12 +77,8 @@ class Lumina2PipelineParameters:
                 name="height",
                 input_types=["int"],
                 type="int",
-                allowed_modes=set(),
                 tooltip="Height of the generated image.",
                 default_value=1024,
-                minimum=64,
-                maximum=2048,
-                step=64,
             )
         )
         self._seed_parameter.add_input_parameters()
@@ -110,17 +94,17 @@ class Lumina2PipelineParameters:
             )
         )
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self._huggingface_repo_parameter.after_value_set(parameter, value, modified_parameters_set)
-
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
-        
+
         huggingface_errors = self._huggingface_repo_parameter.validate_before_node_run()
         if huggingface_errors:
             errors.extend(huggingface_errors)
-        
+
         return errors if errors else None
+
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
 
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()
@@ -141,11 +125,11 @@ class Lumina2PipelineParameters:
             "height": self._node.get_parameter_value("height"),
             "generator": self._seed_parameter.get_generator(),
         }
-        
+
         # Remove empty negative prompt
         if not pipe_kwargs["negative_prompt"]:
             del pipe_kwargs["negative_prompt"]
-            
+
         return pipe_kwargs
 
     def publish_output_image_preview_placeholder(self) -> None:
@@ -160,7 +144,7 @@ class Lumina2PipelineParameters:
             preview_image = pipe.image_processor.postprocess(preview_image, output_type="pil")[0]
             self._node.set_parameter_value("output_image", pil_to_image_artifact(preview_image))
         except Exception as e:
-            logger.warning(f"Failed to generate preview from latents: {e}")
+            logger.warning("Failed to generate preview from latents: %s", e)
 
     def publish_output_image(self, image: Image) -> None:
         self._node.set_parameter_value("output_image", pil_to_image_artifact(image))

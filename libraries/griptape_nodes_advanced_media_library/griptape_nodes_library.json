@@ -422,15 +422,6 @@
       }
     },
     {
-      "class_name": "DeprecatedPipeline",
-      "file_path": "diffusers_nodes_library/pipelines/deprecated/deprecated_pipeline.py",
-      "metadata": {
-        "category": "image/deprecated",
-        "description": "Generate images with deprecated diffusers pipelines via 🤗 Diffusers.",
-        "display_name": "Deprecated Pipeline"
-      }
-    },
-    {
       "class_name": "DitPipeline",
       "file_path": "diffusers_nodes_library/pipelines/dit/dit_pipeline.py",
       "metadata": {
@@ -548,8 +539,8 @@
       }
     },
     {
-      "class_name": "LtxPipeline",
-      "file_path": "diffusers_nodes_library/pipelines/ltx/ltx_pipeline.py",
+      "class_name": "LTXImageToVideoPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/ltx/ltx_image_to_video_pipeline.py",
       "metadata": {
         "category": "video/ltx",
         "description": "Generate videos with LTX Video via 🤗 Diffusers.",
@@ -656,8 +647,8 @@
       }
     },
     {
-      "class_name": "StableCascadePipeline",
-      "file_path": "diffusers_nodes_library/pipelines/stable_cascade/stable_cascade_pipeline.py",
+      "class_name": "StableCascadeCombinedPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_cascade/stable_cascade_combined_pipeline.py",
       "metadata": {
         "category": "image/stable_cascade",
         "description": "Generate high-quality images with Stable Cascade via 🤗 Diffusers.",

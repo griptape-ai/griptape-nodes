@@ -2,10 +2,12 @@ import logging
 from typing import Any
 
 import PIL.Image
+import torch  # type: ignore[reportMissingImports]
 from PIL.Image import Image
-from pillow_nodes_library.utils import image_artifact_to_pil, pil_to_image_artifact  # type: ignore[reportMissingImports]
-
-import diffusers  # type: ignore[reportMissingImports]
+from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
+    image_artifact_to_pil,
+    pil_to_image_artifact,
+)
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (
     HuggingFaceRepoParameter,
@@ -39,7 +41,7 @@ class LeditsPpPipelineParameters:
         self._node.add_parameter(
             Parameter(
                 name="input_image",
-                input_types=["ImageArtifact"],
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 tooltip="Input image to edit",
             )
@@ -134,18 +136,16 @@ class LeditsPpPipelineParameters:
     # ------------------------------------------------------------------
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._huggingface_repo_parameter.validate_before_node_run()
-        
+
         # Validate that input_image is provided
         input_image = self._node.get_parameter_value("input_image")
         if input_image is None:
             errors = errors or []
             errors.append(ValueError("input_image is required"))
-            
+
         return errors or None
 
-    def after_value_set(
-        self, parameter: Parameter, value: Any, modified_parameters_set: set[str]
-    ) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
 
     def preprocess(self) -> None:
@@ -186,7 +186,7 @@ class LeditsPpPipelineParameters:
     def get_num_inference_steps(self) -> int:
         return int(self._node.get_parameter_value("num_inference_steps"))
 
-    def get_generator(self):
+    def get_generator(self) -> torch.Generator:
         return self._seed_parameter.get_generator()
 
     def get_pipe_kwargs(self) -> dict:
@@ -201,12 +201,12 @@ class LeditsPpPipelineParameters:
             "num_inference_steps": self.get_num_inference_steps(),
             "generator": self.get_generator(),
         }
-        
+
         # Only add edit_cooldown_steps if it's not None
         cooldown_steps = self.get_edit_cooldown_steps()
         if cooldown_steps is not None:
             kwargs["edit_cooldown_steps"] = [cooldown_steps]
-            
+
         return kwargs
 
     # ------------------------------------------------------------------
@@ -217,13 +217,11 @@ class LeditsPpPipelineParameters:
         try:
             input_image = self.get_input_image()
             width, height = input_image.size
-        except:
+        except Exception:
             width, height = 512, 512
-            
+
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
-        self._node.publish_update_to_parameter(
-            "output_image", pil_to_image_artifact(preview_placeholder_image)
-        )
+        self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
     def publish_output_image(self, output_image_pil: Image) -> None:
         image_artifact = pil_to_image_artifact(output_image_pil)

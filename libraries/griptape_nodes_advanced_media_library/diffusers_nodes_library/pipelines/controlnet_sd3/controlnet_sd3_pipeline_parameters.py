@@ -6,7 +6,10 @@ import PIL.Image
 from griptape.artifacts import ImageUrlArtifact
 from griptape.loaders import ImageLoader
 from PIL.Image import Image
-from pillow_nodes_library.utils import image_artifact_to_pil, pil_to_image_artifact  # type: ignore[reportMissingImports]
+from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
+    image_artifact_to_pil,
+    pil_to_image_artifact,
+)
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
@@ -34,7 +37,6 @@ class ControlnetSd3PipelineParameters:
                 "InstantX/SD3-Controlnet-Pose",
                 "InstantX/SD3-Controlnet-Tile",
             ],
-            parameter_prefix="controlnet_",
         )
         self._seed_parameter = SeedParameter(node)
 
@@ -165,8 +167,8 @@ class ControlnetSd3PipelineParameters:
         return self._controlnet_repo_parameter.get_repo_revision()
 
     def publish_output_image_preview_placeholder(self) -> None:
-        width = int(self._node.parameter_values["width"])
-        height = int(self._node.parameter_values["height"])
+        width = self.get_width()
+        height = self.get_height()
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
         self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
@@ -217,11 +219,11 @@ class ControlnetSd3PipelineParameters:
             "control_guidance_end": self.get_control_guidance_end(),
             "generator": self._seed_parameter.get_generator(),
         }
-        
+
         negative_prompt = self.get_negative_prompt()
         if negative_prompt:
             kwargs["negative_prompt"] = negative_prompt
-            
+
         return kwargs
 
     def latents_to_image_pil(self, pipe: diffusers.StableDiffusion3ControlNetPipeline, latents: Any) -> Image:
@@ -230,12 +232,13 @@ class ControlnetSd3PipelineParameters:
         intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
         return intermediate_pil_image
 
-    def publish_output_image_preview_latents(self, pipe: diffusers.StableDiffusion3ControlNetPipeline, latents: Any) -> None:
+    def publish_output_image_preview_latents(
+        self, pipe: diffusers.StableDiffusion3ControlNetPipeline, latents: Any
+    ) -> None:
         preview_image_pil = self.latents_to_image_pil(pipe, latents)
         preview_image_artifact = pil_to_image_artifact(preview_image_pil)
         self._node.publish_update_to_parameter("output_image", preview_image_artifact)
 
     def publish_output_image(self, output_image_pil: Image) -> None:
         image_artifact = pil_to_image_artifact(output_image_pil)
-        self._node.set_parameter_value("output_image", image_artifact)
         self._node.parameter_output_values["output_image"] = image_artifact

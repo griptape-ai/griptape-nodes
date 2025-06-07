@@ -10,14 +10,12 @@ from diffusers_nodes_library.common.parameters.log_parameter import (
 from diffusers_nodes_library.common.utils.huggingface_utils import (
     model_cache,  # type: ignore[reportMissingImports]
 )
-from diffusers_nodes_library.pipelines.i2vgen_xl.i2vgen_xl_pipeline_parameters import (
-    I2VGenXLPipelineParameters,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.pipelines.i2vgen_xl.i2vgen_xl_pipeline_memory_footprint import (
     optimize_i2vgen_xl_pipeline_memory_footprint,  # type: ignore[reportMissingImports]
-)
-from diffusers_nodes_library.pipelines.i2vgen_xl.i2vgen_xl_pipeline_memory_footprint import (
     print_i2vgen_xl_pipeline_memory_footprint,  # type: ignore[reportMissingImports]
+)
+from diffusers_nodes_library.pipelines.i2vgen_xl.i2vgen_xl_pipeline_parameters import (
+    I2VGenXLPipelineParameters,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -28,7 +26,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 class I2VGenXLPipeline(ControlNode):
     """Griptape wrapper around diffusers.I2VGenXLPipeline."""
 
-    def __init__(self, **kwargs) -> None:  # noqa: D401
+    def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.pipe_params = I2VGenXLPipelineParameters(self)
         self.log_params = LogParameter(self)
@@ -40,12 +38,10 @@ class I2VGenXLPipeline(ControlNode):
     # ------------------------------------------------------------------
     # Lifecycle hooks
     # ------------------------------------------------------------------
-    def after_value_set(
-        self, parameter: Parameter, value: Any, modified_parameters_set: set[str]
-    ) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         self.pipe_params.after_value_set(parameter, value, modified_parameters_set)
 
-    def validate_before_node_run(self) -> list[Exception] | None:  # noqa: D401
+    def validate_before_node_run(self) -> list[Exception] | None:
         errors = self.pipe_params.validate_before_node_run()
         return errors or None
 
@@ -55,10 +51,10 @@ class I2VGenXLPipeline(ControlNode):
     # ------------------------------------------------------------------
     # Execution
     # ------------------------------------------------------------------
-    def process(self) -> AsyncResult | None:  # noqa: D401
+    def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
-    def _process(self) -> AsyncResult | None:  # noqa: C901
+    def _process(self) -> AsyncResult | None:
         self.preprocess()
         self.log_params.append_to_logs("Preparing models...\n")
 
@@ -89,12 +85,10 @@ class I2VGenXLPipeline(ControlNode):
         def callback_on_step_end(
             step: int,
             _timestep: int,
-            callback_kwargs: dict,
-        ) -> dict:  # noqa: D401
+            _callback_kwargs: dict,
+        ) -> dict:
             if step < num_inference_steps - 1:
-                self.log_params.append_to_logs(
-                    f"Starting inference step {step + 2} of {num_inference_steps}...\n"
-                )
+                self.log_params.append_to_logs(f"Starting inference step {step + 2} of {num_inference_steps}...\n")
             return {}
 
         self.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")

@@ -1,11 +1,13 @@
 import logging
+import uuid
 from pathlib import Path
 from typing import Any
-import uuid
 
 from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (
+    HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
+)
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -171,14 +173,7 @@ class AllegroPipelineParameters:
             "output_type": "pil",
         }
 
-    # -------------------------------------------------------------------------
-    # Helpers for publishing results to the frontend
-    # -------------------------------------------------------------------------
-
-    def publish_output_video(self, video_file: Path) -> None:
-        """Persist the video to the static files store and publish the resulting URL as output."""
-        filename = f"{uuid.uuid4()}{video_file.suffix}"
-        url = (
-            GriptapeNodes.StaticFilesManager().save_static_file(video_file.read_bytes(), filename)
-        )  # type: ignore[attr-defined]
+    def publish_output_video(self, video_path: Path) -> None:
+        filename = f"{uuid.uuid4()}{video_path.suffix}"
+        url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), filename)
         self._node.parameter_output_values["output_video"] = VideoUrlArtifact(url)

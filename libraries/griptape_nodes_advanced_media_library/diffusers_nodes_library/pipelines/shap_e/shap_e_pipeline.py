@@ -64,10 +64,10 @@ class ShapEPipeline(ControlNode):
 
         num_inference_steps = self.pipe_params.get_num_inference_steps()
         self.log_params.append_to_logs(f"Starting inference with {num_inference_steps} steps...\n")
-        
+
         output = pipe(
             **self.pipe_params.get_pipe_kwargs(),
         )
-        
+
         self.pipe_params.publish_output_mesh(output)
         self.log_params.append_to_logs("Done.\n")

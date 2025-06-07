@@ -163,12 +163,12 @@ class StableDiffusionXLPipelineParameters:
             "guidance_scale": self.get_guidance_scale(),
             "generator": self._seed_parameter.get_generator(),
         }
-        
+
         negative_prompt = self.get_negative_prompt()
         if negative_prompt:
             kwargs["negative_prompt"] = negative_prompt
             kwargs["negative_prompt_2"] = self.get_negative_prompt_2()
-            
+
         return kwargs
 
     def latents_to_image_pil(self, pipe: diffusers.StableDiffusionXLPipeline, latents: Any) -> Image:

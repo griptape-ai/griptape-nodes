@@ -22,7 +22,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class BlipDiffusionPipeline(ControlNode):
     """Griptape wrapper around diffusers.pipelines.blip_diffusion.BlipDiffusionPipeline."""
-    
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.pipe_params = BlipDiffusionPipelineParameters(self)
@@ -65,10 +65,10 @@ class BlipDiffusionPipeline(ControlNode):
         num_inference_steps = self.pipe_params.get_num_inference_steps()
 
         def callback_on_step_end(
-            pipe: diffusers.BlipDiffusionPipeline,
+            _pipe: diffusers.BlipDiffusionPipeline,
             i: int,
             _t: Any,
-            callback_kwargs: dict,
+            _callback_kwargs: dict,
         ) -> dict:
             if i < num_inference_steps - 1:
                 self.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")

@@ -31,16 +31,17 @@ def optimize_t2i_adapter_pipeline_memory_footprint(pipe: diffusers.StableDiffusi
     device = get_best_device()
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for memory footprint optimization")
+        msg = "CUDA is required for memory footprint optimization"
+        raise RuntimeError(msg)
 
     if device == torch.device("cuda"):
         # Sequential cpu offload only makes sense for gpus (VRAM <-> RAM).
         logger.info("Enabling sequential cpu offload")
         pipe.enable_sequential_cpu_offload()
-    
+
     logger.info("Enabling attention slicing")
     pipe.enable_attention_slicing()
-    
+
     if hasattr(pipe, "enable_vae_slicing"):
         logger.info("Enabling vae slicing")
         pipe.enable_vae_slicing()

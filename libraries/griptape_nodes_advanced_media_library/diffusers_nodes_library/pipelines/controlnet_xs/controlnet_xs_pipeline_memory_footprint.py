@@ -34,10 +34,10 @@ def optimize_controlnet_xs_pipeline_memory_footprint(pipe: diffusers.StableDiffu
         # Sequential cpu offload only makes sense for gpus (VRAM <-> RAM).
         logger.info("Enabling sequential cpu offload")
         pipe.enable_sequential_cpu_offload()
-    
+
     logger.info("Enabling attention slicing")
     pipe.enable_attention_slicing()
-    
+
     if hasattr(pipe, "enable_vae_slicing"):
         logger.info("Enabling vae slicing")
         pipe.enable_vae_slicing()

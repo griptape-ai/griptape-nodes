@@ -1,8 +1,10 @@
 import logging
+import uuid
 from pathlib import Path
 from typing import Any
-import uuid
 
+import torch  # type: ignore[reportMissingImports]
+from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 from griptape.loaders import ImageLoader
 from PIL.Image import Image
@@ -12,7 +14,6 @@ from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -143,7 +144,7 @@ class StableVideoDiffusionPipelineParameters:
     def get_image(self) -> Image:
         image_artifact = self._node.get_parameter_value("image")
         if isinstance(image_artifact, ImageUrlArtifact):
-            return ImageLoader().load(image_artifact.value)
+            image_artifact = ImageLoader().load(image_artifact.value)
         return image_artifact_to_pil(image_artifact)
 
     def get_width(self) -> int:
@@ -167,7 +168,7 @@ class StableVideoDiffusionPipelineParameters:
     def get_noise_aug_strength(self) -> float:
         return float(self._node.get_parameter_value("noise_aug_strength"))
 
-    def get_generator(self):
+    def get_generator(self) -> torch.Generator:
         return self._seed_parameter.get_generator()
 
     def get_pipe_kwargs(self) -> dict:
@@ -183,9 +184,6 @@ class StableVideoDiffusionPipelineParameters:
             "generator": self.get_generator(),
         }
 
-    # --------------------------------------------------------------
-    # Result publishing helpers
-    # --------------------------------------------------------------
     def publish_output_video(self, video_path: Path) -> None:
         filename = f"{uuid.uuid4()}{video_path.suffix}"
         url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), filename)

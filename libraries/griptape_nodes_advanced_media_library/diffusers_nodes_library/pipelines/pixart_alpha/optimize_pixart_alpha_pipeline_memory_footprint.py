@@ -26,7 +26,7 @@ def print_pixart_alpha_pipeline_memory_footprint(
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_pixart_alpha_pipeline_memory_footprint(
     pipe: diffusers.PixArtAlphaPipeline,  # type: ignore[reportMissingImports]
 ) -> None:

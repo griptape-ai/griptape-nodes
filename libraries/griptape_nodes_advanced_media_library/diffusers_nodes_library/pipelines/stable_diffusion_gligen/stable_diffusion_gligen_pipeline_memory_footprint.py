@@ -31,7 +31,8 @@ def optimize_stable_diffusion_gligen_pipeline_memory_footprint(pipe: diffusers.S
     device = get_best_device()
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for optimization but is not available")
+        msg = "CUDA is required for optimization but is not available"
+        raise RuntimeError(msg)
 
     if device == torch.device("cuda"):
         logger.info("Enabling sequential cpu offload")

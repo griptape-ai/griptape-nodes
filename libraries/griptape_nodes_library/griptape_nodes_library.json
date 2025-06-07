@@ -341,14 +341,6 @@
       }
     },
     {
-      "image/deprecated": {
-        "color": "border-gray-500",
-        "title": "Image/Deprecated",
-        "description": "Deprecated image generation pipelines",
-        "icon": "Image"
-      }
-    },
-    {
       "image/dit": {
         "color": "border-purple-500",
         "title": "Image/DiT",

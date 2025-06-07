@@ -1,13 +1,10 @@
 import logging
-from typing import Any
 import uuid
-
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
-import torch
-
+import torch  # type: ignore[reportMissingImports]
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
@@ -53,7 +50,7 @@ class UnidiffuserPipelineParameters:
             Parameter(
                 name="image",
                 default_value=None,
-                input_types=["ImageArtifact"],
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 tooltip="Input image (for text and joint modes)",
             )
@@ -117,35 +114,29 @@ class UnidiffuserPipelineParameters:
         )
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self._huggingface_repo_parameter.after_value_set(parameter, value, modified_parameters_set)
         self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
-        
+
         repo_errors = self._huggingface_repo_parameter.validate_before_node_run()
         if repo_errors:
             errors.extend(repo_errors)
-            
-        seed_errors = self._seed_parameter.validate_before_node_run()
-        if seed_errors:
-            errors.extend(seed_errors)
-            
+
         mode = self._node.get_parameter_value("mode")
         prompt = self._node.get_parameter_value("prompt")
         image = self._node.get_parameter_value("image")
-        
+
         if mode == "img" and not prompt:
             errors.append(ValueError("Prompt is required for img mode"))
         elif mode == "text" and not image:
             errors.append(ValueError("Image is required for text mode"))
         elif mode == "joint" and not (prompt or image):
             errors.append(ValueError("Either prompt or image (or both) is required for joint mode"))
-            
+
         return errors if errors else None
 
     def preprocess(self) -> None:
-        self._huggingface_repo_parameter.preprocess()
         self._seed_parameter.preprocess()
 
     def get_repo_revision(self) -> tuple[str, str]:
@@ -164,17 +155,17 @@ class UnidiffuserPipelineParameters:
             "width": self._node.get_parameter_value("width"),
             "generator": self._seed_parameter.get_generator(),
         }
-        
+
         # Add prompt if available and needed
         prompt = self._node.get_parameter_value("prompt")
         if prompt and mode in ["img", "joint"]:
             kwargs["prompt"] = prompt
-            
+
         # Add image if available and needed
         image = self._node.get_parameter_value("image")
         if image and mode in ["text", "joint"]:
             kwargs["image"] = image.value
-            
+
         return kwargs
 
     def publish_output_image_preview_placeholder(self) -> None:
@@ -189,7 +180,7 @@ class UnidiffuserPipelineParameters:
         """Publish intermediate latents as preview image."""
         try:
             with torch.no_grad():
-                if hasattr(pipe, 'vae') and pipe.vae is not None:
+                if hasattr(pipe, "vae") and pipe.vae is not None:
                     # Decode latents to image
                     latents = latents / pipe.vae.config.scaling_factor
                     image = pipe.vae.decode(latents, return_dict=False)[0]
@@ -201,7 +192,7 @@ class UnidiffuserPipelineParameters:
                     image_artifact.name = f"unidiffuser_preview_{uuid.uuid4().hex[:8]}.png"
                     self._node.set_parameter_value("image", image_artifact)
         except Exception as e:
-            logger.warning(f"Failed to generate preview from latents: {e}")
+            logger.warning("Failed to generate preview from latents: %s", e)
 
     def publish_output_image(self, image: PIL.Image.Image) -> None:
         """Publish the final generated image."""

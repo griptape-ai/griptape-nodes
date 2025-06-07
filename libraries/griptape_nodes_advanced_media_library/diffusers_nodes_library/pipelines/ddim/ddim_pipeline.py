@@ -22,7 +22,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class DdimPipeline(ControlNode):
     """Griptape wrapper around diffusers.pipelines.ddim.DDIMPipeline."""
-    
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.pipe_params = DdimPipelineParameters(self)

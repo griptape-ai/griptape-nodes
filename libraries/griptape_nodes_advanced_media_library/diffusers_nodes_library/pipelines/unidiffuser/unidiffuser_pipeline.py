@@ -8,12 +8,11 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.pipelines.unidiffuser.unidiffuser_pipeline_parameters import (  # type: ignore[reportMissingImports]
-    UnidiffuserPipelineParameters,
-)
 from diffusers_nodes_library.pipelines.unidiffuser.unidiffuser_pipeline_memory_footprint import (  # type: ignore[reportMissingImports]
     optimize_unidiffuser_pipeline_memory_footprint,
-    print_unidiffuser_pipeline_memory_footprint,
+)
+from diffusers_nodes_library.pipelines.unidiffuser.unidiffuser_pipeline_parameters import (  # type: ignore[reportMissingImports]
+    UnidiffuserPipelineParameters,
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -82,13 +81,13 @@ class UnidiffuserPipeline(ControlNode):
             output_type="pil",
             callback_on_step_end=callback_on_step_end,
         )
-        
+
         # UniDiffuser can output both images and text depending on mode
-        if hasattr(result, 'images') and result.images:
+        if hasattr(result, "images") and result.images:
             output_image_pil = result.images[0]
             self.pipe_params.publish_output_image(output_image_pil)
-        
-        if hasattr(result, 'text') and result.text:
+
+        if hasattr(result, "text") and result.text:
             self.pipe_params.publish_output_text(result.text[0])
-            
+
         self.log_params.append_to_logs("Done.\n")

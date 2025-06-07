@@ -26,7 +26,7 @@ def print_kandinsky3_pipeline_memory_footprint(
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_kandinsky3_pipeline_memory_footprint(
     pipe: diffusers.Kandinsky3Pipeline | diffusers.Kandinsky3Img2ImgPipeline,  # type: ignore[reportMissingImports]
 ) -> None:
@@ -57,4 +57,4 @@ def optimize_kandinsky3_pipeline_memory_footprint(
         pipe.movq.enable_slicing()  # type: ignore[attr-defined]
 
     logger.info("Final memory footprint:")
-    print_kandinsky3_pipeline_memory_footprint(pipe) 
+    print_kandinsky3_pipeline_memory_footprint(pipe)

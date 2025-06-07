@@ -10,7 +10,9 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     pil_to_image_artifact,
 )
 
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (
+    HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
+)
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -133,7 +135,7 @@ class BlipDiffusionPipelineParameters:
     def get_reference_image(self) -> Image:
         reference_image_artifact = self._node.get_parameter_value("reference_image")
         if isinstance(reference_image_artifact, ImageUrlArtifact):
-            return ImageLoader().load(reference_image_artifact.value)
+            reference_image_artifact = ImageLoader().load(reference_image_artifact.value)
         return image_artifact_to_pil(reference_image_artifact)
 
     def get_source_subject_category(self) -> str:
@@ -169,13 +171,11 @@ class BlipDiffusionPipelineParameters:
         return kwargs
 
     def publish_output_image_preview_placeholder(self) -> None:
-        height = self.get_height()
         width = self.get_width()
-        placeholder_image = PIL.Image.new("RGB", (width, height), (128, 128, 128))
-        image_artifact = pil_to_image_artifact(placeholder_image)
-        self._node.set_parameter_value("output_image", image_artifact)
+        height = self.get_height()
+        preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
+        self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
     def publish_output_image(self, image: Image) -> None:
         image_artifact = pil_to_image_artifact(image)
-        self._node.set_parameter_value("output_image", image_artifact)
         self._node.parameter_output_values["output_image"] = image_artifact

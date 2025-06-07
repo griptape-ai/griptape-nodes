@@ -26,7 +26,7 @@ def print_deepfloyd_if_pipeline_memory_footprint(
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_deepfloyd_if_pipeline_memory_footprint(
     pipe: diffusers.IFPipeline,  # type: ignore[reportMissingImports]
 ) -> None:

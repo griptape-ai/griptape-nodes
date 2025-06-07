@@ -8,11 +8,11 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.pipelines.stable_cascade.stable_cascade_pipeline_memory_footprint import (
-    optimize_stable_cascade_pipeline_memory_footprint,
+from diffusers_nodes_library.pipelines.stable_cascade.stable_cascade_combined_pipeline_memory_footprint import (
+    optimize_stable_cascade_combined_pipeline_memory_footprint,
 )  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.pipelines.stable_cascade.stable_cascade_pipeline_parameters import (
-    StableCascadePipelineParameters,  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.pipelines.stable_cascade.stable_cascade_combined_pipeline_parameters import (
+    StableCascadeCombinedPipelineParameters,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -20,12 +20,12 @@ from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class StableCascadePipeline(ControlNode):
-    """Griptape wrapper around diffusers.pipelines.stable_cascade.StableCascadePipeline."""
+class StableCascadeCombinedPipeline(ControlNode):
+    """Griptape wrapper around diffusers.pipelines.stable_cascade.StableCascadeCombinedPipeline."""
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.pipe_params = StableCascadePipelineParameters(self)
+        self.pipe_params = StableCascadeCombinedPipelineParameters(self)
         self.log_params = LogParameter(self)
         self.pipe_params.add_input_parameters()
         self.pipe_params.add_output_parameters()
@@ -52,7 +52,7 @@ class StableCascadePipeline(ControlNode):
         with self.log_params.append_profile_to_logs("Loading model metadata"):
             base_repo_id, base_revision = self.pipe_params.get_repo_revision()
             pipe = model_cache.from_pretrained(
-                diffusers.StableCascadePipeline,
+                diffusers.StableCascadeCombinedPipeline,
                 pretrained_model_name_or_path=base_repo_id,
                 revision=base_revision,
                 torch_dtype=torch.bfloat16,
@@ -60,12 +60,12 @@ class StableCascadePipeline(ControlNode):
             )
 
         with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
-            optimize_stable_cascade_pipeline_memory_footprint(pipe)
+            optimize_stable_cascade_combined_pipeline_memory_footprint(pipe)
 
         num_inference_steps = self.pipe_params.get_num_inference_steps()
 
         def callback_on_step_end(
-            pipe: diffusers.StableCascadePipeline,
+            pipe: diffusers.StableCascadeCombinedPipeline,
             i: int,
             _t: Any,
             callback_kwargs: dict,

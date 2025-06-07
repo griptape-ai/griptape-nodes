@@ -99,31 +99,25 @@ class StableDiffusionPanoramaPipelineParameters:
             Parameter(
                 name="output_image",
                 type="image",
-                output_types=["image"],
+                output_type="image",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Generated panoramic image",
             )
         )
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self._huggingface_repo_parameter.after_value_set(parameter, value, modified_parameters_set)
         self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
-        
+
         repo_errors = self._huggingface_repo_parameter.validate_before_node_run()
         if repo_errors:
             errors.extend(repo_errors)
-            
-        seed_errors = self._seed_parameter.validate_before_node_run()
-        if seed_errors:
-            errors.extend(seed_errors)
-            
+
         return errors or None
 
     def preprocess(self) -> None:
-        self._huggingface_repo_parameter.preprocess()
         self._seed_parameter.preprocess()
 
     def get_repo_revision(self) -> tuple[str, str]:
@@ -142,11 +136,11 @@ class StableDiffusionPanoramaPipelineParameters:
             "view_batch_size": self._node.get_parameter_value("view_batch_size"),
             "generator": self._seed_parameter.get_generator(),
         }
-        
+
         negative_prompt = self._node.get_parameter_value("negative_prompt")
         if negative_prompt:
             kwargs["negative_prompt"] = negative_prompt
-            
+
         return kwargs
 
     def publish_output_image_preview_placeholder(self) -> None:
@@ -155,7 +149,9 @@ class StableDiffusionPanoramaPipelineParameters:
         placeholder_image = PIL.Image.new("RGB", (width, height), (128, 128, 128))
         self._node.set_parameter_value("output_image", pil_to_image_artifact(placeholder_image))
 
-    def publish_output_image_preview_latents(self, pipe: diffusers.StableDiffusionPanoramaPipeline, latents: Any) -> None:
+    def publish_output_image_preview_latents(
+        self, pipe: diffusers.StableDiffusionPanoramaPipeline, latents: Any
+    ) -> None:
         with pipe.vae.disable_slicing():
             latents = 1 / pipe.vae.config.scaling_factor * latents
             preview_image = pipe.vae.decode(latents).sample

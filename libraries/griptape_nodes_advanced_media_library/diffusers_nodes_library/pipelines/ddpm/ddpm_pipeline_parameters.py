@@ -13,6 +13,9 @@ from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
+# Constants
+MAX_INFERENCE_STEPS = 10000
+
 
 class DdpmPipelineParameters:
     def __init__(self, node: BaseNode):
@@ -45,7 +48,7 @@ class DdpmPipelineParameters:
             Parameter(
                 name="image",
                 input_types=[],
-                type="griptape_nodes_library.exe_types.core_types.ImageArtifact",
+                type="ImageArtifact",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Generated image",
             )
@@ -53,17 +56,17 @@ class DdpmPipelineParameters:
 
     def validate_before_node_run(self) -> list[Exception]:
         errors = self._huggingface_repo_parameter.validate_before_node_run() or []
-        
+
         # Validate num_inference_steps
         try:
             steps = self.get_num_inference_steps()
             if steps <= 0:
                 errors.append(ValueError("Number of inference steps must be positive"))
-            if steps > 10000:
-                errors.append(ValueError("Number of inference steps too large (max 10000)"))
+            if steps > MAX_INFERENCE_STEPS:
+                errors.append(ValueError(f"Number of inference steps too large (max {MAX_INFERENCE_STEPS})"))
         except Exception as e:
             errors.append(e)
-        
+
         return errors
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
@@ -80,10 +83,10 @@ class DdpmPipelineParameters:
         width = 256
         height = 256
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
-        self._node.set_output_parameter_value("image", pil_to_image_artifact(preview_placeholder_image))
+        self._node.publish_update_to_parameter("image", pil_to_image_artifact(preview_placeholder_image))
 
     def get_num_inference_steps(self) -> int:
-        return int(self._node.get_input_parameter_value("num_inference_steps"))
+        return int(self._node.get_parameter_value("num_inference_steps"))
 
     def get_pipe_kwargs(self) -> dict:
         return {
@@ -101,11 +104,11 @@ class DdpmPipelineParameters:
         try:
             preview_image_pil = self.latents_to_image_pil(pipe, latents)
             preview_image_artifact = pil_to_image_artifact(preview_image_pil)
-            self._node.set_output_parameter_value("image", preview_image_artifact)
-        except Exception:
+            self._node.publish_update_to_parameter("image", preview_image_artifact)
+        except Exception as e:
             # If preview fails, skip it
-            pass
+            logger.debug("Failed to generate preview image: %s", e)
 
     def publish_output_image(self, output_image_pil: Image) -> None:
         image_artifact = pil_to_image_artifact(output_image_pil)
-        self._node.set_output_parameter_value("image", image_artifact)
+        self._node.parameter_output_values["image"] = image_artifact

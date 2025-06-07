@@ -21,14 +21,14 @@ def print_stable_diffusion_3_pipeline_memory_footprint(
         [
             "text_encoder",
             "text_encoder_2",
-            "text_encoder_3", 
+            "text_encoder_3",
             "transformer",
             "vae",
         ],
     )
 
 
-@cache  # noqa: B019
+@cache
 def optimize_stable_diffusion_3_pipeline_memory_footprint(
     pipe: diffusers.StableDiffusion3Pipeline,  # type: ignore[reportMissingImports]
 ) -> None:

@@ -30,19 +30,20 @@ def print_unidiffuser_pipeline_memory_footprint(pipe: diffusers.UniDiffuserPipel
 def optimize_unidiffuser_pipeline_memory_footprint(pipe: diffusers.UniDiffuserPipeline) -> None:
     """Optimize pipeline memory footprint."""
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is not available. UniDiffuser requires GPU acceleration.")
-    
+        msg = "CUDA is not available. UniDiffuser requires GPU acceleration."
+        raise RuntimeError(msg)
+
     device = get_best_device()
 
     if device == torch.device("cuda"):
         # Sequential cpu offload only makes sense for gpus (VRAM <-> RAM).
         logger.info("Enabling sequential cpu offload")
         pipe.enable_sequential_cpu_offload()
-    
+
     # Enable memory efficient attention
     logger.info("Enabling attention slicing")
     pipe.enable_attention_slicing()
-    
+
     # Enable VAE slicing if available
     if hasattr(pipe, "enable_vae_slicing"):
         logger.info("Enabling vae slicing")

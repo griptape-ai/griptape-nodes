@@ -22,7 +22,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class AuraFlowPipeline(ControlNode):
     """Griptape wrapper around diffusers.pipelines.aura_flow.AuraFlowPipeline."""
-    
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.pipe_params = AuraFlowPipelineParameters(self)

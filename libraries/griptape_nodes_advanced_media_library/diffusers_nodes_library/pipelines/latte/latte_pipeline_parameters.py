@@ -1,10 +1,12 @@
 import logging
+import uuid
+from pathlib import Path
 from typing import Any
 
 import numpy as np
+import torch  # type: ignore[reportMissingImports]
+from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 from artifact_utils.video_utils import numpy_video_to_video_artifact  # type: ignore[reportMissingImports]
-
-import diffusers  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (
     HuggingFaceRepoParameter,
@@ -12,6 +14,7 @@ from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -118,9 +121,7 @@ class LattePipelineParameters:
         errors = self._huggingface_repo_parameter.validate_before_node_run()
         return errors or None
 
-    def after_value_set(
-        self, parameter: Parameter, value: Any, modified_parameters_set: set[str]
-    ) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
 
     def preprocess(self) -> None:
@@ -153,7 +154,7 @@ class LattePipelineParameters:
     def get_num_inference_steps(self) -> int:
         return int(self._node.get_parameter_value("num_inference_steps"))
 
-    def get_generator(self):
+    def get_generator(self) -> torch.Generator:
         return self._seed_parameter.get_generator()
 
     def get_pipe_kwargs(self) -> dict:
@@ -168,20 +169,15 @@ class LattePipelineParameters:
             "generator": self.get_generator(),
         }
 
-    # ------------------------------------------------------------------
-    # Preview helpers
-    # ------------------------------------------------------------------
     def publish_output_video_preview_placeholder(self) -> None:
         width = self.get_width()
         height = self.get_height()
         num_frames = self.get_num_frames()
         # Create a black video placeholder
         preview_placeholder_video = np.zeros((num_frames, height, width, 3), dtype=np.uint8)
-        self._node.publish_update_to_parameter(
-            "output_video", numpy_video_to_video_artifact(preview_placeholder_video)
-        )
+        self._node.publish_update_to_parameter("output_video", numpy_video_to_video_artifact(preview_placeholder_video))
 
-    def publish_output_video(self, output_video: np.ndarray) -> None:
-        video_artifact = numpy_video_to_video_artifact(output_video)
-        self._node.set_parameter_value("output_video", video_artifact)
-        self._node.parameter_output_values["output_video"] = video_artifact
+    def publish_output_video(self, video_path: Path) -> None:
+        filename = f"{uuid.uuid4()}{video_path.suffix}"
+        url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), filename)
+        self._node.parameter_output_values["output_video"] = VideoUrlArtifact(url)

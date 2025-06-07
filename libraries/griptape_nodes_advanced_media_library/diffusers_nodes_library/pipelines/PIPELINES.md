@@ -19,7 +19,6 @@
 - [x] DdimPipeline
 - [x] DdpmPipeline
 - [x] DeepfloydIfPipeline
-- [x] DeprecatedPipeline
 - [x] DitPipeline
 - [x] EasyanimatePipeline
 - [x] FluxPipeline
@@ -69,4 +68,4 @@
 - [x] UnidiffuserPipeline
 - [x] VisualclozePipeline
 - [x] WanPipeline
-- [x] WuerstchenPipeline 
+- [x] WuerstchenPipeline
