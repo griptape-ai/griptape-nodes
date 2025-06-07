@@ -581,6 +581,201 @@ class BaseNode(ABC):
             msg = f"Parameter '{parameter_name} doesn't exist on {self.name}'"
             raise RuntimeError(msg)
 
+    def reorder_elements(self, element_order: list[str | int]) -> None:
+        """Reorder the elements of this node.
+
+        Args:
+            element_order: A list of element names or indices in the desired order.
+                         Can mix names and indices. Names take precedence over indices.
+
+        Example:
+            # Reorder by names
+            node.reorder_elements(["element1", "element2", "element3"])
+
+            # Reorder by indices
+            node.reorder_elements([0, 2, 1])
+
+            # Mix names and indices
+            node.reorder_elements(["element1", 2, "element3"])
+        """
+        # Get current elements
+        current_elements = self.root_ui_element._children
+
+        # Create a new ordered list of elements
+        ordered_elements = []
+        for item in element_order:
+            if isinstance(item, str):
+                # Find element by name
+                element = self.root_ui_element.find_element_by_name(item)
+                if element is None:
+                    msg = f"Element '{item}' not found"
+                    raise ValueError(msg)
+                ordered_elements.append(element)
+            elif isinstance(item, int):
+                # Get element by index
+                if item < 0 or item >= len(current_elements):
+                    msg = f"Element index {item} out of range"
+                    raise ValueError(msg)
+                ordered_elements.append(current_elements[item])
+            else:
+                msg = "Element order must contain strings (names) or integers (indices)"
+                raise TypeError(msg)
+
+        # Verify we have all elements
+        if len(ordered_elements) != len(current_elements):
+            msg = "Element order must include all elements exactly once"
+            raise ValueError(msg)
+
+        # Remove all elements from root_ui_element
+        for element in current_elements:
+            self.root_ui_element.remove_child(element)
+
+        # Add elements back in the new order
+        for element in ordered_elements:
+            self.root_ui_element.add_child(element)
+
+    def move_element_to_position(self, element: str | int, position: str | int) -> None:
+        """Move a single element to a specific position in the element list.
+
+        Args:
+            element: The element to move, specified by name or index
+            position: The target position, which can be:
+                     - "first" to move to the beginning
+                     - "last" to move to the end
+                     - An integer index (0-based) for a specific position
+
+        Example:
+            # Move element to first position by name
+            node.move_element_to_position("element1", "first")
+
+            # Move element to last position by index
+            node.move_element_to_position(0, "last")
+
+            # Move element to specific position
+            node.move_element_to_position("element1", 2)
+        """
+        # Get list of all element names
+        element_names = [child.name for child in self.root_ui_element._children]
+
+        # Convert element index to name if needed
+        element = self._get_element_name(element, element_names)
+
+        # Create new order with moved element
+        new_order = element_names.copy()
+        idx = new_order.index(element)
+
+        # Handle special position values
+        if position == "first":
+            target_pos = 0
+        elif position == "last":
+            target_pos = len(new_order) - 1
+        elif isinstance(position, int):
+            if position < 0 or position >= len(new_order):
+                msg = f"Target position {position} out of range"
+                raise ValueError(msg)
+            target_pos = position
+        else:
+            msg = "Position must be 'first', 'last', or an integer index"
+            raise TypeError(msg)
+
+        # Remove element from current position and insert at target position
+        new_order.pop(idx)
+        new_order.insert(target_pos, element)
+
+        # Use reorder_elements to apply the move
+        self.reorder_elements(list(new_order))
+
+    def _get_element_name(self, element: str | int, element_names: list[str]) -> str:
+        """Convert an element identifier (name or index) to its name.
+
+        Args:
+            element: Element identifier, either a name (str) or index (int)
+            element_names: List of all element names
+
+        Returns:
+            The element name
+
+        Raises:
+            ValueError: If index is out of range
+        """
+        if isinstance(element, int):
+            if element < 0 or element >= len(element_names):
+                msg = f"Element index {element} out of range"
+                raise ValueError(msg)
+            return element_names[element]
+        return element
+
+    def swap_elements(self, elem1: str | int, elem2: str | int) -> None:
+        """Swap the positions of two elements.
+
+        Args:
+            elem1: First element to swap, specified by name or index
+            elem2: Second element to swap, specified by name or index
+
+        Example:
+            # Swap by names
+            node.swap_elements("element1", "element2")
+
+            # Swap by indices
+            node.swap_elements(0, 2)
+
+            # Mix names and indices
+            node.swap_elements("element1", 2)
+        """
+        # Get list of all element names
+        element_names = [child.name for child in self.root_ui_element._children]
+
+        # Convert indices to names if needed
+        elem1 = self._get_element_name(elem1, element_names)
+        elem2 = self._get_element_name(elem2, element_names)
+
+        # Create new order with swapped elements
+        new_order = element_names.copy()
+        idx1 = new_order.index(elem1)
+        idx2 = new_order.index(elem2)
+        new_order[idx1], new_order[idx2] = new_order[idx2], new_order[idx1]
+
+        # Use reorder_elements to apply the swap
+        self.reorder_elements(list(new_order))
+
+    def move_element_up_down(self, element: str | int, *, up: bool = True) -> None:
+        """Move an element up or down one position in the element list.
+
+        Args:
+            element: The element to move, specified by name or index
+            up: If True, move element up one position. If False, move down one position.
+
+        Example:
+            # Move element up by name
+            node.move_element_up_down("element1", up=True)
+
+            # Move element down by index
+            node.move_element_up_down(0, up=False)
+        """
+        # Get list of all element names
+        element_names = [child.name for child in self.root_ui_element._children]
+
+        # Convert index to name if needed
+        element = self._get_element_name(element, element_names)
+
+        # Create new order with moved element
+        new_order = element_names.copy()
+        idx = new_order.index(element)
+
+        if up:
+            if idx == 0:
+                msg = "Element is already at the top"
+                raise ValueError(msg)
+            new_order[idx], new_order[idx - 1] = new_order[idx - 1], new_order[idx]
+        else:
+            if idx == len(new_order) - 1:
+                msg = "Element is already at the bottom"
+                raise ValueError(msg)
+            new_order[idx], new_order[idx + 1] = new_order[idx + 1], new_order[idx]
+
+        # Use reorder_elements to apply the move
+        self.reorder_elements(list(new_order))
+
 
 class ControlNode(BaseNode):
     # Control Nodes may have one Control Input Port and at least one Control Output Port
