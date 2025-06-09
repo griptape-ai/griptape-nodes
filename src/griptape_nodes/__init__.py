@@ -430,9 +430,7 @@ def __build_libraries_list(*, register_advanced_library: bool) -> list[str]:
     if default_library not in current_libraries:
         current_libraries.append(default_library)
 
-    advanced_media_library = str(
-        library_base_dir / "griptape_nodes_advanced_media_library/griptape_nodes_advanced_media_library.json"
-    )
+    advanced_media_library = str(library_base_dir / "griptape_nodes_advanced_media_library/griptape_nodes_library.json")
     if register_advanced_library:
         # If the advanced media library is not registered, add it
         if advanced_media_library not in current_libraries:
