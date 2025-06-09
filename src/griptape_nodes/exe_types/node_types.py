@@ -818,12 +818,14 @@ class EndNode(BaseNode):
 class StartLoopNode(BaseNode):
     finished: bool
     current_index: int
+    subflow_name: str | None = None
     end_node: EndLoopNode | None = None
     """Creating class for Start Loop Node in order to implement loop functionality in execution."""
 
 
 class EndLoopNode(BaseNode):
     start_node: StartLoopNode | None = None
+    subflow_name: str | None = None
     """Creating class for Start Loop Node in order to implement loop functionality in execution."""
 
 

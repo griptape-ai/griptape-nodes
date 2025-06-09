@@ -41,6 +41,8 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartFlowResultFailure,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
+    CreateFlowRequest,
+    CreateFlowResultSuccess,
     ListNodesInFlowRequest,
     ListNodesInFlowResultSuccess,
 )
@@ -345,6 +347,14 @@ class NodeManager:
                     # create the connection bt them
                     node.end_node = end_node
                     end_node.start_node = node
+                    # create the subflow.
+                    subflow_request = CreateFlowRequest(
+                        parent_flow_name=parent_flow_name, flow_name=f"{node.name}_subflow"
+                    )
+                    subflow = GriptapeNodes.handle_request(subflow_request)
+                    if isinstance(subflow, CreateFlowResultSuccess):
+                        node.subflow_name = subflow.flow_name
+                        end_node.subflow_name = subflow.flow_name
 
         return CreateNodeResultSuccess(
             node_name=node.name, node_type=node.__class__.__name__, specific_library_name=request.specific_library_name

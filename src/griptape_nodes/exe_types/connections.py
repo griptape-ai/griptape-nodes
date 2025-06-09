@@ -231,3 +231,45 @@ class Connections:
                                 )
                             )
                             self.unresolve_future_nodes(target_node)
+
+    def get_outgoing_connections(self, node: BaseNode) -> list[Connection]:
+        """Get all outgoing connections from a node.
+
+        Args:
+            node: The node to get outgoing connections for
+
+        Returns:
+            A list of Connection objects where the node is the source
+        """
+        result = []
+        if node.name not in self.outgoing_index:
+            return result
+
+        # Iterate through all parameter connections for this node
+        for connection_ids in self.outgoing_index[node.name].values():
+            for connection_id in connection_ids:
+                if connection_id in self.connections:
+                    connection = self.connections[connection_id]
+                    result.append(connection)
+
+        return result
+
+    def get_incoming_connections(self, node: BaseNode) -> list[Connection]:
+        """Get all incoming connections to a node.
+
+        Args:
+            node: The node to get incoming connections for
+
+        Returns:
+            A list of Connection objects where the node is the target
+        """
+        result = []
+        if node.name not in self.incoming_index:
+            return result
+        # Iterate through all parameter connections for this node
+        for connection_ids in self.incoming_index[node.name].values():
+            for connection_id in connection_ids:
+                if connection_id in self.connections:
+                    connection = self.connections[connection_id]
+                    result.append(connection)
+        return result
