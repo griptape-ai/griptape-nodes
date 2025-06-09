@@ -468,6 +468,15 @@
       }
     },
     {
+      "class_name": "MergeImages",
+      "file_path": "griptape_nodes_library/image/merge_images.py",
+      "metadata": {
+        "category": "image",
+        "description": "Merge images together in different layouts with grid options and dynamic image input list",
+        "display_name": "Merge Images"
+      }
+    },
+    {
       "class_name": "CompareImages",
       "file_path": "griptape_nodes_library/image/compare_images.py",
       "metadata": {
