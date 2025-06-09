@@ -22,6 +22,7 @@
         "pillow>=11.2.1",
         "protobuf>=6.30.2",
         "sentencepiece>=0.2.0",
+        "cmake==3.31.6",
         "spandrel>=0.4.1",
         "torch>=2.7.0",
         "torchvision>=0.22.0",
@@ -38,8 +39,7 @@
       ]
     }
   },
-  "categories": [
-  ],
+  "categories": [],
   "nodes": [
     {
       "class_name": "GrayscaleConvertImage",
@@ -203,7 +203,6 @@
         "display_name": "Rescale Image"
       }
     },
-    
     {
       "class_name": "TilingSPAN",
       "file_path": "spandrel_nodes_library/tiling_span.py",

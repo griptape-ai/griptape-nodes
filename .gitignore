@@ -190,3 +190,4 @@ request_payload_schemas.json
 # JetBrains
 .idea/
 
+.vscode/settings.json

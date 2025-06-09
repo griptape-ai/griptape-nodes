@@ -240,6 +240,23 @@ wheels = [
 ]
 
 [[package]]
+name = "exa-py"
+version = "1.14.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "openai" },
+    { name = "pydantic" },
+    { name = "pytest-mock" },
+    { name = "requests" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e5/e1/6171e246b8a5aa57a3f089aaa2a4f7d0f195abd65e27b042e700009d8b94/exa_py-1.14.2.tar.gz", hash = "sha256:b1b6e18949c33a60fd67a895b6eca4a1f48c49f085e67860d0eac60d6a6ec88e", size = 28347, upload-time = "2025-06-04T04:14:02.383Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/28/bd/23f7c0d93840a5c9a6ed5735dea5c4630a44e1d246b79a89bf50991df536/exa_py-1.14.2-py3-none-any.whl", hash = "sha256:26aff3464d29eade1f45496b8cea8a7f4d11e886d2b5fd8f7c43b1692049047c", size = 35717, upload-time = "2025-06-04T04:14:00.888Z" },
+]
+
+[[package]]
 name = "execnet"
 version = "2.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -381,6 +398,9 @@ drivers-web-scraper-trafilatura = [
 drivers-web-search-duckduckgo = [
     { name = "duckduckgo-search" },
 ]
+drivers-web-search-exa = [
+    { name = "exa-py" },
+]
 loaders-image = [
     { name = "pillow" },
 ]
@@ -391,8 +411,9 @@ version = "0.36.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
-    { name = "griptape", extra = ["drivers-prompt-amazon-bedrock", "drivers-prompt-anthropic", "drivers-prompt-cohere", "drivers-prompt-ollama", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "loaders-image"] },
+    { name = "griptape", extra = ["drivers-prompt-amazon-bedrock", "drivers-prompt-anthropic", "drivers-prompt-cohere", "drivers-prompt-ollama", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "drivers-web-search-exa", "loaders-image"] },
     { name = "httpx" },
+    { name = "json-repair" },
     { name = "packaging" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -430,8 +451,9 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "griptape", extras = ["drivers-prompt-cohere", "drivers-prompt-anthropic", "drivers-prompt-ollama", "drivers-prompt-amazon-bedrock", "loaders-image", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo"], specifier = ">=1.7.1" },
+    { name = "griptape", extras = ["drivers-prompt-cohere", "drivers-prompt-anthropic", "drivers-prompt-ollama", "drivers-prompt-amazon-bedrock", "loaders-image", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "drivers-web-search-exa"], specifier = ">=1.7.1" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
+    { name = "json-repair", specifier = ">=0.46.1" },
     { name = "packaging", specifier = ">=25.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
@@ -634,6 +656,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/00/2a/e867e8531cf3e36b41201936b7fa7ba7b5702dbef42922193f05c8976cd6/jmespath-1.0.1.tar.gz", hash = "sha256:90261b206d6defd58fdd5e85f478bf633a2901798906be2ad389150c5c60edbe", size = 25843, upload-time = "2022-06-17T18:00:12.224Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/31/b4/b9b800c45527aadd64d5b442f9b932b00648617eb5d63d2c7a6587b7cafc/jmespath-1.0.1-py3-none-any.whl", hash = "sha256:02e2e4cc71b5bcab88332eebf907519190dd9e6e82107fa7f83b1003a6252980", size = 20256, upload-time = "2022-06-17T18:00:10.251Z" },
+]
+
+[[package]]
+name = "json-repair"
+version = "0.46.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7c/3c/0e48912ba21b7f356b9b1ede3f742710e314b3fbc4da5fa7c2459f5bac83/json_repair-0.46.1.tar.gz", hash = "sha256:ff7bc239b513787588fb4961a85f7b8de93724a13711ecf6b9e72ac0d32d7bd0", size = 33393, upload-time = "2025-06-04T18:15:14.33Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f4/3c/e338f6de3e54439fc6a71a57e09d4186c2bb000eb678d161ab2430085e4d/json_repair-0.46.1-py3-none-any.whl", hash = "sha256:4ae27b8e04c3a295b172a4bc51913279fc99de5297e59ea730ae07797df3c86d", size = 22299, upload-time = "2025-06-04T18:15:12.773Z" },
 ]
 
 [[package]]

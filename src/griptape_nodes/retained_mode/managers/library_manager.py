@@ -456,37 +456,14 @@ class LibraryManager:
 
         # Install node library dependencies
         try:
-            site_packages = None
             if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
                 pip_install_flags = library_data.metadata.dependencies.pip_install_flags
                 if pip_install_flags is None:
                     pip_install_flags = []
                 pip_dependencies = library_data.metadata.dependencies.pip_dependencies
 
-                # Create a virtual environment for the library
-                python_version = platform.python_version()
-                library_venv_path = (
-                    xdg_data_home()
-                    / "griptape_nodes"
-                    / "venvs"
-                    / python_version
-                    / library_data.name.replace(" ", "_").strip()
-                )
-                if library_venv_path.exists():
-                    logger.debug("Virtual environment already exists at %s", library_venv_path)
-                else:
-                    subprocess.run(  # noqa: S603
-                        [sys.executable, "-m", "uv", "venv", library_venv_path, "--python", python_version],
-                        check=True,
-                        text=True,
-                    )
-                    logger.debug("Created virtual environment at %s", library_venv_path)
-
                 # Grab the python executable from the virtual environment so that we can pip install there
-                if OSManager.is_windows():
-                    library_venv_python_path = library_venv_path / "Scripts" / "python.exe"
-                else:
-                    library_venv_python_path = library_venv_path / "bin" / "python"
+                library_venv_python_path = self._get_library_venv_python_path(library_data.name)
                 subprocess.run(  # noqa: S603
                     [
                         sys.executable,
@@ -502,16 +479,6 @@ class LibraryManager:
                     check=True,
                     text=True,
                 )
-                # Need to insert into the path so that the library picks up on the venv
-                site_packages = str(
-                    Path(
-                        sysconfig.get_path(
-                            "purelib",
-                            vars={"base": str(library_venv_path), "platbase": str(library_venv_path)},
-                        )
-                    )
-                )
-                sys.path.insert(0, site_packages)
         except subprocess.CalledProcessError as e:
             # Failed to create the library
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
@@ -595,14 +562,25 @@ class LibraryManager:
     def register_library_from_requirement_specifier_request(
         self, request: RegisterLibraryFromRequirementSpecifierRequest
     ) -> ResultPayload:
+        package_name = Requirement(request.requirement_specifier).name
         try:
-            subprocess.run([uv.find_uv_bin(), "pip", "install", request.requirement_specifier], check=True, text=True)  # noqa: S603
+            library_python_venv_path = self._get_library_venv_python_path(package_name)
+            subprocess.run(  # noqa: S603
+                [
+                    uv.find_uv_bin(),
+                    "pip",
+                    "install",
+                    request.requirement_specifier,
+                    "--python",
+                    library_python_venv_path,
+                ],
+                check=True,
+                text=True,
+            )
         except subprocess.CalledProcessError as e:
             details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to {e}"
             logger.error(details)
             return RegisterLibraryFromRequirementSpecifierResultFailure()
-
-        package_name = Requirement(request.requirement_specifier).name
 
         library_path = str(files(package_name).joinpath(request.library_config_name))
 
@@ -613,6 +591,41 @@ class LibraryManager:
             return RegisterLibraryFromRequirementSpecifierResultFailure()
 
         return RegisterLibraryFromRequirementSpecifierResultSuccess(library_name=request.requirement_specifier)
+
+    def _get_library_venv_python_path(self, library_name: str) -> Path:
+        # Create a virtual environment for the library
+        python_version = platform.python_version()
+        library_venv_path = (
+            xdg_data_home() / "griptape_nodes" / "venvs" / python_version / library_name.replace(" ", "_").strip()
+        )
+        if library_venv_path.exists():
+            logger.debug("Virtual environment already exists at %s", library_venv_path)
+        else:
+            subprocess.run(  # noqa: S603
+                [sys.executable, "-m", "uv", "venv", str(library_venv_path), "--python", python_version],
+                check=True,
+                text=True,
+            )
+            logger.debug("Created virtual environment at %s", library_venv_path)
+
+        # Grab the python executable from the virtual environment so that we can pip install there
+        if OSManager.is_windows():
+            library_venv_python_path = library_venv_path / "Scripts" / "python.exe"
+        else:
+            library_venv_python_path = library_venv_path / "bin" / "python"
+
+        # Need to insert into the path so that the library picks up on the venv
+        site_packages = str(
+            Path(
+                sysconfig.get_path(
+                    "purelib",
+                    vars={"base": str(library_venv_path), "platbase": str(library_venv_path)},
+                )
+            )
+        )
+        sys.path.insert(0, site_packages)
+
+        return library_venv_python_path
 
     def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
         try:
