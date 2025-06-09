@@ -4,6 +4,7 @@ from griptape_nodes.exe_types.core_types import (
     ControlParameterInput,
     ControlParameterOutput,
     Parameter,
+    ParameterGroup,
     ParameterList,
     ParameterMode,
     ParameterTypeBuiltin,
@@ -28,18 +29,10 @@ class ForEachStartNode(StartLoopNode):
         self.current_index = 0
         self._items = []
         self.exec_out = ControlParameterOutput(tooltip="Continue the flow", name="exec_out")
+        self.exec_out.ui_options = {"display_name": "For Each"}
         self.add_parameter(self.exec_out)
         self.exec_in = ControlParameterInput()
         self.add_parameter(self.exec_in)
-        self.index_count = Parameter(
-            name="index",
-            tooltip="Current index of the iteration",
-            type=ParameterTypeBuiltin.INT.value,
-            allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-            settable=False,
-            default_value=0,
-        )
-        self.add_parameter(self.index_count)
         self.items_list = ParameterList(
             name="items",
             tooltip="List of items to iterate through",
@@ -48,14 +41,23 @@ class ForEachStartNode(StartLoopNode):
         )
         self.add_parameter(self.items_list)
 
-        # Add current item output parameter
-        self.current_item = Parameter(
-            name="current_item",
-            tooltip="Current item being processed",
-            output_type=ParameterTypeBuiltin.ALL.value,
-            allowed_modes={ParameterMode.OUTPUT},
-        )
-        self.add_parameter(self.current_item)
+        with ParameterGroup(name="For Each Item") as group:
+            # Add current item output parameter
+            self.current_item = Parameter(
+                name="current_item",
+                tooltip="Current item being processed",
+                output_type=ParameterTypeBuiltin.ALL.value,
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+            self.index_count = Parameter(
+                name="index",
+                tooltip="Current index of the iteration",
+                type=ParameterTypeBuiltin.INT.value,
+                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+                settable=False,
+                default_value=0,
+            )
+        self.add_node_element(group)
 
         self.loop = ControlParameterOutput(tooltip="To the End Node", name="loop")
         self.loop.ui_options = {"display_name": "Enter Loop", "hide": True}

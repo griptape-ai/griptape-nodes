@@ -205,6 +205,14 @@
       }
     },
     {
+      "lists": {
+        "color": "border-gray-500",
+        "title": "Lists",
+        "description": "Nodes to interact with an work with Lists",
+        "icon": "Cog"
+      }
+    },
+    {
       "workflows": {
         "color": "border-gray-500",
         "title": "Workflows",
@@ -216,9 +224,9 @@
   "nodes": [
     {
       "class_name": "DisplayList",
-      "file_path": "griptape_nodes_library/utils/display_list.py",
+      "file_path": "griptape_nodes_library/lists/display_list.py",
       "metadata": {
-        "category": "utils",
+        "category": "lists",
         "description": "Takes a list input and creates output parameters for each item in the list",
         "display_name": "Display List"
       }

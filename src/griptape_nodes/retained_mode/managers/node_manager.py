@@ -324,6 +324,9 @@ class NodeManager:
             end_loop = GriptapeNodes.handle_request(
                 CreateNodeRequest(
                     node_type="ForEachEndNode",
+                    metadata={
+                        "position": {"x": node.metadata["position"]["x"] + 650, "y": node.metadata["position"]["y"]}
+                    },
                     override_parent_flow_name=parent_flow_name,
                 )
             )
