@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, TypeVar, override
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -163,6 +163,7 @@ class BaseNodeElement:
     element_id: str = field(default_factory=lambda: str(uuid.uuid4().hex))
     element_type: str = field(default_factory=lambda: BaseNodeElement.__name__)
     name: str = field(default_factory=lambda: str(f"{BaseNodeElement.__name__}_{uuid.uuid4().hex}"))
+    parent_group_name: str | None = None
 
     _children: list[BaseNodeElement] = field(default_factory=list)
     _stack: ClassVar[list[BaseNodeElement]] = []
@@ -219,6 +220,7 @@ class BaseNodeElement:
         return {
             "element_id": self.element_id,
             "element_type": self.__class__.__name__,
+            "parent_group_name": self.parent_group_name,
             "children": [child.to_dict() for child in self._children],
         }
 
@@ -408,6 +410,20 @@ class ParameterGroup(BaseNodeElement):
             if self_value != other_value:
                 differences[key] = other_value
         return differences
+
+    def add_child(self, child: BaseNodeElement) -> None:
+        child.parent_group_name = self.name
+        return super().add_child(child)
+
+    def remove_child(self, child: BaseNodeElement|str) -> None:
+        if isinstance(child, str):
+            child_from_str = self.find_element_by_name(child)
+            if child_from_str is not None and isinstance(child_from_str,BaseNodeElement):
+                child_from_str.parent_group_name = None
+                return super().remove_child(child_from_str)
+        else:
+            child.parent_group_name = None
+        return super().remove_child(child)
 
 
 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/856
