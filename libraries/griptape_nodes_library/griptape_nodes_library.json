@@ -205,6 +205,14 @@
       }
     },
     {
+      "lists": {
+        "color": "border-gray-500",
+        "title": "Lists",
+        "description": "Nodes to interact with an work with Lists",
+        "icon": "List"
+      }
+    },
+    {
       "workflows": {
         "color": "border-gray-500",
         "title": "Workflows",
@@ -214,6 +222,15 @@
     }
   ],
   "nodes": [
+    {
+      "class_name": "DisplayList",
+      "file_path": "griptape_nodes_library/lists/display_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list input and creates output parameters for each item in the list",
+        "display_name": "Display List"
+      }
+    },
     {
       "class_name": "Agent",
       "file_path": "griptape_nodes_library/agents/agent.py",
@@ -852,6 +869,24 @@
         "category": "execution_flow",
         "description": "Let's you choose which direction you want a flow to go, based on the output of previous nodes",
         "display_name": "Output Selector"
+      }
+    },
+    {
+      "class_name": "ForEachStartNode",
+      "file_path": "griptape_nodes_library/execution/for_each_start.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Start node for iterating through a list of items and running a flow for each one",
+        "display_name": "ForEach Start"
+      }
+    },
+    {
+      "class_name": "ForEachEndNode",
+      "file_path": "griptape_nodes_library/execution/for_each_end.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "End node that completes a loop iteration and connects back to the ForEachStartNode",
+        "display_name": "ForEach End"
       }
     },
     {
