@@ -15,7 +15,7 @@ with console.status("Loading Griptape Nodes...") as status:
     import tarfile
     import tempfile
     from pathlib import Path
-    from typing import Literal
+    from typing import Any, Literal
 
     import httpx
     from dotenv import load_dotenv
@@ -75,7 +75,7 @@ def main() -> None:
     _process_args(args)
 
 
-def _run_init(  # noqa: PLR0913
+def _run_init(  # noqa: PLR0913, C901
     *,
     interactive: bool = True,
     workspace_directory: str | None = None,
@@ -83,6 +83,8 @@ def _run_init(  # noqa: PLR0913
     storage_backend: str | None = None,
     storage_backend_bucket_id: str | None = None,
     register_advanced_library: bool | None = None,
+    config_values: dict[str, Any] | None = None,
+    secret_values: dict[str, str] | None = None,
 ) -> None:
     """Runs through the engine init steps.
 
@@ -93,6 +95,8 @@ def _run_init(  # noqa: PLR0913
         storage_backend (str | None): The storage backend to set.
         storage_backend_bucket_id (str | None): The storage backend bucket ID to set.
         register_advanced_library (bool | None): Whether to register the advanced library.
+        config_values (dict[str, any] | None): Arbitrary config key-value pairs to set.
+        secret_values (dict[str, str] | None): Arbitrary secret key-value pairs to set.
     """
     __init_system_config()
 
@@ -132,6 +136,18 @@ def _run_init(  # noqa: PLR0913
         )
         console.print(f"[bold green]Libraries to register set to: {', '.join(libraries_to_register)}[/bold green]")
 
+    # Set arbitrary config values
+    if config_values:
+        for key, value in config_values.items():
+            config_manager.set_config_value(key, value)
+            console.print(f"[bold green]Config '{key}' set to: {value}[/bold green]")
+
+    # Set arbitrary secret values
+    if secret_values:
+        for key, value in secret_values.items():
+            secrets_manager.set_secret(key, value)
+            console.print(f"[bold green]Secret '{key}' set[/bold green]")
+
     _sync_assets()
     console.print("[bold green]Initialization complete![/bold green]")
 
@@ -152,6 +168,8 @@ def _start_engine(*, no_update: bool = False) -> None:
             storage_backend_bucket_id=ENV_STORAGE_BACKEND_BUCKET_ID,
             register_advanced_library=ENV_REGISTER_ADVANCED_LIBRARY,
             interactive=True,
+            config_values=None,
+            secret_values=None,
         )
 
     # Confusing double negation -- If `no_update` is set, we want to skip the update
@@ -213,6 +231,18 @@ def _get_args() -> argparse.Namespace:
         "--no-interactive",
         action="store_true",
         help="Run init in non-interactive mode (no prompts).",
+    )
+    init_parser.add_argument(
+        "--config",
+        action="append",
+        metavar="KEY=VALUE",
+        help="Set arbitrary config values as key=value pairs (can be used multiple times). Example: --config log_level=DEBUG --config workspace_directory=/tmp",
+    )
+    init_parser.add_argument(
+        "--secret",
+        action="append",
+        metavar="KEY=VALUE",
+        help="Set arbitrary secret values as key=value pairs (can be used multiple times). Example: --secret MY_API_KEY=abc123 --secret OTHER_KEY=xyz789",
     )
 
     # engine
@@ -635,8 +665,42 @@ def _uninstall_self() -> None:
     os_manager.replace_process(["uv", "tool", "uninstall", "griptape-nodes"])
 
 
+def _parse_key_value_pairs(pairs: list[str] | None) -> dict[str, str] | None:
+    """Parse key=value pairs from a list of strings.
+
+    Args:
+        pairs: List of strings in the format "key=value"
+
+    Returns:
+        Dictionary of key-value pairs, or None if no pairs provided
+    """
+    if not pairs:
+        return None
+
+    result = {}
+    for pair in pairs:
+        if "=" not in pair:
+            console.print(f"[bold red]Invalid key=value pair: {pair}. Expected format: key=value[/bold red]")
+            continue
+        # Split only on the first = to handle values that contain =
+        key, value = pair.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+
+        if not key:
+            console.print(f"[bold red]Empty key in pair: {pair}[/bold red]")
+            continue
+
+        result[key] = value
+
+    return result if result else None
+
+
 def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
     if args.command == "init":
+        config_values = _parse_key_value_pairs(getattr(args, "config", None))
+        secret_values = _parse_key_value_pairs(getattr(args, "secret", None))
+
         _run_init(
             interactive=not args.no_interactive,
             workspace_directory=args.workspace_directory,
@@ -644,6 +708,8 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
             storage_backend=args.storage_backend,
             storage_backend_bucket_id=args.storage_backend_bucket_id,
             register_advanced_library=args.register_advanced_library,
+            config_values=config_values,
+            secret_values=secret_values,
         )
     elif args.command == "engine":
         _start_engine(no_update=args.no_update)
