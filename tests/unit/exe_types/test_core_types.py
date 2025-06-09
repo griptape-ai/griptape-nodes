@@ -45,26 +45,47 @@ class TestBaseNodeElement:
         assert ui_element.to_dict() == {
             "element_id": ANY,
             "element_type": "BaseNodeElement",
+            "parent_group_name": None,
             "children": [
                 {
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
+                    "parent_group_name": None,
                     "children": [
-                        {"element_id": ANY, "element_type": "BaseNodeElement", "children": []},
+                        {
+                            "element_id": ANY,
+                            "element_type": "BaseNodeElement",
+                            "parent_group_name": None,
+                            "children": [],
+                        },
                         {
                             "element_id": ANY,
                             "element_type": "ParameterGroup",
                             "name": "group1",
+                            "parent_group_name": None,
                             "ui_options": {},
-                            "children": [{"element_id": "leaf1", "element_type": "BaseNodeElement", "children": []}],
+                            "children": [
+                                {
+                                    "element_id": "leaf1",
+                                    "element_type": "BaseNodeElement",
+                                    "parent_group_name": "group1",
+                                    "children": [],
+                                }
+                            ],
                         },
                     ],
                 },
                 {
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
+                    "parent_group_name": None,
                     "children": [
-                        {"element_id": "leaf2", "element_type": "BaseNodeElement", "children": []},
+                        {
+                            "element_id": "leaf2",
+                            "element_type": "BaseNodeElement",
+                            "parent_group_name": None,
+                            "children": [],
+                        },
                         {
                             "element_id": "parameter",
                             "element_type": "Parameter",
@@ -78,6 +99,7 @@ class TestBaseNodeElement:
                             "mode_allowed_output": True,
                             "mode_allowed_property": True,
                             "name": "test",
+                            "parent_group_name": None,
                             "output_type": "str",
                             "tooltip": "test",
                             "tooltip_as_input": None,
@@ -100,23 +122,37 @@ class TestBaseNodeElement:
         assert ui_element.to_dict() == {
             "element_id": ANY,
             "element_type": "BaseNodeElement",
+            "parent_group_name": None,
             "children": [
                 {
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
+                    "parent_group_name": None,
                     "children": [
-                        {"element_id": ANY, "element_type": "BaseNodeElement", "children": []},
+                        {
+                            "element_id": ANY,
+                            "element_type": "BaseNodeElement",
+                            "parent_group_name": None,
+                            "children": [],
+                        },
                         {
                             "element_id": ANY,
                             "element_type": "ParameterGroup",
                             "name": "group1",
+                            "parent_group_name": None,
                             "ui_options": {},
                             "children": [
                                 {
                                     "element_id": "leaf1",
                                     "element_type": "BaseNodeElement",
+                                    "parent_group_name": "group1",
                                     "children": [
-                                        {"element_id": "leaf3", "element_type": "BaseNodeElement", "children": []},
+                                        {
+                                            "element_id": "leaf3",
+                                            "element_type": "BaseNodeElement",
+                                            "parent_group_name": None,
+                                            "children": [],
+                                        },
                                     ],
                                 }
                             ],
@@ -126,8 +162,14 @@ class TestBaseNodeElement:
                 {
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
+                    "parent_group_name": None,
                     "children": [
-                        {"element_id": "leaf2", "element_type": "BaseNodeElement", "children": []},
+                        {
+                            "element_id": "leaf2",
+                            "element_type": "BaseNodeElement",
+                            "parent_group_name": None,
+                            "children": [],
+                        },
                         {
                             "children": [],
                             "default_value": None,
@@ -141,6 +183,7 @@ class TestBaseNodeElement:
                             "mode_allowed_output": True,
                             "mode_allowed_property": True,
                             "name": "test",
+                            "parent_group_name": None,
                             "output_type": "str",
                             "tooltip": "test",
                             "tooltip_as_input": None,
@@ -179,16 +222,24 @@ class TestBaseNodeElement:
         assert ui_element.to_dict() == {
             "element_id": ANY,
             "element_type": "BaseNodeElement",
+            "parent_group_name": None,
             "children": [
                 {
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
+                    "parent_group_name": None,
                     "children": [
-                        {"element_id": ANY, "element_type": "BaseNodeElement", "children": []},
+                        {
+                            "element_id": ANY,
+                            "element_type": "BaseNodeElement",
+                            "parent_group_name": None,
+                            "children": [],
+                        },
                         {
                             "element_id": ANY,
                             "element_type": "ParameterGroup",
                             "name": "group1",
+                            "parent_group_name": None,
                             "ui_options": {},
                             "children": [],
                         },
@@ -197,13 +248,19 @@ class TestBaseNodeElement:
                 {
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
+                    "parent_group_name": None,
                     "children": [
-                        {"element_id": "leaf2", "element_type": "BaseNodeElement", "children": []},
+                        {
+                            "element_id": "leaf2",
+                            "element_type": "BaseNodeElement",
+                            "parent_group_name": None,
+                            "children": [],
+                        },
                         {
                             "element_id": "parameter",
-                            "default_value": None,
                             "element_type": "Parameter",
                             "children": [],
+                            "default_value": None,
                             "input_types": [
                                 "str",
                             ],
@@ -212,6 +269,7 @@ class TestBaseNodeElement:
                             "mode_allowed_output": True,
                             "mode_allowed_property": True,
                             "name": "test",
+                            "parent_group_name": None,
                             "output_type": "str",
                             "tooltip": "test",
                             "tooltip_as_input": None,
