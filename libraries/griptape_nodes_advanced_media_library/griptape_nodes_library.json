@@ -22,7 +22,7 @@
         "pillow>=11.2.1",
         "protobuf>=6.30.2",
         "sentencepiece>=0.2.0",
-        "cmake=3.31.6",
+        "cmake==3.31.6",
         "spandrel>=0.4.1",
         "torch>=2.7.0",
         "torchvision>=0.22.0",
@@ -223,4 +223,3 @@
     }
   ]
 }
-
