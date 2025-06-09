@@ -29,7 +29,6 @@ jobs:
     permissions:
       packages: write
       contents: read
-      attestations: write
       id-token: write
 
     steps:
@@ -104,17 +103,3 @@ jobs:
             BUILD_TYPE=gpu
           tags: ${{ steps.meta_gpu.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Generate CPU artifact attestation
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: ghcr.io/${{ github.repository }}
-          subject-digest: ${{ steps.push_cpu.outputs.digest }}
-          push-to-registry: true
-
-      - name: Generate GPU artifact attestation
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: ghcr.io/${{ github.repository }}
-          subject-digest: ${{ steps.push_gpu.outputs.digest }}
-          push-to-registry: true
