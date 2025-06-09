@@ -122,5 +122,16 @@ class MarigoldPipelineParameters:
         placeholder_image = PIL.Image.new("RGB", (512, 512), color="gray")
         self._node.set_parameter_value("output_depth_image", pil_to_image_artifact(placeholder_image))
 
+    def latents_to_image_pil(self, pipe: Any, latents: Any) -> Image:
+        # Use the VAE to decode latents to image
+        image = pipe.vae.decode(latents / pipe.vae.config.scaling_factor, return_dict=False)[0]
+        intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
+        return intermediate_pil_image
+
+    def publish_output_depth_image_preview_latents(self, pipe: Any, latents: Any) -> None:
+        preview_image_pil = self.latents_to_image_pil(pipe, latents)
+        preview_image_artifact = pil_to_image_artifact(preview_image_pil)
+        self._node.publish_update_to_parameter("output_depth_image", preview_image_artifact)
+
     def publish_output_depth_image(self, image: Image) -> None:
         self._node.set_parameter_value("output_depth_image", pil_to_image_artifact(image))

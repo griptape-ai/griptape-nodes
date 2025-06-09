@@ -164,6 +164,24 @@ class DeepfloydIfPipelineParameters:
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
         self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
+    def latents_to_image_pil(self, _pipe: Any, latents: Any) -> Image:
+        # For DeepFloyd IF, latents are typically intermediate_images in PIL format already
+        if hasattr(latents, "convert"):
+            # If it's already a PIL image, just return it
+            return latents
+        if isinstance(latents, list) and len(latents) > 0:
+            # If it's a list of PIL images, take the first one
+            return latents[0]
+        # Fallback: create a placeholder if we can't decode
+        import PIL.Image
+
+        return PIL.Image.new("RGB", (self.get_width(), self.get_height()), color="gray")
+
+    def publish_output_image_preview_latents(self, pipe: Any, latents: Any) -> None:
+        preview_image_pil = self.latents_to_image_pil(pipe, latents)
+        preview_image_artifact = pil_to_image_artifact(preview_image_pil)
+        self._node.publish_update_to_parameter("output_image", preview_image_artifact)
+
     def publish_output_image(self, output_image_pil: Image) -> None:
         image_artifact = pil_to_image_artifact(output_image_pil)
         self._node.parameter_output_values["output_image"] = image_artifact

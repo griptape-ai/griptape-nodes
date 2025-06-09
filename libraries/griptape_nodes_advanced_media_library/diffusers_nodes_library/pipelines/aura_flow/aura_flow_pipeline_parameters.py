@@ -2,6 +2,7 @@ import logging
 from typing import Any
 
 import PIL.Image
+import torch  # type: ignore[reportMissingImports]
 from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
@@ -152,13 +153,25 @@ class AuraFlowPipelineParameters:
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
         self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
+    def latents_to_image_pil(self, pipe: Any, latents: Any) -> Image:
+        # Check if VAE needs upcasting to float32 to prevent overflow
+        needs_upcasting = pipe.vae.dtype == torch.float16 and pipe.vae.config.force_upcast
+        if needs_upcasting:
+            pipe.upcast_vae()
+            latents = latents.to(next(iter(pipe.vae.post_quant_conv.parameters())).dtype)
+
+        # Decode latents using VAE with proper scaling
+        image = pipe.vae.decode(latents / pipe.vae.config.scaling_factor, return_dict=False)[0]
+
+        # Post-process the image to PIL format
+        image_pil = pipe.image_processor.postprocess(image, output_type="pil")[0]
+        return image_pil
+
     def publish_output_image_preview_latents(self, pipe: Any, latents: Any) -> None:
         try:
-            with pipe.vae.to(latents.device, dtype=latents.dtype):
-                preview_image = pipe.vae.decode(latents / pipe.vae.config.scaling_factor, return_dict=False)[0]
-                preview_image = pipe.image_processor.postprocess(preview_image, output_type="pil")[0]
-                image_artifact = pil_to_image_artifact(preview_image)
-                self._node.publish_update_to_parameter("output_image", image_artifact)
+            preview_image_pil = self.latents_to_image_pil(pipe, latents)
+            image_artifact = pil_to_image_artifact(preview_image_pil)
+            self._node.publish_update_to_parameter("output_image", image_artifact)
         except Exception as e:
             logger.warning("Failed to generate preview image: %s", e)
 

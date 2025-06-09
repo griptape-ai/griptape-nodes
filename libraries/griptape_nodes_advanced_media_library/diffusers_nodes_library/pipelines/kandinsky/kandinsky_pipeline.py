@@ -103,14 +103,14 @@ class KandinskyPipeline(ControlNode):
             generator=self.pipe_params.get_generator(),
         ).image_embeds
 
-        def callback_on_step_end(
+        def callback(
             step: int,
             _timestep: int,
-            _callback_kwargs: dict,
-        ) -> dict:
+            latents: Any,
+        ) -> None:
             if step < num_inference_steps - 1:
+                self.pipe_params.publish_output_image_preview_latents(pipe, latents)
                 self.log_params.append_to_logs(f"Starting inference step {step + 2} of {num_inference_steps}...\n")
-            return {}
 
         # Stage 2: Generate image from embeddings
         self.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")
@@ -121,7 +121,8 @@ class KandinskyPipeline(ControlNode):
             num_inference_steps=num_inference_steps,
             generator=self.pipe_params.get_generator(),
             output_type="pil",
-            callback_on_step_end=callback_on_step_end,
+            callback=callback,
+            callback_steps=1,
         ).images[0]
 
         self.pipe_params.publish_output_image(output_image_pil)

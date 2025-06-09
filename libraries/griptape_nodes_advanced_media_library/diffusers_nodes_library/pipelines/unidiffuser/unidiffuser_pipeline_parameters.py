@@ -176,21 +176,27 @@ class UnidiffuserPipelineParameters:
         image_artifact.name = f"unidiffuser_preview_{uuid.uuid4().hex[:8]}.png"
         self._node.set_parameter_value("image", image_artifact)
 
-    def publish_output_image_preview_latents(self, pipe: diffusers.UniDiffuserPipeline, latents: torch.Tensor) -> None:
+    def latents_to_image_pil(self, pipe: diffusers.UniDiffuserPipeline, latents: Any) -> PIL.Image.Image:
+        """Convert latents to PIL image for preview."""
+        with torch.no_grad():
+            if hasattr(pipe, "vae") and pipe.vae is not None:
+                latents = latents / pipe.vae.config.scaling_factor
+                image = pipe.vae.decode(latents, return_dict=False)[0]
+                image = (image / 2 + 0.5).clamp(0, 1)
+                image = image.cpu().permute(0, 2, 3, 1).float().numpy()
+                image = (image * 255).round().astype("uint8")
+                preview_image = PIL.Image.fromarray(image[0])
+                return preview_image
+            # Fallback placeholder if VAE is not available
+            return PIL.Image.new("RGB", (512, 512), color=(128, 128, 128))
+
+    def publish_output_image_preview_latents(self, pipe: diffusers.UniDiffuserPipeline, latents: Any) -> None:
         """Publish intermediate latents as preview image."""
         try:
-            with torch.no_grad():
-                if hasattr(pipe, "vae") and pipe.vae is not None:
-                    # Decode latents to image
-                    latents = latents / pipe.vae.config.scaling_factor
-                    image = pipe.vae.decode(latents, return_dict=False)[0]
-                    image = (image / 2 + 0.5).clamp(0, 1)
-                    image = image.cpu().permute(0, 2, 3, 1).float().numpy()
-                    image = (image * 255).round().astype("uint8")
-                    preview_image = PIL.Image.fromarray(image[0])
-                    image_artifact = pil_to_image_artifact(preview_image)
-                    image_artifact.name = f"unidiffuser_preview_{uuid.uuid4().hex[:8]}.png"
-                    self._node.set_parameter_value("image", image_artifact)
+            preview_image_pil = self.latents_to_image_pil(pipe, latents)
+            image_artifact = pil_to_image_artifact(preview_image_pil)
+            image_artifact.name = f"unidiffuser_preview_{uuid.uuid4().hex[:8]}.png"
+            self._node.publish_update_to_parameter("image", image_artifact)
         except Exception as e:
             logger.warning("Failed to generate preview from latents: %s", e)
 

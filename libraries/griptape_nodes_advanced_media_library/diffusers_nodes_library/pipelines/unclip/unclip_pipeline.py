@@ -83,20 +83,10 @@ class UnclipPipeline(ControlNode):
         # -------------------------------------------------------------
         num_inference_steps = self.pipe_params.get_num_inference_steps()
 
-        def callback_on_step_end(
-            step: int,
-            _timestep: int,
-            _callback_kwargs: dict,
-        ) -> dict:
-            if step < num_inference_steps - 1:
-                self.log_params.append_to_logs(f"Starting inference step {step + 2} of {num_inference_steps}...\n")
-            return {}
-
-        self.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")
+        self.log_params.append_to_logs(f"Starting inference with {num_inference_steps} steps...\n")
         output_image_pil = pipe(
             **self.pipe_params.get_pipe_kwargs(),
             output_type="pil",
-            callback_on_step_end=callback_on_step_end,
         ).images[0]
 
         self.pipe_params.publish_output_image(output_image_pil)

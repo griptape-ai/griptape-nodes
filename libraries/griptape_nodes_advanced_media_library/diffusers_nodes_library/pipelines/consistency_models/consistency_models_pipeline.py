@@ -64,22 +64,16 @@ class ConsistencyModelsPipeline(ControlNode):
 
         num_inference_steps = self.pipe_params.get_num_inference_steps()
 
-        def callback_on_step_end(
-            pipe: diffusers.ConsistencyModelPipeline,
-            i: int,
-            _t: Any,
-            callback_kwargs: dict,
-        ) -> dict:
-            if i < num_inference_steps - 1:
-                self.pipe_params.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
-                self.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")
-            return {}
+        def callback(step: int, timestep: int, latents: Any) -> None:  # noqa: ARG001
+            if step < num_inference_steps - 1:
+                self.pipe_params.publish_output_image_preview_latents(pipe, latents)
+                self.log_params.append_to_logs(f"Starting inference step {step + 2} of {num_inference_steps}...\n")
 
         self.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")
         output_image_pil = pipe(
             **self.pipe_params.get_pipe_kwargs(),
             output_type="pil",
-            callback_on_step_end=callback_on_step_end,
+            callback=callback,
         ).images[0]
         self.pipe_params.publish_output_image(output_image_pil)
         self.log_params.append_to_logs("Done.\n")

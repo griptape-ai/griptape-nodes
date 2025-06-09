@@ -63,21 +63,9 @@ class BlipDiffusionPipeline(ControlNode):
             optimize_blip_diffusion_pipeline_memory_footprint(pipe)
 
         num_inference_steps = self.pipe_params.get_num_inference_steps()
-
-        def callback_on_step_end(
-            _pipe: diffusers.BlipDiffusionPipeline,
-            i: int,
-            _t: Any,
-            _callback_kwargs: dict,
-        ) -> dict:
-            if i < num_inference_steps - 1:
-                self.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")
-            return {}
-
         self.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")
         output_image_pil = pipe(
             **self.pipe_params.get_pipe_kwargs(),
-            callback_on_step_end=callback_on_step_end,
         ).images[0]
         self.pipe_params.publish_output_image(output_image_pil)
         self.log_params.append_to_logs("Done.\n")

@@ -112,11 +112,19 @@ class ConsistencyModelsPipelineParameters:
         placeholder = PIL.Image.new("RGB", (256, 256), (128, 128, 128))
         self._node.publish_update_to_parameter("image", pil_to_image_artifact(placeholder))
 
-    def publish_output_image_preview_latents(self, pipe: diffusers.ConsistencyModelPipeline, latents: Any) -> None:  # noqa: ARG002
+    def latents_to_image_pil(self, pipe: diffusers.ConsistencyModelPipeline, latents: Any) -> Image:
+        """Convert latents to PIL image for consistency models.
+
+        Consistency models don't use a VAE, so we denormalize the latents directly.
+        """
+        image = pipe.postprocess_image(latents, output_type="pil")[0]
+        return image
+
+    def publish_output_image_preview_latents(self, pipe: diffusers.ConsistencyModelPipeline, latents: Any) -> None:
         try:
-            # For consistency models, we may not have a VAE decode step like other models
-            # This is a simplified preview generation
-            logger.debug("Generating preview for consistency model")
+            preview_image_pil = self.latents_to_image_pil(pipe, latents)
+            preview_image_artifact = pil_to_image_artifact(preview_image_pil)
+            self._node.publish_update_to_parameter("image", preview_image_artifact)
         except Exception as e:
             logger.warning("Failed to generate preview: %s", e)
 

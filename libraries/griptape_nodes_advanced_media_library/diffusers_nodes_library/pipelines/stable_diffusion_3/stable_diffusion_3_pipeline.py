@@ -84,12 +84,14 @@ class StableDiffusion3Pipeline(ControlNode):
         num_inference_steps = self.pipe_params.get_num_inference_steps()
 
         def callback_on_step_end(
-            step: int,
-            _timestep: int,
-            _callback_kwargs: dict,
+            pipe: diffusers.StableDiffusion3Pipeline,
+            i: int,
+            _t: Any,
+            callback_kwargs: dict,
         ) -> dict:
-            if step < num_inference_steps - 1:
-                self.log_params.append_to_logs(f"Starting inference step {step + 2} of {num_inference_steps}...\n")
+            if i < num_inference_steps - 1:
+                self.pipe_params.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
+                self.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")
             return {}
 
         self.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")

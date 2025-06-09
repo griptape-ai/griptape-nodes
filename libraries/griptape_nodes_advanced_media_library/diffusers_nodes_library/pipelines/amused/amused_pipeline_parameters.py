@@ -1,7 +1,9 @@
 import logging
 from typing import Any
 
+import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
+import torch  # type: ignore[reportMissingImports]
 from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
@@ -25,10 +27,6 @@ class AmusedPipelineParameters:
             repo_ids=[
                 "amused/amused-256",
                 "amused/amused-512",
-                "reza-alipour/ml-muse",
-                "reza-alipour/face-muse",
-                "reza-alipour/Muse-Face",
-                "suvadityamuk/amused-512-pokemon",
             ],
         )
         self._seed_parameter = SeedParameter(node)
@@ -166,6 +164,41 @@ class AmusedPipelineParameters:
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
         self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
+    def latents_to_image_pil(self, pipe: diffusers.AmusedPipeline, latents: torch.Tensor) -> Image:
+        """Convert latents to PIL image using the pipeline's VQ-VAE decoder."""
+        # Handle potential upcasting needed for float16
+        needs_upcasting = pipe.vqvae.dtype == torch.float16 and pipe.vqvae.config.force_upcast
+
+        if needs_upcasting:
+            pipe.vqvae.float()
+
+        batch_size = latents.shape[0]
+        width = self.get_width()
+        height = self.get_height()
+
+        # Decode latents using VQ-VAE
+        output = pipe.vqvae.decode(
+            latents,
+            force_not_quantize=True,
+            shape=(
+                batch_size,
+                height // pipe.vae_scale_factor,
+                width // pipe.vae_scale_factor,
+                pipe.vqvae.config.latent_channels,
+            ),
+        ).sample.clip(0, 1)
+
+        # Convert to PIL image
+        intermediate_pil_image = pipe.image_processor.postprocess(output, output_type="pil")[0]
+        return intermediate_pil_image
+
+    def publish_output_image_preview_latents(self, pipe: diffusers.AmusedPipeline, latents: torch.Tensor) -> None:
+        """Publish preview image from latents during inference."""
+        preview_image_pil = self.latents_to_image_pil(pipe, latents)
+        preview_image_artifact = pil_to_image_artifact(preview_image_pil)
+        self._node.publish_update_to_parameter("output_image", preview_image_artifact)
+
     def publish_output_image(self, output_image_pil: Image) -> None:
         image_artifact = pil_to_image_artifact(output_image_pil)
+        self._node.set_parameter_value("output_image", image_artifact)
         self._node.parameter_output_values["output_image"] = image_artifact

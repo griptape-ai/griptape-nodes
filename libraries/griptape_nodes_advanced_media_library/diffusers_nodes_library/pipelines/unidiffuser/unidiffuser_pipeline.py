@@ -64,22 +64,16 @@ class UnidiffuserPipeline(ControlNode):
 
         num_inference_steps = self.pipe_params.get_num_inference_steps()
 
-        def callback_on_step_end(
-            pipe: diffusers.UniDiffuserPipeline,
-            i: int,
-            _t: Any,
-            callback_kwargs: dict,
-        ) -> dict:
-            if i < num_inference_steps - 1:
-                self.pipe_params.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
-                self.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")
-            return {}
+        def callback(step: int, _timestep: int, latents: Any) -> None:
+            if step < num_inference_steps - 1:
+                self.pipe_params.publish_output_image_preview_latents(pipe, latents)
+                self.log_params.append_to_logs(f"Starting inference step {step + 2} of {num_inference_steps}...\n")
 
         self.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")
         result = pipe(
             **self.pipe_params.get_pipe_kwargs(),
             output_type="pil",
-            callback_on_step_end=callback_on_step_end,
+            callback=callback,
         )
 
         # UniDiffuser can output both images and text depending on mode

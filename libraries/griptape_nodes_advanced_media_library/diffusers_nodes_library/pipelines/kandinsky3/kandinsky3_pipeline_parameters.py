@@ -162,6 +162,21 @@ class Kandinsky3PipelineParameters:
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
         self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
+    def latents_to_image_pil(self, pipe: Any, latents: Any) -> Image:
+        # Use the MoVQ to decode latents to image
+        image = pipe.movq.decode(latents, force_not_quantize=True)["sample"]
+        # Post-processing for output
+        image = image * 0.5 + 0.5
+        image = image.clamp(0, 1)
+        image = image.cpu().permute(0, 2, 3, 1).float().numpy()
+        intermediate_pil_image = pipe.numpy_to_pil(image)[0]
+        return intermediate_pil_image
+
+    def publish_output_image_preview_latents(self, pipe: Any, latents: Any) -> None:
+        preview_image_pil = self.latents_to_image_pil(pipe, latents)
+        preview_image_artifact = pil_to_image_artifact(preview_image_pil)
+        self._node.publish_update_to_parameter("output_image", preview_image_artifact)
+
     def publish_output_image(self, output_image_pil: Image) -> None:
         image_artifact = pil_to_image_artifact(output_image_pil)
         self._node.set_parameter_value("output_image", image_artifact)

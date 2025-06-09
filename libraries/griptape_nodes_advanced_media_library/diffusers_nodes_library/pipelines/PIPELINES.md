@@ -1,71 +1,71 @@
 - [x] AllegroPipeline
 - [x] AmusedPipeline
-- [ ] AnimateDiffPipeline
-- [ ] AudioldmPipeline
-- [ ] Audioldm2Pipeline
+- [x] AnimateDiffPipeline
+- [x] AudioldmPipeline
+- [x] Audioldm2Pipeline
 - [x] AuraFlowPipeline
 - [x] BlipDiffusionPipeline
-- [ ] CogvideoPipeline
-- [ ] Cogview3Pipeline
+- [x] CogvideoPipeline
+- [x] Cogview3Pipeline
 - [x] Cogview4Pipeline
-- [ ] ConsisidPipeline
-- [ ] ConsistencyModelsPipeline
-- [ ] ControlnetPipeline
-- [ ] ControlnetHunyuanditPipeline
-- [ ] ControlnetSd3Pipeline
-- [ ] ControlnetXsPipeline
-- [ ] CosmosPipeline
-- [ ] DanceDiffusionPipeline
-- [ ] DdimPipeline
-- [ ] DdpmPipeline
-- [ ] DeepfloydIfPipeline
-- [ ] DitPipeline
-- [ ] EasyanimatePipeline
+- [x] ConsisidPipeline
+- [x] ConsistencyModelsPipeline
+- [x] ControlnetPipeline
+- [x] ControlnetHunyuanditPipeline
+- [x] ControlnetSd3Pipeline
+- [x] ControlnetXsPipeline
+- [x] CosmosPipeline
+- [x] DanceDiffusionPipeline
+- [x] DdimPipeline
+- [x] DdpmPipeline
+- [x] DeepfloydIfPipeline
+- [x] DitPipeline
+- [x] EasyanimatePipeline
 - [x] FluxPipeline
-- [ ] HidreamImagePipeline
-- [ ] HunyuanVideoPipeline
-- [ ] HunyuanditPipeline
-- [ ] I2VGenXLPipeline
-- [ ] KandinskyPipeline
-- [ ] Kandinsky22Pipeline
-- [ ] Kandinsky3Pipeline
-- [ ] KolorsPipeline
-- [ ] LatentConsistencyModelsPipeline
-- [ ] LatentDiffusionPipeline
-- [ ] LattePipeline
-- [ ] LeditsPpPipeline
-- [ ] LtxPipeline
-- [ ] LuminaPipeline
-- [ ] Lumina2Pipeline
-- [ ] MarigoldPipeline
-- [ ] MochiPipeline
-- [ ] MusicldmPipeline
-- [ ] OmnigenPipeline
-- [ ] PagPipeline
-- [ ] PaintByExamplePipeline
-- [ ] PiaPipeline
-- [ ] PixartAlphaPipeline
-- [ ] SanaPipeline
-- [ ] SemanticStableDiffusionPipeline
-- [ ] ShapEPipeline
-- [ ] StableAudioPipeline
-- [ ] StableCascadePipeline
-- [ ] StableDiffusionPipeline
-- [ ] StableDiffusion3Pipeline
-- [ ] StableDiffusionAttendAndExcitePipeline
-- [ ] StableDiffusionDiffeditPipeline
-- [ ] StableDiffusionGligenPipeline
-- [ ] StableDiffusionKDiffusionPipeline
-- [ ] StableDiffusionLdm3dPipeline
-- [ ] StableDiffusionPanoramaPipeline
-- [ ] StableDiffusionSafePipeline
-- [ ] StableDiffusionSagPipeline
-- [ ] StableDiffusionXLPipeline
-- [ ] StableVideoDiffusionPipeline
-- [ ] T2IAdapterPipeline
-- [ ] TextToVideoSynthesisPipeline
-- [ ] UnclipPipeline
-- [ ] UnidiffuserPipeline
-- [ ] VisualclozePipeline
-- [ ] WanPipeline
-- [ ] WuerstchenPipeline
+- [x] HidreamImagePipeline
+- [x] HunyuanVideoPipeline
+- [x] HunyuanditPipeline
+- [x] I2VGenXLPipeline
+- [x] KandinskyPipeline
+- [x] Kandinsky22Pipeline
+- [x] Kandinsky3Pipeline
+- [x] KolorsPipeline
+- [x] LatentConsistencyModelsPipeline
+- [x] LatentDiffusionPipeline
+- [x] LattePipeline
+- [x] LeditsPpPipeline
+- [x] LtxPipeline
+- [x] LuminaPipeline
+- [x] Lumina2Pipeline
+- [x] MarigoldPipeline
+- [x] MochiPipeline
+- [x] MusicldmPipeline
+- [x] OmnigenPipeline
+- [x] PagPipeline
+- [x] PaintByExamplePipeline
+- [x] PiaPipeline
+- [x] PixartAlphaPipeline
+- [x] SanaPipeline
+- [x] SemanticStableDiffusionPipeline
+- [x] ShapEPipeline
+- [x] StableAudioPipeline
+- [x] StableCascadePipeline
+- [x] StableDiffusionPipeline
+- [x] StableDiffusion3Pipeline
+- [x] StableDiffusionAttendAndExcitePipeline
+- [x] StableDiffusionDiffeditPipeline
+- [x] StableDiffusionGligenPipeline
+- [x] StableDiffusionKDiffusionPipeline
+- [x] StableDiffusionLdm3dPipeline
+- [x] StableDiffusionPanoramaPipeline
+- [x] StableDiffusionSafePipeline
+- [x] StableDiffusionSagPipeline
+- [x] StableDiffusionXLPipeline
+- [x] StableVideoDiffusionPipeline
+- [x] T2IAdapterPipeline
+- [x] TextToVideoSynthesisPipeline
+- [x] UnclipPipeline
+- [x] UnidiffuserPipeline
+- [x] VisualclozePipeline
+- [x] WanPipeline
+- [x] WuerstchenPipeline
