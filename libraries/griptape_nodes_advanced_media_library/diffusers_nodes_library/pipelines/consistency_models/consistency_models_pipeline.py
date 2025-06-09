@@ -12,7 +12,7 @@ from diffusers_nodes_library.pipelines.consistency_models.consistency_models_pip
     optimize_consistency_models_pipeline_memory_footprint,
 )  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.consistency_models.consistency_models_pipeline_parameters import (
-    ConsistencyModelsPipelineParameters,  # type: ignore[reportMissingImports]
+    ConsistencyModelPipelineParameters,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -20,12 +20,12 @@ from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class ConsistencyModelsPipeline(ControlNode):
+class ConsistencyModelPipeline(ControlNode):
     """Griptape wrapper around diffusers.pipelines.consistency_models.ConsistencyModelPipeline."""
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.pipe_params = ConsistencyModelsPipelineParameters(self)
+        self.pipe_params = ConsistencyModelPipelineParameters(self)
         self.log_params = LogParameter(self)
         self.pipe_params.add_input_parameters()
         self.pipe_params.add_output_parameters()

@@ -17,7 +17,7 @@ MAX_BATCH_SIZE = 16
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class ConsistencyModelsPipelineParameters:
+class ConsistencyModelPipelineParameters:
     def __init__(self, node: BaseNode):
         self._node = node
         self._huggingface_repo_parameter = HuggingFaceRepoParameter(

@@ -368,7 +368,7 @@
       }
     },
     {
-      "class_name": "ConsistencyModelsPipeline",
+      "class_name": "ConsistencyModelPipeline",
       "file_path": "diffusers_nodes_library/pipelines/consistency_models/consistency_models_pipeline.py",
       "metadata": {
         "category": "image/consistency_models",
