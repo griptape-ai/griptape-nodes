@@ -1,4 +1,3 @@
-import contextlib
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -62,15 +61,21 @@ class ForEachEndNode(EndLoopNode):
     def process(self) -> None:
         if self.start_node is None:
             return
-        # This means this is the first item in the loop.
+
+        # Initialize output_list only on the first iteration
         output_list = self.get_parameter_value("output")
         if self.start_node.current_index == 1:
-            with contextlib.suppress(Exception):
-                self.remove_parameter_value("output")
-        if output_list is None:
+            # Reset the output list at the beginning of a new loop execution
             output_list = []
             self.set_parameter_value("output", output_list)
+        elif output_list is None:
+            # If output_list is None (shouldn't happen normally), initialize it
+            output_list = []
+            self.set_parameter_value("output", output_list)
+
+        # Append the current item to the output list
         output_list.append(self.get_parameter_value("current_item"))
+        # Make the output available when the loop is finished
         if self.start_node.finished:
             self.parameter_output_values["output"] = self.get_parameter_value("output")
 

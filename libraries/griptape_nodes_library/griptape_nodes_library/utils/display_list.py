@@ -9,6 +9,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
 
 
@@ -58,7 +59,6 @@ class DisplayList(ControlNode):
             else:
                 output_param = self.dynamic_params[i]
                 output_param.output_type = item_type
-            from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 
             modified_request = AlterElementEvent(element_details=output_param.to_event(self))
             EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
