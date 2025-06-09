@@ -1,43 +1,40 @@
-# WebScraper
+# Web Scraper
 
 ## What is it?
 
-The WebScraper tool arguments an agent, allowing that agent to extract and process information from websites.
+The Web Scraper tool is a utility that can be given to an agent to help it extract information from web pages.
 
 ## When would I use it?
 
 Use this node when you want to:
 
-- Enable your agents to access and extract information from web pages
-- Gather data from online sources for analysis
-- Incorporate web content into your AI workflows
-- Research information available on public websites
-- Monitor web content for specific information
+- Enable agents to extract data from websites
+- Scrape content from web pages
+- Gather information from online sources
+- Automate web data collection
 
 ## How to use it
 
 ### Basic Setup
 
-1. Add the WebScraper tool to your worksflow
-1. Connect the "tool" output to an agent or other node that can utilize tools
-
-### Parameters
-
-- **off_prompt**: Whether to run web scraping operations outside the main prompt (default is False)
+1. Add the Web Scraper tool to your workflow
+1. Connect its output to nodes that need web scraping capabilities (like an Agent)
 
 ### Outputs
 
-- **tool**: The configured web scraper tool that can be used by other nodes
+- **tool**: The configured web scraper tool that other nodes can use
 
 ## Example
 
-Imagine you want to create an agent that can research information from websites:
+Imagine you want to create an agent that can scrape web content:
 
-1. Add a WebScraper to your workflow
-1. Set the "name" parameter to "WebResearcher"
-1. Set "off_prompt" to True for more efficient processing
+1. Add a Web Scraper tool to your workflow
 1. Connect the "tool" output to an Agent's "tools" input
-1. Now your agent can scrape and analyze web content when prompted
+1. Now that agent can perform web scraping operations when needed in conversations
+
+## Implementation Details
+
+The Web Scraper tool is implemented using Griptape's `WebScraperTool` class and provides a simple interface for extracting content from web pages. The tool is designed to be used by agents to gather information from websites in a structured way.
 
 ## Important Notes
 
