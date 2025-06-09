@@ -35,7 +35,7 @@ class ForEachStartNode(StartLoopNode):
             name="index",
             tooltip="Current index of the iteration",
             type=ParameterTypeBuiltin.INT.value,
-            allowed_modes={ParameterMode.PROPERTY},
+            allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             settable=False,
             default_value=0,
         )
@@ -57,8 +57,8 @@ class ForEachStartNode(StartLoopNode):
         )
         self.add_parameter(self.current_item)
 
-        self.loop = ControlParameterOutput(tooltip="Enter the For Each Loop", name="loop")
-        self.loop.ui_options = {"display_name": "Enter Loop"}
+        self.loop = ControlParameterOutput(tooltip="To the End Node", name="loop")
+        self.loop.ui_options = {"display_name": "Enter Loop", "hide": True}
         self.add_parameter(self.loop)
 
     def process(self) -> None:
@@ -77,6 +77,10 @@ class ForEachStartNode(StartLoopNode):
         self.set_parameter_value("index", self.current_index)
         self.publish_update_to_parameter("index", self.current_index)
         self.current_index += 1
+        if self.current_index == len(self._items):
+            self.finished = True
+            self._items = []
+            self.current_index = 0
 
     # This node cannot run unless it's connected to a start node.
     def validate_before_workflow_run(self) -> list[Exception] | None:
@@ -116,33 +120,17 @@ class ForEachStartNode(StartLoopNode):
         return exceptions
 
     def get_next_control_output(self) -> Parameter | None:
-        if self.finished:
-            self.finished = False
-            return self.exec_out
-        if self.current_index == len(self._items) - 1:
-            # This is the last iteration of the loop
-            self.finished = True
-            # reset the node.
-            self.current_index = 0
-            self._items = []
         return self.loop
 
-    def after_incoming_connection(
+    def after_outgoing_connection(
         self,
-        source_node: BaseNode,
         source_parameter: Parameter,
+        target_node: BaseNode,
         target_parameter: Parameter,
         modified_parameters_set: set[str],
     ) -> None:
-        if target_parameter == self.items_list or target_parameter.parent_container_name == "items":
-            self.current_item.type = source_parameter.type
-            param = self.items_list.add_child_parameter()
-            param.type = "str"
-            param.default_value = "test"
-            modified_parameters_set.add("current_item")
-            modified_parameters_set.add("items")
-        if target_parameter == self.exec_in and isinstance(source_node, EndLoopNode):
-            self.end_node = source_node
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
+        if source_parameter == self.loop and isinstance(target_node, EndLoopNode):
+            self.end_node = target_node
+        return super().after_outgoing_connection(
+            source_parameter, target_node, target_parameter, modified_parameters_set
         )

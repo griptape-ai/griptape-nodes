@@ -2,7 +2,8 @@ import contextlib
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
-    ControlParameter,
+    ControlParameterInput,
+    ControlParameterOutput,
     Parameter,
     ParameterMode,
     ParameterTypeBuiltin,
@@ -23,13 +24,14 @@ class ForEachEndNode(EndLoopNode):
         super().__init__(name, metadata)
         self.start_node = None
         self._index = 0
-        self.continue_loop = ControlParameter(
+        self.continue_loop = ControlParameterOutput(tooltip="Continue to the next iteration", name="exec_out")
+        self.from_start = ControlParameterInput(
             tooltip="Continue to the next iteration",
-            name="Continue",
-            allowed_modes={ParameterMode.OUTPUT, ParameterMode.INPUT},
+            name="from_start",
         )
-        self.continue_loop.ui_options = {"display_name": "Continue", "hide": True}
+        self.from_start.ui_options = {"hide": True}
         self.add_parameter(self.continue_loop)
+        self.add_parameter(self.from_start)
         self.output = Parameter(
             name="output",
             tooltip="Output parameter for the loop iteration",
@@ -79,14 +81,19 @@ class ForEachEndNode(EndLoopNode):
         If the node is finished, it moves on to the completed parameter.
         """
         # Go back to the start node now.
-        return self.get_parameter_by_name("Continue")
+        if self.start_node is not None and self.start_node.finished:
+            return self.get_parameter_by_name("exec_out")
+        return self.get_parameter_by_name("from_start")
 
-    def after_outgoing_connection(
+    def after_incoming_connection(
         self,
+        source_node: BaseNode,
         source_parameter: Parameter,
-        target_node: BaseNode,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],  # noqa: ARG002
+        modified_parameters_set: set[str],
     ) -> None:
-        if source_parameter is self.continue_loop and isinstance(target_node, StartLoopNode):
-            self.start_node = target_node
+        if target_parameter is self.from_start and isinstance(source_node, StartLoopNode):
+            self.start_node = source_node
+        return super().after_incoming_connection(
+            source_node, source_parameter, target_parameter, modified_parameters_set
+        )

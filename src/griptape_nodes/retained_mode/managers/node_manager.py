@@ -331,10 +331,10 @@ class NodeManager:
                 # Create Loop between output and input to the start node.
                 GriptapeNodes.handle_request(
                     CreateConnectionRequest(
-                        source_node_name=end_loop.node_name,
-                        source_parameter_name="Continue",
-                        target_node_name=node.name,
-                        target_parameter_name="exec_in",
+                        source_node_name=node.name,
+                        source_parameter_name="loop",
+                        target_node_name=end_loop.node_name,
+                        target_parameter_name="from_start",
                     )
                 )
                 end_node = self.get_node_by_name(end_loop.node_name)
@@ -1746,6 +1746,7 @@ class NodeManager:
                 metadata=copy.deepcopy(node.metadata),
                 # If it is actively resolving, mark as unresolved.
                 resolution=node.state.value,
+                initial_setup=True,
             )
 
             # We're going to compare this node instance vs. a canonical one. Rez that one up.
