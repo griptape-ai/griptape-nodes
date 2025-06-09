@@ -801,7 +801,6 @@
         "display_name": "Published Workflow"
       }
     },
-    
     {
       "class_name": "LoadGLTF",
       "file_path": "griptape_nodes_library/three_d/load_gltf.py",
@@ -809,15 +808,6 @@
         "category": "3D",
         "description": "Loads a GLTF file into your workflow",
         "display_name": "Load GLTF"
-      }
-    },
-    {
-      "class_name": "TestDynamicGroup",
-      "file_path": "griptape_nodes_library/utils/test_groups.py",
-      "metadata": {
-        "category": "utils",
-        "description": "Test node for dynamic parameter groups",
-        "display_name": "Test Dynamic Group"
       }
     }
   ],

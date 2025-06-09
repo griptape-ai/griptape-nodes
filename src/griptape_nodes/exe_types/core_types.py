@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, TypeVar, override
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -415,10 +415,10 @@ class ParameterGroup(BaseNodeElement):
         child.parent_group_name = self.name
         return super().add_child(child)
 
-    def remove_child(self, child: BaseNodeElement|str) -> None:
+    def remove_child(self, child: BaseNodeElement | str) -> None:
         if isinstance(child, str):
             child_from_str = self.find_element_by_name(child)
-            if child_from_str is not None and isinstance(child_from_str,BaseNodeElement):
+            if child_from_str is not None and isinstance(child_from_str, BaseNodeElement):
                 child_from_str.parent_group_name = None
                 return super().remove_child(child_from_str)
         else:
