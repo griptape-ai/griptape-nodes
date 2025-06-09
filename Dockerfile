@@ -16,21 +16,24 @@ FROM ${BASE_IMAGE_CPU} AS builder_cpu
 # Bring in uv/uvx binaries from the official Astral SH image
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Install git (needed for uv to fetch dependencies)
+# Install git (needed for uv to fetch dependencies) and build tools for native packages
 RUN apt-get update \
- && apt-get install -y git \
- && rm -rf /var/lib/apt/lists/*
+ && apt-get install -y git build-essential pkg-config cmake libprotobuf-dev protobuf-compiler \
+ && rm -rf /var/lib/apt/lists/* \
+ && pkg-config --version \
+ && cmake --version
 
 WORKDIR /app
 
 # Set virtual environment location outside of /app to avoid mount conflicts
-ENV UV_PYTHON_INSTALL_DIR=/opt/python
-RUN uv python install python3.12
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 
 # 2.1) Install dependencies (without yet installing the project itself)
 #     - Use BuildKit cache mounts for pip/uv caches
 ENV UV_LINK_MODE=copy
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_PYTHON_DOWNLOADS=never
+ENV UV_PYTHON=/usr/bin/python3.12
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
@@ -65,6 +68,9 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       software-properties-common \
       wget \
+      tzdata \
+ && ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime \
+ && dpkg-reconfigure -f noninteractive tzdata \
  && add-apt-repository ppa:deadsnakes/ppa \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -72,19 +78,28 @@ RUN apt-get update \
       ffmpeg libgl1 \
       libjpeg-dev zlib1g-dev libpng-dev libwebp-dev \
       build-essential \
- && rm -rf /var/lib/apt/lists/*
+      pkg-config \
+      cmake \
+      libprotobuf-dev \
+      protobuf-compiler \
+      python3.12 \
+      python3.12-dev \
+      python3.12-venv \
+ && rm -rf /var/lib/apt/lists/* \
+ && pkg-config --version \
+ && cmake --version
 
 WORKDIR /app
 
 # Set virtual environment location outside of /app to avoid mount conflicts
-# Install Python in a system-wide location accessible to all users
-ENV UV_PYTHON_INSTALL_DIR=/opt/python
-RUN uv python install python3.12
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 
 # 3.2) Install dependencies (without yet installing the project itself)
 #     - Use BuildKit cache mounts for pip/uv caches
 ENV UV_LINK_MODE=copy
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_PYTHON_DOWNLOADS=never
+ENV UV_PYTHON=/usr/bin/python3.12
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
@@ -113,9 +128,9 @@ FROM builder_${BUILD_TYPE} AS builder
 #────────────────────────────
 FROM ${BASE_IMAGE_CPU} AS runtime_cpu
 
-# Install git (needed by entrypoint if it ever pulls from Git, etc.)
+# Install git (needed by entrypoint if it ever pulls from Git, etc.) and build tools
 RUN apt-get update \
- && apt-get install -y git libgl1-mesa-glx libglib2.0-0 \
+ && apt-get install -y git libgl1-mesa-glx libglib2.0-0 build-essential pkg-config cmake libprotobuf-dev protobuf-compiler \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -126,12 +141,25 @@ WORKDIR /app
 #────────────────────────────
 FROM ${BASE_IMAGE_GPU} AS runtime_gpu
 
-# Install only the libraries needed at runtime
+# Install libraries needed at runtime and build tools
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
 RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      software-properties-common \
+      tzdata \
+ && ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime \
+ && dpkg-reconfigure -f noninteractive tzdata \
+ && add-apt-repository ppa:deadsnakes/ppa \
+ && apt-get update \
  && apt-get install -y --no-install-recommends \
       git ffmpeg libgl1 \
       libjpeg-dev zlib1g-dev libpng-dev libwebp-dev \
- && rm -rf /var/lib/apt/lists/*
+      build-essential pkg-config cmake libprotobuf-dev protobuf-compiler \
+      python3.12 python3.12-dev python3.12-venv \
+ && rm -rf /var/lib/apt/lists/* \
+ && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
+ && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
 
 WORKDIR /app
 
@@ -147,14 +175,11 @@ RUN groupadd --gid 1000 appuser \
  && useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser 
 
 # Create app directory structure and set permissions for volume mount points
-RUN mkdir -p /app /opt/venv /opt/python && \
-    chown -R appuser:appuser /app /opt/venv /opt/python
+RUN mkdir -p /app /opt/venv && \
+    chown -R appuser:appuser /app /opt/venv
 
 # 7.2) Copy the venv from the chosen builder into /opt/venv, preserving ownership
 COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
-
-# 7.2.1) Copy the Python installation from builder to /opt/python with proper ownership
-COPY --from=builder --chown=appuser:appuser /opt/python /opt/python
 
 LABEL org.opencontainers.image.source="https://github.com/griptape-ai/griptape-nodes"
 LABEL org.opencontainers.image.description="Griptape Nodes."
