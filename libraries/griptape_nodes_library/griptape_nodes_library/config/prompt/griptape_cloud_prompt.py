@@ -23,13 +23,6 @@ BASE_URL = "https://cloud.griptape.ai"
 API_KEY_URL = f"{BASE_URL}/configuration/api-keys"
 CHAT_MODELS_URL = f"{BASE_URL}/api/models?model_type=chat"
 MODEL_CHOICES_ARGS = [
-    {"name": "gpt-4.1", "icon": "logos/openai.svg", "args": {"stream": True}},
-    {"name": "gpt-4.1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
-    {"name": "gpt-4.1-nano", "icon": "logos/openai.svg", "args": {"stream": True}},
-    {"name": "gpt-4.5-preview", "icon": "logos/openai.svg", "args": {"stream": True}},
-    {"name": "o1", "icon": "logos/openai.svg", "args": {"stream": True}},
-    {"name": "o1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
-    {"name": "o3-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
     {
         "name": "claude-sonnet-4-20250514",
         "icon": "logos/anthropic.svg",
@@ -46,16 +39,6 @@ MODEL_CHOICES_ARGS = [
         "args": {"stream": True, "structured_output_strategy": "tool", "max_tokens": 64000},
     },
     {
-        "name": "llama3-3-70b-instruct-v1",
-        "icon": "logos/meta.svg",
-        "args": {"stream": True, "structured_output_strategy": "tool"},
-    },
-    {
-        "name": "llama3-1-70b-instruct-v1",
-        "icon": "logos/meta.svg",
-        "args": {"stream": True, "structured_output_strategy": "tool"},
-    },
-    {
         "name": "deepseek.r1-v1",
         "icon": "logos/deepseek.svg",
         "args": {"stream": False, "structured_output_strategy": "tool", "top_p": None},
@@ -70,10 +53,27 @@ MODEL_CHOICES_ARGS = [
         "icon": "logos/google.svg",
         "args": {"stream": True, "structured_output_strategy": "tool"},
     },
+    {
+        "name": "llama3-3-70b-instruct-v1",
+        "icon": "logos/meta.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool"},
+    },
+    {
+        "name": "llama3-1-70b-instruct-v1",
+        "icon": "logos/meta.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool"},
+    },
+    {"name": "gpt-4.1", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "gpt-4.1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "gpt-4.1-nano", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "gpt-4.5-preview", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "o1", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "o1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "o3-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
 ]
 
 MODEL_CHOICES = [model["name"] for model in MODEL_CHOICES_ARGS]
-DEFAULT_MODEL = MODEL_CHOICES[0]
+DEFAULT_MODEL = MODEL_CHOICES[8]
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 
