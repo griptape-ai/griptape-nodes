@@ -26,15 +26,58 @@ from griptape_nodes_library.utils.error_utils import try_throw_error
 # --- Constants ---
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
-MODEL_CHOICES = [
-    "gpt-4.1",
-    "gpt-4.1-mini",
-    "gpt-4.1-nano",
-    "gpt-4.5-preview",
-    "o1",
-    "o1-mini",
-    "o3-mini",
+MODEL_CHOICES_ARGS = [
+    {"name": "gpt-4.1", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "gpt-4.1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "gpt-4.1-nano", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "gpt-4.5-preview", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "o1", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "o1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "o3-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {
+        "name": "claude-sonnet-4-20250514",
+        "icon": "logos/anthropic.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool", "max_tokens": 64000},
+    },
+    {
+        "name": "claude-3-7-sonnet",
+        "icon": "logos/anthropic.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool", "max_tokens": 64000},
+    },
+    {
+        "name": "claude-3-5-sonnet",
+        "icon": "logos/anthropic.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool", "max_tokens": 64000},
+    },
+    {
+        "name": "llama3-3-70b-instruct-v1",
+        "icon": "logos/meta.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool"},
+    },
+    {
+        "name": "llama3-1-70b-instruct-v1",
+        "icon": "logos/meta.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool"},
+    },
+    {
+        "name": "deepseek.r1-v1",
+        "icon": "logos/deepseek.svg",
+        "args": {"stream": False, "structured_output_strategy": "tool"},
+    },
+    {
+        "name": "gemini-2.5-flash-preview-05-20",
+        "icon": "logos/google.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool"},
+    },
+    {
+        "name": "gemini-2.0-flash",
+        "icon": "logos/google.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool"},
+    },
 ]
+
+MODEL_CHOICES = [model["name"] for model in MODEL_CHOICES_ARGS]
+
 DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
@@ -97,7 +140,7 @@ class Agent(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="Choose a model, or connect a Prompt Model Configuration",
                 traits={Options(choices=MODEL_CHOICES)},
-                ui_options={"display_name": "prompt model"},
+                ui_options={"display_name": "prompt model", "data": MODEL_CHOICES_ARGS},
             )
         )
         # Main prompt input for the agent.
@@ -391,8 +434,10 @@ class Agent(ControlNode):
         elif isinstance(model_input, str):
             if model_input not in MODEL_CHOICES:
                 model_input = DEFAULT_MODEL
+            # Get the appropriate args
+            args = next((model["args"] for model in MODEL_CHOICES_ARGS if model["name"] == model_input), {})
             prompt_driver = GriptapeCloudPromptDriver(
-                model=model_input, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
+                model=model_input, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), **args
             )
             agent = GtAgent(prompt_driver=prompt_driver, tools=tools, rulesets=rulesets)
 
@@ -432,28 +477,34 @@ class Agent(ControlNode):
         args = [prompt] if prompt else []
         structure_id_stack = []
         active_structure_id = None
-        for event in agent.run_stream(
-            *args, event_types=[StartStructureRunEvent, TextChunkEvent, ActionChunkEvent, FinishStructureRunEvent]
-        ):
-            if isinstance(event, StartStructureRunEvent):
-                active_structure_id = event.structure_id
-                structure_id_stack.append(active_structure_id)
-            if isinstance(event, FinishStructureRunEvent):
-                structure_id_stack.pop()
-                active_structure_id = structure_id_stack[-1] if structure_id_stack else None
 
-            # If an Agent uses other Agents (via `StructureRunTool`), we will receive those events too.
-            # We want to ignore those events and only show the events for this node's Agent.
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/984
-            if agent.id == active_structure_id:
-                # If the artifact is a TextChunkEvent, append it to the output parameter.
-                if isinstance(event, TextChunkEvent):
-                    self.append_value_to_parameter("output", value=event.token)
-                    if include_details:
-                        self.append_value_to_parameter("logs", value=event.token)
+        prompt_driver = agent.tasks[0].prompt_driver
+        if prompt_driver.stream:
+            for event in agent.run_stream(
+                *args, event_types=[StartStructureRunEvent, TextChunkEvent, ActionChunkEvent, FinishStructureRunEvent]
+            ):
+                if isinstance(event, StartStructureRunEvent):
+                    active_structure_id = event.structure_id
+                    structure_id_stack.append(active_structure_id)
+                if isinstance(event, FinishStructureRunEvent):
+                    structure_id_stack.pop()
+                    active_structure_id = structure_id_stack[-1] if structure_id_stack else None
 
-                # If the artifact is an ActionChunkEvent, append it to the logs parameter.
-                if include_details and isinstance(event, ActionChunkEvent) and event.name:
-                    self.append_value_to_parameter("logs", f"\n[Using tool {event.name}: ({event.path})]\n")
+                # If an Agent uses other Agents (via `StructureRunTool`), we will receive those events too.
+                # We want to ignore those events and only show the events for this node's Agent.
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/984
+                if agent.id == active_structure_id:
+                    # If the artifact is a TextChunkEvent, append it to the output parameter.
+                    if isinstance(event, TextChunkEvent):
+                        self.append_value_to_parameter("output", value=event.token)
+                        if include_details:
+                            self.append_value_to_parameter("logs", value=event.token)
 
+                    # If the artifact is an ActionChunkEvent, append it to the logs parameter.
+                    if include_details and isinstance(event, ActionChunkEvent) and event.name:
+                        self.append_value_to_parameter("logs", f"\n[Using tool {event.name}: ({event.path})]\n")
+        else:
+            agent.run(*args)
+            self.append_value_to_parameter("output", value=str(agent.output))
+            try_throw_error(agent.output)
         return agent
