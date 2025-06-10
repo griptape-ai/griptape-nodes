@@ -241,6 +241,33 @@
       }
     },
     {
+      "class_name": "GetIndexOfItem",
+      "file_path": "griptape_nodes_library/lists/get_index_of_item.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and gets the index of an item in the list.",
+        "display_name": "Get Index Of Item"
+      }
+    },
+    {
+      "class_name": "GetListContainsItem",
+      "file_path": "griptape_nodes_library/lists/get_list_contains_item.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and checks if the list contains an item.",
+        "display_name": "Get List Contains Item"
+      }
+    },
+    {
+      "class_name": "GetListIsEmpty",
+      "file_path": "griptape_nodes_library/lists/get_list_is_empty.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and checks if the list is empty.",
+        "display_name": "Get List Is Empty"
+      }
+    },
+    {
       "class_name": "GetListLength",
       "file_path": "griptape_nodes_library/lists/get_list_length.py",
       "metadata": {

@@ -7,8 +7,8 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 
 
-class GetListLength(ControlNode):
-    """GetListLength Node that that gets the length of a list."""
+class GetListContainsItem(ControlNode):
+    """GetListContainsItem Node that that checks if a list contains an item."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
@@ -19,27 +19,36 @@ class GetListLength(ControlNode):
             allowed_modes={ParameterMode.INPUT},
         )
         self.add_parameter(self.items_list)
-        self.length = Parameter(
-            name="length",
-            tooltip="Output length of the list",
-            output_type="int",
+        self.item = Parameter(
+            name="item",
+            tooltip="Item to check if the list contains",
+            input_types=["any"],
+            allowed_modes={ParameterMode.INPUT},
+        )
+        self.add_parameter(self.item)
+
+        self.contains_item = Parameter(
+            name="contains_item",
+            tooltip="Output if the list contains the item",
+            output_type="bool",
+            default_value=True,
             allowed_modes={ParameterMode.OUTPUT},
         )
-        self.add_parameter(self.length)
+        self.add_parameter(self.contains_item)
 
-    def _get_length(self) -> int:
+    def _contains_item(self) -> bool:
         list_items = self.get_parameter_value("items")
-        if list_items:
-            print(f"list_items: {list_items}")
-            return len(list_items)
-        return 0
+        item = self.get_parameter_value("item")
+        if not item or not list_items:
+            return False
+        return item in list_items
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         if parameter.name == "items":
-            length = self._get_length()
-            self.parameter_output_values["length"] = length
-            self.publish_update_to_parameter("length", length)
-            modified_parameters_set.add("length")
+            contains_item = self._contains_item()
+            self.parameter_output_values["contains_item"] = contains_item
+            self.publish_update_to_parameter("contains_item", contains_item)
+            modified_parameters_set.add("contains_item")
         return super().after_value_set(parameter, value, modified_parameters_set)
 
     def after_incoming_connection(
@@ -50,12 +59,10 @@ class GetListLength(ControlNode):
         modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "items":
-            print("after_incoming_connection")
-            length = self._get_length()
-            print(f"length: {length}")
-            self.parameter_output_values["length"] = length
-            self.publish_update_to_parameter("length", length)
-            modified_parameters_set.add("length")
+            contains_item = self._contains_item()
+            self.parameter_output_values["contains_item"] = contains_item
+            self.publish_update_to_parameter("contains_item", contains_item)
+            modified_parameters_set.add("contains_item")
         return super().after_incoming_connection(
             source_node, source_parameter, target_parameter, modified_parameters_set
         )
@@ -68,15 +75,15 @@ class GetListLength(ControlNode):
         modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "items":
-            self.parameter_output_values["length"] = 0
-            self.publish_update_to_parameter("length", 0)
-            modified_parameters_set.add("length")
+            self.parameter_output_values["contains_item"] = False
+            self.publish_update_to_parameter("contains_item", False)
+            modified_parameters_set.add("contains_item")
         return super().after_incoming_connection_removed(
             source_node, source_parameter, target_parameter, modified_parameters_set
         )
 
     def process(self) -> None:
         # Get the list of items from the input parameter
-        length = self._get_length()
+        contains_item = self._contains_item()
 
-        self.parameter_output_values["length"] = length
+        self.parameter_output_values["contains_item"] = contains_item
