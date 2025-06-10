@@ -30,7 +30,6 @@ class GetListLength(ControlNode):
     def _get_length(self) -> int:
         list_items = self.get_parameter_value("items")
         if list_items:
-            print(f"list_items: {list_items}")
             return len(list_items)
         return 0
 
@@ -50,9 +49,7 @@ class GetListLength(ControlNode):
         modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "items":
-            print("after_incoming_connection")
             length = self._get_length()
-            print(f"length: {length}")
             self.parameter_output_values["length"] = length
             self.publish_update_to_parameter("length", length)
             modified_parameters_set.add("length")

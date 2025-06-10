@@ -88,5 +88,4 @@ class RemoveFromList(ControlNode):
 
         new_list = list_values.copy()
         new_list.pop(index)
-        print(f"New list: {new_list}")
         self.parameter_output_values["output"] = new_list

@@ -97,7 +97,6 @@ class ReplaceInList(ControlNode):
         new_list = list_values.copy()
 
         if replace_by == "item":
-            print("replace_by == item")
             item_to_replace = self.get_parameter_value("item_to_replace")
             if item_to_replace is None:
                 return
@@ -107,14 +106,11 @@ class ReplaceInList(ControlNode):
             except ValueError:
                 return
         else:  # replace_by == "index"
-            print("replace_by == index")
             index = self.get_parameter_value("index_to_replace")
-            print(f"index: {index}")
             if index is None or not isinstance(index, int):
                 return
             if 0 <= index < len(new_list):
                 new_list[index] = new_item
             else:
                 return
-        print(f"new_list: {new_list}")
         self.parameter_output_values["output"] = new_list
