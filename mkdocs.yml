@@ -127,6 +127,9 @@ nav:
         - Get List Contains Item: nodes/lists/get_list_contains_item.md
         - Get Index Of Item: nodes/lists/get_index_of_item.md
         - Display List: nodes/lists/display_list.md
+        - Replace In List: nodes/lists/replace_in_list.md
+        - Split List: nodes/lists/split_list.md
+        - Combine Lists: nodes/lists/combine_lists.md
     - Number:
         - Float Input: nodes/number/create_float.md
         - Int Input: nodes/number/create_int.md

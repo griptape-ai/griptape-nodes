@@ -232,6 +232,15 @@
       }
     },
     {
+      "class_name": "CombineLists",
+      "file_path": "griptape_nodes_library/lists/combine_lists.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes two lists and combines them into a single flattened list.",
+        "display_name": "Combine Lists"
+      }
+    },
+    {
       "class_name": "CreateList",
       "file_path": "griptape_nodes_library/lists/create_list.py",
       "metadata": {
@@ -292,6 +301,15 @@
         "category": "lists",
         "description": "Takes a list input and replaces an item either by matching the item or by index.",
         "display_name": "Replace In List"
+      }
+    },
+    {
+      "class_name": "SplitList",
+      "file_path": "griptape_nodes_library/lists/split_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list input and splits it either by index or by item value, with options for keeping the split item.",
+        "display_name": "Split List"
       }
     },
     {
