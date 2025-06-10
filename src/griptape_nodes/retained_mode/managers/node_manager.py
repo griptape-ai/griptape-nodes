@@ -109,6 +109,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueResultFailure,
     GetParameterValueResultSuccess,
     ParameterAndMode,
+    RemoveElementEvent,
     RemoveParameterFromNodeRequest,
     RemoveParameterFromNodeResultFailure,
     RemoveParameterFromNodeResultSuccess,
@@ -1367,6 +1368,9 @@ class NodeManager:
                 if modified_parameter is not None:
                     modified_request = AlterElementEvent(element_details=modified_parameter.to_event(node))
                     EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
+                else:
+                    remove_request = RemoveElementEvent(element_name=modified_parameter_name)
+                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=remove_request)))
         return NodeManager.ModifiedReturnValue(finalized_value, modified)
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.

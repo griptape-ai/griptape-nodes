@@ -298,3 +298,9 @@ class GetNodeElementDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 @PayloadRegistry.register
 class AlterElementEvent(ExecutionPayload):
     element_details: dict[str, Any]
+
+
+@dataclass
+@PayloadRegistry.register
+class RemoveElementEvent(ExecutionPayload):
+    element_name: str

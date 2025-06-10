@@ -29,6 +29,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     AlterElementEvent,
+    RemoveElementEvent,
     SetParameterValueRequest,
 )
 
@@ -221,6 +222,11 @@ class ExecuteNodeState(State):
                                 )
                                 EventBus.publish_event(
                                     ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request))
+                                )
+                            else:
+                                remove_request = RemoveElementEvent(element_name=modified_parameter_name)
+                                EventBus.publish_event(
+                                    ExecutionGriptapeNodeEvent(ExecutionEvent(payload=remove_request))
                                 )
 
             if parameter.name in current_node.parameter_values:
