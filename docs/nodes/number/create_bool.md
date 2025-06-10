@@ -5,7 +5,7 @@ The Create Bool node allows you to create a boolean value.
 ## Inputs
 
 - **Value** (bool): The boolean value to create
-  - Default: False
+    - Default: False
 
 ## Outputs
 
@@ -25,4 +25,4 @@ The Create Bool node allows you to create a boolean value.
 
 - The node can accept both input and property modes for the value parameter
 - The default value is False if not specified
-- The value is immediately forwarded to the output when changed 
+- The value is immediately forwarded to the output when changed

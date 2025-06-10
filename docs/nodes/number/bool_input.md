@@ -18,8 +18,8 @@ Use the Bool Input node when:
 ### Basic Setup
 
 1. Add a Bool Input node to your workflow
-2. Set the "value" parameter to either True or False
-3. Connect the output to nodes that accept boolean input
+1. Set the "value" parameter to either True or False
+1. Connect the output to nodes that accept boolean input
 
 ### Parameters
 
@@ -34,8 +34,8 @@ Use the Bool Input node when:
 A workflow to control a conditional branch:
 
 1. Add a Bool Input node to your workflow
-2. Set the "value" parameter to `True`
-3. Connect the output to a Conditional node's condition parameter
+1. Set the "value" parameter to `True`
+1. Connect the output to a Conditional node's condition parameter
 
 ## Important Notes
 
@@ -46,4 +46,4 @@ A workflow to control a conditional branch:
 ## Common Issues
 
 - Confusion between string "true"/"false" and boolean True/False values
-- Unexpected behavior when connecting to nodes expecting different types 
+- Unexpected behavior when connecting to nodes expecting different types

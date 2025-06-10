@@ -24,4 +24,4 @@ The Create Bool List node allows you to create a list of boolean values.
 
 - All items in the input list must be boolean values
 - The order of items is preserved in the output list
-- The node can accept both input and property modes for the items parameter 
+- The node can accept both input and property modes for the items parameter

@@ -24,4 +24,4 @@ The Create Float List node allows you to create a list of float values.
 
 - All items in the input list must be float values
 - The order of items is preserved in the output list
-- The node can accept both input and property modes for the items parameter 
+- The node can accept both input and property modes for the items parameter
