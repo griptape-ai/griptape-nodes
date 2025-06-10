@@ -223,6 +223,42 @@
   ],
   "nodes": [
     {
+      "class_name": "AddToList",
+      "file_path": "griptape_nodes_library/lists/add_to_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list input and adds a value to the list at the specified index.",
+        "display_name": "Add To List"
+      }
+    },
+    {
+      "class_name": "CreateList",
+      "file_path": "griptape_nodes_library/lists/create_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and creates a list.",
+        "display_name": "Create List"
+      }
+    },
+    {
+      "class_name": "GetListLength",
+      "file_path": "griptape_nodes_library/lists/get_list_length.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and gets the length of the list.",
+        "display_name": "Get List Length"
+      }
+    },
+    {
+      "class_name": "RemoveFromList",
+      "file_path": "griptape_nodes_library/lists/remove_from_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list input and removes an item from the list at the specified index or by value.",
+        "display_name": "Remove From List"
+      }
+    },
+    {
       "class_name": "DisplayList",
       "file_path": "griptape_nodes_library/lists/display_list.py",
       "metadata": {
