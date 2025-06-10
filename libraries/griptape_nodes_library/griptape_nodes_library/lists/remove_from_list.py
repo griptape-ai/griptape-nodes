@@ -9,7 +9,7 @@ from griptape_nodes.traits.options import Options
 
 
 class RemoveFromList(ControlNode):
-    """RemoveFromList Node that takes a list and a"""
+    """RemoveFromList Node that takes a list and removes an item based on specified criteria."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
