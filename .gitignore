@@ -191,3 +191,7 @@ request_payload_schemas.json
 .idea/
 
 .vscode/settings.json
+
+# AI copilot plugins
+CLAUDE.md
+
