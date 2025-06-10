@@ -118,6 +118,15 @@ nav:
         - Load Image: nodes/image/load_image.md
         - Generate Image: nodes/image/create_image.md
         - Describe Image: nodes/image/describe_image.md
+    - Lists:
+        - Create List: nodes/lists/create_list.md
+        - Add To List: nodes/lists/add_to_list.md
+        - Remove From List: nodes/lists/remove_from_list.md
+        - Get List Length: nodes/lists/get_list_length.md
+        - Get List Is Empty: nodes/lists/get_list_is_empty.md
+        - Get List Contains Item: nodes/lists/get_list_contains_item.md
+        - Get Index Of Item: nodes/lists/get_index_of_item.md
+        - Display List: nodes/lists/display_list.md
     - Number:
         - Float Input: nodes/number/create_float.md
         - Int Input: nodes/number/create_int.md
