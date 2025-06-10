@@ -39,8 +39,9 @@ class ReplaceInList(ControlNode):
             name="item_to_replace",
             tooltip="Item to replace in the list",
             input_types=["any"],
+            default_value=None,
             allowed_modes={ParameterMode.INPUT},
-            ui_options={"hide": True},
+            ui_options={"hide": False},
         )
         self.add_parameter(self.item_to_replace)
 
@@ -48,7 +49,8 @@ class ReplaceInList(ControlNode):
             name="index_to_replace",
             tooltip="Index of item to replace in the list",
             input_types=["int"],
-            allowed_modes={ParameterMode.INPUT},
+            default_value=0,
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             ui_options={"hide": True},
         )
         self.add_parameter(self.index_to_replace)
@@ -79,6 +81,7 @@ class ReplaceInList(ControlNode):
                 self.show_parameter_by_name("index_to_replace")
             modified_parameters_set.add("item_to_replace")
             modified_parameters_set.add("index_to_replace")
+        return super().after_value_set(parameter, value, modified_parameters_set)
 
     def process(self) -> None:
         # Get the list of items from the input parameter
@@ -94,6 +97,7 @@ class ReplaceInList(ControlNode):
         new_list = list_values.copy()
 
         if replace_by == "item":
+            print("replace_by == item")
             item_to_replace = self.get_parameter_value("item_to_replace")
             if item_to_replace is None:
                 return
@@ -103,12 +107,14 @@ class ReplaceInList(ControlNode):
             except ValueError:
                 return
         else:  # replace_by == "index"
+            print("replace_by == index")
             index = self.get_parameter_value("index_to_replace")
+            print(f"index: {index}")
             if index is None or not isinstance(index, int):
                 return
             if 0 <= index < len(new_list):
                 new_list[index] = new_item
             else:
                 return
-
+        print(f"new_list: {new_list}")
         self.parameter_output_values["output"] = new_list

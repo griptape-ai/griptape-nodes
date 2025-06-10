@@ -436,13 +436,13 @@ class BaseNode(ABC):
             GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(parameter_name=child.name, node_name=self.name))
 
     def get_parameter_value(self, param_name: str) -> Any:
-        if param_name in self.parameter_values:
-            return self.parameter_values[param_name]
         param = self.get_parameter_by_name(param_name)
-        if param:
+        if param and isinstance(param, ParameterContainer):
             value = handle_container_parameter(self, param)
             if value:
                 return value
+        if param_name in self.parameter_values:
+            return self.parameter_values[param_name]
         return param.default_value if param else None
 
     def get_parameter_list_value(self, param: str) -> list:

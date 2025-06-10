@@ -69,6 +69,7 @@ class RemoveFromList(ControlNode):
                 self.hide_parameter_by_name("index")
             modified_parameters_set.add("index")
             modified_parameters_set.add("item")
+        return super().after_value_set(parameter, value, modified_parameters_set)
 
     def process(self) -> None:
         # Get the list of items from the input parameter

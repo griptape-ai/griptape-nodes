@@ -67,6 +67,7 @@ class AddToList(ControlNode):
             elif value == "index":
                 self.show_parameter_by_name("index")
             modified_parameters_set.add("index")
+        return super().after_value_set(parameter, value, modified_parameters_set)
 
     def process(self) -> None:
         # Get the list of items from the input parameter
