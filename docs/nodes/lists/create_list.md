@@ -49,4 +49,4 @@ Imagine you want to create a list of different data types:
 ## Common Issues
 
 - **Empty List**: If no items are provided, the output will be an empty list
-- **Type Mismatch**: The node accepts items of any type, but be aware of how the receiving node handles different data types 
+- **Type Mismatch**: The node accepts items of any type, but be aware of how the receiving node handles different data types

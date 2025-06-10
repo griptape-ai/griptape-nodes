@@ -32,4 +32,4 @@ The Combine Lists node takes two lists and combines them into a single flattened
 - The order of items is preserved in the output list
 - If either input is not a list, it will be treated as an empty list
 - The original lists are not modified; a new list is returned
-- The operation is equivalent to list concatenation (list_a + list_b) 
+- The operation is equivalent to list concatenation (list_a + list_b)

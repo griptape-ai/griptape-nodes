@@ -58,4 +58,4 @@ Imagine you want to remove a specific task from a list of tasks:
 - **Invalid Index**: If using "index" removal, ensure the index is within the list's bounds
 - **Item Not Found**: When using "item" removal, the item must exist in the list
 - **Empty List**: If the input list is empty, no items can be removed
-- **Type Mismatch**: When using "item" removal, ensure the item type matches the list items 
+- **Type Mismatch**: When using "item" removal, ensure the item type matches the list items

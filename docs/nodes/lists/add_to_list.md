@@ -57,4 +57,4 @@ Imagine you want to add a new item to a list of tasks:
 
 - **Invalid Index**: If using "index" position, ensure the index is within the list's bounds
 - **Empty List**: If the input list is empty, the item will be added as the first element
-- **Type Mismatch**: Be aware of how the receiving node handles different data types in the list 
+- **Type Mismatch**: Be aware of how the receiving node handles different data types in the list

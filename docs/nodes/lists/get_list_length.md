@@ -50,4 +50,4 @@ Imagine you want to check how many tasks are in a task list:
 
 - **Empty List**: If no list is connected, the length will be 0
 - **Invalid Input**: If the input is not a list, the length will be 0
-- **Type Mismatch**: The node only works with list inputs, other types will result in a length of 0 
+- **Type Mismatch**: The node only works with list inputs, other types will result in a length of 0

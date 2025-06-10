@@ -50,4 +50,4 @@ Imagine you want to check if a task list has any pending tasks:
 
 - **No Input**: If no list is connected, the output will be true (empty)
 - **Invalid Input**: If the input is not a list, the output will be true (empty)
-- **Type Mismatch**: The node only works with list inputs, other types will result in true (empty) 
+- **Type Mismatch**: The node only works with list inputs, other types will result in true (empty)

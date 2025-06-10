@@ -54,4 +54,4 @@ Imagine you have a list of mixed data types that you want to process separately:
 - **Empty List**: If the input list is empty, no output parameters will be created
 - **Invalid Input**: If the input is not a list, no output parameters will be created
 - **Type Limitations**: Some complex types may be handled as "any" type
-- **Dynamic Updates**: The number of output parameters changes with the list length 
+- **Dynamic Updates**: The number of output parameters changes with the list length

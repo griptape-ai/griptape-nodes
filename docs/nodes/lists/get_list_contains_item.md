@@ -54,4 +54,4 @@ Imagine you want to check if a specific task exists in a task list:
 - **No Input**: If either the list or item is not connected, the output will be false
 - **Invalid Input**: If the input is not a list, the output will be false
 - **Type Mismatch**: The item type must match the list item types for proper comparison
-- **Case Sensitivity**: String comparisons are case-sensitive 
+- **Case Sensitivity**: String comparisons are case-sensitive

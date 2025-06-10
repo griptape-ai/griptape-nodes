@@ -12,9 +12,9 @@ The Replace In List node allows you to replace an item in a list either by match
 ## Properties
 
 - **Replace By** (str): How to identify the item to replace
-  - Options:
-    - "item": Replace by matching the item value
-    - "index": Replace by index position
+    - Options:
+        - "item": Replace by matching the item value
+        - "index": Replace by index position
 
 ## Outputs
 
@@ -41,4 +41,4 @@ The Replace In List node allows you to replace an item in a list either by match
 - When replacing by item, the first occurrence of the item will be replaced
 - When replacing by index, the index must be within the bounds of the list
 - If the item is not found when replacing by item, no changes will be made
-- The original list is not modified; a new list is returned 
+- The original list is not modified; a new list is returned

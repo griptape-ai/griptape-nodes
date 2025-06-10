@@ -55,4 +55,4 @@ Imagine you want to find the position of a specific task in a task list:
 - **No Input**: If either the list or item is not connected, the output will be -1
 - **Invalid Input**: If the input is not a list, the output will be -1
 - **Type Mismatch**: The item type must match the list item types for proper comparison
-- **Case Sensitivity**: String comparisons are case-sensitive 
+- **Case Sensitivity**: String comparisons are case-sensitive
