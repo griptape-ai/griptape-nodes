@@ -134,7 +134,8 @@ class GriptapeCloudPrompt(BasePrompt):
 
         self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
         model_param = self.get_parameter_by_name("model")
-        model_param.ui_options = {"data": MODEL_CHOICES_ARGS}
+        if model_param is not None:
+            model_param.ui_options = {"data": MODEL_CHOICES_ARGS}
 
         # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.
         self.remove_parameter_element_by_name("seed")

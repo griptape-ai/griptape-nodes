@@ -477,7 +477,11 @@ class Agent(ControlNode):
         structure_id_stack = []
         active_structure_id = None
 
-        prompt_driver = agent.tasks[0].prompt_driver
+        task = agent.tasks[0]
+        if not isinstance(task, PromptTask):
+            msg = "Agent must have a PromptTask"
+            raise TypeError(msg)
+        prompt_driver = task.prompt_driver
         if prompt_driver.stream:
             for event in agent.run_stream(
                 *args, event_types=[StartStructureRunEvent, TextChunkEvent, ActionChunkEvent, FinishStructureRunEvent]
