@@ -1,6 +1,6 @@
-# Create Bool
+# BoolInput
 
-The Create Bool node allows you to create a boolean value.
+The BoolInput node allows you to create a boolean value.
 
 ## Inputs
 
