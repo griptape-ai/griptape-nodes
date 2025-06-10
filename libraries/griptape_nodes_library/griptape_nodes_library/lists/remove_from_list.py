@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -86,6 +87,6 @@ class RemoveFromList(ControlNode):
         elif remove_item_by == "item":
             index = list_values.index(self.get_parameter_value("item"))
 
-        new_list = list_values.copy()
+        new_list = deepcopy(list_values)
         new_list.pop(index)
         self.parameter_output_values["output"] = new_list

@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -94,7 +95,7 @@ class ReplaceInList(ControlNode):
             return
 
         replace_by = self.get_parameter_value("replace_by")
-        new_list = list_values.copy()
+        new_list = deepcopy(list_values)
 
         if replace_by == "item":
             item_to_replace = self.get_parameter_value("item_to_replace")

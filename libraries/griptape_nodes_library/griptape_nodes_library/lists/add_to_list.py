@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -86,7 +87,7 @@ class AddToList(ControlNode):
         else:
             index = self.get_parameter_value("index")
 
-        new_list = list_values.copy()
+        new_list = deepcopy(list_values)
         new_list.insert(index, item)
 
         self.parameter_output_values["output"] = new_list
