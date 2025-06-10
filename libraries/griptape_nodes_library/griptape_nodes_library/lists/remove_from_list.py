@@ -76,6 +76,7 @@ class RemoveFromList(ControlNode):
         if not list_values or not isinstance(list_values, list):
             return
         remove_item_by = self.get_parameter_value("remove_item_by")
+        index = 0  # Initialize index with a default value
         if remove_item_by == "first":
             index = 0
         elif remove_item_by == "last":
