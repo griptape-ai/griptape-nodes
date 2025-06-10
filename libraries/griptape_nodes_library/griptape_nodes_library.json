@@ -286,6 +286,15 @@
       }
     },
     {
+      "class_name": "ReplaceInList",
+      "file_path": "griptape_nodes_library/lists/replace_in_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list input and replaces an item either by matching the item or by index.",
+        "display_name": "Replace In List"
+      }
+    },
+    {
       "class_name": "DisplayList",
       "file_path": "griptape_nodes_library/lists/display_list.py",
       "metadata": {
