@@ -12,16 +12,13 @@ class BoolInput(DataNode):
         self,
         name: str,
         metadata: dict[Any, Any] | None = None,
-        *,
-        value: bool = False,
     ) -> None:
         super().__init__(name, metadata)
 
-        self.value = value
         self.add_parameter(
             Parameter(
                 name="bool",
-                default_value=self.value,
+                default_value=False,
                 output_type="bool",
                 type="bool",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},

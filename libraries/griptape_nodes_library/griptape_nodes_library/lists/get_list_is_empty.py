@@ -36,7 +36,6 @@ class GetListIsEmpty(ControlNode):
         if parameter.name == "items":
             is_empty = self._is_empty()
             self.parameter_output_values["is_empty"] = is_empty
-            self.publish_update_to_parameter("is_empty", is_empty)
             modified_parameters_set.add("is_empty")
         return super().after_value_set(parameter, value, modified_parameters_set)
 
@@ -50,7 +49,6 @@ class GetListIsEmpty(ControlNode):
         if target_parameter.name == "items":
             is_empty = self._is_empty()
             self.parameter_output_values["is_empty"] = is_empty
-            self.publish_update_to_parameter("is_empty", is_empty)
             modified_parameters_set.add("is_empty")
         return super().after_incoming_connection(
             source_node, source_parameter, target_parameter, modified_parameters_set
