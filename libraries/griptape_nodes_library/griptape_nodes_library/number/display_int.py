@@ -25,5 +25,12 @@ class DisplayInteger(DataNode):
             )
         )
 
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        if "integer" in parameter.name:
+            self.parameter_output_values["integer"] = value
+            self.publish_update_to_parameter("integer", value)
+            modified_parameters_set.add("integer")
+        return super().after_value_set(parameter, value, modified_parameters_set)
+
     def process(self) -> None:
         self.parameter_output_values["integer"] = self.parameter_values.get("integer")

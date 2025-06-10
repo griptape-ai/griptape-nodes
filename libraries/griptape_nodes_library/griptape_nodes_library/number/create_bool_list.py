@@ -6,6 +6,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.retained_mode.griptape_nodes import logger
 
 
 class CreateBoolList(ControlNode):
@@ -30,15 +31,27 @@ class CreateBoolList(ControlNode):
         self.add_parameter(self.output)
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        if parameter.name != "output":
+        if "items_" in parameter.name:
             list_values = self.get_parameter_value("items")
+
+            # Set Parameter Output Values
             self.parameter_output_values["output"] = list_values
+
+            # # Publish Update to Parameter
             self.publish_update_to_parameter("output", list_values)
+
+            # Add Parameters to Modified Parameters Set
             modified_parameters_set.add("output")
+
+            # Node name
+            node_name = self.name
+
+            # Log the value
+            logger.debug(f"{node_name}: Set the value to: {list_values}")
+
         return super().after_value_set(parameter, value, modified_parameters_set)
 
     def process(self) -> None:
         # Get the list of items from the input parameter
         list_values = self.get_parameter_value("items")
-
         self.parameter_output_values["output"] = list_values
