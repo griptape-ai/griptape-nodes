@@ -118,11 +118,33 @@ nav:
         - Load Image: nodes/image/load_image.md
         - Generate Image: nodes/image/create_image.md
         - Describe Image: nodes/image/describe_image.md
+    - Lists:
+        - Create List: nodes/lists/create_list.md
+        - Add To List: nodes/lists/add_to_list.md
+        - Remove From List: nodes/lists/remove_from_list.md
+        - Get List Length: nodes/lists/get_list_length.md
+        - Get List Is Empty: nodes/lists/get_list_is_empty.md
+        - Get List Contains Item: nodes/lists/get_list_contains_item.md
+        - Get Index Of Item: nodes/lists/get_index_of_item.md
+        - Display List: nodes/lists/display_list.md
+        - Replace In List: nodes/lists/replace_in_list.md
+        - Split List: nodes/lists/split_list.md
+        - Combine Lists: nodes/lists/combine_lists.md
     - Number:
-        - Float Input: nodes/number/create_float.md
-        - Int Input: nodes/number/create_int.md
-        - Display Float: nodes/number/display_float.md
-        - Display Int: nodes/number/display_int.md
+        - Input Nodes:
+          - Float Input: nodes/number/create_float.md
+          - Int Input: nodes/number/create_int.md
+          - Bool Input: nodes/number/create_bool.md
+        - Display Nodes:
+          - Display Float: nodes/number/display_float.md
+          - Display Int: nodes/number/display_int.md
+        - List Nodes:
+          - Create Float List: nodes/number/create_float_list.md
+          - Create Int List: nodes/number/create_int_list.md
+          - Create Bool List: nodes/number/create_bool_list.md
+        - Math Nodes:
+          - Math Operations: nodes/number/math.md
+          - Askulator: nodes/number/askulator.md
     - Rules:
         - Ruleset: nodes/rules/create_ruleset.md
         - Ruleset List: nodes/rules/ruleset_list.md
@@ -139,12 +161,18 @@ nav:
         - Search Web: nodes/text/search_web.md
         - Summarize Text: nodes/text/summarize_text.md
         - Text Input: nodes/text/create_multiline_text.md
+    - Video:
+        - Load Video: nodes/video/load_video.md
+        - Display Video: nodes/video/display_video.md
+        - Save Video: nodes/video/save_video.md
     - Tools:
         - Calculator: nodes/tools/calculator_tool.md
         - Date Time: nodes/tools/date_time_tool.md
+        - File Manager: nodes/tools/file_manager_tool.md
         - Info Retriever: nodes/tools/rag_tool.md
         - Tool List: nodes/tools/tool_list.md
         - Web Scraper: nodes/tools/web_scraper_tool.md
+        - Web Search: nodes/tools/web_search_tool.md
     - Advanced Media Library:
         - Flux Pipeline: nodes/advanced_media_library/flux_pipeline.md
         - Pillow Resize: nodes/advanced_media_library/pillow_resize.md

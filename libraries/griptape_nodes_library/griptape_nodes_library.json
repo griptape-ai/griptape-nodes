@@ -223,6 +223,132 @@
   ],
   "nodes": [
     {
+      "class_name": "AddToList",
+      "file_path": "griptape_nodes_library/lists/add_to_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list input and adds a value to the list at the specified index.",
+        "display_name": "Add To List"
+      }
+    },
+    {
+      "class_name": "CombineLists",
+      "file_path": "griptape_nodes_library/lists/combine_lists.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes two lists and combines them into a single flattened list.",
+        "display_name": "Combine Lists"
+      }
+    },
+    {
+      "class_name": "CreateList",
+      "file_path": "griptape_nodes_library/lists/create_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and creates a list.",
+        "display_name": "Create List"
+      }
+    },
+    {
+      "class_name": "BoolInput",
+      "file_path": "griptape_nodes_library/number/create_bool.py",
+      "metadata": {
+        "category": "number",
+        "description": "Creates a boolean value.",
+        "display_name": "Bool Input"
+      }
+    },
+    {
+      "class_name": "CreateFloatList",
+      "file_path": "griptape_nodes_library/number/create_float_list.py",
+      "metadata": {
+        "category": "number",
+        "description": "Creates a list of float values.",
+        "display_name": "Create Float List"
+      }
+    },
+    {
+      "class_name": "CreateIntList",
+      "file_path": "griptape_nodes_library/number/create_int_list.py",
+      "metadata": {
+        "category": "number",
+        "description": "Creates a list of integer values.",
+        "display_name": "Create Int List"
+      }
+    },
+    {
+      "class_name": "CreateBoolList",
+      "file_path": "griptape_nodes_library/number/create_bool_list.py",
+      "metadata": {
+        "category": "number",
+        "description": "Creates a list of boolean values.",
+        "display_name": "Create Bool List"
+      }
+    },
+    {
+      "class_name": "GetIndexOfItem",
+      "file_path": "griptape_nodes_library/lists/get_index_of_item.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and gets the index of an item in the list.",
+        "display_name": "Get Index Of Item"
+      }
+    },
+    {
+      "class_name": "GetListContainsItem",
+      "file_path": "griptape_nodes_library/lists/get_list_contains_item.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and checks if the list contains an item.",
+        "display_name": "Get List Contains Item"
+      }
+    },
+    {
+      "class_name": "GetListIsEmpty",
+      "file_path": "griptape_nodes_library/lists/get_list_is_empty.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and checks if the list is empty.",
+        "display_name": "Get List Is Empty"
+      }
+    },
+    {
+      "class_name": "GetListLength",
+      "file_path": "griptape_nodes_library/lists/get_list_length.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and gets the length of the list.",
+        "display_name": "Get List Length"
+      }
+    },
+    {
+      "class_name": "RemoveFromList",
+      "file_path": "griptape_nodes_library/lists/remove_from_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list input and removes an item from the list at the specified index or by value.",
+        "display_name": "Remove From List"
+      }
+    },
+    {
+      "class_name": "ReplaceInList",
+      "file_path": "griptape_nodes_library/lists/replace_in_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list input and replaces an item either by matching the item or by index.",
+        "display_name": "Replace In List"
+      }
+    },
+    {
+      "class_name": "SplitList",
+      "file_path": "griptape_nodes_library/lists/split_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list input and splits it either by index or by item value, with options for keeping the split item.",
+        "display_name": "Split List"
+      }
+    },
+    {
       "class_name": "DisplayList",
       "file_path": "griptape_nodes_library/lists/display_list.py",
       "metadata": {
@@ -329,6 +455,15 @@
         "category": "convert",
         "description": "Converts incoming value to an integer",
         "display_name": "To Integer"
+      }
+    },
+    {
+      "class_name": "CreateTextList",
+      "file_path": "griptape_nodes_library/text/create_text_list.py",
+      "metadata": {
+        "category": "text",
+        "description": "Creates a list of text items",
+        "display_name": "Create Text List"
       }
     },
     {
@@ -635,6 +770,15 @@
         "category": "rules",
         "description": "Combine rulesets to give an agent a more complex set of behaviors",
         "display_name": "Ruleset List"
+      }
+    },
+    {
+      "class_name": "CreateTextList",
+      "file_path": "griptape_nodes_library/text/create_text_list.py",
+      "metadata": {
+        "category": "text",
+        "description": "Create a list of text items",
+        "display_name": "Create Text List"
       }
     },
     {
