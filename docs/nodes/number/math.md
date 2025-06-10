@@ -21,13 +21,14 @@ Use this node when you need to:
 ### Basic Setup
 
 1. Add the Math node to your workflow
-2. Select the operation you want to perform from the dropdown menu
-3. Connect input values to parameters A and B (B is only needed for binary operations)
-4. The result will be available in the "result" output
+1. Select the operation you want to perform from the dropdown menu
+1. Connect input values to parameters A and B (B is only needed for binary operations)
+1. The result will be available in the "result" output
 
 ### Available Operations
 
 #### Binary Operations (require both A and B inputs)
+
 - Add (A + B)
 - Subtract (A - B)
 - Multiply (A * B)
@@ -39,6 +40,7 @@ Use this node when you need to:
 - Max (max(A, B))
 
 #### Unary Operations (only require A input)
+
 - Square Root (√A)
 - Round (round(A))
 - Ceiling (⌈A⌉)
@@ -55,14 +57,15 @@ Use this node when you need to:
 Imagine you want to calculate the average of two numbers:
 
 1. Add a Math node to your workflow
-2. Select "average [avg(A, B)]" from the operation dropdown
-3. Connect two number inputs to parameters A and B
-4. The average will be available in the "result" output
+1. Select "average [avg(A, B)]" from the operation dropdown
+1. Connect two number inputs to parameters A and B
+1. The average will be available in the "result" output
 
 ## Implementation Details
 
 The Math node automatically handles:
+
 - Type conversion for inputs
 - Division by zero (returns infinity)
 - Modulo by zero (returns infinity)
-- Dynamic parameter visibility (hides B parameter for unary operations) 
+- Dynamic parameter visibility (hides B parameter for unary operations)

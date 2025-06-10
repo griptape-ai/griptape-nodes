@@ -19,10 +19,10 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the Askulator to your workflow
-2. Enter your mathematical question in the "instruction" parameter
-3. The node will process the question and provide:
-   - A detailed reasoning of how it solved the problem
-   - The final answer in the "result" output
+1. Enter your mathematical question in the "instruction" parameter
+1. The node will process the question and provide:
+    - A detailed reasoning of how it solved the problem
+    - The final answer in the "result" output
 
 ### Parameters
 
@@ -41,20 +41,21 @@ Use this node when you want to:
 Imagine you want to calculate something complex like "If I have 3 dozen eggs and give away a third, how many do I have left?":
 
 1. Add an Askulator to your workflow
-2. Enter the question in the "instruction" parameter
-3. The node will:
-   - Interpret that 3 dozen = 36 eggs
-   - Calculate that a third of 36 is 12
-   - Subtract 12 from 36
-   - Provide the reasoning in the "output"
-   - Give the final answer (24) in the "result"
+1. Enter the question in the "instruction" parameter
+1. The node will:
+    - Interpret that 3 dozen = 36 eggs
+    - Calculate that a third of 36 is 12
+    - Subtract 12 from 36
+    - Provide the reasoning in the "output"
+    - Give the final answer (24) in the "result"
 
 ## Implementation Details
 
 The Askulator uses:
+
 - A natural language processing model to understand questions
 - The Calculator tool to perform precise calculations
 - JSON output format to separate reasoning from the final answer
 - Streaming updates to show progress in real-time
 
-The node is designed to be creative and helpful, making reasonable estimates when exact numbers aren't available and providing clear explanations of its reasoning. 
+The node is designed to be creative and helpful, making reasonable estimates when exact numbers aren't available and providing clear explanations of its reasoning.
