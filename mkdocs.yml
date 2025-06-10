@@ -131,10 +131,20 @@ nav:
         - Split List: nodes/lists/split_list.md
         - Combine Lists: nodes/lists/combine_lists.md
     - Number:
-        - Float Input: nodes/number/create_float.md
-        - Int Input: nodes/number/create_int.md
-        - Display Float: nodes/number/display_float.md
-        - Display Int: nodes/number/display_int.md
+        - Input Nodes:
+          - Float Input: nodes/number/create_float.md
+          - Int Input: nodes/number/create_int.md
+          - Bool Input: nodes/number/bool_input.md
+        - Display Nodes:
+          - Display Float: nodes/number/display_float.md
+          - Display Int: nodes/number/display_int.md
+        - List Nodes:
+          - Create Float List: nodes/number/create_float_list.md
+          - Create Int List: nodes/number/create_int_list.md
+          - Create Bool List: nodes/number/create_bool_list.md
+        - Math Nodes:
+          - Math Operations: nodes/number/math.md
+          - Askulator: nodes/number/askulator.md
     - Rules:
         - Ruleset: nodes/rules/create_ruleset.md
         - Ruleset List: nodes/rules/ruleset_list.md
