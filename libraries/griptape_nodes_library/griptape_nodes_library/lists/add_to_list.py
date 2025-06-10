@@ -39,10 +39,9 @@ class AddToList(ControlNode):
             input_types=["str"],
             allowed_modes={ParameterMode.PROPERTY},
             default_value="end",
-            traits=[Options(choices=["start", "end", "index"])],
         )
         self.add_parameter(self.position)
-
+        self.position.add_trait(Options(choices=["start", "end", "index"]))
         self.index = Parameter(
             name="index",
             tooltip="Index to add the value to the list",

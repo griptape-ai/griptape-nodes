@@ -32,9 +32,9 @@ class SplitList(ControlNode):
             input_types=["str"],
             allowed_modes={ParameterMode.PROPERTY},
             default_value="index",
-            traits=[Options(choices=["index", "item"])],
         )
         self.add_parameter(self.split_by)
+        self.split_by.add_trait(Options(choices=["index", "item"]))
 
         self.split_index = Parameter(
             name="split_index",

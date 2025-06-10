@@ -31,9 +31,9 @@ class ReplaceInList(ControlNode):
             input_types=["str"],
             allowed_modes={ParameterMode.PROPERTY},
             default_value="item",
-            traits=[Options(choices=["item", "index"])],
         )
         self.add_parameter(self.replace_by)
+        self.replace_by.add_trait(Options(choices=["item", "index"]))
 
         self.item_to_replace = Parameter(
             name="item_to_replace",

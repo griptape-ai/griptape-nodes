@@ -28,10 +28,9 @@ class RemoveFromList(ControlNode):
             input_types=["str"],
             allowed_modes={ParameterMode.PROPERTY},
             default_value="item",
-            traits=[Options(choices=["first", "last", "index", "item"])],
         )
         self.add_parameter(self.remove_item_by)
-
+        self.remove_item_by.add_trait(Options(choices=["first", "last", "index", "item"]))
         self.value = Parameter(
             name="item",
             tooltip="Item to remove from the list",
