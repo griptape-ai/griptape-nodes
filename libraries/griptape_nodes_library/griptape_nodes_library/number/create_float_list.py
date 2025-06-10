@@ -34,7 +34,6 @@ class CreateFloatList(ControlNode):
         if parameter.name != "output":
             list_values = self.get_parameter_value("items")
             self.parameter_output_values["output"] = list_values
-            self.publish_update_to_parameter("output", list_values)
             modified_parameters_set.add("output")
         return super().after_value_set(parameter, value, modified_parameters_set)
 
