@@ -463,7 +463,7 @@ class LibraryManager:
                 pip_dependencies = library_data.metadata.dependencies.pip_dependencies
 
                 # Grab the python executable from the virtual environment so that we can pip install there
-                library_venv_python_path = self._get_library_venv_python_path(library_data.name)
+                library_venv_python_path = self._get_library_venv_python_path(library_data.name, file_path)
                 subprocess.run(  # noqa: S603
                     [
                         sys.executable,
@@ -564,7 +564,7 @@ class LibraryManager:
     ) -> ResultPayload:
         package_name = Requirement(request.requirement_specifier).name
         try:
-            library_python_venv_path = self._get_library_venv_python_path(package_name)
+            library_python_venv_path = self._get_library_venv_python_path(package_name, None)
             subprocess.run(  # noqa: S603
                 [
                     uv.find_uv_bin(),
@@ -592,12 +592,20 @@ class LibraryManager:
 
         return RegisterLibraryFromRequirementSpecifierResultSuccess(library_name=request.requirement_specifier)
 
-    def _get_library_venv_python_path(self, library_name: str) -> Path:
+    def _get_library_venv_python_path(self, library_name: str, library_file_path: str | None = None) -> Path:
         # Create a virtual environment for the library
         python_version = platform.python_version()
-        library_venv_path = (
-            xdg_data_home() / "griptape_nodes" / "venvs" / python_version / library_name.replace(" ", "_").strip()
-        )
+
+        clean_library_name = library_name.replace(" ", "_").strip()
+
+        if library_file_path is not None:
+            # Create venv relative to the library.json file
+            library_dir = Path(library_file_path).parent.absolute()
+            library_venv_path = library_dir / ".venv"
+        else:
+            # Else, create venv relative to the xdg data home
+            library_venv_path = xdg_data_home() / "griptape_nodes" / "libraries" / clean_library_name / ".venv"
+
         if library_venv_path.exists():
             logger.debug("Virtual environment already exists at %s", library_venv_path)
         else:
