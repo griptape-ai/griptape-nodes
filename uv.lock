@@ -53,6 +53,25 @@ wheels = [
 ]
 
 [[package]]
+name = "austin-dist"
+version = "3.7.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/ec/66d49f755a3e0a980324d9f3acc43de5bf0ea87eea52fd826d87300c7d7c/austin_dist-3.7.0-1-py2.py3-none-macosx_11_0_x86_64.whl", hash = "sha256:92a98e436336355473e8f5145aaea9fa524c97b4cd5336719ebb8a07c963ca79", size = 41803, upload-time = "2024-10-16T18:46:19.368Z" },
+    { url = "https://files.pythonhosted.org/packages/9f/2c/bc25aeaf7ad41450eea1f293b008508f5dfa9ef724690603b22b2c32987f/austin_dist-3.7.0-py2.py3-none-macosx_11_0_arm64.whl", hash = "sha256:72ac1883dfc7e750a25434d72722bca5faf45c95d0a84c22ea8d97152c51a1e7", size = 40880, upload-time = "2024-10-14T19:22:42.92Z" },
+    { url = "https://files.pythonhosted.org/packages/66/a9/ac086a7e24c5f74e8fe85cc805a715ef7794eb41e716739e8c9cabea11b5/austin_dist-3.7.0-py2.py3-none-macosx_11_0_x86_64.whl", hash = "sha256:61d16d9a8e81dccc31e1cae2137885d0d7257ecad673b77b0e69de16cda7a2f0", size = 43094, upload-time = "2024-10-14T19:22:44.597Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/af/63d9cc839352e43d302f972b0d94365cd9f709d6830e19e89d47f7b5d284/austin_dist-3.7.0-py2.py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:e73d3cad0b5c8d51e5b2130dd61cfa0ea8f9c01013ab6f536fb5199a17547b96", size = 677235, upload-time = "2024-10-14T19:23:07.751Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/30/61f454aad245f4160481dab9f4f261646263b8201cd97f6ae88eef6cc8dd/austin_dist-3.7.0-py2.py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:1cd9a7f7f22cc9a9f961ff11f27a18ac5c03a35fc564b1de68a84eb8191d559d", size = 639062, upload-time = "2024-10-14T19:26:11.214Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/65/7645d493335888b67e86b2fb90c65d49a19c8be3b95fda98d36cf8b00b61/austin_dist-3.7.0-py2.py3-none-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:9ea01bdc2b3ffcee67da9a4514cc2b40a526c2cc3a753516010e99acb0744f30", size = 501296, upload-time = "2024-10-14T19:25:54.6Z" },
+    { url = "https://files.pythonhosted.org/packages/22/b1/619878c340c2145e257c6aaac49a60e70a22e8c3b6e67ee82cd07ec05637/austin_dist-3.7.0-py2.py3-none-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:402ab2ea7ce8f2f431102d37b5ea0289c9c6868eb1a8ba3b0f09fd1df3280add", size = 841296, upload-time = "2024-10-14T19:26:30.346Z" },
+    { url = "https://files.pythonhosted.org/packages/95/b5/c20a8ae4d970a58d7ef7cefc903b4b4ab817659767d400a85db975336e0e/austin_dist-3.7.0-py2.py3-none-musllinux_1_1_aarch64.whl", hash = "sha256:a125130171389b0b7baab7168787893bce0972db88b8b5e9811b41b774bea5e2", size = 40419, upload-time = "2024-10-14T19:26:12.849Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/d9/a0ef743ba0bc62b36921caba8a0bb2f0e672196e0c73f6afd0911dcb23dd/austin_dist-3.7.0-py2.py3-none-musllinux_1_1_armv7l.whl", hash = "sha256:a853294017a480cf92226382077a0e90e3719ffe6aa4c76b1d9a3a6d3346ae7d", size = 37750, upload-time = "2024-10-14T19:25:56.328Z" },
+    { url = "https://files.pythonhosted.org/packages/ac/69/017c54941434e9b8304b5a89f11b6047c56756401bb2223b2fabd154711c/austin_dist-3.7.0-py2.py3-none-musllinux_1_1_ppc64le.whl", hash = "sha256:26a816a6df008ea652dca67e9fba3d91ed27d0d65d813eabe7bfec9becf540c4", size = 41864, upload-time = "2024-10-14T19:26:31.787Z" },
+    { url = "https://files.pythonhosted.org/packages/02/4e/75ab56f3fe82141396c2563336c7165da529fb705ecb8abb10e4683ee79f/austin_dist-3.7.0-py2.py3-none-musllinux_1_1_x86_64.whl", hash = "sha256:2ef2976d4f188fa6fa316c710bb64a79feb7ff5662154b893face916bf0a9c81", size = 40645, upload-time = "2024-10-14T19:23:10.459Z" },
+    { url = "https://files.pythonhosted.org/packages/86/d0/b8cc79892a7f40d7bf82f092f334099646d526d4ff2f11c6291cbe5ded5b/austin_dist-3.7.0-py2.py3-none-win_amd64.whl", hash = "sha256:760dabaff27022d238091c1d9de9234c881359d0f98295ae8c0428ffc33868c8", size = 54901, upload-time = "2024-10-14T19:24:04.272Z" },
+]
+
+[[package]]
 name = "babel"
 version = "2.17.0"
 source = { registry = "https://pypi.org/simple" }
@@ -410,6 +429,7 @@ name = "griptape-nodes"
 version = "0.37.0"
 source = { editable = "." }
 dependencies = [
+    { name = "austin-dist" },
     { name = "fastapi" },
     { name = "griptape", extra = ["drivers-prompt-amazon-bedrock", "drivers-prompt-anthropic", "drivers-prompt-cohere", "drivers-prompt-ollama", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "drivers-web-search-exa", "loaders-image"] },
     { name = "httpx" },
@@ -450,6 +470,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "austin-dist", specifier = ">=3.7.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
     { name = "griptape", extras = ["drivers-prompt-cohere", "drivers-prompt-anthropic", "drivers-prompt-ollama", "drivers-prompt-amazon-bedrock", "loaders-image", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "drivers-web-search-exa"], specifier = ">=1.7.1" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
