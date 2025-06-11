@@ -1,38 +1,37 @@
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
-    ControlParameterInput,
-    ControlParameterOutput,
     Parameter,
-    ParameterGroup,
     ParameterMode,
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode, EndLoopNode, StartLoopNode
+from griptape_nodes_library.execution.for_each_start import ForEachStartNode
 
 
-class ForLoopStartNode(StartLoopNode):
+class ForLoopStartNode(ForEachStartNode):
     """For Loop Start Node that runs a connected flow for a specified number of iterations.
 
     This node implements a traditional for loop with start, end, and step parameters.
     It provides the current iteration value to the next node in the flow and keeps track of the iteration state.
     """
 
-    _flow: ControlFlow | None = None
-
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
-        self.finished = False
+
+        # Set up internal state tracking
         self._internal_index = 0
         self._offset = 0
         self._internal_end = 0
-        self.current_index = 0  # Keep this for end node compatibility
-        self.exec_out = ControlParameterOutput(tooltip="Continue the flow", name="exec_out")
+        self.current_index = 0
         self.exec_out.ui_options = {"display_name": "For Loop"}
-        self.add_parameter(self.exec_out)
-        self.exec_in = ControlParameterInput()
-        self.add_parameter(self.exec_in)
+
+        # Delete existing parameters we don't need
+        self.remove_parameter_element_by_name("index")
+        self.remove_parameter_element_by_name("items")
+
+        # Adjust current_item to be an integer
+        self.current_item.type = ParameterTypeBuiltin.INT.value
 
         self.start_value = Parameter(
             name="start",
@@ -60,19 +59,7 @@ class ForLoopStartNode(StartLoopNode):
         self.add_parameter(self.end_value)
         self.add_parameter(self.step_value)
 
-        with ParameterGroup(name="While in loop") as group:
-            self.current_item = Parameter(
-                name="current_item",
-                tooltip="Current item in the loop",
-                type=ParameterTypeBuiltin.INT.value,
-                allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
-            )
-        self.add_node_element(group)
-
-        self.loop = ControlParameterOutput(tooltip="To the End Node", name="loop")
-        self.loop.ui_options = {"display_name": "Enter Loop", "hide": True}
-        self.add_parameter(self.loop)
+        self.move_element_to_position("For Each Item", position="last")
 
     def process(self) -> None:
         # Reset state when the node is first processed
@@ -84,8 +71,10 @@ class ForLoopStartNode(StartLoopNode):
             start = self.get_parameter_value("start")
             end = self.get_parameter_value("end")
             step = self.get_parameter_value("step")
-            if step == 0:
-                raise ValueError("Step value cannot be zero")
+            if step <= 0:
+                # We should have caught this in validation, but just in case
+                msg = f"{self.name}: Step value cannot be less than or equal to zero"
+                raise ValueError(msg)
 
             # Calculate internal range starting from 0
             self._offset = start
@@ -115,6 +104,19 @@ class ForLoopStartNode(StartLoopNode):
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         exceptions = []
+
+        if self.get_parameter_value("start") >= self.get_parameter_value("end"):
+            exceptions.append(Exception(f"{self.name}: Start value must be less than end value"))
+
+        if self.get_parameter_value("step") <= 0:
+            exceptions.append(Exception(f"{self.name}: Step value cannot be less than or equal to zero"))
+
+        if self.get_parameter_value("start") <= 0:
+            exceptions.append(Exception(f"{self.name}: Start value cannot be less than or equal to zero"))
+
+        if self.get_parameter_value("end") <= 0:
+            exceptions.append(Exception(f"{self.name}: End value cannot be less than or equal to zero"))
+
         self._internal_index = 0
         self.current_index = 0
         self.finished = False
@@ -145,19 +147,3 @@ class ForLoopStartNode(StartLoopNode):
         except Exception as e:
             exceptions.append(e)
         return exceptions
-
-    def get_next_control_output(self) -> Parameter | None:
-        return self.loop
-
-    def after_outgoing_connection(
-        self,
-        source_parameter: Parameter,
-        target_node: BaseNode,
-        target_parameter: Parameter,
-        modified_parameters_set: set[str],
-    ) -> None:
-        if source_parameter == self.loop and isinstance(target_node, EndLoopNode):
-            self.end_node = target_node
-        return super().after_outgoing_connection(
-            source_parameter, target_node, target_parameter, modified_parameters_set
-        )
