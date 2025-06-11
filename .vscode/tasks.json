@@ -2,15 +2,16 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Austin Profile Griptape Nodes",
+            "label": "Profile Griptape Nodes App: CPU profiling - uses sudo (may be required for some systems such as Mac)",
             "type": "shell",
-            "command": ".venv/bin/austin",
+            "command": "sudo",
             "args": [
+                ".venv/bin/austin",
                 "-i", "100us",
                 "-s",
                 "-C",
                 "-b",
-                "-o", "profiles/profile_griptape_nodes.mojo",
+                "-o", "profiles/profile_griptape_nodes_cpu.mojo",
                 ".venv/bin/python",
                 "-m", "src.griptape_nodes.__init__",
                 "--no-update"
@@ -27,11 +28,62 @@
             "problemMatcher": []
         },
         {
-            "label": "Austin Profile Griptape Nodes (with Memory - requires sudo)",
+            "label": "Profile Griptape Nodes App: Memory profiling - uses sudo (may be required for some systems such as Mac)",
             "type": "shell",
             "command": "sudo",
             "args": [
                 ".venv/bin/austin",
+                "-i", "100us",
+                "-m",
+                "-s",
+                "-C",
+                "-b",
+                "-o", "profiles/profile_griptape_nodes_memory.mojo",
+                ".venv/bin/python",
+                "-m", "src.griptape_nodes.__init__",
+                "--no-update"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Profile Griptape Nodes App: CPU profiling - does NOT use sudo",
+            "type": "shell",
+            "command": ".venv/bin/austin",
+            "args": [
+                "-i", "100us",
+                "-s",
+                "-C",
+                "-b",
+                "-o", "profiles/profile_griptape_nodes_cpu.mojo",
+                ".venv/bin/python",
+                "-m", "src.griptape_nodes.__init__",
+                "--no-update"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Profile Griptape Nodes App: Memory profiling - does NOT use sudo",
+            "type": "shell",
+            "command": ".venv/bin/austin",
+            "args": [
                 "-i", "100us",
                 "-m",
                 "-s",
