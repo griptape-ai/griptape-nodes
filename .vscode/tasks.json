@@ -219,6 +219,123 @@
                 "clear": false
             },
             "problemMatcher": []
+        },
+        {
+            "label": "Stop/Detach CPU Profiling",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "pkill -f \"austin.*profile.*cpu.mojo\" || echo \"No CPU profiling process found\""
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Stop/Detach Memory Profiling",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "pkill -f \"austin.*profile.*memory.mojo\" || echo \"No memory profiling process found\""
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Stop/Detach All Profiling",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "pkill -f \"austin.*profile.*\\.mojo\" && echo \"Stopped all profiling processes\" || echo \"No profiling processes found\""
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Stop/Detach CPU Profiling - uses sudo",
+            "type": "shell",
+            "command": "sudo",
+            "args": [
+                "pkill",
+                "-f",
+                "austin.*profile.*cpu.mojo"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Stop/Detach Memory Profiling - uses sudo",
+            "type": "shell",
+            "command": "sudo",
+            "args": [
+                "pkill",
+                "-f",
+                "austin.*profile.*memory.mojo"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Stop/Detach All Profiling - uses sudo",
+            "type": "shell",
+            "command": "sudo",
+            "args": [
+                "pkill",
+                "-f",
+                "austin.*profile.*\\.mojo"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
         }
     ],
     "inputs": [
