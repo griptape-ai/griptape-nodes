@@ -25,24 +25,38 @@ def human_readable_memory_footprint(model: torch.nn.Module) -> str:
     return to_human_readable_size(model.get_memory_footprint())  # type: ignore[reportAttributeAccessIssue]
 
 
-def print_pipeline_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> None:
-    """Print pipeline memory footprint."""
-    bytes_per_component = {}
+def get_bytes_by_component(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> dict[str, int]:
+    """Get bytes by component for a DiffusionPipeline."""
+    bytes_by_component = {}
     for name in component_names:
         if hasattr(pipe, name):
             component = getattr(pipe, name)
             if hasattr(component, "get_memory_footprint"):
-                bytes_per_component[name] = component.get_memory_footprint()
+                bytes_by_component[name] = component.get_memory_footprint()
             else:
                 logger.warning("Component %s does not have get_memory_footprint method", name)
+                bytes_by_component[name] = None
         else:
             logger.warning("Pipeline does not have component %s", name)
+            bytes_by_component[name] = None
+    return bytes_by_component
 
-    component_bytes = [bytes_per_component[name] for name in component_names]
+
+def get_total_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> int:
+    """Get total memory footprint of a DiffusionPipeline."""
+    bytes_by_component = get_bytes_by_component(pipe, component_names)
+    total_bytes = sum(bytes_ for bytes_ in bytes_by_component.values() if bytes_ is not None)
+    return total_bytes
+
+
+def print_pipeline_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> None:
+    """Print pipeline memory footprint."""
+    bytes_by_component = get_bytes_by_component(pipe, component_names)
+    component_bytes = [bytes_by_component[name] for name in component_names]
     total_bytes = sum(component_bytes)
     max_bytes = max(component_bytes)
 
-    for name, bytes_ in bytes_per_component.items():
+    for name, bytes_ in bytes_by_component.items():
         if bytes_ is None:
             continue
         logger.info("%s: %s", name, to_human_readable_size(bytes_))
