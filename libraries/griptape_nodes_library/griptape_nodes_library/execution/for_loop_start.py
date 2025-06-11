@@ -24,40 +24,49 @@ class ForLoopStartNode(StartLoopNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
         self.finished = False
-        self.current_index = 0
+        self._internal_index = 0
+        self._offset = 0
+        self._internal_end = 0
+        self.current_index = 0  # Keep this for end node compatibility
         self.exec_out = ControlParameterOutput(tooltip="Continue the flow", name="exec_out")
         self.exec_out.ui_options = {"display_name": "For Loop"}
         self.add_parameter(self.exec_out)
         self.exec_in = ControlParameterInput()
         self.add_parameter(self.exec_in)
 
-        with ParameterGroup(name="Loop Parameters") as group:
-            self.start_value = Parameter(
-                name="start",
-                tooltip="Starting value for the loop",
-                type=ParameterTypeBuiltin.INT.value,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                default_value=1,
-            )
-            self.end_value = Parameter(
-                name="end",
-                tooltip="Ending value for the loop (exclusive)",
-                type=ParameterTypeBuiltin.INT.value,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                default_value=10,
-            )
-            self.step_value = Parameter(
-                name="step",
-                tooltip="Step value for each iteration",
-                type=ParameterTypeBuiltin.INT.value,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                default_value=1,
-            )
-            self.current_index_param = Parameter(
-                name="current_index",
-                tooltip="Current value in the loop",
+        self.start_value = Parameter(
+            name="start",
+            tooltip="Starting value for the loop",
+            type=ParameterTypeBuiltin.INT.value,
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            default_value=1,
+        )
+        self.end_value = Parameter(
+            name="end",
+            tooltip="Ending value for the loop (exclusive)",
+            type=ParameterTypeBuiltin.INT.value,
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            default_value=10,
+        )
+        self.step_value = Parameter(
+            name="step",
+            tooltip="Step value for each iteration",
+            type=ParameterTypeBuiltin.INT.value,
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            default_value=1,
+        )
+
+        self.add_parameter(self.start_value)
+        self.add_parameter(self.end_value)
+        self.add_parameter(self.step_value)
+
+        with ParameterGroup(name="While in loop") as group:
+            self.current_item = Parameter(
+                name="current_item",
+                tooltip="Current item in the loop",
                 type=ParameterTypeBuiltin.INT.value,
                 allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"hide_property": True},
             )
         self.add_node_element(group)
 
@@ -69,28 +78,44 @@ class ForLoopStartNode(StartLoopNode):
         # Reset state when the node is first processed
         if self._flow is None or self.finished:
             return
-        if self.current_index == 0:
+
+        if self._internal_index == 0:
             # Initialize everything!
-            self.current_index = self.get_parameter_value("start")
-            self.end = self.get_parameter_value("end")
-            self.step = self.get_parameter_value("step")
-            if self.step == 0:
+            start = self.get_parameter_value("start")
+            end = self.get_parameter_value("end")
+            step = self.get_parameter_value("step")
+            if step == 0:
                 raise ValueError("Step value cannot be zero")
 
-        # Get the current value and pass it along
+            # Calculate internal range starting from 0
+            self._offset = start
+            # Calculate how many steps we need to take
+            self._internal_end = (end - start) // step
+            self._internal_index = 0
+            self.current_index = 0  # Start at 0 for proper end node synchronization
+
+        # Unresolve all future nodes at the start of processing
         self._flow.connections.unresolve_future_nodes(self)
-        self.parameter_output_values["current_index"] = self.current_index
-        self.current_index += self.step
+
+        # Get the current value and pass it along
+        step = self.get_parameter_value("step")
+        current_value = self._offset + (self._internal_index * step)
+        self.parameter_output_values["current_item"] = current_value  # Pass current value to end node
+
+        self.current_index = self._internal_index + 1  # 1-based for end node compatibility
+        self._internal_index += 1
 
         # Check if we've reached the end
-        if (self.step > 0 and self.current_index >= self.end) or (self.step < 0 and self.current_index <= self.end):
+        if self._internal_index > self._internal_end:
             self.finished = True
+            self._internal_index = 0
             self.current_index = 0
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         exceptions = []
+        self._internal_index = 0
         self.current_index = 0
         self.finished = False
         if self.end_node is None:

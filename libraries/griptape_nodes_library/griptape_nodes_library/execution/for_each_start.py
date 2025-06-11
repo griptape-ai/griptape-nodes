@@ -56,6 +56,7 @@ class ForEachStartNode(StartLoopNode):
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 settable=False,
                 default_value=0,
+                ui_options={"hide_property": True},
             )
         self.add_node_element(group)
 
@@ -99,7 +100,8 @@ class ForEachStartNode(StartLoopNode):
         self._items = []
         self.finished = False
         if self.end_node is None:
-            exceptions.append(Exception("End node not found or connected."))
+            msg = f"{self.name}: End node not found or connected."
+            exceptions.append(Exception(msg))
         try:
             flow = GriptapeNodes.ObjectManager().get_object_by_name(
                 GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
@@ -116,7 +118,8 @@ class ForEachStartNode(StartLoopNode):
 
         exceptions = []
         if self.end_node is None:
-            exceptions.append(Exception("End node not found or connected."))
+            msg = f"{self.name}: End node not found or connected."
+            exceptions.append(Exception(msg))
         try:
             flow = GriptapeNodes.ObjectManager().get_object_by_name(
                 GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
