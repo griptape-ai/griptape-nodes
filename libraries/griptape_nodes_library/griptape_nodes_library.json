@@ -219,6 +219,14 @@
         "description": "Nodes for executing Workflows",
         "icon": "Workflow"
       }
+    },
+    {
+      "video/allegro": {
+        "color": "border-pink-500",
+        "title": "Video/Allegro",
+        "description": "Video generation with Allegro",
+        "icon": "Video"
+      }
     }
   ],
   "nodes": [

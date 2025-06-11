@@ -13,6 +13,7 @@
     "dependencies": {
       "pip_dependencies": [
         "accelerate>=1.6.0",
+        "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "imageio-ffmpeg>=0.6.0",
         "diffusers>=0.33.1",
@@ -31,7 +32,8 @@
         "tqdm>=4.67.1",
         "protobuf>=6.31.0",
         "prodigyopt>=1.1.2; sys_platform == 'win32'",
-        "bitsandbytes>=0.46.0; sys_platform == 'win32'"
+        "bitsandbytes>=0.46.0; sys_platform == 'win32'",
+        "ftfy>=6.3.1"
       ],
       "pip_install_flags": [
         "--preview",
@@ -219,6 +221,15 @@
         "category": "image/flux/loras",
         "description": "TrainFluxLora node.",
         "display_name": "Train Flux Lora"
+      }
+    },
+    {
+      "class_name": "AllegroPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/allegro/allegro_pipeline.py",
+      "metadata": {
+        "category": "video/allegro",
+        "description": "Generate a video with Allegro via 🤗 Diffusers.",
+        "display_name": "Allegro"
       }
     }
   ]
