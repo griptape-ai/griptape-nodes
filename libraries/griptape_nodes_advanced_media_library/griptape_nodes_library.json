@@ -231,6 +231,33 @@
         "description": "Generate a video with Allegro via 🤗 Diffusers.",
         "display_name": "Allegro"
       }
+    },
+    {
+      "class_name": "AmusedPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_pipeline.py",
+      "metadata": {
+        "category": "image/amused",
+        "description": "Generate an Image with aMUSEd via 🤗 Diffusers.",
+        "display_name": "aMUSEd"
+      }
+    },
+    {
+      "class_name": "AmusedImg2ImgPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_img2img_pipeline.py",
+      "metadata": {
+        "category": "image/amused",
+        "description": "Generate Image Variations with aMUSEd via 🤗 Diffusers.",
+        "display_name": "aMUSEd Img2Img"
+      }
+    },
+    {
+      "class_name": "AmusedInpaintPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_inpaint_pipeline.py",
+      "metadata": {
+        "category": "image/amused",
+        "description": "Inpaint Images with aMUSEd via 🤗 Diffusers.",
+        "display_name": "aMUSEd Inpaint"
+      }
     }
   ]
 }

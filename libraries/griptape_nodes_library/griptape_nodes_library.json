@@ -221,6 +221,14 @@
       }
     },
     {
+      "image/amused": {
+        "color": "border-purple-500",
+        "title": "Image/aMUSEd",
+        "description": "Image generation with aMUSEd",
+        "icon": "Image"
+      }
+    },
+    {
       "video/allegro": {
         "color": "border-pink-500",
         "title": "Video/Allegro",
