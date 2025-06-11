@@ -73,7 +73,7 @@ class AgentManager:
             if isinstance(last_event, FinishTaskEvent):
                 if isinstance(last_event.task_output, ErrorArtifact):
                     return RunAgentResultFailure(last_event.task_output.to_json())
-                if isinstance(last_event.task_output, TextArtifact):
+                elif isinstance(last_event.task_output, TextArtifact):
                     return RunAgentResultSuccess(last_event.task_output.to_json())
             err_msg = f"Unexpected final event: {last_event}"
             logger.error(err_msg)
