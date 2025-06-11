@@ -24,4 +24,4 @@ The Get From List node takes a list and an index as input and returns the item a
 - If the index is out of range or invalid, the node will return None
 - If either the list or index input is missing, the node will return None
 - The output type is "any" since the list can contain items of any type
-- The index parameter can be set either as an input connection or as a property value 
+- The index parameter can be set either as an input connection or as a property value
