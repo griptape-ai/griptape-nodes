@@ -1,6 +1,6 @@
 import logging
 
-from griptape.artifacts import ErrorArtifact
+from griptape.artifacts import ErrorArtifact, TextArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import EventBus, FinishTaskEvent, TextChunkEvent
 from griptape.memory.structure import ConversationMemory
@@ -73,8 +73,9 @@ class AgentManager:
             if isinstance(last_event, FinishTaskEvent):
                 if isinstance(last_event.task_output, ErrorArtifact):
                     return RunAgentResultFailure(last_event.task_output.to_json())
-                return RunAgentResultSuccess(last_event.task_output.to_json())
-            err_msg = f"Unexpected final event type: {type(last_event)}"
+                if isinstance(last_event.task_output, TextArtifact):
+                    return RunAgentResultSuccess(last_event.task_output.to_json())
+            err_msg = f"Unexpected final event: {last_event}"
             logger.error(err_msg)
             return RunAgentResultFailure(ErrorArtifact(last_event).to_json())
         except Exception as e:
