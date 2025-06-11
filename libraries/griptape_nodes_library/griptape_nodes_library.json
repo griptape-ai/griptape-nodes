@@ -229,6 +229,38 @@
       }
     },
     {
+      "image/stable_diffusion": {
+        "color": "border-purple-500",
+        "title": "Image/Stable Diffusion",
+        "description": "Image generation with Stable Diffusion",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_3": {
+        "color": "border-purple-500",
+        "title": "Image/Stable Diffusion 3",
+        "description": "Image generation with Stable Diffusion 3",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_attend_and_excite": {
+        "color": "border-purple-500",
+        "title": "Image/SD Attend and Excite",
+        "description": "Enhanced attention control",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_diffedit": {
+        "color": "border-purple-500",
+        "title": "Image/SD DiffEdit",
+        "description": "Image editing with DiffEdit",
+        "icon": "Image"
+      }
+    },
+    {
       "video/allegro": {
         "color": "border-pink-500",
         "title": "Video/Allegro",

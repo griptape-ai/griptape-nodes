@@ -16,7 +16,7 @@
         "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "imageio-ffmpeg>=0.6.0",
-        "diffusers>=0.33.1",
+        "git+https://github.com/huggingface/diffusers.git@b6f793304437120239d4b942cac623b0ea86039b",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
         "peft>=0.15.2",
@@ -257,6 +257,42 @@
         "category": "image/amused",
         "description": "Inpaint Images with aMUSEd via 🤗 Diffusers.",
         "display_name": "aMUSEd Inpaint"
+      }
+    },
+    {
+      "class_name": "StableDiffusionPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion/stable_diffusion_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion",
+        "description": "Generate images with Stable Diffusion via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion"
+      }
+    },
+    {
+      "class_name": "StableDiffusion3Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_3/stable_diffusion_3_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_3",
+        "description": "Generate images with Stable Diffusion 3 via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion 3"
+      }
+    },
+    {
+      "class_name": "StableDiffusionAttendAndExcitePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_attend_and_excite/stable_diffusion_attend_and_excite_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_attend_and_excite",
+        "description": "Generate images with enhanced attention control via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion Attend and Excite"
+      }
+    },
+    {
+      "class_name": "StableDiffusionDiffeditPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_diffedit/stable_diffusion_diffedit_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_diffedit",
+        "description": "Edit images using DiffEdit technique via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion DiffEdit"
       }
     }
   ]
