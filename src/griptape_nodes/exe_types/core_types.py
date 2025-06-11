@@ -498,9 +498,20 @@ class Parameter(BaseNodeElement):
     _converters: list[Callable[[Any], Any]]
     _validators: list[Callable[[Parameter, Any], None]]
     _ui_options: dict
+    _widget: str | None = None  # The widget class name to use for this parameter
+    _widget_asset_url: str | None = None  # URL for custom widget assets
     next: Parameter | None = None
     prev: Parameter | None = None
     parent_container_name: str | None = None
+
+    # Define valid widgets for each type
+    _valid_widgets: ClassVar[dict[str, set[str]]] = {
+        "str": {"default", "text", "textarea", "select"},
+        "int": {"default", "number", "slider", "select"},
+        "float": {"default", "number", "slider", "select"},
+        "bool": {"default", "checkbox", "toggle", "select"},
+        "any": {"default"},  # Any type can use the default widget
+    }
 
     def __init__(  # noqa: PLR0913,PLR0912
         self,
@@ -518,6 +529,8 @@ class Parameter(BaseNodeElement):
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         traits: set[Trait.__class__ | Trait] | None = None,  # We are going to make these children.
         ui_options: dict | None = None,
+        widget: str | None = None,
+        widget_asset_url: str | None = None,
         *,
         settable: bool = True,
         user_defined: bool = False,
@@ -569,6 +582,8 @@ class Parameter(BaseNodeElement):
         self.input_types = input_types
         self.output_type = output_type
         self.parent_container_name = parent_container_name
+        self.widget_asset_url = widget_asset_url  # Set widget_asset_url first
+        self.widget = widget  # Then set the widget
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children."""
@@ -584,6 +599,9 @@ class Parameter(BaseNodeElement):
         our_dict["tooltip_as_input"] = self.tooltip_as_input
         our_dict["tooltip_as_output"] = self.tooltip_as_output
         our_dict["tooltip_as_property"] = self.tooltip_as_property
+        our_dict["widget"] = self.widget
+        if self._widget_asset_url:
+            our_dict["widget_asset_url"] = self._widget_asset_url
 
         our_dict["is_user_defined"] = self.user_defined
         our_dict["ui_options"] = self.ui_options
@@ -849,6 +867,66 @@ class Parameter(BaseNodeElement):
             elif self_value != other_value:
                 differences[key] = other_value
         return differences
+
+    @property
+    def widget(self) -> str:
+        """Get the widget class name for this parameter."""
+        if self._widget is None:
+            return "default"
+        return self._widget
+
+    @widget.setter
+    def widget(self, value: str | None) -> None:
+        """Set the widget class name for this parameter.
+        
+        Args:
+            value: The widget class name to use, or None to use the default widget.
+            
+        Raises:
+            ValueError: If the widget is not valid for the parameter's type.
+        """
+        if value is None:
+            self._widget = "default"
+            return
+
+        # Get the base type for widget validation
+        base_type = self.type.lower()
+        
+        # If it's a custom widget, allow it
+        if value == "custom":
+            if not self._widget_asset_url:
+                raise ValueError("Custom widgets require a widget_asset_url to be set")
+            self._widget = value
+            return
+            
+        if base_type in self._valid_widgets:
+            if value not in self._valid_widgets[base_type]:
+                raise ValueError(f"Widget '{value}' is not valid for type '{base_type}'. Valid widgets are: {self._valid_widgets[base_type]}")
+        else:
+            # For unknown types, only allow the default widget
+            if value != "default":
+                raise ValueError(f"Widget '{value}' is not valid for unknown type '{base_type}'. Only 'default' is allowed.")
+        
+        self._widget = value
+
+    @property
+    def widget_asset_url(self) -> str | None:
+        """Get the asset URL for custom widgets."""
+        return self._widget_asset_url
+
+    @widget_asset_url.setter
+    def widget_asset_url(self, value: str | None) -> None:
+        """Set the asset URL for custom widgets.
+        
+        Args:
+            value: The URL to the custom widget assets, or None to clear it.
+            
+        Raises:
+            ValueError: If trying to set an asset URL for a non-custom widget.
+        """
+        if value is not None and self._widget is not None and self._widget != "custom":
+            raise ValueError("Asset URLs can only be set for custom widgets")
+        self._widget_asset_url = value
 
 
 # Convenience classes to reduce boilerplate in node definitions
