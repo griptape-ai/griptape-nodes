@@ -5,7 +5,6 @@ from griptape_nodes.exe_types.core_types import (
     ControlParameterOutput,
     Parameter,
     ParameterGroup,
-    ParameterList,
     ParameterMode,
     ParameterTypeBuiltin,
 )
@@ -33,10 +32,10 @@ class ForEachStartNode(StartLoopNode):
         self.add_parameter(self.exec_out)
         self.exec_in = ControlParameterInput()
         self.add_parameter(self.exec_in)
-        self.items_list = ParameterList(
+        self.items_list = Parameter(
             name="items",
             tooltip="List of items to iterate through",
-            input_types=[ParameterTypeBuiltin.ANY.value],
+            input_types=["list"],
             allowed_modes={ParameterMode.INPUT},
         )
         self.add_parameter(self.items_list)
