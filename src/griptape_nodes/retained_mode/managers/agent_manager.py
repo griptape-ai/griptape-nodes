@@ -72,8 +72,8 @@ class AgentManager:
                     )
             if isinstance(last_event, FinishTaskEvent):
                 if isinstance(last_event.task_output, ErrorArtifact):
-                    return RunAgentResultFailure(last_event.task_output)
-                return RunAgentResultSuccess(last_event.task_output)
+                    return RunAgentResultFailure(last_event.task_output.to_json())
+                return RunAgentResultSuccess(last_event.task_output.to_json())
             err_msg = f"Unexpected final event type: {type(last_event)}"
             logger.error(err_msg)
             return RunAgentResultFailure(ErrorArtifact(last_event).to_json())
