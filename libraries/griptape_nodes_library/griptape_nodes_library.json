@@ -286,6 +286,15 @@
       }
     },
     {
+      "class_name": "GetFromList",
+      "file_path": "griptape_nodes_library/lists/get_from_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and gets an item at a specified index from the list.",
+        "display_name": "Get From List"
+      }
+    },
+    {
       "class_name": "GetIndexOfItem",
       "file_path": "griptape_nodes_library/lists/get_index_of_item.py",
       "metadata": {
@@ -1060,6 +1069,7 @@
         "display_name": "Load GLTF"
       }
     }
+    
   ],
   "workflows": [
     "workflows/templates/prompt_an_image.py",

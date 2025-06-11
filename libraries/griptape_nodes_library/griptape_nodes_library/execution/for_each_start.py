@@ -70,7 +70,13 @@ class ForEachStartNode(StartLoopNode):
         if self.current_index == 0:
             # Initialize everything!
             list_values = self.get_parameter_value("items")
-            self._items = list_values
+            # Ensure the list is flattened
+            if isinstance(list_values, list):
+                self._items = [
+                    item for sublist in list_values for item in (sublist if isinstance(sublist, list) else [sublist])
+                ]
+            else:
+                self._items = []
         # Get the current item and pass it along.
         # I need to unresolve all future nodes (all of them in the for each loop).
         self._flow.connections.unresolve_future_nodes(self)
