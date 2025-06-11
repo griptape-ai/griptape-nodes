@@ -122,3 +122,36 @@ The `RetainedMode` class in `retained_mode/retained_mode.py` provides the script
 - `bootstrap/register_libraries_script.py` handles library discovery and registration
 - Workflow runners in `bootstrap/workflow_runners/` for different execution contexts
 - Structure defined in `bootstrap/structure_config.yaml`
+
+## Profiling (Optional)
+
+**Installation (for advanced users):**
+```bash
+uv add griptape-nodes[profiling]  # Add profiling extra to existing project
+# OR
+uv sync --extra profiling         # Sync with profiling extra in development
+```
+
+**VS Code Tasks Available:**
+- **Find Griptape Nodes Process ID** - Finds running Griptape process PID
+- **Attach to Griptape Nodes App: CPU/Memory profiling** - Start profiling (4 variants: with/without sudo, CPU/memory)
+- **Stop/Detach Profiling** - Stop profiling sessions (6 variants: with/without sudo, CPU/memory/all)
+
+**Profiling Workflow:**
+1. Start Griptape Nodes in debug mode
+2. Run "Find Griptape Nodes Process ID" task to get PID
+3. Run attach profiling task (use sudo variants on Mac if needed)
+4. Exercise your application
+5. Run stop/detach task to save profile
+6. Profile files saved to `profiles/` with timestamps: `profile_attach_cpu_YYYYMMDD_HHMMSS.mojo`
+
+**Key Points:**
+- Austin overwrites existing files - timestamped filenames prevent data loss
+- Use detach tasks rather than killing main program for complete data
+- Sudo variants required on some systems (especially Mac) for process attachment
+
+# important-instruction-reminders
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.

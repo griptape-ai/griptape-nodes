@@ -429,7 +429,6 @@ name = "griptape-nodes"
 version = "0.37.0"
 source = { editable = "." }
 dependencies = [
-    { name = "austin-dist" },
     { name = "fastapi" },
     { name = "griptape", extra = ["drivers-prompt-amazon-bedrock", "drivers-prompt-anthropic", "drivers-prompt-cohere", "drivers-prompt-ollama", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "drivers-web-search-exa", "loaders-image"] },
     { name = "httpx" },
@@ -443,6 +442,11 @@ dependencies = [
     { name = "uvicorn" },
     { name = "websockets" },
     { name = "xdg-base-dirs" },
+]
+
+[package.optional-dependencies]
+profiling = [
+    { name = "austin-dist" },
 ]
 
 [package.dev-dependencies]
@@ -470,7 +474,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "austin-dist", specifier = ">=3.7.0" },
+    { name = "austin-dist", marker = "extra == 'profiling'", specifier = ">=3.7.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
     { name = "griptape", extras = ["drivers-prompt-cohere", "drivers-prompt-anthropic", "drivers-prompt-ollama", "drivers-prompt-amazon-bedrock", "loaders-image", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "drivers-web-search-exa"], specifier = ">=1.7.1" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
@@ -485,6 +489,7 @@ requires-dist = [
     { name = "websockets", specifier = ">=15.0.1,<16.0.0" },
     { name = "xdg-base-dirs", specifier = ">=6.0.2" },
 ]
+provides-extras = ["profiling"]
 
 [package.metadata.requires-dev]
 dev = [
