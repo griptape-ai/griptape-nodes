@@ -111,7 +111,7 @@
             "command": "bash",
             "args": [
                 "-c",
-                "pgrep -f \"debugpy/launcher.*src.griptape_nodes\""
+                "pgrep -f \"debugpy.*--connect.*src\\.griptape_nodes\""
             ],
             "group": "build",
             "presentation": {
