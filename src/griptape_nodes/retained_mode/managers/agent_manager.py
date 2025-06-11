@@ -2,8 +2,9 @@ import logging
 
 from griptape.artifacts import ErrorArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
+from griptape.events import EventBus, TextChunkEvent, FinishTaskEvent
 from griptape.memory.structure import ConversationMemory
-from griptape.tasks import PromptTask
+from griptape.structures import Agent
 
 from griptape_nodes.retained_mode.events.agent_events import (
     ConfigureAgentRequest,
@@ -18,11 +19,14 @@ from griptape_nodes.retained_mode.events.agent_events import (
     RunAgentRequest,
     RunAgentResultFailure,
     RunAgentResultSuccess,
+    AgentStreamEvent,
 )
-from griptape_nodes.retained_mode.events.base_events import ResultPayload
+from griptape_nodes.retained_mode.events.base_events import ResultPayload, ExecutionGriptapeNodeEvent, ExecutionEvent
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+from griptape_nodes.retained_mode.events.execution_events import ControlFlowCancelledEvent
+
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -53,21 +57,31 @@ class AgentManager:
         if not api_key:
             msg = f"Secret '{API_KEY_ENV_VAR}' not found"
             raise ValueError(msg)
-        return GriptapeCloudPromptDriver(api_key=api_key)
+        return GriptapeCloudPromptDriver(api_key=api_key, stream=True)
 
     def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         try:
             if self.prompt_driver is None:
                 self.prompt_driver = self._initialize_prompt_driver()
-            task_output = PromptTask(
-                request.input, prompt_driver=self.prompt_driver, conversation_memory=self.conversation_memory
-            ).run()
-            if isinstance(task_output, ErrorArtifact):
-                details = f"Error running agent: {task_output.value}"
-                logger.error(details)
-                return RunAgentResultFailure(error=task_output.to_json())
-            return RunAgentResultSuccess(output=task_output.to_json())
+            agent = Agent(prompt_driver=self.prompt_driver, conversation_memory=self.conversation_memory)
+            *events, last_event = agent.run_stream(request.input)
+            for event in events:
+                if isinstance(event, TextChunkEvent):
+                    EventBus.publish_event(
+                        ExecutionGriptapeNodeEvent(
+                            wrapped_event=ExecutionEvent(payload=AgentStreamEvent(token=event.token))
+                        )
+                    )
+            if isinstance(last_event, FinishTaskEvent):
+                if isinstance(last_event.task_output, ErrorArtifact):
+                    return RunAgentResultFailure(last_event.task_output)
+                else:
+                    return RunAgentResultSuccess(last_event.task_output)
+            else:
+                logger.error(f"Unexpected final event type: {type(last_event)}")
+                return RunAgentResultFailure(ErrorArtifact(last_event).to_json())
         except Exception as e:
+            logger.error(f"Error running agent: {e}")
             return RunAgentResultFailure(ErrorArtifact(e).to_json())
 
     def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
