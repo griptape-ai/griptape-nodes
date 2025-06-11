@@ -321,9 +321,12 @@ class NodeManager:
 
         if isinstance(node, StartLoopNode) and not request.initial_setup:
             # If it's StartLoop, create an EndLoop and connect it to the StartLoop.
+            start_node_name = node.name
+            end_node_name = start_node_name.replace("Start", "End")
             end_loop = GriptapeNodes.handle_request(
                 CreateNodeRequest(
                     node_type="ForEachEndNode",
+                    node_name=end_node_name,
                     metadata={
                         "position": {"x": node.metadata["position"]["x"] + 650, "y": node.metadata["position"]["y"]}
                     },

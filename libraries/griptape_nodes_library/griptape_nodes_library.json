@@ -1068,8 +1068,25 @@
         "description": "Loads a GLTF file into your workflow",
         "display_name": "Load GLTF"
       }
+    },
+    {
+      "class_name": "ForLoopStartNode",
+      "file_path": "griptape_nodes_library/execution/for_loop_start.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Start node for iterating through a range of numbers with a specified step value",
+        "display_name": "For Loop Start"
+      }
+    },
+    {
+      "class_name": "ForLoopEndNode",
+      "file_path": "griptape_nodes_library/execution/for_loop_end.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "End node that completes a loop iteration and connects back to the ForLoopStartNode",
+        "display_name": "For Loop End"
+      }
     }
-    
   ],
   "workflows": [
     "workflows/templates/prompt_an_image.py",
