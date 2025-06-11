@@ -2,11 +2,12 @@ import logging
 
 from griptape.artifacts import ErrorArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.events import EventBus, TextChunkEvent, FinishTaskEvent
+from griptape.events import EventBus, FinishTaskEvent, TextChunkEvent
 from griptape.memory.structure import ConversationMemory
 from griptape.structures import Agent
 
 from griptape_nodes.retained_mode.events.agent_events import (
+    AgentStreamEvent,
     ConfigureAgentRequest,
     ConfigureAgentResultFailure,
     ConfigureAgentResultSuccess,
@@ -19,14 +20,11 @@ from griptape_nodes.retained_mode.events.agent_events import (
     RunAgentRequest,
     RunAgentResultFailure,
     RunAgentResultSuccess,
-    AgentStreamEvent,
 )
-from griptape_nodes.retained_mode.events.base_events import ResultPayload, ExecutionGriptapeNodeEvent, ExecutionEvent
+from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ResultPayload
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-from griptape_nodes.retained_mode.events.execution_events import ControlFlowCancelledEvent
-
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -75,13 +73,13 @@ class AgentManager:
             if isinstance(last_event, FinishTaskEvent):
                 if isinstance(last_event.task_output, ErrorArtifact):
                     return RunAgentResultFailure(last_event.task_output)
-                else:
-                    return RunAgentResultSuccess(last_event.task_output)
-            else:
-                logger.error(f"Unexpected final event type: {type(last_event)}")
-                return RunAgentResultFailure(ErrorArtifact(last_event).to_json())
+                return RunAgentResultSuccess(last_event.task_output)
+            err_msg = f"Unexpected final event type: {type(last_event)}"
+            logger.error(err_msg)
+            return RunAgentResultFailure(ErrorArtifact(last_event).to_json())
         except Exception as e:
-            logger.error(f"Error running agent: {e}")
+            err_msg = f"Error running agent: {e}"
+            logger.error(err_msg)
             return RunAgentResultFailure(ErrorArtifact(e).to_json())
 
     def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
