@@ -135,6 +135,7 @@ class PaintMask(DataNode):
     def _update_existing_mask(
         self, output_mask_value: Any, image_artifact: ImageUrlArtifact, modified_parameters_set: set[str]
     ) -> None:
+        # If we have a dict representation, check if it's been edited
         if isinstance(output_mask_value, dict):
             if "meta" not in output_mask_value:
                 output_mask_value["meta"] = {}
@@ -142,15 +143,26 @@ class PaintMask(DataNode):
             self.set_parameter_value("output_mask", output_mask_value)
             modified_parameters_set.add("output_mask")
         else:
-            mask_url = output_mask_value.value
-            response = httpx.get(mask_url, timeout=30)
-            response.raise_for_status()
-            mask_content = response.content
-            new_mask_filename = f"mask_{uuid.uuid4()}.png"
-            mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_content, new_mask_filename)
-            mask_artifact = ImageUrlArtifact(mask_url, meta={"source_image_url": image_artifact.value})
-            self.set_parameter_value("output_mask", mask_artifact)
-            modified_parameters_set.add("output_mask")
+            # For ImageUrlArtifact, check if it's been edited
+            meta = getattr(output_mask_value, "meta", {})
+            if isinstance(meta, dict) and meta.get("maskEdited", False):
+                # If mask was edited, keep it but update source image URL
+                mask_url = output_mask_value.value
+                response = httpx.get(mask_url, timeout=30)
+                response.raise_for_status()
+                mask_content = response.content
+                new_mask_filename = f"mask_{uuid.uuid4()}.png"
+                mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_content, new_mask_filename)
+                mask_artifact = ImageUrlArtifact(
+                    mask_url, meta={"source_image_url": image_artifact.value, "maskEdited": True}
+                )
+                self.set_parameter_value("output_mask", mask_artifact)
+                modified_parameters_set.add("output_mask")
+            else:
+                # If mask wasn't edited, generate a new one
+                self._create_new_mask(image_artifact, modified_parameters_set)
+                return
+
             self._apply_mask_to_input(image_artifact, mask_artifact)
             modified_parameters_set.add("output_image")
 
