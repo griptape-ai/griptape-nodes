@@ -187,6 +187,9 @@ GriptapeNodes/
 # Generated Output
 request_payload_schemas.json
 
+# Profile Output
+profiles/
+
 # JetBrains
 .idea/
 
