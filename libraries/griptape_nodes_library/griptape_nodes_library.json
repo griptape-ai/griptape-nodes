@@ -782,15 +782,6 @@
       }
     },
     {
-      "class_name": "CreateTextList",
-      "file_path": "griptape_nodes_library/text/create_text_list.py",
-      "metadata": {
-        "category": "text",
-        "description": "Create a list of text items",
-        "display_name": "Create Text List"
-      }
-    },
-    {
       "class_name": "DateAndTime",
       "file_path": "griptape_nodes_library/text/date_and_time.py",
       "metadata": {
