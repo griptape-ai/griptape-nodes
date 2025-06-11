@@ -23,16 +23,12 @@ class Template(ControlNode):
             )
         )
         self.add_parameter(
-            ParameterList(
+            Parameter(
             name="template_parameters",
-            input_types=["str"],
-            tooltip="List of parameters for template",
+            input_types=["dict"],
+            tooltip="Dict of parameters for template",
             default_value=None,
             allowed_modes={ParameterMode.PROPERTY, ParameterMode.INPUT},
-            ui_options={
-                "multiline": True,
-                "placeholder_text": "Format: parameter_name:parameter_value." \
-            }
          )
     )
                 # Output parameter example
@@ -59,9 +55,6 @@ class Template(ControlNode):
         if param_list is None:
             exceptions.append(ValueError("No parameters provided"))
             return exceptions
-        for param in param_list:
-            if param.count(":") != 1:
-                exceptions.append(ValueError(f"Invalid parameter - {param} \nPlease use the format: parameter_name:parameter_value"))
 
         return exceptions if exceptions else None
 
@@ -70,17 +63,17 @@ class Template(ControlNode):
         # Get template value to validate
         template = self.get_parameter_value("template")
         # Add parameter for each template variable found
-        param_list = self.get_parameter_value("template_parameters")
-        param_dict = {}
+        param_dict = self.get_parameter_value("template_parameters")
         output = ""
-        for param in param_list:
-            param_name, param_value = param.split(":")
-            param_dict[param_name] = param_value
         # Set output value
         if output == "":
             try:
                 output = template.format(**param_dict)
             except Exception as e:
-                output = (f"Although {e} seems to be in the template, it's not found in the parameters you provided.")
-                raise ValueError(output)
+                if isinstance(e, KeyError):
+                    output = (f"Although {e} seems to be in the template, it's not found in the parameters you provided.")
+                    raise KeyError(output)
+                else:
+                    output = (f"An error occurred: {e}. \nPlease check your template and parameters.")
+                    raise ValueError(output)
         self.parameter_output_values["output"] = output

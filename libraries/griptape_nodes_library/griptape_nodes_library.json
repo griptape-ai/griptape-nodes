@@ -241,6 +241,15 @@
       }
     },
     {
+      "class_name": "Template",
+      "file_path": "griptape_nodes_library/agents/template.py",
+      "metadata": {
+        "category": "agents",
+        "description": "Creates an AI agent with conversation memory and the ability to use tools",
+        "display_name": "Template"
+      }
+    },
+    {
       "class_name": "LoadAudio",
       "file_path": "griptape_nodes_library/audio/load_audio.py",
       "metadata": {

@@ -50,6 +50,15 @@ class StartFlow(StartNode):
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             )
         )
+        self.add_parameter(
+            ParameterList(
+                name="dict",
+                input_types=["dict"],
+                default_value=None,
+                tooltip="",
+                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            )
+        )
 
     def process(self) -> None:
         pass
