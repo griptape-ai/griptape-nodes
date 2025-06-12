@@ -659,30 +659,21 @@
       }
     },
     {
-      "class_name": "DescribeImage",
-      "file_path": "griptape_nodes_library/image/describe_image.py",
-      "metadata": {
-        "category": "image",
-        "description": "Can be used to describe an image",
-        "display_name": "Describe Image"
-      }
-    },
-    {
-      "class_name": "MergeImages",
-      "file_path": "griptape_nodes_library/image/merge_images.py",
-      "metadata": {
-        "category": "image",
-        "description": "Merge images together in different layouts with grid options and dynamic image input list",
-        "display_name": "Merge Images"
-      }
-    },
-    {
       "class_name": "CompareImages",
       "file_path": "griptape_nodes_library/image/compare_images.py",
       "metadata": {
         "category": "image",
         "description": "Can be used to compare two images",
         "display_name": "Compare Images"
+      }
+    },
+    {
+      "class_name": "DescribeImage",
+      "file_path": "griptape_nodes_library/image/describe_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Can be used to describe an image",
+        "display_name": "Describe Image"
       }
     },
     {
@@ -695,6 +686,15 @@
       }
     },
     {
+      "class_name": "DisplayMask",
+      "file_path": "griptape_nodes_library/image/display_mask.py",
+      "metadata": {
+        "category": "image",
+        "description": "Create a mask from an image's alpha channel.",
+        "display_name": "Display Mask"
+      }
+    },
+    {
       "class_name": "GenerateImage",
       "file_path": "griptape_nodes_library/image/create_image.py",
       "metadata": {
@@ -704,12 +704,30 @@
       }
     },
     {
+      "class_name": "InvertMask",
+      "file_path": "griptape_nodes_library/image/invert_mask.py",
+      "metadata": {
+        "category": "image",
+        "description": "Invert a mask image.",
+        "display_name": "Invert Mask"
+      }
+    },
+    {
       "class_name": "LoadImage",
       "file_path": "griptape_nodes_library/image/load_image.py",
       "metadata": {
         "category": "image",
         "description": "Loads an image from disk",
         "display_name": "Load Image"
+      }
+    },
+    {
+      "class_name": "MergeImages",
+      "file_path": "griptape_nodes_library/image/merge_images.py",
+      "metadata": {
+        "category": "image",
+        "description": "Merge images together in different layouts with grid options and dynamic image input list",
+        "display_name": "Merge Images"
       }
     },
     {
