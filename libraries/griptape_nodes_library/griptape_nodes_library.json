@@ -506,15 +506,6 @@
       }
     },
     {
-      "class_name": "CreateTextList",
-      "file_path": "griptape_nodes_library/text/create_text_list.py",
-      "metadata": {
-        "category": "text",
-        "description": "Creates a list of text items",
-        "display_name": "Create Text List"
-      }
-    },
-    {
       "class_name": "ToText",
       "file_path": "griptape_nodes_library/convert/to_text.py",
       "metadata": {
