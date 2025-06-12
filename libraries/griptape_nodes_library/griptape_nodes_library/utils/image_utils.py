@@ -1,8 +1,10 @@
 import base64
 import io
 import uuid
+from io import BytesIO
 from urllib.error import URLError
 
+import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.loaders import ImageLoader
 from PIL import Image
@@ -45,6 +47,36 @@ def save_pil_image_to_static_file(image: Image.Image, image_format: str = "PNG")
     url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, filename)
 
     return ImageUrlArtifact(url)
+
+
+def load_pil_from_url(url: str) -> Image.Image:
+    """Load image from URL using httpx."""
+    response = httpx.get(url, timeout=30)
+    response.raise_for_status()
+    return Image.open(BytesIO(response.content))
+
+
+def create_alpha_mask(image: Image.Image) -> Image.Image:
+    """Create a mask from an image's alpha channel.
+
+    Args:
+        image: PIL Image to create mask from
+
+    Returns:
+        PIL Image with black background and white mask
+    """
+    # Convert to RGBA if needed
+    if image.mode != "RGBA":
+        image = image.convert("RGBA")
+
+    # Extract alpha channel
+    mask = image.getchannel("A")
+
+    # Convert to RGB (black background with white mask)
+    mask_rgb = Image.new("RGB", mask.size, (0, 0, 0))
+    mask_rgb.paste((255, 255, 255), mask=mask)
+
+    return mask_rgb
 
 
 def load_image_from_url_artifact(image_url_artifact: ImageUrlArtifact) -> ImageArtifact:
