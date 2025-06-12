@@ -112,6 +112,7 @@ def _run_init(config: InitConfig) -> None:
     # Sync libraries
     if config.libraries_sync is not False:
         _sync_libraries()
+
     console.print("[bold green]Initialization complete![/bold green]")
 
 
@@ -128,26 +129,34 @@ def _gather_init_configuration(config: InitConfig) -> dict[str, Any]:
     api_key = config.api_key
     storage_backend = config.storage_backend
     register_advanced_library = config.register_advanced_library
+    bucket_name = config.bucket_name
     storage_backend_bucket_id = None
+
+    # Init/apply API key first since other values (buckets) may depend on it
+    if config.interactive:
+        api_key = _prompt_for_api_key(default_api_key=api_key)
+
+    if api_key is not None:
+        secrets_manager.set_secret("GT_CLOUD_API_KEY", api_key)
+        console.print("[bold green]Griptape API Key set")
 
     if config.interactive:
         workspace_directory = _prompt_for_workspace(default_workspace_directory=workspace_directory)
-        api_key = _prompt_for_api_key(default_api_key=api_key)
+
         storage_backend = _prompt_for_storage_backend(default_storage_backend=storage_backend)
         if storage_backend == "gtc":
-            storage_backend_bucket_id = _prompt_for_gtc_bucket_name(default_bucket_name=config.bucket_name)
+            storage_backend_bucket_id = _prompt_for_gtc_bucket_name(default_bucket_name=bucket_name)
         register_advanced_library = _prompt_for_advanced_media_library(
             default_prompt_for_advanced_media_library=register_advanced_library
         )
 
-    if storage_backend == "gtc" and config.bucket_name:
-        # Handle GTC bucket resolution for non-interactive mode with bucket name
-        storage_backend_bucket_id = _get_or_create_bucket_id(config.bucket_name)
+    if not config.interactive and storage_backend == "gtc" and bucket_name is not None:
+        storage_backend_bucket_id = _get_or_create_bucket_id(bucket_name)
 
     return {
         "workspace_directory": workspace_directory,
-        "api_key": api_key,
         "storage_backend": storage_backend,
+        "bucket_name": bucket_name,
         "storage_backend_bucket_id": storage_backend_bucket_id,
         "register_advanced_library": register_advanced_library,
     }
@@ -169,10 +178,6 @@ def _apply_init_configuration(
     if config_data["workspace_directory"] is not None:
         config_manager.set_config_value("workspace_directory", config_data["workspace_directory"])
         console.print(f"[bold green]Workspace directory set to: {config_data['workspace_directory']}[/bold green]")
-
-    if config_data["api_key"] is not None:
-        secrets_manager.set_secret("GT_CLOUD_API_KEY", config_data["api_key"])
-        console.print("[bold green]Griptape API Key set")
 
     if config_data["storage_backend"] is not None:
         config_manager.set_config_value("storage_backend", config_data["storage_backend"])
@@ -432,31 +437,28 @@ def _get_griptape_cloud_buckets_and_display_table() -> tuple[list[str], dict[str
     Returns:
         tuple: (bucket_names, name_to_id_mapping, display_table)
     """
-    url = f"{GT_CLOUD_BASE_URL}/api/buckets"
-    headers = {
-        "Authorization": f"Bearer {secrets_manager.get_secret('GT_CLOUD_API_KEY')}",
-    }
+    api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY")
     bucket_names: list[str] = []
     name_to_id: dict[str, str] = {}
+
+    if api_key is None:
+        msg = "Griptape Cloud API Key not found."
+        raise RuntimeError(msg)
 
     table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True, expand=True)
     table.add_column("Bucket Name", style="green")
     table.add_column("Bucket ID", style="green")
 
-    with httpx.Client() as client:
-        response = client.get(url, headers=headers)
-        try:
-            response.raise_for_status()
-            data = response.json()
-            for bucket in data["buckets"]:
-                bucket_name = bucket["name"]
-                bucket_id = bucket["bucket_id"]
-                bucket_names.append(bucket_name)
-                name_to_id[bucket_name] = bucket_id
-                table.add_row(bucket_name, bucket_id)
-
-        except httpx.HTTPStatusError as e:
-            console.print(f"[red]Error fetching buckets: {e}[/red]")
+    try:
+        buckets = GriptapeCloudStorageDriver.list_buckets(base_url=GT_CLOUD_BASE_URL, api_key=api_key)
+        for bucket in buckets:
+            bucket_name = bucket["name"]
+            bucket_id = bucket["bucket_id"]
+            bucket_names.append(bucket_name)
+            name_to_id[bucket_name] = bucket_id
+            table.add_row(bucket_name, bucket_id)
+    except RuntimeError as e:
+        console.print(f"[red]Error fetching buckets: {e}[/red]")
 
     return bucket_names, name_to_id, table
 
@@ -481,7 +483,7 @@ Select a Griptape Cloud Bucket to use for storage. This is the location where Gr
     while True:
         # Prompt user for bucket name
         selected_bucket_name = Prompt.ask(
-            "Enter bucket name:",
+            "Enter bucket name",
             default=default_bucket_name,
             show_default=bool(default_bucket_name),
         )

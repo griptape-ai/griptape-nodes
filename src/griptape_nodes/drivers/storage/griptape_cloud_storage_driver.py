@@ -134,3 +134,27 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         logger.info("Created new Griptape Cloud bucket '%s' with ID: %s", bucket_name, bucket_id)
         return bucket_id
+
+    @staticmethod
+    def list_buckets(*, base_url: str, api_key: str) -> list[dict]:
+        """List all buckets in Griptape Cloud.
+
+        Args:
+            base_url: The base URL for the Griptape Cloud API.
+            api_key: The API key for authentication.
+
+        Returns:
+            A list of dictionaries containing bucket information.
+        """
+        headers = {"Authorization": f"Bearer {api_key}"}
+        url = urljoin(base_url, "/api/buckets")
+
+        try:
+            response = httpx.get(url, headers=headers)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = f"Failed to list buckets: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+
+        return response.json().get("buckets", [])
