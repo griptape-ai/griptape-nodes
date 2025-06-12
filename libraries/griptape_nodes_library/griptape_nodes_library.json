@@ -690,7 +690,7 @@
       "file_path": "griptape_nodes_library/image/display_mask.py",
       "metadata": {
         "category": "image",
-        "description": "Create a mask from an image's alpha channel.",
+        "description": "Display a mask from an image's alpha channel.",
         "display_name": "Display Mask"
       }
     },
