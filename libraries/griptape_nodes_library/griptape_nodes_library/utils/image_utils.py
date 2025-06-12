@@ -2,7 +2,6 @@ import base64
 import io
 import uuid
 from io import BytesIO
-from typing import Any
 from urllib.error import URLError
 
 import httpx
@@ -55,13 +54,6 @@ def load_pil_from_url(url: str) -> Image.Image:
     response = httpx.get(url, timeout=30)
     response.raise_for_status()
     return Image.open(BytesIO(response.content))
-
-
-def normalize_image_input(value: Any) -> ImageUrlArtifact:
-    """Normalize various image input types to ImageUrlArtifact."""
-    if isinstance(value, dict):
-        return dict_to_image_url_artifact(value)
-    return value
 
 
 def create_alpha_mask(image: Image.Image) -> Image.Image:

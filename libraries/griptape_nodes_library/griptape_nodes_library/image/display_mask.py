@@ -6,8 +6,8 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes_library.utils.image_utils import (
     create_alpha_mask,
+    dict_to_image_url_artifact,
     load_pil_from_url,
-    normalize_image_input,
     save_pil_image_to_static_file,
 )
 
@@ -48,7 +48,8 @@ class DisplayMask(DataNode):
             return
 
         # Normalize input to ImageUrlArtifact
-        input_image = normalize_image_input(input_image)
+        if isinstance(input_image, dict):
+            input_image = dict_to_image_url_artifact(input_image)
 
         # Create mask from image
         self._create_mask(input_image)
@@ -72,7 +73,10 @@ class DisplayMask(DataNode):
 
     def _handle_input_image_change(self, value: Any, modified_parameters_set: set[str]) -> None:
         # Normalize input image to ImageUrlArtifact
-        image_artifact = normalize_image_input(value)
+        if isinstance(value, dict):
+            image_artifact = dict_to_image_url_artifact(value)
+        else:
+            image_artifact = value
 
         # Create mask from image
         self._create_mask(image_artifact)
