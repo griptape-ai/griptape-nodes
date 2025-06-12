@@ -15,7 +15,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
     def __init__(
         self,
         *,
-        bucket_id: str | None = None,
+        bucket_id: str,
         base_url: str | None = None,
         api_key: str | None = None,
         headers: dict | None = None,
@@ -23,7 +23,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         """Initialize the GriptapeCloudStorageDriver.
 
         Args:
-            bucket_id: The ID of the bucket to use. If not provided, a new bucket will be provisioned.
+            bucket_id: The ID of the bucket to use. Required.
             base_url: The base URL for the Griptape Cloud API. If not provided, it will be retrieved from the environment variable "GT_CLOUD_BASE_URL" or default to "https://cloud.griptape.ai".
             api_key: The API key for authentication. If not provided, it will be retrieved from the environment variable "GT_CLOUD_API_KEY".
             headers: Additional headers to include in the requests. If not provided, the default headers will be used.
@@ -83,3 +83,36 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             raise ValueError(msg) from e
 
         return response.json()["name"]
+
+    @staticmethod
+    def create_bucket(bucket_name: str, *, base_url: str, api_key: str) -> str:
+        """Create a new bucket in Griptape Cloud.
+
+        Args:
+            bucket_name: Name for the bucket.
+            base_url: The base URL for the Griptape Cloud API.
+            api_key: The API key for authentication.
+
+        Returns:
+            The bucket ID of the created bucket.
+
+        Raises:
+            RuntimeError: If bucket creation fails.
+        """
+        headers = {"Authorization": f"Bearer {api_key}"}
+        url = urljoin(base_url, "/api/buckets")
+        payload = {"name": bucket_name}
+
+        try:
+            response = httpx.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = f"Failed to create bucket '{bucket_name}': {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+
+        response_data = response.json()
+        bucket_id = response_data["bucket_id"]
+
+        logger.info("Created new Griptape Cloud bucket '%s' with ID: %s", bucket_name, bucket_id)
+        return bucket_id
