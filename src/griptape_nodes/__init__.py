@@ -54,6 +54,7 @@ ENV_REGISTER_ADVANCED_LIBRARY = (
     if os.getenv("GTN_REGISTER_ADVANCED_LIBRARY") is not None
     else None
 )
+ENV_NO_ASSETS_SYNC = os.getenv("GTN_NO_ASSETS_SYNC", "false").lower() == "true"
 
 
 config_manager = ConfigManager()
@@ -85,6 +86,7 @@ def _run_init(  # noqa: PLR0913, C901
     register_advanced_library: bool | None = None,
     config_values: dict[str, Any] | None = None,
     secret_values: dict[str, str] | None = None,
+    no_assets_sync: bool = False,
 ) -> None:
     """Runs through the engine init steps.
 
@@ -97,6 +99,7 @@ def _run_init(  # noqa: PLR0913, C901
         register_advanced_library (bool | None): Whether to register the advanced library.
         config_values (dict[str, any] | None): Arbitrary config key-value pairs to set.
         secret_values (dict[str, str] | None): Arbitrary secret key-value pairs to set.
+        no_assets_sync (bool): If True, skips the assets sync during initialization.
     """
     __init_system_config()
 
@@ -148,7 +151,8 @@ def _run_init(  # noqa: PLR0913, C901
             secrets_manager.set_secret(key, value)
             console.print(f"[bold green]Secret '{key}' set[/bold green]")
 
-    _sync_assets()
+    if no_assets_sync:
+        _sync_assets()
     console.print("[bold green]Initialization complete![/bold green]")
 
 
@@ -170,6 +174,7 @@ def _start_engine(*, no_update: bool = False) -> None:
             interactive=True,
             config_values=None,
             secret_values=None,
+            no_assets_sync=ENV_NO_ASSETS_SYNC,
         )
 
     # Confusing double negation -- If `no_update` is set, we want to skip the update
@@ -243,6 +248,11 @@ def _get_args() -> argparse.Namespace:
         action="append",
         metavar="KEY=VALUE",
         help="Set arbitrary secret values as key=value pairs (can be used multiple times). Example: --secret MY_API_KEY=abc123 --secret OTHER_KEY=xyz789",
+    )
+    init_parser.add_argument(
+        "--no-assets-sync",
+        action="store_true",
+        help="Skip asset synchronization during initialization.",
     )
 
     # engine
@@ -710,6 +720,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
             register_advanced_library=args.register_advanced_library,
             config_values=config_values,
             secret_values=secret_values,
+            no_assets_sync=args.no_assets_sync,
         )
     elif args.command == "engine":
         _start_engine(no_update=args.no_update)
