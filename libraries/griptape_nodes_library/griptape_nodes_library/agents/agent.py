@@ -435,6 +435,8 @@ class Agent(ControlNode):
                 model_input = DEFAULT_MODEL
             # Get the appropriate args
             args = next((model["args"] for model in MODEL_CHOICES_ARGS if model["name"] == model_input), {})
+            # Remove any None values from args
+            args = {k: v for k, v in args.items() if v is not None}
             prompt_driver = GriptapeCloudPromptDriver(
                 model=model_input, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), **args
             )
