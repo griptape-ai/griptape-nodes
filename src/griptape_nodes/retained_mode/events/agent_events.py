@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from griptape.memory.structure import Run
 
 from griptape_nodes.retained_mode.events.base_events import (
+    ExecutionPayload,
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
@@ -81,3 +82,9 @@ class ResetAgentConversationMemoryResultSuccess(WorkflowNotAlteredMixin, ResultP
 @PayloadRegistry.register
 class ResetAgentConversationMemoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
+
+
+@dataclass
+@PayloadRegistry.register
+class AgentStreamEvent(ExecutionPayload):
+    token: str
