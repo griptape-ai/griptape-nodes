@@ -462,23 +462,34 @@ class LibraryManager:
                     pip_install_flags = []
                 pip_dependencies = library_data.metadata.dependencies.pip_dependencies
 
-                # Grab the python executable from the virtual environment so that we can pip install there
-                library_venv_python_path = self._get_library_venv_python_path(library_data.name, file_path)
-                subprocess.run(  # noqa: S603
-                    [
-                        sys.executable,
-                        "-m",
-                        "uv",
-                        "pip",
-                        "install",
-                        *pip_dependencies,
-                        *pip_install_flags,
-                        "--python",
-                        str(library_venv_python_path),
-                    ],
-                    check=True,
-                    text=True,
-                )
+                # Determine venv path for checking ownership
+                venv_path = self._get_library_venv_path(library_data.name, file_path)
+
+                # Only install dependencies if conditions are met
+                if self._should_install_dependencies(venv_path):
+                    # Grab the python executable from the virtual environment so that we can pip install there
+                    library_venv_python_path = self._init_library_venv(venv_path)
+                    subprocess.run(  # noqa: S603
+                        [
+                            sys.executable,
+                            "-m",
+                            "uv",
+                            "pip",
+                            "install",
+                            *pip_dependencies,
+                            *pip_install_flags,
+                            "--python",
+                            str(library_venv_python_path),
+                        ],
+                        check=True,
+                        text=True,
+                    )
+                else:
+                    logger.debug(
+                        "Skipping dependency installation for library '%s' - venv exists at %s and is not owned by current user",
+                        library_data.name,
+                        venv_path,
+                    )
         except subprocess.CalledProcessError as e:
             # Failed to create the library
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
@@ -564,19 +575,30 @@ class LibraryManager:
     ) -> ResultPayload:
         package_name = Requirement(request.requirement_specifier).name
         try:
-            library_python_venv_path = self._get_library_venv_python_path(package_name, None)
-            subprocess.run(  # noqa: S603
-                [
-                    uv.find_uv_bin(),
-                    "pip",
-                    "install",
-                    request.requirement_specifier,
-                    "--python",
-                    library_python_venv_path,
-                ],
-                check=True,
-                text=True,
-            )
+            # Determine venv path for checking ownership
+            venv_path = self._get_library_venv_path(package_name, None)
+
+            # Only install dependencies if conditions are met
+            if self._should_install_dependencies(venv_path):
+                library_python_venv_path = self._init_library_venv(venv_path)
+                subprocess.run(  # noqa: S603
+                    [
+                        uv.find_uv_bin(),
+                        "pip",
+                        "install",
+                        request.requirement_specifier,
+                        "--python",
+                        library_python_venv_path,
+                    ],
+                    check=True,
+                    text=True,
+                )
+            else:
+                logger.debug(
+                    "Skipping dependency installation for package '%s' - venv exists at %s and is not owned by current user",
+                    package_name,
+                    venv_path,
+                )
         except subprocess.CalledProcessError as e:
             details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to {e}"
             logger.error(details)
@@ -592,19 +614,19 @@ class LibraryManager:
 
         return RegisterLibraryFromRequirementSpecifierResultSuccess(library_name=request.requirement_specifier)
 
-    def _get_library_venv_python_path(self, library_name: str, library_file_path: str | None = None) -> Path:
+    def _init_library_venv(self, library_venv_path: Path) -> Path:
+        """Initialize a virtual environment for the library.
+
+        If the virtual environment already exists, it will not be recreated.
+
+        Args:
+            library_venv_path: Path to the virtual environment directory
+
+        Returns:
+            Path to the Python executable in the virtual environment
+        """
         # Create a virtual environment for the library
         python_version = platform.python_version()
-
-        clean_library_name = library_name.replace(" ", "_").strip()
-
-        if library_file_path is not None:
-            # Create venv relative to the library.json file
-            library_dir = Path(library_file_path).parent.absolute()
-            library_venv_path = library_dir / ".venv"
-        else:
-            # Else, create venv relative to the xdg data home
-            library_venv_path = xdg_data_home() / "griptape_nodes" / "libraries" / clean_library_name / ".venv"
 
         if library_venv_path.exists():
             logger.debug("Virtual environment already exists at %s", library_venv_path)
@@ -634,6 +656,69 @@ class LibraryManager:
         sys.path.insert(0, site_packages)
 
         return library_venv_python_path
+
+    def _get_library_venv_path(self, library_name: str, library_file_path: str | None = None) -> Path:
+        """Get the path to the virtual environment directory for a library.
+
+        Args:
+            library_name: Name of the library
+            library_file_path: Optional path to the library JSON file
+
+        Returns:
+            Path to the virtual environment directory
+        """
+        clean_library_name = library_name.replace(" ", "_").strip()
+
+        if library_file_path is not None:
+            # Create venv relative to the library.json file
+            library_dir = Path(library_file_path).parent.absolute()
+            return library_dir / ".venv"
+
+        # Create venv relative to the xdg data home
+        return xdg_data_home() / "griptape_nodes" / "libraries" / clean_library_name / ".venv"
+
+    def _check_venv_ownership(self, venv_path: Path) -> bool:
+        """Check if the current user owns the virtual environment directory.
+
+        Args:
+            venv_path: Path to the virtual environment directory
+
+        Returns:
+            True if the current user owns the venv, False otherwise
+        """
+        # On Windows, permission checks are hard. Assume we can write to the venv
+        if OSManager.is_windows():
+            return True
+
+        try:
+            # Get the current user's UID
+            current_uid = os.getuid()
+
+            # Get the venv directory's ownership info
+            venv_stat = venv_path.stat()
+            venv_owner_uid = venv_stat.st_uid
+        except (OSError, AttributeError) as e:
+            # If there's an error accessing the file, assume we don't own it
+            logger.debug("Could not check venv ownership for %s: %s", venv_path, e)
+            return False
+        else:
+            return current_uid == venv_owner_uid
+
+    def _should_install_dependencies(self, venv_path: Path) -> bool:
+        """Determine if dependencies should be installed based on venv existence and ownership.
+
+        Args:
+            venv_path: Path to the virtual environment directory
+
+        Returns:
+            True if dependencies should be installed, False otherwise
+        """
+        # Condition 1: There is no venv
+        if not venv_path.exists():
+            return True
+
+        # Condition 2: There is a venv AND we own it
+        return self._check_venv_ownership(venv_path)
 
     def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
         try:
