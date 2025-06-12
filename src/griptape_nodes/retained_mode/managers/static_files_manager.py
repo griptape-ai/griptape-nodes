@@ -58,9 +58,13 @@ class StaticFilesManager:
                     logger.error(msg)
                     raise ValueError(msg)
 
+                static_files_directory = config_manager.get_config_value(
+                    "static_files_directory", default="staticfiles"
+                )
                 self.storage_driver = GriptapeCloudStorageDriver(
                     bucket_id=bucket_id,
                     api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"),
+                    static_files_directory=static_files_directory,
                 )
             case "local":
                 self.storage_driver = LocalStorageDriver()
