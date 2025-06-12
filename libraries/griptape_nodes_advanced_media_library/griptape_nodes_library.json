@@ -13,9 +13,10 @@
     "dependencies": {
       "pip_dependencies": [
         "accelerate>=1.6.0",
+        "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "imageio-ffmpeg>=0.6.0",
-        "diffusers>=0.33.1",
+        "git+https://github.com/huggingface/diffusers.git@b6f793304437120239d4b942cac623b0ea86039b",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
         "peft>=0.15.2",
@@ -31,7 +32,8 @@
         "tqdm>=4.67.1",
         "protobuf>=6.31.0",
         "prodigyopt>=1.1.2; sys_platform == 'win32'",
-        "bitsandbytes>=0.46.0; sys_platform == 'win32'"
+        "bitsandbytes>=0.46.0; sys_platform == 'win32'",
+        "ftfy>=6.3.1"
       ],
       "pip_install_flags": [
         "--preview",
@@ -219,6 +221,78 @@
         "category": "image/flux/loras",
         "description": "TrainFluxLora node.",
         "display_name": "Train Flux Lora"
+      }
+    },
+    {
+      "class_name": "AllegroPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/allegro/allegro_pipeline.py",
+      "metadata": {
+        "category": "video/allegro",
+        "description": "Generate a video with Allegro via 🤗 Diffusers.",
+        "display_name": "Allegro"
+      }
+    },
+    {
+      "class_name": "AmusedPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_pipeline.py",
+      "metadata": {
+        "category": "image/amused",
+        "description": "Generate an Image with aMUSEd via 🤗 Diffusers.",
+        "display_name": "aMUSEd"
+      }
+    },
+    {
+      "class_name": "AmusedImg2ImgPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_img2img_pipeline.py",
+      "metadata": {
+        "category": "image/amused",
+        "description": "Generate Image Variations with aMUSEd via 🤗 Diffusers.",
+        "display_name": "aMUSEd Img2Img"
+      }
+    },
+    {
+      "class_name": "AmusedInpaintPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_inpaint_pipeline.py",
+      "metadata": {
+        "category": "image/amused",
+        "description": "Inpaint Images with aMUSEd via 🤗 Diffusers.",
+        "display_name": "aMUSEd Inpaint"
+      }
+    },
+    {
+      "class_name": "StableDiffusionPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion/stable_diffusion_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion",
+        "description": "Generate images with Stable Diffusion via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion"
+      }
+    },
+    {
+      "class_name": "StableDiffusion3Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_3/stable_diffusion_3_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_3",
+        "description": "Generate images with Stable Diffusion 3 via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion 3"
+      }
+    },
+    {
+      "class_name": "StableDiffusionAttendAndExcitePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_attend_and_excite/stable_diffusion_attend_and_excite_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_attend_and_excite",
+        "description": "Generate images with enhanced attention control via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion Attend and Excite"
+      }
+    },
+    {
+      "class_name": "StableDiffusionDiffeditPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_diffedit/stable_diffusion_diffedit_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_diffedit",
+        "description": "Edit images using DiffEdit technique via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion DiffEdit"
       }
     }
   ]

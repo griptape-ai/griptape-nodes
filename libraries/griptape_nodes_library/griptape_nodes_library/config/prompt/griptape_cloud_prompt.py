@@ -34,11 +34,6 @@ MODEL_CHOICES_ARGS = [
         "args": {"stream": True, "structured_output_strategy": "tool", "max_tokens": 64000},
     },
     {
-        "name": "claude-3-5-sonnet",
-        "icon": "logos/anthropic.svg",
-        "args": {"stream": True, "structured_output_strategy": "tool", "max_tokens": 64000},
-    },
-    {
         "name": "deepseek.r1-v1",
         "icon": "logos/deepseek.svg",
         "args": {"stream": False, "structured_output_strategy": "tool", "top_p": None},

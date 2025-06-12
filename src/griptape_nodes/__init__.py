@@ -54,6 +54,9 @@ ENV_REGISTER_ADVANCED_LIBRARY = (
     if os.getenv("GTN_REGISTER_ADVANCED_LIBRARY") is not None
     else None
 )
+ENV_ASSETS_SYNC = (
+    os.getenv("GTN_ASSETS_SYNC", "false").lower() == "true" if os.getenv("GTN_ASSETS_SYNC") is not None else None
+)
 
 
 config_manager = ConfigManager()
@@ -85,6 +88,7 @@ def _run_init(  # noqa: PLR0913, C901
     register_advanced_library: bool | None = None,
     config_values: dict[str, Any] | None = None,
     secret_values: dict[str, str] | None = None,
+    assets_sync: bool | None = None,
 ) -> None:
     """Runs through the engine init steps.
 
@@ -97,6 +101,7 @@ def _run_init(  # noqa: PLR0913, C901
         register_advanced_library (bool | None): Whether to register the advanced library.
         config_values (dict[str, any] | None): Arbitrary config key-value pairs to set.
         secret_values (dict[str, str] | None): Arbitrary secret key-value pairs to set.
+        assets_sync (bool | None): If False, skips the assets sync during initialization.
     """
     __init_system_config()
 
@@ -148,7 +153,8 @@ def _run_init(  # noqa: PLR0913, C901
             secrets_manager.set_secret(key, value)
             console.print(f"[bold green]Secret '{key}' set[/bold green]")
 
-    _sync_assets()
+    if assets_sync is not False:
+        _sync_assets()
     console.print("[bold green]Initialization complete![/bold green]")
 
 
@@ -170,6 +176,7 @@ def _start_engine(*, no_update: bool = False) -> None:
             interactive=True,
             config_values=None,
             secret_values=None,
+            assets_sync=ENV_ASSETS_SYNC,
         )
 
     # Confusing double negation -- If `no_update` is set, we want to skip the update
@@ -226,6 +233,11 @@ def _get_args() -> argparse.Namespace:
         "--register-advanced-library",
         help="Install the Griptape Nodes Advanced Image Library.",
         default=ENV_REGISTER_ADVANCED_LIBRARY,
+    )
+    init_parser.add_argument(
+        "--assets-sync",
+        help="Sync the Griptape Nodes assets (libraries, workflows, etc.).",
+        default=ENV_ASSETS_SYNC,
     )
     init_parser.add_argument(
         "--no-interactive",
@@ -710,6 +722,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
             register_advanced_library=args.register_advanced_library,
             config_values=config_values,
             secret_values=secret_values,
+            assets_sync=args.assets_sync,
         )
     elif args.command == "engine":
         _start_engine(no_update=args.no_update)

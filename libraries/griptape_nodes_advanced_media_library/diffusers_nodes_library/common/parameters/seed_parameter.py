@@ -51,7 +51,9 @@ class SeedParameter:
 
     def preprocess(self) -> None:
         if self._node.get_parameter_value("randomize_seed"):
-            self._node.publish_update_to_parameter("seed", torch.Generator().seed())
+            seed = torch.Generator().seed()
+            self._node.set_parameter_value("seed", seed)
+            self._node.publish_update_to_parameter("seed", seed)
 
     def get_seed(self) -> int:
         return int(self._node.get_parameter_value("seed"))
