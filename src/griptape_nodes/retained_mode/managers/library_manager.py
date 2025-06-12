@@ -462,13 +462,25 @@ class LibraryManager:
                     pip_install_flags = []
                 pip_dependencies = library_data.metadata.dependencies.pip_dependencies
 
-                # Determine venv path for checking ownership
+                # Determine venv path for dependency installation
                 venv_path = self._get_library_venv_path(library_data.name, file_path)
 
                 # Only install dependencies if conditions are met
-                if self._should_install_dependencies(venv_path):
-                    # Grab the python executable from the virtual environment so that we can pip install there
+                try:
                     library_venv_python_path = self._init_library_venv(venv_path)
+                except PermissionError as e:
+                    self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                        library_path=file_path,
+                        library_name=library_data.name,
+                        library_version=library_version,
+                        status=LibraryManager.LibraryStatus.UNUSABLE,
+                        problems=[str(e)],
+                    )
+                    details = f"Attempted to load Library JSON file from '{json_path}'. Failed when creating the virtual environment: {e}."
+                    logger.error(details)
+                    return RegisterLibraryFromFileResultFailure()
+                if self._can_write_to_venv_location(venv_path):
+                    # Grab the python executable from the virtual environment so that we can pip install there
                     subprocess.run(  # noqa: S603
                         [
                             sys.executable,
@@ -486,7 +498,7 @@ class LibraryManager:
                     )
                 else:
                     logger.debug(
-                        "Skipping dependency installation for library '%s' - venv exists at %s and is not owned by current user",
+                        "Skipping dependency installation for library '%s' - venv location at %s is not writable",
                         library_data.name,
                         venv_path,
                     )
@@ -497,7 +509,7 @@ class LibraryManager:
                 library_name=library_data.name,
                 library_version=library_version,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[f"Failed to create the library: {e}"],
+                problems=[str(e)],
             )
             details = (
                 f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {e}."
@@ -575,12 +587,17 @@ class LibraryManager:
     ) -> ResultPayload:
         package_name = Requirement(request.requirement_specifier).name
         try:
-            # Determine venv path for checking ownership
+            # Determine venv path for dependency installation
             venv_path = self._get_library_venv_path(package_name, None)
 
             # Only install dependencies if conditions are met
-            if self._should_install_dependencies(venv_path):
+            try:
                 library_python_venv_path = self._init_library_venv(venv_path)
+            except PermissionError as e:
+                details = f"Attempted to install library '{request.requirement_specifier}'. Failed when creating the virtual environment: {e}"
+                logger.error(details)
+                return RegisterLibraryFromRequirementSpecifierResultFailure()
+            if self._can_write_to_venv_location(venv_path):
                 subprocess.run(  # noqa: S603
                     [
                         uv.find_uv_bin(),
@@ -595,7 +612,7 @@ class LibraryManager:
                 )
             else:
                 logger.debug(
-                    "Skipping dependency installation for package '%s' - venv exists at %s and is not owned by current user",
+                    "Skipping dependency installation for package '%s' - venv location at %s is not writable",
                     package_name,
                     venv_path,
                 )
@@ -631,6 +648,10 @@ class LibraryManager:
         if library_venv_path.exists():
             logger.debug("Virtual environment already exists at %s", library_venv_path)
         else:
+            if not self._can_write_to_venv_location(library_venv_path):
+                details = f"Cannot create virtual environment at {library_venv_path} - no write permissions."
+                logger.error(details)
+                raise PermissionError(details)
             subprocess.run(  # noqa: S603
                 [sys.executable, "-m", "uv", "venv", str(library_venv_path), "--python", python_version],
                 check=True,
@@ -677,48 +698,34 @@ class LibraryManager:
         # Create venv relative to the xdg data home
         return xdg_data_home() / "griptape_nodes" / "libraries" / clean_library_name / ".venv"
 
-    def _check_venv_ownership(self, venv_path: Path) -> bool:
-        """Check if the current user owns the virtual environment directory.
+    def _can_write_to_venv_location(self, venv_path: Path) -> bool:
+        """Check if we can write to the venv location (either create it or modify existing).
 
         Args:
             venv_path: Path to the virtual environment directory
 
         Returns:
-            True if the current user owns the venv, False otherwise
+            True if we can write to the location, False otherwise
         """
-        # On Windows, permission checks are hard. Assume we can write to the venv
+        # On Windows, permission checks are hard. Assume we can write
         if OSManager.is_windows():
             return True
 
-        try:
-            # Get the current user's UID
-            current_uid = os.getuid()
-
-            # Get the venv directory's ownership info
-            venv_stat = venv_path.stat()
-            venv_owner_uid = venv_stat.st_uid
-        except (OSError, AttributeError) as e:
-            # If there's an error accessing the file, assume we don't own it
-            logger.debug("Could not check venv ownership for %s: %s", venv_path, e)
-            return False
-        else:
-            return current_uid == venv_owner_uid
-
-    def _should_install_dependencies(self, venv_path: Path) -> bool:
-        """Determine if dependencies should be installed based on venv existence and ownership.
-
-        Args:
-            venv_path: Path to the virtual environment directory
-
-        Returns:
-            True if dependencies should be installed, False otherwise
-        """
-        # Condition 1: There is no venv
+        # If venv doesn't exist, check if parent directory is writable
         if not venv_path.exists():
-            return True
+            parent_dir = venv_path.parent
+            try:
+                return parent_dir.exists() and os.access(parent_dir, os.W_OK)
+            except (OSError, AttributeError) as e:
+                logger.debug("Could not check parent directory permissions for %s: %s", parent_dir, e)
+                return False
 
-        # Condition 2: There is a venv AND we own it
-        return self._check_venv_ownership(venv_path)
+        # If venv exists, check if we can write to it
+        try:
+            return os.access(venv_path, os.W_OK)
+        except (OSError, AttributeError) as e:
+            logger.debug("Could not check venv write permissions for %s: %s", venv_path, e)
+            return False
 
     def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
         try:
