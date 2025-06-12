@@ -9,7 +9,8 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.image_utils import (
-    dict_to_image_url_artifact,
+    load_pil_from_url,
+    normalize_image_input,
     save_pil_image_to_static_file,
 )
 
@@ -49,9 +50,8 @@ class InvertMask(DataNode):
         if input_mask is None:
             return
 
-        # Normalize dict input to ImageUrlArtifact
-        if isinstance(input_mask, dict):
-            input_mask = dict_to_image_url_artifact(input_mask)
+        # Normalize input to ImageUrlArtifact
+        input_mask = normalize_image_input(input_mask)
 
         # Invert the mask
         self._invert_mask(input_mask)
@@ -74,10 +74,8 @@ class InvertMask(DataNode):
         )
 
     def _handle_input_mask_change(self, value: Any, modified_parameters_set: set[str]) -> None:
-        # Normalize input mask to ImageUrlArtifact if needed
-        mask_artifact = value
-        if isinstance(value, dict):
-            mask_artifact = dict_to_image_url_artifact(value)
+        # Normalize input mask to ImageUrlArtifact
+        mask_artifact = normalize_image_input(value)
 
         # Invert the mask
         self._invert_mask(mask_artifact)
@@ -93,7 +91,7 @@ class InvertMask(DataNode):
     def _invert_mask(self, mask_artifact: ImageUrlArtifact) -> None:
         """Invert the input mask and set as output_mask."""
         # Load mask
-        mask_pil = self.load_pil_from_url(mask_artifact.value)
+        mask_pil = load_pil_from_url(mask_artifact.value)
 
         # Convert to grayscale if needed
         if mask_pil.mode != "L":

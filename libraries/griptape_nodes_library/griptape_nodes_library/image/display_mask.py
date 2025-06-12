@@ -8,7 +8,9 @@ from PIL import Image
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes_library.utils.image_utils import (
-    dict_to_image_url_artifact,
+    create_alpha_mask,
+    load_pil_from_url,
+    normalize_image_input,
     save_pil_image_to_static_file,
 )
 
@@ -48,9 +50,8 @@ class DisplayMask(DataNode):
         if input_image is None:
             return
 
-        # Normalize dict input to ImageUrlArtifact
-        if isinstance(input_image, dict):
-            input_image = dict_to_image_url_artifact(input_image)
+        # Normalize input to ImageUrlArtifact
+        input_image = normalize_image_input(input_image)
 
         # Create mask from image
         self._create_mask(input_image)
@@ -73,10 +74,8 @@ class DisplayMask(DataNode):
         )
 
     def _handle_input_image_change(self, value: Any, modified_parameters_set: set[str]) -> None:
-        # Normalize input image to ImageUrlArtifact if needed
-        image_artifact = value
-        if isinstance(value, dict):
-            image_artifact = dict_to_image_url_artifact(value)
+        # Normalize input image to ImageUrlArtifact
+        image_artifact = normalize_image_input(value)
 
         # Create mask from image
         self._create_mask(image_artifact)
@@ -91,18 +90,10 @@ class DisplayMask(DataNode):
     def _create_mask(self, image_artifact: ImageUrlArtifact) -> None:
         """Create a mask from the input image and set as output_mask."""
         # Load image
-        image_pil = self.load_pil_from_url(image_artifact.value)
+        image_pil = load_pil_from_url(image_artifact.value)
 
-        # Convert to RGBA if needed
-        if image_pil.mode != "RGBA":
-            image_pil = image_pil.convert("RGBA")
-
-        # Extract alpha channel
-        mask = image_pil.getchannel("A")
-
-        # Convert to RGB (black background with white mask)
-        mask_rgb = Image.new("RGB", mask.size, (0, 0, 0))
-        mask_rgb.paste((255, 255, 255), mask=mask)
+        # Create mask from alpha channel
+        mask_rgb = create_alpha_mask(image_pil)
 
         # Save output mask and create URL artifact
         output_artifact = save_pil_image_to_static_file(mask_rgb)
