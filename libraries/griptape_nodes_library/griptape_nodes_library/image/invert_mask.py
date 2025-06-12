@@ -1,7 +1,5 @@
-from io import BytesIO
 from typing import Any
 
-import httpx
 from griptape.artifacts import ImageUrlArtifact
 from PIL import Image
 
@@ -28,7 +26,7 @@ class InvertMask(DataNode):
                 type="ImageArtifact",
                 tooltip="The mask to invert",
                 ui_options={"hide_property": True},
-                allowed_modes={ParameterMode.INPUT},
+                allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
 
@@ -93,20 +91,20 @@ class InvertMask(DataNode):
         # Load mask
         mask_pil = load_pil_from_url(mask_artifact.value)
 
+        # If image has alpha channel, use and invert the alpha channel
+        if mask_pil.mode == "RGBA":
+            alpha = mask_pil.getchannel("A")
+            mask_to_invert = alpha
         # Convert to grayscale if needed
-        if mask_pil.mode != "L":
-            mask_pil = mask_pil.convert("L")
+        elif mask_pil.mode != "L":
+            mask_to_invert = mask_pil.convert("L")
+        else:
+            mask_to_invert = mask_pil
 
         # Invert the mask
-        inverted_mask = Image.eval(mask_pil, lambda x: 255 - x)
+        inverted_mask = Image.eval(mask_to_invert, lambda x: 255 - x)
 
         # Save output mask and create URL artifact
-        output_artifact = save_pil_image_to_static_file(inverted_mask)
+        output_artifact = save_pil_image_to_static_file(inverted_mask, image_format="PNG")
         self.set_parameter_value("output_mask", output_artifact)
         self.publish_update_to_parameter("output_mask", output_artifact)
-
-    def load_pil_from_url(self, url: str) -> Image.Image:
-        """Load image from URL using httpx."""
-        response = httpx.get(url, timeout=30)
-        response.raise_for_status()
-        return Image.open(BytesIO(response.content))

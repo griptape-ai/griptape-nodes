@@ -1,9 +1,6 @@
-from io import BytesIO
 from typing import Any
 
-import httpx
 from griptape.artifacts import ImageUrlArtifact
-from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
@@ -28,7 +25,7 @@ class DisplayMask(DataNode):
                 type="ImageArtifact",
                 tooltip="The image to create a mask from",
                 ui_options={"hide_property": True},
-                allowed_modes={ParameterMode.INPUT},
+                allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
 
@@ -93,15 +90,9 @@ class DisplayMask(DataNode):
         image_pil = load_pil_from_url(image_artifact.value)
 
         # Create mask from alpha channel
-        mask_rgb = create_alpha_mask(image_pil)
+        mask = create_alpha_mask(image_pil)
 
         # Save output mask and create URL artifact
-        output_artifact = save_pil_image_to_static_file(mask_rgb)
+        output_artifact = save_pil_image_to_static_file(mask)
         self.set_parameter_value("output_mask", output_artifact)
         self.publish_update_to_parameter("output_mask", output_artifact)
-
-    def load_pil_from_url(self, url: str) -> Image.Image:
-        """Load image from URL using httpx."""
-        response = httpx.get(url, timeout=30)
-        response.raise_for_status()
-        return Image.open(BytesIO(response.content))
