@@ -267,6 +267,22 @@
         "description": "Video generation with Allegro",
         "icon": "Video"
       }
+    },
+    {
+      "video/wan": {
+        "color": "border-pink-500",
+        "title": "video/wan",
+        "description": "",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/wan/loras": {
+        "color": "border-pink-500",
+        "title": "video/wan/loras",
+        "description": "",
+        "icon": "Video"
+      }
     }
   ],
   "nodes": [
