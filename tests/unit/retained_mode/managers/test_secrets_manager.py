@@ -1,12 +1,18 @@
 import os
+import platform
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="xdg_base_dirs cannot find XDG_CONFIG_HOME on Windows on GitHub Actions"
+)
 class TestSecretsManager:
     """Test SecretsManager functionality including search order precedence."""
 

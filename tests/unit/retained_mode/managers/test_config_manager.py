@@ -1,11 +1,17 @@
 import os
+import platform
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 
 
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="xdg_base_dirs cannot find XDG_CONFIG_HOME on Windows on GitHub Actions"
+)
 class TestConfigManager:
     """Test ConfigManager functionality including environment variable loading."""
 
