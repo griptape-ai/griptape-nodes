@@ -55,8 +55,8 @@ ENV_REGISTER_ADVANCED_LIBRARY = (
     if os.getenv("GTN_REGISTER_ADVANCED_LIBRARY") is not None
     else None
 )
-ENV_ASSETS_SYNC = (
-    os.getenv("GTN_ASSETS_SYNC", "false").lower() == "true" if os.getenv("GTN_ASSETS_SYNC") is not None else None
+ENV_LIBRARIES_SYNC = (
+    os.getenv("GTN_LIBRARIES_SYNC", "false").lower() == "true" if os.getenv("GTN_LIBRARIES_SYNC") is not None else None
 )
 ENV_GTN_BUCKET_NAME = os.getenv("GTN_BUCKET_NAME")
 
@@ -72,7 +72,7 @@ class InitConfig:
     register_advanced_library: bool | None = None
     config_values: dict[str, Any] | None = None
     secret_values: dict[str, str] | None = None
-    assets_sync: bool | None = None
+    libraries_sync: bool | None = None
     bucket_name: str | None = None
 
 
@@ -109,9 +109,9 @@ def _run_init(config: InitConfig) -> None:
     # Apply configuration values
     _apply_init_configuration(config_data, config.config_values, config.secret_values)
 
-    # Sync assets
-    if config.assets_sync is not False:
-        _sync_assets()
+    # Sync libraries
+    if config.libraries_sync is not False:
+        _sync_libraries()
     console.print("[bold green]Initialization complete![/bold green]")
 
 
@@ -224,7 +224,7 @@ def _start_engine(*, no_update: bool = False) -> None:
                 interactive=True,
                 config_values=None,
                 secret_values=None,
-                assets_sync=ENV_ASSETS_SYNC,
+                libraries_sync=ENV_LIBRARIES_SYNC,
                 bucket_name=ENV_GTN_BUCKET_NAME,
             )
         )
@@ -285,9 +285,9 @@ def _get_args() -> argparse.Namespace:
         default=ENV_REGISTER_ADVANCED_LIBRARY,
     )
     init_parser.add_argument(
-        "--assets-sync",
-        help="Sync the Griptape Nodes assets (libraries, workflows, etc.).",
-        default=ENV_ASSETS_SYNC,
+        "--libraries-sync",
+        help="Sync the Griptape Nodes libraries.",
+        default=ENV_LIBRARIES_SYNC,
     )
     init_parser.add_argument(
         "--no-interactive",
@@ -332,14 +332,14 @@ def _get_args() -> argparse.Namespace:
     self_subparsers.add_parser("uninstall", help="Uninstall the CLI.")
     self_subparsers.add_parser("version", help="Print the CLI version.")
 
-    # assets
-    assets_parser = subparsers.add_parser("assets", help="Manage local assets (libraries, workflows, etc.).")
-    assets_subparsers = assets_parser.add_subparsers(
+    # libraries
+    libraries_parser = subparsers.add_parser("libraries", help="Manage local libraries.")
+    libraries_subparsers = libraries_parser.add_subparsers(
         dest="subcommand",
         metavar="SUBCOMMAND",
         required=True,
     )
-    assets_subparsers.add_parser("sync", help="Sync assets with your current engine version.")
+    libraries_subparsers.add_parser("sync", help="Sync libraries with your current engine version.")
 
     args = parser.parse_args()
 
@@ -634,22 +634,22 @@ def _auto_update_self() -> None:
 
 
 def _update_self() -> None:
-    """Installs the latest release of the CLI *and* refreshes bundled assets."""
+    """Installs the latest release of the CLI *and* refreshes bundled libraries."""
     console.print("[bold green]Starting updater...[/bold green]")
 
     os_manager.replace_process([sys.executable, "-m", "griptape_nodes.updater"])
 
 
 def _sync_assets() -> None:
-    """Download and fully replace the Griptape Nodes assets directory."""
+    """Download and sync Griptape Nodes libraries, copying only directories from synced libraries."""
     install_source, _ = __get_install_source()
-    # Unless we're installed from PyPi, grab assets from the 'latest' tag
+    # Unless we're installed from PyPi, grab libraries from the 'latest' tag
     if install_source == "pypi":
         version = __get_current_version()
     else:
         version = LATEST_TAG
 
-    console.print(f"[bold cyan]Fetching Griptape Nodes assets ({version})...[/bold cyan]")
+    console.print(f"[bold cyan]Fetching Griptape Nodes libraries ({version})...[/bold cyan]")
 
     tar_url = NODES_TARBALL_URL.format(tag=version)
     console.print(f"[green]Downloading from {tar_url}[/green]")
@@ -663,7 +663,7 @@ def _sync_assets() -> None:
             try:
                 r.raise_for_status()
             except httpx.HTTPStatusError as e:
-                console.print(f"[red]Error fetching assets: {e}[/red]")
+                console.print(f"[red]Error fetching libraries: {e}[/red]")
                 return
             task = progress.add_task("[green]Downloading...", total=int(r.headers.get("Content-Length", 0)))
             with tar_path.open("wb") as f:
@@ -679,10 +679,16 @@ def _sync_assets() -> None:
         extracted_root = next(Path(tmp).glob("griptape-nodes-*"))
         extracted_libs = extracted_root / "libraries"
 
-        # Fully replace the destination directory
-        if dest_nodes.exists():
-            shutil.rmtree(dest_nodes)
-        shutil.copytree(extracted_libs, dest_nodes)
+        # Copy directories from synced libraries without removing existing content
+        dest_nodes.mkdir(parents=True, exist_ok=True)
+        
+        for library_dir in extracted_libs.iterdir():
+            if library_dir.is_dir():
+                dest_library_dir = dest_nodes / library_dir.name
+                if dest_library_dir.exists():
+                    shutil.rmtree(dest_library_dir)
+                shutil.copytree(library_dir, dest_library_dir)
+                console.print(f"[green]Synced library: {library_dir.name}[/green]")
 
     console.print("[bold green]Node Libraries updated.[/bold green]")
 
@@ -804,7 +810,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
                 register_advanced_library=args.register_advanced_library,
                 config_values=config_values,
                 secret_values=secret_values,
-                assets_sync=args.assets_sync,
+                libraries_sync=args.libraries_sync,
                 bucket_name=args.bucket_name,
             )
         )
@@ -824,7 +830,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
             _uninstall_self()
         elif args.subcommand == "version":
             _print_current_version()
-    elif args.command == "assets":
+    elif args.command == "libraries":
         if args.subcommand == "sync":
             _sync_assets()
     else:
