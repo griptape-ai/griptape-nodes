@@ -29,7 +29,7 @@ with console.status("Loading Griptape Nodes...") as status:
 
     from griptape_nodes.app import start_app
     from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
-    from griptape_nodes.retained_mode.griptape_nodes import engine_version
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, engine_version
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -640,7 +640,7 @@ def _update_self() -> None:
     os_manager.replace_process([sys.executable, "-m", "griptape_nodes.updater"])
 
 
-def _sync_assets() -> None:
+def _sync_libraries() -> None:
     """Download and sync Griptape Nodes libraries, copying only directories from synced libraries."""
     install_source, _ = __get_install_source()
     # Unless we're installed from PyPi, grab libraries from the 'latest' tag
@@ -681,7 +681,7 @@ def _sync_assets() -> None:
 
         # Copy directories from synced libraries without removing existing content
         dest_nodes.mkdir(parents=True, exist_ok=True)
-        
+
         for library_dir in extracted_libs.iterdir():
             if library_dir.is_dir():
                 dest_library_dir = dest_nodes / library_dir.name
@@ -690,7 +690,15 @@ def _sync_assets() -> None:
                 shutil.copytree(library_dir, dest_library_dir)
                 console.print(f"[green]Synced library: {library_dir.name}[/green]")
 
-    console.print("[bold green]Node Libraries updated.[/bold green]")
+    # Re-initialize all libraries from config
+    console.print("[bold cyan]Initializing libraries...[/bold cyan]")
+    try:
+        GriptapeNodes.LibraryManager().load_all_libraries_from_config()
+        console.print("[bold green]Libraries Initialized successfully.[/bold green]")
+    except Exception as e:
+        console.print(f"[red]Error initializing libraries: {e}[/red]")
+
+    console.print("[bold green]Libraries synced.[/bold green]")
 
 
 def _print_current_version() -> None:
@@ -832,7 +840,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
             _print_current_version()
     elif args.command == "libraries":
         if args.subcommand == "sync":
-            _sync_assets()
+            _sync_libraries()
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)
