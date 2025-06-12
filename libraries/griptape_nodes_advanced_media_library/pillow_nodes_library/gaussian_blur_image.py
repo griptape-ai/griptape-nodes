@@ -2,7 +2,7 @@ import logging
 
 import PIL.ImageFilter
 from griptape.artifacts import ImageUrlArtifact
-from griptape.loaders import ImageLoader
+from utils.image_utils import load_image_from_url_artifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -52,7 +52,7 @@ class GaussianBlurImage(ControlNode):
         radius = float(self.get_parameter_value("radius"))
 
         if isinstance(input_image_artifact, ImageUrlArtifact):
-            input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
+            input_image_artifact = load_image_from_url_artifact(input_image_artifact)
 
         input_image_pil = image_artifact_to_pil(input_image_artifact)
         output_image_pil = input_image_pil.filter(PIL.ImageFilter.GaussianBlur(radius=radius))
