@@ -151,7 +151,7 @@ def _run_init(  # noqa: PLR0913, C901
             secrets_manager.set_secret(key, value)
             console.print(f"[bold green]Secret '{key}' set[/bold green]")
 
-    if no_assets_sync:
+    if not no_assets_sync:
         _sync_assets()
     console.print("[bold green]Initialization complete![/bold green]")
 
