@@ -112,6 +112,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
     RemoveParameterFromNodeResultFailure,
     RemoveParameterFromNodeResultSuccess,
+    RenameParameterRequest,
+    RenameParameterResultFailure,
+    RenameParameterResultSuccess,
     SetParameterValueRequest,
     SetParameterValueResultFailure,
     SetParameterValueResultSuccess,
@@ -156,6 +159,7 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(GetParameterValueRequest, self.on_get_parameter_value_request)
         event_manager.assign_manager_to_request_type(SetParameterValueRequest, self.on_set_parameter_value_request)
+        event_manager.assign_manager_to_request_type(RenameParameterRequest, self.on_rename_parameter_request)
         event_manager.assign_manager_to_request_type(ResolveNodeRequest, self.on_resolve_from_node_request)
         event_manager.assign_manager_to_request_type(GetAllNodeInfoRequest, self.on_get_all_node_info_request)
         event_manager.assign_manager_to_request_type(
@@ -2279,3 +2283,83 @@ class NodeManager:
             else:
                 commands.append(output_command)
         return commands if commands else None
+
+    def on_rename_parameter_request(self, request: RenameParameterRequest) -> ResultPayload:  # noqa: C901, PLR0912
+        """Handle renaming a parameter on a node.
+
+        Args:
+            request: The rename parameter request containing the old and new parameter names
+
+        Returns:
+            ResultPayload: Success or failure result
+        """
+        # Get the node
+        node_name = request.node_name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to rename Parameter in the Current Context. Failed because the Current Context was empty."
+                logger.error(details)
+                return RenameParameterResultFailure()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+        else:
+            try:
+                node = self.get_node_by_name(node_name)
+            except KeyError as err:
+                details = f"Attempted to rename Parameter '{request.parameter_name}' on Node '{node_name}'. Failed because the Node could not be found. Error: {err}"
+                logger.error(details)
+                return RenameParameterResultFailure()
+
+        # Get the parameter
+        parameter = node.get_parameter_by_name(request.parameter_name)
+        if parameter is None:
+            details = f"Attempted to rename Parameter '{request.parameter_name}' on Node '{node_name}'. Failed because the Parameter could not be found."
+            logger.error(details)
+            return RenameParameterResultFailure()
+
+        # Validate the new parameter name
+        if any(char.isspace() for char in request.new_parameter_name):
+            details = f"Failed to rename Parameter '{request.parameter_name}' to '{request.new_parameter_name}'. Parameter names cannot contain any whitespace characters."
+            logger.error(details)
+            return RenameParameterResultFailure()
+
+        # Check for duplicate names
+        if node.does_name_exist(request.new_parameter_name):
+            details = f"Failed to rename Parameter '{request.parameter_name}' to '{request.new_parameter_name}'. A Parameter with that name already exists."
+            logger.error(details)
+            return RenameParameterResultFailure()
+
+        # Get all connections for this node
+        flow_name = self.get_node_parent_flow_by_name(node_name)
+        flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+
+        # Update connections that reference this parameter
+        if node_name in flow.connections.incoming_index:
+            incoming_connections = flow.connections.incoming_index[node_name]
+            for connection_ids in incoming_connections.values():
+                for connection_id in connection_ids:
+                    connection = flow.connections.connections[connection_id]
+                    if connection.target_parameter.name == request.parameter_name:
+                        connection.target_parameter.name = request.new_parameter_name
+
+        if node_name in flow.connections.outgoing_index:
+            outgoing_connections = flow.connections.outgoing_index[node_name]
+            for connection_ids in outgoing_connections.values():
+                for connection_id in connection_ids:
+                    connection = flow.connections.connections[connection_id]
+                    if connection.source_parameter.name == request.parameter_name:
+                        connection.source_parameter.name = request.new_parameter_name
+
+        # Update parameter name
+        old_name = parameter.name
+        parameter.name = request.new_parameter_name
+
+        # Update parameter values if they exist
+        if old_name in node.parameter_values:
+            node.parameter_values[request.new_parameter_name] = node.parameter_values.pop(old_name)
+        if old_name in node.parameter_output_values:
+            node.parameter_output_values[request.new_parameter_name] = node.parameter_output_values.pop(old_name)
+
+        return RenameParameterResultSuccess(
+            old_parameter_name=old_name, new_parameter_name=request.new_parameter_name, node_name=node_name
+        )
