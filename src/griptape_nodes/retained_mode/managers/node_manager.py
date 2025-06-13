@@ -700,6 +700,24 @@ class NodeManager:
         )
         return result
 
+    def generate_unique_parameter_name(self, node: BaseNode, base_name: str) -> str:
+        """Generate a unique parameter name for a node by appending a number if needed.
+
+        Args:
+            node: The node to check for existing parameter names
+            base_name: The desired base name for the parameter
+
+        Returns:
+            A unique parameter name that doesn't conflict with existing parameters
+        """
+        if node.get_parameter_by_name(base_name) is None:
+            return base_name
+
+        counter = 1
+        while node.get_parameter_by_name(f"{base_name}_{counter}") is not None:
+            counter += 1
+        return f"{base_name}_{counter}"
+
     def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
         node = None
@@ -752,13 +770,13 @@ class NodeManager:
             logger.error(details)
             result = AddParameterToNodeResultFailure()
             return result
-        # Does the Node already have a parameter by this name?
-        if node.get_parameter_by_name(request.parameter_name) is not None:
-            details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{node_name}'. Failed because it already had a Parameter with that name on it. Parameter names must be unique within the Node."
-            logger.error(details)
 
-            result = AddParameterToNodeResultFailure()
-            return result
+        # Generate a unique parameter name if needed
+        original_name = request.parameter_name
+        request.parameter_name = self.generate_unique_parameter_name(node, original_name)
+        if request.parameter_name != original_name:
+            details = f"Parameter name '{original_name}' was already taken. Using '{request.parameter_name}' instead."
+            logger.warning(details)
 
         # Let's see if the Parameter is properly formed.
         # If a Parameter is intended for Control, it needs to have that be the exclusive type.
