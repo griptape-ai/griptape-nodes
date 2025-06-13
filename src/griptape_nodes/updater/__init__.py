@@ -41,6 +41,7 @@ def _download_and_run_installer() -> None:
         subprocess.run(  # noqa: S603
             ["uv", "tool", "upgrade", "griptape-nodes"],  # noqa: S607
             text=True,
+            capture_output=True,
             check=True,
         )
     except subprocess.CalledProcessError as e:
@@ -57,6 +58,7 @@ def _sync_libraries() -> None:
         subprocess.run(  # noqa: S603
             ["griptape-nodes", "libraries", "sync"],  # noqa: S607
             text=True,
+            capture_output=True,
             check=True,
         )
     except subprocess.CalledProcessError as e:

@@ -481,6 +481,9 @@ class LibraryManager:
                     return RegisterLibraryFromFileResultFailure()
                 if self._can_write_to_venv_location(library_venv_python_path):
                     # Grab the python executable from the virtual environment so that we can pip install there
+                    logger.info(
+                        "Installing dependencies for library '%s' with pip in venv at %s", library_data.name, venv_path
+                    )
                     subprocess.run(  # noqa: S603
                         [
                             sys.executable,
@@ -494,6 +497,7 @@ class LibraryManager:
                             str(library_venv_python_path),
                         ],
                         check=True,
+                        capture_output=True,
                         text=True,
                     )
                 else:
@@ -598,6 +602,7 @@ class LibraryManager:
                 logger.error(details)
                 return RegisterLibraryFromRequirementSpecifierResultFailure()
             if self._can_write_to_venv_location(library_python_venv_path):
+                logger.info("Installing dependency '%s' with pip in venv at %s", package_name, venv_path)
                 subprocess.run(  # noqa: S603
                     [
                         uv.find_uv_bin(),
@@ -608,6 +613,7 @@ class LibraryManager:
                         library_python_venv_path,
                     ],
                     check=True,
+                    capture_output=True,
                     text=True,
                 )
             else:
@@ -656,6 +662,7 @@ class LibraryManager:
                 subprocess.run(  # noqa: S603
                     [sys.executable, "-m", "uv", "venv", str(library_venv_path), "--python", python_version],
                     check=True,
+                    capture_output=True,
                     text=True,
                 )
             except subprocess.CalledProcessError as e:
