@@ -32,6 +32,29 @@ make format            # Format code with ruff + mdformat
 make fix               # Format + unsafe ruff fixes (excludes libraries/tests)
 ```
 
+**IMPORTANT - AI Agent Linting Workflow:**
+
+Claude Code must follow this pattern to prevent lint debt accumulation:
+
+1. **After completing a logical group of changes** (e.g., implementing a feature, fixing a bug)
+1. **Run lint check**: `make check`
+1. **Fix any issues found** before moving to next major task. Ask the user if they are comfortable running `make fix` (which will make all changes for them) or if they want to step through them one by one.
+1. **Always check before completing work sessions**
+
+**Goal: Zero lint errors, always.** Never let lint issues accumulate for "later cleanup."
+
+```bash
+# Check specific files/directories:
+uv run ruff check path/to/file.py
+uv run ruff check libraries/griptape_nodes_neo4j_library/
+
+# Auto-fix simple issues:
+uv run ruff check --fix path/to/file.py
+
+# Quick status check:
+uv run ruff check --statistics
+```
+
 **Documentation:**
 
 ```bash
