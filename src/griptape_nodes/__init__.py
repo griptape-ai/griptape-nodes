@@ -59,6 +59,7 @@ ENV_LIBRARIES_SYNC = (
     os.getenv("GTN_LIBRARIES_SYNC", "false").lower() == "true" if os.getenv("GTN_LIBRARIES_SYNC") is not None else None
 )
 ENV_GTN_BUCKET_NAME = os.getenv("GTN_BUCKET_NAME")
+ENV_LIBRARIES_BASE_DIR = os.getenv("GTN_LIBRARIES_BASE_DIR")
 
 
 @dataclass
@@ -552,7 +553,9 @@ def __build_libraries_list(*, register_advanced_library: bool) -> list[str]:
     """Builds the list of libraries to register based on the advanced library setting."""
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/929
     libraries_key = "app_events.on_app_initialization_complete.libraries_to_register"
-    library_base_dir = xdg_data_home() / "griptape_nodes/libraries"
+    library_base_dir = (
+        Path(ENV_LIBRARIES_BASE_DIR) if ENV_LIBRARIES_BASE_DIR else xdg_data_home() / "griptape_nodes/libraries"
+    )
 
     current_libraries = config_manager.get_config_value(
         libraries_key,
