@@ -185,8 +185,7 @@ class AllegroPipelineParameters:
         if repo_id is None:
             available_models = self._huggingface_repo_parameter.fetch_repo_revisions()
             if not available_models:
-                msg = "No available models found in Hugging Face repository."
-                raise ValueError(msg)
+                return 640, 368, 40  # 40x360P variant
             repo_id = available_models[0][0]
 
         """Get recommended width and height for a specific model."""

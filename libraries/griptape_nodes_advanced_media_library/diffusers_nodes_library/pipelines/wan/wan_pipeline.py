@@ -43,7 +43,7 @@ class WanPipeline(ControlNode):
         self.log_params.add_output_parameters()
         # Track last preview generation time for throttling
         self._last_preview_time = 0.0
-        self._preview_throttle_seconds = 60.0
+        self._preview_throttle_seconds = 300.0
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         self.pipe_params.after_value_set(parameter, value, modified_parameters_set)
@@ -117,10 +117,9 @@ class WanPipeline(ControlNode):
         ) -> dict:
             if i < num_inference_steps - 1:
                 # Throttle preview generation to once every 10 seconds
-                current_time = time.time()
-                if current_time - self._last_preview_time >= self._preview_throttle_seconds:
+                if time.time() - self._last_preview_time >= self._preview_throttle_seconds:
                     self.pipe_params.publish_output_video_preview_latents(pipe, callback_kwargs["latents"])
-                    self._last_preview_time = current_time
+                    self._last_preview_time = time.time()
                 self.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")
             return {}
 

@@ -215,8 +215,7 @@ class WanImageToVideoPipelineParameters:
         if repo_id is None:
             available_models = self._huggingface_repo_parameter.fetch_repo_revisions()
             if not available_models:
-                msg = "No available models found in Hugging Face repository."
-                raise ValueError(msg)
+                return 832, 480  # Default to 832x480 if no models are available
             repo_id = available_models[0][0]
 
         match repo_id:

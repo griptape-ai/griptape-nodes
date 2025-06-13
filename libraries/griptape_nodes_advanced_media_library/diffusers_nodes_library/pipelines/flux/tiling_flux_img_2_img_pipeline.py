@@ -178,13 +178,13 @@ class TilingFluxImg2ImgPipeline(ControlNode):
 
         def wrapped_pipe(tile: Image, get_preview_image_with_partial_tile: Any) -> Image:
             def callback_on_step_end(
-                pipe: diffusers.FluxImg2ImgPipeline, i: int, _t: Any, callback_kwargs: dict
+                pipe: diffusers.FluxImg2ImgPipeline, i: int, _t: Any, _callback_kwargs: dict
             ) -> dict:
                 if i < num_inference_steps - 1:
                     # Generate a preview image if this is not yet the last step.
                     # That would be redundant, since the pipeline automatically
                     # does that for the last step.
-                    latents = callback_kwargs["latents"]
+                    latents = _callback_kwargs["latents"]
                     latents = pipe._unpack_latents(latents, tile_size, tile_size, pipe.vae_scale_factor)
                     latents = (latents / pipe.vae.config.scaling_factor) + pipe.vae.config.shift_factor
                     image = pipe.vae.decode(latents, return_dict=False)[0]

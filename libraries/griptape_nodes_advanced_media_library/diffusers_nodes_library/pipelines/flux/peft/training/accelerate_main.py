@@ -1043,10 +1043,10 @@ class FluxLoraTrainingScript:
         num_inference_steps = self.args.num_validation_inference_steps
 
         def callback_on_step_end(
-            pipe: diffusers.FluxPipeline,  # noqa: ARG001
+            _pipe: diffusers.FluxPipeline,
             i: int,
             _t: Any,
-            callback_kwargs: dict,  # noqa: ARG001
+            _callback_kwargs: dict,
         ) -> dict:
             if i < num_inference_steps - 1:
                 # self.pipe_params.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])  # noqa: ERA001

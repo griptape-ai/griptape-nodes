@@ -1,0 +1,120 @@
+import logging
+from typing import Any
+
+from artifact_utils.audio_utils import dict_to_audio_url_artifact  # type: ignore[reportMissingImports]
+
+from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (
+    HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
+)
+from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter  # type: ignore[reportMissingImports]
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.node_types import BaseNode
+
+logger = logging.getLogger("diffusers_nodes_library")
+
+
+class DanceDiffusionPipelineParameters:
+    def __init__(self, node: BaseNode):
+        self._node = node
+        self._huggingface_repo_parameter = HuggingFaceRepoParameter(
+            node,
+            repo_ids=[
+                "harmonai/maestro-150k",
+                "harmonai/dance-diffusion-ddim-1024",
+            ],
+        )
+        self._seed_parameter = SeedParameter(node)
+
+    def add_input_parameters(self) -> None:
+        self._huggingface_repo_parameter.add_input_parameters()
+        self._node.add_parameter(
+            Parameter(
+                name="audio_length_in_s",
+                default_value=4.096,
+                input_types=["float"],
+                type="float",
+                tooltip="Length of the generated audio in seconds",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
+                name="num_inference_steps",
+                default_value=100,
+                input_types=["int"],
+                type="int",
+                tooltip="Number of denoising steps for generation",
+            )
+        )
+        self._seed_parameter.add_input_parameters()
+
+    def add_output_parameters(self) -> None:
+        self._node.add_parameter(
+            Parameter(
+                name="output_audio",
+                output_type="AudioUrlArtifact",
+                tooltip="The generated audio",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+        )
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        errors = self._huggingface_repo_parameter.validate_before_node_run()
+        return errors or None
+
+    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+        self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
+
+    def preprocess(self) -> None:
+        self._seed_parameter.preprocess()
+
+    def get_repo_revision(self) -> tuple[str, str]:
+        return self._huggingface_repo_parameter.get_repo_revision()
+
+    def get_audio_length_in_s(self) -> float:
+        return float(self._node.get_parameter_value("audio_length_in_s"))
+
+    def get_num_inference_steps(self) -> int:
+        return int(self._node.get_parameter_value("num_inference_steps"))
+
+    def get_pipe_kwargs(self) -> dict:
+        return {
+            "audio_length_in_s": self.get_audio_length_in_s(),
+            "num_inference_steps": self.get_num_inference_steps(),
+            "generator": self._seed_parameter.get_generator(),
+        }
+
+    def publish_output_audio(self, audio_data: Any) -> None:
+        import base64
+        import io
+
+        import numpy as np
+        import scipy.io.wavfile  # type: ignore[reportMissingImports]
+
+        # Convert audio array to WAV format
+        buffer = io.BytesIO()
+        # DanceDiffusion typically outputs at 48kHz
+        sample_rate = 48000
+
+        # Ensure audio is in the right format for scipy
+        if isinstance(audio_data, list):
+            audio_data = audio_data[0]  # Take first audio if batch
+
+        # Normalize and convert to int16
+        audio_data = np.array(audio_data)
+        if audio_data.dtype != np.int16:
+            # Normalize to [-1, 1] then scale to int16 range
+            audio_data = audio_data / np.max(np.abs(audio_data))
+            audio_data = (audio_data * 32767).astype(np.int16)
+
+        scipy.io.wavfile.write(buffer, sample_rate, audio_data)
+        buffer.seek(0)
+
+        # Convert to base64
+        audio_bytes = buffer.getvalue()
+        audio_b64 = base64.b64encode(audio_bytes).decode()
+
+        # Create audio artifact
+        audio_dict = {"type": "audio/wav", "value": f"data:audio/wav;base64,{audio_b64}"}
+
+        audio_artifact = dict_to_audio_url_artifact(audio_dict, "wav")
+        self._node.parameter_output_values["output_audio"] = audio_artifact
