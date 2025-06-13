@@ -700,6 +700,24 @@ class NodeManager:
         )
         return result
 
+    def generate_unique_parameter_name(self, node: BaseNode, base_name: str) -> str:
+        """Generate a unique parameter name for a node by appending a number if needed.
+
+        Args:
+            node: The node to check for existing parameter names
+            base_name: The desired base name for the parameter
+
+        Returns:
+            A unique parameter name that doesn't conflict with existing parameters
+        """
+        if node.get_parameter_by_name(base_name) is None:
+            return base_name
+
+        counter = 1
+        while node.get_parameter_by_name(f"{base_name}_{counter}") is not None:
+            counter += 1
+        return f"{base_name}_{counter}"
+
     def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
         node = None
@@ -752,13 +770,14 @@ class NodeManager:
             logger.error(details)
             result = AddParameterToNodeResultFailure()
             return result
-        # Does the Node already have a parameter by this name?
-        if node.get_parameter_by_name(request.parameter_name) is not None:
-            details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{node_name}'. Failed because it already had a Parameter with that name on it. Parameter names must be unique within the Node."
-            logger.error(details)
 
-            result = AddParameterToNodeResultFailure()
-            return result
+        # Generate a unique parameter name if needed
+        requested_parameter_name = request.parameter_name
+        if requested_parameter_name is None:
+            # Not allowed to have a parameter with no name, so we'll give it a default name
+            requested_parameter_name = "parameter"
+
+        final_param_name = self.generate_unique_parameter_name(node, requested_parameter_name)
 
         # Let's see if the Parameter is properly formed.
         # If a Parameter is intended for Control, it needs to have that be the exclusive type.
@@ -799,7 +818,7 @@ class NodeManager:
 
         # Let's roll, I guess.
         new_param = Parameter(
-            name=request.parameter_name,
+            name=final_param_name,
             type=request.type,
             input_types=request.input_types,
             output_type=request.output_type,
@@ -822,12 +841,17 @@ class NodeManager:
                 logger.info(new_param.name)
                 node.add_parameter(new_param)
         except Exception as e:
-            details = f"Couldn't add parameter with name {request.parameter_name} to node. Error: {e}"
+            details = f"Couldn't add parameter with name {request.parameter_name} to Node '{node_name}'. Error: {e}"
             logger.error(details)
             return AddParameterToNodeResultFailure()
 
-        details = f"Successfully added Parameter '{request.parameter_name}' to Node '{node_name}'."
-        logger.debug(details)
+        details = f"Successfully added Parameter '{final_param_name}' to Node '{node_name}'."
+        log_level = logging.DEBUG
+        if final_param_name != requested_parameter_name:
+            log_level = logging.WARNING
+            details = f"{details} WARNING: Had to rename from original parameter name '{requested_parameter_name}' as a parameter with this name already existed in node '{node_name}'."
+
+        logger.log(level=log_level, msg=details)
 
         result = AddParameterToNodeResultSuccess(
             parameter_name=new_param.name, type=new_param.type, node_name=node_name
