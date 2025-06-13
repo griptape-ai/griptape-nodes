@@ -772,11 +772,12 @@ class NodeManager:
             return result
 
         # Generate a unique parameter name if needed
-        original_name = request.parameter_name
-        request.parameter_name = self.generate_unique_parameter_name(node, original_name)
-        if request.parameter_name != original_name:
-            details = f"Parameter name '{original_name}' was already taken. Using '{request.parameter_name}' instead."
-            logger.warning(details)
+        requested_parameter_name = request.parameter_name
+        if requested_parameter_name is None:
+            # Not allowed to have a parameter with no name, so we'll give it a default name
+            requested_parameter_name = "parameter"
+
+        final_param_name = self.generate_unique_parameter_name(node, requested_parameter_name)
 
         # Let's see if the Parameter is properly formed.
         # If a Parameter is intended for Control, it needs to have that be the exclusive type.
@@ -817,7 +818,7 @@ class NodeManager:
 
         # Let's roll, I guess.
         new_param = Parameter(
-            name=request.parameter_name,
+            name=final_param_name,
             type=request.type,
             input_types=request.input_types,
             output_type=request.output_type,
@@ -840,12 +841,17 @@ class NodeManager:
                 logger.info(new_param.name)
                 node.add_parameter(new_param)
         except Exception as e:
-            details = f"Couldn't add parameter with name {request.parameter_name} to node. Error: {e}"
+            details = f"Couldn't add parameter with name {request.parameter_name} to Node '{node_name}'. Error: {e}"
             logger.error(details)
             return AddParameterToNodeResultFailure()
 
-        details = f"Successfully added Parameter '{request.parameter_name}' to Node '{node_name}'."
-        logger.debug(details)
+        details = f"Successfully added Parameter '{final_param_name}' to Node '{node_name}'."
+        log_level = logging.DEBUG
+        if final_param_name != requested_parameter_name:
+            log_level = logging.WARNING
+            details = f"{details} WARNING: Had to rename from original parameter name '{requested_parameter_name}' as a parameter with this name already existed in node '{node_name}'."
+
+        logger.log(level=log_level, msg=details)
 
         result = AddParameterToNodeResultSuccess(
             parameter_name=new_param.name, type=new_param.type, node_name=node_name
