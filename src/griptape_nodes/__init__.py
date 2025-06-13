@@ -562,22 +562,33 @@ def __build_libraries_list(*, register_advanced_library: bool) -> list[str]:
         config_source="user_config",
         default=config_manager.get_config_value(libraries_key, config_source="default_config", default=[]),
     )
-    new_libraries = current_libraries
+    new_libraries = current_libraries.copy()
+
+    def _get_library_identifier(library_path: str) -> str:
+        """Get the unique identifier for a library based on parent/filename."""
+        path = Path(library_path)
+        return f"{path.parent.name}/{path.name}"
+
+    # Create a set of current library identifiers for fast lookup
+    current_identifiers = {_get_library_identifier(lib) for lib in current_libraries}
 
     default_library = str(library_base_dir / "griptape_nodes_library/griptape_nodes_library.json")
+    default_identifier = "griptape_nodes_library/griptape_nodes_library.json"
     # If somehow the user removed the default library, add it back
-    if default_library not in current_libraries:
-        current_libraries.append(default_library)
+    if default_identifier not in current_identifiers:
+        new_libraries.append(default_library)
 
     advanced_media_library = str(library_base_dir / "griptape_nodes_advanced_media_library/griptape_nodes_library.json")
+    advanced_identifier = "griptape_nodes_advanced_media_library/griptape_nodes_library.json"
     if register_advanced_library:
         # If the advanced media library is not registered, add it
-        if advanced_media_library not in current_libraries:
+        if advanced_identifier not in current_identifiers:
             new_libraries.append(advanced_media_library)
-    else:  # noqa: PLR5501 easier to reason about this way
+    else:
         # If the advanced media library is registered, remove it
-        if advanced_media_library in current_libraries:
-            new_libraries.remove(advanced_media_library)
+        libraries_to_remove = [lib for lib in new_libraries if _get_library_identifier(lib) == advanced_identifier]
+        for lib in libraries_to_remove:
+            new_libraries.remove(lib)
 
     return new_libraries
 
