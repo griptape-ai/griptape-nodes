@@ -103,11 +103,8 @@ def _run_init(config: InitConfig) -> None:
     """
     __init_system_config()
 
-    # Gather configuration values
-    config_data = _gather_init_configuration(config)
-
-    # Apply configuration values
-    _apply_init_configuration(config_data, config.config_values, config.secret_values)
+    # Run configuration flow
+    _run_init_configuration(config)
 
     # Sync libraries
     if config.libraries_sync is not False:
@@ -116,23 +113,10 @@ def _run_init(config: InitConfig) -> None:
     console.print("[bold green]Initialization complete![/bold green]")
 
 
-def _gather_init_configuration(config: InitConfig) -> dict[str, Any]:
-    """Gather all configuration values for initialization.
-
-    Args:
-        config: Initialization configuration.
-
-    Returns:
-        Dictionary containing all configuration values.
-    """
-    workspace_directory = config.workspace_directory
+def _handle_api_key_config(config: InitConfig) -> str | None:
+    """Handle API key configuration step."""
     api_key = config.api_key
-    storage_backend = config.storage_backend
-    register_advanced_library = config.register_advanced_library
-    bucket_name = config.bucket_name
-    storage_backend_bucket_id = None
 
-    # Init/apply API key first since other values (buckets) may depend on it
     if config.interactive:
         api_key = _prompt_for_api_key(default_api_key=api_key)
 
@@ -140,75 +124,101 @@ def _gather_init_configuration(config: InitConfig) -> dict[str, Any]:
         secrets_manager.set_secret("GT_CLOUD_API_KEY", api_key)
         console.print("[bold green]Griptape API Key set")
 
+    return api_key
+
+
+def _handle_workspace_config(config: InitConfig) -> str | None:
+    """Handle workspace directory configuration step."""
+    workspace_directory = config.workspace_directory
+
     if config.interactive:
         workspace_directory = _prompt_for_workspace(default_workspace_directory=workspace_directory)
 
+    if workspace_directory is not None:
+        config_manager.set_config_value("workspace_directory", workspace_directory)
+        console.print(f"[bold green]Workspace directory set to: {workspace_directory}[/bold green]")
+
+    return workspace_directory
+
+
+def _handle_storage_backend_config(config: InitConfig) -> str | None:
+    """Handle storage backend configuration step."""
+    storage_backend = config.storage_backend
+
+    if config.interactive:
         storage_backend = _prompt_for_storage_backend(default_storage_backend=storage_backend)
-        if storage_backend == "gtc":
-            storage_backend_bucket_id = _prompt_for_gtc_bucket_name(default_bucket_name=bucket_name)
+
+    if storage_backend is not None:
+        config_manager.set_config_value("storage_backend", storage_backend)
+        console.print(f"[bold green]Storage backend set to: {storage_backend}")
+
+    return storage_backend
+
+
+def _handle_bucket_config(config: InitConfig, storage_backend: str | None) -> str | None:
+    """Handle bucket configuration step (depends on API key and storage backend)."""
+    storage_backend_bucket_id = None
+
+    if storage_backend == "gtc":
+        if config.interactive:
+            storage_backend_bucket_id = _prompt_for_gtc_bucket_name(default_bucket_name=config.bucket_name)
+        elif config.bucket_name is not None:
+            storage_backend_bucket_id = _get_or_create_bucket_id(config.bucket_name)
+
+    if storage_backend_bucket_id is not None:
+        secrets_manager.set_secret("GT_CLOUD_BUCKET_ID", storage_backend_bucket_id)
+        console.print(f"[bold green]Storage backend bucket ID set to: {storage_backend_bucket_id}[/bold green]")
+
+    return storage_backend_bucket_id
+
+
+def _handle_advanced_library_config(config: InitConfig) -> bool | None:
+    """Handle advanced library configuration step."""
+    register_advanced_library = config.register_advanced_library
+
+    if config.interactive:
         register_advanced_library = _prompt_for_advanced_media_library(
             default_prompt_for_advanced_media_library=register_advanced_library
         )
 
-    if not config.interactive and storage_backend == "gtc" and bucket_name is not None:
-        storage_backend_bucket_id = _get_or_create_bucket_id(bucket_name)
-
-    return {
-        "workspace_directory": workspace_directory,
-        "storage_backend": storage_backend,
-        "bucket_name": bucket_name,
-        "storage_backend_bucket_id": storage_backend_bucket_id,
-        "register_advanced_library": register_advanced_library,
-    }
-
-
-def _apply_init_configuration(
-    config_data: dict[str, Any],
-    config_values: dict[str, Any] | None = None,
-    secret_values: dict[str, str] | None = None,
-) -> None:
-    """Apply all configuration values to the system.
-
-    Args:
-        config_data: Core configuration values.
-        config_values: Arbitrary config key-value pairs.
-        secret_values: Arbitrary secret key-value pairs.
-    """
-    # Set core configuration values
-    if config_data["workspace_directory"] is not None:
-        config_manager.set_config_value("workspace_directory", config_data["workspace_directory"])
-        console.print(f"[bold green]Workspace directory set to: {config_data['workspace_directory']}[/bold green]")
-
-    if config_data["storage_backend"] is not None:
-        config_manager.set_config_value("storage_backend", config_data["storage_backend"])
-        console.print(f"[bold green]Storage backend set to: {config_data['storage_backend']}")
-
-    if config_data["storage_backend_bucket_id"] is not None:
-        secrets_manager.set_secret("GT_CLOUD_BUCKET_ID", config_data["storage_backend_bucket_id"])
-        console.print(
-            f"[bold green]Storage backend bucket ID set to: {config_data['storage_backend_bucket_id']}[/bold green]"
-        )
-
-    if config_data["register_advanced_library"] is not None:
-        libraries_to_register = __build_libraries_list(
-            register_advanced_library=config_data["register_advanced_library"]
-        )
+    if register_advanced_library is not None:
+        libraries_to_register = __build_libraries_list(register_advanced_library=register_advanced_library)
         config_manager.set_config_value(
             "app_events.on_app_initialization_complete.libraries_to_register", libraries_to_register
         )
         console.print(f"[bold green]Libraries to register set to: {', '.join(libraries_to_register)}[/bold green]")
 
+    return register_advanced_library
+
+
+def _handle_arbitrary_configs(config: InitConfig) -> None:
+    """Handle arbitrary config and secret values."""
     # Set arbitrary config values
-    if config_values:
-        for key, value in config_values.items():
+    if config.config_values:
+        for key, value in config.config_values.items():
             config_manager.set_config_value(key, value)
             console.print(f"[bold green]Config '{key}' set to: {value}[/bold green]")
 
     # Set arbitrary secret values
-    if secret_values:
-        for key, value in secret_values.items():
+    if config.secret_values:
+        for key, value in config.secret_values.items():
             secrets_manager.set_secret(key, value)
             console.print(f"[bold green]Secret '{key}' set[/bold green]")
+
+
+def _run_init_configuration(config: InitConfig) -> None:
+    """Handle initialization with proper dependency ordering."""
+    _handle_api_key_config(config)
+
+    _handle_workspace_config(config)
+
+    storage_backend = _handle_storage_backend_config(config)
+
+    _handle_bucket_config(config, storage_backend)
+
+    _handle_advanced_library_config(config)
+
+    _handle_arbitrary_configs(config)
 
 
 def _start_engine(*, no_update: bool = False) -> None:
