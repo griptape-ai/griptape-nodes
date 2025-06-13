@@ -37,9 +37,9 @@ make fix               # Format + unsafe ruff fixes (excludes libraries/tests)
 Claude Code must follow this pattern to prevent lint debt accumulation:
 
 1. **After completing a logical group of changes** (e.g., implementing a feature, fixing a bug)
-2. **Run lint check**: `make check` or `uv run ruff check <path>`
-3. **Fix any issues found** before moving to next major task
-4. **Always check before completing work sessions**
+1. **Run lint check**: `make check`
+1. **Fix any issues found** before moving to next major task. Ask the user if they are comfortable running `make fix` (which will make all changes for them) or if they want to step through them one by one.
+1. **Always check before completing work sessions**
 
 **Goal: Zero lint errors, always.** Never let lint issues accumulate for "later cleanup."
 
