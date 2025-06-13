@@ -77,7 +77,7 @@ format: ## Format project.
 .PHONY: fix
 fix: ## Fix project.
 	@make format
-	@uv run ruff check --fix --unsafe-fixes --exclude "libraries/**/tests/**/*" --exclude "libraries/griptape_nodes_library/workflows/templates/**/*"
+	@uv run ruff check --fix --unsafe-fixes --exclude "libraries/**/tests/**/*" --exclude "libraries/griptape_nodes_library/workflows/templates/**/*" --exclude "libraries/griptape_nodes_advanced_media_library/test_node_loading.py"
 
 .PHONY: check
 check: check/format check/lint check/types check/spell ## Run all checks.
@@ -89,7 +89,7 @@ check/format:
 
 .PHONY: check/lint
 check/lint:
-	@uv run ruff check --exclude "libraries/**/tests/**/*" --exclude "libraries/griptape_nodes_library/workflows/templates/**/*"
+	@uv run ruff check --exclude "libraries/**/tests/**/*" --exclude "libraries/griptape_nodes_library/workflows/templates/**/*" --exclude "libraries/griptape_nodes_advanced_media_library/test_node_loading.py"
 
 .PHONY: check/types
 check/types:
