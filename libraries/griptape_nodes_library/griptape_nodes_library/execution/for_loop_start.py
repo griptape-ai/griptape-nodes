@@ -100,22 +100,23 @@ class ForLoopStartNode(ForEachStartNode):
             self._internal_index = 0
             self.current_index = 0
 
-    def validate_before_workflow_run(self) -> list[Exception] | None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
+    def _validate_parameter_values(self) -> list[Exception] | None:
         exceptions = []
-
         if self.get_parameter_value("start") >= self.get_parameter_value("end"):
             exceptions.append(Exception(f"{self.name}: Start value must be less than end value"))
 
         if self.get_parameter_value("step") <= 0:
             exceptions.append(Exception(f"{self.name}: Step value cannot be less than or equal to zero"))
 
-        if self.get_parameter_value("start") <= 0:
-            exceptions.append(Exception(f"{self.name}: Start value cannot be less than or equal to zero"))
+        return exceptions
 
-        if self.get_parameter_value("end") <= 0:
-            exceptions.append(Exception(f"{self.name}: End value cannot be less than or equal to zero"))
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        exceptions = []
+
+        if validation_exceptions := self._validate_parameter_values():
+            exceptions.extend(validation_exceptions)
 
         self._internal_index = 0
         self.current_index = 0
@@ -136,6 +137,9 @@ class ForLoopStartNode(ForEachStartNode):
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         exceptions = []
+        if validation_exceptions := self._validate_parameter_values():
+            exceptions.extend(validation_exceptions)
+
         if self.end_node is None:
             exceptions.append(Exception("End node not found or connected."))
         try:
