@@ -62,12 +62,21 @@
       }
     },
     {
-      "class_name": "DepthAnythingForDepthEstimation",
-      "file_path": "transformers_nodes_library/depth_anything_for_depth_estimation.py",
+      "class_name": "DepthAnythingForDepthEstimationImage",
+      "file_path": "transformers_nodes_library/depth_anything_for_depth_estimation_image.py",
       "metadata": {
         "category": "image/depth",
         "description": "Generate a Depth Map with Depth Anything V2 and 🤗 Transformers Pairs well with ControlNet Image Generation in depth mode.",
-        "display_name": "Depth Anything V2"
+        "display_name": "Depth Anything V2 Image"
+      }
+    },
+    {
+      "class_name": "DepthAnythingForDepthEstimationVideo",
+      "file_path": "transformers_nodes_library/depth_anything_for_depth_estimation_video.py",
+      "metadata": {
+        "category": "video/depth",
+        "description": "Generate Depth Maps for video with Depth Anything V2 and 🤗 Transformers. Processes each frame for depth estimation.",
+        "display_name": "Depth Anything V2 Video"
       }
     },
     {
