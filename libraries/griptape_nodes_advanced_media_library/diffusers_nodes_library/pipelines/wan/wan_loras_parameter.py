@@ -1,7 +1,8 @@
 import hashlib
 import logging
-from typing import Any
 import re
+from typing import Any
+
 import safetensors  # type: ignore[reportMissingImports]
 
 from griptape_nodes.exe_types.core_types import ParameterList, ParameterMode
@@ -66,7 +67,7 @@ class WanLorasParameter:
             # an at first seemingly unrelated error when trying to run the pipeline (complains about meta device).
             # Specifically the proj_out.* layers in the lora are getting mapped to the base transformer proj_out layers
             # AND the vace proj_out layers. They should only be mapped to the vace layers.
-            # Acccording to https://github.com/huggingface/peft/pull/2419, you can prefix the keys with "^" to avoid
+            # According to https://github.com/huggingface/peft/pull/2419, you can prefix the keys with "^" to avoid
             # mapping to all matches.
             # So, we replace the keys that start with "proj_out" with "^proj_out" to avoid adding them to the
             # vace_block layers.
@@ -76,8 +77,8 @@ class WanLorasParameter:
             for key in list(state_dict.keys()):
                 if key.startswith("transformer.proj_out."):
                     new_key = "^" + key
-                    state_dict[f"^{key}"] = state_dict.pop(key)
-                    logger.info(f"Renamed {key} to {new_key} in lora state_dict to avoid mapping to vace layers.")
+                    state_dict[new_key] = state_dict.pop(key)
+                    logger.info("Renamed %s to %s in lora state_dict to avoid mapping to vace layers.", key, new_key)
 
             # Load the lora weights into the pipeline.
             pipe.load_lora_weights(state_dict, adapter_name=item["name"])
@@ -92,29 +93,24 @@ class WanLorasParameter:
 
 
 # This is unused, but keeping because it is very useful for debugging lora loading issues.
-def print_cleaned_state_dict_keys(state_dict):
-    """
-    Prints all keys in the state_dict, replacing numbers with '<NUM>' for brevity.
-    """
-    pattern = re.compile(r'\b\d+\b')
+def log_cleaned_state_dict_keys(state_dict: dict) -> None:
+    """Logs all keys in the state_dict, replacing numbers with '<NUM>' for brevity."""
+    pattern = re.compile(r"\b\d+\b")
     cleaned_keys = set()
 
-    for key in state_dict.keys():
-        cleaned_key = pattern.sub('<NUM>', key)
+    for key in state_dict:
+        cleaned_key = pattern.sub("<NUM>", key)
         cleaned_keys.add(cleaned_key)
 
     for key in sorted(cleaned_keys):
-        print(key)
+        logger.info(key)
+
 
 # This is unused, but keeping because it is very useful for debugging lora loading issues.
-def extract_lora_state_dict(model):
-    """
-    Extracts a state_dict containing only LoRA-related parameters from the model.
+def extract_lora_state_dict(model: Any) -> dict:
+    """Extracts a state_dict containing only LoRA-related parameters from the model.
+
     Looks for parameter names containing 'lora_'.
     """
-    lora_state_dict = {
-        name: param
-        for name, param in model.named_parameters()
-        if "lora_" in name
-    }
+    lora_state_dict = {name: param for name, param in model.named_parameters() if "lora_" in name}
     return lora_state_dict
