@@ -130,6 +130,10 @@ nav:
         - Replace In List: nodes/lists/replace_in_list.md
         - Split List: nodes/lists/split_list.md
         - Combine Lists: nodes/lists/combine_lists.md
+        - Create Float List: nodes/lists/create_float_list.md
+        - Create Int List: nodes/lists/create_int_list.md
+        - Create Bool List: nodes/lists/create_bool_list.md
+        - Create Text List: nodes/lists/create_text_list.md
     - Number:
         - Input Nodes:
           - Float Input: nodes/number/create_float.md
@@ -138,10 +142,6 @@ nav:
         - Display Nodes:
           - Display Float: nodes/number/display_float.md
           - Display Int: nodes/number/display_int.md
-        - List Nodes:
-          - Create Float List: nodes/number/create_float_list.md
-          - Create Int List: nodes/number/create_int_list.md
-          - Create Bool List: nodes/number/create_bool_list.md
         - Math Nodes:
           - Math Operations: nodes/number/math.md
           - Askulator: nodes/number/askulator.md
