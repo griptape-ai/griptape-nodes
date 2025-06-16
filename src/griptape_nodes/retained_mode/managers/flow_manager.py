@@ -3,15 +3,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
-from griptape.events import EventBus
-
 from griptape_nodes.exe_types.core_types import (
     ParameterContainer,
     ParameterMode,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
-from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
     CreateConnectionResultFailure,
@@ -81,7 +78,6 @@ from griptape_nodes.retained_mode.events.node_events import (
     SerializeNodeToCommandsResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
-    AlterElementEvent,
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.validation_events import (
@@ -608,9 +604,7 @@ class FlowManager:
 
         # Let the source make any internal handling decisions now that the Connection has been made.
         source_node.after_outgoing_connection(
-            source_parameter=source_param,
-            target_node=target_node,
-            target_parameter=target_param
+            source_parameter=source_param, target_node=target_node, target_parameter=target_param
         )
 
         # And target.
@@ -784,9 +778,7 @@ class FlowManager:
                 logger.warning(e)
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
         source_node.after_outgoing_connection_removed(
-            source_parameter=source_param,
-            target_node=target_node,
-            target_parameter=target_param
+            source_parameter=source_param, target_node=target_node, target_parameter=target_param
         )
 
         # And target.

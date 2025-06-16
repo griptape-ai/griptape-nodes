@@ -95,10 +95,7 @@ class ForEachEndNode(EndLoopNode):
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         if target_parameter is self.from_start and isinstance(source_node, StartLoopNode):
             self.start_node = source_node
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)

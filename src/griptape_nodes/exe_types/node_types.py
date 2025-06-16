@@ -394,10 +394,7 @@ class BaseNode(ABC):
 
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
-        final_value = self.before_value_set(
-            parameter=parameter,
-            value=candidate_value
-        )
+        final_value = self.before_value_set(parameter=parameter, value=candidate_value)
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
 
@@ -418,9 +415,7 @@ class BaseNode(ABC):
                 new_parent_value = handle_container_parameter(self, parent_parameter)
                 if new_parent_value is not None:
                     # set that new value if it exists.
-                    self.set_parameter_value(
-                        parameter.parent_container_name, new_parent_value
-                    )
+                    self.set_parameter_value(parameter.parent_container_name, new_parent_value)
 
     def kill_parameter_children(self, parameter: Parameter) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes

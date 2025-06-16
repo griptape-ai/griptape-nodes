@@ -80,7 +80,7 @@ class SplitList(ControlNode):
         )
         self.add_parameter(self.output_b)
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "split_by":
             if value == "index":
                 self.show_parameter_by_name("split_index")
@@ -90,10 +90,7 @@ class SplitList(ControlNode):
                 self.hide_parameter_by_name("split_index")
                 self.show_parameter_by_name("split_item")
                 self.show_parameter_by_name("keep_split_item")
-            modified_parameters_set.add("split_index")
-            modified_parameters_set.add("split_item")
-            modified_parameters_set.add("keep_split_item")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def process(self) -> None:
         # Get the list of items from the input parameter

@@ -222,14 +222,11 @@ class Agent(ControlNode):
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         # If an existing agent is connected, hide parameters related to creating a new one.
         if target_parameter.name == "agent":
             params_to_toggle = ["model", "tools", "rulesets"]
             self.hide_parameter_by_name(params_to_toggle)
-            for param_name in params_to_toggle:
-                modified_parameters_set.add(param_name)
 
         if target_parameter.name == "model" and source_parameter.name == "prompt_model_config":
             # Remove the options trait
@@ -246,32 +243,23 @@ class Agent(ControlNode):
                 "display_name", source_parameter.name
             )
 
-            # make sure we update the model
-            modified_parameters_set.add("model")
-
         # If additional context is connected, prevent editing via property panel.
         # NOTE: This is a workaround. Ideally this is done automatically.
         if target_parameter.name == "additional_context":
             target_parameter.allowed_modes = {ParameterMode.INPUT}
-            modified_parameters_set.add("additional_context")
 
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         # If the agent connection is removed, show agent creation parameters.
         if target_parameter.name == "agent":
             params_to_toggle = ["model", "tools", "rulesets"]
             self.show_parameter_by_name(params_to_toggle)
-            for param_name in params_to_toggle:
-                modified_parameters_set.add(param_name)
 
         if target_parameter.name == "model":
             # Reset the parameter type
@@ -291,17 +279,12 @@ class Agent(ControlNode):
             # Change the display name to be appropriate
             target_parameter._ui_options["display_name"] = "prompt model"
 
-            modified_parameters_set.add("model")
-
         # If the additional context connection is removed, make it editable again.
         # NOTE: This is a workaround. Ideally this is done automatically.
         if target_parameter.name == "additional_context":
             target_parameter.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY}
-            modified_parameters_set.add(target_parameter.name)
 
-        return super().after_incoming_connection_removed(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
     # --- Validation ---
     def validate_before_workflow_run(self) -> list[Exception] | None:

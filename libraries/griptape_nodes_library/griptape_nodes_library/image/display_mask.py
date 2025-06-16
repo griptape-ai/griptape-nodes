@@ -59,19 +59,16 @@ class DisplayMask(DataNode):
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         """Handle input connections and update outputs accordingly."""
         if target_parameter.name == "input_image":
             input_image = self.get_parameter_value("input_image")
             if input_image is not None:
-                self._handle_input_image_change(input_image, modified_parameters_set)
+                self._handle_input_image_change(input_image)
 
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
-    def _handle_input_image_change(self, value: Any, modified_parameters_set: set[str]) -> None:
+    def _handle_input_image_change(self, value: Any) -> None:
         # Normalize input image to ImageUrlArtifact
         if isinstance(value, dict):
             image_artifact = dict_to_image_url_artifact(value)
@@ -80,13 +77,12 @@ class DisplayMask(DataNode):
 
         # Create mask from image
         self._create_mask(image_artifact)
-        modified_parameters_set.add("output_mask")
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "input_image" and value is not None:
-            self._handle_input_image_change(value, modified_parameters_set)
+            self._handle_input_image_change(value)
 
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def _create_mask(self, image_artifact: ImageUrlArtifact) -> None:
         """Create a mask from the input image and set as output_mask."""

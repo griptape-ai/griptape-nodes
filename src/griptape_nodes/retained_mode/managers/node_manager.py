@@ -4,8 +4,6 @@ import pickle
 from typing import Any, NamedTuple, cast
 from uuid import uuid4
 
-from griptape.events import EventBus
-
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     Parameter,
@@ -18,8 +16,6 @@ from griptape_nodes.exe_types.node_types import BaseNode, EndLoopNode, NodeResol
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
-    ExecutionEvent,
-    ExecutionGriptapeNodeEvent,
     ResultPayload,
     ResultPayloadFailure,
 )
@@ -92,7 +88,6 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     AddParameterToNodeResultFailure,
     AddParameterToNodeResultSuccess,
-    AlterElementEvent,
     AlterParameterDetailsRequest,
     AlterParameterDetailsResultFailure,
     AlterParameterDetailsResultSuccess,

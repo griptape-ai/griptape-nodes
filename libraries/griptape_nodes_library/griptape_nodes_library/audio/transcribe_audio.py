@@ -110,11 +110,9 @@ class TranscribeAudio(ControlNode):
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "agent":
             self.hide_parameter_by_name("model")
-            modified_parameters_set.add("model")
 
         if target_parameter.name == "model" and source_parameter.name == "text_to_speech_model_config":
             # Check and see if the incoming connection is from a prompt model config or an agent.
@@ -123,22 +121,17 @@ class TranscribeAudio(ControlNode):
             target_parameter._ui_options["display_name"] = source_parameter.ui_options.get(
                 "display_name", source_parameter.name
             )
-            modified_parameters_set.add("model")
 
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "agent":
             self.show_parameter_by_name("model")
-            modified_parameters_set.add("model")
         # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter
         if target_parameter.name == "model":
             target_parameter.type = "str"
@@ -147,10 +140,7 @@ class TranscribeAudio(ControlNode):
             target_parameter._ui_options["display_name"] = "text to speech model"
             self.set_parameter_value("model", DEFAULT_MODEL)
 
-            modified_parameters_set.add("model")
-        return super().after_incoming_connection_removed(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
     def process(self) -> AsyncResult[Structure]:
         # Get the parameters from the node
