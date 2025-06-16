@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import re
 from typing import Any
 
 import safetensors  # type: ignore[reportMissingImports]
@@ -57,16 +58,30 @@ class WanLorasParameter:
         # Load the loras.
         for item in loras_to_load.values():
             lora_path = item["path"]
-            msg = f"Loading lora weights: {lora_path}"
-            logger.info(msg)
+            logger.info("Loading lora weights: %s", lora_path)
             state_dict = safetensors.torch.load_file(lora_path)  # type: ignore[reportAttributeAccessIssue]
-            pipe.load_lora_weights(state_dict, adapter_name=item["name"])
 
-        # if loras_to_load and get_best_device(quiet=True) == torch.device("cuda"):
-        #     # If we loaded any loras, make sure the layers have been casted
-        #     # to bfloat16. For cuda, we enable the layerwise caching on the
-        #     # transformer, but this isn't applied to the linear layers added
-        #     # by the loras. Those are loaded as fp8, and cuda doesn't have
+            # Fix for loading Wan 2.1 loras with Wan VACE
+            #
+            # When attempting to load a wan lora with vace, we are getting some incorrect layer mappings, which is causing
+            # an at first seemingly unrelated error when trying to run the pipeline (complains about meta device).
+            # Specifically the proj_out.* layers in the lora are getting mapped to the base transformer proj_out layers
+            # AND the vace proj_out layers. They should only be mapped to the vace layers.
+            # According to https://github.com/huggingface/peft/pull/2419, you can prefix the keys with "^" to avoid
+            # mapping to all matches.
+            # So, we replace the keys that start with "proj_out" with "^proj_out" to avoid adding them to the
+            # vace_block layers.
+            # Note that we also need to rename the keys that will be loaded. In case the lora is not already in diffusers format,
+            # we need to convert it to diffusers format first, which is done by calling `pipe.lora_state_dict(state_dict)`.
+            state_dict = pipe.lora_state_dict(state_dict)
+            for key in list(state_dict.keys()):
+                if key.startswith("transformer.proj_out."):
+                    new_key = "^" + key
+                    state_dict[new_key] = state_dict.pop(key)
+                    logger.info("Renamed %s to %s in lora state_dict to avoid mapping to vace layers.", key, new_key)
+
+            # Load the lora weights into the pipeline.
+            pipe.load_lora_weights(state_dict, adapter_name=item["name"])
 
         # Use them with given weights.
         adapter_names = [v["name"] for v in lora_by_name.values()]
@@ -75,3 +90,27 @@ class WanLorasParameter:
         logger.info(msg)
         pipe.set_adapters(adapter_names=adapter_names, adapter_weights=adapter_weights)
         pipe.enable_lora()
+
+
+# This is unused, but keeping because it is very useful for debugging lora loading issues.
+def log_cleaned_state_dict_keys(state_dict: dict) -> None:
+    """Logs all keys in the state_dict, replacing numbers with '<NUM>' for brevity."""
+    pattern = re.compile(r"\b\d+\b")
+    cleaned_keys = set()
+
+    for key in state_dict:
+        cleaned_key = pattern.sub("<NUM>", key)
+        cleaned_keys.add(cleaned_key)
+
+    for key in sorted(cleaned_keys):
+        logger.info(key)
+
+
+# This is unused, but keeping because it is very useful for debugging lora loading issues.
+def extract_lora_state_dict(model: Any) -> dict:
+    """Extracts a state_dict containing only LoRA-related parameters from the model.
+
+    Looks for parameter names containing 'lora_'.
+    """
+    lora_state_dict = {name: param for name, param in model.named_parameters() if "lora_" in name}
+    return lora_state_dict
