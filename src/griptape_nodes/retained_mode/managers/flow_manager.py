@@ -607,37 +607,18 @@ class FlowManager:
             return CreateConnectionResultFailure()
 
         # Let the source make any internal handling decisions now that the Connection has been made.
-        modified_source_parameters = set()
         source_node.after_outgoing_connection(
             source_parameter=source_param,
             target_node=target_node,
-            target_parameter=target_param,
-            modified_parameters_set=modified_source_parameters,
+            target_parameter=target_param
         )
 
         # And target.
-        modified_target_parameters = set()
         target_node.after_incoming_connection(
             source_node=source_node,
             source_parameter=source_param,
             target_parameter=target_param,
-            modified_parameters_set=modified_target_parameters,
         )
-
-        if modified_source_parameters:
-            for modified_parameter_name in modified_source_parameters:
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
-                modified_parameter = source_node.get_parameter_by_name(modified_parameter_name)
-                if modified_parameter is not None:
-                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(source_node))
-                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
-        if modified_target_parameters:
-            for modified_parameter_name in modified_target_parameters:
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
-                modified_parameter = target_node.get_parameter_by_name(modified_parameter_name)
-                if modified_parameter is not None:
-                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(target_node))
-                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
 
         details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
         logger.debug(details)
@@ -801,37 +782,20 @@ class FlowManager:
                 )
             except KeyError as e:
                 logger.warning(e)
-        modified_source_parameters = set()
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
         source_node.after_outgoing_connection_removed(
             source_parameter=source_param,
             target_node=target_node,
-            target_parameter=target_param,
-            modified_parameters_set=modified_source_parameters,
+            target_parameter=target_param
         )
 
         # And target.
-        modified_target_parameters = set()
         target_node.after_incoming_connection_removed(
             source_node=source_node,
             source_parameter=source_param,
             target_parameter=target_param,
             modified_parameters_set=modified_target_parameters,
         )
-        if modified_source_parameters:
-            for modified_parameter_name in modified_source_parameters:
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
-                modified_parameter = source_node.get_parameter_by_name(modified_parameter_name)
-                if modified_parameter is not None:
-                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(source_node))
-                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
-        if modified_target_parameters:
-            for modified_parameter_name in modified_target_parameters:
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
-                modified_parameter = target_node.get_parameter_by_name(modified_parameter_name)
-                if modified_parameter is not None:
-                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(target_node))
-                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
 
         details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" deleted.'
         logger.debug(details)

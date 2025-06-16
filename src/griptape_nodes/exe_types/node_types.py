@@ -126,7 +126,6 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002,
-        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
         return
@@ -136,7 +135,6 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
         return
@@ -146,7 +144,6 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         return
@@ -156,12 +153,11 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
         return
 
-    def before_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> Any:  # noqa: ARG002
+    def before_value_set(self, parameter: Parameter, value: Any) -> Any:  # noqa: ARG002
         """Callback when a Parameter's value is ABOUT to be set.
 
         Custom nodes may elect to override the default behavior by implementing this function in their node code.
@@ -186,7 +182,7 @@ class BaseNode(ABC):
         # Default behavior is to do nothing to the supplied value, and indicate no other modified Parameters.
         return value
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:  # noqa: ARG002
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:  # noqa: ARG002
         """Callback AFTER a Parameter's value was set.
 
         Custom nodes may elect to override the default behavior by implementing this function in their node code.
@@ -353,7 +349,7 @@ class BaseNode(ABC):
                 return parameter
         return None
 
-    def set_parameter_value(self, param_name: str, value: Any) -> set[str] | None:
+    def set_parameter_value(self, param_name: str, value: Any) -> None:
         """Attempt to set a Parameter's value.
 
         The Node may choose to store a different value (or type) than what was passed in.
@@ -396,29 +392,22 @@ class BaseNode(ABC):
         for validator in parameter.validators:
             validator(parameter, candidate_value)
 
-        # Keep track of which other parameters got modified as a result of any node-specific logic.
-        modified_parameters: set[str] = set()
-
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
         final_value = self.before_value_set(
             parameter=parameter,
-            value=candidate_value,
-            modified_parameters_set=modified_parameters,
+            value=candidate_value
         )
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
-
-        # Emit AlterElementEvent for this parameter's value change
-        self._emit_parameter_value_change_event(parameter)
 
         # If a parameter value has been set at the top level of a container, wipe all children.
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(
             parameter=parameter,
             value=final_value,
-            modified_parameters_set=modified_parameters,
         )
+        self._emit_parameter_value_change_event(parameter)
         # handle with container parameters
         if parameter.parent_container_name is not None:
             # Does it have a parent container
@@ -429,13 +418,9 @@ class BaseNode(ABC):
                 new_parent_value = handle_container_parameter(self, parent_parameter)
                 if new_parent_value is not None:
                     # set that new value if it exists.
-                    modified_parameters_from_container = self.set_parameter_value(
+                    self.set_parameter_value(
                         parameter.parent_container_name, new_parent_value
                     )
-                    # Return the complete set of modified parameters.
-                    if modified_parameters_from_container:
-                        modified_parameters = modified_parameters | modified_parameters_from_container
-        return modified_parameters
 
     def kill_parameter_children(self, parameter: Parameter) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes

@@ -1355,18 +1355,12 @@ class NodeManager:
             return NodeManager.ModifiedReturnValue(object_created, modified)
         # Otherwise use set_parameter_value. This calls our converters and validators.
         old_value = node.get_parameter_value(request.parameter_name)
-        modified_parameters = node.set_parameter_value(request.parameter_name, object_created)
+        node.set_parameter_value(request.parameter_name, object_created)
         # Get the "converted" value here.
         finalized_value = node.get_parameter_value(request.parameter_name)
         if old_value != finalized_value:
             modified = True
         # If any parameters were dependent on that value, we're calling this details request to emit the result to the editor.
-        if modified_parameters:
-            for modified_parameter_name in modified_parameters:
-                modified_parameter = node.root_ui_element.find_element_by_name(modified_parameter_name)
-                if modified_parameter is not None:
-                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(node))
-                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
         return NodeManager.ModifiedReturnValue(finalized_value, modified)
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
