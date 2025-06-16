@@ -288,7 +288,7 @@
     },
     {
       "class_name": "StableDiffusionAttendAndExcitePipeline",
-      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_attend_and_excite/stable_diffusion_attend_and_excite_pipeline.py",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_ae/stable_diffusion_ae_pipeline.py",
       "metadata": {
         "category": "image/stable_diffusion_attend_and_excite",
         "description": "Generate images with enhanced attention control via 🤗 Diffusers.",
