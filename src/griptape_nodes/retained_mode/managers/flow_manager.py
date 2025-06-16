@@ -794,7 +794,6 @@ class FlowManager:
             source_node=source_node,
             source_parameter=source_param,
             target_parameter=target_param,
-            modified_parameters_set=modified_target_parameters,
         )
 
         details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" deleted.'
