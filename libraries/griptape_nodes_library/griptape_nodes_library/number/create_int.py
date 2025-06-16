@@ -30,22 +30,5 @@ class IntegerInput(DataNode):
             )
         )
 
-        self.add_parameter(
-            Parameter(
-                name="integer",
-                default_value=self.value,
-                output_type="int",
-                type="int",
-                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
-                tooltip="An integer",
-                widget="number_slider", 
-                widget_options={
-                    "min": 0,
-                    "max": 100,
-                    "step": 1,
-                }
-            )
-        )
-
     def process(self) -> None:
         self.parameter_output_values["integer"] = self.parameter_values.get("integer")
