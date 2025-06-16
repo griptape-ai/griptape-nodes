@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
@@ -11,6 +12,9 @@ from griptape.mixins.serializable_mixin import SerializableMixin
 from griptape.structures import Structure
 from griptape.tools import BaseTool
 from pydantic import BaseModel, Field
+
+from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
+from griptape_nodes.retained_mode.utils.session_persistence import SessionPersistence
 
 if TYPE_CHECKING:
     import builtins
@@ -108,9 +112,37 @@ class BaseEvent(BaseModel, ABC):
     # Keeping here instead of in GriptapeNodes to avoid circular import hell.
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/848
     _session_id: ClassVar[str | None] = None
+    _engine_id: ClassVar[str | None] = None
+    engine_id: str | None = Field(default_factory=lambda: BaseEvent._engine_id, init=False)
 
     # Instance variable with a default_factory that references the class variable
     session_id: str | None = Field(default_factory=lambda: BaseEvent._session_id)
+
+    @classmethod
+    def initialize_engine_id(cls) -> None:
+        """Initialize the engine ID if not already set."""
+        if cls._engine_id is None:
+            # Check for explicit engine ID first
+            explicit_id = os.getenv("GTN_ENGINE_ID")
+            if explicit_id:
+                cls._engine_id = explicit_id
+            else:
+                # Get persistent engine ID from single engine data
+
+                cls._engine_id = EngineIdentity.get_engine_id()
+
+            # Initialize engine data (name, etc.) in persistent storage
+
+            EngineIdentity.get_engine_data()
+
+    @classmethod
+    def initialize_session_id(cls) -> None:
+        """Initialize the session ID from persisted storage if available."""
+        if cls._session_id is None:
+            # Check if there's a persisted session ID
+            persisted_session_id = SessionPersistence.get_persisted_session_id()
+            if persisted_session_id:
+                cls._session_id = persisted_session_id
 
     # Custom JSON encoder for the payload
     class Config:
