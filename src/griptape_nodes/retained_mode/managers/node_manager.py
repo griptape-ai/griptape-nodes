@@ -1159,6 +1159,7 @@ class NodeManager:
         list_connections_result = self.on_list_connections_for_node_request(list_connections_request)
 
         if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+            # No connections exist for this node, which is not a failure - just nothing to validate
             return None
 
         # Check and break invalid incoming connections
