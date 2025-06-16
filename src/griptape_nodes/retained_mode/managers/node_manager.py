@@ -1142,7 +1142,7 @@ class NodeManager:
             else:
                 parameter.allowed_modes.discard(ParameterMode.OUTPUT)
 
-    def _validate_and_break_invalid_connections(
+    def _validate_and_break_invalid_connections(  # noqa: C901
         self, node_name: str, parameter: Parameter, request: AlterParameterDetailsRequest
     ) -> None:
         """Validate and break any connections that are no longer valid after a parameter type change.
