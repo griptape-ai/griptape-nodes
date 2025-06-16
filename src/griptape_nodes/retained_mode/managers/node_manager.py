@@ -1144,18 +1144,22 @@ class NodeManager:
 
     def _validate_and_break_invalid_connections(
         self, node_name: str, parameter: Parameter, request: AlterParameterDetailsRequest
-    ) -> None:
+    ) -> ResultPayload | None:
         """Validate and break any connections that are no longer valid after a parameter type change.
 
         This method checks both incoming and outgoing connections for a parameter and removes
         any that are no longer type-compatible after the parameter's type has been changed.
+
+        Returns:
+            ResultPayload | None: Returns AlterParameterDetailsResultFailure if any connection deletion fails,
+                                 None otherwise.
         """
         # Get all connections for this node
         list_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
         list_connections_result = self.on_list_connections_for_node_request(list_connections_request)
 
         if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
-            return
+            return None
 
         # Check and break invalid incoming connections
         for conn in list_connections_result.incoming_connections:
@@ -1172,14 +1176,9 @@ class NodeManager:
                         )
                     )
                     if isinstance(delete_result, ResultPayloadFailure):
-                        logger.warning(
-                            "Failed to delete incompatible incoming connection from %s.%s to %s.%s: %s",
-                            conn.source_node_name,
-                            conn.source_parameter_name,
-                            node_name,
-                            request.parameter_name,
-                            delete_result,
-                        )
+                        details = f"Failed to delete incompatible incoming connection from {conn.source_node_name}.{conn.source_parameter_name} to {node_name}.{request.parameter_name}: {delete_result}"
+                        logger.error(details)
+                        return AlterParameterDetailsResultFailure()
 
         # Check and break invalid outgoing connections
         for conn in list_connections_result.outgoing_connections:
@@ -1196,16 +1195,13 @@ class NodeManager:
                         )
                     )
                     if isinstance(delete_result, ResultPayloadFailure):
-                        logger.warning(
-                            "Failed to delete incompatible outgoing connection from %s.%s to %s.%s: %s",
-                            node_name,
-                            request.parameter_name,
-                            conn.target_node_name,
-                            conn.target_parameter_name,
-                            delete_result,
-                        )
+                        details = f"Failed to delete incompatible outgoing connection from {node_name}.{request.parameter_name} to {conn.target_node_name}.{conn.target_parameter_name}: {delete_result}"
+                        logger.error(details)
+                        return AlterParameterDetailsResultFailure()
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901
+        return None
+
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911
         node_name = request.node_name
         node = None
 
@@ -1242,6 +1238,12 @@ class NodeManager:
                 parameter_group.ui_options = request.ui_options
             return AlterParameterDetailsResultSuccess()
 
+        # Check and handle connections if type was changed
+        if request.type is not None or request.input_types is not None or request.output_type is not None:
+            result = self._validate_and_break_invalid_connections(node_name, parameter, request)
+            if isinstance(result, AlterParameterDetailsResultFailure):
+                return result
+
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/827
         # Now change all the values on the Parameter.
         self.modify_alterable_fields(request, parameter)
@@ -1256,10 +1258,6 @@ class NodeManager:
         if request.default_value is not None:
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/825
             node.parameter_values[request.parameter_name] = request.default_value
-
-        # Check and handle connections if type was changed
-        if request.type is not None or request.input_types is not None or request.output_type is not None:
-            self._validate_and_break_invalid_connections(node_name, parameter, request)
 
         details = f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{node_name}'."
         logger.debug(details)
