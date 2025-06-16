@@ -1164,34 +1164,47 @@ class NodeManager:
                     source_node = self.get_node_by_name(conn.source_node_name)
                     source_param = source_node.get_parameter_by_name(conn.source_parameter_name)
                     if source_param and not parameter.is_incoming_type_allowed(source_param.output_type):
-                        try:
-                            GriptapeNodes.FlowManager().on_delete_connection_request(
-                                DeleteConnectionRequest(
-                                    source_node_name=conn.source_node_name,
-                                    source_parameter_name=conn.source_parameter_name,
-                                    target_node_name=node_name,
-                                    target_parameter_name=request.parameter_name,
-                                )
+                        delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
+                            DeleteConnectionRequest(
+                                source_node_name=conn.source_node_name,
+                                source_parameter_name=conn.source_parameter_name,
+                                target_node_name=node_name,
+                                target_parameter_name=request.parameter_name,
                             )
-                        except Exception as e:
-                            logger.warning("Failed to delete connection: %s", e)
+                        )
+                        if isinstance(delete_result, ResultPayloadFailure):
+                            logger.warning(
+                                "Failed to delete incompatible incoming connection from %s.%s to %s.%s: %s",
+                                conn.source_node_name,
+                                conn.source_parameter_name,
+                                node_name,
+                                request.parameter_name,
+                                delete_result,
+                            )
+
             # Check and break invalid outgoing connections
             for conn in list_connections_result.outgoing_connections:
                 if conn.source_parameter_name == request.parameter_name:
                     target_node = self.get_node_by_name(conn.target_node_name)
                     target_param = target_node.get_parameter_by_name(conn.target_parameter_name)
                     if target_param and not target_param.is_incoming_type_allowed(parameter.output_type):
-                        try:
-                            GriptapeNodes.FlowManager().on_delete_connection_request(
-                                DeleteConnectionRequest(
-                                    source_node_name=node_name,
-                                    source_parameter_name=request.parameter_name,
-                                    target_node_name=conn.target_node_name,
-                                    target_parameter_name=conn.target_parameter_name,
-                                )
+                        delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
+                            DeleteConnectionRequest(
+                                source_node_name=node_name,
+                                source_parameter_name=request.parameter_name,
+                                target_node_name=conn.target_node_name,
+                                target_parameter_name=conn.target_parameter_name,
                             )
-                        except Exception as e:
-                            logger.warning("Failed to delete connection: %s", e)
+                        )
+                        if isinstance(delete_result, ResultPayloadFailure):
+                            logger.warning(
+                                "Failed to delete incompatible outgoing connection from %s.%s to %s.%s: %s",
+                                node_name,
+                                request.parameter_name,
+                                conn.target_node_name,
+                                conn.target_parameter_name,
+                                delete_result,
+                            )
         except Exception as e:
             logger.warning("Failed to validate connections after parameter type change: %s", e)
 
