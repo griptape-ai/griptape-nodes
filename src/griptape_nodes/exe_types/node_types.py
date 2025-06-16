@@ -85,6 +85,8 @@ class BaseNode(ABC):
         self.parameter_values = {}
         self.parameter_output_values = {}
         self.root_ui_element = BaseNodeElement()
+        # Set the node context for the root element
+        self.root_ui_element._node_context = self
         self.process_generator = None
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
@@ -248,6 +250,8 @@ class BaseNode(ABC):
         return None
 
     def add_node_element(self, ui_element: BaseNodeElement) -> None:
+        # Set the node context before adding to ensure proper propagation
+        ui_element._node_context = self
         self.root_ui_element.add_child(ui_element)
 
     def remove_node_element(self, ui_element: BaseNodeElement) -> None:
@@ -404,6 +408,10 @@ class BaseNode(ABC):
         )
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
+
+        # Emit AlterElementEvent for this parameter's value change
+        self._emit_parameter_value_change_event(parameter)
+
         # If a parameter value has been set at the top level of a container, wipe all children.
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(
@@ -684,6 +692,25 @@ class BaseNode(ABC):
 
         # Use reorder_elements to apply the move
         self.reorder_elements(list(new_order))
+
+    def _emit_parameter_value_change_event(self, parameter: Parameter) -> None:
+        """Emit an AlterElementEvent for a parameter value change."""
+        try:
+            from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+            from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+
+            # Create event data using the parameter's to_event method
+            event_data = parameter.to_event(self)
+
+            # Publish the event
+            event = ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
+            )
+            EventBus.publish_event(event)
+
+        except ImportError:
+            # If imports fail, silently continue - this ensures backward compatibility
+            pass
 
     def _get_element_name(self, element: str | int, element_names: list[str]) -> str:
         """Convert an element identifier (name or index) to its name.

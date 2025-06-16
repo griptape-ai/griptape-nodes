@@ -164,10 +164,12 @@ class BaseNodeElement:
     element_type: str = field(default_factory=lambda: BaseNodeElement.__name__)
     name: str = field(default_factory=lambda: str(f"{BaseNodeElement.__name__}_{uuid.uuid4().hex}"))
     parent_group_name: str | None = None
+    changes: dict[str, tuple[Any, Any]] = field(default_factory=dict)
 
     _children: list[BaseNodeElement] = field(default_factory=list)
     _stack: ClassVar[list[BaseNodeElement]] = []
     _parent: BaseNodeElement | None = field(default=None)
+    _node_context: BaseNode | None = field(default=None)
 
     @property
     def children(self) -> list[BaseNodeElement]:
@@ -199,6 +201,49 @@ class BaseNodeElement:
     def __repr__(self) -> str:
         return f"BaseNodeElement({self.children=})"
 
+    def __setattr__(self, attr: str, value: Any, /) -> None:
+        old_value = getattr(self, attr, None) if hasattr(self, attr) else None
+
+        # Only track and emit events for meaningful changes to relevant attributes
+        if (
+            hasattr(self, attr)
+            and old_value != value
+            and not attr.startswith("_")
+            and attr not in ("changes", "element_id")
+        ):
+            self.changes[attr] = (old_value, value)
+
+            # Call the method after setting the attribute to emit event
+            super().__setattr__(attr, value)
+            self._emit_alter_element_event_if_possible(attr, old_value, value)
+        else:
+            super().__setattr__(attr, value)
+
+    def _emit_alter_element_event_if_possible(self, _attr: str, _old_value: Any, _new_value: Any) -> None:
+        """Emit an AlterElementEvent if we have node context and the necessary dependencies."""
+        if self._node_context is None:
+            return
+
+        try:
+            # Import here to avoid circular dependencies
+            from griptape.events import EventBus
+
+            from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+            from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+
+            # Create event data using the existing to_event method
+            event_data = self.to_event(self._node_context)
+
+            # Publish the event
+            event = ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
+            )
+            EventBus.publish_event(event)
+
+        except ImportError:
+            # If imports fail, silently continue - this ensures backward compatibility
+            pass
+
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
 
@@ -228,7 +273,13 @@ class BaseNodeElement:
         if child._parent is not None:
             child._parent.remove_child(child)
         child._parent = self
+        # Propagate node context to children
+        child._node_context = self._node_context
         self._children.append(child)
+
+        # Also propagate to any existing children of the child
+        for grandchild in child._children:
+            grandchild._node_context = self._node_context
 
     def remove_child(self, child: BaseNodeElement | str) -> None:
         ui_elements: list[BaseNodeElement] = [self]
