@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.events.base_events import (
+    ExecutionPayload,
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
@@ -32,6 +33,15 @@ class CreateConnectionResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class CreateConnectionResultFailure(ResultPayloadFailure):
     pass
+
+
+@dataclass
+@PayloadRegistry.register
+class ConnectionCreatedEvent(ExecutionPayload):
+    source_node_name: str
+    source_parameter_name: str
+    target_node_name: str
+    target_parameter_name: str
 
 
 @dataclass

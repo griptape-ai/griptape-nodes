@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, cast
 from griptape.events import EventBus
 
 from griptape_nodes.exe_types.core_types import (
+    DynamicParameter,
     ParameterContainer,
     ParameterMode,
 )
@@ -13,6 +14,7 @@ from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.connection_events import (
+    ConnectionCreatedEvent,
     CreateConnectionRequest,
     CreateConnectionResultFailure,
     CreateConnectionResultSuccess,
@@ -509,6 +511,58 @@ class FlowManager:
             logger.error(details)
             return CreateConnectionResultFailure()
 
+        logger.info("Checking for dynamic parameters")
+        # Handle dynamic parameters before connection
+        if isinstance(target_param, DynamicParameter):
+            logger.info("Found dynamic parameter")
+            dynamic_param = target_param  # Type narrowing for DynamicParameter
+            if dynamic_param.mode == "replace":
+                # For replace mode, disconnect any existing connections and update the parameter type
+                if target_node_name in source_flow.connections.incoming_index:
+                    incoming_connections = source_flow.connections.incoming_index[target_node_name]
+                    if dynamic_param.name in incoming_connections:
+                        for connection_id in incoming_connections[dynamic_param.name]:
+                            connection = source_flow.connections.connections[connection_id]
+                            # Disconnect existing connection
+                            source_flow.connections.remove_connection(
+                                source_node=connection.source_node.name,
+                                source_parameter=connection.source_parameter.name,
+                                target_node=connection.target_node.name,
+                                target_parameter=connection.target_parameter.name,
+                            )
+                # Update parameter type to match incoming connection
+                dynamic_param.type = source_param.output_type
+                dynamic_param.input_types = [source_param.output_type]
+                dynamic_param.output_type = source_param.output_type
+                dynamic_param.tooltip = source_param.tooltip
+                dynamic_param.tooltip_as_input = source_param.tooltip_as_input
+                dynamic_param.tooltip_as_property = source_param.tooltip_as_property
+                dynamic_param.tooltip_as_output = source_param.tooltip_as_output
+                if hasattr(source_param, "_ui_options") and source_param._ui_options:
+                    dynamic_param._ui_options.update(source_param._ui_options)
+                dynamic_param._is_replaced = True
+
+                # Send UI update for the modified dynamic parameter
+                modified_request = AlterElementEvent(element_details=dynamic_param.to_event(target_node))
+                EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
+
+            elif dynamic_param.mode == "spawn":
+                # For spawn mode, create a new parameter and connect to it instead
+                spawned_param = dynamic_param._handle_spawn_mode(source_param, is_target=True)
+                if not spawned_param:
+                    details = f'Failed to spawn new parameter for dynamic parameter "{target_node_name}.{request.target_parameter_name}"'
+                    logger.error(details)
+                    return CreateConnectionResultFailure()
+
+                # Send UI update for the spawned parameter
+                spawned_request = AlterElementEvent(element_details=spawned_param.to_event(target_node))
+                EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=spawned_request)))
+
+                # Update target parameter to the spawned one
+                target_param = spawned_param
+                # Update the request to use the spawned parameter's name
+                request.target_parameter_name = spawned_param.name
+
         # Ask each node involved to bless this union.
         if not source_node.allow_outgoing_connection(
             source_parameter=source_param,
@@ -605,6 +659,15 @@ class FlowManager:
                     details = "Failed attempting to restore the old Connection after failing the replacement. A thousand pardons."
                     logger.error(details)
             return CreateConnectionResultFailure()
+
+        # Send success event to update UI
+        connection_event = ConnectionCreatedEvent(
+            source_node_name=source_node_name,
+            source_parameter_name=request.source_parameter_name,
+            target_node_name=target_node_name,
+            target_parameter_name=request.target_parameter_name,
+        )
+        EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=connection_event)))
 
         # Let the source make any internal handling decisions now that the Connection has been made.
         modified_source_parameters = set()

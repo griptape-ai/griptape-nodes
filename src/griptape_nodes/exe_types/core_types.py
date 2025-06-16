@@ -1271,6 +1271,271 @@ class ParameterKeyValuePair(Parameter):
             value_param.default_value = value
 
 
+class DynamicParameter(Parameter):
+    """A parameter that spawns or replaces itself when another parameter connects to it.
+
+    Modes:
+    - "spawn": Creates a new parameter as a sibling for each connection, keeping the original dynamic parameter
+    - "replace": Replaces itself with the connected parameter's properties, reverting on disconnect
+    """
+
+    mode: Literal["spawn", "replace"]
+    remove_spawn_on_disconnect: bool
+    _original_properties: dict[str, Any]
+    _spawned_parameters: list[str]  # Track spawned parameter names
+    _is_replaced: bool = False
+
+    def __init__(  # noqa: PLR0913
+        self,
+        name: str,
+        tooltip: str | list[dict],
+        mode: Literal["spawn", "replace"] = "replace",
+        type: str | None = ParameterTypeBuiltin.ALL.value,  # noqa: A002
+        input_types: list[str] | None = None,
+        output_type: str | None = ParameterTypeBuiltin.ALL.value,
+        default_value: Any = None,
+        tooltip_as_input: str | list[dict] | None = None,
+        tooltip_as_property: str | list[dict] | None = None,
+        tooltip_as_output: str | list[dict] | None = None,
+        allowed_modes: set[ParameterMode] | None = None,
+        converters: list[Callable[[Any], Any]] | None = None,
+        validators: list[Callable[[Parameter, Any], None]] | None = None,
+        traits: set[Trait.__class__ | Trait] | None = None,
+        ui_options: dict | None = None,
+        *,
+        remove_spawn_on_disconnect: bool = False,
+        settable: bool = True,
+        user_defined: bool = False,
+        element_id: str | None = None,
+        element_type: str | None = None,
+        parent_container_name: str | None = None,
+    ):
+        super().__init__(
+            name=name,
+            tooltip=tooltip,
+            type=type,
+            input_types=input_types,
+            output_type=output_type,
+            default_value=default_value,
+            tooltip_as_input=tooltip_as_input,
+            tooltip_as_property=tooltip_as_property,
+            tooltip_as_output=tooltip_as_output,
+            allowed_modes=allowed_modes,
+            converters=converters,
+            validators=validators,
+            traits=traits,
+            ui_options=ui_options,
+            settable=settable,
+            user_defined=user_defined,
+            element_id=element_id,
+            element_type=element_type or self.__class__.__name__,
+            parent_container_name=parent_container_name,
+        )
+
+        self.mode = mode
+        self.remove_spawn_on_disconnect = remove_spawn_on_disconnect
+        self._spawned_parameters = []
+        self._is_replaced = False
+        if input_types is None:
+            input_types = [ParameterTypeBuiltin.ALL.value]
+
+        # Store original properties for reverting in replace mode
+        self._original_properties = {
+            "name": name,
+            "tooltip": tooltip,
+            "type": type,
+            "input_types": input_types,
+            "output_type": output_type,
+            "default_value": default_value,
+            "tooltip_as_input": tooltip_as_input,
+            "tooltip_as_property": tooltip_as_property,
+            "tooltip_as_output": tooltip_as_output,
+            "ui_options": ui_options.copy() if ui_options else {},
+        }
+
+    def allow_incoming_connection(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+    ) -> bool:
+        """Callback to confirm allowing a Connection coming TO this Node."""
+        if self.mode == "spawn":
+            spawned_param = self._handle_spawn_mode(source_parameter, is_target=True)
+            if spawned_param:
+                return True
+        elif self.mode == "replace":
+            self._handle_replace_mode(source_parameter, is_target=True)
+            return True
+        return False
+
+    def allow_outgoing_connection(
+        self,
+        source_parameter: Parameter,
+        target_node: BaseNode,
+        target_parameter: Parameter,
+    ) -> bool:
+        """Callback to confirm allowing a Connection going OUT of this Node."""
+        if self.mode == "spawn":
+            spawned_param = self._handle_spawn_mode(target_parameter, is_target=False)
+            if spawned_param:
+                return True
+        elif self.mode == "replace":
+            self._handle_replace_mode(target_parameter, is_target=False)
+            return True
+        return False
+
+    def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+        modified_parameters_set: set[str],
+    ) -> None:
+        """Callback after a Connection TO this Node was REMOVED."""
+        print(f"[DynamicParameter] Incoming connection removed for {self.name} in {self.mode} mode")
+        if self.mode == "spawn":
+            self._handle_spawn_disconnection(source_parameter, target_parameter, _is_target=True)
+        elif self.mode == "replace":
+            print(f"[DynamicParameter] Handling replace disconnection for {self.name}")
+            self._handle_replace_disconnection(
+                source_parameter, target_parameter, _is_target=True, modified_parameters_set=modified_parameters_set
+            )
+            print(f"[DynamicParameter] After replace disconnection, modified_parameters_set: {modified_parameters_set}")
+
+    def after_outgoing_connection_removed(
+        self,
+        source_parameter: Parameter,
+        target_node: BaseNode,
+        target_parameter: Parameter,
+        modified_parameters_set: set[str],
+    ) -> None:
+        """Callback after a Connection OUT of this Node was REMOVED."""
+        print(f"[DynamicParameter] Outgoing connection removed for {self.name} in {self.mode} mode")
+        if self.mode == "spawn":
+            self._handle_spawn_disconnection(source_parameter, target_parameter, _is_target=False)
+        elif self.mode == "replace":
+            print(f"[DynamicParameter] Handling replace disconnection for {self.name}")
+            self._handle_replace_disconnection(
+                source_parameter, target_parameter, _is_target=False, modified_parameters_set=modified_parameters_set
+            )
+            print(f"[DynamicParameter] After replace disconnection, modified_parameters_set: {modified_parameters_set}")
+
+    def _handle_spawn_mode(self, connecting_param: Parameter, *, is_target: bool) -> Parameter:
+        """Handle spawn mode - create a new parameter as sibling."""
+        # Generate unique name for spawned parameter
+        spawn_name = f"{self.name}_spawn_{len(self._spawned_parameters) + 1}_{uuid.uuid4().hex[:8]}"
+
+        # Create spawned parameter inheriting from connecting parameter
+        spawned_param = Parameter(
+            name=spawn_name,
+            tooltip=connecting_param.tooltip,
+            type=connecting_param.type if is_target else connecting_param.output_type,
+            input_types=[connecting_param.output_type] if is_target else connecting_param.input_types,
+            output_type=connecting_param.output_type if not is_target else connecting_param.type,
+            default_value=connecting_param.default_value,
+            tooltip_as_input=connecting_param.tooltip_as_input,
+            tooltip_as_property=connecting_param.tooltip_as_property,
+            tooltip_as_output=connecting_param.tooltip_as_output,
+            allowed_modes=self.allowed_modes,
+            ui_options=connecting_param.ui_options.copy()
+            if hasattr(connecting_param, "_ui_options") and connecting_param._ui_options
+            else {},
+            user_defined=True,
+            parent_container_name=self.parent_container_name,
+        )
+
+        # Add as sibling (need to access parent to insert before this parameter)
+        if self._parent:
+            # Find this parameter's position in parent's children
+            my_index = self._parent._children.index(self)
+            # Insert before this parameter
+            self._parent._children.insert(my_index, spawned_param)
+            spawned_param._parent = self._parent
+
+        # Track the spawned parameter
+        self._spawned_parameters.append(spawn_name)
+
+        return spawned_param
+
+    def _handle_replace_mode(self, connecting_param: Parameter, *, is_target: bool) -> Parameter:
+        """Handle replace mode - replace this parameter's properties."""
+        if not self._is_replaced:
+            # First connection - replace properties
+            self.tooltip = connecting_param.tooltip
+            self.type = connecting_param.type if is_target else connecting_param.output_type
+            self.input_types = [connecting_param.output_type] if is_target else connecting_param.input_types
+            self.output_type = connecting_param.output_type if not is_target else connecting_param.type
+            self.default_value = connecting_param.default_value
+            self.tooltip_as_input = connecting_param.tooltip_as_input
+            self.tooltip_as_property = connecting_param.tooltip_as_property
+            self.tooltip_as_output = connecting_param.tooltip_as_output
+
+            # Inherit ui_options
+            if hasattr(connecting_param, "_ui_options") and connecting_param._ui_options:
+                self._ui_options.update(connecting_param._ui_options)
+
+            self._is_replaced = True
+
+        return self
+
+    def _handle_spawn_disconnection(
+        self, _source_param: Parameter, _target_param: Parameter, *, _is_target: bool
+    ) -> None:
+        """Handle disconnection in spawn mode."""
+        if self.remove_spawn_on_disconnect and self._spawned_parameters and self._parent:
+            # Find and remove the spawned parameter
+            # This would need integration with the connection system to identify which spawned param to remove
+            # For now, we'll remove the last spawned parameter as a placeholder
+            last_spawn_name = self._spawned_parameters.pop()
+            # Find and remove the spawned parameter from parent
+            for child in self._parent._children[:]:
+                if isinstance(child, Parameter) and child.name == last_spawn_name:
+                    self._parent.remove_child(child)
+                    break
+
+    def _handle_replace_disconnection(
+        self, _source_param: Parameter, _target_param: Parameter, *, _is_target: bool, modified_parameters_set: set[str]
+    ) -> None:
+        """Handle disconnection in replace mode."""
+        print(f"[DynamicParameter] _handle_replace_disconnection called for {self.name}")
+        print(f"[DynamicParameter] Current state - _is_replaced: {self._is_replaced}")
+        # Check if this was the last connection - if so, revert to original
+        # This would need integration with connection system to check remaining connections
+        # For now, revert immediately as placeholder
+        if self._is_replaced:
+            print(f"[DynamicParameter] Reverting {self.name} to original properties")
+            # Revert to original properties
+            self.tooltip = self._original_properties["tooltip"]
+            self.type = ParameterTypeBuiltin.ANY.value
+            self.input_types = [ParameterTypeBuiltin.ANY.value]
+            self.output_type = ParameterTypeBuiltin.ANY.value
+            self.default_value = self._original_properties["default_value"]
+            self.tooltip_as_input = self._original_properties["tooltip_as_input"]
+            self.tooltip_as_property = self._original_properties["tooltip_as_property"]
+            self.tooltip_as_output = self._original_properties["tooltip_as_output"]
+            self._ui_options = self._original_properties["ui_options"].copy()
+
+            self._is_replaced = False
+            # Add this parameter to the modified set so UI gets updated
+            modified_parameters_set.add(self.name)
+            print(f"[DynamicParameter] Added {self.name} to modified_parameters_set: {modified_parameters_set}")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Override to include dynamic parameter specific fields."""
+        result = super().to_dict()
+        result.update(
+            {
+                "mode": self.mode,
+                "remove_spawn_on_disconnect": self.remove_spawn_on_disconnect,
+                "is_dynamic": True,
+                "is_replaced": self._is_replaced,
+                "spawned_parameters": self._spawned_parameters,
+            }
+        )
+        return result
+
+
 class ParameterDictionary(ParameterContainer):
     _kvp_type: ParameterType.KeyValueTypePair
     _original_traits: set[Trait.__class__ | Trait]
