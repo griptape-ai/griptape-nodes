@@ -21,6 +21,11 @@ dependencies = [
   "json-repair>=0.46.1",
 ]
 
+[project.optional-dependencies]
+profiling = [
+  "austin-dist>=3.7.0",
+]
+
 [dependency-groups]
 dev = [
   "mdformat>=0.7.22",

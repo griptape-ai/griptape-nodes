@@ -1,9 +1,11 @@
+import contextlib
 import json
 import logging
 import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from threading import Thread
 from typing import Any, cast
 from urllib.parse import urljoin
 
@@ -68,6 +70,7 @@ class PublishedWorkflow(ControlNode):
 
         self.workflows = self._get_workflow_options()
         self.choices = list(map(PublishedWorkflow._workflow_to_name_and_id, self.workflows))
+        self._workflow_polling_thread: Thread | None = None
 
         self.add_parameter(
             Parameter(
@@ -131,6 +134,25 @@ class PublishedWorkflow(ControlNode):
         response.raise_for_status()
         return response
 
+    def _get_workflow_status(self) -> str:
+        workflow = self._get_workflow()
+        return workflow.json().get("status", self.workflow_details.get("status", "PENDING"))
+
+    def _poll_workflow_status(self) -> None:
+        workflow_status = self._get_workflow_status()
+        while workflow_status not in ["READY", "ERROR"]:
+            time.sleep(5)
+            workflow_status = self._get_workflow_status()
+        self.set_parameter_value("workflow_status", workflow_status)
+
+    def _start_polling_workflow_status(self) -> None:
+        if self._workflow_polling_thread is None or not self._workflow_polling_thread.is_alive():
+            self._workflow_polling_thread = Thread(
+                target=self._poll_workflow_status,
+                daemon=True,
+            )
+            self._workflow_polling_thread.start()
+
     def _purge_old_connections(self) -> None:
         connection_request: ListConnectionsForNodeRequest = ListConnectionsForNodeRequest(node_name=self.name)
         result = GriptapeNodes.NodeManager().on_list_connections_for_node_request(request=connection_request)
@@ -181,6 +203,12 @@ class PublishedWorkflow(ControlNode):
 
     def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         """Callback after a value has been set on this Node."""
+        if parameter.name == "workflow_status" and value is not None:
+            thread = self._workflow_polling_thread
+            if thread is not None and thread.is_alive():
+                with contextlib.suppress(RuntimeError):
+                    thread.join(timeout=0.1)
+
         # If the workflow_id is set, we can fetch the workflow.
         if parameter.name == "workflow_id" and value is not None:
             try:
@@ -224,6 +252,23 @@ class PublishedWorkflow(ControlNode):
                     )
                 )
                 modified_parameters_set.add("workflow_name")
+
+                self.add_parameter(
+                    Parameter(
+                        name="workflow_status",
+                        type="Status",
+                        input_types=["str"],
+                        default_value=workflow["status"],
+                        tooltip="The status of the published Nodes Workflow.",
+                        allowed_modes={
+                            ParameterMode.OUTPUT,
+                        },
+                        user_defined=False,
+                        settable=False,
+                    )
+                )
+                modified_parameters_set.add("workflow_status")
+                self._start_polling_workflow_status()
 
                 for params in workflow["input"].values():
                     for param, info in params.items():

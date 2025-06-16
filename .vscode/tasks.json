@@ -1,0 +1,321 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Profile Griptape Nodes App: CPU profiling - uses sudo (may be required for some systems such as Mac)",
+            "type": "shell",
+            "command": "sudo",
+            "args": [
+                ".venv/bin/austin",
+                "-i", "100us",
+                "-C",
+                "-b",
+                "-o", "profiles/profile_griptape_nodes_cpu.mojo",
+                ".venv/bin/python",
+                "-m", "src.griptape_nodes.__init__",
+                "--no-update"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Profile Griptape Nodes App: Memory profiling - uses sudo (may be required for some systems such as Mac)",
+            "type": "shell",
+            "command": "sudo",
+            "args": [
+                ".venv/bin/austin",
+                "-i", "100us",
+                "-m",
+                "-C",
+                "-b",
+                "-o", "profiles/profile_griptape_nodes_memory.mojo",
+                ".venv/bin/python",
+                "-m", "src.griptape_nodes.__init__",
+                "--no-update"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Profile Griptape Nodes App: CPU profiling - does NOT use sudo",
+            "type": "shell",
+            "command": ".venv/bin/austin",
+            "args": [
+                "-i", "100us",
+                "-C",
+                "-b",
+                "-o", "profiles/profile_griptape_nodes_cpu.mojo",
+                ".venv/bin/python",
+                "-m", "src.griptape_nodes.__init__",
+                "--no-update"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Profile Griptape Nodes App: Memory profiling - does NOT use sudo",
+            "type": "shell",
+            "command": ".venv/bin/austin",
+            "args": [
+                "-i", "100us",
+                "-m",
+                "-C",
+                "-b",
+                "-o", "profiles/profile_griptape_nodes_memory.mojo",
+                ".venv/bin/python",
+                "-m", "src.griptape_nodes.__init__",
+                "--no-update"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Find Griptape Nodes Process ID",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "pgrep -f \"debugpy.*--connect.*src\\.griptape_nodes\""
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Attach to Griptape Nodes App: CPU profiling - uses sudo (may be required for some systems such as Mac)",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "sudo .venv/bin/austin -i 10us -C -b -p ${input:griptapeNodesPid} -o \"profiles/profile_attach_cpu_$(date +%Y%m%d_%H%M%S).mojo\""
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Attach to Griptape Nodes App: Memory profiling - uses sudo (may be required for some systems such as Mac)",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "sudo .venv/bin/austin -i 10us -m -C -b -p ${input:griptapeNodesPid} -o \"profiles/profile_attach_memory_$(date +%Y%m%d_%H%M%S).mojo\""
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Attach to Griptape Nodes App: CPU profiling - does NOT use sudo",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                ".venv/bin/austin -i 10us -C -b -p ${input:griptapeNodesPid} -o \"profiles/profile_attach_cpu_$(date +%Y%m%d_%H%M%S).mojo\""
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Attach to Griptape Nodes App: Memory profiling - does NOT use sudo",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                ".venv/bin/austin -i 10us -m -C -b -p ${input:griptapeNodesPid} -o \"profiles/profile_attach_memory_$(date +%Y%m%d_%H%M%S).mojo\""
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Stop/Detach CPU Profiling",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "pkill -f \"austin.*profile.*cpu.mojo\" || echo \"No CPU profiling process found\""
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Stop/Detach Memory Profiling",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "pkill -f \"austin.*profile.*memory.mojo\" || echo \"No memory profiling process found\""
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Stop/Detach All Profiling",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "pkill -f \"austin.*profile.*\\.mojo\" && echo \"Stopped all profiling processes\" || echo \"No profiling processes found\""
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Stop/Detach CPU Profiling - uses sudo",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "sudo pkill -f \"austin.*profile.*cpu.mojo\" && echo \"Stopped CPU profiling\" || echo \"No CPU profiling process found\""
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Stop/Detach Memory Profiling - uses sudo",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "sudo pkill -f \"austin.*profile.*memory.mojo\" && echo \"Stopped memory profiling\" || echo \"No memory profiling process found\""
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Stop/Detach All Profiling - uses sudo",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "sudo pkill -f \"austin.*profile.*\\.mojo\" && echo \"Stopped all profiling processes\" || echo \"No profiling processes found\""
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "griptapeNodesPid",
+            "description": "Enter the Griptape Nodes PID (use 'Find Griptape Nodes Process ID' task first):",
+            "type": "promptString"
+        }
+    ]
+}

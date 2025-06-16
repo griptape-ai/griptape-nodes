@@ -1,7 +1,7 @@
 from griptape.artifacts import ImageUrlArtifact
-from griptape.loaders import ImageLoader
 from PIL.Image import Image
 from pillow_nodes_library.utils import image_artifact_to_pil
+from utils.image_utils import load_image_from_url_artifact
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -51,7 +51,7 @@ class FluxControlNetParameters:
     def get_control_image_pil(self) -> Image:
         control_image_artifact = self._node.get_parameter_value("control_image")
         if isinstance(control_image_artifact, ImageUrlArtifact):
-            control_image_artifact = ImageLoader().parse(control_image_artifact.to_bytes())
+            control_image_artifact = load_image_from_url_artifact(control_image_artifact)
         control_image_pil = image_artifact_to_pil(control_image_artifact)
         return control_image_pil.convert("RGB")
 

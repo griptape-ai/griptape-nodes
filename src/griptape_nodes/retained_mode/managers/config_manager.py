@@ -1,6 +1,7 @@
 import copy
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -40,9 +41,14 @@ USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config
 class ConfigManager:
     """A class to manage application configuration and file pathing.
 
-    This class handles loading and saving configuration from a config.json file
-    located in the project root. If the config file is not found, it will create
-    one with default values.
+    This class handles loading and saving configuration from multiple sources with the following precedence:
+    1. Default configuration from Settings model (lowest priority)
+    2. User global configuration from ~/.config/griptape_nodes/griptape_nodes_config.json
+    3. Workspace-specific configuration from <workspace>/griptape_nodes_config.json
+    4. Environment variables with GTN_CONFIG_ prefix (highest priority)
+
+    Environment variables starting with GTN_CONFIG_ are converted to config keys by removing the prefix
+    and converting to lowercase (e.g., GTN_CONFIG_FOO=bar becomes {"foo": "bar"}).
 
     Supports categorized configuration using dot notation (e.g., 'category.subcategory.key')
     to organize related configuration items.
@@ -51,7 +57,8 @@ class ConfigManager:
         default_config (dict): The default configuration loaded from the Settings model.
         user_config (dict): The user configuration loaded from the config file.
         workspace_config (dict): The workspace configuration loaded from the workspace config file.
-        merged_config (dict): The merged configuration, combining default, user, and workspace settings.
+        env_config (dict): The configuration loaded from GTN_CONFIG_ environment variables.
+        merged_config (dict): The merged configuration, combining all sources in precedence order.
     """
 
     def __init__(self, event_manager: EventManager | None = None) -> None:
@@ -126,6 +133,26 @@ class ConfigManager:
 
         return [config_file for config_file in possible_config_files if config_file.exists()]
 
+    def _load_config_from_env_vars(self) -> dict[str, Any]:
+        """Load configuration values from GTN_CONFIG_ environment variables.
+
+        Environment variables starting with GTN_CONFIG_ are converted to config keys.
+        GTN_CONFIG_FOO=bar becomes {"foo": "bar"}
+        GTN_CONFIG_STORAGE_BACKEND=gtc becomes {"storage_backend": "gtc"}
+
+        Returns:
+            Dictionary containing config values from environment variables
+        """
+        env_config = {}
+        for key, value in os.environ.items():
+            if key.startswith("GTN_CONFIG_"):
+                # Remove GTN_CONFIG_ prefix and convert to lowercase
+                config_key = key[11:].lower()  # len("GTN_CONFIG_") = 11
+                env_config[config_key] = value
+                logger.debug("Loaded config from env var: %s -> %s", key, config_key)
+
+        return env_config
+
     def load_configs(self) -> None:
         """Load configs from the user config file and the workspace config file.
 
@@ -158,6 +185,12 @@ class ConfigManager:
         else:
             self.workspace_config = {}
             logger.debug("Workspace config file not found")
+
+        # Merge in configuration from GTN_CONFIG_ environment variables (highest priority)
+        self.env_config = self._load_config_from_env_vars()
+        if self.env_config:
+            merged_config = merge_dicts(merged_config, self.env_config)
+            logger.debug("Merged config from environment variables: %s", list(self.env_config.keys()))
 
         # Validate the full config against the Settings model.
         try:

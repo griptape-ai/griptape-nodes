@@ -53,6 +53,7 @@ if TYPE_CHECKING:
         GetParameterDetailsRequest,
         GetParameterValueRequest,
         RemoveParameterFromNodeRequest,
+        RenameParameterRequest,
         SetParameterValueRequest,
     )
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
@@ -410,6 +411,11 @@ class PayloadConverter:
         command_params = ",".join(params)
 
         return f"""cmd.create_flow({command_params})"""
+
+    @staticmethod
+    def _handle_RenameParameterRequest(payload: RenameParameterRequest) -> str:
+        """Handle RenameParameterRequest payloads."""
+        return f"""cmd.rename_param(node_name="{payload.node_name}",parameter_name="{payload.parameter_name}",new_parameter_name="{payload.new_parameter_name}")"""
 
     # GENERIC HANDLERS FOR PAYLOADS WITHOUT SPECIFIC HANDLERS
 

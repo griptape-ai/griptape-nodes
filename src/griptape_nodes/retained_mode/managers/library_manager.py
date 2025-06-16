@@ -462,23 +462,50 @@ class LibraryManager:
                     pip_install_flags = []
                 pip_dependencies = library_data.metadata.dependencies.pip_dependencies
 
-                # Grab the python executable from the virtual environment so that we can pip install there
-                library_venv_python_path = self._get_library_venv_python_path(library_data.name)
-                subprocess.run(  # noqa: S603
-                    [
-                        sys.executable,
-                        "-m",
-                        "uv",
-                        "pip",
-                        "install",
-                        *pip_dependencies,
-                        *pip_install_flags,
-                        "--python",
-                        str(library_venv_python_path),
-                    ],
-                    check=True,
-                    text=True,
-                )
+                # Determine venv path for dependency installation
+                venv_path = self._get_library_venv_path(library_data.name, file_path)
+
+                # Only install dependencies if conditions are met
+                try:
+                    library_venv_python_path = self._init_library_venv(venv_path)
+                except RuntimeError as e:
+                    self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                        library_path=file_path,
+                        library_name=library_data.name,
+                        library_version=library_version,
+                        status=LibraryManager.LibraryStatus.UNUSABLE,
+                        problems=[str(e)],
+                    )
+                    details = f"Attempted to load Library JSON file from '{json_path}'. Failed when creating the virtual environment: {e}."
+                    logger.error(details)
+                    return RegisterLibraryFromFileResultFailure()
+                if self._can_write_to_venv_location(library_venv_python_path):
+                    # Grab the python executable from the virtual environment so that we can pip install there
+                    logger.info(
+                        "Installing dependencies for library '%s' with pip in venv at %s", library_data.name, venv_path
+                    )
+                    subprocess.run(  # noqa: S603
+                        [
+                            sys.executable,
+                            "-m",
+                            "uv",
+                            "pip",
+                            "install",
+                            *pip_dependencies,
+                            *pip_install_flags,
+                            "--python",
+                            str(library_venv_python_path),
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                else:
+                    logger.debug(
+                        "Skipping dependency installation for library '%s' - venv location at %s is not writable",
+                        library_data.name,
+                        venv_path,
+                    )
         except subprocess.CalledProcessError as e:
             # Failed to create the library
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
@@ -486,7 +513,7 @@ class LibraryManager:
                 library_name=library_data.name,
                 library_version=library_version,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[f"Failed to create the library: {e}"],
+                problems=[str(e)],
             )
             details = (
                 f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {e}."
@@ -564,19 +591,37 @@ class LibraryManager:
     ) -> ResultPayload:
         package_name = Requirement(request.requirement_specifier).name
         try:
-            library_python_venv_path = self._get_library_venv_python_path(package_name)
-            subprocess.run(  # noqa: S603
-                [
-                    uv.find_uv_bin(),
-                    "pip",
-                    "install",
-                    request.requirement_specifier,
-                    "--python",
-                    library_python_venv_path,
-                ],
-                check=True,
-                text=True,
-            )
+            # Determine venv path for dependency installation
+            venv_path = self._get_library_venv_path(package_name, None)
+
+            # Only install dependencies if conditions are met
+            try:
+                library_python_venv_path = self._init_library_venv(venv_path)
+            except RuntimeError as e:
+                details = f"Attempted to install library '{request.requirement_specifier}'. Failed when creating the virtual environment: {e}"
+                logger.error(details)
+                return RegisterLibraryFromRequirementSpecifierResultFailure()
+            if self._can_write_to_venv_location(library_python_venv_path):
+                logger.info("Installing dependency '%s' with pip in venv at %s", package_name, venv_path)
+                subprocess.run(  # noqa: S603
+                    [
+                        uv.find_uv_bin(),
+                        "pip",
+                        "install",
+                        request.requirement_specifier,
+                        "--python",
+                        library_python_venv_path,
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            else:
+                logger.debug(
+                    "Skipping dependency installation for package '%s' - venv location at %s is not writable",
+                    package_name,
+                    venv_path,
+                )
         except subprocess.CalledProcessError as e:
             details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to {e}"
             logger.error(details)
@@ -592,20 +637,37 @@ class LibraryManager:
 
         return RegisterLibraryFromRequirementSpecifierResultSuccess(library_name=request.requirement_specifier)
 
-    def _get_library_venv_python_path(self, library_name: str) -> Path:
+    def _init_library_venv(self, library_venv_path: Path) -> Path:
+        """Initialize a virtual environment for the library.
+
+        If the virtual environment already exists, it will not be recreated.
+
+        Args:
+            library_venv_path: Path to the virtual environment directory
+
+        Returns:
+            Path to the Python executable in the virtual environment
+
+        Raises:
+            RuntimeError: If the virtual environment cannot be created.
+        """
         # Create a virtual environment for the library
         python_version = platform.python_version()
-        library_venv_path = (
-            xdg_data_home() / "griptape_nodes" / "venvs" / python_version / library_name.replace(" ", "_").strip()
-        )
+
         if library_venv_path.exists():
             logger.debug("Virtual environment already exists at %s", library_venv_path)
         else:
-            subprocess.run(  # noqa: S603
-                [sys.executable, "-m", "uv", "venv", str(library_venv_path), "--python", python_version],
-                check=True,
-                text=True,
-            )
+            try:
+                logger.info("Creating virtual environment at %s with Python %s", library_venv_path, python_version)
+                subprocess.run(  # noqa: S603
+                    [sys.executable, "-m", "uv", "venv", str(library_venv_path), "--python", python_version],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                msg = f"Failed to create virtual environment at {library_venv_path} with Python {python_version}: {e}"
+                raise RuntimeError(msg) from e
             logger.debug("Created virtual environment at %s", library_venv_path)
 
         # Grab the python executable from the virtual environment so that we can pip install there
@@ -626,6 +688,57 @@ class LibraryManager:
         sys.path.insert(0, site_packages)
 
         return library_venv_python_path
+
+    def _get_library_venv_path(self, library_name: str, library_file_path: str | None = None) -> Path:
+        """Get the path to the virtual environment directory for a library.
+
+        Args:
+            library_name: Name of the library
+            library_file_path: Optional path to the library JSON file
+
+        Returns:
+            Path to the virtual environment directory
+        """
+        clean_library_name = library_name.replace(" ", "_").strip()
+
+        if library_file_path is not None:
+            # Create venv relative to the library.json file
+            library_dir = Path(library_file_path).parent.absolute()
+            return library_dir / ".venv"
+
+        # Create venv relative to the xdg data home
+        return xdg_data_home() / "griptape_nodes" / "libraries" / clean_library_name / ".venv"
+
+    def _can_write_to_venv_location(self, venv_python_path: Path) -> bool:
+        """Check if we can write to the venv location (either create it or modify existing).
+
+        Args:
+            venv_python_path: Path to the python executable in the virtual environment
+
+        Returns:
+            True if we can write to the location, False otherwise
+        """
+        # On Windows, permission checks are hard. Assume we can write
+        if OSManager.is_windows():
+            return True
+
+        venv_path = venv_python_path.parent.parent
+
+        # If venv doesn't exist, check if parent directory is writable
+        if not venv_path.exists():
+            parent_dir = venv_path.parent
+            try:
+                return parent_dir.exists() and os.access(parent_dir, os.W_OK)
+            except (OSError, AttributeError) as e:
+                logger.debug("Could not check parent directory permissions for %s: %s", parent_dir, e)
+                return False
+
+        # If venv exists, check if we can write to it
+        try:
+            return os.access(venv_path, os.W_OK)
+        except (OSError, AttributeError) as e:
+            logger.debug("Could not check venv write permissions for %s: %s", venv_path, e)
+            return False
 
     def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
         try:

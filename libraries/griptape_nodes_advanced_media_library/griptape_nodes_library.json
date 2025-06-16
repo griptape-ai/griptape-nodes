@@ -13,9 +13,10 @@
     "dependencies": {
       "pip_dependencies": [
         "accelerate>=1.6.0",
+        "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "imageio-ffmpeg>=0.6.0",
-        "diffusers>=0.33.1",
+        "git+https://github.com/huggingface/diffusers.git@b6f793304437120239d4b942cac623b0ea86039b",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
         "peft>=0.15.2",
@@ -31,7 +32,8 @@
         "tqdm>=4.67.1",
         "protobuf>=6.31.0",
         "prodigyopt>=1.1.2; sys_platform == 'win32'",
-        "bitsandbytes>=0.46.0; sys_platform == 'win32'"
+        "bitsandbytes>=0.46.0; sys_platform == 'win32'",
+        "ftfy>=6.3.1"
       ],
       "pip_install_flags": [
         "--preview",
@@ -60,12 +62,21 @@
       }
     },
     {
-      "class_name": "DepthAnythingForDepthEstimation",
-      "file_path": "transformers_nodes_library/depth_anything_for_depth_estimation.py",
+      "class_name": "DepthAnythingForDepthEstimationImage",
+      "file_path": "transformers_nodes_library/depth_anything_for_depth_estimation_image.py",
       "metadata": {
         "category": "image/depth",
         "description": "Generate a Depth Map with Depth Anything V2 and 🤗 Transformers Pairs well with ControlNet Image Generation in depth mode.",
-        "display_name": "Depth Anything V2"
+        "display_name": "Depth Anything V2 Image"
+      }
+    },
+    {
+      "class_name": "DepthAnythingForDepthEstimationVideo",
+      "file_path": "transformers_nodes_library/depth_anything_for_depth_estimation_video.py",
+      "metadata": {
+        "category": "video/depth",
+        "description": "Generate Depth Maps for video with Depth Anything V2 and 🤗 Transformers. Processes each frame for depth estimation.",
+        "display_name": "Depth Anything V2 Video"
       }
     },
     {
@@ -219,6 +230,168 @@
         "category": "image/flux/loras",
         "description": "TrainFluxLora node.",
         "display_name": "Train Flux Lora"
+      }
+    },
+    {
+      "class_name": "AllegroPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/allegro/allegro_pipeline.py",
+      "metadata": {
+        "category": "video/allegro",
+        "description": "Generate a video with Allegro via 🤗 Diffusers.",
+        "display_name": "Allegro"
+      }
+    },
+    {
+      "class_name": "AmusedPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_pipeline.py",
+      "metadata": {
+        "category": "image/amused",
+        "description": "Generate an Image with aMUSEd via 🤗 Diffusers.",
+        "display_name": "aMUSEd"
+      }
+    },
+    {
+      "class_name": "AmusedImg2ImgPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_img2img_pipeline.py",
+      "metadata": {
+        "category": "image/amused",
+        "description": "Generate Image Variations with aMUSEd via 🤗 Diffusers.",
+        "display_name": "aMUSEd Img2Img"
+      }
+    },
+    {
+      "class_name": "AmusedInpaintPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_inpaint_pipeline.py",
+      "metadata": {
+        "category": "image/amused",
+        "description": "Inpaint Images with aMUSEd via 🤗 Diffusers.",
+        "display_name": "aMUSEd Inpaint"
+      }
+    },
+    {
+      "class_name": "StableDiffusionPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion/stable_diffusion_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion",
+        "description": "Generate images with Stable Diffusion via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion"
+      }
+    },
+    {
+      "class_name": "StableDiffusion3Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_3/stable_diffusion_3_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_3",
+        "description": "Generate images with Stable Diffusion 3 via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion 3"
+      }
+    },
+    {
+      "class_name": "StableDiffusionAttendAndExcitePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_ae/stable_diffusion_ae_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_attend_and_excite",
+        "description": "Generate images with enhanced attention control via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion Attend and Excite"
+      }
+    },
+    {
+      "class_name": "StableDiffusionDiffeditPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_diffedit/stable_diffusion_diffedit_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_diffedit",
+        "description": "Edit images using DiffEdit technique via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion DiffEdit"
+      }
+    },
+    {
+      "class_name": "WanPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/wan/wan_pipeline.py",
+      "metadata": {
+        "category": "video/wan",
+        "description": "Generate videos from text with Wan",
+        "display_name": "Wan T2V"
+      }
+    },
+    {
+      "class_name": "WanImageToVideoPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/wan/wan_image_to_video_pipeline.py",
+      "metadata": {
+        "category": "video/wan",
+        "description": "Generate videos from image and text with Wan",
+        "display_name": "Wan I2V"
+      }
+    },
+    {
+      "class_name": "WanVacePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/wan/wan_vace_pipeline.py",
+      "metadata": {
+        "category": "video/wan",
+        "description": "Generate videos with VACE control via 🤗 Diffusers",
+        "display_name": "Wan VACE"
+      }
+    },
+    {
+      "class_name": "FirstFrameToVideoWanVaceAux",
+      "file_path": "diffusers_nodes_library/pipelines/wan/auxiliary/first_frame_to_video_wan_vace_aux.py",
+      "metadata": {
+        "category": "video/wan/aux",
+        "description": "Generate video with input image as first frame for WAN VACE conditioning.",
+        "display_name": "WAN First Frame Aux"
+      }
+    },
+    {
+      "class_name": "FirstLastFrameToVideoWanVaceAux",
+      "file_path": "diffusers_nodes_library/pipelines/wan/auxiliary/first_last_frame_to_video_wan_vace_aux.py",
+      "metadata": {
+        "category": "video/wan/aux",
+        "description": "Generate video with input images as first and last frames for WAN VACE conditioning.",
+        "display_name": "WAN First+Last Frame Aux"
+      }
+    },
+    {
+      "class_name": "LastFrameToVideoWanVaceAux",
+      "file_path": "diffusers_nodes_library/pipelines/wan/auxiliary/last_frame_to_video_wan_vace_aux.py",
+      "metadata": {
+        "category": "video/wan/aux",
+        "description": "Generate video with input image as last frame for WAN VACE conditioning.",
+        "display_name": "WAN Last Frame Aux"
+      }
+    },
+    {
+      "class_name": "RandomFramesToVideoWanVaceAux",
+      "file_path": "diffusers_nodes_library/pipelines/wan/auxiliary/random_frames_to_video_wan_vace_aux.py",
+      "metadata": {
+        "category": "video/wan/aux",
+        "description": "Generate video with input images at random frame positions for WAN VACE conditioning.",
+        "display_name": "WAN Random Frames Aux"
+      }
+    },
+    {
+      "class_name": "StaticMaskWanVaceAux",
+      "file_path": "diffusers_nodes_library/pipelines/wan/auxiliary/static_mask_wan_vace_aux.py",
+      "metadata": {
+        "category": "video/wan/aux",
+        "description": "Generate static mask video for WAN VACE conditioning.",
+        "display_name": "WAN Static Mask Aux"
+      }
+    },
+    {
+      "class_name": "Kijai1Dot3BWanLora",
+      "file_path": "diffusers_nodes_library/pipelines/wan/lora/kijai_1_dot_3_b_wan_lora.py",
+      "metadata": {
+        "category": "video/wan/loras",
+        "description": "Experimental LoRA extractions from CausVid finetunes. Enables generating videos in 2-8 steps.",
+        "display_name": "Kijai CausVid 1.3B"
+      }
+    },
+    {
+      "class_name": "Kijai14BWanLora",
+      "file_path": "diffusers_nodes_library/pipelines/wan/lora/kijai_14_b_wan_lora.py",
+      "metadata": {
+        "category": "video/wan/loras",
+        "description": "Experimental LoRA extractions from CausVid finetunes. Enables generating videos in 2-8 steps.",
+        "display_name": "Kijai CausVid 14B"
       }
     }
   ]

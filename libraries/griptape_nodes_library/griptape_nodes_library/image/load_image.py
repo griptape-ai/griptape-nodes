@@ -27,11 +27,11 @@ class LoadImage(DataNode):
     def _to_image_artifact(self, image: Any) -> Any:
         if isinstance(image, dict):
             # Preserve any existing metadata
-            metadata = image.get("metadata", {})
+            metadata = image.get("meta", {})
             artifact = dict_to_image_url_artifact(image)
             if metadata:
                 # Return a dictionary with metadata
-                return {"type": "ImageUrlArtifact", "value": artifact.value, "metadata": metadata}
+                return {"type": "ImageUrlArtifact", "value": artifact.value, "meta": metadata}
             return artifact
         return image
 
