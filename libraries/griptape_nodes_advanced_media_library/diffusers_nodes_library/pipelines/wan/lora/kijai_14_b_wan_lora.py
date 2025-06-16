@@ -23,11 +23,13 @@ class Kijai14BWanLora(HuggingFaceWanLora):
                     "Compatible nodes:\n"
                     "- Wan T2V\n"
                     "- Wan I2V\n"
+                    "- Wan Vace\n"
                     "\n"
                     "Compatible models:\n"
                     "- Wan-AI/Wan2.1-T2V-14B-Diffusers\n"
                     "- Wan-AI/Wan2.1-I2V-14B-480P-Diffusers\n"
                     "- Wan-AI/Wan2.1-I2V-14B-720P-Diffusers\n"
+                    "- Wan-AI/Wan2.1-VACE-1.3B-diffusers\n"
                     "\n"
                     "Notes:\n"
                     '- Set "num_inference_steps" to 2 for fastest results, increase for slower but better results.\n'
