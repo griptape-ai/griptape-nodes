@@ -1142,18 +1142,15 @@ class NodeManager:
             else:
                 parameter.allowed_modes.discard(ParameterMode.OUTPUT)
 
-    def _validate_and_handle_connections(
+    def _validate_and_break_invalid_connections(
         self, node_name: str, parameter: Parameter, request: AlterParameterDetailsRequest
     ) -> None:
-        """Validate and handle connections when parameter type changes."""
-        try:
-            parent_flow_name = self.get_node_parent_flow_by_name(node_name)
-            parent_flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(
-                parent_flow_name, ControlFlow
-            )
-            if not parent_flow:
-                return
+        """Validate and break any connections that are no longer valid after a parameter type change.
 
+        This method checks both incoming and outgoing connections for a parameter and removes
+        any that are no longer type-compatible after the parameter's type has been changed.
+        """
+        try:
             # Get all connections for this node
             list_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
             list_connections_result = self.on_list_connections_for_node_request(list_connections_request)
@@ -1161,61 +1158,35 @@ class NodeManager:
             if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
                 return
 
-            # Check incoming connections
-            for incoming_connection in list_connections_result.incoming_connections:
-                if incoming_connection.target_parameter_name == request.parameter_name:
-                    # Get the source parameter
-                    source_node = self.get_node_by_name(incoming_connection.source_node_name)
-                    source_param = source_node.get_parameter_by_name(incoming_connection.source_parameter_name)
+            # Check and break invalid incoming connections
+            for conn in list_connections_result.incoming_connections:
+                if conn.target_parameter_name == request.parameter_name:
+                    source_node = self.get_node_by_name(conn.source_node_name)
+                    source_param = source_node.get_parameter_by_name(conn.source_parameter_name)
+                    if source_param and not parameter.is_incoming_type_allowed(source_param.output_type):
+                        GriptapeNodes.FlowManager().on_delete_connection_request(
+                            DeleteConnectionRequest(
+                                source_node_name=conn.source_node_name,
+                                source_parameter_name=conn.source_parameter_name,
+                                target_node_name=node_name,
+                                target_parameter_name=request.parameter_name,
+                            )
+                        )
 
-                    # Check if the connection is still valid
-                    if source_param is not None and not parameter.is_incoming_type_allowed(source_param.output_type):
-                        # Break the connection
-                        logger.info(
-                            "Breaking connection from %s.%s to %s.%s due to type mismatch. "
-                            "Source type: %s, Target allowed types: %s",
-                            incoming_connection.source_node_name,
-                            incoming_connection.source_parameter_name,
-                            node_name,
-                            request.parameter_name,
-                            source_param.output_type,
-                            parameter.input_types,
+            # Check and break invalid outgoing connections
+            for conn in list_connections_result.outgoing_connections:
+                if conn.source_parameter_name == request.parameter_name:
+                    target_node = self.get_node_by_name(conn.target_node_name)
+                    target_param = target_node.get_parameter_by_name(conn.target_parameter_name)
+                    if target_param and not target_param.is_incoming_type_allowed(parameter.output_type):
+                        GriptapeNodes.FlowManager().on_delete_connection_request(
+                            DeleteConnectionRequest(
+                                source_node_name=node_name,
+                                source_parameter_name=request.parameter_name,
+                                target_node_name=conn.target_node_name,
+                                target_parameter_name=conn.target_parameter_name,
+                            )
                         )
-                        delete_request = DeleteConnectionRequest(
-                            source_node_name=incoming_connection.source_node_name,
-                            source_parameter_name=incoming_connection.source_parameter_name,
-                            target_node_name=node_name,
-                            target_parameter_name=request.parameter_name,
-                        )
-                        GriptapeNodes.FlowManager().on_delete_connection_request(delete_request)
-
-            # Check outgoing connections
-            for outgoing_connection in list_connections_result.outgoing_connections:
-                if outgoing_connection.source_parameter_name == request.parameter_name:
-                    # Get the target parameter
-                    target_node = self.get_node_by_name(outgoing_connection.target_node_name)
-                    target_param = target_node.get_parameter_by_name(outgoing_connection.target_parameter_name)
-
-                    # Check if the connection is still valid
-                    if target_param is not None and not target_param.is_incoming_type_allowed(parameter.output_type):
-                        # Break the connection
-                        logger.info(
-                            "Breaking connection from %s.%s to %s.%s due to type mismatch. "
-                            "Source type: %s, Target allowed types: %s",
-                            node_name,
-                            request.parameter_name,
-                            outgoing_connection.target_node_name,
-                            outgoing_connection.target_parameter_name,
-                            parameter.output_type,
-                            target_param.input_types,
-                        )
-                        delete_request = DeleteConnectionRequest(
-                            source_node_name=node_name,
-                            source_parameter_name=request.parameter_name,
-                            target_node_name=outgoing_connection.target_node_name,
-                            target_parameter_name=outgoing_connection.target_parameter_name,
-                        )
-                        GriptapeNodes.FlowManager().on_delete_connection_request(delete_request)
         except Exception as e:
             logger.warning("Failed to validate connections after parameter type change: %s", e)
 
@@ -1273,7 +1244,7 @@ class NodeManager:
 
         # Check and handle connections if type was changed
         if request.type is not None or request.input_types is not None or request.output_type is not None:
-            self._validate_and_handle_connections(node_name, parameter, request)
+            self._validate_and_break_invalid_connections(node_name, parameter, request)
 
         details = f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{node_name}'."
         logger.debug(details)
