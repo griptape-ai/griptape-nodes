@@ -277,6 +277,14 @@
       }
     },
     {
+      "video/wan/aux": {
+        "color": "border-pink-500",
+        "title": "Video/WAN/Aux",
+        "description": "Auxiliary nodes for WAN video generation",
+        "icon": "Video"
+      }
+    },
+    {
       "video/wan/loras": {
         "color": "border-pink-500",
         "title": "video/wan/loras",

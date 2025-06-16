@@ -7,24 +7,30 @@ from typing import Any
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
+from griptape.artifacts import ImageUrlArtifact
+from PIL import Image  # type: ignore[reportMissingImports]
+from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
+    image_artifact_to_pil,
+)
+from utils.image_utils import load_image_from_url_artifact
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class WanPipelineParameters:
+class WanVacePipelineParameters:
     def __init__(self, node: BaseNode):
         self._node = node
         self._huggingface_repo_parameter = HuggingFaceRepoParameter(
             node,
             repo_ids=[
-                "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
-                "Wan-AI/Wan2.1-T2V-14B-Diffusers",
+                "Wan-AI/Wan2.1-VACE-1.3B-diffusers",
+                "Wan-AI/Wan2.1-VACE-14B-diffusers",
             ],
         )
         self._seed_parameter = SeedParameter(node)
@@ -100,6 +106,33 @@ class WanPipelineParameters:
                 tooltip="CFG guidance scale (higher = more prompt adherence)",
             )
         )
+        self._node.add_parameter(
+            Parameter(
+                name="input_video",
+                default_value=None,
+                input_types=["VideoUrlArtifact"],
+                type="VideoUrlArtifact",
+                tooltip="Input video for video-to-video generation (optional)",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
+                name="mask",
+                default_value=None,
+                input_types=["VideoUrlArtifact"],
+                type="VideoUrlArtifact",
+                tooltip="Mask video for video-to-video generation (required when input_video is provided)",
+            )
+        )
+        self._node.add_parameter(
+            ParameterList(
+                name="reference_frames",
+                default_value=[],
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                type="ImageArtifact",
+                tooltip="Reference frames to guide video generation (optional)",
+            )
+        )
         self._seed_parameter.add_input_parameters()
 
     def add_output_parameters(self) -> None:
@@ -112,18 +145,50 @@ class WanPipelineParameters:
             )
         )
 
-    def validate_before_node_run(self) -> list[Exception] | None:
-        errors = self._huggingface_repo_parameter.validate_before_node_run()
-
-        # Validate dimensions are divisible by 16
+    def _validate_dimensions(self) -> list[Exception]:
+        """Validate that dimensions are divisible by 16."""
+        errors = []
         width = self.get_width()
         height = self.get_height()
         if width % 16 != 0:
-            errors = errors or []
             errors.append(ValueError(f"Width ({width}) must be divisible by 16"))
         if height % 16 != 0:
-            errors = errors or []
             errors.append(ValueError(f"Height ({height}) must be divisible by 16"))
+        return errors
+
+    def _validate_input_requirements(self) -> list[Exception]:
+        """Validate video and mask are provided together or neither are provided."""
+        errors = []
+        input_video = self.get_input_video()
+        mask = self.get_mask()
+        prompt = self.get_prompt()
+
+        # Video and mask must be provided together
+        if (input_video is None) != (mask is None):
+            if input_video is None:
+                errors.append(
+                    ValueError(
+                        "Mask is provided but input_video is missing. Both video and mask are required together."
+                    )
+                )
+            else:
+                errors.append(
+                    ValueError(
+                        "Input video is provided but mask is missing. Both video and mask are required together."
+                    )
+                )
+
+        # Ensure there's some input for generation
+        if input_video is None and not prompt.strip():
+            errors.append(ValueError("Must provide either a prompt or both input_video and mask for video generation"))
+
+        return errors
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        errors = self._huggingface_repo_parameter.validate_before_node_run() or []
+
+        errors.extend(self._validate_dimensions())
+        errors.extend(self._validate_input_requirements())
 
         return errors or None
 
@@ -137,9 +202,9 @@ class WanPipelineParameters:
 
         """Get recommended width, height, and num_frames for a specific model."""
         match repo_id:
-            case "Wan-AI/Wan2.1-T2V-1.3B-Diffusers":
+            case "Wan-AI/Wan2.1-VACE-1.3B-diffusers":
                 return 832, 480  # 1.3B model - lighter computational requirements
-            case "Wan-AI/Wan2.1-T2V-14B-Diffusers":
+            case "Wan-AI/Wan2.1-VACE-14B-diffusers":
                 return 1280, 720  # 14B model - same resolution but higher quality
             case _:
                 msg = f"Unsupported model repo_id: {repo_id}."
@@ -194,8 +259,57 @@ class WanPipelineParameters:
     def get_guidance_scale(self) -> float:
         return float(self._node.get_parameter_value("guidance_scale"))
 
+    def get_input_video(self) -> VideoUrlArtifact | None:
+        return self._node.get_parameter_value("input_video")
+
+    def get_mask(self) -> VideoUrlArtifact | None:
+        return self._node.get_parameter_value("mask")
+
+    def get_reference_frames(self) -> list:
+        return self._node.get_parameter_value("reference_frames") or []
+
+    def get_input_video_pil_frames(self) -> list[Image.Image] | None:
+        input_video = self.get_input_video()
+        if input_video is None:
+            return None
+        return self._video_artifact_to_pil_frames(input_video)
+
+    def get_mask_pil_frames(self) -> list[Image.Image] | None:
+        mask = self.get_mask()
+        if mask is None:
+            return None
+        return [pil_frame.convert("L") for pil_frame in self._video_artifact_to_pil_frames(mask)]
+
+    def get_reference_frames_pil(self) -> list[Image.Image] | None:
+        """Get reference frames as a list of PIL Images."""
+        reference_frames = self.get_reference_frames()
+        if not reference_frames:
+            return None
+
+        pil_images = []
+        for frame_artifact in reference_frames:
+            image_artifact = frame_artifact
+            if isinstance(image_artifact, ImageUrlArtifact):
+                image_artifact = load_image_from_url_artifact(image_artifact)
+            pil_image = image_artifact_to_pil(image_artifact)
+            pil_image = pil_image.convert("RGB")
+            pil_images.append(pil_image)
+
+        return pil_images if pil_images else None
+
+    def _video_artifact_to_pil_frames(self, video_artifact: VideoUrlArtifact) -> list[Image.Image]:
+        """Convert a VideoUrlArtifact to a list of PIL Image frames."""
+        if video_artifact is None:
+            return []
+
+        # Use diffusers loading utilities to convert video URL to frames
+        return diffusers.utils.load_video(video_artifact.value)
+
     def get_pipe_kwargs(self) -> dict:
         return {
+            "video": self.get_input_video_pil_frames(),
+            "mask": self.get_mask_pil_frames(),
+            "reference_images": self.get_reference_frames_pil(),
             "prompt": self.get_prompt(),
             "negative_prompt": self.get_negative_prompt(),
             "width": self.get_width(),
@@ -207,7 +321,7 @@ class WanPipelineParameters:
             "output_type": "pil",
         }
 
-    def latents_to_video_mp4(self, pipe: diffusers.WanPipeline, latents: Any) -> Path:
+    def latents_to_video_mp4(self, pipe: diffusers.WanVACEPipeline, latents: Any) -> Path:
         """Convert latents to video frames and export as MP4 file."""
         self.get_num_frames()
         self.get_width()
@@ -246,7 +360,7 @@ class WanPipelineParameters:
         else:
             return temp_file
 
-    def publish_output_video_preview_latents(self, pipe: diffusers.WanPipeline, latents: Any) -> None:
+    def publish_output_video_preview_latents(self, pipe: diffusers.WanVACEPipeline, latents: Any) -> None:
         """Publish a preview video from latents during generation."""
         preview_video_path = None
         try:
