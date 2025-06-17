@@ -349,25 +349,29 @@ class NodeManager:
                     override_parent_flow_name=parent_flow_name,
                 )
             )
-            if isinstance(end_loop, CreateNodeResultSuccess):
-                # Create Loop between output and input to the start node.
-                GriptapeNodes.handle_request(
-                    CreateConnectionRequest(
-                        source_node_name=node.name,
-                        source_parameter_name="loop",
-                        target_node_name=end_loop.node_name,
-                        target_parameter_name="from_start",
-                    )
-                )
-                end_node = self.get_node_by_name(end_loop.node_name)
-                if isinstance(end_node, EndLoopNode):
-                    # create the connection
-                    node.end_node = end_node
-                    end_node.start_node = node
-            else:
+            if not isinstance(end_loop, CreateNodeResultSuccess):
                 msg = f"Failed to create EndLoop node for StartLoop node '{node.name}'"
                 logger.error(msg)
                 return CreateNodeResultFailure()
+
+            # Create Loop between output and input to the start node.
+            GriptapeNodes.handle_request(
+                CreateConnectionRequest(
+                    source_node_name=node.name,
+                    source_parameter_name="loop",
+                    target_node_name=end_loop.node_name,
+                    target_parameter_name="from_start",
+                )
+            )
+            end_node = self.get_node_by_name(end_loop.node_name)
+            if not isinstance(end_node, EndLoopNode):
+                msg = f"End node '{end_loop.node_name}' is not a valid EndLoopNode"
+                logger.error(msg)
+                return CreateNodeResultFailure()
+
+            # create the connection
+            node.end_node = end_node
+            end_node.start_node = node
 
         return CreateNodeResultSuccess(
             node_name=node.name, node_type=node.__class__.__name__, specific_library_name=request.specific_library_name
