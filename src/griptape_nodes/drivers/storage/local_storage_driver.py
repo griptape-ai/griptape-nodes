@@ -1,4 +1,5 @@
 import logging
+import time
 from urllib.parse import urljoin
 
 import httpx
@@ -46,4 +47,7 @@ class LocalStorageDriver(BaseStorageDriver):
         return {"url": url, "headers": response_data.get("headers", {}), "method": "PUT"}
 
     def create_signed_download_url(self, file_name: str) -> str:
-        return urljoin(self.base_url, f"/static/{file_name}")
+        url = urljoin(self.base_url, f"/static/{file_name}")
+        # Add a cache-busting query parameter to the URL so that the browser always reloads the file
+        cache_busted_url = urljoin(url, f"?t={int(time.time())}")
+        return cache_busted_url
