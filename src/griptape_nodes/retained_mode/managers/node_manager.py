@@ -998,12 +998,21 @@ class NodeManager:
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(request.parameter_name)
+        parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
         if parameter is None:
-            details = f"Attempted to get details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
-            logger.error(details)
-
-            result = GetParameterDetailsResultFailure()
-            return result
+            parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
+            if parameter_group is None:
+                parameter_message = node.get_message_by_name_or_element_id(request.parameter_name)
+                if parameter_message is None:
+                    details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
+                    logger.error(details)
+                    return AlterParameterDetailsResultFailure()
+                if request.ui_options is not None:  # type: ignore[attr-defined]
+                    parameter_message.ui_options = request.ui_options  # type: ignore[attr-defined]
+                return AlterParameterDetailsResultSuccess()
+            if request.ui_options is not None:  # type: ignore[attr-defined]
+                parameter_group.ui_options = request.ui_options  # type: ignore[attr-defined]
+            return AlterParameterDetailsResultSuccess()
 
         # Let's bundle up the details.
         modes_allowed = parameter.allowed_modes
@@ -1202,7 +1211,7 @@ class NodeManager:
 
         return None
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         node_name = request.node_name
         node = None
 
@@ -1231,11 +1240,19 @@ class NodeManager:
         if parameter is None:
             parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
             if parameter_group is None:
-                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
-                logger.error(details)
-
-                return AlterParameterDetailsResultFailure()
+                parameter_message = node.get_message_by_name_or_element_id(request.parameter_name)
+                if parameter_message is None:
+                    details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
+                    logger.error(details)
+                    return AlterParameterDetailsResultFailure()
+                # type: ignore[attr-defined]
+                if request.ui_options is not None:
+                    # type: ignore[attr-defined]
+                    parameter_message.ui_options = request.ui_options
+                return AlterParameterDetailsResultSuccess()
+            # type: ignore[attr-defined]
             if request.ui_options is not None:
+                # type: ignore[attr-defined]
                 parameter_group.ui_options = request.ui_options
             return AlterParameterDetailsResultSuccess()
 
