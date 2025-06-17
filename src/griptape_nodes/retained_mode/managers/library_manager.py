@@ -139,7 +139,7 @@ def check_v0_40_0_modified_parameters_set_removal(library_data: LibrarySchema) -
             VersionCompatibilityIssue(
                 message=f"WARNING: The modified_parameters_set parameter will be removed in Griptape Nodes 0.40. "
                 f"This library (built for engine version {library_version_str}) needs to be updated before the 0.40 release. "
-                "Please update to a newer version of this library or contact the library author to update the library to ensure compatibiltiy. "
+                "Please update to a newer version of this library or contact the library author to update the library to ensure compatibility. "
                 "Click here for more details: <URL TO COME>.",
                 severity=LibraryManager.LibraryStatus.FLAWED,
             )
@@ -150,7 +150,7 @@ def check_v0_40_0_modified_parameters_set_removal(library_data: LibrarySchema) -
             VersionCompatibilityIssue(
                 message=f"WARNING: The modified_parameters_set parameter will be removed in Griptape Nodes 0.40. "
                 f"This library (built for engine version {library_version_str}) needs to be updated before the 0.40 release. "
-                "Please update to a newer version of this library or contact the library author to update the library to ensure compatibiltiy. "
+                "Please update to a newer version of this library or contact the library author to update the library to ensure compatibility. "
                 "Click here for more details: <URL TO COME>.",
                 severity=LibraryManager.LibraryStatus.FLAWED,
             )
