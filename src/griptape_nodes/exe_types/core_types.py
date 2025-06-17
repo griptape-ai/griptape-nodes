@@ -1153,13 +1153,6 @@ class ParameterMessage(Parameter):
 
         return data
 
-    def to_event(self, node: BaseNode) -> dict:
-        event_data = super().to_event(node)
-        dict_data = self.to_dict()
-        # Combine them both to get what we need for the UI.
-        event_data.update(dict_data)
-        return event_data
-
 
 class ParameterKeyValuePair(Parameter):
     def __init__(  # noqa: PLR0913
