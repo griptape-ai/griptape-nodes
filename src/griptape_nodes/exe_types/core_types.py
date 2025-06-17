@@ -368,6 +368,15 @@ class ParameterGroup(BaseNodeElement):
     """UI element for a group of parameters."""
 
     ui_options: dict = field(default_factory=dict)
+    collapsed: bool = False
+    is_collapsible: bool = True
+
+    def __init__(self, *, is_collapsible: bool = True, collapsed: bool = False, **kwargs):
+        super().__init__(**kwargs)
+        self.collapsed = collapsed
+        self.is_collapsible = is_collapsible
+        self.ui_options["is_collapsible"] = is_collapsible
+        self.ui_options["collapsed"] = collapsed
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
@@ -392,16 +401,30 @@ class ParameterGroup(BaseNodeElement):
         # Add in our deltas.
         our_dict["name"] = self.name
         our_dict["ui_options"] = self.ui_options
+        our_dict["collapsed"] = self.collapsed
+        our_dict["is_collapsible"] = self.is_collapsible
         return our_dict
 
     def to_event(self, node: BaseNode) -> dict:
         event_data = super().to_event(node)
         event_data["ui_options"] = self.ui_options
+        event_data["collapsed"] = self.collapsed
+        event_data["is_collapsible"] = self.is_collapsible
         return event_data
 
     def equals(self, other: ParameterGroup) -> dict:
-        self_dict = {"name": self.name, "ui_options": self.ui_options}
-        other_dict = {"name": other.name, "ui_options": other.ui_options}
+        self_dict = {
+            "name": self.name,
+            "ui_options": self.ui_options,
+            "collapsed": self.collapsed,
+            "is_collapsible": self.is_collapsible,
+        }
+        other_dict = {
+            "name": other.name,
+            "ui_options": other.ui_options,
+            "collapsed": other.collapsed,
+            "is_collapsible": other.is_collapsible,
+        }
         if self_dict == other_dict:
             return {}
         differences = {}
