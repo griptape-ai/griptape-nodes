@@ -261,6 +261,14 @@
       }
     },
     {
+      "image/würstchen": {
+        "color": "border-purple-500",
+        "title": "image/würstchen",
+        "description": "Efficient generation with Würstchen",
+        "icon": "Image"
+      }
+    },
+    {
       "video/allegro": {
         "color": "border-pink-500",
         "title": "Video/Allegro",
