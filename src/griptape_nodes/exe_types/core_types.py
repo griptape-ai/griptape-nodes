@@ -164,7 +164,7 @@ class BaseNodeElement:
     element_type: str = field(default_factory=lambda: BaseNodeElement.__name__)
     name: str = field(default_factory=lambda: str(f"{BaseNodeElement.__name__}_{uuid.uuid4().hex}"))
     parent_group_name: str | None = None
-    changes: dict[str, tuple[Any, Any]] = field(default_factory=dict)
+    changes: dict[str, Any] = field(default_factory=dict)
 
     _children: list[BaseNodeElement] = field(default_factory=list)
     _stack: ClassVar[list[BaseNodeElement]] = []
@@ -215,11 +215,46 @@ class BaseNodeElement:
                     if old_value != new_value:
                         # it needs to be static so we can call these methods.
                         self._node_context._tracked_parameters.append(self)
-                        self.changes[attr_name] = (old_value, new_value)
+                        self.changes[attr_name] = new_value
                     return result
                 return func(self, *args, **kwargs)
             return wrapper
         return decorator
+
+
+    def _emit_alter_element_event_if_possible(self) -> None:
+        """Emit an AlterElementEvent if we have node context and the necessary dependencies."""
+        if self._node_context is None:
+            return
+
+        try:
+            # Import here to avoid circular dependencies
+            from griptape.events import EventBus
+
+            from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+            from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+
+            # Create base event data using the existing to_event method
+            # Create a modified event data that only includes changed fields
+            event_data = {
+                # Include base fields that should always be present
+                "element_id": self.element_id,
+                "element_type": self.element_type,
+                "name": self.name,
+                "node_name": self._node_context.name,
+            }
+            event_data.update(self.changes)
+
+            # Publish the event
+            event = ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
+            )
+            EventBus.publish_event(event)
+            self.changes.clear()
+
+        except ImportError:
+            # If imports fail, silently continue - this ensures backward compatibility
+            pass
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.

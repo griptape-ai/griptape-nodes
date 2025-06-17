@@ -107,7 +107,7 @@ class BaseNode(ABC):
 
     def emit_parameter_changes(self) -> None:
         for parameter in self._tracked_parameters:
-            self._emit_parameter_lifecycle_event(parameter)
+            parameter._emit_alter_element_event_if_possible()
         self._tracked_parameters.clear()
 
     def allow_incoming_connection(
