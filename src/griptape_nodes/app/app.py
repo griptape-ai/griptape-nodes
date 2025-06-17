@@ -40,6 +40,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventResultSuccess,
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
+    FlushParameterChangesRequest,
     GriptapeNodeEvent,
     ProgressEvent,
     deserialize_event,
@@ -272,7 +273,6 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
     else:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."
         raise TypeError(msg) from None
-
     # Don't send events over the wire that don't have a request_id set (e.g. engine-internal events)
     event_json = result_event.json()
     socket_manager.emit(dest_socket, event_json)

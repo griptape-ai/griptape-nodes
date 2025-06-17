@@ -32,7 +32,6 @@ class EventManager:
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
         self.current_active_node: str | None = None
 
-
     def assign_manager_to_request_type(
         self,
         request_type: type[RP],
@@ -130,4 +129,3 @@ class EventManager:
             listener_set = self._app_event_listeners[app_event_type]
             for listener_callback in listener_set:
                 listener_callback(app_event)
-
