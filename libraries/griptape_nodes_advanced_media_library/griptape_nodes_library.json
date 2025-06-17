@@ -34,7 +34,8 @@
         "prodigyopt>=1.1.2; sys_platform == 'win32'",
         "bitsandbytes>=0.46.0; sys_platform == 'win32'",
         "ftfy>=6.3.1",
-        "git+https://github.com/dylanholmes/cosmos-guardrail.git"
+        "git+https://github.com/dylanholmes/cosmos-guardrail.git",
+        "sam2>=1.1.0"
       ],
       "pip_install_flags": [
         "--preview",
@@ -72,12 +73,30 @@
       }
     },
     {
+      "class_name": "DinoSam2ImageDetector",
+      "file_path": "dino_sam2_library/dino_sam_2_image_detector.py",
+      "metadata": {
+        "category": "image/segmentation",
+        "description": "Generate an image mask from a prompt. Uses Grounding DINO to transform prompt to bounding boxes, then uses Segment Anything Model 2 (SAM2) from Meta to generate the mask from the bounding boxes.",
+        "display_name": "Image Mask via G-DINO + SAM2"
+      }
+    },
+    {
       "class_name": "DepthAnythingForDepthEstimationVideo",
       "file_path": "transformers_nodes_library/depth_anything_for_depth_estimation_video.py",
       "metadata": {
         "category": "video/depth",
         "description": "Generate Depth Maps for video with Depth Anything V2 and 🤗 Transformers. Processes each frame for depth estimation.",
         "display_name": "Depth Anything V2 Video"
+      }
+    },
+    {
+      "class_name": "DinoSam2VideoDetector", 
+      "file_path": "dino_sam2_library/dino_sam_2_video_detector.py",
+      "metadata": {
+        "category": "video/segmentation",
+        "description": "Generate a video mask from a prompt. Uses Grounding DINO to transform prompt to bounding boxes on a single frame, then uses Segment Anything Model 2 (SAM2) from Meta to generate the mask from the bounding boxes across all frames.",
+        "display_name": "Video Mask via G-DINO + SAM2"
       }
     },
     {
