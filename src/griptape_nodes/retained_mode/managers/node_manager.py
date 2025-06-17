@@ -1228,6 +1228,13 @@ class NodeManager:
                 parameter_group.ui_options = request.ui_options
             return AlterParameterDetailsResultSuccess()
 
+        # Handle ParameterMessage
+        parameter_message = node.get_message_by_name_or_element_id(request.parameter_name)
+        if parameter_message is not None:
+            if request.ui_options is not None:
+                parameter_message.ui_options = request.ui_options
+            return AlterParameterDetailsResultSuccess()
+
         # Handle Parameter
         parameter = node.get_parameter_by_name(request.parameter_name)
         if parameter is None:
@@ -1259,6 +1266,11 @@ class NodeManager:
 
         details = f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{node_name}'."
         logger.debug(details)
+
+        # If we're not in initial setup, we need to emit an event to update the UI
+        if not request.initial_setup:
+            modified_request = AlterElementEvent(element_details=parameter.to_event(node))
+            EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
 
         return AlterParameterDetailsResultSuccess()
 
