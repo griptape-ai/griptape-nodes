@@ -14,7 +14,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     GriptapeNodeEvent,
     RequestPayload,
     ResultPayload,
-    WorkflowAlteredMixin,
 )
 
 if TYPE_CHECKING:
@@ -32,6 +31,7 @@ class EventManager:
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
         self.current_active_node: str | None = None
+
 
     def assign_manager_to_request_type(
         self,
@@ -98,8 +98,6 @@ class EventManager:
                         result=result_payload,
                         retained_mode=retained_mode_str,
                     )
-                    if depth_manager.is_top_level():
-                        self.flush_all_pending_parameter_changes()
                 else:
                     result_event = EventResultFailure(
                         request=request,
@@ -108,7 +106,6 @@ class EventManager:
                     )
                 wrapped_event = GriptapeNodeEvent(wrapped_event=result_event)
                 EventBus.publish_event(wrapped_event)
-                # Flush pending parameter changes after successful operation completion
             else:
                 msg = f"No manager found to handle request of type '{request_type.__name__}."
                 raise TypeError(msg)
@@ -134,14 +131,3 @@ class EventManager:
             for listener_callback in listener_set:
                 listener_callback(app_event)
 
-    def flush_all_pending_parameter_changes(self) -> None:
-        """Flush pending parameter changes for all nodes with tracked parameters."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
-        try:
-            obj_manager = GriptapeNodes.ObjectManager()
-            # Get all flows and their nodes
-            nodes = obj_manager.get_filtered_subset(type=BaseNode)
-            for node in nodes.values():
-                node.emit_parameter_changes()
-        except Exception as e:
-            logger.warning(f"Error flushing parameter changes: {e}")

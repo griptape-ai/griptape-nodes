@@ -107,9 +107,10 @@ class BaseNode(ABC):
         self.state = NodeResolutionState.UNRESOLVED
 
     def emit_parameter_changes(self) -> None:
-        for parameter in self._tracked_parameters:
-            parameter._emit_alter_element_event_if_possible()
-        self._tracked_parameters.clear()
+        if self._tracked_parameters:
+            for parameter in self._tracked_parameters:
+                parameter._emit_alter_element_event_if_possible()
+            self._tracked_parameters.clear()
 
     def allow_incoming_connection(
         self,
@@ -693,7 +694,9 @@ class BaseNode(ABC):
 
             # Create event data using the parameter's to_event method
             if remove:
-                event = ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=RemoveElementEvent(element_id=parameter.element_id)))
+                event = ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=RemoveElementEvent(element_id=parameter.element_id))
+                )
             else:
                 event_data = parameter.to_event(self)
 

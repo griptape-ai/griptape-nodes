@@ -204,6 +204,7 @@ class BaseNodeElement:
     @staticmethod
     def tracked_field(attr_name: str) -> Callable:
         """Decorator for properties that should track changes and emit events."""
+
         def decorator(func: Callable) -> Callable:
             def wrapper(self, *args, **kwargs) -> Callable:
                 # For setters, track the change
@@ -215,13 +216,14 @@ class BaseNodeElement:
                     if old_value != new_value:
                         # it needs to be static so we can call these methods.
                         self.changes[attr_name] = new_value
-                    if self._node_context is not None:
-                        self._node_context._tracked_parameters.append(self)
+                        if self._node_context is not None and self not in self._node_context._tracked_parameters:
+                            self._node_context._tracked_parameters.append(self)
                     return result
                 return func(self, *args, **kwargs)
-            return wrapper
-        return decorator
 
+            return wrapper
+
+        return decorator
 
     def _emit_alter_element_event_if_possible(self) -> None:
         """Emit an AlterElementEvent if we have node context and the necessary dependencies."""
@@ -730,16 +732,14 @@ class Parameter(BaseNodeElement):
         validators += self._validators
         return validators
 
-
     @property
     def allowed_modes(self) -> set[ParameterMode]:
         return self._allowed_modes
 
     @allowed_modes.setter
     @BaseNodeElement.tracked_field("allowed_modes")
-    def allowed_modes(self, value:Any) -> None:
+    def allowed_modes(self, value: Any) -> None:
         self._allowed_modes = value
-
 
     @property
     def ui_options(self) -> dict:

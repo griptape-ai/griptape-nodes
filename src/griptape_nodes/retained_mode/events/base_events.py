@@ -557,3 +557,21 @@ class ProgressEvent(GtBaseEvent):
     value: Any = field()
     node_name: str = field()
     parameter_name: str = field()
+
+
+# Special internal request for flushing parameter changes
+@dataclass(kw_only=True)
+class FlushParameterChangesRequest(RequestPayload):
+    pass
+
+
+@dataclass
+class FlushParameterChangesResultSuccess(ResultPayload):
+    def succeeded(self) -> bool:
+        return True
+
+
+@dataclass
+class FlushParameterChangesResultFailure(ResultPayload):
+    def succeeded(self) -> bool:
+        return False

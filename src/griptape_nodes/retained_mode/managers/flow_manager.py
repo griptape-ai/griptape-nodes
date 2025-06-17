@@ -9,6 +9,7 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.retained_mode.events.base_events import FlushParameterChangesRequest, FlushParameterChangesResultSuccess
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
     CreateConnectionResultFailure,
@@ -126,6 +127,7 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(
             DeserializeFlowFromCommandsRequest, self.on_deserialize_flow_from_commands
         )
+        event_manager.assign_manager_to_request_type(FlushParameterChangesRequest, self.on_flush_request)
 
         self._name_to_parent_name = {}
 
@@ -1342,3 +1344,14 @@ class FlowManager:
         details = f"Successfully deserialized Flow '{flow_name}'."
         logger.debug(details)
         return DeserializeFlowFromCommandsResultSuccess(flow_name=flow_name)
+
+
+    def on_flush_request(self, request: FlushParameterChangesRequest) -> ResultPayload:
+        obj_manager = GriptapeNodes.ObjectManager()
+        # Get all flows and their nodes
+        nodes = obj_manager.get_filtered_subset(type=BaseNode)
+        for node in nodes.values():
+            # Only flush if there are actually tracked parameters
+            if hasattr(node, "_tracked_parameters") and node._tracked_parameters:
+                node.emit_parameter_changes()
+        return FlushParameterChangesResultSuccess()
