@@ -1142,7 +1142,67 @@ class NodeManager:
             else:
                 parameter.allowed_modes.discard(ParameterMode.OUTPUT)
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    def _validate_and_break_invalid_connections(
+        self, node_name: str, parameter: Parameter, request: AlterParameterDetailsRequest
+    ) -> ResultPayload | None:
+        """Validate and break any connections that are no longer valid after a parameter type change.
+
+        This method checks both incoming and outgoing connections for a parameter and removes
+        any that are no longer type-compatible after the parameter's type has been changed.
+
+        Returns:
+            ResultPayload | None: Returns AlterParameterDetailsResultFailure if any connection deletion fails,
+                                 None otherwise.
+        """
+        # Get all connections for this node
+        list_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
+        list_connections_result = self.on_list_connections_for_node_request(list_connections_request)
+
+        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+            # No connections exist for this node, which is not a failure - just nothing to validate
+            return None
+
+        # Check and break invalid incoming connections
+        for conn in list_connections_result.incoming_connections:
+            if conn.target_parameter_name == request.parameter_name:
+                source_node = self.get_node_by_name(conn.source_node_name)
+                source_param = source_node.get_parameter_by_name(conn.source_parameter_name)
+                if source_param and not parameter.is_incoming_type_allowed(source_param.output_type):
+                    delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
+                        DeleteConnectionRequest(
+                            source_node_name=conn.source_node_name,
+                            source_parameter_name=conn.source_parameter_name,
+                            target_node_name=node_name,
+                            target_parameter_name=request.parameter_name,
+                        )
+                    )
+                    if isinstance(delete_result, ResultPayloadFailure):
+                        details = f"Failed to delete incompatible incoming connection from {conn.source_node_name}.{conn.source_parameter_name} to {node_name}.{request.parameter_name}: {delete_result}"
+                        logger.error(details)
+                        return AlterParameterDetailsResultFailure()
+
+        # Check and break invalid outgoing connections
+        for conn in list_connections_result.outgoing_connections:
+            if conn.source_parameter_name == request.parameter_name:
+                target_node = self.get_node_by_name(conn.target_node_name)
+                target_param = target_node.get_parameter_by_name(conn.target_parameter_name)
+                if target_param and not target_param.is_incoming_type_allowed(parameter.output_type):
+                    delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
+                        DeleteConnectionRequest(
+                            source_node_name=node_name,
+                            source_parameter_name=request.parameter_name,
+                            target_node_name=conn.target_node_name,
+                            target_parameter_name=conn.target_parameter_name,
+                        )
+                    )
+                    if isinstance(delete_result, ResultPayloadFailure):
+                        details = f"Failed to delete incompatible outgoing connection from {node_name}.{request.parameter_name} to {conn.target_node_name}.{conn.target_parameter_name}: {delete_result}"
+                        logger.error(details)
+                        return AlterParameterDetailsResultFailure()
+
+        return None
+
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911
         node_name = request.node_name
         node = None
 
@@ -1150,69 +1210,57 @@ class NodeManager:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = f"Attempted to alter details for Parameter '{request.parameter_name}' from node in the Current Context. Failed because there was no such Node."
                 logger.error(details)
-
                 return AlterParameterDetailsResultFailure()
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
-
-        # Does this node exist?
-        if node is None:
-            obj_mgr = GriptapeNodes.ObjectManager()
-            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
-            if node is None:
-                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}', but no such Node was found."
+        else:
+            try:
+                node = self.get_node_by_name(node_name)
+            except Exception as e:
+                details = f"Failed to get Node '{node_name}': {e}"
                 logger.error(details)
-
                 return AlterParameterDetailsResultFailure()
 
-        # Check for Parameter, ParameterGroup, or ParameterMessage
-        parameter = node.get_parameter_by_name(request.parameter_name)
-        parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
-        parameter_message = node.get_message_by_name_or_element_id(request.parameter_name)
-
-        if parameter is None and parameter_group is None and parameter_message is None:
-            details = f"Attempted to alter details for '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter, ParameterGroup, or ParameterMessage with that name on it."
-            logger.error(details)
-            return AlterParameterDetailsResultFailure()
-
-        # Handle ParameterMessage
-        if parameter_message is not None:
-            if request.ui_options is not None:
-                parameter_message.ui_options = request.ui_options
-            if request.tooltip is not None and isinstance(request.tooltip, str):
-                parameter_message.value = request.tooltip
-            return AlterParameterDetailsResultSuccess()
-
         # Handle ParameterGroup
+        parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
         if parameter_group is not None:
             if request.ui_options is not None:
                 parameter_group.ui_options = request.ui_options
             return AlterParameterDetailsResultSuccess()
 
         # Handle Parameter
-        if parameter is not None:
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/827
-            # Now change all the values on the Parameter.
-            self.modify_alterable_fields(request, parameter)
-            # The rest of these are not alterable
-            if parameter.user_defined is False and request.request_id:
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
-                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
-                logger.warning(details)
-                return AlterParameterDetailsResultSuccess()
-            self.modify_key_parameter_fields(request, parameter)
-            # This field requires the node as well
-            if request.default_value is not None:
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/825
-                node.parameter_values[request.parameter_name] = request.default_value
+        parameter = node.get_parameter_by_name(request.parameter_name)
+        if parameter is None:
+            details = f"Parameter '{request.parameter_name}' not found in Node '{node_name}'."
+            logger.error(details)
+            return AlterParameterDetailsResultFailure()
 
-            details = f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{node_name}'."
-            logger.debug(details)
+        # Check and handle connections if type was changed
+        if request.type is not None or request.input_types is not None or request.output_type is not None:
+            result = self._validate_and_break_invalid_connections(node_name, parameter, request)
+            if isinstance(result, AlterParameterDetailsResultFailure):
+                return result
 
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/827
+        # Now change all the values on the Parameter.
+        self.modify_alterable_fields(request, parameter)
+        # The rest of these are not alterable
+        if parameter.user_defined is False and request.request_id:
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
+            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
+            logger.warning(details)
             return AlterParameterDetailsResultSuccess()
 
-        # This should never happen due to the earlier checks, but just in case
-        return AlterParameterDetailsResultFailure()
+        self.modify_key_parameter_fields(request, parameter)
+        # This field requires the node as well
+        if request.default_value is not None:
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/825
+            node.parameter_values[request.parameter_name] = request.default_value
+
+        details = f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{node_name}'."
+        logger.debug(details)
+
+        return AlterParameterDetailsResultSuccess()
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:
