@@ -108,7 +108,7 @@ class VersionWindow(NamedTuple):
     check_function: Callable[[LibrarySchema], list[VersionCompatibilityIssue]]
 
 
-def check_modified_parameters_set_deprecation(library_data: LibrarySchema) -> list[VersionCompatibilityIssue]:
+def check_v0_40_0_modified_parameters_set_removal(library_data: LibrarySchema) -> list[VersionCompatibilityIssue]:
     """Check for libraries impacted by the modified_parameters_set deprecation timeline."""
     # Get current engine version
     engine_version_result = GriptapeNodes.handle_request(GetEngineVersionRequest())
@@ -165,7 +165,7 @@ VERSION_COMPATIBILITY_WINDOWS = [
     VersionWindow(
         min_version=None,
         max_version=Version(0, 40, 0),  # Exclusive - anything < 0.40.0
-        check_function=check_modified_parameters_set_deprecation,
+        check_function=check_v0_40_0_modified_parameters_set_removal,
     ),
     # Future version windows can be added here
 ]
