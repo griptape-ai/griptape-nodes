@@ -1202,7 +1202,10 @@ class NodeManager:
 
         return None
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911
+    # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
+    # For PLR0911 (too many return statements): Need to give customers explicit reasons for failure on each case.
+    # For PLR0912 (too many local variables): Need to give customers explicit reasons for failure on each case.
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         node_name = request.node_name
         node = None
 
