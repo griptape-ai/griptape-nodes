@@ -330,6 +330,15 @@ class NodeManager:
 
             # Get the opposing EndNode
             end_class_name = node_class_name.replace("Start", "End")
+
+            # Check and see if the class exists
+            try:
+                LibraryRegistry.get_libraries_with_node_type(end_class_name)
+            except KeyError:
+                msg = f"End class '{end_class_name}' does not exist for start class '{node_class_name}'"
+                logger.error(msg)
+                return CreateNodeResultFailure()
+
             # Create the EndNode
             end_loop = GriptapeNodes.handle_request(
                 CreateNodeRequest(
