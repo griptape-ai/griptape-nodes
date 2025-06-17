@@ -393,6 +393,15 @@
         "description": "Experimental LoRA extractions from CausVid finetunes. Enables generating videos in 2-8 steps.",
         "display_name": "Kijai CausVid 14B"
       }
+    },
+    {
+      "class_name": "WuerstchenCombinedPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/wuerstchen/wuerstchen_combined_pipeline.py",
+      "metadata": {
+        "category": "image/würstchen",
+        "description": "Generate images efficiently with Würstchen via 🤗 Diffusers.",
+        "display_name": "Würstchen"
+      }
     }
   ]
 }
