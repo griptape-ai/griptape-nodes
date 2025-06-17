@@ -1142,7 +1142,7 @@ class NodeManager:
             else:
                 parameter.allowed_modes.discard(ParameterMode.OUTPUT)
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         node_name = request.node_name
         node = None
 
