@@ -339,30 +339,48 @@
       }
     },
     {
-      "class_name": "CreateFloatList",
-      "file_path": "griptape_nodes_library/number/create_float_list.py",
+      "class_name": "CreateBoolList",
+      "file_path": "griptape_nodes_library/lists/create_bool_list.py",
       "metadata": {
-        "category": "number",
+        "category": "lists",
+        "description": "Creates a list of boolean values.",
+        "display_name": "Create Bool List"
+      }
+    },
+    {
+      "class_name": "CreateFloatList",
+      "file_path": "griptape_nodes_library/lists/create_float_list.py",
+      "metadata": {
+        "category": "lists",
         "description": "Creates a list of float values.",
         "display_name": "Create Float List"
       }
     },
     {
       "class_name": "CreateIntList",
-      "file_path": "griptape_nodes_library/number/create_int_list.py",
+      "file_path": "griptape_nodes_library/lists/create_int_list.py",
       "metadata": {
-        "category": "number",
+        "category": "lists",
         "description": "Creates a list of integer values.",
         "display_name": "Create Int List"
       }
     },
     {
-      "class_name": "CreateBoolList",
-      "file_path": "griptape_nodes_library/number/create_bool_list.py",
+      "class_name": "CreateTextList",
+      "file_path": "griptape_nodes_library/lists/create_text_list.py",
       "metadata": {
-        "category": "number",
-        "description": "Creates a list of boolean values.",
-        "display_name": "Create Bool List"
+        "category": "lists",
+        "description": "Creates a list of text items",
+        "display_name": "Create Text List"
+      }
+    },
+    {
+      "class_name": "GetFromList",
+      "file_path": "griptape_nodes_library/lists/get_from_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and gets an item at a specified index from the list.",
+        "display_name": "Get From List"
       }
     },
     {
@@ -862,15 +880,6 @@
       }
     },
     {
-      "class_name": "CreateTextList",
-      "file_path": "griptape_nodes_library/text/create_text_list.py",
-      "metadata": {
-        "category": "text",
-        "description": "Create a list of text items",
-        "display_name": "Create Text List"
-      }
-    },
-    {
       "class_name": "DateAndTime",
       "file_path": "griptape_nodes_library/text/date_and_time.py",
       "metadata": {
@@ -1147,6 +1156,24 @@
         "category": "3D",
         "description": "Loads a GLTF file into your workflow",
         "display_name": "Load GLTF"
+      }
+    },
+    {
+      "class_name": "ForLoopStartNode",
+      "file_path": "griptape_nodes_library/execution/for_loop_start.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Start node for iterating through a range of numbers with a specified step value",
+        "display_name": "For Loop Start"
+      }
+    },
+    {
+      "class_name": "ForLoopEndNode",
+      "file_path": "griptape_nodes_library/execution/for_loop_end.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "End node that completes a loop iteration and connects back to the ForLoopStartNode",
+        "display_name": "For Loop End"
       }
     }
   ],

@@ -221,7 +221,7 @@ class NodeManager:
             if parent_flow_name == old_name:
                 self._name_to_parent_flow_name[node_name] = new_name
 
-    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
+    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
         parent_flow = None
@@ -325,30 +325,53 @@ class NodeManager:
 
         if isinstance(node, StartLoopNode) and not request.initial_setup:
             # If it's StartLoop, create an EndLoop and connect it to the StartLoop.
+            # Get the class name of the node
+            node_class_name = node.__class__.__name__
+
+            # Get the opposing EndNode
+            # TODO: (griptape) Get paired classes implemented so we dont need to do name stuff. https://github.com/griptape-ai/griptape-nodes/issues/1549
+            end_class_name = node_class_name.replace("Start", "End")
+
+            # Check and see if the class exists
+            libraries_with_node_type = LibraryRegistry.get_libraries_with_node_type(end_class_name)
+            if not libraries_with_node_type:
+                msg = f"End class '{end_class_name}' does not exist for start class '{node_class_name}'"
+                logger.error(msg)
+                return CreateNodeResultFailure()
+
+            # Create the EndNode
             end_loop = GriptapeNodes.handle_request(
                 CreateNodeRequest(
-                    node_type="ForEachEndNode",
+                    node_type=end_class_name,
                     metadata={
                         "position": {"x": node.metadata["position"]["x"] + 650, "y": node.metadata["position"]["y"]}
                     },
                     override_parent_flow_name=parent_flow_name,
                 )
             )
-            if isinstance(end_loop, CreateNodeResultSuccess):
-                # Create Loop between output and input to the start node.
-                GriptapeNodes.handle_request(
-                    CreateConnectionRequest(
-                        source_node_name=node.name,
-                        source_parameter_name="loop",
-                        target_node_name=end_loop.node_name,
-                        target_parameter_name="from_start",
-                    )
+            if not isinstance(end_loop, CreateNodeResultSuccess):
+                msg = f"Failed to create EndLoop node for StartLoop node '{node.name}'"
+                logger.error(msg)
+                return CreateNodeResultFailure()
+
+            # Create Loop between output and input to the start node.
+            GriptapeNodes.handle_request(
+                CreateConnectionRequest(
+                    source_node_name=node.name,
+                    source_parameter_name="loop",
+                    target_node_name=end_loop.node_name,
+                    target_parameter_name="from_start",
                 )
-                end_node = self.get_node_by_name(end_loop.node_name)
-                if isinstance(end_node, EndLoopNode):
-                    # create the connection bt them
-                    node.end_node = end_node
-                    end_node.start_node = node
+            )
+            end_node = self.get_node_by_name(end_loop.node_name)
+            if not isinstance(end_node, EndLoopNode):
+                msg = f"End node '{end_loop.node_name}' is not a valid EndLoopNode"
+                logger.error(msg)
+                return CreateNodeResultFailure()
+
+            # create the connection
+            node.end_node = end_node
+            end_node.start_node = node
 
         return CreateNodeResultSuccess(
             node_name=node.name, node_type=node.__class__.__name__, specific_library_name=request.specific_library_name

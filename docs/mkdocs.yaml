@@ -1,0 +1,16 @@
+nav:
+  - Home: index.md
+  - Nodes:
+    - Lists:
+      - Add To List: nodes/lists/add_to_list.md
+      - Combine Lists: nodes/lists/combine_lists.md
+      - Create List: nodes/lists/create_list.md
+      - Display List: nodes/lists/display_list.md
+      - Get Index Of Item: nodes/lists/get_index_of_item.md
+      - Get From List: nodes/lists/get_from_list.md
+      - Get List Contains Item: nodes/lists/get_list_contains_item.md
+      - Get List Is Empty: nodes/lists/get_list_is_empty.md
+      - Get List Length: nodes/lists/get_list_length.md
+      - Remove From List: nodes/lists/remove_from_list.md
+      - Replace In List: nodes/lists/replace_in_list.md
+      - Split List: nodes/lists/split_list.md 
