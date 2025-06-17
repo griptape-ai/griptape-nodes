@@ -173,12 +173,6 @@ class BaseNodeElement:
     def children(self) -> list[BaseNodeElement]:
         return self._children
 
-    def __post_init__(self) -> None:
-        # If there's currently an active element, add this new element as a child
-        current = BaseNodeElement.get_current()
-        if current is not None:
-            current.add_child(self)
-
     def __enter__(self) -> Self:
         # Push this element onto the global stack
         BaseNodeElement._stack.append(self)
@@ -370,13 +364,6 @@ class ParameterGroup(BaseNodeElement):
     ui_options: dict = field(default_factory=dict)
     collapsed: bool = False
     is_collapsible: bool = True
-
-    def __init__(self, *, is_collapsible: bool = True, collapsed: bool = False, **kwargs):
-        super().__init__(**kwargs)
-        self.collapsed = collapsed
-        self.is_collapsible = is_collapsible
-        self.ui_options["is_collapsible"] = is_collapsible
-        self.ui_options["collapsed"] = collapsed
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
