@@ -301,69 +301,6 @@ class BaseNodeElement:
 
 
 @dataclass(kw_only=True)
-class ParameterMessage(BaseNodeElement):
-    """Represents a UI message element, such as a warning or informational text."""
-
-    # Define default titles as a class-level constant
-    DEFAULT_TITLES: ClassVar[dict[str, str]] = {
-        "info": "Info",
-        "warning": "Warning",
-        "error": "Error",
-        "success": "Success",
-        "tip": "Tip",
-        "none": "",
-    }
-
-    # Create a type alias using the keys from DEFAULT_TITLES
-    type VariantType = Literal["info", "warning", "error", "success", "tip", "none"]
-
-    element_type: str = field(default_factory=lambda: ParameterMessage.__name__)
-    variant: VariantType
-    title: str | None = None
-    value: str
-    button_link: str | None = None
-    button_text: str | None = None
-    full_width: bool = False
-    ui_options: dict = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        data = super().to_dict()
-
-        # Use class-level default titles
-        title = self.title or self.DEFAULT_TITLES.get(str(self.variant), "")
-
-        # Merge the UI options with the message-specific options
-        merged_ui_options = {
-            **self.ui_options,
-            **{
-                k: v
-                for k, v in {
-                    "title": title,
-                    "variant": self.variant,
-                    "button_link": self.button_link,
-                    "button_text": self.button_text,
-                    "full_width": self.full_width,
-                }.items()
-                if v is not None
-            },
-        }
-
-        data["name"] = self.name
-        data["value"] = self.value
-        data["default_value"] = self.value  # for compatibility
-        data["ui_options"] = merged_ui_options
-
-        return data
-
-    def to_event(self, node: BaseNode) -> dict:
-        event_data = super().to_event(node)
-        dict_data = self.to_dict()
-        # Combine them both to get what we need for the UI.
-        event_data.update(dict_data)
-        return event_data
-
-
-@dataclass(kw_only=True)
 class ParameterGroup(BaseNodeElement):
     """UI element for a group of parameters."""
 
@@ -1138,6 +1075,90 @@ class ParameterList(ParameterContainer):
         self.add_child(param)
 
         return param
+
+
+class ParameterMessage(Parameter):
+    """Represents a UI message element, such as a warning or informational text."""
+
+    # Define default titles as a class-level constant
+    DEFAULT_TITLES: ClassVar[dict[str, str]] = {
+        "info": "Info",
+        "warning": "Warning",
+        "error": "Error",
+        "success": "Success",
+        "tip": "Tip",
+        "none": "",
+    }
+
+    # Create a type alias using the keys from DEFAULT_TITLES
+    type VariantType = Literal["info", "warning", "error", "success", "tip", "none"]
+
+    def __init__(  # noqa: PLR0913
+        self,
+        *,
+        name: str,
+        variant: VariantType,
+        value: str,
+        tooltip: str | list[dict] = "",
+        title: str | None = None,
+        button_link: str | None = None,
+        button_text: str | None = None,
+        full_width: bool = False,
+        ui_options: dict | None = None,
+        element_id: str | None = None,
+    ):
+        # Initialize the Parameter parent class with required fields
+        super().__init__(
+            name=name,
+            tooltip=tooltip,
+            type=ParameterTypeBuiltin.STR.value,  # Messages are always strings
+            default_value=value,  # Use value as the default_value
+            element_id=element_id,
+            element_type=self.__class__.__name__,
+            settable=False,  # Messages are not settable
+            allowed_modes={ParameterMode.PROPERTY},  # Messages are only properties
+        )
+
+        self.variant = variant
+        self.title = title
+        self.value = value
+        self.button_link = button_link
+        self.button_text = button_text
+        self.full_width = full_width
+        self._ui_options = ui_options or {}
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+
+        # Use class-level default titles
+        title = self.DEFAULT_TITLES.get(str(self.variant), "")
+
+        # Merge the UI options with the message-specific options
+        merged_ui_options = {
+            **self._ui_options,
+            **{
+                k: v
+                for k, v in {
+                    "title": title,
+                    "variant": self.variant,
+                }.items()
+                if v is not None
+            },
+        }
+
+        data["name"] = self.name
+        data["value"] = self.value
+        data["default_value"] = self.value  # for compatibility
+        data["ui_options"] = merged_ui_options
+
+        return data
+
+    def to_event(self, node: BaseNode) -> dict:
+        event_data = super().to_event(node)
+        dict_data = self.to_dict()
+        # Combine them both to get what we need for the UI.
+        event_data.update(dict_data)
+        return event_data
 
 
 class ParameterKeyValuePair(Parameter):
