@@ -84,6 +84,26 @@ class Version:
     def __str__(self) -> str:
         return f"{self.major}.{self.minor}.{self.patch}"
 
+    def __lt__(self, other: Version) -> bool:
+        """Less than comparison."""
+        return (self.major, self.minor, self.patch) < (other.major, other.minor, other.patch)
+
+    def __le__(self, other: Version) -> bool:
+        """Less than or equal comparison."""
+        return (self.major, self.minor, self.patch) <= (other.major, other.minor, other.patch)
+
+    def __gt__(self, other: Version) -> bool:
+        """Greater than comparison."""
+        return (self.major, self.minor, self.patch) > (other.major, other.minor, other.patch)
+
+    def __ge__(self, other: Version) -> bool:
+        """Greater than or equal comparison."""
+        return (self.major, self.minor, self.patch) >= (other.major, other.minor, other.patch)
+
+    def __eq__(self, other: Version) -> bool:  # type: ignore[override]
+        """Equality comparison."""
+        return (self.major, self.minor, self.patch) == (other.major, other.minor, other.patch)
+
 
 class GriptapeNodes(metaclass=SingletonMeta):
     _event_manager: EventManager

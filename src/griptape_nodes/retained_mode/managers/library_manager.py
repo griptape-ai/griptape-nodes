@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from importlib.resources import files
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, NamedTuple, cast
 
 import uv
 from packaging.requirements import Requirement
@@ -80,16 +80,55 @@ from griptape_nodes.retained_mode.events.library_events import (
     UnloadLibraryFromRegistryResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, Version
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from types import ModuleType
 
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class VersionCompatibilityIssue(NamedTuple):
+    """Represents a version compatibility issue found in a library."""
+
+    message: str
+    severity: LibraryManager.LibraryStatus
+
+
+class VersionWindow(NamedTuple):
+    """Defines a version window and its associated compatibility check function."""
+
+    min_version: Version | None  # None means no minimum
+    max_version: Version | None  # None means no maximum
+    check_function: Callable[[LibrarySchema], list[VersionCompatibilityIssue]]
+
+
+def check_modified_parameters_set_deprecation(library_data: LibrarySchema) -> list[VersionCompatibilityIssue]:  # noqa: ARG001
+    """Check for libraries impacted by the modified_parameters_set deprecation in 0.40.0."""
+    return [
+        VersionCompatibilityIssue(
+            message="A breaking change will be introduced in Griptape Nodes 0.40 that will require "
+            "impacted node libraries to be updated. The modified_parameters_set will no longer "
+            "be required. Click here for more details: <URL TO COME>.",
+            severity=LibraryManager.LibraryStatus.FLAWED,
+        )
+    ]
+
+
+# Registry of version windows and their compatibility checks
+VERSION_COMPATIBILITY_WINDOWS = [
+    VersionWindow(
+        min_version=None,
+        max_version=Version(0, 40, 0),  # Exclusive - anything < 0.40.0
+        check_function=check_modified_parameters_set_deprecation,
+    ),
+    # Future version windows can be added here
+]
 
 
 class LibraryManager:
@@ -1033,7 +1072,48 @@ class LibraryManager:
         # Go tell the Workflow Manager that it's turn is now.
         GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
 
-    def _attempt_load_nodes_from_library(  # noqa: PLR0913
+    def _check_library_version_compatibility(self, library_data: LibrarySchema) -> list[VersionCompatibilityIssue]:
+        """Check library engine version against compatibility windows and return any issues.
+
+        Args:
+            library_data: The library schema containing metadata with engine_version
+
+        Returns:
+            List of version compatibility issues
+        """
+        issues = []
+
+        library_version = Version.from_string(library_data.metadata.engine_version)
+
+        if library_version is None:
+            issues.append(
+                VersionCompatibilityIssue(
+                    message=f"Unable to parse library engine version '{library_data.metadata.engine_version}': not in major.minor.patch format",
+                    severity=LibraryManager.LibraryStatus.UNUSABLE,
+                )
+            )
+            return issues
+
+        # Check each version window
+        for window in VERSION_COMPATIBILITY_WINDOWS:
+            version_in_window = True
+
+            # Check minimum version (inclusive)
+            if window.min_version is not None and library_version < window.min_version:
+                version_in_window = False
+
+            # Check maximum version (exclusive)
+            if window.max_version is not None and library_version >= window.max_version:
+                version_in_window = False
+
+            # If version is in the window, run the check function
+            if version_in_window:
+                window_issues = window.check_function(library_data)
+                issues.extend(window_issues)
+
+        return issues
+
+    def _attempt_load_nodes_from_library(  # noqa: PLR0913, C901
         self,
         library_data: LibrarySchema,
         library: Library,
@@ -1043,6 +1123,25 @@ class LibraryManager:
         problems: list[str],
     ) -> LibraryManager.LibraryInfo:
         any_nodes_loaded_successfully = False
+
+        # Check for version-based compatibility issues and add to problems
+        version_issues = self._check_library_version_compatibility(library_data)
+        has_disqualifying_issues = False
+        for issue in version_issues:
+            problems.append(issue.message)
+            if issue.severity == LibraryManager.LibraryStatus.UNUSABLE:
+                has_disqualifying_issues = True
+
+        # Early exit if any version issues are disqualifying
+        if has_disqualifying_issues:
+            return LibraryManager.LibraryInfo(
+                library_path=library_file_path,
+                library_name=library_data.name,
+                library_version=library_version,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=problems,
+            )
+
         # Process each node in the metadata
         for node_definition in library_data.nodes:
             # Resolve relative path to absolute path
