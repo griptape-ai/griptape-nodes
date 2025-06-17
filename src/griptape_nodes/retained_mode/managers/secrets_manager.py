@@ -100,13 +100,18 @@ class SecretsManager:
         return DeleteSecretValueResultSuccess()
 
     def get_secret(self, secret_name: str, *, should_error_on_not_found: bool = True) -> str | None:
-        """Return the secret value, searching workspace env, global env, then OS env."""
+        """Return the secret value with the following search precedence (highest to lowest priority).
+
+        1. OS environment variables (highest priority)
+        2. Workspace .env file (<workspace>/.env)
+        3. Global .env file (~/.config/griptape_nodes/.env) (lowest priority)
+        """
         secret_name = SecretsManager._apply_secret_name_compliance(secret_name)
 
         search_order = [
+            ("environment variables", lambda: getenv(secret_name)),
             (str(self.workspace_env_path), lambda: DotEnv(self.workspace_env_path).get(secret_name)),
             (str(ENV_VAR_PATH), lambda: DotEnv(ENV_VAR_PATH).get(secret_name)),
-            ("environment variables", lambda: getenv(secret_name)),
         ]
 
         value = None

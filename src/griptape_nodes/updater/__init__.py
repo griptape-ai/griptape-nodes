@@ -21,7 +21,7 @@ def main() -> None:
     """Entry point for the updater CLI."""
     try:
         _download_and_run_installer()
-        _sync_assets()
+        _sync_libraries()
     except subprocess.CalledProcessError:
         console.print("[red]Error during update process.[/red]")
     else:
@@ -41,6 +41,7 @@ def _download_and_run_installer() -> None:
         subprocess.run(  # noqa: S603
             ["uv", "tool", "upgrade", "griptape-nodes"],  # noqa: S607
             text=True,
+            capture_output=True,
             check=True,
         )
     except subprocess.CalledProcessError as e:
@@ -50,20 +51,21 @@ def _download_and_run_installer() -> None:
         console.print("[green]Finished updating self.[/green]")
 
 
-def _sync_assets() -> None:
-    """Syncs the assets for the engine."""
-    console.print("[bold green]Syncing assets...[/bold green]")
+def _sync_libraries() -> None:
+    """Syncs the libraries for the engine."""
+    console.print("[bold green]Syncing libraries...[/bold green]")
     try:
         subprocess.run(  # noqa: S603
-            ["griptape-nodes", "assets", "sync"],  # noqa: S607
+            ["griptape-nodes", "libraries", "sync"],  # noqa: S607
             text=True,
+            capture_output=True,
             check=True,
         )
     except subprocess.CalledProcessError as e:
-        console.print(f"[red]Error during asset sync: {e}[/red]")
+        console.print(f"[red]Error during libraries sync: {e}[/red]")
         raise
     else:
-        console.print("[green]Finished syncing assets.[/green]")
+        console.print("[green]Finished syncing libraries.[/green]")
 
 
 if __name__ == "__main__":

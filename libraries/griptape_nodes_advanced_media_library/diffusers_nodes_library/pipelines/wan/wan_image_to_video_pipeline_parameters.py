@@ -5,59 +5,73 @@ from pathlib import Path
 from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
+import numpy as np
+import PIL.Image
+import torch  # type: ignore[reportMissingImports]
 from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
-
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (
-    HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
+from griptape.artifacts import ImageUrlArtifact
+from griptape.loaders import ImageLoader
+from PIL.Image import Image
+from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
+    image_artifact_to_pil,
 )
-from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter  # type: ignore[reportMissingImports]
+
+from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
+from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # type: ignore[reportMissingImports]
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class AllegroPipelineParameters:
-    """Handles all Allegro pipeline related parameters for the AllegroPipeline node."""
-
+class WanImageToVideoPipelineParameters:
     def __init__(self, node: BaseNode):
         self._node = node
-        # By default we expose the canonical Allegro model on the Hub. Additional fine-tunes can be added later.
         self._huggingface_repo_parameter = HuggingFaceRepoParameter(
             node,
             repo_ids=[
-                "rhymes-ai/Allegro",
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1482
-                # "rhymes-ai/Allegro-T2V-40x360P",
-                "rhymes-ai/Allegro-T2V-40x720P",
+                "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers",
+                "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers",
             ],
         )
         self._seed_parameter = SeedParameter(node)
 
-    # -------------------------------------------------------------------------
-    # Parameter registration helpers
-    # -------------------------------------------------------------------------
-
     def add_input_parameters(self) -> None:
-        """Register all input parameters on the parent node."""
         self._huggingface_repo_parameter.add_input_parameters()
 
-        default_width, default_height, default_num_frames = self._get_model_defaults()
+        default_width, default_height = self._get_model_defaults()
 
+        self._node.add_parameter(
+            Parameter(
+                name="input_image",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                type="ImageArtifact",
+                tooltip="Input image for video generation",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
+                name="auto_resize_input_image",
+                default_value=True,
+                input_types=["bool"],
+                type="bool",
+                tooltip="Automatically resize input image to match model requirements",
+            )
+        )
         self._node.add_parameter(
             Parameter(
                 name="prompt",
                 default_value="",
                 input_types=["str"],
                 type="str",
-                tooltip="Prompt",
+                tooltip="Prompt for video generation",
             )
         )
         self._node.add_parameter(
             Parameter(
                 name="negative_prompt",
-                default_value="nsfw, lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry",
+                default_value="",
                 input_types=["str"],
                 type="str",
                 tooltip="Negative prompt (optional)",
@@ -70,7 +84,7 @@ class AllegroPipelineParameters:
                 input_types=["int"],
                 type="int",
                 allowed_modes=set(),
-                tooltip="Video frame width",
+                tooltip="Video frame width (model-specific)",
             )
         )
         self._node.add_parameter(
@@ -80,68 +94,61 @@ class AllegroPipelineParameters:
                 input_types=["int"],
                 type="int",
                 allowed_modes=set(),
-                tooltip="Video frame height",
+                tooltip="Video frame height (model-specific)",
             )
         )
         self._node.add_parameter(
             Parameter(
                 name="num_frames",
-                default_value=default_num_frames,
+                default_value=33,
                 input_types=["int"],
                 type="int",
-                allowed_modes=set(),
-                tooltip="Number of frames to generate",
+                tooltip="Number of frames to generate (model-specific)",
+                ui_options={"slider": {"min_val": 9, "max_val": 65}, "step": 8},
             )
         )
         self._node.add_parameter(
             Parameter(
                 name="num_inference_steps",
-                default_value=20,
+                default_value=50,
                 input_types=["int"],
                 type="int",
-                tooltip="Number of denoising steps, 20 is quick, 100 ideal but slow",
+                tooltip="Number of denoising steps (20 is quick, 50+ for quality)",
             )
         )
         self._node.add_parameter(
             Parameter(
                 name="guidance_scale",
-                default_value=7.5,
+                default_value=5.0,
                 input_types=["float"],
                 type="float",
-                tooltip="CFG guidance scale",
+                tooltip="CFG guidance scale (higher = more prompt adherence)",
             )
         )
-
-        # Seed helpers are standard across pipelines.
         self._seed_parameter.add_input_parameters()
 
     def add_output_parameters(self) -> None:
-        """Register output parameters (currently only the final video URL)."""
         self._node.add_parameter(
             Parameter(
                 name="output_video",
                 output_type="VideoUrlArtifact",
-                tooltip="The generated video clip",
+                tooltip="The output video",
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
 
-    # -------------------------------------------------------------------------
-    # Validation & lifecycle hooks
-    # -------------------------------------------------------------------------
-
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._huggingface_repo_parameter.validate_before_node_run()
 
-        # Validate dimensions are divisible by 8
+        # Validate dimensions are divisible by 16
         width = self.get_width()
         height = self.get_height()
-        if width % 8 != 0:
+        if width % 16 != 0:
             errors = errors or []
-            errors.append(ValueError(f"Width ({width}) must be divisible by 8"))
-        if height % 8 != 0:
+            errors.append(ValueError(f"Width ({width}) must be divisible by 16"))
+        if height % 16 != 0:
             errors = errors or []
-            errors.append(ValueError(f"Height ({height}) must be divisible by 8"))
+            errors.append(ValueError(f"Height ({height}) must be divisible by 16"))
 
         return errors or None
 
@@ -152,12 +159,35 @@ class AllegroPipelineParameters:
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()
 
-    # -------------------------------------------------------------------------
-    # Convenience getters
-    # -------------------------------------------------------------------------
-
     def get_repo_revision(self) -> tuple[str, str]:
         return self._huggingface_repo_parameter.get_repo_revision()
+
+    def publish_output_video_preview_placeholder(self) -> None:
+        # Create a small black video placeholder
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file:
+            temp_path = Path(temp_file.name)
+        try:
+            # Create a single black frame and export as 1-frame video
+
+            black_frame = PIL.Image.new("RGB", (320, 240), color="black")
+            frames = [black_frame]
+            diffusers.utils.export_to_video(frames, str(temp_path), fps=1)
+            filename = f"placeholder_{uuid.uuid4()}.mp4"
+            url = GriptapeNodes.StaticFilesManager().save_static_file(temp_path.read_bytes(), filename)
+            self._node.publish_update_to_parameter("output_video", VideoUrlArtifact(url))
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
+
+    def get_input_image_pil(self) -> Image:
+        input_image_artifact = self._node.get_parameter_value("input_image")
+        if isinstance(input_image_artifact, ImageUrlArtifact):
+            input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
+        input_image_pil = image_artifact_to_pil(input_image_artifact)
+        return input_image_pil.convert("RGB")
+
+    def get_auto_resize_input_image(self) -> bool:
+        return bool(self._node.get_parameter_value("auto_resize_input_image"))
 
     def get_prompt(self) -> str:
         return self._node.get_parameter_value("prompt")
@@ -180,36 +210,32 @@ class AllegroPipelineParameters:
     def get_guidance_scale(self) -> float:
         return float(self._node.get_parameter_value("guidance_scale"))
 
-    def _get_model_defaults(self, repo_id: str | None = None) -> tuple[int, int, int]:
-        """Get default width, height, and num_frames for a specific model or the default model."""
+    def _get_model_defaults(self, repo_id: str | None = None) -> tuple[int, int]:
+        """Get default width and height for a specific model or the default model."""
         if repo_id is None:
             available_models = self._huggingface_repo_parameter.fetch_repo_revisions()
             if not available_models:
-                return 640, 368, 40  # 40x360P variant
+                return 832, 480  # Default to 832x480 if no models are available
             repo_id = available_models[0][0]
 
-        """Get recommended width and height for a specific model."""
         match repo_id:
-            case "rhymes-ai/Allegro":
-                return 1280, 720, 88  # Default Allegro model
-            case "rhymes-ai/Allegro-T2V-40x360P":
-                return 640, 368, 40  # 40x360P variant
-            case "rhymes-ai/Allegro-T2V-40x720P":
-                return 1280, 720, 40  # 40x720P variant
+            case "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers":
+                return 832, 480  # I2V 480P model - optimized for consumer GPUs
+            case "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers":
+                return 1280, 720  # I2V 720P model - higher resolution
             case _:
-                msg = f"Unsupported model: {repo_id}"
+                msg = f"Unsupported model repo_id: {repo_id}."
                 raise ValueError(msg)
 
     def _update_dimensions_for_model(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
         """Update width and height when model selection changes."""
         if parameter.name == "model" and isinstance(value, str):
             repo_id, _ = self._huggingface_repo_parameter._key_to_repo_revision(value)
-            recommended_width, recommended_height, num_frames = self._get_model_defaults(repo_id)
+            recommended_width, recommended_height = self._get_model_defaults(repo_id)
 
             # Update dimensions and mark them as modified
             current_width = self._node.get_parameter_value("width")
             current_height = self._node.get_parameter_value("height")
-            current_num_frames = self._node.get_parameter_value("num_frames")
 
             if current_width != recommended_width:
                 self._node.set_parameter_value("width", recommended_width)
@@ -219,42 +245,78 @@ class AllegroPipelineParameters:
                 self._node.set_parameter_value("height", recommended_height)
                 modified_parameters_set.add("height")
 
-            if current_num_frames != num_frames:
-                self._node.set_parameter_value("num_frames", num_frames)
-                modified_parameters_set.add("num_frames")
+    def get_image_for_model(self, pipe: Any) -> tuple[Image, int, int]:
+        """Prepare input image with proper resizing and update pipe_kwargs."""
+        image = self.get_input_image_pil()
+        repo_id, _ = self.get_repo_revision()
 
-    def get_pipe_kwargs(self) -> dict:
-        """Return a dictionary of keyword arguments to pass to the Allegro pipeline."""
+        if not self.get_auto_resize_input_image():
+            # If auto-resize is disabled, ensure image matches model dimensions
+            width = self.get_width()
+            height = self.get_height()
+            if image.width != width or image.height != height:
+                msg = f"Input image must be {width}x{height} for model {repo_id}, but got {image.width}x{image.height}."
+                raise ValueError(msg)
+            return image, height, width
+
+        # Automatically resize image based on model capabilities
+        match repo_id:
+            case "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers":
+                max_area = 832 * 480  # I2V 480P model
+            case "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers":
+                max_area = 1280 * 720  # I2V 720P model
+            case _:
+                msg = f"Unsupported model repo_id: {repo_id}."
+                raise ValueError(msg)
+
+        aspect_ratio = image.height / image.width
+        mod_value = pipe.vae_scale_factor_spatial * pipe.transformer.config.patch_size[1]
+        height = round(np.sqrt(max_area * aspect_ratio)) // mod_value * mod_value
+        width = round(np.sqrt(max_area / aspect_ratio)) // mod_value * mod_value
+        image = image.resize((width, height))
+
+        return image, height, width
+
+    def get_pipe_kwargs(self, pipe: Any) -> dict:
+        image, height, width = self.get_image_for_model(pipe)
         return {
             "prompt": self.get_prompt(),
             "negative_prompt": self.get_negative_prompt(),
+            "image": image,
+            "height": height,
+            "width": width,
             "num_frames": self.get_num_frames(),
-            "height": self.get_height(),
-            "width": self.get_width(),
             "num_inference_steps": self.get_num_inference_steps(),
             "guidance_scale": self.get_guidance_scale(),
             "generator": self._seed_parameter.get_generator(),
-            "output_type": "pil",
         }
 
-    def latents_to_video_mp4(self, pipe: diffusers.AllegroPipeline, latents: Any) -> Path:
+    def latents_to_video_mp4(self, pipe: Any, latents: Any) -> Path:
         """Convert latents to video frames and export as MP4 file."""
-        num_frames = self.get_num_frames()
-        width = self.get_width()
-        height = self.get_height()
-
-        # First convert latents to frames using the VAE
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file_obj:
             temp_file = Path(temp_file_obj.name)
 
         try:
+            # Convert latents to video frames using VAE decode
             latents = latents.to(pipe.vae.dtype)
-            frames = pipe.decode_latents(latents)
-            frames = frames[:, :, :num_frames, :height, :width]
-            frames = pipe.video_processor.postprocess_video(video=frames, output_type="pil")[0]
+
+            # Apply latents normalization as per the WAN pipeline
+            latents_mean = (
+                torch.tensor(pipe.vae.config.latents_mean)
+                .view(1, pipe.vae.config.z_dim, 1, 1, 1)
+                .to(latents.device, latents.dtype)
+            )
+            latents_std = 1.0 / torch.tensor(pipe.vae.config.latents_std).view(1, pipe.vae.config.z_dim, 1, 1, 1).to(
+                latents.device, latents.dtype
+            )
+            latents = latents / latents_std + latents_mean
+
+            # Decode latents to video using VAE
+            video = pipe.vae.decode(latents, return_dict=False)[0]
+            frames = pipe.video_processor.postprocess_video(video, output_type="pil")[0]
 
             # Export frames to video
-            diffusers.utils.export_to_video(frames, str(temp_file), fps=15)
+            diffusers.utils.export_to_video(frames, str(temp_file), fps=16)
         except Exception:
             # Clean up on error
             if temp_file.exists():
@@ -263,7 +325,7 @@ class AllegroPipelineParameters:
         else:
             return temp_file
 
-    def publish_output_video_preview_latents(self, pipe: diffusers.AllegroPipeline, latents: Any) -> None:
+    def publish_output_video_preview_latents(self, pipe: Any, latents: Any) -> None:
         """Publish a preview video from latents during generation."""
         preview_video_path = None
         try:

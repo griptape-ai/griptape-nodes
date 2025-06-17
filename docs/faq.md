@@ -87,14 +87,14 @@ If you would like to _manually_ update, you can always use either of these comma
 
 ```bash
 griptape-nodes self update
-griptape-nodes assets update
+griptape-nodes libraries sync
 ```
 
 or
 
 ```bash
 gtn self update
-gtn assets update
+gtn libraries sync
 ```
 
 ## I'm seeing `failed to locate pyvenv.cfg: The system cannot find the file specified.` - What should I do?

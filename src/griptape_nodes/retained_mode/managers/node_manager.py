@@ -112,6 +112,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
     RemoveParameterFromNodeResultFailure,
     RemoveParameterFromNodeResultSuccess,
+    RenameParameterRequest,
+    RenameParameterResultFailure,
+    RenameParameterResultSuccess,
     SetParameterValueRequest,
     SetParameterValueResultFailure,
     SetParameterValueResultSuccess,
@@ -156,6 +159,7 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(GetParameterValueRequest, self.on_get_parameter_value_request)
         event_manager.assign_manager_to_request_type(SetParameterValueRequest, self.on_set_parameter_value_request)
+        event_manager.assign_manager_to_request_type(RenameParameterRequest, self.on_rename_parameter_request)
         event_manager.assign_manager_to_request_type(ResolveNodeRequest, self.on_resolve_from_node_request)
         event_manager.assign_manager_to_request_type(GetAllNodeInfoRequest, self.on_get_all_node_info_request)
         event_manager.assign_manager_to_request_type(
@@ -706,6 +710,24 @@ class NodeManager:
         )
         return result
 
+    def generate_unique_parameter_name(self, node: BaseNode, base_name: str) -> str:
+        """Generate a unique parameter name for a node by appending a number if needed.
+
+        Args:
+            node: The node to check for existing parameter names
+            base_name: The desired base name for the parameter
+
+        Returns:
+            A unique parameter name that doesn't conflict with existing parameters
+        """
+        if node.get_parameter_by_name(base_name) is None:
+            return base_name
+
+        counter = 1
+        while node.get_parameter_by_name(f"{base_name}_{counter}") is not None:
+            counter += 1
+        return f"{base_name}_{counter}"
+
     def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
         node = None
@@ -758,13 +780,14 @@ class NodeManager:
             logger.error(details)
             result = AddParameterToNodeResultFailure()
             return result
-        # Does the Node already have a parameter by this name?
-        if node.get_parameter_by_name(request.parameter_name) is not None:
-            details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{node_name}'. Failed because it already had a Parameter with that name on it. Parameter names must be unique within the Node."
-            logger.error(details)
 
-            result = AddParameterToNodeResultFailure()
-            return result
+        # Generate a unique parameter name if needed
+        requested_parameter_name = request.parameter_name
+        if requested_parameter_name is None:
+            # Not allowed to have a parameter with no name, so we'll give it a default name
+            requested_parameter_name = "parameter"
+
+        final_param_name = self.generate_unique_parameter_name(node, requested_parameter_name)
 
         # Let's see if the Parameter is properly formed.
         # If a Parameter is intended for Control, it needs to have that be the exclusive type.
@@ -805,7 +828,7 @@ class NodeManager:
 
         # Let's roll, I guess.
         new_param = Parameter(
-            name=request.parameter_name,
+            name=final_param_name,
             type=request.type,
             input_types=request.input_types,
             output_type=request.output_type,
@@ -828,12 +851,17 @@ class NodeManager:
                 logger.info(new_param.name)
                 node.add_parameter(new_param)
         except Exception as e:
-            details = f"Couldn't add parameter with name {request.parameter_name} to node. Error: {e}"
+            details = f"Couldn't add parameter with name {request.parameter_name} to Node '{node_name}'. Error: {e}"
             logger.error(details)
             return AddParameterToNodeResultFailure()
 
-        details = f"Successfully added Parameter '{request.parameter_name}' to Node '{node_name}'."
-        logger.debug(details)
+        details = f"Successfully added Parameter '{final_param_name}' to Node '{node_name}'."
+        log_level = logging.DEBUG
+        if final_param_name != requested_parameter_name:
+            log_level = logging.WARNING
+            details = f"{details} WARNING: Had to rename from original parameter name '{requested_parameter_name}' as a parameter with this name already existed in node '{node_name}'."
+
+        logger.log(level=log_level, msg=details)
 
         result = AddParameterToNodeResultSuccess(
             parameter_name=new_param.name, type=new_param.type, node_name=node_name
@@ -1120,7 +1148,67 @@ class NodeManager:
             else:
                 parameter.allowed_modes.discard(ParameterMode.OUTPUT)
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:
+    def _validate_and_break_invalid_connections(
+        self, node_name: str, parameter: Parameter, request: AlterParameterDetailsRequest
+    ) -> ResultPayload | None:
+        """Validate and break any connections that are no longer valid after a parameter type change.
+
+        This method checks both incoming and outgoing connections for a parameter and removes
+        any that are no longer type-compatible after the parameter's type has been changed.
+
+        Returns:
+            ResultPayload | None: Returns AlterParameterDetailsResultFailure if any connection deletion fails,
+                                 None otherwise.
+        """
+        # Get all connections for this node
+        list_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
+        list_connections_result = self.on_list_connections_for_node_request(list_connections_request)
+
+        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+            # No connections exist for this node, which is not a failure - just nothing to validate
+            return None
+
+        # Check and break invalid incoming connections
+        for conn in list_connections_result.incoming_connections:
+            if conn.target_parameter_name == request.parameter_name:
+                source_node = self.get_node_by_name(conn.source_node_name)
+                source_param = source_node.get_parameter_by_name(conn.source_parameter_name)
+                if source_param and not parameter.is_incoming_type_allowed(source_param.output_type):
+                    delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
+                        DeleteConnectionRequest(
+                            source_node_name=conn.source_node_name,
+                            source_parameter_name=conn.source_parameter_name,
+                            target_node_name=node_name,
+                            target_parameter_name=request.parameter_name,
+                        )
+                    )
+                    if isinstance(delete_result, ResultPayloadFailure):
+                        details = f"Failed to delete incompatible incoming connection from {conn.source_node_name}.{conn.source_parameter_name} to {node_name}.{request.parameter_name}: {delete_result}"
+                        logger.error(details)
+                        return AlterParameterDetailsResultFailure()
+
+        # Check and break invalid outgoing connections
+        for conn in list_connections_result.outgoing_connections:
+            if conn.source_parameter_name == request.parameter_name:
+                target_node = self.get_node_by_name(conn.target_node_name)
+                target_param = target_node.get_parameter_by_name(conn.target_parameter_name)
+                if target_param and not target_param.is_incoming_type_allowed(parameter.output_type):
+                    delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
+                        DeleteConnectionRequest(
+                            source_node_name=node_name,
+                            source_parameter_name=request.parameter_name,
+                            target_node_name=conn.target_node_name,
+                            target_parameter_name=conn.target_parameter_name,
+                        )
+                    )
+                    if isinstance(delete_result, ResultPayloadFailure):
+                        details = f"Failed to delete incompatible outgoing connection from {node_name}.{request.parameter_name} to {conn.target_node_name}.{conn.target_parameter_name}: {delete_result}"
+                        logger.error(details)
+                        return AlterParameterDetailsResultFailure()
+
+        return None
+
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911
         node_name = request.node_name
         node = None
 
@@ -1156,6 +1244,12 @@ class NodeManager:
             if request.ui_options is not None:
                 parameter_group.ui_options = request.ui_options
             return AlterParameterDetailsResultSuccess()
+
+        # Check and handle connections if type was changed
+        if request.type is not None or request.input_types is not None or request.output_type is not None:
+            result = self._validate_and_break_invalid_connections(node_name, parameter, request)
+            if isinstance(result, AlterParameterDetailsResultFailure):
+                return result
 
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/827
         # Now change all the values on the Parameter.
@@ -2261,3 +2355,83 @@ class NodeManager:
             else:
                 commands.append(output_command)
         return commands if commands else None
+
+    def on_rename_parameter_request(self, request: RenameParameterRequest) -> ResultPayload:  # noqa: C901, PLR0912
+        """Handle renaming a parameter on a node.
+
+        Args:
+            request: The rename parameter request containing the old and new parameter names
+
+        Returns:
+            ResultPayload: Success or failure result
+        """
+        # Get the node
+        node_name = request.node_name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to rename Parameter in the Current Context. Failed because the Current Context was empty."
+                logger.error(details)
+                return RenameParameterResultFailure()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+        else:
+            try:
+                node = self.get_node_by_name(node_name)
+            except KeyError as err:
+                details = f"Attempted to rename Parameter '{request.parameter_name}' on Node '{node_name}'. Failed because the Node could not be found. Error: {err}"
+                logger.error(details)
+                return RenameParameterResultFailure()
+
+        # Get the parameter
+        parameter = node.get_parameter_by_name(request.parameter_name)
+        if parameter is None:
+            details = f"Attempted to rename Parameter '{request.parameter_name}' on Node '{node_name}'. Failed because the Parameter could not be found."
+            logger.error(details)
+            return RenameParameterResultFailure()
+
+        # Validate the new parameter name
+        if any(char.isspace() for char in request.new_parameter_name):
+            details = f"Failed to rename Parameter '{request.parameter_name}' to '{request.new_parameter_name}'. Parameter names cannot contain any whitespace characters."
+            logger.error(details)
+            return RenameParameterResultFailure()
+
+        # Check for duplicate names
+        if node.does_name_exist(request.new_parameter_name):
+            details = f"Failed to rename Parameter '{request.parameter_name}' to '{request.new_parameter_name}'. A Parameter with that name already exists."
+            logger.error(details)
+            return RenameParameterResultFailure()
+
+        # Get all connections for this node
+        flow_name = self.get_node_parent_flow_by_name(node_name)
+        flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+
+        # Update connections that reference this parameter
+        if node_name in flow.connections.incoming_index:
+            incoming_connections = flow.connections.incoming_index[node_name]
+            for connection_ids in incoming_connections.values():
+                for connection_id in connection_ids:
+                    connection = flow.connections.connections[connection_id]
+                    if connection.target_parameter.name == request.parameter_name:
+                        connection.target_parameter.name = request.new_parameter_name
+
+        if node_name in flow.connections.outgoing_index:
+            outgoing_connections = flow.connections.outgoing_index[node_name]
+            for connection_ids in outgoing_connections.values():
+                for connection_id in connection_ids:
+                    connection = flow.connections.connections[connection_id]
+                    if connection.source_parameter.name == request.parameter_name:
+                        connection.source_parameter.name = request.new_parameter_name
+
+        # Update parameter name
+        old_name = parameter.name
+        parameter.name = request.new_parameter_name
+
+        # Update parameter values if they exist
+        if old_name in node.parameter_values:
+            node.parameter_values[request.new_parameter_name] = node.parameter_values.pop(old_name)
+        if old_name in node.parameter_output_values:
+            node.parameter_output_values[request.new_parameter_name] = node.parameter_output_values.pop(old_name)
+
+        return RenameParameterResultSuccess(
+            old_parameter_name=old_name, new_parameter_name=request.new_parameter_name, node_name=node_name
+        )

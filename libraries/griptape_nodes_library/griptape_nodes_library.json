@@ -267,6 +267,30 @@
         "description": "Video generation with Allegro",
         "icon": "Video"
       }
+    },
+    {
+      "video/wan": {
+        "color": "border-pink-500",
+        "title": "video/wan",
+        "description": "",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/wan/aux": {
+        "color": "border-pink-500",
+        "title": "Video/WAN/Aux",
+        "description": "Auxiliary nodes for WAN video generation",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/wan/loras": {
+        "color": "border-pink-500",
+        "title": "video/wan/loras",
+        "description": "",
+        "icon": "Video"
+      }
     }
   ],
   "nodes": [
@@ -668,30 +692,21 @@
       }
     },
     {
-      "class_name": "DescribeImage",
-      "file_path": "griptape_nodes_library/image/describe_image.py",
-      "metadata": {
-        "category": "image",
-        "description": "Can be used to describe an image",
-        "display_name": "Describe Image"
-      }
-    },
-    {
-      "class_name": "MergeImages",
-      "file_path": "griptape_nodes_library/image/merge_images.py",
-      "metadata": {
-        "category": "image",
-        "description": "Merge images together in different layouts with grid options and dynamic image input list",
-        "display_name": "Merge Images"
-      }
-    },
-    {
       "class_name": "CompareImages",
       "file_path": "griptape_nodes_library/image/compare_images.py",
       "metadata": {
         "category": "image",
         "description": "Can be used to compare two images",
         "display_name": "Compare Images"
+      }
+    },
+    {
+      "class_name": "DescribeImage",
+      "file_path": "griptape_nodes_library/image/describe_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Can be used to describe an image",
+        "display_name": "Describe Image"
       }
     },
     {
@@ -704,6 +719,15 @@
       }
     },
     {
+      "class_name": "DisplayMask",
+      "file_path": "griptape_nodes_library/image/display_mask.py",
+      "metadata": {
+        "category": "image",
+        "description": "Display a mask from an image's alpha channel.",
+        "display_name": "Display Mask"
+      }
+    },
+    {
       "class_name": "GenerateImage",
       "file_path": "griptape_nodes_library/image/create_image.py",
       "metadata": {
@@ -713,12 +737,30 @@
       }
     },
     {
+      "class_name": "InvertMask",
+      "file_path": "griptape_nodes_library/image/invert_mask.py",
+      "metadata": {
+        "category": "image",
+        "description": "Invert a mask image.",
+        "display_name": "Invert Mask"
+      }
+    },
+    {
       "class_name": "LoadImage",
       "file_path": "griptape_nodes_library/image/load_image.py",
       "metadata": {
         "category": "image",
         "description": "Loads an image from disk",
         "display_name": "Load Image"
+      }
+    },
+    {
+      "class_name": "MergeImages",
+      "file_path": "griptape_nodes_library/image/merge_images.py",
+      "metadata": {
+        "category": "image",
+        "description": "Merge images together in different layouts with grid options and dynamic image input list",
+        "display_name": "Merge Images"
       }
     },
     {

@@ -8,7 +8,6 @@
             "args": [
                 ".venv/bin/austin",
                 "-i", "100us",
-                "-s",
                 "-C",
                 "-b",
                 "-o", "profiles/profile_griptape_nodes_cpu.mojo",
@@ -35,7 +34,6 @@
                 ".venv/bin/austin",
                 "-i", "100us",
                 "-m",
-                "-s",
                 "-C",
                 "-b",
                 "-o", "profiles/profile_griptape_nodes_memory.mojo",
@@ -60,7 +58,6 @@
             "command": ".venv/bin/austin",
             "args": [
                 "-i", "100us",
-                "-s",
                 "-C",
                 "-b",
                 "-o", "profiles/profile_griptape_nodes_cpu.mojo",
@@ -86,7 +83,6 @@
             "args": [
                 "-i", "100us",
                 "-m",
-                "-s",
                 "-C",
                 "-b",
                 "-o", "profiles/profile_griptape_nodes_memory.mojo",
@@ -130,7 +126,7 @@
             "command": "bash",
             "args": [
                 "-c",
-                "sudo .venv/bin/austin -i 100us -s -C -b -p ${input:griptapeNodesPid} -o \"profiles/profile_attach_cpu_$(date +%Y%m%d_%H%M%S).mojo\""
+                "sudo .venv/bin/austin -i 10us -C -b -p ${input:griptapeNodesPid} -o \"profiles/profile_attach_cpu_$(date +%Y%m%d_%H%M%S).mojo\""
             ],
             "group": "build",
             "presentation": {
@@ -149,7 +145,7 @@
             "command": "bash",
             "args": [
                 "-c",
-                "sudo .venv/bin/austin -i 100us -m -s -C -b -p ${input:griptapeNodesPid} -o \"profiles/profile_attach_memory_$(date +%Y%m%d_%H%M%S).mojo\""
+                "sudo .venv/bin/austin -i 10us -m -C -b -p ${input:griptapeNodesPid} -o \"profiles/profile_attach_memory_$(date +%Y%m%d_%H%M%S).mojo\""
             ],
             "group": "build",
             "presentation": {
@@ -168,7 +164,7 @@
             "command": "bash",
             "args": [
                 "-c",
-                ".venv/bin/austin -i 100us -s -C -b -p ${input:griptapeNodesPid} -o \"profiles/profile_attach_cpu_$(date +%Y%m%d_%H%M%S).mojo\""
+                ".venv/bin/austin -i 10us -C -b -p ${input:griptapeNodesPid} -o \"profiles/profile_attach_cpu_$(date +%Y%m%d_%H%M%S).mojo\""
             ],
             "group": "build",
             "presentation": {
@@ -187,7 +183,7 @@
             "command": "bash",
             "args": [
                 "-c",
-                ".venv/bin/austin -i 100us -m -s -C -b -p ${input:griptapeNodesPid} -o \"profiles/profile_attach_memory_$(date +%Y%m%d_%H%M%S).mojo\""
+                ".venv/bin/austin -i 10us -m -C -b -p ${input:griptapeNodesPid} -o \"profiles/profile_attach_memory_$(date +%Y%m%d_%H%M%S).mojo\""
             ],
             "group": "build",
             "presentation": {
