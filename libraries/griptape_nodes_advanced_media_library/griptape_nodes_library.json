@@ -323,6 +323,15 @@
       }
     },
     {
+      "class_name": "WanVideoToVideoPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/wan/wan_video_to_video_pipeline.py",
+      "metadata": {
+        "category": "video/wan",
+        "description": "Generate videos from video and text with Wan",
+        "display_name": "Wan V2V"
+      }
+    },
+    {
       "class_name": "WanVacePipeline",
       "file_path": "diffusers_nodes_library/pipelines/wan/wan_vace_pipeline.py",
       "metadata": {
