@@ -222,7 +222,8 @@ class NodeManager:
             if parent_flow_name == old_name:
                 self._name_to_parent_flow_name[node_name] = new_name
 
-    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
+    # There are a lot of returns, but we're doing a lot of error handling.
+    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
         parent_flow = None
