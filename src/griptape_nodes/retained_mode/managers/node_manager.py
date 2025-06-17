@@ -25,7 +25,6 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
-    CreateConnectionResultSuccess,
     DeleteConnectionRequest,
     DeleteConnectionResultFailure,
     IncomingConnection,
@@ -222,8 +221,7 @@ class NodeManager:
             if parent_flow_name == old_name:
                 self._name_to_parent_flow_name[node_name] = new_name
 
-    # There are a lot of returns, but we're doing a lot of error handling.
-    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
         parent_flow = None
@@ -342,23 +340,18 @@ class NodeManager:
                 return CreateNodeResultFailure()
 
             # Create the EndNode
-            try:
-                end_loop = GriptapeNodes.handle_request(
-                    CreateNodeRequest(
-                        node_type=end_class_name,
-                        metadata={
-                            "position": {"x": node.metadata["position"]["x"] + 650, "y": node.metadata["position"]["y"]}
-                        },
-                        override_parent_flow_name=parent_flow_name,
-                    )
+            end_loop = GriptapeNodes.handle_request(
+                CreateNodeRequest(
+                    node_type=end_class_name,
+                    metadata={
+                        "position": {"x": node.metadata["position"]["x"] + 650, "y": node.metadata["position"]["y"]}
+                    },
+                    override_parent_flow_name=parent_flow_name,
                 )
-                if not isinstance(end_loop, CreateNodeResultSuccess):
-                    msg = f"Failed to create EndLoop node for StartLoop node '{node.name}'"
-                    logger.error(msg)
-                    return CreateNodeResultFailure()
-
+            )
+            if isinstance(end_loop, CreateNodeResultSuccess):
                 # Create Loop between output and input to the start node.
-                connection_result = GriptapeNodes.handle_request(
+                GriptapeNodes.handle_request(
                     CreateConnectionRequest(
                         source_node_name=node.name,
                         source_parameter_name="loop",
@@ -366,23 +359,13 @@ class NodeManager:
                         target_parameter_name="from_start",
                     )
                 )
-                if not isinstance(connection_result, CreateConnectionResultSuccess):
-                    msg = f"Failed to create connection between loop nodes '{node.name}' and '{end_loop.node_name}'"
-                    logger.error(msg)
-                    return CreateNodeResultFailure()
-
                 end_node = self.get_node_by_name(end_loop.node_name)
-                if not isinstance(end_node, EndLoopNode):
-                    msg = f"Created node '{end_loop.node_name}' is not an EndLoopNode"
-                    logger.error(msg)
-                    return CreateNodeResultFailure()
-
-                # create the connection bt them
-                node.end_node = end_node
-                end_node.start_node = node
-
-            except Exception as e:
-                msg = f"Error creating loop structure: {e!s}"
+                if isinstance(end_node, EndLoopNode):
+                    # create the connection
+                    node.end_node = end_node
+                    end_node.start_node = node
+            else:
+                msg = f"Failed to create EndLoop node for StartLoop node '{node.name}'"
                 logger.error(msg)
                 return CreateNodeResultFailure()
 
