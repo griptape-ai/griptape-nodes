@@ -561,7 +561,7 @@ class ProgressEvent(GtBaseEvent):
 
 # Special internal request for flushing parameter changes
 @dataclass(kw_only=True)
-class FlushParameterChangesRequest(RequestPayload):
+class FlushParameterChangesRequest(RequestPayload, WorkflowNotAlteredMixin):
     pass
 
 

@@ -40,7 +40,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventResultSuccess,
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
-    FlushParameterChangesRequest,
     GriptapeNodeEvent,
     ProgressEvent,
     deserialize_event,

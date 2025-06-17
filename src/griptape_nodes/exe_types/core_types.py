@@ -206,7 +206,7 @@ class BaseNodeElement:
         """Decorator for properties that should track changes and emit events."""
 
         def decorator(func: Callable) -> Callable:
-            def wrapper(self, *args, **kwargs) -> Callable:
+            def wrapper(self: BaseNodeElement, *args, **kwargs) -> Callable:
                 # For setters, track the change
                 if len(args) >= 1:  # setter with value
                     old_value = getattr(self, f"{attr_name}", None) if hasattr(self, f"{attr_name}") else None

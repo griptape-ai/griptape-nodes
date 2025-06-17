@@ -4,16 +4,18 @@ from dataclasses import fields
 from typing import TYPE_CHECKING
 
 from griptape.events import EventBus
-from griptape_nodes.exe_types.node_types import BaseNode
 from typing_extensions import TypeVar
 
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
+    EventRequest,
     EventResultFailure,
     EventResultSuccess,
+    FlushParameterChangesRequest,
     GriptapeNodeEvent,
     RequestPayload,
     ResultPayload,
+    WorkflowAlteredMixin,
 )
 
 if TYPE_CHECKING:
@@ -31,6 +33,7 @@ class EventManager:
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
         self.current_active_node: str | None = None
+        self._flush_in_queue: bool = False
 
     def assign_manager_to_request_type(
         self,
@@ -97,6 +100,11 @@ class EventManager:
                         result=result_payload,
                         retained_mode=retained_mode_str,
                     )
+                    if isinstance(result_event.result, WorkflowAlteredMixin) and not self._flush_in_queue:
+                        from griptape_nodes.app.app_websocket import event_queue
+
+                        event_queue.put(EventRequest(request=FlushParameterChangesRequest()))
+                        self._flush_in_queue = True
                 else:
                     result_event = EventResultFailure(
                         request=request,

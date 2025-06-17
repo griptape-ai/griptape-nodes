@@ -63,7 +63,7 @@ class BaseNode(ABC):
     parameter_output_values: dict[str, Any]
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
-    _tracked_parameters: list[Parameter]
+    _tracked_parameters: list[BaseNodeElement]
 
     @property
     def parameters(self) -> list[Parameter]:
@@ -135,6 +135,7 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002,
+        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
         return
@@ -143,7 +144,8 @@ class BaseNode(ABC):
         self,
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
-        target_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002,
+        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
         return
@@ -153,6 +155,7 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         return
@@ -162,11 +165,17 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
+        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
         return
 
-    def before_value_set(self, parameter: Parameter, value: Any) -> Any:  # noqa: ARG002
+    def before_value_set(
+        self,
+        parameter: Parameter,  # noqa: ARG002
+        value: Any,
+        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
+    ) -> Any:
         """Callback when a Parameter's value is ABOUT to be set.
 
         Custom nodes may elect to override the default behavior by implementing this function in their node code.
@@ -191,7 +200,12 @@ class BaseNode(ABC):
         # Default behavior is to do nothing to the supplied value, and indicate no other modified Parameters.
         return value
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:  # noqa: ARG002
+    def after_value_set(
+        self,
+        parameter: Parameter,  # noqa: ARG002
+        value: Any,  # noqa: ARG002
+        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
+    ) -> None:
         """Callback AFTER a Parameter's value was set.
 
         Custom nodes may elect to override the default behavior by implementing this function in their node code.
@@ -212,7 +226,7 @@ class BaseNode(ABC):
         # Default behavior is to do nothing, and indicate no other modified Parameters.
         return None  # noqa: RET501
 
-    def after_settings_changed(self) -> None:  # noqa: ARG002
+    def after_settings_changed(self, modified_parameters_set: set[str] | None = None) -> None:  # noqa: ARG002
         """Callback for when the settings of this Node are changed."""
         # Waiting for https://github.com/griptape-ai/griptape-nodes/issues/1309
         return
@@ -416,6 +430,7 @@ class BaseNode(ABC):
         self.after_value_set(
             parameter=parameter,
             value=final_value,
+            modified_parameters_set=set(),
         )
         self._emit_parameter_lifecycle_event(parameter)
         # handle with container parameters
@@ -686,7 +701,7 @@ class BaseNode(ABC):
         # Use reorder_elements to apply the move
         self.reorder_elements(list(new_order))
 
-    def _emit_parameter_lifecycle_event(self, parameter: BaseNodeElement, remove: bool = False) -> None:
+    def _emit_parameter_lifecycle_event(self, parameter: BaseNodeElement, *, remove: bool = False) -> None:
         """Emit an AlterElementEvent for parameter add/remove operations."""
         try:
             from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
