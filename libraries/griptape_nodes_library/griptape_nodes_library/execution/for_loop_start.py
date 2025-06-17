@@ -67,19 +67,15 @@ class ForLoopStartNode(ForEachStartNode):
             return
 
         if self._internal_index == 0:
-            # Initialize everything!
+            # Initialize everything
             start = self.get_parameter_value("start")
             end = self.get_parameter_value("end")
             step = self.get_parameter_value("step")
-            if step <= 0:
-                # We should have caught this in validation, but just in case
-                msg = f"{self.name}: Step value cannot be less than or equal to zero"
-                raise ValueError(msg)
 
             # Calculate internal range starting from 0
             self._offset = start
             # Calculate how many steps we need to take
-            self._internal_end = (end - start) // step
+            self._internal_end = abs((end - start) // step)
             self._internal_index = 0
             self.current_index = 0  # Start at 0 for proper end node synchronization
 
@@ -102,11 +98,22 @@ class ForLoopStartNode(ForEachStartNode):
 
     def _validate_parameter_values(self) -> list[Exception] | None:
         exceptions = []
-        if self.get_parameter_value("start") >= self.get_parameter_value("end"):
-            exceptions.append(Exception(f"{self.name}: Start value must be less than end value"))
+        start = self.get_parameter_value("start")
+        end = self.get_parameter_value("end")
+        step = self.get_parameter_value("step")
 
-        if self.get_parameter_value("step") <= 0:
-            exceptions.append(Exception(f"{self.name}: Step value cannot be less than or equal to zero"))
+        if start < end and step <= 0:
+            msg = f"{self.name}: Step value must be positive when start ({start}) is less than end ({end})"
+            exceptions.append(Exception(msg))
+        if start > end and step >= 0:
+            msg = f"{self.name}: Step value must be negative when start ({start}) is greater than end ({end})"
+            exceptions.append(Exception(msg))
+        if start == end and step != 0:
+            msg = f"{self.name}: Step value must be zero when start ({start}) is equal to end ({end})"
+            exceptions.append(Exception(msg))
+        if start != end and step == 0:
+            msg = f"{self.name}: Step value must be non-zero when start ({start}) is not equal to end ({end})"
+            exceptions.append(Exception(msg))
 
         return exceptions
 
