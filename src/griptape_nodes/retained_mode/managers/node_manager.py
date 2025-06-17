@@ -997,47 +997,38 @@ class NodeManager:
                 return result
 
         # Does the Parameter actually exist on the Node?
-        parameter = node.get_parameter_by_name(request.parameter_name)
-        parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
+        parameter = node.root_ui_element.find_element_by_name(request.parameter_name)
+
         if parameter is None:
-            parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
-            if parameter_group is None:
-                parameter_message = node.get_message_by_name_or_element_id(request.parameter_name)
-                if parameter_message is None:
-                    details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
-                    logger.error(details)
-                    return AlterParameterDetailsResultFailure()
-                if request.ui_options is not None:  # type: ignore[attr-defined]
-                    parameter_message.ui_options = request.ui_options  # type: ignore[attr-defined]
-                return AlterParameterDetailsResultSuccess()
-            if request.ui_options is not None:  # type: ignore[attr-defined]
-                parameter_group.ui_options = request.ui_options  # type: ignore[attr-defined]
-            return AlterParameterDetailsResultSuccess()
+            details = f"Attempted to get details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
+            logger.error(details)
+            return GetParameterDetailsResultFailure()
 
         # Let's bundle up the details.
-        modes_allowed = parameter.allowed_modes
-        allows_input = ParameterMode.INPUT in modes_allowed
-        allows_property = ParameterMode.PROPERTY in modes_allowed
-        allows_output = ParameterMode.OUTPUT in modes_allowed
+        if isinstance(parameter, Parameter):
+            modes_allowed = parameter.allowed_modes
+            allows_input = ParameterMode.INPUT in modes_allowed
+            allows_property = ParameterMode.PROPERTY in modes_allowed
+            allows_output = ParameterMode.OUTPUT in modes_allowed
 
         details = f"Successfully got details for Parameter '{request.parameter_name}' from Node '{node_name}'."
         logger.debug(details)
 
         result = GetParameterDetailsResultSuccess(
             element_id=parameter.element_id,
-            type=parameter.type,
-            input_types=parameter.input_types,
-            output_type=parameter.output_type,
-            default_value=parameter.default_value,
-            tooltip=parameter.tooltip,
-            tooltip_as_input=parameter.tooltip_as_input,
-            tooltip_as_property=parameter.tooltip_as_property,
-            tooltip_as_output=parameter.tooltip_as_output,
+            type=getattr(parameter, "type", ""),
+            input_types=getattr(parameter, "input_types", []),
+            output_type=getattr(parameter, "output_type", ""),
+            default_value=getattr(parameter, "default_value", None),
+            tooltip=getattr(parameter, "tooltip", ""),
+            tooltip_as_input=getattr(parameter, "tooltip_as_input", None),
+            tooltip_as_property=getattr(parameter, "tooltip_as_property", None),
+            tooltip_as_output=getattr(parameter, "tooltip_as_output", None),
             mode_allowed_input=allows_input,
             mode_allowed_property=allows_property,
             mode_allowed_output=allows_output,
-            is_user_defined=parameter.user_defined,
-            ui_options=parameter.ui_options,
+            is_user_defined=getattr(parameter, "user_defined", False),
+            ui_options=getattr(parameter, "ui_options", None),
         )
         return result
 
@@ -1113,17 +1104,18 @@ class NodeManager:
                 # Otherwise, just set it here. It'll be handled in .json() when we send it over.
                 param_to_value[element_id] = value
 
-    def modify_alterable_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
-        if request.tooltip is not None:
-            parameter.tooltip = request.tooltip
-        if request.tooltip_as_input is not None:
-            parameter.tooltip_as_input = request.tooltip_as_input
-        if request.tooltip_as_property is not None:
-            parameter.tooltip_as_property = request.tooltip_as_property
-        if request.tooltip_as_output is not None:
-            parameter.tooltip_as_output = request.tooltip_as_output
-        if request.ui_options is not None:
-            parameter.ui_options = request.ui_options
+    def modify_alterable_fields(self, request: AlterParameterDetailsRequest, parameter: BaseNodeElement) -> None:
+        if isinstance(parameter, Parameter):
+            if request.tooltip:
+                parameter.tooltip = request.tooltip
+            if request.tooltip_as_input is not None:
+                parameter.tooltip_as_input = request.tooltip_as_input
+            if request.tooltip_as_property is not None:
+                parameter.tooltip_as_property = request.tooltip_as_property
+            if request.tooltip_as_output is not None:
+                parameter.tooltip_as_output = request.tooltip_as_output
+        if request.ui_options is not None and hasattr(parameter, "ui_options"):
+            parameter.ui_options = request.ui_options  # type: ignore[attr-defined]
 
     def modify_key_parameter_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
         if request.type is not None:
@@ -1211,7 +1203,7 @@ class NodeManager:
 
         return None
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901
         node_name = request.node_name
         node = None
 
@@ -1235,29 +1227,18 @@ class NodeManager:
                 return AlterParameterDetailsResultFailure()
 
         # Does the Parameter actually exist on the Node?
-        parameter = node.get_parameter_by_name(request.parameter_name)
-        parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
+        parameter = node.root_ui_element.find_element_by_name(request.parameter_name)
         if parameter is None:
-            parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
-            if parameter_group is None:
-                parameter_message = node.get_message_by_name_or_element_id(request.parameter_name)
-                if parameter_message is None:
-                    details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
-                    logger.error(details)
-                    return AlterParameterDetailsResultFailure()
-                # type: ignore[attr-defined]
-                if request.ui_options is not None:
-                    # type: ignore[attr-defined]
-                    parameter_message.ui_options = request.ui_options
-                return AlterParameterDetailsResultSuccess()
-            # type: ignore[attr-defined]
-            if request.ui_options is not None:
-                # type: ignore[attr-defined]
-                parameter_group.ui_options = request.ui_options
-            return AlterParameterDetailsResultSuccess()
+            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
+            logger.error(details)
+            return AlterParameterDetailsResultFailure()
+        if request.ui_options is not None:
+            parameter.ui_options = request.ui_options  # type: ignore[attr-defined]
 
         # Check and handle connections if type was changed
-        if request.type is not None or request.input_types is not None or request.output_type is not None:
+        if isinstance(parameter, Parameter) and (
+            request.type is not None or request.input_types is not None or request.output_type is not None
+        ):
             result = self._validate_and_break_invalid_connections(node_name, parameter, request)
             if isinstance(result, AlterParameterDetailsResultFailure):
                 return result
@@ -1265,13 +1246,16 @@ class NodeManager:
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/827
         # Now change all the values on the Parameter.
         self.modify_alterable_fields(request, parameter)
+
         # The rest of these are not alterable
-        if parameter.user_defined is False and request.request_id:
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
-            logger.warning(details)
-            return AlterParameterDetailsResultSuccess()
-        self.modify_key_parameter_fields(request, parameter)
+        if isinstance(parameter, Parameter):
+            if parameter.user_defined is False and request.request_id:
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
+                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
+                logger.warning(details)
+                return AlterParameterDetailsResultSuccess()
+            self.modify_key_parameter_fields(request, parameter)
+
         # This field requires the node as well
         if request.default_value is not None:
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/825
