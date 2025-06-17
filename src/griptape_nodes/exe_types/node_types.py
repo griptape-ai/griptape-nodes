@@ -63,6 +63,7 @@ class BaseNode(ABC):
     parameter_output_values: dict[str, Any]
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
+    _tracked_parameters: list[Parameter] = []
 
     @property
     def parameters(self) -> list[Parameter]:
@@ -103,6 +104,11 @@ class BaseNode(ABC):
                 )
             )
         self.state = NodeResolutionState.UNRESOLVED
+
+    def emit_parameter_changes(self) -> None:
+        for parameter in self._tracked_parameters:
+            self._emit_parameter_lifecycle_event(parameter)
+        self._tracked_parameters.clear()
 
     def allow_incoming_connection(
         self,
@@ -409,7 +415,7 @@ class BaseNode(ABC):
             parameter=parameter,
             value=final_value,
         )
-        self._emit_parameter_value_change_event(parameter)
+        self._emit_parameter_lifecycle_event(parameter)
         # handle with container parameters
         if parameter.parent_container_name is not None:
             # Does it have a parent container
@@ -677,25 +683,6 @@ class BaseNode(ABC):
 
         # Use reorder_elements to apply the move
         self.reorder_elements(list(new_order))
-
-    def _emit_parameter_value_change_event(self, parameter: Parameter) -> None:
-        """Emit an AlterElementEvent for a parameter value change."""
-        try:
-            from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
-            from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
-
-            # Create event data using the parameter's to_event method
-            event_data = parameter.to_event(self)
-
-            # Publish the event
-            event = ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
-            )
-            EventBus.publish_event(event)
-
-        except ImportError:
-            # If imports fail, silently continue - this ensures backward compatibility
-            pass
 
     def _emit_parameter_lifecycle_event(self, parameter: BaseNodeElement, remove: bool = False) -> None:
         """Emit an AlterElementEvent for parameter add/remove operations."""
