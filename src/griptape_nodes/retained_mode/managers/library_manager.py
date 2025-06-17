@@ -108,20 +108,60 @@ class VersionWindow(NamedTuple):
     check_function: Callable[[LibrarySchema], list[VersionCompatibilityIssue]]
 
 
-def check_modified_parameters_set_deprecation(library_data: LibrarySchema) -> list[VersionCompatibilityIssue]:  # noqa: ARG001
-    """Check for libraries impacted by the modified_parameters_set deprecation in 0.40.0."""
-    return [
-        VersionCompatibilityIssue(
-            message="A breaking change will be introduced in Griptape Nodes 0.40 that will require "
-            "impacted node libraries to be updated. The modified_parameters_set will no longer "
-            "be required. Click here for more details: <URL TO COME>.",
-            severity=LibraryManager.LibraryStatus.FLAWED,
-        )
-    ]
+def check_modified_parameters_set_deprecation(library_data: LibrarySchema) -> list[VersionCompatibilityIssue]:
+    """Check for libraries impacted by the modified_parameters_set deprecation timeline."""
+    # Get current engine version
+    engine_version_result = GriptapeNodes.handle_request(GetEngineVersionRequest())
+    if not isinstance(engine_version_result, GetEngineVersionResultSuccess):
+        # If we can't get current engine version, skip version-specific warnings
+        return []
+
+    current_engine_version = Version(
+        engine_version_result.major, engine_version_result.minor, engine_version_result.patch
+    )
+
+    # Determine which phase we're in based on current engine version
+    library_version_str = library_data.metadata.engine_version
+
+    if current_engine_version >= Version(0, 40, 0):
+        # 0.40+ Release: Parameter removed, reject incompatible libraries
+        return [
+            VersionCompatibilityIssue(
+                message=f"This library (built for engine version {library_version_str}) is incompatible with Griptape Nodes 0.40+. "
+                "The modified_parameters_set parameter <TODO UPDATE BREAKING CHANGE INFO> has been removed. "
+                "Please update to a newer version of this library or contact the library author to update the library to ensure compatibility.",
+                severity=LibraryManager.LibraryStatus.UNUSABLE,
+            )
+        ]
+    if current_engine_version >= Version(0, 39, 0):
+        # 0.39 Release: Warn about imminent removal and contact library author
+        return [
+            VersionCompatibilityIssue(
+                message=f"WARNING: The modified_parameters_set parameter will be removed in Griptape Nodes 0.40. "
+                f"This library (built for engine version {library_version_str}) needs to be updated before the 0.40 release. "
+                "Please update to a newer version of this library or contact the library author to update the library to ensure compatibiltiy. "
+                "Click here for more details: <URL TO COME>.",
+                severity=LibraryManager.LibraryStatus.FLAWED,
+            )
+        ]
+    if current_engine_version >= Version(0, 38, 0):
+        # 0.38 Release: Warn about imminent removal
+        return [
+            VersionCompatibilityIssue(
+                message=f"WARNING: The modified_parameters_set parameter will be removed in Griptape Nodes 0.40. "
+                f"This library (built for engine version {library_version_str}) needs to be updated before the 0.40 release. "
+                "Please update to a newer version of this library or contact the library author to update the library to ensure compatibiltiy. "
+                "Click here for more details: <URL TO COME>.",
+                severity=LibraryManager.LibraryStatus.FLAWED,
+            )
+        ]
+    # Pre-0.38: No warnings yet
+    return []
 
 
 # Registry of version windows and their compatibility checks
 VERSION_COMPATIBILITY_WINDOWS = [
+    # Check libraries with engine_version < 0.40.0 for modified_parameters_set issues
     VersionWindow(
         min_version=None,
         max_version=Version(0, 40, 0),  # Exclusive - anything < 0.40.0
