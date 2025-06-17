@@ -32,6 +32,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ParameterValueUpdateEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
+    RemoveElementEvent,
     RemoveParameterFromNodeRequest,
 )
 
@@ -203,7 +204,7 @@ class BaseNode(ABC):
         # Default behavior is to do nothing, and indicate no other modified Parameters.
         return None  # noqa: RET501
 
-    def after_settings_changed(self, modified_parameters_set: set[str]) -> None:  # noqa: ARG002
+    def after_settings_changed(self) -> None:  # noqa: ARG002
         """Callback for when the settings of this Node are changed."""
         # Waiting for https://github.com/griptape-ai/griptape-nodes/issues/1309
         return
@@ -227,6 +228,7 @@ class BaseNode(ABC):
             msg = "Cannot have duplicate names on parameters."
             raise ValueError(msg)
         self.add_node_element(param)
+        self._emit_parameter_lifecycle_event(param)
 
     def remove_parameter_element_by_name(self, element_name: str) -> None:
         element = self.root_ui_element.find_element_by_name(element_name)
@@ -234,6 +236,9 @@ class BaseNode(ABC):
             self.remove_parameter_element(element)
 
     def remove_parameter_element(self, param: BaseNodeElement) -> None:
+        # Emit event before removal if it's a Parameter
+        if isinstance(param, Parameter):
+            self._emit_parameter_lifecycle_event(param)
         for child in param.find_elements_by_type(BaseNodeElement):
             self.remove_node_element(child)
         self.remove_node_element(param)
@@ -686,6 +691,28 @@ class BaseNode(ABC):
             event = ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
             )
+            EventBus.publish_event(event)
+
+        except ImportError:
+            # If imports fail, silently continue - this ensures backward compatibility
+            pass
+
+    def _emit_parameter_lifecycle_event(self, parameter: BaseNodeElement, remove: bool = False) -> None:
+        """Emit an AlterElementEvent for parameter add/remove operations."""
+        try:
+            from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+            from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+
+            # Create event data using the parameter's to_event method
+            if remove:
+                event = ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=RemoveElementEvent(element_id=parameter.element_id)))
+            else:
+                event_data = parameter.to_event(self)
+
+                # Publish the event
+                event = ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
+                )
             EventBus.publish_event(event)
 
         except ImportError:

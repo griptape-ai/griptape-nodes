@@ -201,23 +201,25 @@ class BaseNodeElement:
     def __repr__(self) -> str:
         return f"BaseNodeElement({self.children=})"
 
-    def __setattr__(self, attr: str, value: Any, /) -> None:
-        old_value = getattr(self, attr, None) if hasattr(self, attr) else None
+    @staticmethod
+    def tracked_field(attr_name: str) -> Callable:
+        """Decorator for properties that should track changes and emit events."""
+        def decorator(func: Callable) -> Callable:
+            def wrapper(self, *args, **kwargs) -> Callable:
+                # For setters, track the change
+                if len(args) >= 1:  # setter with value
+                    old_value = getattr(self, f"{attr_name}", None) if hasattr(self, f"{attr_name}") else None
+                    result = func(self, *args, **kwargs)
+                    new_value = getattr(self, f"{attr_name}", None) if hasattr(self, f"{attr_name}") else None
+                    # Track change if different
+                    if old_value != new_value:
+                        # it needs to be static so we can call these methods.
+                        self.changes[attr_name] = (old_value, new_value)
+                    return result
+                return func(self, *args, **kwargs)
+            return wrapper
+        return decorator
 
-        # Only track and emit events for meaningful changes to relevant attributes
-        if (
-            hasattr(self, attr)
-            and old_value != value
-            and not attr.startswith("_")
-            and attr not in ("changes", "element_id")
-        ):
-            self.changes[attr] = (old_value, value)
-
-            # Call the method after setting the attribute to emit event
-            super().__setattr__(attr, value)
-            self._emit_alter_element_event_if_possible(attr, old_value, value)
-        else:
-            super().__setattr__(attr, value)
 
     def _emit_alter_element_event_if_possible(self, _attr: str, _old_value: Any, _new_value: Any) -> None:
         """Emit an AlterElementEvent if we have node context and the necessary dependencies."""
@@ -281,6 +283,10 @@ class BaseNodeElement:
         for grandchild in child._children:
             grandchild._node_context = self._node_context
 
+        # Emit event if we have node context
+        if self._node_context is not None:
+            self._node_context._emit_parameter_lifecycle_event(child)
+
     def remove_child(self, child: BaseNodeElement | str) -> None:
         ui_elements: list[BaseNodeElement] = [self]
         for ui_element in ui_elements:
@@ -289,6 +295,8 @@ class BaseNodeElement:
                 ui_element._children.remove(child)
                 break
             ui_elements.extend(ui_element._children)
+        if self._node_context is not None and isinstance(child, BaseNodeElement):
+            self._node_context._emit_parameter_lifecycle_event(child, remove=True)
 
     def find_element_by_id(self, element_id: str) -> BaseNodeElement | None:
         if self.element_id == element_id:
@@ -539,7 +547,7 @@ class Parameter(BaseNodeElement):
     tooltip_as_output: str | list[dict] | None = None
     settable: bool = True
     user_defined: bool = False
-    allowed_modes: set = field(
+    _allowed_modes: set = field(
         default_factory=lambda: {
             ParameterMode.OUTPUT,
             ParameterMode.INPUT,
@@ -590,9 +598,9 @@ class Parameter(BaseNodeElement):
         self.settable = settable
         self.user_defined = user_defined
         if allowed_modes is None:
-            self.allowed_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
+            self._allowed_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
         else:
-            self.allowed_modes = allowed_modes
+            self._allowed_modes = allowed_modes
 
         if converters is None:
             self._converters = []
@@ -677,6 +685,7 @@ class Parameter(BaseNodeElement):
         return ParameterTypeBuiltin.STR.value
 
     @type.setter
+    @BaseNodeElement.tracked_field("type")
     def type(self, value: str | None) -> None:
         self._custom_setter_for_property_type(value)
 
@@ -710,6 +719,17 @@ class Parameter(BaseNodeElement):
         validators += self._validators
         return validators
 
+
+    @property
+    def allowed_modes(self) -> set[ParameterMode]:
+        return self._allowed_modes
+
+    @allowed_modes.setter
+    @BaseNodeElement.tracked_field("allowed_modes")
+    def allowed_modes(self, value:Any) -> None:
+        self._allowed_modes = value
+
+
     @property
     def ui_options(self) -> dict:
         ui_options = {}
@@ -722,6 +742,7 @@ class Parameter(BaseNodeElement):
         return ui_options
 
     @ui_options.setter
+    @BaseNodeElement.tracked_field("ui_options")
     def ui_options(self, value: dict) -> None:
         self._ui_options = value
 
@@ -740,6 +761,7 @@ class Parameter(BaseNodeElement):
         return [ParameterTypeBuiltin.STR.value]
 
     @input_types.setter
+    @BaseNodeElement.tracked_field("input_types")
     def input_types(self, value: list[str] | None) -> None:
         self._custom_setter_for_property_input_types(value)
 
@@ -777,6 +799,7 @@ class Parameter(BaseNodeElement):
         return ParameterTypeBuiltin.STR.value
 
     @output_type.setter
+    @BaseNodeElement.tracked_field("output_type")
     def output_type(self, value: str | None) -> None:
         self._custom_setter_for_property_output_type(value)
 
@@ -828,6 +851,7 @@ class Parameter(BaseNodeElement):
     def is_outgoing_type_allowed(self, target_type: str | None) -> bool:
         return ParameterType.are_types_compatible(source_type=self.output_type, target_type=target_type)
 
+    @BaseNodeElement.tracked_field("default_value")
     def set_default_value(self, value: Any) -> None:
         self.default_value = value
 
