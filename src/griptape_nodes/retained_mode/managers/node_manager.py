@@ -1165,40 +1165,54 @@ class NodeManager:
 
                 return AlterParameterDetailsResultFailure()
 
-        # Does the Parameter actually exist on the Node?
+        # Check for Parameter, ParameterGroup, or ParameterMessage
         parameter = node.get_parameter_by_name(request.parameter_name)
         parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
-        if parameter is None:
-            parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
-            if parameter_group is None:
-                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
-                logger.error(details)
+        parameter_message = node.get_message_by_name_or_element_id(request.parameter_name)
 
-                return AlterParameterDetailsResultFailure()
+        if parameter is None and parameter_group is None and parameter_message is None:
+            details = f"Attempted to alter details for '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter, ParameterGroup, or ParameterMessage with that name on it."
+            logger.error(details)
+            return AlterParameterDetailsResultFailure()
+
+        # Handle ParameterMessage
+        if parameter_message is not None:
+            if request.ui_options is not None:
+                parameter_message.ui_options = request.ui_options
+            if request.tooltip is not None and isinstance(request.tooltip, str):
+                parameter_message.value = request.tooltip
+            return AlterParameterDetailsResultSuccess()
+
+        # Handle ParameterGroup
+        if parameter_group is not None:
             if request.ui_options is not None:
                 parameter_group.ui_options = request.ui_options
             return AlterParameterDetailsResultSuccess()
 
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/827
-        # Now change all the values on the Parameter.
-        self.modify_alterable_fields(request, parameter)
-        # The rest of these are not alterable
-        if parameter.user_defined is False and request.request_id:
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
-            logger.warning(details)
+        # Handle Parameter
+        if parameter is not None:
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/827
+            # Now change all the values on the Parameter.
+            self.modify_alterable_fields(request, parameter)
+            # The rest of these are not alterable
+            if parameter.user_defined is False and request.request_id:
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
+                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
+                logger.warning(details)
+                return AlterParameterDetailsResultSuccess()
+            self.modify_key_parameter_fields(request, parameter)
+            # This field requires the node as well
+            if request.default_value is not None:
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/825
+                node.parameter_values[request.parameter_name] = request.default_value
+
+            details = f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{node_name}'."
+            logger.debug(details)
+
             return AlterParameterDetailsResultSuccess()
-        self.modify_key_parameter_fields(request, parameter)
-        # This field requires the node as well
-        if request.default_value is not None:
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/825
-            node.parameter_values[request.parameter_name] = request.default_value
 
-        details = f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{node_name}'."
-        logger.debug(details)
-
-        result = AlterParameterDetailsResultSuccess()
-        return result
+        # This should never happen due to the earlier checks, but just in case
+        return AlterParameterDetailsResultFailure()
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:
