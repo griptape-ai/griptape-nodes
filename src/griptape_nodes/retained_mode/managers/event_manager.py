@@ -4,6 +4,7 @@ from dataclasses import fields
 from typing import TYPE_CHECKING
 
 from griptape.events import EventBus
+from griptape_nodes.exe_types.node_types import BaseNode
 from typing_extensions import TypeVar
 
 from griptape_nodes.retained_mode.events.base_events import (
@@ -13,6 +14,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     GriptapeNodeEvent,
     RequestPayload,
     ResultPayload,
+    WorkflowAlteredMixin,
 )
 
 if TYPE_CHECKING:
@@ -96,6 +98,8 @@ class EventManager:
                         result=result_payload,
                         retained_mode=retained_mode_str,
                     )
+                    if depth_manager.is_top_level():
+                        self.flush_all_pending_parameter_changes()
                 else:
                     result_event = EventResultFailure(
                         request=request,
@@ -104,6 +108,7 @@ class EventManager:
                     )
                 wrapped_event = GriptapeNodeEvent(wrapped_event=result_event)
                 EventBus.publish_event(wrapped_event)
+                # Flush pending parameter changes after successful operation completion
             else:
                 msg = f"No manager found to handle request of type '{request_type.__name__}."
                 raise TypeError(msg)
@@ -128,3 +133,15 @@ class EventManager:
             listener_set = self._app_event_listeners[app_event_type]
             for listener_callback in listener_set:
                 listener_callback(app_event)
+
+    def flush_all_pending_parameter_changes(self) -> None:
+        """Flush pending parameter changes for all nodes with tracked parameters."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+        try:
+            obj_manager = GriptapeNodes.ObjectManager()
+            # Get all flows and their nodes
+            nodes = obj_manager.get_filtered_subset(type=BaseNode)
+            for node in nodes.values():
+                node.emit_parameter_changes()
+        except Exception as e:
+            logger.warning(f"Error flushing parameter changes: {e}")

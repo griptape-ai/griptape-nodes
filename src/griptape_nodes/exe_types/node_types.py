@@ -63,7 +63,7 @@ class BaseNode(ABC):
     parameter_output_values: dict[str, Any]
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
-    _tracked_parameters: list[Parameter] = []
+    _tracked_parameters: list[Parameter]
 
     @property
     def parameters(self) -> list[Parameter]:
@@ -90,6 +90,7 @@ class BaseNode(ABC):
         # Set the node context for the root element
         self.root_ui_element._node_context = self
         self.process_generator = None
+        self._tracked_parameters = []
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
