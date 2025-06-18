@@ -930,7 +930,8 @@ class NodeManager:
             return RemoveParameterFromNodeResultSuccess()
 
         # No tricky stuff, users!
-        if hasattr(parameter, "user_defined") and parameter.user_defined is False:  # type: ignore[attr-defined]
+        # if user_defined doesn't exist, or is false, then it's not user-defined
+        if not getattr(parameter, "user_defined", False):
             details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be removed from a Node."
             logger.error(details)
 
