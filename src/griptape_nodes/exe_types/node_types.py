@@ -434,12 +434,12 @@ class BaseNode(ABC):
         return None
 
     def get_element_by_name_and_type(
-        self, param_name: str, element_type: type[BaseNodeElement] | None = None
+        self, elem_name: str, element_type: type[BaseNodeElement] | None = None
     ) -> BaseNodeElement | None:
         find_type = element_type if element_type is not None else BaseNodeElement
         element_items = self.root_ui_element.find_elements_by_type(find_type)
         for element_item in element_items:
-            if param_name == element_item.name:
+            if elem_name == element_item.name:
                 return element_item
         return None
 
