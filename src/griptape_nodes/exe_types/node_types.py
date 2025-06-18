@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
 from enum import StrEnum, auto
-from typing import Any, TypeVar
+from typing import Any, TypeVar, overload
 
 from griptape.events import BaseEvent, EventBus
 
@@ -130,51 +130,134 @@ class BaseNode(ABC):
         """Callback to confirm allowing a Connection going OUT of this Node."""
         return True
 
+    @overload
     def after_incoming_connection(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+    ) -> None: ...
+
+    @overload
+    def after_incoming_connection(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+        modified_parameters_set: set[str],
+    ) -> None: ...
+
+    def after_incoming_connection(  # pyright: ignore[reportInconsistentOverload]
         self,
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
-        target_parameter: Parameter,  # noqa: ARG002,
-        *args: Any,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+        **kwargs: Any,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
         return
 
+    @overload
     def after_outgoing_connection(
+        self,
+        source_parameter: Parameter,
+        target_node: BaseNode,
+        target_parameter: Parameter,
+    ) -> None: ...
+
+    @overload
+    def after_outgoing_connection(
+        self,
+        source_parameter: Parameter,
+        target_node: BaseNode,
+        target_parameter: Parameter,
+        modified_parameters_set: set[str],
+    ) -> None: ...
+
+    def after_outgoing_connection(  # pyright: ignore[reportInconsistentOverload]
         self,
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
-        target_parameter: Parameter,  # noqa: ARG002,
-        *args: Any,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+        **kwargs: Any,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
         return
 
+    @overload
     def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+    ) -> None: ...
+
+    @overload
+    def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+        modified_parameters_set: set[str],
+    ) -> None: ...
+
+    def after_incoming_connection_removed(  # pyright: ignore[reportInconsistentOverload]
         self,
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        *args: Any,  # noqa: ARG002
+        **kwargs: Any,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         return
 
+    @overload
     def after_outgoing_connection_removed(
+        self,
+        source_parameter: Parameter,
+        target_node: BaseNode,
+        target_parameter: Parameter,
+    ) -> None: ...
+
+    @overload
+    def after_outgoing_connection_removed(
+        self,
+        source_parameter: Parameter,
+        target_node: BaseNode,
+        target_parameter: Parameter,
+        modified_parameters_set: set[str],
+    ) -> None: ...
+
+    def after_outgoing_connection_removed(  # pyright: ignore[reportInconsistentOverload]
         self,
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        *args: Any,  # noqa: ARG002
+        **kwargs: Any,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
         return
 
+    @overload
     def before_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> Any: ...
+
+    @overload
+    def before_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+        modified_parameters_set: set[str],
+    ) -> Any: ...
+
+    def before_value_set(  # pyright: ignore[reportInconsistentOverload]
         self,
         parameter: Parameter,  # noqa: ARG002
         value: Any,
-        *args: Any,  # noqa: ARG002
+        **kwargs: Any,  # noqa: ARG002
     ) -> Any:
         """Callback when a Parameter's value is ABOUT to be set.
 
@@ -190,7 +273,7 @@ class BaseNode(ABC):
         Args:
             parameter: the Parameter on this node that is about to be changed
             value: the value intended to be set (this has already gone through any converters and validators on the Parameter)
-            args: Any additional arugments. Meant to prevent errors with modified_parameters_set parameters set.
+            kwargs: Any additional arugments. Meant to prevent errors with modified_parameters_set parameters set.
 
         Returns:
             The final value to set for the Parameter. This gives the Node logic one last opportunity to mutate the value
@@ -199,11 +282,26 @@ class BaseNode(ABC):
         # Default behavior is to do nothing to the supplied value, and indicate no other modified Parameters.
         return value
 
+    @overload
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None: ...
+
+    @overload
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+        modified_parameters_set: set[str],
+    ) -> None: ...
+
     def after_value_set(  # pyright: ignore[reportInconsistentOverload]
         self,
         parameter: Parameter,  # noqa: ARG002
         value: Any,  # noqa: ARG002
-        *args: Any,  # noqa: ARG002
+        **kwargs: Any,  # noqa: ARG002
     ) -> None:
         """Callback AFTER a Parameter's value was set.
 
@@ -216,7 +314,7 @@ class BaseNode(ABC):
         Args:
             parameter: the Parameter on this node that was just changed
             value: the value that was set (already converted, validated, and possibly mutated by the node code)
-            *args: Optional modified_parameters_set (set[str]) - A set of parameter names within this node
+            **kwargs: Optional modified_parameters_set (set[str]) - A set of parameter names within this node
                 that were modified as a result of this call. The Parameter this was called on does NOT need to be part of the return.
 
         Returns:
@@ -225,7 +323,7 @@ class BaseNode(ABC):
         # Default behavior is to do nothing, and indicate no other modified Parameters.
         return None  # noqa: RET501
 
-    def after_settings_changed(self, *args: Any) -> None:  # noqa: ARG002
+    def after_settings_changed(self, **kwargs: Any) -> None:  # noqa: ARG002
         """Callback for when the settings of this Node are changed."""
         # Waiting for https://github.com/griptape-ai/griptape-nodes/issues/1309
         return
@@ -424,13 +522,21 @@ class BaseNode(ABC):
 
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
-        final_value = self.before_value_set(parameter=parameter, value=candidate_value)
+        try:
+            final_value = self.before_value_set(parameter=parameter, value=candidate_value)
+        except TypeError:
+            final_value = self.before_value_set(
+                parameter=parameter, value=candidate_value, modified_parameters_set=set()
+            )
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
 
         # If a parameter value has been set at the top level of a container, wipe all children.
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
-        self.after_value_set(parameter=parameter, value=final_value)
+        try:
+            self.after_value_set(parameter=parameter, value=final_value)
+        except TypeError:
+            self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=set())
         self._emit_parameter_lifecycle_event(parameter)
         # handle with container parameters
         if parameter.parent_container_name is not None:

@@ -218,10 +218,7 @@ class Agent(ControlNode):
     # --- UI Interaction Hooks ---
 
     def after_incoming_connection(
-        self,
-        source_node: BaseNode,
-        source_parameter: Parameter,
-        target_parameter: Parameter,
+        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
         # If an existing agent is connected, hide parameters related to creating a new one.
         if target_parameter.name == "agent":

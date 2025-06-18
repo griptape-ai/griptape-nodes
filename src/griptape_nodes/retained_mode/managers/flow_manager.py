@@ -608,16 +608,32 @@ class FlowManager:
             return CreateConnectionResultFailure()
 
         # Let the source make any internal handling decisions now that the Connection has been made.
-        source_node.after_outgoing_connection(
-            source_parameter=source_param, target_node=target_node, target_parameter=target_param
-        )
+        try:
+            source_node.after_outgoing_connection(
+                source_parameter=source_param, target_node=target_node, target_parameter=target_param
+            )
+        except TypeError:
+            source_node.after_outgoing_connection(
+                source_parameter=source_param,
+                target_node=target_node,
+                target_parameter=target_param,
+                modified_parameters_set=set(),
+            )
 
         # And target.
-        target_node.after_incoming_connection(
-            source_node=source_node,
-            source_parameter=source_param,
-            target_parameter=target_param,
-        )
+        try:
+            target_node.after_incoming_connection(
+                source_node=source_node,
+                source_parameter=source_param,
+                target_parameter=target_param,
+            )
+        except TypeError:
+            target_node.after_incoming_connection(
+                source_node=source_node,
+                source_parameter=source_param,
+                target_parameter=target_param,
+                modified_parameters_set=set(),
+            )
 
         details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
         logger.debug(details)
@@ -782,16 +798,32 @@ class FlowManager:
             except KeyError as e:
                 logger.warning(e)
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
-        source_node.after_outgoing_connection_removed(
-            source_parameter=source_param, target_node=target_node, target_parameter=target_param
-        )
+        try:
+            source_node.after_outgoing_connection_removed(
+                source_parameter=source_param, target_node=target_node, target_parameter=target_param
+            )
+        except TypeError:
+            source_node.after_outgoing_connection_removed(
+                source_parameter=source_param,
+                target_node=target_node,
+                target_parameter=target_param,
+                modified_parameters_set=set(),
+            )
 
         # And target.
-        target_node.after_incoming_connection_removed(
-            source_node=source_node,
-            source_parameter=source_param,
-            target_parameter=target_param,
-        )
+        try:
+            target_node.after_incoming_connection_removed(
+                source_node=source_node,
+                source_parameter=source_param,
+                target_parameter=target_param,
+            )
+        except TypeError:
+            target_node.after_incoming_connection_removed(
+                source_node=source_node,
+                source_parameter=source_param,
+                target_parameter=target_param,
+                modified_parameters_set=set(),
+            )
 
         details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" deleted.'
         logger.debug(details)
