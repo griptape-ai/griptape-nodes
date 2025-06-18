@@ -913,9 +913,9 @@ class NodeManager:
                 result = RemoveParameterFromNodeResultFailure()
                 return result
 
-        # Does the Parameter actually exist on the Node?
-        parameter = node.get_element_by_name_and_type(request.parameter_name)
-        if parameter is None:
+        # Does the Element actually exist on the Node?
+        element = node.get_element_by_name_and_type(request.parameter_name)
+        if element is None:
             details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have an Element with that name on it."
             logger.error(details)
 
@@ -923,23 +923,23 @@ class NodeManager:
             return result
 
         # If it's a ParameterGroup, we need to remove all the Parameters inside it.
-        if isinstance(parameter, ParameterGroup):
-            for child in parameter.find_elements_by_type(Parameter):
+        if isinstance(element, ParameterGroup):
+            for child in element.find_elements_by_type(Parameter):
                 GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, node_name))
             node.remove_parameter_element_by_name(request.parameter_name)
             return RemoveParameterFromNodeResultSuccess()
 
         # No tricky stuff, users!
         # if user_defined doesn't exist, or is false, then it's not user-defined
-        if not getattr(parameter, "user_defined", False):
-            details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be removed from a Node."
+        if not getattr(element, "user_defined", False):
+            details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because the Element was not user-defined (i.e., critical to the Node implementation). Only user-defined Elements can be removed from a Node."
             logger.error(details)
 
             result = RemoveParameterFromNodeResultFailure()
             return result
 
         # Get all the connections to/from this Parameter.
-        if isinstance(parameter, Parameter):
+        if isinstance(element, Parameter):
             list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
             list_connections_result = GriptapeNodes.handle_request(request=list_node_connections_request)
             if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
@@ -984,8 +984,8 @@ class NodeManager:
                         result = RemoveParameterFromNodeResultFailure()
 
         # Delete the Element itself.
-        if parameter is not None:
-            node.remove_parameter_element(parameter)
+        if element is not None:
+            node.remove_parameter_element(element)
         else:
             details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because element didn't exist."
             logger.error(details)
@@ -1023,39 +1023,39 @@ class NodeManager:
                 result = GetParameterDetailsResultFailure()
                 return result
 
-        # Does the Parameter actually exist on the Node?
-        parameter = node.get_element_by_name_and_type(request.parameter_name)
+        # Does the Element actually exist on the Node?
+        element = node.get_element_by_name_and_type(request.parameter_name)
 
-        if parameter is None:
-            details = f"Attempted to get details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
+        if element is None:
+            details = f"Attempted to get details for Element '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have an Element with that name on it."
             logger.error(details)
             return GetParameterDetailsResultFailure()
 
         # Let's bundle up the details.
-        if isinstance(parameter, Parameter):
-            modes_allowed = parameter.allowed_modes
+        if isinstance(element, Parameter):
+            modes_allowed = element.allowed_modes
             allows_input = ParameterMode.INPUT in modes_allowed
             allows_property = ParameterMode.PROPERTY in modes_allowed
             allows_output = ParameterMode.OUTPUT in modes_allowed
 
-            details = f"Successfully got details for Parameter '{request.parameter_name}' from Node '{node_name}'."
+            details = f"Successfully got details for Element '{request.parameter_name}' from Node '{node_name}'."
             logger.debug(details)
 
         result = GetParameterDetailsResultSuccess(
-            element_id=parameter.element_id,
-            type=getattr(parameter, "type", ""),
-            input_types=getattr(parameter, "input_types", []),
-            output_type=getattr(parameter, "output_type", ""),
-            default_value=getattr(parameter, "default_value", None),
-            tooltip=getattr(parameter, "tooltip", ""),
-            tooltip_as_input=getattr(parameter, "tooltip_as_input", None),
-            tooltip_as_property=getattr(parameter, "tooltip_as_property", None),
-            tooltip_as_output=getattr(parameter, "tooltip_as_output", None),
+            element_id=element.element_id,
+            type=getattr(element, "type", ""),
+            input_types=getattr(element, "input_types", []),
+            output_type=getattr(element, "output_type", ""),
+            default_value=getattr(element, "default_value", None),
+            tooltip=getattr(element, "tooltip", ""),
+            tooltip_as_input=getattr(element, "tooltip_as_input", None),
+            tooltip_as_property=getattr(element, "tooltip_as_property", None),
+            tooltip_as_output=getattr(element, "tooltip_as_output", None),
             mode_allowed_input=allows_input,
             mode_allowed_property=allows_property,
             mode_allowed_output=allows_output,
-            is_user_defined=getattr(parameter, "user_defined", False),
-            ui_options=getattr(parameter, "ui_options", None),
+            is_user_defined=getattr(element, "user_defined", False),
+            ui_options=getattr(element, "ui_options", None),
         )
         return result
 
@@ -1095,7 +1095,7 @@ class NodeManager:
                 return GetNodeElementDetailsResultFailure()
 
         element_details = element.to_dict()
-        # We need to get parameter values from here
+        # We need to get element values from here
         param_to_value = {}
         self._set_param_to_value(node, element, param_to_value)
         if param_to_value:
@@ -1253,42 +1253,42 @@ class NodeManager:
 
                 return AlterParameterDetailsResultFailure()
 
-        # Does the Parameter actually exist on the Node?
-        parameter = node.get_element_by_name_and_type(request.parameter_name)
-        if parameter is None:
+        # Does the Element actually exist on the Node?
+        element = node.get_element_by_name_and_type(request.parameter_name)
+        if element is None:
             details = f"Attempted to alter details for Element '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have an Element with that name on it."
             logger.error(details)
             return AlterParameterDetailsResultFailure()
         if request.ui_options is not None:
-            parameter.ui_options = request.ui_options  # type: ignore[attr-defined]
+            element.ui_options = request.ui_options  # type: ignore[attr-defined]
 
         # Check and handle connections if type was changed
-        if isinstance(parameter, Parameter) and (
+        if isinstance(element, Parameter) and (
             request.type is not None or request.input_types is not None or request.output_type is not None
         ):
-            result = self._validate_and_break_invalid_connections(node_name, parameter, request)
+            result = self._validate_and_break_invalid_connections(node_name, element, request)
             if isinstance(result, AlterParameterDetailsResultFailure):
                 return result
 
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/827
         # Now change all the values on the Element.
-        self.modify_alterable_fields(request, parameter)
+        self.modify_alterable_fields(request, element)
 
         # The rest of these are not alterable
-        if isinstance(parameter, Parameter):
-            if hasattr(parameter, "user_defined") and parameter.user_defined is False and request.request_id:  # type: ignore[attr-defined]
+        if isinstance(element, Parameter):
+            if hasattr(element, "user_defined") and element.user_defined is False and request.request_id:  # type: ignore[attr-defined]
                 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
-                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
+                details = f"Attempted to alter details for Element '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Element was not user-defined (i.e., critical to the Node implementation). Only user-defined Elements can be totally modified from a Node."
                 logger.warning(details)
                 return AlterParameterDetailsResultSuccess()
-            self.modify_key_parameter_fields(request, parameter)
+            self.modify_key_parameter_fields(request, element)
 
         # This field requires the node as well
         if request.default_value is not None:
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/825
             node.parameter_values[request.parameter_name] = request.default_value
 
-        details = f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{node_name}'."
+        details = f"Successfully altered details for Element '{request.parameter_name}' from Node '{node_name}'."
         logger.debug(details)
 
         result = AlterParameterDetailsResultSuccess()
