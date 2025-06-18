@@ -21,9 +21,9 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
     """Check for libraries impacted by the modified_parameters_set deprecation timeline."""
 
     def applies_to_library(self, library_data: LibrarySchema) -> bool:
-        """Check applies to libraries with engine_version < 0.40.0."""
+        """Check applies to libraries with engine_version < 0.39.0."""
         library_version = Version.from_string(library_data.metadata.engine_version)
-        return library_version is not None and library_version < Version(0, 40, 0)
+        return library_version is not None and library_version < Version(0, 39, 0)
 
     def check_library(self, library_data: LibrarySchema) -> list[LibraryVersionCompatibilityIssue]:
         """Perform the modified_parameters_set deprecation check."""
@@ -40,35 +40,23 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
         # Determine which phase we're in based on current engine version
         library_version_str = library_data.metadata.engine_version
 
-        if current_engine_version >= Version(0, 40, 0):
-            # 0.40+ Release: Parameter removed, reject incompatible libraries
+        if current_engine_version >= Version(0, 39, 0):
+            # 0.39+ Release: Parameter removed, reject incompatible libraries
             return [
                 LibraryVersionCompatibilityIssue(
-                    message=f"This library (built for engine version {library_version_str}) is incompatible with Griptape Nodes 0.40+. "
-                    "The modified_parameters_set parameter <TODO UPDATE BREAKING CHANGE INFO> has been removed. "
-                    "Please update to a newer version of this library or contact the library author to update the library to ensure compatibility.",
+                    message=f"This library (built for engine version {library_version_str}) is incompatible with Griptape Nodes 0.39+. "
+                    "The 'modified_parameters_set' parameter has been removed from BaseNode methods: 'after_incoming_connection', 'after_outgoing_connection', 'after_incoming_connection_removed', 'after_outgoing_connection_removed', 'before_value_set', and 'after_value_set'. "
+                    "If this library overrides any of these methods, it will not load or function properly. Please update to a newer version of this library or contact the library author immediately.",
                     severity=LibraryManager.LibraryStatus.UNUSABLE,
                 )
             ]
-        if current_engine_version >= Version(0, 39, 0):
-            # 0.39 Release: Warn about imminent removal and contact library author
-            return [
-                LibraryVersionCompatibilityIssue(
-                    message=f"WARNING: The modified_parameters_set parameter will be removed in Griptape Nodes 0.40. "
-                    f"This library (built for engine version {library_version_str}) needs to be updated before the 0.40 release. "
-                    "Please update to a newer version of this library or contact the library author to update the library to ensure compatibility. "
-                    "Click here for more details: <URL TO COME>.",
-                    severity=LibraryManager.LibraryStatus.FLAWED,
-                )
-            ]
         if current_engine_version >= Version(0, 38, 0):
-            # 0.38 Release: Warn about imminent removal
+            # 0.38 Release: Warning about upcoming removal in 0.39
             return [
                 LibraryVersionCompatibilityIssue(
-                    message=f"WARNING: The modified_parameters_set parameter will be removed in Griptape Nodes 0.40. "
-                    f"This library (built for engine version {library_version_str}) needs to be updated before the 0.40 release. "
-                    "Please update to a newer version of this library or contact the library author to update the library to ensure compatibility. "
-                    "Click here for more details: <URL TO COME>.",
+                    message=f"WARNING: The 'modified_parameters_set' parameter will be removed in Griptape Nodes 0.39 from BaseNode methods: 'after_incoming_connection', 'after_outgoing_connection', 'after_incoming_connection_removed', 'after_outgoing_connection_removed', 'before_value_set', and 'after_value_set'. "
+                    f"This library (built for engine version {library_version_str}) must be updated before the 0.39 release. "
+                    "If this library overrides any of these methods, it will fail to load in 0.39. If not, no action is necessary. Please contact the library author to confirm whether this library is impacted.",
                     severity=LibraryManager.LibraryStatus.FLAWED,
                 )
             ]
