@@ -1032,6 +1032,10 @@ class NodeManager:
             return GetParameterDetailsResultFailure()
 
         # Let's bundle up the details.
+        allows_input = False
+        allows_property = False
+        allows_output = False
+
         if isinstance(element, Parameter):
             modes_allowed = element.allowed_modes
             allows_input = ParameterMode.INPUT in modes_allowed
