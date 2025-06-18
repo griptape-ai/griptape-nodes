@@ -7,7 +7,7 @@
 # description = "The simplest image generation workflow."
 # schema_version = "0.3.0"
 # engine_version_created_with = "0.33.1"
-# node_libraries_referenced = [["Griptape Nodes Library", "0.34.0"]]
+# node_libraries_referenced = [["Griptape Nodes Library", "0.38.0"]]
 # is_griptape_provided = true
 # is_template = true
 # creation_date = 2025-05-01T03:00:00.000000+00:00
