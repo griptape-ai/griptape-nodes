@@ -521,9 +521,7 @@ class LibraryManager:
                 status=LibraryManager.LibraryStatus.UNUSABLE,
                 problems=[f"Dependency installation failed: {error_details}"],
             )
-            details = (
-                f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {error_details}"
-            )
+            details = f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {error_details}"
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 

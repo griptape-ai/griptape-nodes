@@ -119,7 +119,12 @@ class OSManager:
 
             return OpenAssociatedFileResultSuccess()
         except subprocess.CalledProcessError as e:
-            logger.error("Process error when opening file: return code=%s, stdout=%s, stderr=%s", e.returncode, e.stdout, e.stderr)
+            logger.error(
+                "Process error when opening file: return code=%s, stdout=%s, stderr=%s",
+                e.returncode,
+                e.stdout,
+                e.stderr,
+            )
             return OpenAssociatedFileResultFailure()
         except Exception as e:
             logger.error("Exception occurred when trying to open file: %s", type(e).__name__)
