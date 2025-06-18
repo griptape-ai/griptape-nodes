@@ -8,6 +8,7 @@ from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     Parameter,
     ParameterContainer,
+    ParameterGroup,
     ParameterMode,
     ParameterTypeBuiltin,
 )
@@ -216,7 +217,7 @@ class NodeManager:
             if parent_flow_name == old_name:
                 self._name_to_parent_flow_name[node_name] = new_name
 
-    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
+    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
         parent_flow = None
@@ -320,30 +321,53 @@ class NodeManager:
 
         if isinstance(node, StartLoopNode) and not request.initial_setup:
             # If it's StartLoop, create an EndLoop and connect it to the StartLoop.
+            # Get the class name of the node
+            node_class_name = node.__class__.__name__
+
+            # Get the opposing EndNode
+            # TODO: (griptape) Get paired classes implemented so we dont need to do name stuff. https://github.com/griptape-ai/griptape-nodes/issues/1549
+            end_class_name = node_class_name.replace("Start", "End")
+
+            # Check and see if the class exists
+            libraries_with_node_type = LibraryRegistry.get_libraries_with_node_type(end_class_name)
+            if not libraries_with_node_type:
+                msg = f"End class '{end_class_name}' does not exist for start class '{node_class_name}'"
+                logger.error(msg)
+                return CreateNodeResultFailure()
+
+            # Create the EndNode
             end_loop = GriptapeNodes.handle_request(
                 CreateNodeRequest(
-                    node_type="ForEachEndNode",
+                    node_type=end_class_name,
                     metadata={
                         "position": {"x": node.metadata["position"]["x"] + 650, "y": node.metadata["position"]["y"]}
                     },
                     override_parent_flow_name=parent_flow_name,
                 )
             )
-            if isinstance(end_loop, CreateNodeResultSuccess):
-                # Create Loop between output and input to the start node.
-                GriptapeNodes.handle_request(
-                    CreateConnectionRequest(
-                        source_node_name=node.name,
-                        source_parameter_name="loop",
-                        target_node_name=end_loop.node_name,
-                        target_parameter_name="from_start",
-                    )
+            if not isinstance(end_loop, CreateNodeResultSuccess):
+                msg = f"Failed to create EndLoop node for StartLoop node '{node.name}'"
+                logger.error(msg)
+                return CreateNodeResultFailure()
+
+            # Create Loop between output and input to the start node.
+            GriptapeNodes.handle_request(
+                CreateConnectionRequest(
+                    source_node_name=node.name,
+                    source_parameter_name="loop",
+                    target_node_name=end_loop.node_name,
+                    target_parameter_name="from_start",
                 )
-                end_node = self.get_node_by_name(end_loop.node_name)
-                if isinstance(end_node, EndLoopNode):
-                    # create the connection bt them
-                    node.end_node = end_node
-                    end_node.start_node = node
+            )
+            end_node = self.get_node_by_name(end_loop.node_name)
+            if not isinstance(end_node, EndLoopNode):
+                msg = f"End node '{end_loop.node_name}' is not a valid EndLoopNode"
+                logger.error(msg)
+                return CreateNodeResultFailure()
+
+            # create the connection
+            node.end_node = end_node
+            end_node.start_node = node
 
         return CreateNodeResultSuccess(
             node_name=node.name, node_type=node.__class__.__name__, specific_library_name=request.specific_library_name
@@ -885,84 +909,87 @@ class NodeManager:
                 result = RemoveParameterFromNodeResultFailure()
                 return result
 
-        # Does the Parameter actually exist on the Node?
-        parameter = node.get_parameter_by_name(request.parameter_name)
-        parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
-        if parameter is None and parameter_group is None:
-            details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
+        # Does the Element actually exist on the Node?
+        element = node.get_element_by_name_and_type(request.parameter_name)
+        if element is None:
+            details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have an Element with that name on it."
             logger.error(details)
 
             result = RemoveParameterFromNodeResultFailure()
             return result
-        if parameter_group is not None:
-            for child in parameter_group.find_elements_by_type(Parameter):
+
+        # If it's a ParameterGroup, we need to remove all the Parameters inside it.
+        if isinstance(element, ParameterGroup):
+            for child in element.find_elements_by_type(Parameter):
                 GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, node_name))
             node.remove_parameter_element_by_name(request.parameter_name)
 
             return RemoveParameterFromNodeResultSuccess()
 
         # No tricky stuff, users!
-        if parameter is not None and parameter.user_defined is False:
-            details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be removed from a Node."
+        # if user_defined doesn't exist, or is false, then it's not user-defined
+        if not getattr(element, "user_defined", False):
+            details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because the Element was not user-defined (i.e., critical to the Node implementation). Only user-defined Elements can be removed from a Node."
             logger.error(details)
 
             result = RemoveParameterFromNodeResultFailure()
             return result
 
         # Get all the connections to/from this Parameter.
-        list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
-        list_connections_result = GriptapeNodes.handle_request(request=list_node_connections_request)
-        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
-            details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because we were unable to get a list of Connections for the Parameter's Node."
-            logger.error(details)
+        if isinstance(element, Parameter):
+            list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
+            list_connections_result = GriptapeNodes.handle_request(request=list_node_connections_request)
+            if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+                details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because we were unable to get a list of Connections for the Parameter's Node."
+                logger.error(details)
 
-            result = RemoveParameterFromNodeResultFailure()
-            return result
+                result = RemoveParameterFromNodeResultFailure()
+                return result
 
-        # We have a list of all connections to the NODE. Sift down to just those that are about this PARAMETER.
+            # We have a list of all connections to the NODE. Sift down to just those that are about this PARAMETER.
 
-        # Destroy all the incoming Connections to this PARAMETER
-        for incoming_connection in list_connections_result.incoming_connections:
-            if incoming_connection.target_parameter_name == request.parameter_name:
-                delete_request = DeleteConnectionRequest(
-                    source_node_name=incoming_connection.source_node_name,
-                    source_parameter_name=incoming_connection.source_parameter_name,
-                    target_node_name=node_name,
-                    target_parameter_name=incoming_connection.target_parameter_name,
-                )
-                delete_result = GriptapeNodes.handle_request(delete_request)
-                if isinstance(delete_result, DeleteConnectionResultFailure):
-                    details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because we were unable to delete a Connection for that Parameter."
-                    logger.error(details)
+            # Destroy all the incoming Connections to this PARAMETER
+            for incoming_connection in list_connections_result.incoming_connections:
+                if incoming_connection.target_parameter_name == request.parameter_name:
+                    delete_request = DeleteConnectionRequest(
+                        source_node_name=incoming_connection.source_node_name,
+                        source_parameter_name=incoming_connection.source_parameter_name,
+                        target_node_name=node_name,
+                        target_parameter_name=incoming_connection.target_parameter_name,
+                    )
+                    delete_result = GriptapeNodes.handle_request(delete_request)
+                    if isinstance(delete_result, DeleteConnectionResultFailure):
+                        details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because we were unable to delete a Connection for that Parameter."
+                        logger.error(details)
 
-                    result = RemoveParameterFromNodeResultFailure()
+                        result = RemoveParameterFromNodeResultFailure()
 
-        # Destroy all the outgoing Connections from this PARAMETER
-        for outgoing_connection in list_connections_result.outgoing_connections:
-            if outgoing_connection.source_parameter_name == request.parameter_name:
-                delete_request = DeleteConnectionRequest(
-                    source_node_name=node_name,
-                    source_parameter_name=outgoing_connection.source_parameter_name,
-                    target_node_name=outgoing_connection.target_node_name,
-                    target_parameter_name=outgoing_connection.target_parameter_name,
-                )
-                delete_result = GriptapeNodes.handle_request(delete_request)
-                if isinstance(delete_result, DeleteConnectionResultFailure):
-                    details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because we were unable to delete a Connection for that Parameter."
-                    logger.error(details)
+            # Destroy all the outgoing Connections from this PARAMETER
+            for outgoing_connection in list_connections_result.outgoing_connections:
+                if outgoing_connection.source_parameter_name == request.parameter_name:
+                    delete_request = DeleteConnectionRequest(
+                        source_node_name=node_name,
+                        source_parameter_name=outgoing_connection.source_parameter_name,
+                        target_node_name=outgoing_connection.target_node_name,
+                        target_parameter_name=outgoing_connection.target_parameter_name,
+                    )
+                    delete_result = GriptapeNodes.handle_request(delete_request)
+                    if isinstance(delete_result, DeleteConnectionResultFailure):
+                        details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because we were unable to delete a Connection for that Parameter."
+                        logger.error(details)
 
-                    result = RemoveParameterFromNodeResultFailure()
+                        result = RemoveParameterFromNodeResultFailure()
 
-        # Delete the Parameter itself.
-        if parameter is not None:
-            node.remove_parameter_element(parameter)
+        # Delete the Element itself.
+        if element is not None:
+            node.remove_parameter_element(element)
         else:
-            details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because parameter didn't exist."
+            details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because element didn't exist."
             logger.error(details)
 
             result = RemoveParameterFromNodeResultFailure()
 
-        details = f"Successfully removed Parameter '{request.parameter_name}' from Node '{node_name}'."
+        details = f"Successfully removed Element '{request.parameter_name}' from Node '{node_name}'."
         logger.debug(details)
 
         result = RemoveParameterFromNodeResultSuccess()
@@ -993,39 +1020,43 @@ class NodeManager:
                 result = GetParameterDetailsResultFailure()
                 return result
 
-        # Does the Parameter actually exist on the Node?
-        parameter = node.get_parameter_by_name(request.parameter_name)
-        if parameter is None:
-            details = f"Attempted to get details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
-            logger.error(details)
+        # Does the Element actually exist on the Node?
+        element = node.get_element_by_name_and_type(request.parameter_name)
 
-            result = GetParameterDetailsResultFailure()
-            return result
+        if element is None:
+            details = f"Attempted to get details for Element '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have an Element with that name on it."
+            logger.error(details)
+            return GetParameterDetailsResultFailure()
 
         # Let's bundle up the details.
-        modes_allowed = parameter.allowed_modes
-        allows_input = ParameterMode.INPUT in modes_allowed
-        allows_property = ParameterMode.PROPERTY in modes_allowed
-        allows_output = ParameterMode.OUTPUT in modes_allowed
+        allows_input = False
+        allows_property = False
+        allows_output = False
 
-        details = f"Successfully got details for Parameter '{request.parameter_name}' from Node '{node_name}'."
-        logger.debug(details)
+        if isinstance(element, Parameter):
+            modes_allowed = element.allowed_modes
+            allows_input = ParameterMode.INPUT in modes_allowed
+            allows_property = ParameterMode.PROPERTY in modes_allowed
+            allows_output = ParameterMode.OUTPUT in modes_allowed
+
+            details = f"Successfully got details for Element '{request.parameter_name}' from Node '{node_name}'."
+            logger.debug(details)
 
         result = GetParameterDetailsResultSuccess(
-            element_id=parameter.element_id,
-            type=parameter.type,
-            input_types=parameter.input_types,
-            output_type=parameter.output_type,
-            default_value=parameter.default_value,
-            tooltip=parameter.tooltip,
-            tooltip_as_input=parameter.tooltip_as_input,
-            tooltip_as_property=parameter.tooltip_as_property,
-            tooltip_as_output=parameter.tooltip_as_output,
+            element_id=element.element_id,
+            type=getattr(element, "type", ""),
+            input_types=getattr(element, "input_types", []),
+            output_type=getattr(element, "output_type", ""),
+            default_value=getattr(element, "default_value", None),
+            tooltip=getattr(element, "tooltip", ""),
+            tooltip_as_input=getattr(element, "tooltip_as_input", None),
+            tooltip_as_property=getattr(element, "tooltip_as_property", None),
+            tooltip_as_output=getattr(element, "tooltip_as_output", None),
             mode_allowed_input=allows_input,
             mode_allowed_property=allows_property,
             mode_allowed_output=allows_output,
-            is_user_defined=parameter.user_defined,
-            ui_options=parameter.ui_options,
+            is_user_defined=getattr(element, "user_defined", False),
+            ui_options=getattr(element, "ui_options", None),
         )
         return result
 
@@ -1065,7 +1096,7 @@ class NodeManager:
                 return GetNodeElementDetailsResultFailure()
 
         element_details = element.to_dict()
-        # We need to get parameter values from here
+        # We need to get element values from here
         param_to_value = {}
         self._set_param_to_value(node, element, param_to_value)
         if param_to_value:
@@ -1101,17 +1132,18 @@ class NodeManager:
                 # Otherwise, just set it here. It'll be handled in .json() when we send it over.
                 param_to_value[element_id] = value
 
-    def modify_alterable_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
-        if request.tooltip is not None:
-            parameter.tooltip = request.tooltip
-        if request.tooltip_as_input is not None:
-            parameter.tooltip_as_input = request.tooltip_as_input
-        if request.tooltip_as_property is not None:
-            parameter.tooltip_as_property = request.tooltip_as_property
-        if request.tooltip_as_output is not None:
-            parameter.tooltip_as_output = request.tooltip_as_output
-        if request.ui_options is not None:
-            parameter.ui_options = request.ui_options
+    def modify_alterable_fields(self, request: AlterParameterDetailsRequest, parameter: BaseNodeElement) -> None:
+        if isinstance(parameter, Parameter):
+            if request.tooltip:
+                parameter.tooltip = request.tooltip
+            if request.tooltip_as_input is not None:
+                parameter.tooltip_as_input = request.tooltip_as_input
+            if request.tooltip_as_property is not None:
+                parameter.tooltip_as_property = request.tooltip_as_property
+            if request.tooltip_as_output is not None:
+                parameter.tooltip_as_output = request.tooltip_as_output
+        if request.ui_options is not None and hasattr(parameter, "ui_options"):
+            parameter.ui_options = request.ui_options  # type: ignore[attr-defined]
 
     def modify_key_parameter_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
         if request.type is not None:
@@ -1139,7 +1171,67 @@ class NodeManager:
             else:
                 parameter.allowed_modes.discard(ParameterMode.OUTPUT)
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:
+    def _validate_and_break_invalid_connections(
+        self, node_name: str, parameter: Parameter, request: AlterParameterDetailsRequest
+    ) -> ResultPayload | None:
+        """Validate and break any connections that are no longer valid after a parameter type change.
+
+        This method checks both incoming and outgoing connections for a parameter and removes
+        any that are no longer type-compatible after the parameter's type has been changed.
+
+        Returns:
+            ResultPayload | None: Returns AlterParameterDetailsResultFailure if any connection deletion fails,
+                                 None otherwise.
+        """
+        # Get all connections for this node
+        list_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
+        list_connections_result = self.on_list_connections_for_node_request(list_connections_request)
+
+        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+            # No connections exist for this node, which is not a failure - just nothing to validate
+            return None
+
+        # Check and break invalid incoming connections
+        for conn in list_connections_result.incoming_connections:
+            if conn.target_parameter_name == request.parameter_name:
+                source_node = self.get_node_by_name(conn.source_node_name)
+                source_param = source_node.get_parameter_by_name(conn.source_parameter_name)
+                if source_param and not parameter.is_incoming_type_allowed(source_param.output_type):
+                    delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
+                        DeleteConnectionRequest(
+                            source_node_name=conn.source_node_name,
+                            source_parameter_name=conn.source_parameter_name,
+                            target_node_name=node_name,
+                            target_parameter_name=request.parameter_name,
+                        )
+                    )
+                    if isinstance(delete_result, ResultPayloadFailure):
+                        details = f"Failed to delete incompatible incoming connection from {conn.source_node_name}.{conn.source_parameter_name} to {node_name}.{request.parameter_name}: {delete_result}"
+                        logger.error(details)
+                        return AlterParameterDetailsResultFailure()
+
+        # Check and break invalid outgoing connections
+        for conn in list_connections_result.outgoing_connections:
+            if conn.source_parameter_name == request.parameter_name:
+                target_node = self.get_node_by_name(conn.target_node_name)
+                target_param = target_node.get_parameter_by_name(conn.target_parameter_name)
+                if target_param and not target_param.is_incoming_type_allowed(parameter.output_type):
+                    delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
+                        DeleteConnectionRequest(
+                            source_node_name=node_name,
+                            source_parameter_name=request.parameter_name,
+                            target_node_name=conn.target_node_name,
+                            target_parameter_name=conn.target_parameter_name,
+                        )
+                    )
+                    if isinstance(delete_result, ResultPayloadFailure):
+                        details = f"Failed to delete incompatible outgoing connection from {node_name}.{request.parameter_name} to {conn.target_node_name}.{conn.target_parameter_name}: {delete_result}"
+                        logger.error(details)
+                        return AlterParameterDetailsResultFailure()
+
+        return None
+
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901
         node_name = request.node_name
         node = None
 
@@ -1162,38 +1254,42 @@ class NodeManager:
 
                 return AlterParameterDetailsResultFailure()
 
-        # Does the Parameter actually exist on the Node?
-        parameter = node.get_parameter_by_name(request.parameter_name)
-        parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
-        if parameter is None:
-            parameter_group = node.get_group_by_name_or_element_id(request.parameter_name)
-            if parameter_group is None:
-                details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
-                logger.error(details)
+        # Does the Element actually exist on the Node?
+        element = node.get_element_by_name_and_type(request.parameter_name)
+        if element is None:
+            details = f"Attempted to alter details for Element '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have an Element with that name on it."
+            logger.error(details)
+            return AlterParameterDetailsResultFailure()
+        if request.ui_options is not None:
+            element.ui_options = request.ui_options  # type: ignore[attr-defined]
 
-                return AlterParameterDetailsResultFailure()
-            if request.ui_options is not None:
-                parameter_group.ui_options = request.ui_options
-
-            return AlterParameterDetailsResultSuccess()
+        # Check and handle connections if type was changed
+        if isinstance(element, Parameter) and (
+            request.type is not None or request.input_types is not None or request.output_type is not None
+        ):
+            result = self._validate_and_break_invalid_connections(node_name, element, request)
+            if isinstance(result, AlterParameterDetailsResultFailure):
+                return result
 
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/827
-        # Now change all the values on the Parameter.
-        self.modify_alterable_fields(request, parameter)
-        # The rest of these are not alterable
-        if parameter.user_defined is False and request.request_id:
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
-            logger.warning(details)
+        # Now change all the values on the Element.
+        self.modify_alterable_fields(request, element)
 
-            return AlterParameterDetailsResultSuccess()
-        self.modify_key_parameter_fields(request, parameter)
+        # The rest of these are not alterable
+        if isinstance(element, Parameter):
+            if hasattr(element, "user_defined") and element.user_defined is False and request.request_id:  # type: ignore[attr-defined]
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
+                details = f"Attempted to alter details for Element '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Element was not user-defined (i.e., critical to the Node implementation). Only user-defined Elements can be totally modified from a Node."
+                logger.warning(details)
+                return AlterParameterDetailsResultSuccess()
+            self.modify_key_parameter_fields(request, element)
+
         # This field requires the node as well
         if request.default_value is not None:
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/825
             node.parameter_values[request.parameter_name] = request.default_value
 
-        details = f"Successfully altered details for Parameter '{request.parameter_name}' from Node '{node_name}'."
+        details = f"Successfully altered details for Element '{request.parameter_name}' from Node '{node_name}'."
         logger.debug(details)
 
         result = AlterParameterDetailsResultSuccess()

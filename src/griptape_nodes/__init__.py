@@ -1,5 +1,4 @@
 """Griptape Nodes package."""
-# ruff: noqa: S603, S607
 
 from rich.console import Console
 
@@ -59,7 +58,7 @@ ENV_LIBRARIES_SYNC = (
     os.getenv("GTN_LIBRARIES_SYNC", "false").lower() == "true" if os.getenv("GTN_LIBRARIES_SYNC") is not None else None
 )
 ENV_GTN_BUCKET_NAME = os.getenv("GTN_BUCKET_NAME")
-ENV_LIBRARIES_BASE_DIR = os.getenv("GTN_LIBRARIES_BASE_DIR")
+ENV_LIBRARIES_BASE_DIR = os.getenv("GTN_LIBRARIES_BASE_DIR", str(DATA_DIR / "libraries"))
 
 
 @dataclass
@@ -553,9 +552,7 @@ def __build_libraries_list(*, register_advanced_library: bool) -> list[str]:
     """Builds the list of libraries to register based on the advanced library setting."""
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/929
     libraries_key = "app_events.on_app_initialization_complete.libraries_to_register"
-    library_base_dir = (
-        Path(ENV_LIBRARIES_BASE_DIR) if ENV_LIBRARIES_BASE_DIR else xdg_data_home() / "griptape_nodes/libraries"
-    )
+    library_base_dir = Path(ENV_LIBRARIES_BASE_DIR)
 
     current_libraries = config_manager.get_config_value(
         libraries_key,
@@ -573,13 +570,13 @@ def __build_libraries_list(*, register_advanced_library: bool) -> list[str]:
     current_identifiers = {_get_library_identifier(lib) for lib in current_libraries}
 
     default_library = str(library_base_dir / "griptape_nodes_library/griptape_nodes_library.json")
-    default_identifier = "griptape_nodes_library/griptape_nodes_library.json"
+    default_identifier = _get_library_identifier(default_library)
     # If somehow the user removed the default library, add it back
     if default_identifier not in current_identifiers:
         new_libraries.append(default_library)
 
     advanced_media_library = str(library_base_dir / "griptape_nodes_advanced_media_library/griptape_nodes_library.json")
-    advanced_identifier = "griptape_nodes_advanced_media_library/griptape_nodes_library.json"
+    advanced_identifier = _get_library_identifier(advanced_media_library)
     if register_advanced_library:
         # If the advanced media library is not registered, add it
         if advanced_identifier not in current_identifiers:
@@ -679,7 +676,7 @@ def _sync_libraries() -> None:
 
     tar_url = NODES_TARBALL_URL.format(tag=version)
     console.print(f"[green]Downloading from {tar_url}[/green]")
-    dest_nodes = DATA_DIR / "libraries"
+    dest_nodes = Path(ENV_LIBRARIES_BASE_DIR)
 
     with tempfile.TemporaryDirectory() as tmp:
         tar_path = Path(tmp) / "nodes.tar.gz"

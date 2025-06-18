@@ -72,10 +72,14 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromRequirementSpecifierRequest,
     RegisterLibraryFromRequirementSpecifierResultFailure,
     RegisterLibraryFromRequirementSpecifierResultSuccess,
+    ReloadAllLibrariesRequest,
+    ReloadAllLibrariesResultFailure,
+    ReloadAllLibrariesResultSuccess,
     UnloadLibraryFromRegistryRequest,
     UnloadLibraryFromRegistryResultFailure,
     UnloadLibraryFromRegistryResultSuccess,
 )
+from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
@@ -147,6 +151,7 @@ class LibraryManager:
         event_manager.assign_manager_to_request_type(
             UnloadLibraryFromRegistryRequest, self.unload_library_from_registry_request
         )
+        event_manager.assign_manager_to_request_type(ReloadAllLibrariesRequest, self.reload_all_libraries_request)
 
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
@@ -508,16 +513,15 @@ class LibraryManager:
                     )
         except subprocess.CalledProcessError as e:
             # Failed to create the library
+            error_details = f"return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=library_data.name,
                 library_version=library_version,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[str(e)],
+                problems=[f"Dependency installation failed: {error_details}"],
             )
-            details = (
-                f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {e}."
-            )
+            details = f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {error_details}"
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
@@ -623,7 +627,7 @@ class LibraryManager:
                     venv_path,
                 )
         except subprocess.CalledProcessError as e:
-            details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to {e}"
+            details = f"Attempted to install library '{request.requirement_specifier}'. Failed: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
             logger.error(details)
             return RegisterLibraryFromRequirementSpecifierResultFailure()
 
@@ -666,7 +670,7 @@ class LibraryManager:
                     text=True,
                 )
             except subprocess.CalledProcessError as e:
-                msg = f"Failed to create virtual environment at {library_venv_path} with Python {python_version}: {e}"
+                msg = f"Failed to create virtual environment at {library_venv_path} with Python {python_version}: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
                 raise RuntimeError(msg) from e
             logger.debug("Created virtual environment at %s", library_venv_path)
 
@@ -1255,3 +1259,37 @@ class LibraryManager:
                 library for library in libraries_to_register_category if library.lower() not in paths_to_remove
             ]
             config_mgr.set_config_value(config_category, libraries_to_register_category)
+
+    def reload_all_libraries_request(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
+        # Start with a clean slate.
+        clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
+        clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+        if not clear_all_result.succeeded():
+            details = "Failed to clear the existing object state when preparing to reload all libraries."
+            logger.error(details)
+            return ReloadAllLibrariesResultFailure()
+
+        # Unload all libraries now.
+        all_libraries_request = ListRegisteredLibrariesRequest()
+        all_libraries_result = GriptapeNodes.handle_request(all_libraries_request)
+        if not isinstance(all_libraries_result, ListRegisteredLibrariesResultSuccess):
+            details = "When preparing to reload all libraries, failed to get registered libraries."
+            logger.error(details)
+            return ReloadAllLibrariesResultFailure()
+
+        for library_name in all_libraries_result.libraries:
+            unload_library_request = UnloadLibraryFromRegistryRequest(library_name=library_name)
+            unload_library_result = GriptapeNodes.handle_request(unload_library_request)
+            if not unload_library_result.succeeded():
+                details = f"When preparing to reload all libraries, failed to unload library '{library_name}'."
+                logger.error(details)
+                return ReloadAllLibrariesResultFailure()
+
+        # Load (or reload, which should trigger a hot reload) all libraries
+        self.load_all_libraries_from_config()
+
+        details = (
+            "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."
+        )
+        logger.info(details)
+        return ReloadAllLibrariesResultSuccess()

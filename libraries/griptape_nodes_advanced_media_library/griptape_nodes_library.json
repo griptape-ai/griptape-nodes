@@ -4,8 +4,8 @@
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
-    "library_version": "0.34.0",
-    "engine_version": "0.34.0",
+    "library_version": "0.38.0",
+    "engine_version": "0.38.0",
     "tags": [
       "Griptape",
       "AI"
@@ -323,6 +323,15 @@
       }
     },
     {
+      "class_name": "WanVideoToVideoPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/wan/wan_video_to_video_pipeline.py",
+      "metadata": {
+        "category": "video/wan",
+        "description": "Generate videos from video and text with Wan",
+        "display_name": "Wan V2V"
+      }
+    },
+    {
       "class_name": "WanVacePipeline",
       "file_path": "diffusers_nodes_library/pipelines/wan/wan_vace_pipeline.py",
       "metadata": {
@@ -392,6 +401,15 @@
         "category": "video/wan/loras",
         "description": "Experimental LoRA extractions from CausVid finetunes. Enables generating videos in 2-8 steps.",
         "display_name": "Kijai CausVid 14B"
+      }
+    },
+    {
+      "class_name": "WuerstchenCombinedPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/wuerstchen/wuerstchen_combined_pipeline.py",
+      "metadata": {
+        "category": "image/würstchen",
+        "description": "Generate images efficiently with Würstchen via 🤗 Diffusers.",
+        "display_name": "Würstchen"
       }
     }
   ]
