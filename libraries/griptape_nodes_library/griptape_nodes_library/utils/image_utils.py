@@ -23,7 +23,9 @@ def dict_to_image_url_artifact(image_dict: dict, image_format: str | None = None
     logger.info("Starting dict_to_image_url_artifact")
     value = image_dict["value"]
     if image_dict["type"] == "ImageUrlArtifact":
-        return ImageUrlArtifact(value)
+        # Preserve any existing metadata
+        meta = image_dict.get("meta", {})
+        return ImageUrlArtifact(value, meta=meta)
 
     # Strip base64 prefix if needed
     if "base64," in value:
@@ -146,8 +148,10 @@ def add_image_metadata(artifact: ImageArtifact, image_bytes: bytes) -> None:
         artifact: The ImageArtifact to add metadata to
         image_bytes: The image data in bytes
     """
+    logger.info("Starting add_image_metadata")
     # Add common metadata first
     add_common_metadata(artifact, image_bytes)
+    logger.info("Common metadata added: %s", artifact.meta)
 
     # Get image properties using PIL
     with Image.open(BytesIO(image_bytes)) as img:
@@ -169,6 +173,7 @@ def add_image_metadata(artifact: ImageArtifact, image_bytes: bytes) -> None:
             "compression": img.info.get("compression"),
             "icc_profile": bool(img.info.get("icc_profile")),
         }
+        logger.info("Image properties extracted: %s", properties)
 
         # Extract EXIF data if available
         exif_data = {}
@@ -185,13 +190,18 @@ def add_image_metadata(artifact: ImageArtifact, image_bytes: bytes) -> None:
 
         if exif_data:
             properties["exif"] = exif_data
+            logger.info("EXIF data extracted: %s", exif_data)
 
         # Add color profile information
         if hasattr(img, "getbands"):
             properties["channels"] = len(img.getbands())
             properties["channel_names"] = img.getbands()
+            logger.info(
+                "Color profile info added: channels=%s, names=%s", properties["channels"], properties["channel_names"]
+            )
 
     set_artifact_properties(artifact, properties)
+    logger.info("Final metadata after setting properties: %s", artifact.meta)
 
 
 def get_image_dimensions(artifact: ImageArtifact) -> tuple[int, int]:

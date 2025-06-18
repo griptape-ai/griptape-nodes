@@ -1,8 +1,11 @@
 import hashlib
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
 from griptape.artifacts import BaseArtifact
+
+logger = logging.getLogger(__name__)
 
 
 def add_common_metadata(artifact: BaseArtifact, content_bytes: bytes | None = None) -> None:
@@ -12,6 +15,7 @@ def add_common_metadata(artifact: BaseArtifact, content_bytes: bytes | None = No
         artifact: The artifact to add metadata to
         content_bytes: Optional bytes content for hash/size calculation
     """
+    logger.info("Starting add_common_metadata")
     metadata: dict[str, str | int] = {
         "created_at": datetime.now(UTC).isoformat(),
     }
@@ -24,7 +28,9 @@ def add_common_metadata(artifact: BaseArtifact, content_bytes: bytes | None = No
             }
         )
 
+    logger.info("Common metadata to add: %s", metadata)
     artifact.meta.update(metadata)
+    logger.info("Updated metadata after adding common: %s", artifact.meta)
 
 
 def set_artifact_properties(artifact: BaseArtifact, properties: dict[str, Any]) -> None:
@@ -34,10 +40,16 @@ def set_artifact_properties(artifact: BaseArtifact, properties: dict[str, Any]) 
         artifact: The artifact to set properties on
         properties: Dictionary of properties to set
     """
+    logger.info("Starting set_artifact_properties")
+    logger.info("Current metadata: %s", artifact.meta)
+    logger.info("Properties to set: %s", properties)
+
     if "properties" not in artifact.meta:
         artifact.meta["properties"] = {}
+        logger.info("Created new properties dict in metadata")
 
     artifact.meta["properties"].update(properties)
+    logger.info("Updated metadata: %s", artifact.meta)
 
 
 def set_artifact_tags(artifact: BaseArtifact, tags: dict[str, Any]) -> None:
