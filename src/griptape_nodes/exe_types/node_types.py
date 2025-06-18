@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
 from enum import StrEnum, auto
-from typing import Any, TypeVar, Union, overload
+from typing import Any, TypeVar
 
 from griptape.events import BaseEvent, EventBus
 
@@ -190,8 +190,7 @@ class BaseNode(ABC):
         Args:
             parameter: the Parameter on this node that is about to be changed
             value: the value intended to be set (this has already gone through any converters and validators on the Parameter)
-            modified_parameters_set: A set of parameter names within this node that were modified as a result
-                of this call. The Parameter this was called on does NOT need to be part of the return.
+            args: Any additional arugments. Meant to prevent errors with modified_parameters_set parameters set.
 
         Returns:
             The final value to set for the Parameter. This gives the Node logic one last opportunity to mutate the value
@@ -200,24 +199,7 @@ class BaseNode(ABC):
         # Default behavior is to do nothing to the supplied value, and indicate no other modified Parameters.
         return value
 
-    @overload
-    def after_value_set(
-        self,
-        parameter: Parameter,  # noqa: ARG002
-        value: Any,  # noqa: ARG002
-    ) -> None:
-        ...
-
-    @overload
-    def after_value_set(
-        self,
-        parameter: Parameter,  # noqa: ARG002
-        value: Any,  # noqa: ARG002
-        modified_parameters_set: set[str],  # noqa: ARG002
-    ) -> None:
-        ...
-
-    def after_value_set( # pyright: ignore[reportInconsistentOverload]
+    def after_value_set(  # pyright: ignore[reportInconsistentOverload]
         self,
         parameter: Parameter,  # noqa: ARG002
         value: Any,  # noqa: ARG002
@@ -234,7 +216,7 @@ class BaseNode(ABC):
         Args:
             parameter: the Parameter on this node that was just changed
             value: the value that was set (already converted, validated, and possibly mutated by the node code)
-            *args: Optional modified_parameters_set (set[str]) - A set of parameter names within this node 
+            *args: Optional modified_parameters_set (set[str]) - A set of parameter names within this node
                 that were modified as a result of this call. The Parameter this was called on does NOT need to be part of the return.
 
         Returns:
@@ -313,7 +295,9 @@ class BaseNode(ABC):
         for name in names:
             parameter = self.get_parameter_by_name(name)
             if parameter is not None:
-                parameter._ui_options["hide"] = not visible
+                ui_options = parameter.ui_options
+                ui_options["hide"] = not visible
+                parameter.ui_options = ui_options
 
     def get_message_by_name_or_element_id(self, element: str) -> ParameterMessage | None:
         element_items = self.root_ui_element.find_elements_by_type(ParameterMessage)
@@ -335,7 +319,9 @@ class BaseNode(ABC):
         for name in names:
             message = self.get_message_by_name_or_element_id(name)
             if message is not None:
-                message.ui_options["hide"] = not visible
+                ui_options = message.ui_options
+                ui_options["hide"] = not visible
+                message.ui_options = ui_options
 
     def hide_message_by_name(self, names: str | list[str]) -> None:
         self._set_message_visibility(names, visible=False)
@@ -444,10 +430,7 @@ class BaseNode(ABC):
 
         # If a parameter value has been set at the top level of a container, wipe all children.
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
-        self.after_value_set(
-            parameter=parameter,
-            value=final_value
-        )
+        self.after_value_set(parameter=parameter, value=final_value)
         self._emit_parameter_lifecycle_event(parameter)
         # handle with container parameters
         if parameter.parent_container_name is not None:
@@ -831,6 +814,7 @@ class BaseNode(ABC):
 
         # Use reorder_elements to apply the move
         self.reorder_elements(list(new_order))
+
 
 class ControlNode(BaseNode):
     # Control Nodes may have one Control Input Port and at least one Control Output Port

@@ -7,7 +7,7 @@ Griptape Cloud specific model options, requires a Griptape Cloud API key via
 node configuration, and instantiates the `GriptapeCloudPromptDriver`.
 """
 
-from typing import Any, override
+from typing import Any
 
 import requests
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver as GtGriptapeCloudPromptDriver
@@ -141,7 +141,7 @@ class GriptapeCloudPrompt(BasePrompt):
         # Replace `min_p` with `top_p` for Griptape Cloud.
         self._replace_param_by_name(param_name="min_p", new_param_name="top_p", default_value=0.9)
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None: # pyright: ignore[reportIncompatibleMethodOverride]
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:  # pyright: ignore[reportIncompatibleMethodOverride]
         if parameter.name == "model":
             if "deepseek" in value:
                 self.hide_parameter_by_name("stream")
