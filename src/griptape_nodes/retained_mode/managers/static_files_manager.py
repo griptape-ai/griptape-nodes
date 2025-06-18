@@ -1,8 +1,6 @@
 import base64
 import binascii
 import logging
-import time
-from urllib.parse import urljoin
 
 import httpx
 from xdg_base_dirs import xdg_config_home
@@ -149,10 +147,7 @@ class StaticFilesManager:
             logger.error(msg)
             return CreateStaticFileDownloadUrlResultFailure(error=msg)
 
-        # Add a cache-busting query parameter to the URL so that the browser always reloads the file
-        cache_busted_url = urljoin(url, f"?t={int(time.time())}")
-
-        return CreateStaticFileDownloadUrlResultSuccess(url=cache_busted_url)
+        return CreateStaticFileDownloadUrlResultSuccess(url=url)
 
     def save_static_file(self, data: bytes, file_name: str) -> str:
         """Saves a static file to the workspace directory.
