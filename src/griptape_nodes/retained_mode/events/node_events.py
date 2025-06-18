@@ -420,15 +420,3 @@ class DuplicateSelectedNodesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuc
 @PayloadRegistry.register
 class DuplicateSelectedNodesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
-
-
-@dataclass
-@PayloadRegistry.register
-class UpdateNodeElements(WorkflowNotAlteredMixin, RequestPayload):
-    pass
-
-
-@dataclass
-@PayloadRegistry.register
-class UpdateNodeElementsSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    pass
