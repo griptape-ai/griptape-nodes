@@ -1014,8 +1014,8 @@ class NodeManager:
             allows_property = ParameterMode.PROPERTY in modes_allowed
             allows_output = ParameterMode.OUTPUT in modes_allowed
 
-        details = f"Successfully got details for Parameter '{request.parameter_name}' from Node '{node_name}'."
-        logger.debug(details)
+            details = f"Successfully got details for Parameter '{request.parameter_name}' from Node '{node_name}'."
+            logger.debug(details)
 
         result = GetParameterDetailsResultSuccess(
             element_id=parameter.element_id,
@@ -1232,7 +1232,7 @@ class NodeManager:
         # Does the Parameter actually exist on the Node?
         parameter = node.get_element_by_name_and_type(request.parameter_name)
         if parameter is None:
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have a Parameter with that name on it."
+            details = f"Attempted to alter details for Element '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have an Element with that name on it."
             logger.error(details)
             return AlterParameterDetailsResultFailure()
         if request.ui_options is not None:
@@ -1247,12 +1247,12 @@ class NodeManager:
                 return result
 
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/827
-        # Now change all the values on the Parameter.
+        # Now change all the values on the Element.
         self.modify_alterable_fields(request, parameter)
 
         # The rest of these are not alterable
         if isinstance(parameter, Parameter):
-            if parameter.user_defined is False and request.request_id:
+            if hasattr(parameter, "user_defined") and parameter.user_defined is False and request.request_id:  # type: ignore[attr-defined]
                 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
                 details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Parameter was not user-defined (i.e., critical to the Node implementation). Only user-defined Parameters can be totally modified from a Node."
                 logger.warning(details)
