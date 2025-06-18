@@ -513,16 +513,15 @@ class LibraryManager:
                     )
         except subprocess.CalledProcessError as e:
             # Failed to create the library
+            error_details = f"return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=library_data.name,
                 library_version=library_version,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[str(e)],
+                problems=[f"Dependency installation failed: {error_details}"],
             )
-            details = (
-                f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {e}."
-            )
+            details = f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {error_details}"
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
@@ -628,7 +627,7 @@ class LibraryManager:
                     venv_path,
                 )
         except subprocess.CalledProcessError as e:
-            details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to {e}"
+            details = f"Attempted to install library '{request.requirement_specifier}'. Failed: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
             logger.error(details)
             return RegisterLibraryFromRequirementSpecifierResultFailure()
 
@@ -671,7 +670,7 @@ class LibraryManager:
                     text=True,
                 )
             except subprocess.CalledProcessError as e:
-                msg = f"Failed to create virtual environment at {library_venv_path} with Python {python_version}: {e}"
+                msg = f"Failed to create virtual environment at {library_venv_path} with Python {python_version}: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
                 raise RuntimeError(msg) from e
             logger.debug("Created virtual environment at %s", library_venv_path)
 

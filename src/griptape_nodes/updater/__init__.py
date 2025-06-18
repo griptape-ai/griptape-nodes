@@ -45,7 +45,9 @@ def _download_and_run_installer() -> None:
             check=True,
         )
     except subprocess.CalledProcessError as e:
-        console.print(f"[red]Error during update: {e}[/red]")
+        console.print(
+            f"[red]Error during update: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}[/red]"
+        )
         raise
     else:
         console.print("[green]Finished updating self.[/green]")
@@ -62,7 +64,9 @@ def _sync_libraries() -> None:
             check=True,
         )
     except subprocess.CalledProcessError as e:
-        console.print(f"[red]Error during libraries sync: {e}[/red]")
+        console.print(
+            f"[red]Error during libraries sync: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}[/red]"
+        )
         raise
     else:
         console.print("[green]Finished syncing libraries.[/green]")
