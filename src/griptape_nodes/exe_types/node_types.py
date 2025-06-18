@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
 from enum import StrEnum, auto
-from typing import Any, TypeVar
+from typing import Any, TypeVar, Union, overload
 
 from griptape.events import BaseEvent, EventBus
 
@@ -135,7 +135,7 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002,
-        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
+        *args: Any,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
         return
@@ -145,7 +145,7 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002,
-        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
+        *args: Any,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
         return
@@ -155,7 +155,7 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
+        *args: Any,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         return
@@ -165,7 +165,7 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
+        *args: Any,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
         return
@@ -174,7 +174,7 @@ class BaseNode(ABC):
         self,
         parameter: Parameter,  # noqa: ARG002
         value: Any,
-        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
+        *args: Any,  # noqa: ARG002
     ) -> Any:
         """Callback when a Parameter's value is ABOUT to be set.
 
@@ -200,11 +200,28 @@ class BaseNode(ABC):
         # Default behavior is to do nothing to the supplied value, and indicate no other modified Parameters.
         return value
 
+    @overload
     def after_value_set(
         self,
         parameter: Parameter,  # noqa: ARG002
         value: Any,  # noqa: ARG002
-        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
+    ) -> None:
+        ...
+
+    @overload
+    def after_value_set(
+        self,
+        parameter: Parameter,  # noqa: ARG002
+        value: Any,  # noqa: ARG002
+        modified_parameters_set: set[str],  # noqa: ARG002
+    ) -> None:
+        ...
+
+    def after_value_set( # pyright: ignore[reportInconsistentOverload]
+        self,
+        parameter: Parameter,  # noqa: ARG002
+        value: Any,  # noqa: ARG002
+        *args: Any,  # noqa: ARG002
     ) -> None:
         """Callback AFTER a Parameter's value was set.
 
@@ -217,8 +234,8 @@ class BaseNode(ABC):
         Args:
             parameter: the Parameter on this node that was just changed
             value: the value that was set (already converted, validated, and possibly mutated by the node code)
-            modified_parameters_set: A set of parameter names within this node that were modified as a result
-                of this call. The Parameter this was called on does NOT need to be part of the return.
+            *args: Optional modified_parameters_set (set[str]) - A set of parameter names within this node 
+                that were modified as a result of this call. The Parameter this was called on does NOT need to be part of the return.
 
         Returns:
             Nothing
@@ -226,7 +243,7 @@ class BaseNode(ABC):
         # Default behavior is to do nothing, and indicate no other modified Parameters.
         return None  # noqa: RET501
 
-    def after_settings_changed(self, modified_parameters_set: set[str] | None = None) -> None:  # noqa: ARG002
+    def after_settings_changed(self, *args: Any) -> None:  # noqa: ARG002
         """Callback for when the settings of this Node are changed."""
         # Waiting for https://github.com/griptape-ai/griptape-nodes/issues/1309
         return
@@ -429,8 +446,7 @@ class BaseNode(ABC):
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
         self.after_value_set(
             parameter=parameter,
-            value=final_value,
-            modified_parameters_set=set(),
+            value=final_value
         )
         self._emit_parameter_lifecycle_event(parameter)
         # handle with container parameters
@@ -815,7 +831,6 @@ class BaseNode(ABC):
 
         # Use reorder_elements to apply the move
         self.reorder_elements(list(new_order))
-
 
 class ControlNode(BaseNode):
     # Control Nodes may have one Control Input Port and at least one Control Output Port
