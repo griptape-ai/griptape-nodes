@@ -749,18 +749,18 @@ class WorkflowManager:
                     had_critical_error = True
                 elif delta > WorkflowManager.MAX_MINOR_VERSION_DEVIATION:
                     problems.append(
-                        f"Library '{library_name}' is at version '{library_version}', but this workflow requested '{desired_version}'. This version difference is too far out of tolerance to recommend proceeding."
+                        f"This workflow was built with library '{library_name}' v{desired_version}, but you have v{library_version}. This large version difference may cause compatibility issues. You can update the library to a compatible version or save this workflow to update it to your current library versions."
                     )
                     status = WorkflowManager.WorkflowDependencyStatus.BAD
                     had_critical_error = True
                 else:
                     problems.append(
-                        f"Library '{library_name}' is at version '{library_version}', but this workflow requested '{desired_version}'. There may be incompatibilities. Proceed at your own risk."
+                        f"This workflow was built with library '{library_name}' v{desired_version}, but you have v{library_version}. Minor differences are usually compatible. If you experience issues, you can update the library or save this workflow to update it to your current library versions."
                     )
                     status = WorkflowManager.WorkflowDependencyStatus.CAUTION
             else:
                 problems.append(
-                    f"Library '{library_name}' is at version '{library_version}', but this workflow requested '{desired_version}'. Major version differences have breaking changes that this Workflow may not support."
+                    f"This workflow requires library '{library_name}' v{desired_version}, but you have v{library_version}. Major version changes may include breaking changes. Consider updating the library to match, or save this workflow to update it to your current library versions."
                 )
                 status = WorkflowManager.WorkflowDependencyStatus.BAD
                 had_critical_error = True
