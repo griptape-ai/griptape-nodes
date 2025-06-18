@@ -502,7 +502,6 @@ class LibraryManager:
                             str(library_venv_python_path),
                         ],
                         check=True,
-                        capture_output=True,
                         text=True,
                     )
                 else:
@@ -618,7 +617,6 @@ class LibraryManager:
                         library_python_venv_path,
                     ],
                     check=True,
-                    capture_output=True,
                     text=True,
                 )
             else:
@@ -667,7 +665,6 @@ class LibraryManager:
                 subprocess.run(  # noqa: S603
                     [sys.executable, "-m", "uv", "venv", str(library_venv_path), "--python", python_version],
                     check=True,
-                    capture_output=True,
                     text=True,
                 )
             except subprocess.CalledProcessError as e:
