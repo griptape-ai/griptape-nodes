@@ -1,0 +1,34 @@
+name: Version Bump on Release Branch
+
+on:
+  push:
+    branches:
+      - release/**
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the release branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine source branch name
+        id: branch
+        run: echo "name=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+
+      - name: Create pull request into main
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: main
+          branch: ${{ steps.branch.outputs.name }}
+          title: "chore: ${{ steps.branch.outputs.name }} into main (version bump)"
+          body: |
+            This PR was automatically generated from a push to `${{ steps.branch.outputs.name }}`.
+            It likely includes a version bump or release updates.
+          draft: false
+          delete-branch: false
+
