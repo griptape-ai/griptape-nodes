@@ -277,6 +277,14 @@
       }
     },
     {
+      "video/animatediff": {
+        "color": "border-pink-500",
+        "title": "Video/AnimateDiff",
+        "description": "Video generation with AnimateDiff",
+        "icon": "Video"
+      }
+    },
+    {
       "video/wan": {
         "color": "border-pink-500",
         "title": "video/wan",

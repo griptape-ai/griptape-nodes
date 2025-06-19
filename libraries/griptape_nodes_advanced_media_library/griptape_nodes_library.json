@@ -289,6 +289,24 @@
       }
     },
     {
+      "class_name": "AnimateDiffPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/animatediff/animatediff_pipeline.py",
+      "metadata": {
+        "category": "video/animatediff",
+        "description": "Generate a Video with AnimateDiff via 🤗 Diffusers.",
+        "display_name": "AnimateDiff"
+      }
+    },
+    {
+      "class_name": "AnimateDiffControlNetPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/animatediff/animatediff_controlnet_pipeline.py",
+      "metadata": {
+        "category": "video/animatediff",
+        "description": "Generate a Video with AnimateDiff + ControlNet via 🤗 Diffusers.",
+        "display_name": "AnimateDiff ControlNet"
+      }
+    },
+    {
       "class_name": "StableDiffusionPipeline",
       "file_path": "diffusers_nodes_library/pipelines/stable_diffusion/stable_diffusion_pipeline.py",
       "metadata": {
