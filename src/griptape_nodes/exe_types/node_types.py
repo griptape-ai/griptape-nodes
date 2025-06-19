@@ -430,7 +430,7 @@ class BaseNode(ABC):
             raise ValueError(msg)
 
     def initialize_spotlight(self) -> None:
-        # Make a deep copy of all of the parameters and create the linked list.
+        # Create a linked list of parameters for spotlight navigation.
         curr_param = None
         prev_param = None
         for parameter in self.parameters:
@@ -439,14 +439,13 @@ class BaseNode(ABC):
                 and ParameterTypeBuiltin.CONTROL_TYPE.value not in parameter.input_types
             ):
                 if not self.current_spotlight_parameter or prev_param is None:
-                    # make a copy of the parameter and assign it to current spotlight
-                    param_copy = parameter.copy()
-                    self.current_spotlight_parameter = param_copy
-                    prev_param = param_copy
+                    # Use the original parameter and assign it to current spotlight
+                    self.current_spotlight_parameter = parameter
+                    prev_param = parameter
                     # go on to the next one because prev and next don't need to be set yet.
                     continue
                 # prev_param will have been initialized at this point
-                curr_param = parameter.copy()
+                curr_param = parameter
                 prev_param.next = curr_param
                 curr_param.prev = prev_param
                 prev_param = curr_param
@@ -668,11 +667,16 @@ class BaseNode(ABC):
         self.state = NodeResolutionState.UNRESOLVED
         # delete all output values potentially generated
         self.parameter_output_values.clear()
-        # Remove the current spotlight
-        while self.current_spotlight_parameter is not None:
-            temp = self.current_spotlight_parameter.next
-            del self.current_spotlight_parameter
-            self.current_spotlight_parameter = temp
+        # Clear the spotlight linked list
+        # First, clear all next/prev pointers to break the linked list
+        current = self.current_spotlight_parameter
+        while current is not None:
+            next_param = current.next
+            current.next = None
+            current.prev = None
+            current = next_param
+        # Then clear the reference to the first spotlight parameter
+        self.current_spotlight_parameter = None
 
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
         # Add the value to the node
