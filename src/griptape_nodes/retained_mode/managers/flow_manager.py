@@ -1387,6 +1387,6 @@ class FlowManager:
         nodes = obj_manager.get_filtered_subset(type=BaseNode)
         for node in nodes.values():
             # Only flush if there are actually tracked parameters
-            if hasattr(node, "_tracked_parameters") and node._tracked_parameters:
+            if node._tracked_parameters:
                 node.emit_parameter_changes()
         return FlushParameterChangesResultSuccess()
