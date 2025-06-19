@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
 from enum import StrEnum, auto
-from typing import Any, TypeVar, overload
+from typing import Any, TypeVar
 
 from griptape.events import BaseEvent, EventBus
 
@@ -86,7 +86,7 @@ class BaseNode(ABC):
         else:
             self.metadata = metadata
         self.parameter_values = {}
-        self.parameter_output_values = {}
+        self.parameter_output_values = TrackedParameterOutputValues(self)
         self.root_ui_element = BaseNodeElement()
         # Set the node context for the root element
         self.root_ui_element._node_context = self
@@ -131,24 +131,7 @@ class BaseNode(ABC):
         """Callback to confirm allowing a Connection going OUT of this Node."""
         return True
 
-    @overload
     def after_incoming_connection(
-        self,
-        source_node: BaseNode,
-        source_parameter: Parameter,
-        target_parameter: Parameter,
-    ) -> None: ...
-
-    @overload
-    def after_incoming_connection(
-        self,
-        source_node: BaseNode,
-        source_parameter: Parameter,
-        target_parameter: Parameter,
-        modified_parameters_set: set[str],
-    ) -> None: ...
-
-    def after_incoming_connection(  # pyright: ignore[reportInconsistentOverload]
         self,
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
@@ -158,24 +141,7 @@ class BaseNode(ABC):
         """Callback after a Connection has been established TO this Node."""
         return
 
-    @overload
     def after_outgoing_connection(
-        self,
-        source_parameter: Parameter,
-        target_node: BaseNode,
-        target_parameter: Parameter,
-    ) -> None: ...
-
-    @overload
-    def after_outgoing_connection(
-        self,
-        source_parameter: Parameter,
-        target_node: BaseNode,
-        target_parameter: Parameter,
-        modified_parameters_set: set[str],
-    ) -> None: ...
-
-    def after_outgoing_connection(  # pyright: ignore[reportInconsistentOverload]
         self,
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
@@ -185,24 +151,7 @@ class BaseNode(ABC):
         """Callback after a Connection has been established OUT of this Node."""
         return
 
-    @overload
     def after_incoming_connection_removed(
-        self,
-        source_node: BaseNode,
-        source_parameter: Parameter,
-        target_parameter: Parameter,
-    ) -> None: ...
-
-    @overload
-    def after_incoming_connection_removed(
-        self,
-        source_node: BaseNode,
-        source_parameter: Parameter,
-        target_parameter: Parameter,
-        modified_parameters_set: set[str],
-    ) -> None: ...
-
-    def after_incoming_connection_removed(  # pyright: ignore[reportInconsistentOverload]
         self,
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
@@ -212,24 +161,7 @@ class BaseNode(ABC):
         """Callback after a Connection TO this Node was REMOVED."""
         return
 
-    @overload
     def after_outgoing_connection_removed(
-        self,
-        source_parameter: Parameter,
-        target_node: BaseNode,
-        target_parameter: Parameter,
-    ) -> None: ...
-
-    @overload
-    def after_outgoing_connection_removed(
-        self,
-        source_parameter: Parameter,
-        target_node: BaseNode,
-        target_parameter: Parameter,
-        modified_parameters_set: set[str],
-    ) -> None: ...
-
-    def after_outgoing_connection_removed(  # pyright: ignore[reportInconsistentOverload]
         self,
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
@@ -239,22 +171,7 @@ class BaseNode(ABC):
         """Callback after a Connection OUT of this Node was REMOVED."""
         return
 
-    @overload
     def before_value_set(
-        self,
-        parameter: Parameter,
-        value: Any,
-    ) -> Any: ...
-
-    @overload
-    def before_value_set(
-        self,
-        parameter: Parameter,
-        value: Any,
-        modified_parameters_set: set[str],
-    ) -> Any: ...
-
-    def before_value_set(  # pyright: ignore[reportInconsistentOverload]
         self,
         parameter: Parameter,  # noqa: ARG002
         value: Any,
@@ -283,22 +200,7 @@ class BaseNode(ABC):
         # Default behavior is to do nothing to the supplied value, and indicate no other modified Parameters.
         return value
 
-    @overload
     def after_value_set(
-        self,
-        parameter: Parameter,
-        value: Any,
-    ) -> None: ...
-
-    @overload
-    def after_value_set(
-        self,
-        parameter: Parameter,
-        value: Any,
-        modified_parameters_set: set[str],
-    ) -> None: ...
-
-    def after_value_set(  # pyright: ignore[reportInconsistentOverload]
         self,
         parameter: Parameter,  # noqa: ARG002
         value: Any,  # noqa: ARG002
@@ -311,6 +213,14 @@ class BaseNode(ABC):
         This gives the node an opportunity to perform custom logic after a parameter is set. This may result in
         changing other Parameters on the node. If other Parameters are changed, the engine needs a list of which
         ones have changed to cascade unresolved state.
+
+        NOTE: Subclasses can override this method with either signature:
+        - def after_value_set(self, parameter, value) -> None:  (most common)
+        - def after_value_set(self, parameter, value, **kwargs) -> None:  (advanced)
+        The base implementation uses **kwargs for compatibility with both patterns.
+        The engine will try calling with 2 arguments first, then fall back to 3 if needed.
+        Pyright may show false positive "incompatible override" warnings for the 2-argument
+        version - this is expected and the code will work correctly at runtime.
 
         Args:
             parameter: the Parameter on this node that was just changed
@@ -1014,6 +924,72 @@ class BaseNode(ABC):
 
         # Use reorder_elements to apply the move
         self.reorder_elements(list(new_order))
+
+
+class TrackedParameterOutputValues(dict[str, Any]):
+    """A dictionary that tracks modifications and emits AlterElementEvent when parameter output values change."""
+
+    def __init__(self, node: BaseNode) -> None:
+        super().__init__()
+        self._node = node
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        old_value = self.get(key)
+        super().__setitem__(key, value)
+
+        # Only emit event if value actually changed
+        if old_value != value:
+            self._emit_parameter_change_event(key, value)
+
+    def __delitem__(self, key: str) -> None:
+        if key in self:
+            super().__delitem__(key)
+            self._emit_parameter_change_event(key, None, deleted=True)
+
+    def clear(self) -> None:
+        if self:  # Only emit events if there were values to clear
+            keys_to_clear = list(self.keys())
+            super().clear()
+            for key in keys_to_clear:
+                self._emit_parameter_change_event(key, None, deleted=True)
+
+    def update(self, *args, **kwargs) -> None:
+        # Handle both dict.update(other) and dict.update(**kwargs) patterns
+        if args:
+            other = args[0]
+            if hasattr(other, "items"):
+                for key, value in other.items():
+                    self[key] = value  # Use __setitem__ to trigger events
+            else:
+                for key, value in other:
+                    self[key] = value
+
+        for key, value in kwargs.items():
+            self[key] = value
+
+    def _emit_parameter_change_event(self, parameter_name: str, value: Any, *, deleted: bool = False) -> None:
+        """Emit an AlterElementEvent for parameter output value changes."""
+        try:
+            parameter = self._node.get_parameter_by_name(parameter_name)
+            if parameter is not None:
+                from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+                from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+
+                # Create event data using the parameter's to_event method
+                event_data = parameter.to_event(self._node)
+
+                # Add modification metadata
+                event_data["modification_type"] = "deleted" if deleted else "set"
+                event_data["output_value"] = None if deleted else value
+
+                # Publish the event
+                event = ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
+                )
+                EventBus.publish_event(event)
+        except (ImportError, AttributeError):
+            # If imports fail or parameter doesn't exist, silently continue
+            pass
 
 
 class ControlNode(BaseNode):
