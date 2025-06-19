@@ -566,12 +566,9 @@ class FlushParameterChangesRequest(RequestPayload, WorkflowNotAlteredMixin):
 
 
 @dataclass
-class FlushParameterChangesResultSuccess(ResultPayload):
-    def succeeded(self) -> bool:
-        return True
-
+class FlushParameterChangesResultSuccess(ResultPayloadSuccess):
+    pass
 
 @dataclass
-class FlushParameterChangesResultFailure(ResultPayload):
-    def succeeded(self) -> bool:
-        return False
+class FlushParameterChangesResultFailure(ResultPayloadFailure):
+    pass

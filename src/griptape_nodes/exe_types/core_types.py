@@ -164,7 +164,7 @@ class BaseNodeElement:
     element_type: str = field(default_factory=lambda: BaseNodeElement.__name__)
     name: str = field(default_factory=lambda: str(f"{BaseNodeElement.__name__}_{uuid.uuid4().hex}"))
     parent_group_name: str | None = None
-    changes: dict[str, Any] = field(default_factory=dict)
+    _changes: dict[str, Any] = field(default_factory=dict)
 
     _children: list[BaseNodeElement] = field(default_factory=list)
     _stack: ClassVar[list[BaseNodeElement]] = []
@@ -201,63 +201,58 @@ class BaseNodeElement:
     def __repr__(self) -> str:
         return f"BaseNodeElement({self.children=})"
 
+
+    def get_changes(self) -> dict[str, Any]:
+        return self._changes
+
     @staticmethod
-    def tracked_field(attr_name: str) -> Callable:
+    def emits_update_on_write(func: Callable) -> Callable:
         """Decorator for properties that should track changes and emit events."""
+        def wrapper(self: BaseNodeElement, *args, **kwargs) -> Callable:
+            # For setters, track the change
+            if len(args) >= 1:  # setter with value
+                old_value = getattr(self, f"{func.__name__}", None) if hasattr(self, f"{func.__name__}") else None
+                result = func(self, *args, **kwargs)
+                new_value = getattr(self, f"{func.__name__}", None) if hasattr(self, f"{func.__name__}") else None
+                # Track change if different
+                if old_value != new_value:
+                    # it needs to be static so we can call these methods.
+                    self._changes[func.__name__] = new_value
+                    if self._node_context is not None and self not in self._node_context._tracked_parameters:
+                        self._node_context._tracked_parameters.append(self)
+                return result
+            return func(self, *args, **kwargs)
 
-        def decorator(func: Callable) -> Callable:
-            def wrapper(self: BaseNodeElement, *args, **kwargs) -> Callable:
-                # For setters, track the change
-                if len(args) >= 1:  # setter with value
-                    old_value = getattr(self, f"{attr_name}", None) if hasattr(self, f"{attr_name}") else None
-                    result = func(self, *args, **kwargs)
-                    new_value = getattr(self, f"{attr_name}", None) if hasattr(self, f"{attr_name}") else None
-                    # Track change if different
-                    if old_value != new_value:
-                        # it needs to be static so we can call these methods.
-                        self.changes[attr_name] = new_value
-                        if self._node_context is not None and self not in self._node_context._tracked_parameters:
-                            self._node_context._tracked_parameters.append(self)
-                    return result
-                return func(self, *args, **kwargs)
-
-            return wrapper
-
-        return decorator
+        return wrapper
 
     def _emit_alter_element_event_if_possible(self) -> None:
         """Emit an AlterElementEvent if we have node context and the necessary dependencies."""
         if self._node_context is None:
             return
 
-        try:
-            # Import here to avoid circular dependencies
-            from griptape.events import EventBus
+        # Import here to avoid circular dependencies
+        from griptape.events import EventBus
 
-            from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
-            from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+        from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+        from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
 
-            # Create base event data using the existing to_event method
-            # Create a modified event data that only includes changed fields
-            event_data = {
-                # Include base fields that should always be present
-                "element_id": self.element_id,
-                "element_type": self.element_type,
-                "name": self.name,
-                "node_name": self._node_context.name,
-            }
-            event_data.update(self.changes)
+        # Create base event data using the existing to_event method
+        # Create a modified event data that only includes changed fields
+        event_data = {
+            # Include base fields that should always be present
+            "element_id": self.element_id,
+            "element_type": self.element_type,
+            "name": self.name,
+            "node_name": self._node_context.name,
+        }
+        event_data.update(self._changes)
 
-            # Publish the event
-            event = ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
-            )
-            EventBus.publish_event(event)
-            self.changes.clear()
-
-        except ImportError:
-            # If imports fail, silently continue - this ensures backward compatibility
-            pass
+        # Publish the event
+        event = ExecutionGriptapeNodeEvent(
+            wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
+        )
+        EventBus.publish_event(event)
+        self._changes.clear()
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
@@ -293,7 +288,7 @@ class BaseNodeElement:
         self._children.append(child)
 
         # Also propagate to any existing children of the child
-        for grandchild in child._children:
+        for grandchild in child.find_elements_by_type(BaseNodeElement, find_recursively=True):
             grandchild._node_context = self._node_context
 
         # Emit event if we have node context
@@ -698,7 +693,7 @@ class Parameter(BaseNodeElement):
         return ParameterTypeBuiltin.STR.value
 
     @type.setter
-    @BaseNodeElement.tracked_field("type")
+    @BaseNodeElement.emits_update_on_write
     def type(self, value: str | None) -> None:
         self._custom_setter_for_property_type(value)
 
@@ -737,7 +732,7 @@ class Parameter(BaseNodeElement):
         return self._allowed_modes
 
     @allowed_modes.setter
-    @BaseNodeElement.tracked_field("allowed_modes")
+    @BaseNodeElement.emits_update_on_write
     def allowed_modes(self, value: Any) -> None:
         self._allowed_modes = value
 
@@ -753,7 +748,7 @@ class Parameter(BaseNodeElement):
         return ui_options
 
     @ui_options.setter
-    @BaseNodeElement.tracked_field("ui_options")
+    @BaseNodeElement.emits_update_on_write
     def ui_options(self, value: dict) -> None:
         self._ui_options = value
 
@@ -772,7 +767,7 @@ class Parameter(BaseNodeElement):
         return [ParameterTypeBuiltin.STR.value]
 
     @input_types.setter
-    @BaseNodeElement.tracked_field("input_types")
+    @BaseNodeElement.emits_update_on_write
     def input_types(self, value: list[str] | None) -> None:
         self._custom_setter_for_property_input_types(value)
 
@@ -810,7 +805,7 @@ class Parameter(BaseNodeElement):
         return ParameterTypeBuiltin.STR.value
 
     @output_type.setter
-    @BaseNodeElement.tracked_field("output_type")
+    @BaseNodeElement.emits_update_on_write
     def output_type(self, value: str | None) -> None:
         self._custom_setter_for_property_output_type(value)
 
@@ -862,7 +857,7 @@ class Parameter(BaseNodeElement):
     def is_outgoing_type_allowed(self, target_type: str | None) -> bool:
         return ParameterType.are_types_compatible(source_type=self.output_type, target_type=target_type)
 
-    @BaseNodeElement.tracked_field("default_value")
+    @BaseNodeElement.emits_update_on_write
     def set_default_value(self, value: Any) -> None:
         self.default_value = value
 
