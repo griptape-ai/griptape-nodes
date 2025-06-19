@@ -969,27 +969,23 @@ class TrackedParameterOutputValues(dict[str, Any]):
 
     def _emit_parameter_change_event(self, parameter_name: str, value: Any, *, deleted: bool = False) -> None:
         """Emit an AlterElementEvent for parameter output value changes."""
-        try:
-            parameter = self._node.get_parameter_by_name(parameter_name)
-            if parameter is not None:
-                from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
-                from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+        parameter = self._node.get_parameter_by_name(parameter_name)
+        if parameter is not None:
+            from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+            from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
 
-                # Create event data using the parameter's to_event method
-                event_data = parameter.to_event(self._node)
+            # Create event data using the parameter's to_event method
+            event_data = parameter.to_event(self._node)
 
-                # Add modification metadata
-                event_data["modification_type"] = "deleted" if deleted else "set"
-                event_data["output_value"] = None if deleted else value
+            # Add modification metadata
+            event_data["modification_type"] = "deleted" if deleted else "set"
+            event_data["output_value"] = None if deleted else value
 
-                # Publish the event
-                event = ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
-                )
-                EventBus.publish_event(event)
-        except (ImportError, AttributeError):
-            # If imports fail or parameter doesn't exist, silently continue
-            pass
+            # Publish the event
+            event = ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
+            )
+            EventBus.publish_event(event)
 
 
 class ControlNode(BaseNode):

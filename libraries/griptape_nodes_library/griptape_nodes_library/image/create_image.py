@@ -255,7 +255,9 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             # Check and see if the incoming connection is from a image model config.
             target_parameter.type = source_parameter.type
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
-            target_parameter._ui_options["display_name"] = source_parameter.name
+            ui_options = target_parameter.ui_options
+            ui_options["display_name"] = source_parameter.name
+            target_parameter.ui_options = ui_options
             target_parameter.allowed_modes = {ParameterMode.INPUT}
 
             self.hide_parameter_by_name("image_size")
@@ -284,7 +286,9 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             target_parameter.set_default_value(DEFAULT_MODEL)
             target_parameter.default_value = DEFAULT_MODEL
-            target_parameter._ui_options["display_name"] = "model"
+            ui_options = target_parameter.ui_options
+            ui_options["display_name"] = "model"
+            target_parameter.ui_options = ui_options
             self.set_parameter_value("model", DEFAULT_MODEL)
             self.show_parameter_by_name("image_size")
 

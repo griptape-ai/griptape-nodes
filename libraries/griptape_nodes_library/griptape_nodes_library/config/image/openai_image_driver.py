@@ -126,7 +126,9 @@ class OpenAiImage(BaseImageDriver):
         for name in names:
             parameter = self.get_parameter_by_name(name)
             if parameter is not None:
-                parameter._ui_options["hide"] = not visible
+                ui_options = parameter.ui_options
+                ui_options["hide"] = not visible
+                parameter.ui_options = ui_options
 
     def hide_parameter_by_name(self, names: str | list[str]) -> None:
         """Hides one or more parameters by name."""

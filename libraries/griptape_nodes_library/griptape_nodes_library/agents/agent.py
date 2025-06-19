@@ -236,9 +236,9 @@ class Agent(ControlNode):
             target_parameter.allowed_modes = {ParameterMode.INPUT}
 
             # Set the display name to be appropriate
-            target_parameter._ui_options["display_name"] = source_parameter.ui_options.get(
-                "display_name", source_parameter.name
-            )
+            ui_options = target_parameter.ui_options
+            ui_options["display_name"] = source_parameter.ui_options.get("display_name", source_parameter.name)
+            target_parameter.ui_options = ui_options
 
         # If additional context is connected, prevent editing via property panel.
         # NOTE: This is a workaround. Ideally this is done automatically.
@@ -274,7 +274,9 @@ class Agent(ControlNode):
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
 
             # Change the display name to be appropriate
-            target_parameter._ui_options["display_name"] = "prompt model"
+            ui_options = target_parameter.ui_options
+            ui_options["display_name"] = "prompt model"
+            target_parameter.ui_options = ui_options
 
         # If the additional context connection is removed, make it editable again.
         # NOTE: This is a workaround. Ideally this is done automatically.

@@ -125,9 +125,9 @@ class DescribeImage(ControlNode):
             target_parameter.allowed_modes = {ParameterMode.INPUT}
 
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
-            target_parameter._ui_options["display_name"] = source_parameter.ui_options.get(
-                "display_name", source_parameter.name
-            )
+            ui_options = target_parameter.ui_options
+            ui_options["display_name"] = source_parameter.ui_options.get("display_name", source_parameter.name)
+            target_parameter.ui_options = ui_options
 
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
@@ -148,7 +148,9 @@ class DescribeImage(ControlNode):
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             target_parameter.set_default_value(DEFAULT_MODEL)
             target_parameter.default_value = DEFAULT_MODEL
-            target_parameter._ui_options["display_name"] = "prompt model"
+            ui_options = target_parameter.ui_options
+            ui_options["display_name"] = "prompt model"
+            target_parameter.ui_options = ui_options
             self.set_parameter_value("model", DEFAULT_MODEL)
 
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
