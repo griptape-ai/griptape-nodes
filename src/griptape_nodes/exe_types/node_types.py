@@ -146,7 +146,7 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        modified_parameters_set: set[str] | None = None,
+        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
         return
@@ -191,7 +191,7 @@ class BaseNode(ABC):
         Args:
             parameter: the Parameter on this node that is about to be changed
             value: the value intended to be set (this has already gone through any converters and validators on the Parameter)
-            kwargs: Any additional arguments. Meant to prevent errors with modified_parameters_set parameters set.
+            modified_parameters_set: A set of parameter names within this node that were modified as a result of this call.
 
         Returns:
             The final value to set for the Parameter. This gives the Node logic one last opportunity to mutate the value
@@ -225,7 +225,7 @@ class BaseNode(ABC):
         Args:
             parameter: the Parameter on this node that was just changed
             value: the value that was set (already converted, validated, and possibly mutated by the node code)
-            **kwargs: Optional modified_parameters_set (set[str]) - A set of parameter names within this node
+            modified_parameters_set: Optional set of parameter names within this node
                 that were modified as a result of this call. The Parameter this was called on does NOT need to be part of the return.
 
         Returns:
@@ -812,27 +812,22 @@ class BaseNode(ABC):
 
     def _emit_parameter_lifecycle_event(self, parameter: BaseNodeElement, *, remove: bool = False) -> None:
         """Emit an AlterElementEvent for parameter add/remove operations."""
-        try:
-            from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
-            from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+        from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+        from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
 
-            # Create event data using the parameter's to_event method
-            if remove:
-                event = ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(payload=RemoveElementEvent(element_id=parameter.element_id))
-                )
-            else:
-                event_data = parameter.to_event(self)
+        # Create event data using the parameter's to_event method
+        if remove:
+            event = ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=RemoveElementEvent(element_id=parameter.element_id))
+            )
+        else:
+            event_data = parameter.to_event(self)
 
-                # Publish the event
-                event = ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
-                )
-            EventBus.publish_event(event)
-
-        except ImportError:
-            # If imports fail, silently continue - this ensures backward compatibility
-            pass
+            # Publish the event
+            event = ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
+            )
+        EventBus.publish_event(event)
 
     def _get_element_name(self, element: str | int, element_names: list[str]) -> str:
         """Convert an element identifier (name or index) to its name.
@@ -976,10 +971,10 @@ class TrackedParameterOutputValues(dict[str, Any]):
 
             # Create event data using the parameter's to_event method
             event_data = parameter.to_event(self._node)
+            event_data["value"] = value
 
             # Add modification metadata
             event_data["modification_type"] = "deleted" if deleted else "set"
-            event_data["output_value"] = None if deleted else value
 
             # Publish the event
             event = ExecutionGriptapeNodeEvent(
