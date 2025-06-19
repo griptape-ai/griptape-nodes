@@ -145,7 +145,7 @@ class ResizeVideo(ControlNode):
                     cmd, capture_output=True, text=True, check=True, timeout=300
                 )
                 self.append_value_to_parameter("logs", f"FFmpeg stdout: {result.stdout}\n")
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as e:
                 error_msg = "FFmpeg process timed out after 5 minutes"
                 self.append_value_to_parameter("logs", f"ERROR: {error_msg}\n")
                 raise ValueError(error_msg) from e
