@@ -58,6 +58,9 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.static_files_manager import (
         StaticFilesManager,
     )
+    from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
+        VersionCompatibilityManager,
+    )
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 
@@ -84,6 +87,26 @@ class Version:
     def __str__(self) -> str:
         return f"{self.major}.{self.minor}.{self.patch}"
 
+    def __lt__(self, other: Version) -> bool:
+        """Less than comparison."""
+        return (self.major, self.minor, self.patch) < (other.major, other.minor, other.patch)
+
+    def __le__(self, other: Version) -> bool:
+        """Less than or equal comparison."""
+        return (self.major, self.minor, self.patch) <= (other.major, other.minor, other.patch)
+
+    def __gt__(self, other: Version) -> bool:
+        """Greater than comparison."""
+        return (self.major, self.minor, self.patch) > (other.major, other.minor, other.patch)
+
+    def __ge__(self, other: Version) -> bool:
+        """Greater than or equal comparison."""
+        return (self.major, self.minor, self.patch) >= (other.major, other.minor, other.patch)
+
+    def __eq__(self, other: Version) -> bool:  # type: ignore[override]
+        """Equality comparison."""
+        return (self.major, self.minor, self.patch) == (other.major, other.minor, other.patch)
+
 
 class GriptapeNodes(metaclass=SingletonMeta):
     _event_manager: EventManager
@@ -100,6 +123,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _operation_depth_manager: OperationDepthManager
     _static_files_manager: StaticFilesManager
     _agent_manager: AgentManager
+    _version_compatibility_manager: VersionCompatibilityManager
 
     def __init__(self) -> None:
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
@@ -120,6 +144,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
         from griptape_nodes.retained_mode.managers.static_files_manager import (
             StaticFilesManager,
+        )
+        from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
+            VersionCompatibilityManager,
         )
         from griptape_nodes.retained_mode.managers.workflow_manager import (
             WorkflowManager,
@@ -143,6 +170,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 self._config_manager, self._secrets_manager, self._event_manager
             )
             self._agent_manager = AgentManager(self._event_manager)
+            self._version_compatibility_manager = VersionCompatibilityManager(self._event_manager)
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -229,6 +257,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def AgentManager(cls) -> AgentManager:
         return GriptapeNodes.get_instance()._agent_manager
+
+    @classmethod
+    def VersionCompatibilityManager(cls) -> VersionCompatibilityManager:
+        return GriptapeNodes.get_instance()._version_compatibility_manager
 
     @classmethod
     def clear_data(cls) -> None:
