@@ -92,6 +92,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
+@dataclass
+class DynamicModuleMetadata:
+    """Metadata for dynamically loaded modules."""
+
+    original_file_path: str
+
+
 class LibraryManager:
     class LibraryStatus(StrEnum):
         """Status of the library that was attempted to be loaded."""
@@ -922,6 +929,9 @@ class LibraryManager:
                 msg = f"Error reloading module {module_name} from {file_path}: {e}"
                 raise ImportError(msg) from e
 
+            # Store metadata after module execution to prevent overwriting
+            self._add_dynamic_module_metadata(module, file_path)
+
         # Load it for the first time
         else:
             # Load the module specification
@@ -943,7 +953,19 @@ class LibraryManager:
                 msg = f"Module at '{file_path}' failed to load with error: {err}"
                 raise ImportError(msg) from err
 
+        # Store metadata after module execution to prevent overwriting
+        self._add_dynamic_module_metadata(module, file_path)
+
         return module
+
+    def _add_dynamic_module_metadata(self, module: ModuleType, file_path: Path | str) -> None:
+        """Add metadata to a dynamically loaded module.
+
+        Args:
+            module: The loaded module to add metadata to
+            file_path: Original file path the module was loaded from
+        """
+        module._gtn_metadata = DynamicModuleMetadata(original_file_path=str(file_path))
 
     def _load_class_from_file(self, file_path: Path | str, class_name: str) -> type[BaseNode]:
         """Dynamically load a class from a Python file with support for hot reloading.
