@@ -136,7 +136,7 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        **kwargs: Any,  # noqa: ARG002
+        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
         return
@@ -146,7 +146,7 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        **kwargs: Any,  # noqa: ARG002
+        modified_parameters_set: set[str] | None = None,
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
         return
@@ -156,7 +156,7 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        **kwargs: Any,  # noqa: ARG002
+        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         return
@@ -166,7 +166,7 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        **kwargs: Any,  # noqa: ARG002
+        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
         return
@@ -175,7 +175,7 @@ class BaseNode(ABC):
         self,
         parameter: Parameter,  # noqa: ARG002
         value: Any,
-        **kwargs: Any,  # noqa: ARG002
+        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> Any:
         """Callback when a Parameter's value is ABOUT to be set.
 
@@ -204,7 +204,7 @@ class BaseNode(ABC):
         self,
         parameter: Parameter,  # noqa: ARG002
         value: Any,  # noqa: ARG002
-        **kwargs: Any,  # noqa: ARG002
+        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> None:
         """Callback AFTER a Parameter's value was set.
 
