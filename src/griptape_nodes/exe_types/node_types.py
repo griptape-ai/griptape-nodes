@@ -191,7 +191,7 @@ class BaseNode(ABC):
         Args:
             parameter: the Parameter on this node that is about to be changed
             value: the value intended to be set (this has already gone through any converters and validators on the Parameter)
-            kwargs: Any additional arugments. Meant to prevent errors with modified_parameters_set parameters set.
+            kwargs: Any additional arguments. Meant to prevent errors with modified_parameters_set parameters set.
 
         Returns:
             The final value to set for the Parameter. This gives the Node logic one last opportunity to mutate the value

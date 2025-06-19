@@ -114,8 +114,8 @@ class AmusedPipelineParameters:
         errors = self._huggingface_repo_parameter.validate_before_node_run()
         return errors or None
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        self._seed_parameter.after_value_set(parameter, value)
 
         # Auto-set width and height based on selected model
         if parameter.name == "model":
@@ -123,13 +123,9 @@ class AmusedPipelineParameters:
             if "256" in model:
                 self._node.set_parameter_value("width", 256)
                 self._node.set_parameter_value("height", 256)
-                modified_parameters_set.add("width")
-                modified_parameters_set.add("height")
             elif "512" in model:
                 self._node.set_parameter_value("width", 512)
                 self._node.set_parameter_value("height", 512)
-                modified_parameters_set.add("width")
-                modified_parameters_set.add("height")
 
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()
