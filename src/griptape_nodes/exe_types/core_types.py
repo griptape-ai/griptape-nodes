@@ -201,13 +201,13 @@ class BaseNodeElement:
     def __repr__(self) -> str:
         return f"BaseNodeElement({self.children=})"
 
-
     def get_changes(self) -> dict[str, Any]:
         return self._changes
 
     @staticmethod
     def emits_update_on_write(func: Callable) -> Callable:
         """Decorator for properties that should track changes and emit events."""
+
         def wrapper(self: BaseNodeElement, *args, **kwargs) -> Callable:
             # For setters, track the change
             if len(args) >= 1:  # setter with value

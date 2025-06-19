@@ -569,6 +569,7 @@ class FlushParameterChangesRequest(RequestPayload, WorkflowNotAlteredMixin):
 class FlushParameterChangesResultSuccess(ResultPayloadSuccess):
     pass
 
+
 @dataclass
 class FlushParameterChangesResultFailure(ResultPayloadFailure):
     pass
