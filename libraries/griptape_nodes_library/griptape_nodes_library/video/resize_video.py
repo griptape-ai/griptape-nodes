@@ -88,12 +88,24 @@ class ResizeVideo(ControlNode):
         # Validate that we have a video
         video = self.parameter_values.get("video")
         if not video:
-            exceptions.append(ValueError("Video parameter is required"))
+            msg = f"{self.name}: Video parameter is required"
+            exceptions.append(ValueError(msg))
+
+        # Make sure it's a video artifact
+        if not isinstance(video, VideoUrlArtifact):
+            msg = f"{self.name}: Video parameter must be a VideoUrlArtifact"
+            exceptions.append(ValueError(msg))
+
+        # Make sure it has a value
+        if hasattr(video, "value") and not video.value:  # type: ignore  # noqa: PGH003
+            msg = f"{self.name}: Video parameter must have a value"
+            exceptions.append(ValueError(msg))
 
         # Validate percentage
-        percentage = self.parameter_values.get("percentage", 50.0)
+        percentage = self.parameter_values.get("percentage", 50)
         if percentage <= 0:
-            exceptions.append(ValueError("Percentage must be greater than 0"))
+            msg = f"{self.name}: Percentage must be greater than 0"
+            exceptions.append(ValueError(msg))
 
         return exceptions if exceptions else None
 
@@ -136,7 +148,7 @@ class ResizeVideo(ControlNode):
             except subprocess.TimeoutExpired:
                 error_msg = "FFmpeg process timed out after 5 minutes"
                 self.append_value_to_parameter("logs", f"ERROR: {error_msg}\n")
-                raise ValueError(error_msg)
+                raise ValueError(error_msg) from e
             except subprocess.CalledProcessError as e:
                 error_msg = f"FFmpeg error: {e.stderr}"
                 self.append_value_to_parameter("logs", f"ERROR: {error_msg}\n")
@@ -197,12 +209,8 @@ class ResizeVideo(ControlNode):
             # Convert to video artifact
             video_artifact = to_video_artifact(video)
 
-            # Get the video URL directly
-            if isinstance(video_artifact, VideoUrlArtifact):
-                input_url = video_artifact.value
-            else:
-                msg = f"{self.name}: Expected VideoUrlArtifact, got {type(video_artifact)}"
-                raise ValueError(msg)
+            # Get the video URL directly. Note - we've validated this in validate_before_workflow_run.
+            input_url = video_artifact.value
 
             # Detect video format for output filename
             detected_format = detect_video_format(video)
