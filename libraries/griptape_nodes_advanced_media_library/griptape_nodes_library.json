@@ -16,7 +16,7 @@
         "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "imageio-ffmpeg>=0.6.0",
-        "git+https://github.com/huggingface/diffusers.git@b6f793304437120239d4b942cac623b0ea86039b",
+        "git+https://github.com/huggingface/diffusers.git@66394bf6c798a93a1e9536dac4999f77b690174c",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
         "peft>=0.15.2",
@@ -33,7 +33,8 @@
         "protobuf>=6.31.0",
         "prodigyopt>=1.1.2; sys_platform == 'win32'",
         "bitsandbytes>=0.46.0; sys_platform == 'win32'",
-        "ftfy>=6.3.1"
+        "ftfy>=6.3.1",
+        "git+https://github.com/dylanholmes/cosmos-guardrail.git"
       ],
       "pip_install_flags": [
         "--preview",
@@ -410,6 +411,15 @@
         "category": "image/würstchen",
         "description": "Generate images efficiently with Würstchen via 🤗 Diffusers.",
         "display_name": "Würstchen"
+      }
+    },
+    {
+      "class_name": "Cosmos2TextToImagePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/cosmos/cosmos_2_text_to_image_pipeline.py",
+      "metadata": {
+        "category": "image/cosmos",
+        "description": "Generate images with Cosmos2 text-to-image via 🤗 Diffusers.",
+        "display_name": "Cosmos2 Text2Image"
       }
     }
   ]
