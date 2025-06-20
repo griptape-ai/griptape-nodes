@@ -221,6 +221,22 @@
       }
     },
     {
+      "audio/audioldm": {
+        "color": "border-sky-500",
+        "title": "Audio/AudioLDM",
+        "description": "Audio generation with AudioLDM",
+        "icon": "SpeakerWave"
+      }
+    },
+    {
+      "audio/audioldm2": {
+        "color": "border-sky-500",
+        "title": "Audio/AudioLDM2",
+        "description": "Audio generation with AudioLDM 2",
+        "icon": "SpeakerWave"
+      }
+    },
+    {
       "image/amused": {
         "color": "border-purple-500",
         "title": "Image/aMUSEd",
