@@ -1122,6 +1122,79 @@ class WorkflowManager:
 
         return metadata_block
 
+    def _fix_pickle_data(self, pickle_data: bytes) -> bytes:
+        """Fix dynamic module names in pickled data using the class registry.
+
+        When objects are pickled, their class references include the module name. For dynamically loaded
+        modules, this results in pickle data containing names like 'dynamic_module_create_reference_image_py_123456789'
+        instead of the correct 'create_reference_image'. This method uses the pre-built class registry to
+        efficiently replace these dynamic module names with correct ones.
+
+        Example:
+            Input pickle data containing: b'...dynamic_module_create_reference_image_py_123456789...'
+            Output pickle data containing: b'...create_reference_image...'
+        """
+        try:
+            # Convert bytes to string for pattern matching
+            data_str = pickle_data.decode("latin1")
+
+            # Check if there are any dynamic module references
+            if "dynamic_module_" not in data_str:
+                return pickle_data
+
+            # Get the registry of dynamic classes to correct module names
+            registry = GriptapeNodes.LibraryManager().get_dynamic_class_registry()
+
+            # Replace dynamic module names with correct module names
+            for dynamic_key, correct_module in registry.items():
+                # Extract just the module part from the dynamic key (before the class name)
+                if "." in dynamic_key:
+                    dynamic_module = dynamic_key.split(".")[0]
+                    if dynamic_module in data_str:
+                        data_str = data_str.replace(dynamic_module, correct_module)
+
+            return data_str.encode("latin1")
+
+        except Exception as e:
+            error_message = f"Failed to fix pickle data: {e}"
+            logger.warning(error_message)
+            return pickle_data
+
+    def _get_correct_module_name_for_class(self, value_type: type) -> str | None:
+        """Get the correct module name for a class using the registry.
+
+        For dynamically loaded classes, returns the correct importable module name instead of the
+        auto-generated dynamic module name. For regular classes, returns the module name as-is.
+
+        Example:
+            For ReferenceImageArtifact from a dynamic module:
+            - value_type.__module__ = "dynamic_module_create_reference_image_py_123456789"
+            - Returns: "create_reference_image"
+
+            For a regular class:
+            - value_type.__module__ = "griptape.artifacts"
+            - Returns: "griptape.artifacts"
+
+        Args:
+            value_type: The class type to get the module name for
+
+        Returns:
+            The correct module name or None if not found
+        """
+        module = getmodule(value_type)
+        if not module:
+            return None
+
+        # Check if this is a dynamic module with a registry entry
+        registry = GriptapeNodes.LibraryManager().get_dynamic_class_registry()
+        dynamic_key = f"{module.__name__}.{value_type.__name__}"
+
+        if dynamic_key in registry:
+            return registry[dynamic_key]
+
+        # For regular modules, use the module name as-is
+        return module.__name__
+
     def _generate_unique_values_code(
         self,
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
@@ -1139,17 +1212,19 @@ class WorkflowManager:
         # Serialize the unique values as pickled strings.
         unique_parameter_dict = {}
         for uuid, unique_parameter_value in unique_parameter_uuid_to_values.items():
+            # Serialize with pickle and fix any dynamic module references
             unique_parameter_bytes = pickle.dumps(unique_parameter_value)
-            # Encode the bytes as a string using latin1
+            # Note: Dynamic module names are now fixed before serialization in node_manager.py
+            # so we no longer need to fix pickle data here
             unique_parameter_byte_str = unique_parameter_bytes.decode("latin1")
             unique_parameter_dict[uuid] = unique_parameter_byte_str
 
             # Add import for the unique parameter value's class/module. But not globals.
             value_type = type(unique_parameter_value)
             if isclass(value_type):
-                module = getmodule(value_type)
-                if module and module.__name__ not in global_modules_set:
-                    import_recorder.add_from_import(module.__name__, value_type.__name__)
+                module_name = self._get_correct_module_name_for_class(value_type)
+                if module_name and module_name not in global_modules_set:
+                    import_recorder.add_from_import(module_name, value_type.__name__)
 
         # Generate a comment explaining what we're doing:
         comment_text = (
