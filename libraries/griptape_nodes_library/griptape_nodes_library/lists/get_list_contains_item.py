@@ -43,44 +43,35 @@ class GetListContainsItem(ControlNode):
             return False
         return item in list_items
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "items":
             contains_item = self._contains_item()
             self.parameter_output_values["contains_item"] = contains_item
             self.publish_update_to_parameter("contains_item", contains_item)
-            modified_parameters_set.add("contains_item")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def after_incoming_connection(
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "items":
             contains_item = self._contains_item()
             self.parameter_output_values["contains_item"] = contains_item
             self.publish_update_to_parameter("contains_item", contains_item)
-            modified_parameters_set.add("contains_item")
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "items":
             self.parameter_output_values["contains_item"] = False
             self.publish_update_to_parameter("contains_item", False)
-            modified_parameters_set.add("contains_item")
-        return super().after_incoming_connection_removed(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
     def process(self) -> None:
         # Get the list of items from the input parameter

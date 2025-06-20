@@ -126,7 +126,9 @@ class OpenAiImage(BaseImageDriver):
         for name in names:
             parameter = self.get_parameter_by_name(name)
             if parameter is not None:
-                parameter._ui_options["hide"] = not visible
+                ui_options = parameter.ui_options
+                ui_options["hide"] = not visible
+                parameter.ui_options = ui_options
 
     def hide_parameter_by_name(self, names: str | list[str]) -> None:
         """Hides one or more parameters by name."""
@@ -136,32 +138,32 @@ class OpenAiImage(BaseImageDriver):
         """Shows one or more parameters by name."""
         self._set_parameter_visibility(names, visible=True)
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
         """Certain options are only available for certain models."""
         if parameter.name == "output_format":
             if value == "jpeg":
                 self.show_parameter_by_name("output_compression")
             else:
                 self.hide_parameter_by_name("output_compression")
-            modified_parameters_set.add("output_compression")
 
         if parameter.name == "model":
             # If the model is gpt-image-1, update the size options accordingly
             if value == "gpt-image-1":
                 self._update_option_choices(param="image_size", choices=GPT_IMAGE_SIZES, default=GPT_IMAGE_SIZES[0])
                 self._update_option_choices(param="quality", choices=GPT_IMAGE_QUALITY, default=GPT_IMAGE_QUALITY[0])
-                modified_parameters_set.add("image_size")
 
                 # show gpt-image-1 specific parameters
                 param_list = ["style", "quality", "background", "moderation", "output_format"]
                 self.show_parameter_by_name(param_list)
-                modified_parameters_set.update(param_list)
 
                 if self.get_parameter_value("output_format") == "jpeg":
                     self.show_parameter_by_name("output_compression")
                 else:
                     self.hide_parameter_by_name("output_compression")
-                modified_parameters_set.add("output_compression")
             else:
                 param_list = ["style", "background", "moderation", "output_compression", "output_format"]
                 self.hide_parameter_by_name(param_list)
@@ -177,9 +179,8 @@ class OpenAiImage(BaseImageDriver):
                     self.hide_parameter_by_name("quality")
 
                 param_list.extend(["image_size", "quality"])
-                modified_parameters_set.update(param_list)
 
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def process(self) -> None:
         # Get the parameters from the node

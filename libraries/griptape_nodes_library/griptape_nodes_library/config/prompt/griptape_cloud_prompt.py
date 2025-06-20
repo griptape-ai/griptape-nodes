@@ -141,7 +141,7 @@ class GriptapeCloudPrompt(BasePrompt):
         # Replace `min_p` with `top_p` for Griptape Cloud.
         self._replace_param_by_name(param_name="min_p", new_param_name="top_p", default_value=0.9)
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "model":
             if "deepseek" in value:
                 self.hide_parameter_by_name("stream")
@@ -149,8 +149,6 @@ class GriptapeCloudPrompt(BasePrompt):
             else:
                 self.show_parameter_by_name("stream")
                 self.show_parameter_by_name("top_p")
-            modified_parameters_set.add("stream")
-            modified_parameters_set.add("top_p")
 
             # Check and see if max_tokens is defined in the model args
             model_args = next((model["args"] for model in MODEL_CHOICES_ARGS if model["name"] == value), {})
@@ -158,9 +156,8 @@ class GriptapeCloudPrompt(BasePrompt):
                 self.parameter_output_values["max_tokens"] = model_args["max_tokens"]
             else:
                 self.parameter_output_values["max_tokens"] = -1
-            modified_parameters_set.add("max_tokens")
 
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def process(self) -> None:
         """Processes the node configuration to create a GriptapeCloudPromptDriver.

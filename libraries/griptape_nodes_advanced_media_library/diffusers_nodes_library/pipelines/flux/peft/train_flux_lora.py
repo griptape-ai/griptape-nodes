@@ -30,8 +30,8 @@ class TrainFluxLora(ControlNode):
         self.train_params.add_output_parameters()
         self.log_params.add_output_parameters()
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self.train_params.after_value_set(parameter, value, modified_parameters_set)
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        self.train_params.after_value_set(parameter, value)
 
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()

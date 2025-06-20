@@ -33,44 +33,35 @@ class GetListLength(ControlNode):
             return len(list_items)
         return 0
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "items":
             length = self._get_length()
             self.parameter_output_values["length"] = length
             self.publish_update_to_parameter("length", length)
-            modified_parameters_set.add("length")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def after_incoming_connection(
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "items":
             length = self._get_length()
             self.parameter_output_values["length"] = length
             self.publish_update_to_parameter("length", length)
-            modified_parameters_set.add("length")
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "items":
             self.parameter_output_values["length"] = 0
             self.publish_update_to_parameter("length", 0)
-            modified_parameters_set.add("length")
-        return super().after_incoming_connection_removed(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
     def process(self) -> None:
         # Get the list of items from the input parameter

@@ -107,8 +107,8 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         self.flux_params.add_output_parameters()
         self.log_params.add_output_parameters()
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self.flux_params.after_value_set(parameter, value, modified_parameters_set)
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        self.flux_params.after_value_set(parameter, value)
 
     def preprocess(self) -> None:
         self.flux_params.preprocess()

@@ -41,7 +41,11 @@ class LoadGLTF(DataNode):
         )
         self.add_parameter(image_parameter)
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
         if parameter.name == "gltf":
             image_url = value.get("metadata", {}).get("imageUrl")
             if image_url:
@@ -52,8 +56,7 @@ class LoadGLTF(DataNode):
             else:
                 self.show_message_by_name("help_message")
 
-            modified_parameters_set.add("image")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def process(self) -> None:
         from griptape_nodes_library.utils.gltf_utils import dict_to_gltf_url_artifact

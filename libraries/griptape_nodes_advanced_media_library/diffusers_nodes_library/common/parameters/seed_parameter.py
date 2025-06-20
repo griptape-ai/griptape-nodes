@@ -31,7 +31,7 @@ class SeedParameter:
             )
         )
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name != "randomize_seed":
             return
 
@@ -46,8 +46,6 @@ class SeedParameter:
         else:
             # Enable editing the seed if randomize_seed is False
             seed_parameter.allowed_modes = {ParameterMode.PROPERTY, ParameterMode.INPUT, ParameterMode.OUTPUT}
-
-        modified_parameters_set.add("seed")
 
     def preprocess(self) -> None:
         if self._node.get_parameter_value("randomize_seed"):

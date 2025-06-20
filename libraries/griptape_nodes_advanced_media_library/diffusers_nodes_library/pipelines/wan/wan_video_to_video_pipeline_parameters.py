@@ -159,27 +159,25 @@ class WanVideoToVideoPipelineParameters:
                 msg = f"Unsupported model repo_id: {repo_id}."
                 raise ValueError(msg)
 
-    def _update_dimensions_for_model(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def _update_dimensions_for_model(self, parameter: Parameter, value: Any) -> None:
         """Update width, height when model selection changes."""
         if parameter.name == "model" and isinstance(value, str):
             repo_id, _ = self._huggingface_repo_parameter._key_to_repo_revision(value)
             recommended_width, recommended_height = self._get_model_defaults(repo_id)
 
-            # Update dimensions and mark them as modified
+            # Update dimensions
             current_width = self._node.get_parameter_value("width")
             current_height = self._node.get_parameter_value("height")
 
             if current_width != recommended_width:
                 self._node.set_parameter_value("width", recommended_width)
-                modified_parameters_set.add("width")
 
             if current_height != recommended_height:
                 self._node.set_parameter_value("height", recommended_height)
-                modified_parameters_set.add("height")
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
-        self._update_dimensions_for_model(parameter, value, modified_parameters_set)
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        self._seed_parameter.after_value_set(parameter, value)
+        self._update_dimensions_for_model(parameter, value)
 
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()

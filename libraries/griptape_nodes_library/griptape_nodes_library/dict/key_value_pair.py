@@ -42,7 +42,11 @@ class KeyValuePair(DataNode):
             )
         )
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
         if parameter.name in {"key", "value"}:
             new_dict = {}
 
@@ -53,10 +57,9 @@ class KeyValuePair(DataNode):
 
             self.parameter_output_values["dictionary"] = new_dict
             self.set_parameter_value("dictionary", new_dict)
-            modified_parameters_set.add("dictionary")
             self.show_parameter_by_name("dictionary")
 
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def process(self) -> None:
         """Process the node by creating a key-value pair dictionary."""

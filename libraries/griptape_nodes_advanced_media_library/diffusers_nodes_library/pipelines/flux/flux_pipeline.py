@@ -32,8 +32,8 @@ class FluxPipeline(ControlNode):
         self.pipe_params.add_output_parameters()
         self.log_params.add_output_parameters()
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self.pipe_params.after_value_set(parameter, value, modified_parameters_set)
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        self.pipe_params.after_value_set(parameter, value)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self.pipe_params.validate_before_node_run()
