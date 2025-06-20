@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-from xdg_base_dirs import xdg_data_home
 
 
 class AppInitializationComplete(BaseModel):
