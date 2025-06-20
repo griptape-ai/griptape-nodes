@@ -66,11 +66,14 @@ class Math(BaseNode):
             )
         )
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
         if parameter.name in ["operation", "A", "B"]:
             result = self.calculate_operation()
             self.parameter_output_values["result"] = result
-            modified_parameters_set.add("result")
 
             # Update B parameter visibility based on operation
             if parameter.name == "operation":
@@ -80,9 +83,8 @@ class Math(BaseNode):
                     self.hide_parameter_by_name("B")
                 else:
                     self.show_parameter_by_name("B")
-                modified_parameters_set.add("B")
 
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def _handle_unary(self, operation: str, value: float) -> float:
         import math

@@ -112,7 +112,11 @@ class SearchWeb(BaseTask):
                 return False
         return True
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
         if parameter.name == "search_engine":
             if value == "DuckDuckGo":
                 self.hide_message_by_name("api_keys_message")
@@ -126,8 +130,7 @@ class SearchWeb(BaseTask):
                     self.show_message_by_name("api_keys_message")
                 else:
                     self.hide_message_by_name("api_keys_message")
-            modified_parameters_set.add("api_keys_message")
-        super().after_value_set(parameter, value, modified_parameters_set)
+        super().after_value_set(parameter, value)
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
         if not self.check_api_keys():

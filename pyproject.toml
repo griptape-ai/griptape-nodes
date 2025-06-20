@@ -111,3 +111,4 @@ exclude = [
     "**/.*"
 ]
 pythonVersion = "3.12"
+reportIncompatibleMethodOverride = false

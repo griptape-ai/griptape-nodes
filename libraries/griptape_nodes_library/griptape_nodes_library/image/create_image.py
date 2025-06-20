@@ -242,13 +242,11 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
         # Record a connection to the prompt Parameter so that node validation doesn't get aggro
         if target_parameter.name == "prompt":
             self._has_connection_to_prompt = True
-            modified_parameters_set.add("prompt")
             # hey.. what if we just remove the property mode from the prompt parameter?
             if ParameterMode.PROPERTY in target_parameter.allowed_modes:
                 target_parameter.allowed_modes.remove(ParameterMode.PROPERTY)
@@ -257,29 +255,25 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             # Check and see if the incoming connection is from a image model config.
             target_parameter.type = source_parameter.type
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
-            target_parameter._ui_options["display_name"] = source_parameter.name
+            ui_options = target_parameter.ui_options
+            ui_options["display_name"] = source_parameter.name
+            target_parameter.ui_options = ui_options
             target_parameter.allowed_modes = {ParameterMode.INPUT}
 
             self.hide_parameter_by_name("image_size")
-            modified_parameters_set.add("model")
-            modified_parameters_set.add("image_size")
 
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         # Remove the state maintenance of the connection to the prompt Parameter
         if target_parameter.name == "prompt":
             self._has_connection_to_prompt = False
-            modified_parameters_set.add("prompt")
             # If we have no connections to the prompt parameter, add the property mode back
             target_parameter.allowed_modes.add(ParameterMode.PROPERTY)
 
@@ -292,15 +286,13 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             target_parameter.set_default_value(DEFAULT_MODEL)
             target_parameter.default_value = DEFAULT_MODEL
-            target_parameter._ui_options["display_name"] = "model"
+            ui_options = target_parameter.ui_options
+            ui_options["display_name"] = "model"
+            target_parameter.ui_options = ui_options
             self.set_parameter_value("model", DEFAULT_MODEL)
             self.show_parameter_by_name("image_size")
 
-            modified_parameters_set.add("model")
-            modified_parameters_set.add("image_size")
-        return super().after_incoming_connection_removed(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
     def _create_image(self, agent: GtAgent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)

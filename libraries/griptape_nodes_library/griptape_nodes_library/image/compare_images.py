@@ -43,7 +43,11 @@ class CompareImages(ControlNode):
             )
         )
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
         if parameter.name in {"Image_1", "Image_2"}:
             current_value = self.get_parameter_value("Compare")
             if current_value is None:
@@ -53,8 +57,7 @@ class CompareImages(ControlNode):
             elif parameter.name == "Image_2":
                 current_value["input_image_2"] = value
             self.set_parameter_value("Compare", current_value)
-            modified_parameters_set.add("Compare")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def process(self) -> None:
         """Process the node by creating a dictionary from the input images."""

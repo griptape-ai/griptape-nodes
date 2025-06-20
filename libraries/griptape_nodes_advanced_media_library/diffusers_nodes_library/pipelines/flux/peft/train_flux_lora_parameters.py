@@ -183,7 +183,7 @@ class TrainFluxLoraParameters:
         errors = self._huggingface_repo_parameter.validate_before_node_run()
         return errors or None
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         gradient_accumulation_steps = (
             value if parameter.name == "gradient_accumulation_steps" else self.get_gradient_accumulation_steps()
         )
@@ -194,7 +194,6 @@ class TrainFluxLoraParameters:
             # Update effective batch size when train_batch_size or gradient_accumulation_steps changes
             self._node.set_parameter_value("effective_batch_size", effective_batch_size)
             self._node.publish_update_to_parameter("effective_batch_size", effective_batch_size)
-            modified_parameters_set.add("effective_batch_size")
 
         training_data_directory = (
             value if parameter.name == "training_data_directory" else self.get_training_data_directory()
@@ -225,7 +224,6 @@ class TrainFluxLoraParameters:
                 )
             self._node.set_parameter_value("effective_train_steps", effective_train_steps)
             self._node.publish_update_to_parameter("effective_train_steps", effective_train_steps)
-            modified_parameters_set.add("effective_train_steps")
 
     def get_repo_revision(self) -> tuple[str, str]:
         return self._huggingface_repo_parameter.get_repo_revision()

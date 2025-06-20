@@ -5,7 +5,6 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
@@ -60,19 +59,16 @@ class InvertMask(DataNode):
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         """Handle input connections and update outputs accordingly."""
         if target_parameter.name == "input_mask":
             input_mask = self.get_parameter_value("input_mask")
             if input_mask is not None:
-                self._handle_input_mask_change(input_mask, modified_parameters_set)
+                self._handle_input_mask_change(input_mask)
 
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
-    def _handle_input_mask_change(self, value: Any, modified_parameters_set: set[str]) -> None:
+    def _handle_input_mask_change(self, value: Any) -> None:
         # Normalize input mask to ImageUrlArtifact
         if isinstance(value, dict):
             mask_artifact = dict_to_image_url_artifact(value)
@@ -81,14 +77,12 @@ class InvertMask(DataNode):
 
         # Invert the mask
         self._invert_mask(mask_artifact)
-        modified_parameters_set.add("output_mask")
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "input_mask" and value is not None:
-            self._handle_input_mask_change(value, modified_parameters_set)
+            self._handle_input_mask_change(value)
 
-        logger.info(f"modified_parameters_set: {modified_parameters_set}")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def _invert_mask(self, mask_artifact: ImageUrlArtifact) -> None:
         """Invert the input mask and set as output_mask."""

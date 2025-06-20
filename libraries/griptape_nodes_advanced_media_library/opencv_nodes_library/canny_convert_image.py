@@ -81,7 +81,7 @@ class CannyConvertImage(ControlNode):
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:  # noqa: ARG002
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:  # noqa: ARG002
         if parameter.name in {"output_image"}:
             return
         cmd.run_node(node_name=self.name)

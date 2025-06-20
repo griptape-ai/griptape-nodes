@@ -46,8 +46,8 @@ class FluxFillPipeline(ControlNode):
         errors = self.pipe_params.validate_before_node_run()
         return errors or None
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self.pipe_params.after_value_set(parameter, value, modified_parameters_set)
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        self.pipe_params.after_value_set(parameter, value)
 
     def preprocess(self) -> None:
         self.pipe_params.preprocess()

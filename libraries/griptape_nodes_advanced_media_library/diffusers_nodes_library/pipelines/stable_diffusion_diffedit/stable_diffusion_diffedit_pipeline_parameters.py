@@ -130,8 +130,8 @@ class StableDiffusionDiffeditPipelineParameters:
             )
         )
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        self._seed_parameter.after_value_set(parameter, value)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []

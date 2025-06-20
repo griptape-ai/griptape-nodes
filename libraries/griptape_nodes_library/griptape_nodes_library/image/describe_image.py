@@ -114,11 +114,9 @@ class DescribeImage(ControlNode):
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "agent":
             self.hide_parameter_by_name("model")
-            modified_parameters_set.add("model")
 
         if target_parameter.name == "model" and source_parameter.name == "prompt_model_config":
             # Check and see if the incoming connection is from a prompt model config or an agent.
@@ -127,25 +125,20 @@ class DescribeImage(ControlNode):
             target_parameter.allowed_modes = {ParameterMode.INPUT}
 
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
-            target_parameter._ui_options["display_name"] = source_parameter.ui_options.get(
-                "display_name", source_parameter.name
-            )
-            modified_parameters_set.add("model")
+            ui_options = target_parameter.ui_options
+            ui_options["display_name"] = source_parameter.ui_options.get("display_name", source_parameter.name)
+            target_parameter.ui_options = ui_options
 
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "agent":
             self.show_parameter_by_name("model")
-            modified_parameters_set.add("model")
         # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter
         if target_parameter.name == "model":
             target_parameter.type = "str"
@@ -155,13 +148,12 @@ class DescribeImage(ControlNode):
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             target_parameter.set_default_value(DEFAULT_MODEL)
             target_parameter.default_value = DEFAULT_MODEL
-            target_parameter._ui_options["display_name"] = "prompt model"
+            ui_options = target_parameter.ui_options
+            ui_options["display_name"] = "prompt model"
+            target_parameter.ui_options = ui_options
             self.set_parameter_value("model", DEFAULT_MODEL)
 
-            modified_parameters_set.add("model")
-        return super().after_incoming_connection_removed(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
     def process(self) -> AsyncResult[Structure]:
         # Get the parameters from the node
