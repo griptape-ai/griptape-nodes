@@ -53,7 +53,7 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
                     message=f"This library (built for engine version {library_version_str}) is incompatible with Griptape Nodes 0.39+."
                     "The 'ui_options' field has been modified on all Elements. In order to function properly, all nodes must update ui_options by setting its value to a new dictionary. Updating ui_options by accessing the private field _ui_options will no longer create UI updates in the editor."
                     "If this library accesses the private _ui_options field, it will not update the editor properly. Please update to a newer version of this library or contact the library author immediately.",
-                    severity=LibraryManager.LibraryStatus.FLAWED,
+                    severity=LibraryManager.LibraryStatus.UNUSABLE,
                 ),
             ]
         if current_engine_version >= Version(0, 38, 0):
