@@ -55,7 +55,7 @@ Use the ResizeVideo node when:
     - `gauss`: High quality with Gaussian filtering
 
     **Specialized Algorithms:**
-    
+
     - `experimental`: New algorithms, may vary in quality
     - `accurate_rnd`: Accurate rounding for precise dimensions
     - `full_chroma_int`: Full chroma interpolation
@@ -65,6 +65,7 @@ Use the ResizeVideo node when:
 - **lanczos_parameter**: Fine-tune the Lanczos scaling algorithm (1.0-10.0, default: 3.0)
 
     This parameter controls the alpha value for the Lanczos algorithm, affecting the sharpness and quality of the resized video:
+
     - **Lower values (2.0-3.0)**: Smoother results, less ringing artifacts
     - **Default (3.0)**: Balanced quality, good for most use cases
     - **Higher values (4.0-5.0)**: Sharper results, but may introduce ringing artifacts
@@ -102,7 +103,7 @@ Imagine you want to resize a large video file to 50% of its original size with h
 
 - **For general use**: Use `bicubic` (default) - good balance of quality and speed
 - **For high-quality output**: Use `lanczos` or `sinc` - best quality but slower
-  - With `lanczos`, try `lanczos_parameter` values of 3.0-4.0 for optimal results
+    - With `lanczos`, try `lanczos_parameter` values of 3.0-4.0 for optimal results
 - **For fast processing**: Use `bilinear` or `fast_bilinear` - faster but lower quality
 - **For downscaling**: Use `area` - preserves details well when reducing size
 - **For pixel art/retro**: Use `neighbor` - maintains sharp pixel boundaries
