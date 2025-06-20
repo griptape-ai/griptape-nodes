@@ -51,8 +51,8 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
                 ),
                 LibraryVersionCompatibilityIssue(
                     message=f"This library (built for engine version {library_version_str}) is incompatible with Griptape Nodes 0.39+."
-                    "The 'ui_options' field has been modified on all Elements. In order to function properly, all nodes must update ui_options by setting its value to a new dictionary. Updating ui_options by accessing the private field will no longer create UI updates in the editor."
-                    "If this library accesses the private ui_options field, it will not update the editor properly. Please update to a newer version of this library or contact the library author immediately.",
+                    "The 'ui_options' field has been modified on all Elements. In order to function properly, all nodes must update ui_options by setting its value to a new dictionary. Updating ui_options by accessing the private field _ui_options will no longer create UI updates in the editor."
+                    "If this library accesses the private _ui_options field, it will not update the editor properly. Please update to a newer version of this library or contact the library author immediately.",
                     severity=LibraryManager.LibraryStatus.FLAWED,
                 ),
             ]
@@ -67,8 +67,8 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
                 ),
                 LibraryVersionCompatibilityIssue(
                     message="WARNING: The 'ui_options' field has been modified in Griptape Nodes 0.38 on all BaseNodeElements."
-                    "In order to function properly, all nodes must update ui_options by setting its value to a new dictionary. Updating ui_options by accessing the private field will no longer create UI updates in the editor."
-                    "If this library accesses the private ui_options field, it will not update the editor properly. Please update to a newer version of this library or contact the library author immediately.",
+                    "In order to function properly, all nodes must update ui_options by setting its value to a new dictionary. Updating ui_options by accessing the private field _ui_options will no longer create UI updates in the editor."
+                    "If this library accesses the private _ui_options field, it will not update the editor properly. Please update to a newer version of this library or contact the library author immediately.",
                     severity=LibraryManager.LibraryStatus.FLAWED,
                 ),
             ]
