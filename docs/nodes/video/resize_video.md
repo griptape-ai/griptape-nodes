@@ -20,7 +20,7 @@ Use the ResizeVideo node when:
 
 1. Add a ResizeVideo node to your workflow
 1. Connect a video source to the "video" input
-1. Set the "percentage" parameter to your desired resize amount (1-100)
+1. Set the "percentage" parameter to your desired resize amount (1-400)
 1. Choose a "scaling_algorithm" based on your quality and speed requirements
 1. Run the workflow to resize the video
 
@@ -32,6 +32,7 @@ Use the ResizeVideo node when:
 
     - 50 = 50% of original size
     - 25 = 25% of original size (scaled down)
+    - 200 = 200% of the original size (scaled up)
 
 - **scaling_algorithm**: The algorithm used for video scaling (default: "bicubic")
 

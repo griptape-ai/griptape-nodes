@@ -57,7 +57,7 @@ class ResizeVideo(ControlNode):
             tooltip="Resize percentage (e.g., 50 for 50%)",
         )
         self.add_parameter(percentage_parameter)
-        percentage_parameter.add_trait(Slider(min_val=1, max_val=100))
+        percentage_parameter.add_trait(Slider(min_val=1, max_val=400))
 
         # Add scaling algorithm parameter
         scaling_algorithm_parameter = Parameter(
