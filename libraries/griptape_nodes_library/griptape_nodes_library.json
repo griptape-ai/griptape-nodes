@@ -534,6 +534,15 @@
       }
     },
     {
+      "class_name": "ResizeVideo",
+      "file_path": "griptape_nodes_library/video/resize_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Resize a video using imageio_ffmpeg",
+        "display_name": "Resize Video"
+      }
+    },
+    {
       "class_name": "SaveVideo",
       "file_path": "griptape_nodes_library/video/save_video.py",
       "metadata": {
