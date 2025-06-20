@@ -131,6 +131,13 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 logger = logging.getLogger("griptape_nodes")
 
 
+class FixedClassInfo(NamedTuple):
+    """Information about a class that had its module name temporarily fixed for serialization."""
+
+    cls: type
+    original_module_name: str
+
+
 class NodeManager:
     _name_to_parent_flow_name: dict[str, str]
 
@@ -2280,7 +2287,14 @@ class NodeManager:
 
                 # Check if we can serialize it.
                 try:
+                    # Temporarily fix dynamic module names before serialization
+                    # Example: ReferenceImageArtifact.__module__ changes from
+                    # "dynamic_module_create_reference_image_py_123456789" to "create_reference_image"
+                    # This ensures pickle data contains correct module names for import statements
+                    fixed_classes = NodeManager._fix_dynamic_module_names_for_serialization(value)
                     pickle.dumps(value)
+                    # Restore original module names
+                    NodeManager._restore_dynamic_module_names_after_serialization(fixed_classes)
                 except Exception:
                     # Not serializable; don't waste time on future attempts.
                     serialized_parameter_value_tracker.add_as_not_serializable(value_id)
@@ -2288,12 +2302,18 @@ class NodeManager:
                     return None
                 # The value should be serialized. Add it to the map of uniques.
                 unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
+
+                # Fix dynamic module names before storing the value
+                fixed_classes = NodeManager._fix_dynamic_module_names_for_serialization(value)
                 try:
                     unique_parameter_uuid_to_values[unique_uuid] = copy.deepcopy(value)
                 except Exception:
                     details = f"Attempted to serialize parameter '{parameter_name}` on node '{node_name}'. The parameter value could not be copied. It will be serialized by value. If problems arise from this, ensure the type '{type(value)}' works with copy.deepcopy()."
                     logger.warning(details)
                     unique_parameter_uuid_to_values[unique_uuid] = value
+                finally:
+                    # Always restore original module names
+                    NodeManager._restore_dynamic_module_names_after_serialization(fixed_classes)
                 serialized_parameter_value_tracker.add_as_serializable(value_id, unique_uuid)
 
         # Serialize it
@@ -2461,3 +2481,80 @@ class NodeManager:
         return RenameParameterResultSuccess(
             old_parameter_name=old_name, new_parameter_name=request.new_parameter_name, node_name=node_name
         )
+
+    @staticmethod
+    def _fix_dynamic_module_names_for_serialization(obj: object) -> list[FixedClassInfo]:  # noqa: C901
+        """Temporarily fix dynamic module names on classes before serialization.
+
+        Recursively walks through an object and its attributes, fixing any classes
+        that have dynamic module names. Returns a list of FixedClassInfo objects
+        so the changes can be reverted.
+
+        Example:
+            For a ReferenceImageArtifact object:
+            - Before: ReferenceImageArtifact.__module__ = "dynamic_module_create_reference_image_py_123456789"
+            - After: ReferenceImageArtifact.__module__ = "create_reference_image"
+            - Returns: [FixedClassInfo(cls=ReferenceImageArtifact, original_module_name="dynamic_module_create_reference_image_py_123456789")]
+
+        Args:
+            obj: The object to fix module names for
+
+        Returns:
+            List of FixedClassInfo objects for restoration
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        fixed_classes = []
+        visited = set()  # Prevent infinite recursion
+
+        def _fix_object(item: object) -> None:  # noqa: C901
+            # Avoid infinite recursion on circular references
+            item_id = id(item)
+            if item_id in visited:
+                return
+            visited.add(item_id)
+
+            # Fix module name on the class if it's a dynamic module
+            if hasattr(item, "__class__") and hasattr(item.__class__, "__module__"):
+                cls = item.__class__
+                module_name = cls.__module__
+
+                # Check if this class needs fixing
+                registry = GriptapeNodes.LibraryManager().get_dynamic_class_registry()
+                dynamic_key = f"{module_name}.{cls.__name__}"
+
+                if dynamic_key in registry:
+                    correct_module = registry[dynamic_key]
+                    # Store original for restoration
+                    fixed_classes.append(FixedClassInfo(cls=cls, original_module_name=module_name))
+                    # Fix the module name
+                    cls.__module__ = correct_module
+
+            # Recursively process nested objects
+            try:
+                if hasattr(item, "__dict__"):
+                    for attr_value in item.__dict__.values():
+                        _fix_object(attr_value)
+                elif isinstance(item, (list, tuple)):
+                    for sub_item in item:
+                        _fix_object(sub_item)
+                elif isinstance(item, dict):
+                    for sub_item in item.values():
+                        _fix_object(sub_item)
+            except Exception:  # noqa: S110
+                # Some objects don't allow iteration or introspection, that's expected
+                # for certain built-in types, frozen objects, etc.
+                pass
+
+        _fix_object(obj)
+        return fixed_classes
+
+    @staticmethod
+    def _restore_dynamic_module_names_after_serialization(fixed_classes: list[FixedClassInfo]) -> None:
+        """Restore original module names on classes after serialization.
+
+        Args:
+            fixed_classes: List of FixedClassInfo objects from _fix_dynamic_module_names_for_serialization
+        """
+        for fixed_class_info in fixed_classes:
+            fixed_class_info.cls.__module__ = fixed_class_info.original_module_name

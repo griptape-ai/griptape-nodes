@@ -11,6 +11,7 @@ import sysconfig
 from dataclasses import dataclass, field
 from enum import StrEnum
 from importlib.resources import files
+from inspect import isclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -125,6 +126,11 @@ class LibraryManager:
 
     def __init__(self, event_manager: EventManager) -> None:
         self._library_file_path_to_info = {}
+        # Registry mapping dynamic class names to correct importable module names
+        # Example: "dynamic_module_create_reference_image_py_123456789.ReferenceImageArtifact" -> "create_reference_image"
+        # This is essential for workflow generation - when we serialize objects to Python files,
+        # we need to replace dynamic module names with proper import paths that Python can resolve
+        self._dynamic_class_registry: dict[str, str] = {}
 
         event_manager.assign_manager_to_request_type(
             ListRegisteredLibrariesRequest, self.on_list_registered_libraries_request
@@ -883,11 +889,12 @@ class LibraryManager:
         )
         return result
 
-    def _load_module_from_file(self, file_path: Path | str) -> ModuleType:
+    def _load_module_from_file(self, file_path: Path | str, library: Library | None = None) -> ModuleType:
         """Dynamically load a module from a Python file with support for hot reloading.
 
         Args:
             file_path: Path to the Python file
+            library: The library this module belongs to (optional, None for sandbox libraries)
 
         Returns:
             The loaded module
@@ -954,25 +961,230 @@ class LibraryManager:
                 raise ImportError(msg) from err
 
         # Store metadata after module execution to prevent overwriting
-        self._add_dynamic_module_metadata(module, file_path)
+        self._add_dynamic_module_metadata(module, file_path, library)
 
         return module
 
-    def _add_dynamic_module_metadata(self, module: ModuleType, file_path: Path | str) -> None:
-        """Add metadata to a dynamically loaded module.
+    def _add_dynamic_module_metadata(
+        self, module: ModuleType, file_path: Path | str, library: Library | None = None
+    ) -> None:
+        """Add metadata to a dynamically loaded module and register its classes.
+
+        Dynamic modules are loaded with auto-generated names like 'dynamic_module_create_reference_image_py_123456789'
+        to avoid naming conflicts. However, when we serialize workflows to Python code, we need to generate proper
+        import statements and fix pickle data that contains the dynamic module names.
+
+        This method builds a registry that maps dynamic class identifiers to their correct importable module names,
+        with library namespacing to prevent conflicts between libraries that have identically named classes.
 
         Args:
             module: The loaded module to add metadata to
             file_path: Original file path the module was loaded from
+            library: The library this module belongs to (optional)
         """
         module._gtn_metadata = DynamicModuleMetadata(original_file_path=str(file_path))
 
-    def _load_class_from_file(self, file_path: Path | str, class_name: str) -> type[BaseNode]:
+        # Use the provided library or fall back to lookup
+        if library:
+            library_name = library.get_library_data().name
+        else:
+            library_name = self._find_library_for_file_path(file_path)
+            if not library_name:
+                # Without library context, we can't namespace the class to prevent conflicts.
+                # This means if multiple libraries have classes with the same name, they could
+                # overwrite each other in the registry, leading to incorrect import statements.
+                warning_msg = f"Could not determine library for file {file_path}, using module name only"
+                logger.warning(warning_msg)
+
+        # Register all classes in this module for efficient lookup during pickling
+        # Use the actual importable module path instead of library name
+        correct_module_name = self._get_importable_module_path(file_path, library)
+
+        for attr_name in dir(module):
+            try:
+                attr = getattr(module, attr_name)
+                if isclass(attr) and attr.__module__ == module.__name__:
+                    # Map: "dynamic_module_create_reference_image_py_123456789.ClassName" -> "runwayml.create_reference_image"
+                    dynamic_key = f"{module.__name__}.{attr_name}"
+                    self._dynamic_class_registry[dynamic_key] = correct_module_name
+                    debug_msg = f"Mapped dynamic class for workflow serialization: '{attr_name}' from temporary module '{module.__name__}' will be imported as '{correct_module_name}.{attr_name}'"
+                    logger.debug(debug_msg)
+            except Exception as e:
+                # getattr() can fail on properties, descriptors, or other special attributes
+                # This is normal and expected - we only care about accessible classes
+                debug_msg = f"Skipped attribute {attr_name} during class registration: {e}"
+                logger.debug(debug_msg)
+                continue
+
+    def _find_library_for_file_path(self, file_path: Path | str) -> str | None:
+        """Find which library a file belongs to by checking if the file path is within any library's directory.
+
+        Args:
+            file_path: Path to the file to find the library for
+
+        Returns:
+            Library name if found, None otherwise
+        """
+        file_path = Path(file_path).resolve()
+
+        # Check all loaded libraries to see which one contains this file
+        for lib_path in self.get_libraries_attempted_to_load():
+            lib_info = self.get_library_info_for_attempted_load(lib_path)
+            if not lib_info.library_name:
+                continue
+
+            try:
+                # lib_info.library_path could be a JSON file or a directory
+                # Get the directory that contains the library files
+                library_path = Path(lib_info.library_path).resolve()
+
+                if library_path.is_file():
+                    # If it's a JSON file, the library base is its parent directory
+                    library_base = library_path.parent
+                else:
+                    # If it's already a directory, use it as the base
+                    library_base = library_path
+
+                # Debug logging to understand what's happening
+                debug_msg = f"Checking if {file_path} is relative to library base {library_base} for library '{lib_info.library_name}'"
+                logger.debug(debug_msg)
+
+                # Check if the file is within this library's directory tree
+                if file_path.is_relative_to(library_base):
+                    debug_msg = f"Found library '{lib_info.library_name}' for file {file_path}"
+                    logger.debug(debug_msg)
+                    return lib_info.library_name
+
+            except Exception as e:
+                debug_msg = f"Failed to check if {file_path} belongs to library '{lib_info.library_name}': {e}"
+                logger.debug(debug_msg)
+                continue
+
+        return None
+
+    def _get_importable_module_path(self, file_path: Path | str, library: Library | None = None) -> str:  # noqa: PLR0912, C901
+        """Get the correct importable module path for a file.
+
+        Args:
+            file_path: Path to the Python file
+            library: The library this file belongs to (if known)
+
+        Returns:
+            The importable module path (e.g., "runwayml.create_reference_image")
+        """
+        file_path = Path(file_path).resolve()
+
+        # Primary path: Use the provided library object to construct the module path
+        # This is the expected happy path when libraries are properly loaded with metadata
+        # Example: library="RunwayML Library", file="/.../runwayml/create_reference_image.py" -> "runwayml.create_reference_image"
+        if library:
+            try:
+                library_name = library.get_library_data().name
+
+                # Find the library path from our registry
+                library_base_path = None
+                for lib_path in self.get_libraries_attempted_to_load():
+                    lib_info = self.get_library_info_for_attempted_load(lib_path)
+                    if lib_info.library_name == library_name:
+                        library_base_path = Path(lib_info.library_path).resolve()
+                        break
+
+                if library_base_path and library_base_path.is_file():
+                    # If it's a JSON file, the library base is its parent directory
+                    library_base = library_base_path.parent
+                elif library_base_path:
+                    # If it's already a directory, use it as the base
+                    library_base = library_base_path
+                else:
+                    # Couldn't find library path, skip this approach
+                    library_base = None
+
+                if library_base and file_path.is_relative_to(library_base):
+                    # Get the relative path from the library base
+                    relative_path = file_path.relative_to(library_base)
+
+                    # Convert to module format: remove .py extension, replace / with .
+                    module_parts = list(relative_path.parts[:-1])  # All parts except filename
+                    module_parts.append(relative_path.stem)  # Add filename without .py
+
+                    if module_parts:
+                        return ".".join(module_parts)
+
+            except (OSError, ValueError, AttributeError) as e:
+                # OSError: Path operations (resolve, is_file, etc.)
+                # ValueError: Path relationship operations (is_relative_to, relative_to)
+                # AttributeError: Library object method calls (get_library_data)
+                try:
+                    library_name = library.get_library_data().name
+                except AttributeError:
+                    library_name = str(library)
+                debug_msg = f"Failed to get importable path for {file_path} using library '{library_name}': {e}"
+                logger.debug(debug_msg)
+
+        # Fallback path: Library parameter was None or primary path failed
+        # This happens when loading sandbox libraries, hot-reloaded modules, or when library context is lost
+        # We search through all registered libraries to find which one contains this file
+        # Example: file="/.../griptape-nodes-library-runwayml/runwayml/text_to_image.py" -> "runwayml.text_to_image"
+        for lib_path in self.get_libraries_attempted_to_load():
+            lib_info = self.get_library_info_for_attempted_load(lib_path)
+            if not lib_info.library_name:
+                continue
+
+            try:
+                library_path = Path(lib_info.library_path).resolve()
+
+                # Determine the library base directory
+                if library_path.is_file():
+                    library_base = library_path.parent
+                else:
+                    library_base = library_path
+
+                if file_path.is_relative_to(library_base):
+                    # Get the relative path from the library base
+                    relative_path = file_path.relative_to(library_base)
+
+                    # Convert path to module format (remove .py extension, replace / with .)
+                    module_parts = list(relative_path.parts[:-1])  # Remove filename
+                    module_parts.append(relative_path.stem)  # Add filename without .py
+
+                    # Skip the library directory name itself if it matches a pattern
+                    # e.g., skip "griptape-nodes-library-runwayml" but keep "runwayml"
+                    if module_parts and module_parts[0].startswith("griptape-nodes-library-"):
+                        module_parts = module_parts[1:]
+
+                    if module_parts:
+                        return ".".join(module_parts)
+            except (OSError, ValueError) as e:
+                # OSError: Path operations (resolve, is_file, etc.)
+                # ValueError: Path relationship operations (is_relative_to, relative_to)
+                debug_msg = f"Failed to get importable path for {file_path} in library '{lib_info.library_name}': {e}"
+                logger.debug(debug_msg)
+                continue
+
+        # Final fallback: Use just the filename when all library lookups fail
+        # This is a safety net for edge cases like:
+        # - Completely unregistered files (e.g., user's custom scripts)
+        # - Files in sandbox environments that aren't part of any library
+        # - Corrupted library registry where file paths can't be resolved
+        # Example: file="/tmp/my_custom_node.py" -> "my_custom_node"
+        # Note: This may result in import errors in generated workflows, but prevents crashes
+        return file_path.stem
+
+    def get_dynamic_class_registry(self) -> dict[str, str]:
+        """Get the registry of dynamic class names to correct module names.
+
+        Returns:
+            Dictionary mapping dynamic class keys to correct module names (read-only access)
+        """
+        return self._dynamic_class_registry
+
+    def _load_class_from_file(self, file_path: Path | str, class_name: str, library: Library) -> type[BaseNode]:
         """Dynamically load a class from a Python file with support for hot reloading.
 
         Args:
             file_path: Path to the Python file
             class_name: Name of the class to load
+            library: The library this file belongs to
 
         Returns:
             The loaded class
@@ -983,7 +1195,7 @@ class LibraryManager:
             TypeError: If the loaded class isn't a BaseNode-derived class
         """
         try:
-            module = self._load_module_from_file(file_path)
+            module = self._load_module_from_file(file_path, library)
         except ImportError as err:
             msg = f"Attempted to load class '{class_name}'. Error: {err}"
             raise ImportError(msg) from err
@@ -1073,7 +1285,7 @@ class LibraryManager:
 
             try:
                 # Dynamically load the module containing the node class
-                node_class = self._load_class_from_file(node_file_path, node_definition.class_name)
+                node_class = self._load_class_from_file(node_file_path, node_definition.class_name, library)
             except Exception as err:
                 problems.append(
                     f"Failed to load node '{node_definition.class_name}' from '{node_file_path}' with error: {err}"

@@ -1122,94 +1122,18 @@ class WorkflowManager:
 
         return metadata_block
 
-    class ImportInfo(NamedTuple):
-        """Information needed to create an import statement."""
-
-        module_name: str
-        class_name: str
-
-    def _resolve_importable_module_path(self, value_type: type) -> ImportInfo | None:
-        """Resolve the correct importable module path for a class, handling dynamic modules.
-
-        Args:
-            value_type: The class type to resolve import path for
-
-        Returns:
-            ImportInfo with module_name and class_name if resolvable, None otherwise
-        """
-        module = getmodule(value_type)
-        if not module:
-            error_msg = f"Could not get module for class '{value_type.__name__}'"
-            logger.warning(error_msg)
-            return None
-
-        class_name = value_type.__name__
-
-        # Check if this is a dynamically loaded module with metadata
-        if hasattr(module, "_gtn_metadata"):
-            metadata = module._gtn_metadata
-            original_file_path = metadata.original_file_path
-
-            # Find library by checking which library's base path contains the file
-            from griptape_nodes.node_library.library_registry import LibraryRegistry
-
-            library = None
-            for lib_path in GriptapeNodes.LibraryManager().get_libraries_attempted_to_load():
-                lib_info = GriptapeNodes.LibraryManager().get_library_info_for_attempted_load(lib_path)
-                if not lib_info.library_name:
-                    continue
-                try:
-                    library_base_path = Path(lib_info.library_path).parent
-                    if Path(original_file_path).is_relative_to(library_base_path):
-                        library = LibraryRegistry.get_library(lib_info.library_name)
-                        break
-                except Exception as e:
-                    debug_msg = f"Failed to check library {lib_info.library_name} for path match: {e}"
-                    logger.debug(debug_msg)
-                    continue
-
-            if not library:
-                error_msg = f"Could not find library for dynamic module class '{class_name}' from {original_file_path}"
-                logger.warning(error_msg)
-                return None
-
-            # For BaseNode classes, get the library info using public API
-            library_info = None
-            library_name = library.get_library_data().name
-            for lib_path in GriptapeNodes.LibraryManager().get_libraries_attempted_to_load():
-                lib_info = GriptapeNodes.LibraryManager().get_library_info_for_attempted_load(lib_path)
-                if lib_info.library_name == library_name:
-                    library_info = lib_info
-                    break
-
-            if not library_info:
-                error_msg = f"Could not find library info for library '{library_name}' containing class '{class_name}'"
-                logger.warning(error_msg)
-                return None
-
-            # Calculate the importable module path
-            from pathlib import Path
-
-            library_base_path = Path(library_info.library_path).parent
-            original_path = Path(original_file_path)
-
-            if not original_path.is_relative_to(library_base_path):
-                error_msg = f"File path {original_file_path} is not relative to library base {library_base_path} for class '{class_name}'"
-                logger.warning(error_msg)
-                return None
-
-            # Get relative path from library base to the module file
-            relative_path = original_path.relative_to(library_base_path)
-            # Convert file path to module path (remove .py, replace / with .)
-            module_path_parts = [*relative_path.parts[:-1], relative_path.stem]
-            importable_module_name = ".".join(module_path_parts)
-            return WorkflowManager.ImportInfo(importable_module_name, class_name)
-
-        # Regular module - use the module name as-is
-        return WorkflowManager.ImportInfo(module.__name__, class_name)
-
     def _fix_pickle_data(self, pickle_data: bytes) -> bytes:
-        """Fix dynamic module names in pickled data by replacing them with correct module names."""
+        """Fix dynamic module names in pickled data using the class registry.
+
+        When objects are pickled, their class references include the module name. For dynamically loaded
+        modules, this results in pickle data containing names like 'dynamic_module_create_reference_image_py_123456789'
+        instead of the correct 'create_reference_image'. This method uses the pre-built class registry to
+        efficiently replace these dynamic module names with correct ones.
+
+        Example:
+            Input pickle data containing: b'...dynamic_module_create_reference_image_py_123456789...'
+            Output pickle data containing: b'...create_reference_image...'
+        """
         try:
             # Convert bytes to string for pattern matching
             data_str = pickle_data.decode("latin1")
@@ -1218,15 +1142,16 @@ class WorkflowManager:
             if "dynamic_module_" not in data_str:
                 return pickle_data
 
-            # Replace dynamic module names with correct module names
-            pattern = r"dynamic_module_([a-zA-Z0-9_]+)_py_\d+"
-            matches = re.findall(pattern, data_str)
+            # Get the registry of dynamic classes to correct module names
+            registry = GriptapeNodes.LibraryManager().get_dynamic_class_registry()
 
-            if matches:
-                # Replace each unique match
-                for filename in set(matches):
-                    old_pattern = f"dynamic_module_{filename}_py_\\d+"
-                    data_str = re.sub(old_pattern, filename, data_str)
+            # Replace dynamic module names with correct module names
+            for dynamic_key, correct_module in registry.items():
+                # Extract just the module part from the dynamic key (before the class name)
+                if "." in dynamic_key:
+                    dynamic_module = dynamic_key.split(".")[0]
+                    if dynamic_module in data_str:
+                        data_str = data_str.replace(dynamic_module, correct_module)
 
             return data_str.encode("latin1")
 
@@ -1234,6 +1159,41 @@ class WorkflowManager:
             error_message = f"Failed to fix pickle data: {e}"
             logger.warning(error_message)
             return pickle_data
+
+    def _get_correct_module_name_for_class(self, value_type: type) -> str | None:
+        """Get the correct module name for a class using the registry.
+
+        For dynamically loaded classes, returns the correct importable module name instead of the
+        auto-generated dynamic module name. For regular classes, returns the module name as-is.
+
+        Example:
+            For ReferenceImageArtifact from a dynamic module:
+            - value_type.__module__ = "dynamic_module_create_reference_image_py_123456789"
+            - Returns: "create_reference_image"
+
+            For a regular class:
+            - value_type.__module__ = "griptape.artifacts"
+            - Returns: "griptape.artifacts"
+
+        Args:
+            value_type: The class type to get the module name for
+
+        Returns:
+            The correct module name or None if not found
+        """
+        module = getmodule(value_type)
+        if not module:
+            return None
+
+        # Check if this is a dynamic module with a registry entry
+        registry = GriptapeNodes.LibraryManager().get_dynamic_class_registry()
+        dynamic_key = f"{module.__name__}.{value_type.__name__}"
+
+        if dynamic_key in registry:
+            return registry[dynamic_key]
+
+        # For regular modules, use the module name as-is
+        return module.__name__
 
     def _generate_unique_values_code(
         self,
@@ -1254,16 +1214,17 @@ class WorkflowManager:
         for uuid, unique_parameter_value in unique_parameter_uuid_to_values.items():
             # Serialize with pickle and fix any dynamic module references
             unique_parameter_bytes = pickle.dumps(unique_parameter_value)
-            unique_parameter_bytes = self._fix_pickle_data(unique_parameter_bytes)
+            # Note: Dynamic module names are now fixed before serialization in node_manager.py
+            # so we no longer need to fix pickle data here
             unique_parameter_byte_str = unique_parameter_bytes.decode("latin1")
             unique_parameter_dict[uuid] = unique_parameter_byte_str
 
             # Add import for the unique parameter value's class/module. But not globals.
             value_type = type(unique_parameter_value)
             if isclass(value_type):
-                import_info = self._resolve_importable_module_path(value_type)
-                if import_info and import_info.module_name not in global_modules_set:
-                    import_recorder.add_from_import(import_info.module_name, import_info.class_name)
+                module_name = self._get_correct_module_name_for_class(value_type)
+                if module_name and module_name not in global_modules_set:
+                    import_recorder.add_from_import(module_name, value_type.__name__)
 
         # Generate a comment explaining what we're doing:
         comment_text = (
