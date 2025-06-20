@@ -289,6 +289,24 @@
       }
     },
     {
+      "class_name": "AudioldmPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/audioldm/audioldm_pipeline.py",
+      "metadata": {
+        "category": "audio/audioldm",
+        "description": "Generate audio from text via 🤗 Diffusers.",
+        "display_name": "AudioLDM"
+      }
+    },
+    {
+      "class_name": "Audioldm2Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/audioldm2/audioldm2_pipeline.py",
+      "metadata": {
+        "category": "audio/audioldm2",
+        "description": "Generate audio from text via 🤗 Diffusers.",
+        "display_name": "AudioLDM 2"
+      }
+    },
+    {
       "class_name": "StableDiffusionPipeline",
       "file_path": "diffusers_nodes_library/pipelines/stable_diffusion/stable_diffusion_pipeline.py",
       "metadata": {
