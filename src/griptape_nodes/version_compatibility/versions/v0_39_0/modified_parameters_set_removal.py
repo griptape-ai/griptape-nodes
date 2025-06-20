@@ -48,7 +48,13 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
                     "The 'modified_parameters_set' parameter has been removed from BaseNode methods: 'after_incoming_connection', 'after_outgoing_connection', 'after_incoming_connection_removed', 'after_outgoing_connection_removed', 'before_value_set', and 'after_value_set'. "
                     "If this library overrides any of these methods, it will not load or function properly. Please update to a newer version of this library or contact the library author immediately.",
                     severity=LibraryManager.LibraryStatus.UNUSABLE,
-                )
+                ),
+                LibraryVersionCompatibilityIssue(
+                    message=f"This library (built for engine version {library_version_str}) is incompatible with Griptape Nodes 0.39+."
+                    "The 'ui_options' field has been modified on all Elements. In order to function properly, all nodes must update ui_options by setting it's value to a new dictionary. Updating ui_options by accessing the private field will not longer create UI updates in the editor."
+                    "If this library accesses the private ui_options field, it will not update the editor properly. Please update to a newer version of this library or contact the library author immediately.",
+                    severity=LibraryManager.LibraryStatus.FLAWED,
+                ),
             ]
         if current_engine_version >= Version(0, 38, 0):
             # 0.38 Release: Warning about upcoming removal in 0.39
@@ -58,7 +64,13 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
                     f"This library (built for engine version {library_version_str}) must be updated before the 0.39 release. "
                     "If this library overrides any of these methods, it will fail to load in 0.39. If not, no action is necessary. Please contact the library author to confirm whether this library is impacted.",
                     severity=LibraryManager.LibraryStatus.FLAWED,
-                )
+                ),
+                LibraryVersionCompatibilityIssue(
+                    message="WARNING: The 'ui_options' field has been modified in Griptape Nodes 0.38 on all BaseNodeElements."
+                    "In order to function properly, all nodes must update ui_options by setting it's value to a new dictionary. Updating ui_options by accessing the private field will not longer create UI updates in the editor."
+                    "If this library accesses the private ui_options field, it will not update the editor properly. Please update to a newer version of this library or contact the library author immediately.",
+                    severity=LibraryManager.LibraryStatus.FLAWED,
+                ),
             ]
 
         # No compatibility issues for current version
