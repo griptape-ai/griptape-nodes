@@ -765,6 +765,9 @@ class LibraryManager:
             logger.error(details)
             return UnloadLibraryFromRegistryResultFailure()
 
+        # Clean up dynamic class registry entries for this library
+        self._cleanup_registry_entries_for_library(request.library_name)
+
         # Remove the library from our library info list. This prevents it from still showing
         # up in the table of attempted library loads.
         lib_info = self.get_library_info_by_library_name(request.library_name)
@@ -913,6 +916,9 @@ class LibraryManager:
             # For dynamically loaded modules, we need to re-create the module
             # with a fresh spec rather than using importlib.reload
 
+            # Clean up stale registry entries before reloading
+            self._cleanup_registry_entries_for_module(module_name)
+
             # Remove the old module from sys.modules
             old_module = sys.modules.pop(module_name)
 
@@ -982,7 +988,7 @@ class LibraryManager:
             file_path: Original file path the module was loaded from
             library: The library this module belongs to (optional)
         """
-        module._gtn_metadata = DynamicModuleMetadata(original_file_path=str(file_path))
+        module._gtn_metadata = DynamicModuleMetadata(original_file_path=str(file_path))  # type: ignore[attr-defined]
 
         # Use the provided library or fall back to lookup
         if library:
@@ -1177,6 +1183,83 @@ class LibraryManager:
             Dictionary mapping dynamic class keys to correct module names (read-only access)
         """
         return self._dynamic_class_registry
+
+    def _cleanup_registry_entries_for_module(self, module_name: str) -> None:
+        """Remove dynamic class registry entries for a specific module during hot reload.
+
+        Args:
+            module_name: The dynamic module name to clean up (e.g., "dynamic_module_create_reference_image_py_123456789")
+        """
+        keys_to_remove = [key for key in self._dynamic_class_registry if key.startswith(f"{module_name}.")]
+
+        for key in keys_to_remove:
+            del self._dynamic_class_registry[key]
+            logger.debug("Removed stale registry entry during hot reload: %s", key)
+
+    def _cleanup_registry_entries_for_library(self, library_name: str) -> None:
+        """Remove all dynamic class registry entries for a specific library during unload.
+
+        Args:
+            library_name: The library name to clean up (e.g., "RunwayML Library")
+        """
+        # Get the library info to find all files that belong to this library
+        lib_info = self.get_library_info_by_library_name(library_name)
+        if not lib_info:
+            logger.debug("No library info found for '%s', cannot clean registry entries", library_name)
+            return
+
+        try:
+            library_base = self._get_library_base_path(lib_info.library_path)
+            keys_to_remove = self._find_registry_keys_for_library_base(library_base)
+        except Exception as e:
+            logger.debug("Error during library registry cleanup for '%s': %s", library_name, e)
+            return
+
+        self._remove_registry_keys(keys_to_remove, library_name)
+
+    def _get_library_base_path(self, library_path: str) -> Path:
+        """Get the base directory path for a library."""
+        resolved_path = Path(library_path).resolve()
+        return resolved_path.parent if resolved_path.is_file() else resolved_path
+
+    def _find_registry_keys_for_library_base(self, library_base: Path) -> list[str]:
+        """Find all registry keys that belong to modules from the given library base path."""
+        keys_to_remove = []
+
+        for dynamic_key in self._dynamic_class_registry:
+            if "." not in dynamic_key:
+                continue
+
+            dynamic_module_name = dynamic_key.split(".", 1)[0]
+            if self._module_belongs_to_library_base(dynamic_module_name, library_base):
+                keys_to_remove.append(dynamic_key)
+
+        return keys_to_remove
+
+    def _module_belongs_to_library_base(self, module_name: str, library_base: Path) -> bool:
+        """Check if a module belongs to the given library base path."""
+        if module_name not in sys.modules:
+            return False
+
+        try:
+            module = sys.modules[module_name]
+            if not (hasattr(module, "__file__") and module.__file__):
+                return False
+
+            module_file_path = Path(module.__file__).resolve()
+            return module_file_path.is_relative_to(library_base)
+        except Exception as e:
+            logger.debug("Could not check module file for %s: %s", module_name, e)
+            return False
+
+    def _remove_registry_keys(self, keys_to_remove: list[str], library_name: str) -> None:
+        """Remove the specified keys from the registry and log the operation."""
+        for key in keys_to_remove:
+            del self._dynamic_class_registry[key]
+            logger.debug("Removed stale registry entry for library '%s': %s", library_name, key)
+
+        if keys_to_remove:
+            logger.debug("Cleaned up %d registry entries for library '%s'", len(keys_to_remove), library_name)
 
     def _load_class_from_file(self, file_path: Path | str, class_name: str, library: Library) -> type[BaseNode]:
         """Dynamically load a class from a Python file with support for hot reloading.
