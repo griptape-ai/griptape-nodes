@@ -127,15 +127,13 @@ class ResizeVideo(ControlNode):
 
         self.add_node_element(logs_group)
 
-    # TODO: (jason) Remove modified_parameters_set after this is merged:
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "scaling_algorithm":
             if value == "lanczos":
                 self.show_parameter_by_name("lanczos_parameter")
             else:
                 self.hide_parameter_by_name("lanczos_parameter")
-            modified_parameters_set.add("lanczos_parameter")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         exceptions = []
