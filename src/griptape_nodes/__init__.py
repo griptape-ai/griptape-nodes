@@ -796,7 +796,7 @@ def _uninstall_self() -> None:
     os_manager.replace_process(["uv", "tool", "uninstall", "griptape-nodes"])
 
 
-def _parse_key_value_pairs(pairs: list[str] | None) -> dict[str, str] | None:
+def _parse_key_value_pairs(pairs: list[str] | None) -> dict[str, Any] | None:
     """Parse key=value pairs from a list of strings.
 
     Args:
@@ -822,7 +822,13 @@ def _parse_key_value_pairs(pairs: list[str] | None) -> dict[str, str] | None:
             console.print(f"[bold red]Empty key in pair: {pair}[/bold red]")
             continue
 
-        result[key] = value
+        # Try to parse value as JSON, fall back to string if it fails
+        try:
+            parsed_value = json.loads(value)
+            result[key] = parsed_value
+        except (json.JSONDecodeError, ValueError):
+            # If JSON parsing fails, use the original string value
+            result[key] = value
 
     return result if result else None
 
