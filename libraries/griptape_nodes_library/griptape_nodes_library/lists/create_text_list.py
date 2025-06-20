@@ -29,13 +29,12 @@ class CreateTextList(ControlNode):
         )
         self.add_parameter(self.output)
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name != "output":
             list_values = self.get_parameter_value("items")
             self.parameter_output_values["output"] = list_values
             self.publish_update_to_parameter("output", list_values)
-            modified_parameters_set.add("output")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def process(self) -> None:
         # Get the list of items from the input parameter

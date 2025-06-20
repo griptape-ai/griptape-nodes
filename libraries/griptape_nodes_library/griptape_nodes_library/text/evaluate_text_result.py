@@ -146,11 +146,13 @@ class EvaluateTextResult(BaseTask):
             )
         )
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
         if parameter.name in ["criteria", "input", "expected_output", "actual_output"]:
             self.set_parameter_value("Examples", EXAMPLE_OPTIONS[0])
-
-            modified_parameters_set.add("Examples")
 
         if parameter.name == "Examples" and value != EXAMPLE_OPTIONS[0]:
             self.set_parameter_value("criteria", EXAMPLES[EXAMPLE_OPTIONS.index(value)]["criteria"])
@@ -163,12 +165,7 @@ class EvaluateTextResult(BaseTask):
             self.parameter_output_values["expected_output"] = EXAMPLES[EXAMPLE_OPTIONS.index(value)]["expected_output"]
             self.parameter_output_values["actual_output"] = EXAMPLES[EXAMPLE_OPTIONS.index(value)]["actual_output"]
 
-            modified_parameters_set.add("criteria")
-            modified_parameters_set.add("input")
-            modified_parameters_set.add("expected_output")
-            modified_parameters_set.add("actual_output")
-
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def process(self) -> AsyncResult[Structure]:
         criteria = self.get_parameter_value("criteria")

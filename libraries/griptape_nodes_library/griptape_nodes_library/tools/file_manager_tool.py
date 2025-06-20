@@ -58,16 +58,18 @@ class FileManager(BaseTool):
         """
         self.hide_parameter_by_name("off_prompt")
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
         if parameter.name == "file_location":
             if value == LOCATIONS[1]:
                 self.show_parameter_by_name("bucket_id")
             else:
                 self.hide_parameter_by_name("bucket_id")
 
-            modified_parameters_set.add("bucket_id")
-
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def get_bucket_list(self) -> list[tuple[str, str]]:
         """Get the list of buckets from Griptape Cloud API.

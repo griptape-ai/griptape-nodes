@@ -19,12 +19,11 @@ dependencies = [
   "packaging>=25.0",
   "python-multipart>=0.0.20",
   "json-repair>=0.46.1",
+  "imageio-ffmpeg>=0.6.0",
 ]
 
 [project.optional-dependencies]
-profiling = [
-  "austin-dist>=3.7.0",
-]
+profiling = ["austin-dist>=3.7.0"]
 
 [dependency-groups]
 dev = [
@@ -103,10 +102,12 @@ venvPath = "."
 venv = ".venv"
 include = ["."]
 exclude = [
-    "libraries/griptape_nodes_library/workflows/templates/**/*",
-    ".venv",
-    "**/node_modules",
-    "**/__pycache__",
-    "**/.*"
+  "libraries/griptape_nodes_library/workflows/templates/**/*",
+  ".venv",
+  "GriptapeNodes",
+  "**/node_modules",
+  "**/__pycache__",
+  "**/.*",
 ]
 pythonVersion = "3.12"
+reportIncompatibleMethodOverride = false

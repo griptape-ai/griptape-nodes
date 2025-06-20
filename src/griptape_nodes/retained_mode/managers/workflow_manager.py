@@ -793,7 +793,7 @@ class WorkflowManager:
 
     def register_workflows_from_config(self, config_section: str) -> None:
         workflows_to_register = GriptapeNodes.ConfigManager().get_config_value(config_section)
-        if workflows_to_register is not None:
+        if workflows_to_register:
             self.register_list_of_workflows(workflows_to_register)
 
     def register_list_of_workflows(self, workflows_to_register: list[str]) -> None:

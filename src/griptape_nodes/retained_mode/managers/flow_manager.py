@@ -3,15 +3,16 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
-from griptape.events import EventBus
-
 from griptape_nodes.exe_types.core_types import (
     ParameterContainer,
     ParameterMode,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
-from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+from griptape_nodes.retained_mode.events.base_events import (
+    FlushParameterChangesRequest,
+    FlushParameterChangesResultSuccess,
+)
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
     CreateConnectionResultFailure,
@@ -81,7 +82,6 @@ from griptape_nodes.retained_mode.events.node_events import (
     SerializeNodeToCommandsResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
-    AlterElementEvent,
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.validation_events import (
@@ -130,6 +130,7 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(
             DeserializeFlowFromCommandsRequest, self.on_deserialize_flow_from_commands
         )
+        event_manager.assign_manager_to_request_type(FlushParameterChangesRequest, self.on_flush_request)
 
         self._name_to_parent_name = {}
 
@@ -607,37 +608,32 @@ class FlowManager:
             return CreateConnectionResultFailure()
 
         # Let the source make any internal handling decisions now that the Connection has been made.
-        modified_source_parameters = set()
-        source_node.after_outgoing_connection(
-            source_parameter=source_param,
-            target_node=target_node,
-            target_parameter=target_param,
-            modified_parameters_set=modified_source_parameters,
-        )
+        try:
+            source_node.after_outgoing_connection(
+                source_parameter=source_param, target_node=target_node, target_parameter=target_param
+            )
+        except TypeError:
+            source_node.after_outgoing_connection(
+                source_parameter=source_param,
+                target_node=target_node,
+                target_parameter=target_param,
+                modified_parameters_set=set(),
+            )
 
         # And target.
-        modified_target_parameters = set()
-        target_node.after_incoming_connection(
-            source_node=source_node,
-            source_parameter=source_param,
-            target_parameter=target_param,
-            modified_parameters_set=modified_target_parameters,
-        )
-
-        if modified_source_parameters:
-            for modified_parameter_name in modified_source_parameters:
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
-                modified_parameter = source_node.get_parameter_by_name(modified_parameter_name)
-                if modified_parameter is not None:
-                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(source_node))
-                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
-        if modified_target_parameters:
-            for modified_parameter_name in modified_target_parameters:
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
-                modified_parameter = target_node.get_parameter_by_name(modified_parameter_name)
-                if modified_parameter is not None:
-                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(target_node))
-                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
+        try:
+            target_node.after_incoming_connection(
+                source_node=source_node,
+                source_parameter=source_param,
+                target_parameter=target_param,
+            )
+        except TypeError:
+            target_node.after_incoming_connection(
+                source_node=source_node,
+                source_parameter=source_param,
+                target_parameter=target_param,
+                modified_parameters_set=set(),
+            )
 
         details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
         logger.debug(details)
@@ -801,37 +797,33 @@ class FlowManager:
                 )
             except KeyError as e:
                 logger.warning(e)
-        modified_source_parameters = set()
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
-        source_node.after_outgoing_connection_removed(
-            source_parameter=source_param,
-            target_node=target_node,
-            target_parameter=target_param,
-            modified_parameters_set=modified_source_parameters,
-        )
+        try:
+            source_node.after_outgoing_connection_removed(
+                source_parameter=source_param, target_node=target_node, target_parameter=target_param
+            )
+        except TypeError:
+            source_node.after_outgoing_connection_removed(
+                source_parameter=source_param,
+                target_node=target_node,
+                target_parameter=target_param,
+                modified_parameters_set=set(),
+            )
 
         # And target.
-        modified_target_parameters = set()
-        target_node.after_incoming_connection_removed(
-            source_node=source_node,
-            source_parameter=source_param,
-            target_parameter=target_param,
-            modified_parameters_set=modified_target_parameters,
-        )
-        if modified_source_parameters:
-            for modified_parameter_name in modified_source_parameters:
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
-                modified_parameter = source_node.get_parameter_by_name(modified_parameter_name)
-                if modified_parameter is not None:
-                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(source_node))
-                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
-        if modified_target_parameters:
-            for modified_parameter_name in modified_target_parameters:
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
-                modified_parameter = target_node.get_parameter_by_name(modified_parameter_name)
-                if modified_parameter is not None:
-                    modified_request = AlterElementEvent(element_details=modified_parameter.to_event(target_node))
-                    EventBus.publish_event(ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request)))
+        try:
+            target_node.after_incoming_connection_removed(
+                source_node=source_node,
+                source_parameter=source_param,
+                target_parameter=target_param,
+            )
+        except TypeError:
+            target_node.after_incoming_connection_removed(
+                source_node=source_node,
+                source_parameter=source_param,
+                target_parameter=target_param,
+                modified_parameters_set=set(),
+            )
 
         details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" deleted.'
         logger.debug(details)
@@ -1387,3 +1379,14 @@ class FlowManager:
         details = f"Successfully deserialized Flow '{flow_name}'."
         logger.debug(details)
         return DeserializeFlowFromCommandsResultSuccess(flow_name=flow_name)
+
+    def on_flush_request(self, request: FlushParameterChangesRequest) -> ResultPayload:  # noqa: ARG002
+        obj_manager = GriptapeNodes.ObjectManager()
+        GriptapeNodes.EventManager().clear_flush_in_queue()
+        # Get all flows and their nodes
+        nodes = obj_manager.get_filtered_subset(type=BaseNode)
+        for node in nodes.values():
+            # Only flush if there are actually tracked parameters
+            if node._tracked_parameters:
+                node.emit_parameter_changes()
+        return FlushParameterChangesResultSuccess()

@@ -1349,7 +1349,7 @@ class LibraryManager:
         # Go tell the Workflow Manager that it's turn is now.
         GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
 
-    def _attempt_load_nodes_from_library(  # noqa: PLR0913
+    def _attempt_load_nodes_from_library(  # noqa: PLR0913, C901
         self,
         library_data: LibrarySchema,
         library: Library,
@@ -1359,6 +1359,25 @@ class LibraryManager:
         problems: list[str],
     ) -> LibraryManager.LibraryInfo:
         any_nodes_loaded_successfully = False
+
+        # Check for version-based compatibility issues and add to problems
+        version_issues = GriptapeNodes.VersionCompatibilityManager().check_library_version_compatibility(library_data)
+        has_disqualifying_issues = False
+        for issue in version_issues:
+            problems.append(issue.message)
+            if issue.severity == LibraryManager.LibraryStatus.UNUSABLE:
+                has_disqualifying_issues = True
+
+        # Early exit if any version issues are disqualifying
+        if has_disqualifying_issues:
+            return LibraryManager.LibraryInfo(
+                library_path=library_file_path,
+                library_name=library_data.name,
+                library_version=library_version,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=problems,
+            )
+
         # Process each node in the metadata
         for node_definition in library_data.nodes:
             # Resolve relative path to absolute path

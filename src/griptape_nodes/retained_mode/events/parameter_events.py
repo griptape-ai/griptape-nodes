@@ -323,3 +323,9 @@ class RenameParameterResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class RenameParameterResultFailure(ResultPayloadFailure):
     pass
+
+
+@dataclass
+@PayloadRegistry.register
+class RemoveElementEvent(ExecutionPayload):
+    element_id: str

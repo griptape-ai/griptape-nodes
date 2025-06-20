@@ -164,10 +164,12 @@ class BaseNodeElement:
     element_type: str = field(default_factory=lambda: BaseNodeElement.__name__)
     name: str = field(default_factory=lambda: str(f"{BaseNodeElement.__name__}_{uuid.uuid4().hex}"))
     parent_group_name: str | None = None
+    _changes: dict[str, Any] = field(default_factory=dict)
 
     _children: list[BaseNodeElement] = field(default_factory=list)
     _stack: ClassVar[list[BaseNodeElement]] = []
     _parent: BaseNodeElement | None = field(default=None)
+    _node_context: BaseNode | None = field(default=None)
 
     @property
     def children(self) -> list[BaseNodeElement]:
@@ -199,6 +201,59 @@ class BaseNodeElement:
     def __repr__(self) -> str:
         return f"BaseNodeElement({self.children=})"
 
+    def get_changes(self) -> dict[str, Any]:
+        return self._changes
+
+    @staticmethod
+    def emits_update_on_write(func: Callable) -> Callable:
+        """Decorator for properties that should track changes and emit events."""
+
+        def wrapper(self: BaseNodeElement, *args, **kwargs) -> Callable:
+            # For setters, track the change
+            if len(args) >= 1:  # setter with value
+                old_value = getattr(self, f"{func.__name__}", None) if hasattr(self, f"{func.__name__}") else None
+                result = func(self, *args, **kwargs)
+                new_value = getattr(self, f"{func.__name__}", None) if hasattr(self, f"{func.__name__}") else None
+                # Track change if different
+                if old_value != new_value:
+                    # it needs to be static so we can call these methods.
+                    self._changes[func.__name__] = new_value
+                    if self._node_context is not None and self not in self._node_context._tracked_parameters:
+                        self._node_context._tracked_parameters.append(self)
+                return result
+            return func(self, *args, **kwargs)
+
+        return wrapper
+
+    def _emit_alter_element_event_if_possible(self) -> None:
+        """Emit an AlterElementEvent if we have node context and the necessary dependencies."""
+        if self._node_context is None:
+            return
+
+        # Import here to avoid circular dependencies
+        from griptape.events import EventBus
+
+        from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+        from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+
+        # Create base event data using the existing to_event method
+        # Create a modified event data that only includes changed fields
+        event_data = {
+            # Include base fields that should always be present
+            "element_id": self.element_id,
+            "element_type": self.element_type,
+            "name": self.name,
+            "node_name": self._node_context.name,
+        }
+        event_data.update(self._changes)
+
+        # Publish the event
+        event = ExecutionGriptapeNodeEvent(
+            wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
+        )
+        EventBus.publish_event(event)
+        self._changes.clear()
+
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
 
@@ -228,7 +283,17 @@ class BaseNodeElement:
         if child._parent is not None:
             child._parent.remove_child(child)
         child._parent = self
+        # Propagate node context to children
+        child._node_context = self._node_context
         self._children.append(child)
+
+        # Also propagate to any existing children of the child
+        for grandchild in child.find_elements_by_type(BaseNodeElement, find_recursively=True):
+            grandchild._node_context = self._node_context
+
+        # Emit event if we have node context
+        if self._node_context is not None:
+            self._node_context._emit_parameter_lifecycle_event(child)
 
     def remove_child(self, child: BaseNodeElement | str) -> None:
         ui_elements: list[BaseNodeElement] = [self]
@@ -238,6 +303,8 @@ class BaseNodeElement:
                 ui_element._children.remove(child)
                 break
             ui_elements.extend(ui_element._children)
+        if self._node_context is not None and isinstance(child, BaseNodeElement):
+            self._node_context._emit_parameter_lifecycle_event(child, remove=True)
 
     def find_element_by_id(self, element_id: str) -> BaseNodeElement | None:
         if self.element_id == element_id:
@@ -488,7 +555,7 @@ class Parameter(BaseNodeElement):
     tooltip_as_output: str | list[dict] | None = None
     settable: bool = True
     user_defined: bool = False
-    allowed_modes: set = field(
+    _allowed_modes: set = field(
         default_factory=lambda: {
             ParameterMode.OUTPUT,
             ParameterMode.INPUT,
@@ -539,9 +606,9 @@ class Parameter(BaseNodeElement):
         self.settable = settable
         self.user_defined = user_defined
         if allowed_modes is None:
-            self.allowed_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
+            self._allowed_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
         else:
-            self.allowed_modes = allowed_modes
+            self._allowed_modes = allowed_modes
 
         if converters is None:
             self._converters = []
@@ -626,6 +693,7 @@ class Parameter(BaseNodeElement):
         return ParameterTypeBuiltin.STR.value
 
     @type.setter
+    @BaseNodeElement.emits_update_on_write
     def type(self, value: str | None) -> None:
         self._custom_setter_for_property_type(value)
 
@@ -660,6 +728,15 @@ class Parameter(BaseNodeElement):
         return validators
 
     @property
+    def allowed_modes(self) -> set[ParameterMode]:
+        return self._allowed_modes
+
+    @allowed_modes.setter
+    @BaseNodeElement.emits_update_on_write
+    def allowed_modes(self, value: Any) -> None:
+        self._allowed_modes = value
+
+    @property
     def ui_options(self) -> dict:
         ui_options = {}
         traits = self.find_elements_by_type(Trait)
@@ -671,6 +748,7 @@ class Parameter(BaseNodeElement):
         return ui_options
 
     @ui_options.setter
+    @BaseNodeElement.emits_update_on_write
     def ui_options(self, value: dict) -> None:
         self._ui_options = value
 
@@ -689,6 +767,7 @@ class Parameter(BaseNodeElement):
         return [ParameterTypeBuiltin.STR.value]
 
     @input_types.setter
+    @BaseNodeElement.emits_update_on_write
     def input_types(self, value: list[str] | None) -> None:
         self._custom_setter_for_property_input_types(value)
 
@@ -726,6 +805,7 @@ class Parameter(BaseNodeElement):
         return ParameterTypeBuiltin.STR.value
 
     @output_type.setter
+    @BaseNodeElement.emits_update_on_write
     def output_type(self, value: str | None) -> None:
         self._custom_setter_for_property_output_type(value)
 
@@ -777,6 +857,7 @@ class Parameter(BaseNodeElement):
     def is_outgoing_type_allowed(self, target_type: str | None) -> bool:
         return ParameterType.are_types_compatible(source_type=self.output_type, target_type=target_type)
 
+    @BaseNodeElement.emits_update_on_write
     def set_default_value(self, value: Any) -> None:
         self.default_value = value
 

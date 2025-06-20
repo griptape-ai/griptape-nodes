@@ -128,10 +128,12 @@ class BaseDriver(DataNode):
             api_key = self.get_config_value(service_name, api_key_env_var)
             msg = f"⚠️ This node requires an API key from {service_name}\nPlease visit {api_key_url} to obtain a valid key and update your settings."
             message_param.default_value = msg
+            ui_options = message_param.ui_options
             if not api_key:
-                message_param._ui_options["hide"] = False
+                ui_options["hide"] = False
             else:
-                message_param._ui_options["hide"] = True
+                ui_options["hide"] = True
+            message_param.ui_options = ui_options
 
     def _validate_api_key(
         self, service_name: str, api_key_env_var: str, api_key_url: str | None

@@ -164,6 +164,7 @@ nav:
     - Video:
         - Load Video: nodes/video/load_video.md
         - Display Video: nodes/video/display_video.md
+        - Resize Video: nodes/video/resize_video.md
         - Save Video: nodes/video/save_video.md
     - Tools:
         - Calculator: nodes/tools/calculator_tool.md

@@ -184,7 +184,7 @@ class PublishedWorkflow(ControlNode):
             err_msg = f"Error fetching connections for node {self.name}: {result}"
             raise TypeError(err_msg)
 
-    def _purge_old_parameters(self, valid_parameter_names: set[str]) -> set[str]:
+    def _purge_old_parameters(self, valid_parameter_names: set[str]) -> None:
         # Always maintain these parameters
         valid_parameter_names.update(
             [
@@ -194,14 +194,11 @@ class PublishedWorkflow(ControlNode):
             ]
         )
 
-        modified_parameters_set = set()
         for param in self.parameters:
             if param.name not in valid_parameter_names:
                 self.remove_parameter_element(param)
-                modified_parameters_set.add(param.name)
-        return modified_parameters_set
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Callback after a value has been set on this Node."""
         if parameter.name == "workflow_status" and value is not None:
             thread = self._workflow_polling_thread
@@ -223,19 +220,17 @@ class PublishedWorkflow(ControlNode):
                 # Additionally, we need to purge the old parameters for the Node,
                 # and update the set of modified parameters.
 
-                # Retrieve the input parameters modified, and update the set of modified parameters
+                # Retrieve the input parameters and purge old parameters
                 input_parameters_defined_for_workflow = {
                     i for i, v in cast("dict[str, Any]", workflow["input"]).items()
                 }
-                modified_input_parameters = self._purge_old_parameters(input_parameters_defined_for_workflow)
-                modified_parameters_set.update(modified_input_parameters)
+                self._purge_old_parameters(input_parameters_defined_for_workflow)
 
-                # Retrieve the output parameters modified, and update the set of modified parameters
+                # Retrieve the output parameters and purge old parameters
                 output_parameters_defined_for_workflow = {
                     i for i, v in cast("dict[str, Any]", workflow["output"]).items()
                 }
-                modified_output_parameters = self._purge_old_parameters(output_parameters_defined_for_workflow)
-                modified_parameters_set.update(modified_output_parameters)
+                self._purge_old_parameters(output_parameters_defined_for_workflow)
 
                 self.add_parameter(
                     Parameter(
@@ -251,7 +246,6 @@ class PublishedWorkflow(ControlNode):
                         settable=False,
                     )
                 )
-                modified_parameters_set.add("workflow_name")
 
                 self.add_parameter(
                     Parameter(
@@ -267,25 +261,22 @@ class PublishedWorkflow(ControlNode):
                         settable=False,
                     )
                 )
-                modified_parameters_set.add("workflow_status")
                 self._start_polling_workflow_status()
 
                 for params in workflow["input"].values():
-                    for param, info in params.items():
+                    for info in params.values():
                         kwargs: dict[str, Any] = {**info}
                         kwargs["allowed_modes"] = {
                             ParameterMode.INPUT,
                         }
                         self.add_parameter(Parameter(**kwargs))
-                        modified_parameters_set.add(param)
                 for params in workflow["output"].values():
-                    for param, info in params.items():
+                    for info in params.values():
                         kwargs: dict[str, Any] = {**info}
                         kwargs["allowed_modes"] = {
                             ParameterMode.OUTPUT,
                         }
                         self.add_parameter(Parameter(**kwargs))
-                        modified_parameters_set.add(param)
 
             except Exception as e:
                 err_msg = f"Error fetching workflow: {e!s}"

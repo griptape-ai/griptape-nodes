@@ -8,11 +8,14 @@ from typing_extensions import TypeVar
 
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
+    EventRequest,
     EventResultFailure,
     EventResultSuccess,
+    FlushParameterChangesRequest,
     GriptapeNodeEvent,
     RequestPayload,
     ResultPayload,
+    WorkflowAlteredMixin,
 )
 
 if TYPE_CHECKING:
@@ -30,6 +33,11 @@ class EventManager:
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
         self.current_active_node: str | None = None
+        # Boolean that lets us know if there is currently a FlushParameterChangesRequest in the event queue.
+        self._flush_in_queue: bool = False
+
+    def clear_flush_in_queue(self) -> None:
+        self._flush_in_queue = False
 
     def assign_manager_to_request_type(
         self,
@@ -96,6 +104,13 @@ class EventManager:
                         result=result_payload,
                         retained_mode=retained_mode_str,
                     )
+                    # If the result is a success, and the WorkflowAlteredMixin is present, that means the flow has been changed in some way.
+                    # In that case, we need to flush the element changes, so we add one to the event queue.
+                    if isinstance(result_event.result, WorkflowAlteredMixin) and not self._flush_in_queue:
+                        from griptape_nodes.app.app import event_queue
+
+                        event_queue.put(EventRequest(request=FlushParameterChangesRequest()))
+                        self._flush_in_queue = True
                 else:
                     result_event = EventResultFailure(
                         request=request,

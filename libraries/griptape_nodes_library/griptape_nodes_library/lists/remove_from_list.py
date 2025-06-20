@@ -56,7 +56,7 @@ class RemoveFromList(ControlNode):
         )
         self.add_parameter(self.output)
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "remove_item_by":
             if value in {"first", "last"}:
                 self.hide_parameter_by_name("index")
@@ -67,9 +67,7 @@ class RemoveFromList(ControlNode):
             elif value == "item":
                 self.show_parameter_by_name("item")
                 self.hide_parameter_by_name("index")
-            modified_parameters_set.add("index")
-            modified_parameters_set.add("item")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def process(self) -> None:
         # Get the list of items from the input parameter

@@ -43,44 +43,35 @@ class GetIndexOfItem(ControlNode):
             return -1
         return list_items.index(item)
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "items":
             index = self._get_index()
             self.parameter_output_values["index"] = index
             self.publish_update_to_parameter("index", index)
-            modified_parameters_set.add("index")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def after_incoming_connection(
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "items":
             index = self._get_index()
             self.parameter_output_values["index"] = index
             self.publish_update_to_parameter("index", index)
-            modified_parameters_set.add("index")
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "items":
             self.parameter_output_values["index"] = -1
             self.publish_update_to_parameter("index", -1)
-            modified_parameters_set.add("index")
-        return super().after_incoming_connection_removed(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
     def process(self) -> None:
         # Get the list of items from the input parameter

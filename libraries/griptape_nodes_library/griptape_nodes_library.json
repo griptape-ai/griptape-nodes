@@ -221,6 +221,22 @@
       }
     },
     {
+      "audio/audioldm": {
+        "color": "border-sky-500",
+        "title": "Audio/AudioLDM",
+        "description": "Audio generation with AudioLDM",
+        "icon": "SpeakerWave"
+      }
+    },
+    {
+      "audio/audioldm2": {
+        "color": "border-sky-500",
+        "title": "Audio/AudioLDM2",
+        "description": "Audio generation with AudioLDM 2",
+        "icon": "SpeakerWave"
+      }
+    },
+    {
       "image/amused": {
         "color": "border-purple-500",
         "title": "Image/aMUSEd",
@@ -515,6 +531,15 @@
         "category": "video",
         "description": "Display a video",
         "display_name": "Display Video"
+      }
+    },
+    {
+      "class_name": "ResizeVideo",
+      "file_path": "griptape_nodes_library/video/resize_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Resize a video using imageio_ffmpeg",
+        "display_name": "Resize Video"
       }
     },
     {

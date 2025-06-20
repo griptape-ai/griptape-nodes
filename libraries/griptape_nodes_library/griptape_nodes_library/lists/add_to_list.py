@@ -60,14 +60,13 @@ class AddToList(ControlNode):
         )
         self.add_parameter(self.output)
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "position":
             if value in {"start", "end"}:
                 self.hide_parameter_by_name("index")
             elif value == "index":
                 self.show_parameter_by_name("index")
-            modified_parameters_set.add("index")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def process(self) -> None:
         # Get the list of items from the input parameter
