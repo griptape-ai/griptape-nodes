@@ -703,8 +703,8 @@ def _sync_libraries() -> None:
         extracted_libs = extracted_root / "libraries"
 
         # Copy directories from synced libraries without removing existing content
+        console.print(f"[green]Syncing libraries to {dest_nodes.resolve()}...[/green]")
         dest_nodes.mkdir(parents=True, exist_ok=True)
-
         for library_dir in extracted_libs.iterdir():
             if library_dir.is_dir():
                 dest_library_dir = dest_nodes / library_dir.name
