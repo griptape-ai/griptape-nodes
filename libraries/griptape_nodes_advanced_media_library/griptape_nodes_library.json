@@ -51,7 +51,8 @@
       "metadata": {
         "category": "image",
         "description": "Desaturate an image via the 🛏️ pillow python package. Pairs well with ControlNet Image Generation in grayscale mode.",
-        "display_name": "Desaturate"
+        "display_name": "Desaturate",
+        "group": "edit"
       }
     },
     {
@@ -60,7 +61,8 @@
       "metadata": {
         "category": "image",
         "description": "Apply a gaussian blur to an image with the 🛏️ pillow python package. Pairs well with ControlNet Image Generation in blur or tile mode.",
-        "display_name": "Gaussian Blur"
+        "display_name": "Gaussian Blur",
+        "group": "edit"
       }
     },
     {
