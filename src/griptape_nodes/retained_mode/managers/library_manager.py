@@ -115,9 +115,25 @@ class LibraryManager:
         problems: list[str] = field(default_factory=list)
 
     _library_file_path_to_info: dict[str, LibraryInfo]
-    _dynamic_to_stable_module_mapping: dict[str, str]
-    _stable_to_dynamic_module_mapping: dict[str, str]
-    _library_to_stable_modules: dict[str, set[str]]
+
+    # Stable module namespace mappings for workflow serialization
+    # These mappings ensure that dynamically loaded modules can be reliably imported
+    # in generated workflow code by providing stable, predictable import paths.
+    #
+    # Example mappings:
+    # _dynamic_to_stable_module_mapping = {
+    #     "dynamic_module_image_to_video_py_123456789": "griptape_nodes.node_libraries.runwayml_library.image_to_video"
+    # }
+    # _stable_to_dynamic_module_mapping = {
+    #     "griptape_nodes.node_libraries.runwayml_library.image_to_video": "dynamic_module_image_to_video_py_123456789"
+    # }
+    # _library_to_stable_modules = {
+    #     "RunwayML Library": {"griptape_nodes.node_libraries.runwayml_library.image_to_video", "griptape_nodes.node_libraries.runwayml_library.text_to_image"},
+    #     "Sandbox Library": {"griptape_nodes.node_libraries.sandbox.my_custom_node"}
+    # }
+    _dynamic_to_stable_module_mapping: dict[str, str]  # dynamic_module_name -> stable_namespace
+    _stable_to_dynamic_module_mapping: dict[str, str]  # stable_namespace -> dynamic_module_name
+    _library_to_stable_modules: dict[str, set[str]]  # library_name -> set of stable_namespaces
 
     def __init__(self, event_manager: EventManager) -> None:
         self._library_file_path_to_info = {}
@@ -981,6 +997,42 @@ class LibraryManager:
         # Clear the library's module set
         del self._library_to_stable_modules[library_key]
         logger.debug(f"Completed cleanup of stable aliases for library: {library_name}")
+
+    def get_stable_namespace_for_dynamic_module(self, dynamic_module_name: str) -> str | None:
+        """Get the stable namespace for a dynamic module name.
+
+        This method is used during workflow serialization to convert dynamic module names
+        (like "dynamic_module_image_to_video_py_123456789") to stable namespace imports
+        (like "griptape_nodes.node_libraries.runwayml_library.image_to_video").
+
+        Args:
+            dynamic_module_name: The dynamic module name to look up
+
+        Returns:
+            The stable namespace string, or None if not found
+
+        Example:
+            >>> manager.get_stable_namespace_for_dynamic_module("dynamic_module_image_to_video_py_123456789")
+            "griptape_nodes.node_libraries.runwayml_library.image_to_video"
+        """
+        return self._dynamic_to_stable_module_mapping.get(dynamic_module_name)
+
+    def is_dynamic_module(self, module_name: str) -> bool:
+        """Check if a module name represents a dynamically loaded module.
+
+        Args:
+            module_name: The module name to check
+
+        Returns:
+            True if this is a dynamic module name, False otherwise
+
+        Example:
+            >>> manager.is_dynamic_module("dynamic_module_image_to_video_py_123456789")
+            True
+            >>> manager.is_dynamic_module("griptape.artifacts")
+            False
+        """
+        return module_name.startswith("dynamic_module_")
 
     def _load_module_from_file(self, file_path: Path | str, library_name: str) -> ModuleType:
         """Dynamically load a module from a Python file with support for hot reloading.
