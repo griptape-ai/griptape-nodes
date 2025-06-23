@@ -14,7 +14,6 @@ from typing import Any, cast
 from urllib.parse import urljoin
 
 import uvicorn
-from dotenv import get_key
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -28,7 +27,6 @@ from rich.logging import RichHandler
 from rich.panel import Panel
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
-from xdg_base_dirs import xdg_config_home
 
 # This import is necessary to register all events, even if not technically used
 from griptape_nodes.retained_mode.events import app_events, execution_events
@@ -342,7 +340,8 @@ def _process_event_queue() -> None:
 
 def __create_async_websocket_connection() -> Any:
     """Create an async WebSocket connection to the Nodes API."""
-    api_key = get_key(xdg_config_home() / "griptape_nodes" / ".env", "GT_CLOUD_API_KEY")
+    secrets_manager = GriptapeNodes.SecretsManager()
+    api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY")
     if api_key is None:
         message = Panel(
             Align.center(
