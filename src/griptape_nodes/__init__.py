@@ -18,7 +18,6 @@ with console.status("Loading Griptape Nodes...") as status:
     from typing import Any, Literal
 
     import httpx
-    from dotenv import load_dotenv
     from rich.box import HEAVY_EDGE
     from rich.panel import Panel
     from rich.progress import Progress
@@ -83,8 +82,6 @@ os_manager = OSManager()
 
 def main() -> None:
     """Main entry point for the Griptape Nodes CLI."""
-    load_dotenv(ENV_FILE, override=True)
-
     # Hack to make paths "just work". # noqa: FIX004
     # Without this, packages like `nodes` don't properly import.
     # Long term solution could be to make `nodes` a proper src-layout package
@@ -703,8 +700,8 @@ def _sync_libraries() -> None:
         extracted_libs = extracted_root / "libraries"
 
         # Copy directories from synced libraries without removing existing content
+        console.print(f"[green]Syncing libraries to {dest_nodes.resolve()}...[/green]")
         dest_nodes.mkdir(parents=True, exist_ok=True)
-
         for library_dir in extracted_libs.iterdir():
             if library_dir.is_dir():
                 dest_library_dir = dest_nodes / library_dir.name
@@ -796,7 +793,7 @@ def _uninstall_self() -> None:
     os_manager.replace_process(["uv", "tool", "uninstall", "griptape-nodes"])
 
 
-def _parse_key_value_pairs(pairs: list[str] | None) -> dict[str, str] | None:
+def _parse_key_value_pairs(pairs: list[str] | None) -> dict[str, Any] | None:
     """Parse key=value pairs from a list of strings.
 
     Args:
@@ -822,7 +819,13 @@ def _parse_key_value_pairs(pairs: list[str] | None) -> dict[str, str] | None:
             console.print(f"[bold red]Empty key in pair: {pair}[/bold red]")
             continue
 
-        result[key] = value
+        # Try to parse value as JSON, fall back to string if it fails
+        try:
+            parsed_value = json.loads(value)
+            result[key] = parsed_value
+        except (json.JSONDecodeError, ValueError):
+            # If JSON parsing fails, use the original string value
+            result[key] = value
 
     return result if result else None
 
