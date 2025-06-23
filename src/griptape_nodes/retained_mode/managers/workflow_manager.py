@@ -2148,7 +2148,9 @@ class WorkflowManager:
             logger.error(details)
             return PublishWorkflowResultFailure()
 
-    def _walk_object_tree(self, obj: Any, process_class_fn: Callable[[type, Any], None], visited: set[int] | None = None) -> None:
+    def _walk_object_tree(
+        self, obj: Any, process_class_fn: Callable[[type, Any], None], visited: set[int] | None = None
+    ) -> None:
         """Recursively walk through object tree, calling process_class_fn for each class found.
 
         This unified helper handles the common pattern of recursively traversing nested objects
@@ -2227,7 +2229,9 @@ class WorkflowManager:
             """Patch a single class instance to use stable namespace."""
             module = getmodule(class_type)
             if module and GriptapeNodes.LibraryManager().is_dynamic_module(module.__name__):
-                stable_namespace = GriptapeNodes.LibraryManager().get_stable_namespace_for_dynamic_module(module.__name__)
+                stable_namespace = GriptapeNodes.LibraryManager().get_stable_namespace_for_dynamic_module(
+                    module.__name__
+                )
                 if stable_namespace:
                     # Patch class __module__ (affects pickle class reference)
                     if class_type.__module__ != stable_namespace:
@@ -2281,7 +2285,9 @@ class WorkflowManager:
             if module and module.__name__ not in global_modules_set:
                 if GriptapeNodes.LibraryManager().is_dynamic_module(module.__name__):
                     # Use stable namespace for dynamic modules
-                    stable_namespace = GriptapeNodes.LibraryManager().get_stable_namespace_for_dynamic_module(module.__name__)
+                    stable_namespace = GriptapeNodes.LibraryManager().get_stable_namespace_for_dynamic_module(
+                        module.__name__
+                    )
                     if stable_namespace:
                         import_recorder.add_from_import(stable_namespace, class_type.__name__)
                     else:
