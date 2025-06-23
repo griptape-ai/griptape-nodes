@@ -121,16 +121,16 @@ class LibraryManager:
     # in generated workflow code by providing stable, predictable import paths.
     #
     # Example mappings:
-    # _dynamic_to_stable_module_mapping = {
+    # dynamic to stable module mapping:
     #     "dynamic_module_image_to_video_py_123456789": "griptape_nodes.node_libraries.runwayml_library.image_to_video"
-    # }
-    # _stable_to_dynamic_module_mapping = {
+    #
+    # stable to dynamic module mapping:
     #     "griptape_nodes.node_libraries.runwayml_library.image_to_video": "dynamic_module_image_to_video_py_123456789"
-    # }
-    # _library_to_stable_modules = {
+    #
+    # library to stable modules:
     #     "RunwayML Library": {"griptape_nodes.node_libraries.runwayml_library.image_to_video", "griptape_nodes.node_libraries.runwayml_library.text_to_image"},
     #     "Sandbox Library": {"griptape_nodes.node_libraries.sandbox.my_custom_node"}
-    # }
+    #
     _dynamic_to_stable_module_mapping: dict[str, str]  # dynamic_module_name -> stable_namespace
     _stable_to_dynamic_module_mapping: dict[str, str]  # stable_namespace -> dynamic_module_name
     _library_to_stable_modules: dict[str, set[str]]  # library_name -> set of stable_namespaces
@@ -945,7 +945,8 @@ class LibraryManager:
         # Register the stable alias in sys.modules
         sys.modules[stable_namespace] = module
 
-        logger.debug(f"Registered stable alias: {stable_namespace} -> {dynamic_module_name} (library: {library_key})")
+        details = f"Registered stable alias: {stable_namespace} -> {dynamic_module_name} (library: {library_key})"
+        logger.debug(details)
 
     def _unregister_stable_module_alias(self, dynamic_module_name: str) -> None:
         """Unregister a stable alias for a dynamic module during hot reload.
@@ -968,7 +969,8 @@ class LibraryManager:
             del self._dynamic_to_stable_module_mapping[dynamic_module_name]
             del self._stable_to_dynamic_module_mapping[stable_namespace]
 
-            logger.debug(f"Unregistered stable alias: {stable_namespace}")
+            details = f"Unregistered stable alias: {stable_namespace}"
+            logger.debug(details)
 
     def _unregister_all_stable_module_aliases_for_library(self, library_name: str) -> None:
         """Unregister all stable module aliases for a library during library unload/reload.
@@ -981,7 +983,8 @@ class LibraryManager:
             return
 
         stable_namespaces = self._library_to_stable_modules[library_key].copy()
-        logger.debug(f"Unregistering {len(stable_namespaces)} stable aliases for library: {library_name}")
+        details = f"Unregistering {len(stable_namespaces)} stable aliases for library: {library_name}"
+        logger.debug(details)
 
         for stable_namespace in stable_namespaces:
             # Remove from sys.modules if it exists
@@ -996,7 +999,8 @@ class LibraryManager:
 
         # Clear the library's module set
         del self._library_to_stable_modules[library_key]
-        logger.debug(f"Completed cleanup of stable aliases for library: {library_name}")
+        details = f"Completed cleanup of stable aliases for library: '{library_name}'."
+        logger.debug(details)
 
     def get_stable_namespace_for_dynamic_module(self, dynamic_module_name: str) -> str | None:
         """Get the stable namespace for a dynamic module name.
@@ -1081,7 +1085,8 @@ class LibraryManager:
                 spec.loader.exec_module(module)
                 # Register new stable alias
                 self._register_stable_module_alias(module_name, stable_namespace, module, library_name)
-                logger.debug(f"Hot reloaded module: {module_name} from {file_path}")
+                details = f"Hot reloaded module: {module_name} from {file_path}"
+                logger.debug(details)
             except Exception as e:
                 # Restore the old module in case of failure
                 sys.modules[module_name] = old_module
