@@ -1137,19 +1137,36 @@ class WorkflowManager:
         global_modules_set = {"builtins", "__main__"}
 
         # Serialize the unique values as pickled strings.
+        # IMPORTANT: We patch dynamic module names to stable namespaces before pickling
+        # to ensure generated workflows can reliably import the required classes.
         unique_parameter_dict = {}
+        library_manager = GriptapeNodes.LibraryManager()
+
         for uuid, unique_parameter_value in unique_parameter_uuid_to_values.items():
-            unique_parameter_bytes = pickle.dumps(unique_parameter_value)
+            # Dynamic Module Patching Strategy:
+            # When we pickle objects from dynamically loaded modules (like VideoUrlArtifact),
+            # pickle stores the class's __module__ attribute in the binary data. If we don't
+            # patch this, the pickle data would contain something like:
+            #   "dynamic_module_image_to_video_py_123456789.VideoUrlArtifact"
+            #
+            # When the workflow runs later, Python tries to import this module name, which
+            # fails because dynamic modules don't exist in fresh Python processes.
+            #
+            # Our solution: Temporarily patch the class's __module__ to use the stable namespace
+            # before pickling, so the pickle data contains:
+            #   "griptape_nodes.node_libraries.runwayml_library.image_to_video.VideoUrlArtifact"
+            #
+            # This includes recursive patching for nested objects in containers (lists, tuples, dicts)
+
+            # Apply recursive dynamic module patching, pickle, then restore
+            unique_parameter_bytes = self._patch_and_pickle_object(unique_parameter_value, library_manager)
+
             # Encode the bytes as a string using latin1
             unique_parameter_byte_str = unique_parameter_bytes.decode("latin1")
             unique_parameter_dict[uuid] = unique_parameter_byte_str
 
-            # Add import for the unique parameter value's class/module. But not globals.
-            value_type = type(unique_parameter_value)
-            if isclass(value_type):
-                module = getmodule(value_type)
-                if module and module.__name__ not in global_modules_set:
-                    import_recorder.add_from_import(module.__name__, value_type.__name__)
+            # Collect import statements for all classes in the object tree
+            self._collect_object_imports(unique_parameter_value, import_recorder, library_manager, global_modules_set)
 
         # Generate a comment explaining what we're doing:
         comment_text = (
@@ -2131,6 +2148,97 @@ class WorkflowManager:
             details = f"Failed to publish workflow '{request.workflow_name}'. Error: {e}"
             logger.error(details)
             return PublishWorkflowResultFailure()
+
+    def _patch_and_pickle_object(self, obj: Any, library_manager: Any) -> bytes:
+        """Recursively patch dynamic modules, pickle object, then restore patches."""
+        patched_classes: list[tuple[type, str]] = []
+        patched_instances: list[tuple[Any, str]] = []
+
+        def patch_recursive(target_obj: Any, visited: set[int]) -> None:
+            obj_id = id(target_obj)
+            if obj_id in visited:
+                return
+            visited.add(obj_id)
+
+            target_type = type(target_obj)
+            if isclass(target_type):
+                module = getmodule(target_type)
+                if module and library_manager.is_dynamic_module(module.__name__):
+                    stable_namespace = library_manager.get_stable_namespace_for_dynamic_module(
+                        module.__name__
+                    )
+                    if stable_namespace:
+                        if target_type.__module__ != stable_namespace:
+                            patched_classes.append((target_type, target_type.__module__))
+                            target_type.__module__ = stable_namespace
+
+                        if (
+                            hasattr(target_obj, "module_name")
+                            and target_obj.module_name != stable_namespace
+                        ):
+                            patched_instances.append((target_obj, target_obj.module_name))
+                            target_obj.module_name = stable_namespace
+
+            if isinstance(target_obj, (list, tuple)):
+                for item in target_obj:
+                    patch_recursive(item, visited)
+            elif isinstance(target_obj, dict):
+                for key, value in target_obj.items():
+                    patch_recursive(key, visited)
+                    patch_recursive(value, visited)
+            elif hasattr(target_obj, "__dict__"):
+                for attr_value in target_obj.__dict__.values():
+                    patch_recursive(attr_value, visited)
+
+        try:
+            patch_recursive(obj, set())
+            return pickle.dumps(obj)
+        finally:
+            for class_obj, original_name in patched_classes:
+                class_obj.__module__ = original_name
+            for instance_obj, original_name in patched_instances:
+                instance_obj.module_name = original_name
+
+    def _collect_object_imports(
+        self, obj: Any, import_recorder: Any, library_manager: Any, global_modules_set: set[str]
+    ) -> None:
+        """Recursively collect import statements for all classes in object tree."""
+
+        def collect_recursive(target_obj: Any, visited: set[int]) -> None:
+            obj_id = id(target_obj)
+            if obj_id in visited:
+                return
+            visited.add(obj_id)
+
+            target_type = type(target_obj)
+            if isclass(target_type):
+                module = getmodule(target_type)
+                if module and module.__name__ not in global_modules_set:
+                    if library_manager.is_dynamic_module(module.__name__):
+                        stable_namespace = library_manager.get_stable_namespace_for_dynamic_module(
+                            module.__name__
+                        )
+                        if stable_namespace:
+                            import_recorder.add_from_import(stable_namespace, target_type.__name__)
+                        else:
+                            msg = f"Missing stable namespace for {module.__name__} type {target_type.__name__}"
+                            logger.error(msg)
+                            raise RuntimeError(msg)
+                    else:
+                        import_recorder.add_from_import(module.__name__, target_type.__name__)
+
+            if isinstance(target_obj, (list, tuple)):
+                for item in target_obj:
+                    collect_recursive(item, visited)
+            elif isinstance(target_obj, dict):
+                for key, value in target_obj.items():
+                    collect_recursive(key, visited)
+                    collect_recursive(value, visited)
+            elif hasattr(target_obj, "__dict__"):
+                for attr_value in target_obj.__dict__.values():
+                    collect_recursive(attr_value, visited)
+
+        collect_recursive(obj, set())
 
 
 class ASTContainer:
