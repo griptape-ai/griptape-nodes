@@ -30,7 +30,7 @@
     },
     {
       "agents": {
-        "color": "border-fuchsia-500",
+        "color": "border-purple-500",
         "title": "Agent",
         "description": "Nodes related to Agents",
         "icon": "UserCircle"
@@ -38,7 +38,7 @@
     },
     {
       "agents/prompt_models": {
-        "color": "border-pink-500",
+        "color": "border-indigo-500",
         "title": "Prompt Models",
         "description": "Prompt Drivers for Griptape Agents",
         "icon": "brain"
@@ -46,7 +46,7 @@
     },
     {
       "agents/rules": {
-        "color": "border-rose-500",
+        "color": "border-violet-500",
         "title": "Rules",
         "description": "Basic nodes",
         "icon": "Scale"
@@ -873,7 +873,8 @@
       "metadata": {
         "category": "image",
         "description": "Merge images together in different layouts with grid options and dynamic image input list",
-        "display_name": "Merge Images"
+        "display_name": "Merge Images",
+        "group": "edit"
       }
     },
     {
