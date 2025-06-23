@@ -18,7 +18,6 @@ with console.status("Loading Griptape Nodes...") as status:
     from typing import Any, Literal
 
     import httpx
-    from dotenv import load_dotenv
     from rich.box import HEAVY_EDGE
     from rich.panel import Panel
     from rich.progress import Progress
@@ -83,8 +82,6 @@ os_manager = OSManager()
 
 def main() -> None:
     """Main entry point for the Griptape Nodes CLI."""
-    load_dotenv(ENV_FILE, override=True)
-
     # Hack to make paths "just work". # noqa: FIX004
     # Without this, packages like `nodes` don't properly import.
     # Long term solution could be to make `nodes` a proper src-layout package
