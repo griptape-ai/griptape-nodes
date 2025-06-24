@@ -58,7 +58,7 @@ class AgentManager:
             msg = f"Secret '{API_KEY_ENV_VAR}' not found"
             raise ValueError(msg)
         return GriptapeCloudPromptDriver(api_key=api_key, stream=True)
-    
+
     def _convert_artifacts(self, artifacts: list[RunAgentRequestArtifact]) -> list[BaseArtifact]:
         converted_artifacts = []
         for artifact in artifacts:
@@ -67,8 +67,8 @@ class AgentManager:
                 if mime_type.startswith("image/"):
                     artifact["format"] = mime_type.split("/")[1]
                     artifact["value"] = artifact["data_uri"].split(",")[1]
-                    artifact["width"] = 0 # Dummy value for width
-                    artifact["height"] = 0 # Dummy value for height
+                    artifact["width"] = 0  # Dummy value for width
+                    artifact["height"] = 0  # Dummy value for height
                     del artifact["data_uri"]
                     logger.info(f"Converting artifact to ImageArtifact: {artifact}")
                     converted_artifacts.append(ImageArtifact.from_dict(artifact))
