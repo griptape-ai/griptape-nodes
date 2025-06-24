@@ -1,6 +1,7 @@
 import logging
+from urllib.request import urlopen
 
-from griptape.artifacts import ErrorArtifact, TextArtifact
+from griptape.artifacts import BaseArtifact, ErrorArtifact, ImageArtifact, TextArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import EventBus, FinishTaskEvent, TextChunkEvent
 from griptape.memory.structure import ConversationMemory
@@ -18,6 +19,7 @@ from griptape_nodes.retained_mode.events.agent_events import (
     ResetAgentConversationMemoryResultFailure,
     ResetAgentConversationMemoryResultSuccess,
     RunAgentRequest,
+    RunAgentRequestArtifact,
     RunAgentResultFailure,
     RunAgentResultSuccess,
 )
@@ -56,13 +58,32 @@ class AgentManager:
             msg = f"Secret '{API_KEY_ENV_VAR}' not found"
             raise ValueError(msg)
         return GriptapeCloudPromptDriver(api_key=api_key, stream=True)
+    
+    def _convert_artifacts(self, artifacts: list[RunAgentRequestArtifact]) -> list[BaseArtifact]:
+        converted_artifacts = []
+        for artifact in artifacts:
+            if artifact["data_uri"].startswith("data:"):
+                mime_type = artifact["data_uri"].split(";")[0].split(":")[1]
+                if mime_type.startswith("image/"):
+                    artifact["format"] = mime_type.split("/")[1]
+                    artifact["value"] = artifact["data_uri"].split(",")[1]
+                    artifact["width"] = 0 # Dummy value for width
+                    artifact["height"] = 0 # Dummy value for height
+                    del artifact["data_uri"]
+                    logger.info(f"Converting artifact to ImageArtifact: {artifact}")
+                    converted_artifacts.append(ImageArtifact.from_dict(artifact))
+                else:
+                    converted_artifacts.append(ErrorArtifact(f"Unsupported mime type: {mime_type}"))
+        return converted_artifacts
 
     def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         try:
+            artifacts = self._convert_artifacts(request.artifacts)
+
             if self.prompt_driver is None:
                 self.prompt_driver = self._initialize_prompt_driver()
             agent = Agent(prompt_driver=self.prompt_driver, conversation_memory=self.conversation_memory)
-            *events, last_event = agent.run_stream(request.input)
+            *events, last_event = agent.run_stream([request.input, *artifacts])
             for event in events:
                 if isinstance(event, TextChunkEvent):
                     EventBus.publish_event(
@@ -72,16 +93,16 @@ class AgentManager:
                     )
             if isinstance(last_event, FinishTaskEvent):
                 if isinstance(last_event.task_output, ErrorArtifact):
-                    return RunAgentResultFailure(last_event.task_output.to_json())
+                    return RunAgentResultFailure(last_event.task_output.to_dict())
                 if isinstance(last_event.task_output, TextArtifact):
-                    return RunAgentResultSuccess(last_event.task_output.to_json())
+                    return RunAgentResultSuccess(last_event.task_output.to_dict())
             err_msg = f"Unexpected final event: {last_event}"
             logger.error(err_msg)
-            return RunAgentResultFailure(ErrorArtifact(last_event).to_json())
+            return RunAgentResultFailure(ErrorArtifact(last_event).to_dict())
         except Exception as e:
             err_msg = f"Error running agent: {e}"
             logger.error(err_msg)
-            return RunAgentResultFailure(ErrorArtifact(e).to_json())
+            return RunAgentResultFailure(ErrorArtifact(e).to_dict())
 
     def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
         try:
