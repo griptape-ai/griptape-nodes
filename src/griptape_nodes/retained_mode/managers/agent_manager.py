@@ -19,7 +19,6 @@ from griptape_nodes.retained_mode.events.agent_events import (
     ResetAgentConversationMemoryResultFailure,
     ResetAgentConversationMemoryResultSuccess,
     RunAgentRequest,
-    RunAgentRequestArtifact,
     RunAgentResultFailure,
     RunAgentResultSuccess,
 )
@@ -65,10 +64,11 @@ class AgentManager:
 
     def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         try:
-            artifacts = []
-            for url_artifact in request.url_artifacts:
-                if url_artifact["type"] == "ImageUrlArtifact":
-                    artifacts.append(ImageLoader().parse(ImageUrlArtifact.from_dict(url_artifact).to_bytes()))
+            artifacts = [
+                ImageLoader().parse(ImageUrlArtifact.from_dict(url_artifact).to_bytes())
+                for url_artifact in request.url_artifacts
+                if url_artifact["type"] == "ImageUrlArtifact"
+            ]
 
             if self.prompt_driver is None:
                 self.prompt_driver = self._initialize_prompt_driver()
