@@ -4,11 +4,59 @@ import uuid
 import PIL.Image
 import PIL.ImageOps
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
+from griptape.loaders import ImageLoader
 from PIL.Image import Image
 
 
-def image_artifact_to_pil(image_artifact: ImageArtifact) -> Image:
-    """Converts Griptape ImageArtifact to Pillow Image."""
+def image_artifact_to_pil(image_artifact: ImageArtifact | ImageUrlArtifact | dict) -> Image:
+    """Converts Griptape ImageArtifact to Pillow Image.
+
+    Args:
+        image_artifact: Either an ImageArtifact/ImageUrlArtifact object or a dictionary representation of one
+
+    Returns:
+        PIL Image object
+
+    Raises:
+        ValueError: If the image_artifact is invalid or missing required data
+    """
+    # Handle dictionary case - reconstruct proper artifact
+    if isinstance(image_artifact, dict):
+        value = image_artifact.get("value")
+        if not isinstance(value, str):
+            msg = f"Invalid image data format - expected string value: {value}"
+            raise TypeError(msg)
+
+        # If it's a URL artifact, load it properly
+        if image_artifact.get("type") == "ImageUrlArtifact":
+            url_artifact = ImageUrlArtifact(value=value)
+            try:
+                image_bytes = url_artifact.to_bytes()
+                image_artifact = ImageLoader().parse(image_bytes)
+            except Exception as e:
+                msg = f"Failed to load image from URL: {e}"
+                raise TypeError(msg) from e
+        else:
+            # For raw image data, parse it properly
+            try:
+                image_artifact = ImageLoader().parse(value.encode("utf-8"))
+            except Exception as e:
+                msg = f"Failed to parse image data: {e}"
+                raise TypeError(msg) from e
+
+    # Handle URL artifacts
+    if isinstance(image_artifact, ImageUrlArtifact):
+        try:
+            image_bytes = image_artifact.to_bytes()
+            image_artifact = ImageLoader().parse(image_bytes)
+        except Exception as e:
+            msg = f"Failed to load image from URL: {e}"
+            raise TypeError(msg) from e
+
+    if not isinstance(image_artifact, ImageArtifact):
+        msg = f"Expected ImageArtifact after processing, got {type(image_artifact)}"
+        raise TypeError(msg)
+
     return PIL.Image.open(io.BytesIO(image_artifact.value))
 
 
