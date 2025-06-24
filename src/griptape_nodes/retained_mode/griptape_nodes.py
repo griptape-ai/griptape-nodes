@@ -169,7 +169,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._static_files_manager = StaticFilesManager(
                 self._config_manager, self._secrets_manager, self._event_manager
             )
-            self._agent_manager = AgentManager(self._event_manager)
+            self._agent_manager = AgentManager(self._static_files_manager, self._event_manager)
             self._version_compatibility_manager = VersionCompatibilityManager(self._event_manager)
 
             # Assign handlers now that these are created.

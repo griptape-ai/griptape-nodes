@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import TypedDict
 
 from griptape.memory.structure import Run
 
@@ -14,17 +13,16 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
 @dataclass
-class RunAgentRequestArtifact(TypedDict):
-    name: str
-    id: str
-    data_uri: str
+class RunAgentRequestArtifact:
+    type: str
+    value: str
 
 
 @dataclass
 @PayloadRegistry.register
 class RunAgentRequest(RequestPayload):
     input: str
-    artifacts: list[RunAgentRequestArtifact]
+    url_artifacts: list[RunAgentRequestArtifact]
 
 
 @dataclass

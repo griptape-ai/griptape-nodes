@@ -1,8 +1,9 @@
 import logging
 
-from griptape.artifacts import BaseArtifact, ErrorArtifact, ImageArtifact, TextArtifact
+from griptape.artifacts import ErrorArtifact, ImageUrlArtifact, TextArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import EventBus, FinishTaskEvent, TextChunkEvent
+from griptape.loaders import ImageLoader
 from griptape.memory.structure import ConversationMemory
 from griptape.structures import Agent
 
@@ -26,6 +27,9 @@ from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, Exec
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+from griptape_nodes.retained_mode.managers.static_files_manager import (
+    StaticFilesManager,
+)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -37,9 +41,10 @@ secrets_manager = SecretsManager(config_manager)
 
 
 class AgentManager:
-    def __init__(self, event_manager: EventManager | None = None) -> None:
+    def __init__(self, static_files_manager: StaticFilesManager, event_manager: EventManager | None = None) -> None:
         self.conversation_memory = ConversationMemory()
         self.prompt_driver = None
+        self.static_files_manager = static_files_manager
 
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(RunAgentRequest, self.on_handle_run_agent_request)
@@ -58,29 +63,12 @@ class AgentManager:
             raise ValueError(msg)
         return GriptapeCloudPromptDriver(api_key=api_key, stream=True)
 
-    def _convert_artifacts(self, artifacts: list[RunAgentRequestArtifact]) -> list[BaseArtifact]:
-        converted_artifacts = []
-        for artifact in artifacts:
-            if artifact["data_uri"].startswith("data:"):
-                mime_type = artifact["data_uri"].split(";")[0].split(":")[1]
-                if mime_type.startswith("image/"):
-                    converted_artifacts.append(
-                        ImageArtifact(
-                            name=artifact["name"],
-                            id=artifact["id"],
-                            value=artifact["data_uri"].split(",")[1],
-                            format=mime_type.split("/")[1],
-                            width=0,
-                            height=0,
-                        )
-                    )
-                else:
-                    converted_artifacts.append(ErrorArtifact(f"Unsupported mime type: {mime_type}"))
-        return converted_artifacts
-
     def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         try:
-            artifacts = self._convert_artifacts(request.artifacts)
+            artifacts = []
+            for url_artifact in request.url_artifacts:
+                if url_artifact["type"] == "ImageUrlArtifact":
+                    artifacts.append(ImageLoader().parse(ImageUrlArtifact.from_dict(url_artifact).to_bytes()))
 
             if self.prompt_driver is None:
                 self.prompt_driver = self._initialize_prompt_driver()
