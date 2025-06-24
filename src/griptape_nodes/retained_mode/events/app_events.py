@@ -12,7 +12,9 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 @dataclass
 @PayloadRegistry.register
-class AppStartSessionRequest(RequestPayload): ...
+class AppStartSessionRequest(RequestPayload):
+    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1600
+    session_id: str | None = None
 
 
 @dataclass
