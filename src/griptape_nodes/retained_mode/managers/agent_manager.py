@@ -1,5 +1,4 @@
 import logging
-from urllib.request import urlopen
 
 from griptape.artifacts import BaseArtifact, ErrorArtifact, ImageArtifact, TextArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
@@ -65,13 +64,16 @@ class AgentManager:
             if artifact["data_uri"].startswith("data:"):
                 mime_type = artifact["data_uri"].split(";")[0].split(":")[1]
                 if mime_type.startswith("image/"):
-                    artifact["format"] = mime_type.split("/")[1]
-                    artifact["value"] = artifact["data_uri"].split(",")[1]
-                    artifact["width"] = 0  # Dummy value for width
-                    artifact["height"] = 0  # Dummy value for height
-                    del artifact["data_uri"]
-                    logger.info(f"Converting artifact to ImageArtifact: {artifact}")
-                    converted_artifacts.append(ImageArtifact.from_dict(artifact))
+                    converted_artifacts.append(
+                        ImageArtifact(
+                            name=artifact["name"],
+                            id=artifact["id"],
+                            value=artifact["data_uri"].split(",")[1],
+                            format=mime_type.split("/")[1],
+                            width=0,
+                            height=0,
+                        )
+                    )
                 else:
                     converted_artifacts.append(ErrorArtifact(f"Unsupported mime type: {mime_type}"))
         return converted_artifacts

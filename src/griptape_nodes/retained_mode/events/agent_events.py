@@ -29,13 +29,13 @@ class RunAgentRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class RunAgentResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    output: str
+    output: dict
 
 
 @dataclass
 @PayloadRegistry.register
 class RunAgentResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    error: str
+    error: dict
 
 
 @dataclass
