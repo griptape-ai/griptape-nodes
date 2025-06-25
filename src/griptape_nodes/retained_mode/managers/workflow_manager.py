@@ -51,9 +51,6 @@ from griptape_nodes.retained_mode.events.flow_events import (
 from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
     GetLibraryMetadataResultSuccess,
-    ListRegisteredLibrariesRequest,
-    ListRegisteredLibrariesResultSuccess,
-    UnloadLibraryFromRegistryRequest,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.secrets_events import (
@@ -376,10 +373,7 @@ class WorkflowManager:
         else:
             complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         try:
-            # TODO: scope the libraries loaded to JUST those used by this workflow, eventually: https://github.com/griptape-ai/griptape-nodes/issues/284
-            # Load (or reload, which should trigger a hot reload) all libraries
-            GriptapeNodes.LibraryManager().load_all_libraries_from_config()
-
+            # Libraries are now loaded only on app initialization and explicit reload requests
             # Now execute the workflow.
             with Path(complete_file_path).open(encoding="utf-8") as file:
                 workflow_content = file.read()
@@ -463,22 +457,6 @@ class WorkflowManager:
                     details = f"Failed to clear the existing object state when preparing to run workflow '{request.workflow_name}'."
                     logger.error(details)
                     return RunWorkflowFromRegistryResultFailure()
-
-                # Unload all libraries now.
-                all_libraries_request = ListRegisteredLibrariesRequest()
-                all_libraries_result = GriptapeNodes.handle_request(all_libraries_request)
-                if not isinstance(all_libraries_result, ListRegisteredLibrariesResultSuccess):
-                    details = f"When preparing to run a workflow '{request.workflow_name}', failed to get registered libraries."
-                    logger.error(details)
-                    return RunWorkflowFromRegistryResultFailure()
-
-                for library_name in all_libraries_result.libraries:
-                    unload_library_request = UnloadLibraryFromRegistryRequest(library_name=library_name)
-                    unload_library_result = GriptapeNodes.handle_request(unload_library_request)
-                    if not unload_library_result.succeeded():
-                        details = f"When preparing to run a workflow '{request.workflow_name}', failed to unload library '{library_name}'."
-                        logger.error(details)
-                        return RunWorkflowFromRegistryResultFailure()
 
             # Let's run under the assumption that this Workflow will become our Current Context; if we fail, it will revert.
             GriptapeNodes.ContextManager().push_workflow(request.workflow_name)
