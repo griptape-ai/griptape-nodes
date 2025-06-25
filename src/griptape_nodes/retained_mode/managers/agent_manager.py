@@ -1,11 +1,22 @@
 import logging
+from attrs import define, field
+from schema import Literal, Schema
+import uuid
 
-from griptape.artifacts import ErrorArtifact, ImageUrlArtifact, TextArtifact
+from griptape.artifacts import ErrorArtifact, ImageUrlArtifact, JsonArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.events import EventBus, FinishTaskEvent, TextChunkEvent
+from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
+from griptape.drivers.image_generation import BaseImageGenerationDriver
+from griptape.events import (
+    EventBus,
+    FinishTaskEvent,
+    TextChunkEvent,
+)
 from griptape.loaders import ImageLoader
 from griptape.memory.structure import ConversationMemory
 from griptape.structures import Agent
+from griptape.tools import BaseImageGenerationTool
+from griptape.utils.decorators import activity
 
 from griptape_nodes.retained_mode.events.agent_events import (
     AgentStreamEvent,
@@ -39,10 +50,39 @@ config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
 
 
+@define
+class NodesPromptImageGenerationTool(BaseImageGenerationTool):
+    image_generation_driver: BaseImageGenerationDriver = field(kw_only=True)
+    static_files_manager: StaticFilesManager = field(kw_only=True)
+
+    @activity(
+        config={
+            "description": "Generates an image from text prompts. Both prompt and negative_prompt are required.",
+            "schema": Schema(
+                {
+                    Literal("prompt", description=BaseImageGenerationTool.PROMPT_DESCRIPTION): str,
+                    Literal("negative_prompt", description=BaseImageGenerationTool.NEGATIVE_PROMPT_DESCRIPTION): str,
+                }
+            ),
+        },
+    )
+    def generate_image(self, params: dict[str, dict[str, str]]) -> ImageUrlArtifact | ErrorArtifact:
+        prompt = params["values"]["prompt"]
+        negative_prompt = params["values"]["negative_prompt"]
+
+        output_artifact = self.image_generation_driver.run_text_to_image(
+            prompts=[prompt], negative_prompts=[negative_prompt]
+        )
+        filename = f"{uuid.uuid4()}.png"
+        image_url = self.static_files_manager.save_static_file(output_artifact.to_bytes(), filename)
+        return ImageUrlArtifact(image_url)
+
+
 class AgentManager:
     def __init__(self, static_files_manager: StaticFilesManager, event_manager: EventManager | None = None) -> None:
         self.conversation_memory = ConversationMemory()
         self.prompt_driver = None
+        self.image_tool = None
         self.static_files_manager = static_files_manager
 
         if event_manager is not None:
@@ -62,6 +102,16 @@ class AgentManager:
             raise ValueError(msg)
         return GriptapeCloudPromptDriver(api_key=api_key, stream=True)
 
+    def _initialize_image_tool(self) -> NodesPromptImageGenerationTool:
+        api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
+        if not api_key:
+            msg = f"Secret '{API_KEY_ENV_VAR}' not found"
+            raise ValueError(msg)
+        return NodesPromptImageGenerationTool(
+            image_generation_driver=GriptapeCloudImageGenerationDriver(api_key=api_key, model="dall-e-3"),
+            static_files_manager=self.static_files_manager,
+        )
+
     def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         try:
             artifacts = [
@@ -72,7 +122,23 @@ class AgentManager:
 
             if self.prompt_driver is None:
                 self.prompt_driver = self._initialize_prompt_driver()
-            agent = Agent(prompt_driver=self.prompt_driver, conversation_memory=self.conversation_memory)
+            if self.image_tool is None:
+                self.image_tool = self._initialize_image_tool()
+            output_schema = Schema(
+                {
+                    Literal("conversation_output", description="The text output of the agent"): str,
+                    Literal(
+                        "generated_image_urls",
+                        description="URLs to images created with the NodesPromptImageGenerationTool",
+                    ): list[str],
+                }
+            )
+            agent = Agent(
+                prompt_driver=self.prompt_driver,
+                conversation_memory=self.conversation_memory,
+                tools=[self.image_tool],
+                output_schema=output_schema,
+            )
             *events, last_event = agent.run_stream([request.input, *artifacts])
             for event in events:
                 if isinstance(event, TextChunkEvent):
@@ -84,7 +150,7 @@ class AgentManager:
             if isinstance(last_event, FinishTaskEvent):
                 if isinstance(last_event.task_output, ErrorArtifact):
                     return RunAgentResultFailure(last_event.task_output.to_dict())
-                if isinstance(last_event.task_output, TextArtifact):
+                if isinstance(last_event.task_output, JsonArtifact):
                     return RunAgentResultSuccess(last_event.task_output.to_dict())
             err_msg = f"Unexpected final event: {last_event}"
             logger.error(err_msg)
