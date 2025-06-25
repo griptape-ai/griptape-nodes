@@ -42,6 +42,13 @@ class LibraryMetadata(BaseModel):
     is_griptape_nodes_searchable: bool = True
 
 
+class IconVariant(BaseModel):
+    """Icon variant for light and dark themes."""
+
+    light: str
+    dark: str
+
+
 class NodeMetadata(BaseModel):
     """Metadata about each node within the library, which informs where in the hierarchy it sits, details on usage, and tags to assist search."""
 
@@ -49,6 +56,9 @@ class NodeMetadata(BaseModel):
     description: str
     display_name: str
     tags: list[str] | None = None
+    icon: str | IconVariant | None = None
+    color: str | None = None
+    group: str | None = None
 
 
 class CategoryDefinition(BaseModel):

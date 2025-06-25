@@ -480,7 +480,7 @@ class BaseNode(ABC):
                 return element_item
         return None
 
-    def set_parameter_value(self, param_name: str, value: Any) -> None:
+    def set_parameter_value(self, param_name: str, value: Any, *, emit_change: bool = True) -> None:
         """Attempt to set a Parameter's value.
 
         The Node may choose to store a different value (or type) than what was passed in.
@@ -498,6 +498,7 @@ class BaseNode(ABC):
         Args:
             param_name: the name of the Parameter on this node that is about to be changed
             value: the value intended to be set
+            emit_change: whether to emit a parameter lifecycle event, defaults to True
 
         Returns:
             A set of parameter names within this node that were modified as a result
@@ -540,7 +541,8 @@ class BaseNode(ABC):
             self.after_value_set(parameter=parameter, value=final_value)
         except TypeError:
             self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=set())
-        self._emit_parameter_lifecycle_event(parameter)
+        if emit_change:
+            self._emit_parameter_lifecycle_event(parameter)
         # handle with container parameters
         if parameter.parent_container_name is not None:
             # Does it have a parent container
@@ -551,7 +553,7 @@ class BaseNode(ABC):
                 new_parent_value = handle_container_parameter(self, parent_parameter)
                 if new_parent_value is not None:
                     # set that new value if it exists.
-                    self.set_parameter_value(parameter.parent_container_name, new_parent_value)
+                    self.set_parameter_value(parameter.parent_container_name, new_parent_value, emit_change=False)
 
     def kill_parameter_children(self, parameter: Parameter) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes

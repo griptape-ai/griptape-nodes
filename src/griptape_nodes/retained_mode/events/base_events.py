@@ -12,6 +12,9 @@ from griptape.structures import Structure
 from griptape.tools import BaseTool
 from pydantic import BaseModel, Field
 
+from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
+from griptape_nodes.retained_mode.utils.session_persistence import SessionPersistence
+
 if TYPE_CHECKING:
     import builtins
 
@@ -108,9 +111,28 @@ class BaseEvent(BaseModel, ABC):
     # Keeping here instead of in GriptapeNodes to avoid circular import hell.
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/848
     _session_id: ClassVar[str | None] = None
+    _engine_id: ClassVar[str | None] = None
 
-    # Instance variable with a default_factory that references the class variable
+    # Instance variables with a default_factory that references the class variable
+    engine_id: str | None = Field(default_factory=lambda: BaseEvent._engine_id)
     session_id: str | None = Field(default_factory=lambda: BaseEvent._session_id)
+
+    @classmethod
+    def initialize_engine_id(cls) -> None:
+        """Initialize the engine ID if not already set."""
+        if cls._engine_id is None:
+            persisted_engine_id = cls._engine_id = EngineIdentity.get_engine_id()
+            if persisted_engine_id:
+                cls._engine_id = persisted_engine_id
+
+    @classmethod
+    def initialize_session_id(cls) -> None:
+        """Initialize the session ID from persisted storage if available."""
+        if cls._session_id is None:
+            # Check if there's a persisted session ID
+            persisted_session_id = SessionPersistence.get_persisted_session_id()
+            if persisted_session_id:
+                cls._session_id = persisted_session_id
 
     # Custom JSON encoder for the payload
     class Config:

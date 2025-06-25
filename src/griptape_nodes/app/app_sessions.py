@@ -238,16 +238,7 @@ async def _alisten_for_api_requests() -> None:
                     data = json.loads(message)
 
                     payload = data.get("payload", {})
-                    # With heartbeat events, we skip the regular processing and just send the heartbeat
-                    # Technically no longer needed since https://github.com/griptape-ai/griptape-nodes/pull/369
-                    # but we don't have a proper EventRequest for it yet.
-                    if payload.get("request_type") == "Heartbeat":
-                        session_id = GriptapeNodes.get_session_id()
-                        await __send_heartbeat(
-                            session_id=session_id, request=payload["request"], ws_connection=ws_connection
-                        )
-                    else:
-                        __process_api_event(payload)
+                    __process_api_event(payload)
                 except Exception:
                     logger.exception("Error processing event, skipping.")
         except ConnectionClosed:
@@ -273,6 +264,7 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
     else:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."
         raise TypeError(msg) from None
+
     # Don't send events over the wire that don't have a request_id set (e.g. engine-internal events)
     event_json = result_event.json()
     __schedule_async_task(__emit_message(dest_socket, event_json))
@@ -383,29 +375,6 @@ async def __emit_message(event_type: str, payload: str) -> None:
         logger.error("Unexpected error while sending event to Nodes API: %s", e)
 
 
-async def __send_heartbeat(*, session_id: str | None, request: dict, ws_connection: Any) -> None:
-    """Send a heartbeat response via WebSocket."""
-    heartbeat_response = {
-        "request": request,
-        "result": {},
-        "request_type": "Heartbeat",
-        "event_type": "EventResultSuccess",
-        "result_type": "HeartbeatSuccess",
-        **({"session_id": session_id} if session_id is not None else {}),
-    }
-
-    body = {"type": "success_result", "payload": heartbeat_response}
-    try:
-        await ws_connection.send(json.dumps(body))
-        logger.debug(
-            "Responded to heartbeat request with session: %s and request: %s", session_id, request.get("request_id")
-        )
-    except WebSocketException as e:
-        logger.error("Error sending heartbeat response: %s", e)
-    except Exception as e:
-        logger.error("Unexpected error while sending heartbeat response: %s", e)
-
-
 def __schedule_async_task(coro: Any) -> None:
     """Schedule an async coroutine to run in the event loop from a sync context."""
     if event_loop and event_loop.is_running():
@@ -419,6 +388,12 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
 
     This is used to notify the GUI that the app is ready to receive events.
     """
+    # Initialize engine ID and persistent data
+    from griptape_nodes.retained_mode.events.base_events import BaseEvent
+
+    BaseEvent.initialize_engine_id()
+    BaseEvent.initialize_session_id()
+
     # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
     payload = app_events.AppInitializationComplete()
     app_event = AppEvent(payload=payload)
@@ -431,6 +406,10 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
     else:
         engine_version = "<UNKNOWN ENGINE VERSION>"
 
+    # Get current session ID
+    session_id = GriptapeNodes.get_session_id()
+    session_info = f" | Session: {session_id[:8]}..." if session_id else " | No Session"
+
     message = Panel(
         Align.center(
             f"[bold green]Engine is ready to receive events[/bold green]\n"
@@ -438,7 +417,7 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
             vertical="middle",
         ),
         title="🚀 Griptape Nodes Engine Started",
-        subtitle=f"[green]{engine_version}[/green]",
+        subtitle=f"[green]{engine_version}{session_info}[/green]",
         border_style="green",
         padding=(1, 4),
     )
