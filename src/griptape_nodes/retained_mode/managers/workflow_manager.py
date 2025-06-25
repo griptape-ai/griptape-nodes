@@ -31,6 +31,7 @@ from rich.table import Table
 from rich.text import Text
 from xdg_base_dirs import xdg_config_home
 
+from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
@@ -1137,7 +1138,7 @@ class WorkflowManager:
             "griptape_nodes.bootstrap.workflow_executors.local_workflow_executor", "LocalWorkflowExecutor"
         )
 
-        # === 1) build the `def execute_workflow(input: dict, storage_backend: str = "local") -> dict | None:` ===
+        # === 1) build the `def execute_workflow(input: dict, storage_backend: str = StorageBackend.LOCAL) -> dict | None:` ===
         #   args
         arg_input = ast.arg(arg="input", annotation=ast.Name(id="dict", ctx=ast.Load()))
         arg_storage_backend = ast.arg(arg="storage_backend", annotation=ast.Name(id="str", ctx=ast.Load()))
@@ -1148,7 +1149,7 @@ class WorkflowManager:
             kwonlyargs=[],
             kw_defaults=[],
             kwarg=None,
-            defaults=[ast.Constant("local")],
+            defaults=[ast.Constant(StorageBackend.LOCAL)],
         )
         #   return annotation: dict | None
         return_annotation = ast.BinOp(
@@ -1234,9 +1235,12 @@ class WorkflowManager:
                     keywords=[
                         ast.keyword(
                             arg="choices",
-                            value=ast.List(elts=[ast.Constant("local"), ast.Constant("gtc")], ctx=ast.Load()),
+                            value=ast.List(
+                                elts=[ast.Constant(StorageBackend.LOCAL), ast.Constant(StorageBackend.GTC)],
+                                ctx=ast.Load(),
+                            ),
                         ),
-                        ast.keyword(arg="default", value=ast.Constant("local")),
+                        ast.keyword(arg="default", value=ast.Constant(StorageBackend.LOCAL)),
                         ast.keyword(
                             arg="help",
                             value=ast.Constant(
@@ -1495,6 +1499,7 @@ class WorkflowManager:
         ast.fix_missing_locations(test)
 
         # 3) the body: GriptapeNodes.LibraryManager().load_all_libraries_from_config()
+        # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1615): Generate requests to load ONLY the libraries used in this workflow
         load_call = ast.Expr(
             value=ast.Call(
                 func=ast.Attribute(

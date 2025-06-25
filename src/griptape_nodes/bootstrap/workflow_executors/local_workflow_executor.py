@@ -5,6 +5,7 @@ from typing import Any
 from griptape.events import BaseEvent, EventBus, EventListener
 
 from griptape_nodes.bootstrap.workflow_executors.workflow_executor import WorkflowExecutor
+from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.node_types import EndNode, StartNode
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
@@ -20,38 +21,53 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 logger = logging.getLogger(__name__)
 
 
+class LocalExecutorError(Exception):
+    """Exception raised during local workflow execution."""
+
+
 class LocalWorkflowExecutor(WorkflowExecutor):
     def __init__(self) -> None:
         self.queue = Queue()
         self.output: dict | None = None
 
     def _load_flow_for_workflow(self) -> str:
-        context_manager = GriptapeNodes.ContextManager()
-        return context_manager.get_current_flow().name
+        try:
+            context_manager = GriptapeNodes.ContextManager()
+            return context_manager.get_current_flow().name
+        except Exception as e:
+            msg = f"Failed to get current flow from context manager: {e}"
+            logger.exception(msg)
+            raise LocalExecutorError(msg) from e
 
-    def _set_storage_backend(self, storage_backend: str) -> None:
+    def _set_storage_backend(self, storage_backend: StorageBackend) -> None:
         from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 
-        config_manager = ConfigManager()
-        config_manager.set_config_value(
-            key="storage_backend",
-            value=storage_backend,
-        )
+        try:
+            config_manager = ConfigManager()
+            config_manager.set_config_value(
+                key="storage_backend",
+                value=storage_backend,
+            )
+        except Exception as e:
+            msg = f"Failed to set storage backend: {e}"
+            logger.exception(msg)
+            raise LocalExecutorError(msg) from e
 
     def _handle_event(self, event: BaseEvent) -> None:
         try:
-            if isinstance(event, GriptapeNodeEvent):
-                self.__handle_node_event(event)
-            elif isinstance(event, ExecutionGriptapeNodeEvent):
-                self.__handle_execution_node_event(event)
-            elif isinstance(event, ProgressEvent):
-                self.__handle_progress_event(event)
-            elif isinstance(event, AppEvent):
-                self.__handle_app_event(event)
-            else:
-                msg = f"Unknown event type: {type(event)}"
-                logger.info(msg)
-                self.queue.put(event)
+            match event:
+                case GriptapeNodeEvent():
+                    self.__handle_node_event(event)
+                case ExecutionGriptapeNodeEvent():
+                    self.__handle_execution_node_event(event)
+                case ProgressEvent():
+                    self.__handle_progress_event(event)
+                case AppEvent():
+                    self.__handle_app_event(event)
+                case _:
+                    msg = f"Unknown event type: {type(event)}"
+                    logger.info(msg)
+                    self.queue.put(event)
         except Exception as e:
             logger.info(e)
 
@@ -116,7 +132,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
 
                         if set_parameter_value_result.failed():
                             msg = f"Failed to set parameter {parameter_name} for node {node_name}."
-                            raise ValueError(msg)
+                            raise LocalExecutorError(msg)
 
     def _get_output_for_flow(self, flow_name: str) -> dict:
         control_flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
@@ -128,7 +144,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
 
         return output
 
-    def run(self, workflow_name: str, flow_input: Any, storage_backend: str = "local") -> None:
+    def run(self, workflow_name: str, flow_input: Any, storage_backend: StorageBackend = StorageBackend.LOCAL) -> None:
         """Executes a local workflow.
 
         Executes a workflow by setting up event listeners, registering libraries,
@@ -142,6 +158,8 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         Returns:
             None
         """
+        logger.info("Executing workflow: %s", workflow_name)
+
         EventBus.add_event_listener(
             event_listener=EventListener(
                 on_event=self._handle_event,
@@ -160,8 +178,8 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         start_flow_result = GriptapeNodes.handle_request(start_flow_request)
 
         if start_flow_result.failed():
-            msg = f"Failed to start flow {workflow_name}"
-            raise ValueError(msg)
+            msg = f"Failed to start flow {flow_name}"
+            raise LocalExecutorError(msg)
 
         logger.info("Workflow started!")
 
@@ -183,7 +201,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
                         msg = "Control flow cancelled"
                         is_flow_finished = True
                         logger.error(msg)
-                        error = ValueError(msg)
+                        error = LocalExecutorError(msg)
 
                 self.queue.task_done()
 
