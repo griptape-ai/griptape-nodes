@@ -222,14 +222,18 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return cls()
 
     @classmethod
-    def handle_request(cls, request: RequestPayload) -> ResultPayload:
+    def handle_request(
+        cls, request: RequestPayload, *, session_id: str | None = None, engine_id: str | None = None
+    ) -> ResultPayload:
         event_mgr = GriptapeNodes.EventManager()
         obj_depth_mgr = GriptapeNodes.OperationDepthManager()
         workflow_mgr = GriptapeNodes.WorkflowManager()
         return event_mgr.handle_request(
-            request=request,
+            request,
             operation_depth_mgr=obj_depth_mgr,
             workflow_mgr=workflow_mgr,
+            session_id=session_id,
+            engine_id=engine_id,
         )
 
     @classmethod
@@ -240,6 +244,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def get_session_id(cls) -> str | None:
         return BaseEvent._session_id
+
+    @classmethod
+    def get_engine_id(cls) -> str | None:
+        return BaseEvent._engine_id
 
     @classmethod
     def EventManager(cls) -> EventManager:

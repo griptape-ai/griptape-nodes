@@ -66,7 +66,13 @@ class EventManager:
             del self._request_type_to_manager[request_type]
 
     def handle_request(
-        self, request: RP, operation_depth_mgr: "OperationDepthManager", workflow_mgr: "WorkflowManager"
+        self,
+        request: RP,
+        *,
+        operation_depth_mgr: "OperationDepthManager",
+        workflow_mgr: "WorkflowManager",
+        session_id: str | None = None,
+        engine_id: str | None = None,
     ) -> ResultPayload:
         """Publish an event to the manager assigned to its type.
 
@@ -74,6 +80,8 @@ class EventManager:
             request: The request to handle
             operation_depth_mgr: The operation depth manager to use
             workflow_mgr: The workflow manager to use
+            session_id: The session ID for the request (optional)
+            engine_id: The engine ID for the request (optional)
         """
         # Notify the manager of the event type
         with operation_depth_mgr as depth_manager:
@@ -103,6 +111,8 @@ class EventManager:
                         request=request,
                         result=result_payload,
                         retained_mode=retained_mode_str,
+                        session_id=session_id,
+                        engine_id=engine_id,
                     )
                     # If the result is a success, and the WorkflowAlteredMixin is present, that means the flow has been changed in some way.
                     # In that case, we need to flush the element changes, so we add one to the event queue.
@@ -116,6 +126,8 @@ class EventManager:
                         request=request,
                         result=result_payload,
                         retained_mode=retained_mode_str,
+                        session_id=session_id,
+                        engine_id=engine_id,
                     )
                 wrapped_event = GriptapeNodeEvent(wrapped_event=result_event)
                 EventBus.publish_event(wrapped_event)

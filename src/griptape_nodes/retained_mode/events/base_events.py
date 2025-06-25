@@ -114,8 +114,8 @@ class BaseEvent(BaseModel, ABC):
     _engine_id: ClassVar[str | None] = None
 
     # Instance variables with a default_factory that references the class variable
-    engine_id: str | None = Field(default_factory=lambda: BaseEvent._engine_id)
-    session_id: str | None = Field(default_factory=lambda: BaseEvent._session_id)
+    engine_id: str | None = Field(default=None)
+    session_id: str | None = Field(default=None)
 
     @classmethod
     def initialize_engine_id(cls) -> None:
@@ -257,7 +257,7 @@ class EventRequest(BaseEvent, Generic[P]):
             raise ValueError(msg)
 
         # Create the event instance with the payload
-        return cls(request=request_payload)
+        return cls(request=request_payload, **event_data)
 
 
 class EventResult(BaseEvent, Generic[P, R], ABC):
