@@ -11,6 +11,7 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import EventBus, EventListener, FinishTaskEvent, TextChunkEvent
 from griptape.loaders import ImageLoader
 from griptape.memory.structure import ConversationMemory
+from griptape.rules import Rule, Ruleset
 from griptape.structures import Agent
 from griptape.tools import BaseImageGenerationTool
 from griptape.utils.decorators import activity
@@ -142,6 +143,15 @@ class AgentManager:
                 conversation_memory=self.conversation_memory,
                 tools=[self.image_tool] if self.image_tool else [],
                 output_schema=output_schema,
+                rulesets=[
+                    Ruleset(
+                        name="generated_image_urls",
+                        rules=[
+                            Rule("Do not hallucinate generated_image_urls."),
+                            Rule("Only set generated_image_urls with images generated with your tools."),
+                        ],
+                    ),
+                ],
             )
             *events, last_event = agent.run_stream([request.input, *artifacts])
             full_result = ""
