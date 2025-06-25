@@ -120,7 +120,9 @@ class AgentManager:
         threading.Thread(target=self._on_handle_run_agent_request, args=(request, EventBus.event_listeners)).start()
         return RunAgentResultStarted()
 
-    def _on_handle_run_agent_request(self, request: RunAgentRequest, event_listeners: EventListener) -> ResultPayload:
+    def _on_handle_run_agent_request(
+        self, request: RunAgentRequest, event_listeners: list[EventListener]
+    ) -> ResultPayload:
         EventBus.event_listeners = event_listeners
         try:
             artifacts = [
@@ -138,7 +140,7 @@ class AgentManager:
             agent = Agent(
                 prompt_driver=self.prompt_driver,
                 conversation_memory=self.conversation_memory,
-                tools=[self.image_tool],
+                tools=[self.image_tool] if self.image_tool else [],
                 output_schema=output_schema,
             )
             *events, last_event = agent.run_stream([request.input, *artifacts])
