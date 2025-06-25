@@ -51,9 +51,6 @@ from griptape_nodes.retained_mode.events.flow_events import (
 from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
     GetLibraryMetadataResultSuccess,
-    ListRegisteredLibrariesRequest,
-    ListRegisteredLibrariesResultSuccess,
-    UnloadLibraryFromRegistryRequest,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.secrets_events import (
