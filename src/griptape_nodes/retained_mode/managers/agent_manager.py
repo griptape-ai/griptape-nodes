@@ -7,11 +7,7 @@ from griptape.artifacts import ErrorArtifact, ImageUrlArtifact, JsonArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.image_generation import BaseImageGenerationDriver
-from griptape.events import (
-    EventBus,
-    FinishTaskEvent,
-    TextChunkEvent,
-)
+from griptape.events import EventBus, FinishTaskEvent, TextChunkEvent
 from griptape.loaders import ImageLoader
 from griptape.memory.structure import ConversationMemory
 from griptape.structures import Agent
@@ -126,11 +122,8 @@ class AgentManager:
                 self.image_tool = self._initialize_image_tool()
             output_schema = Schema(
                 {
-                    Literal("conversation_output", description="The text output of the agent"): str,
-                    Literal(
-                        "generated_image_urls",
-                        description="URLs to images created with the NodesPromptImageGenerationTool",
-                    ): list[str],
+                    "generated_image_urls": [str],
+                    "conversation_output": str,
                 }
             )
             agent = Agent(
