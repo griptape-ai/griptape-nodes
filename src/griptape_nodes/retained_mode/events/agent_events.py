@@ -27,6 +27,12 @@ class RunAgentRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
+class RunAgentResultStarted(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
 class RunAgentResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     output: dict
 
