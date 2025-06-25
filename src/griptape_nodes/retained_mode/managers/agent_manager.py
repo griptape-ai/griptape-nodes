@@ -1,21 +1,21 @@
 import json
 import logging
 import threading
-from attrs import define, field
-from json_repair import repair_json
-from schema import Literal, Schema
 import uuid
 
+from attrs import define, field
 from griptape.artifacts import ErrorArtifact, ImageUrlArtifact, JsonArtifact
-from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.image_generation import BaseImageGenerationDriver
-from griptape.events import EventBus, FinishTaskEvent, TextChunkEvent
+from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
+from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
+from griptape.events import EventBus, EventListener, FinishTaskEvent, TextChunkEvent
 from griptape.loaders import ImageLoader
 from griptape.memory.structure import ConversationMemory
 from griptape.structures import Agent
 from griptape.tools import BaseImageGenerationTool
 from griptape.utils.decorators import activity
+from json_repair import repair_json
+from schema import Literal, Schema
 
 from griptape_nodes.retained_mode.events.agent_events import (
     AgentStreamEvent,
@@ -113,10 +113,14 @@ class AgentManager:
         )
 
     def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
+        if self.prompt_driver is None:
+            self.prompt_driver = self._initialize_prompt_driver()
+        if self.image_tool is None:
+            self.image_tool = self._initialize_image_tool()
         threading.Thread(target=self._on_handle_run_agent_request, args=(request, EventBus.event_listeners)).start()
         return RunAgentResultStarted()
 
-    def _on_handle_run_agent_request(self, request: RunAgentRequest, event_listeners) -> ResultPayload:
+    def _on_handle_run_agent_request(self, request: RunAgentRequest, event_listeners: EventListener) -> ResultPayload:
         EventBus.event_listeners = event_listeners
         try:
             artifacts = [
@@ -125,10 +129,6 @@ class AgentManager:
                 if url_artifact["type"] == "ImageUrlArtifact"
             ]
 
-            if self.prompt_driver is None:
-                self.prompt_driver = self._initialize_prompt_driver()
-            if self.image_tool is None:
-                self.image_tool = self._initialize_image_tool()
             output_schema = Schema(
                 {
                     "generated_image_urls": [str],
