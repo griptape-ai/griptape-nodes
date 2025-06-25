@@ -1,5 +1,7 @@
+import json
 import logging
 from attrs import define, field
+from json_repair import repair_json
 from schema import Literal, Schema
 import uuid
 
@@ -133,13 +135,28 @@ class AgentManager:
                 output_schema=output_schema,
             )
             *events, last_event = agent.run_stream([request.input, *artifacts])
+            full_result = ""
+            last_conversation_output = ""
             for event in events:
                 if isinstance(event, TextChunkEvent):
-                    EventBus.publish_event(
-                        ExecutionGriptapeNodeEvent(
-                            wrapped_event=ExecutionEvent(payload=AgentStreamEvent(token=event.token))
-                        )
-                    )
+                    full_result += event.token
+                    try:
+                        result_json = json.loads(repair_json(full_result))
+                        if "conversation_output" in result_json:
+                            new_conversation_output = result_json["conversation_output"]
+                            if new_conversation_output != last_conversation_output:
+                                EventBus.publish_event(
+                                    ExecutionGriptapeNodeEvent(
+                                        wrapped_event=ExecutionEvent(
+                                            payload=AgentStreamEvent(
+                                                token=new_conversation_output[len(last_conversation_output) :]
+                                            )
+                                        )
+                                    )
+                                )
+                                last_conversation_output = new_conversation_output
+                    except json.JSONDecodeError:
+                        pass  # Ignore incomplete JSON
             if isinstance(last_event, FinishTaskEvent):
                 if isinstance(last_event.task_output, ErrorArtifact):
                     return RunAgentResultFailure(last_event.task_output.to_dict())
