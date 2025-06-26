@@ -1603,7 +1603,7 @@ class WorkflowManager:
             # When we pickle objects from dynamically loaded modules (like VideoUrlArtifact),
             # pickle stores the class's __module__ attribute in the binary data. If we don't
             # patch this, the pickle data would contain something like:
-            #   "dynamic_module_image_to_video_py_123456789.VideoUrlArtifact"
+            #   "gtn_dynamic_module_image_to_video_py_123456789.VideoUrlArtifact"
             #
             # When the workflow runs later, Python tries to import this module name, which
             # fails because dynamic modules don't exist in fresh Python processes.
@@ -2660,7 +2660,7 @@ class WorkflowManager:
         are serialized and later reloaded in a fresh Python process.
 
         The Problem:
-            Dynamic modules get names like "dynamic_module_image_to_video_py_123456789"
+            Dynamic modules get names like "gtn_dynamic_module_image_to_video_py_123456789"
             When pickle serializes objects, it embeds these module names in the binary data
             When workflows run later, Python can't import these non-existent module names
 
@@ -2677,7 +2677,7 @@ class WorkflowManager:
             Pickled bytes with stable module references
 
         Example:
-            Before: pickle contains "dynamic_module_image_to_video_py_123456789.VideoUrlArtifact"
+            Before: pickle contains "gtn_dynamic_module_image_to_video_py_123456789.VideoUrlArtifact"
             After:  pickle contains "griptape_nodes.node_libraries.runwayml_library.image_to_video.VideoUrlArtifact"
         """
         patched_classes: list[tuple[type, str]] = []

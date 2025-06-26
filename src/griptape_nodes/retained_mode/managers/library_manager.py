@@ -122,10 +122,10 @@ class LibraryManager:
     #
     # Example mappings:
     # dynamic to stable module mapping:
-    #     "dynamic_module_image_to_video_py_123456789": "griptape_nodes.node_libraries.runwayml_library.image_to_video"
+    #     "gtn_dynamic_module_image_to_video_py_123456789": "griptape_nodes.node_libraries.runwayml_library.image_to_video"
     #
     # stable to dynamic module mapping:
-    #     "griptape_nodes.node_libraries.runwayml_library.image_to_video": "dynamic_module_image_to_video_py_123456789"
+    #     "griptape_nodes.node_libraries.runwayml_library.image_to_video": "gtn_dynamic_module_image_to_video_py_123456789"
     #
     # library to stable modules:
     #     "RunwayML Library": {"griptape_nodes.node_libraries.runwayml_library.image_to_video", "griptape_nodes.node_libraries.runwayml_library.text_to_image"},
@@ -1006,7 +1006,7 @@ class LibraryManager:
         """Get the stable namespace for a dynamic module name.
 
         This method is used during workflow serialization to convert dynamic module names
-        (like "dynamic_module_image_to_video_py_123456789") to stable namespace imports
+        (like "gtn_dynamic_module_image_to_video_py_123456789") to stable namespace imports
         (like "griptape_nodes.node_libraries.runwayml_library.image_to_video").
 
         Args:
@@ -1016,7 +1016,7 @@ class LibraryManager:
             The stable namespace string, or None if not found
 
         Example:
-            >>> manager.get_stable_namespace_for_dynamic_module("dynamic_module_image_to_video_py_123456789")
+            >>> manager.get_stable_namespace_for_dynamic_module("gtn_dynamic_module_image_to_video_py_123456789")
             "griptape_nodes.node_libraries.runwayml_library.image_to_video"
         """
         return self._dynamic_to_stable_module_mapping.get(dynamic_module_name)
@@ -1031,12 +1031,12 @@ class LibraryManager:
             True if this is a dynamic module name, False otherwise
 
         Example:
-            >>> manager.is_dynamic_module("dynamic_module_image_to_video_py_123456789")
+            >>> manager.is_dynamic_module("gtn_dynamic_module_image_to_video_py_123456789")
             True
             >>> manager.is_dynamic_module("griptape.artifacts")
             False
         """
-        return module_name.startswith("dynamic_module_")
+        return module_name.startswith("gtn_dynamic_module_")
 
     def _load_module_from_file(self, file_path: Path | str, library_name: str) -> ModuleType:
         """Dynamically load a module from a Python file with support for hot reloading.
@@ -1055,7 +1055,7 @@ class LibraryManager:
         file_path = Path(file_path)
 
         # Generate a unique module name
-        module_name = f"dynamic_module_{file_path.name.replace('.', '_')}_{hash(str(file_path))}"
+        module_name = f"gtn_dynamic_module_{file_path.name.replace('.', '_')}_{hash(str(file_path))}"
 
         # Create stable namespace
         stable_namespace = self._create_stable_namespace(library_name, file_path)
