@@ -37,18 +37,29 @@ class DictValues(DataNode):
             )
         )
 
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
+        if parameter.name == "dict":
+            # Get the input dictionary
+            input_dict = self.get_parameter_value("dict")
+
+            # Ensure it's actually a dictionary
+            if not isinstance(input_dict, dict):
+                input_dict = {}
+
+            # Extract values as a list
+            values_list = list(input_dict.values())
+
+            # Set output values
+            self.parameter_output_values["values"] = values_list
+            self.set_parameter_value("values", values_list)
+            self.show_parameter_by_name("values")
+
+        return super().after_value_set(parameter, value)
+
     def process(self) -> None:
         """Process the node by extracting values from the dictionary."""
-        # Get the input dictionary
-        input_dict = self.parameter_values.get("dict", {})
-
-        # Ensure it's actually a dictionary
-        if not isinstance(input_dict, dict):
-            input_dict = {}
-
-        # Extract values as a list
-        values_list = list(input_dict.values())
-
-        # Set output values
-        self.parameter_output_values["values"] = values_list
-        self.parameter_values["values"] = values_list  # For get_value compatibility
+        self.parameter_output_values["values"] = self.parameter_values["values"]
