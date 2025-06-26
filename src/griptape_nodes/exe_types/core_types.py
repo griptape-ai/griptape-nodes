@@ -217,7 +217,12 @@ class BaseNodeElement:
                 # Track change if different
                 if old_value != new_value:
                     # it needs to be static so we can call these methods.
-                    self._changes[func.__name__] = new_value
+                    if func.__name__ == "allowed_modes" and isinstance(new_value, set):
+                        self._changes["mode_allowed_input"] = ParameterMode.INPUT in new_value
+                        self._changes["mode_allowed_output"] = ParameterMode.OUTPUT in new_value
+                        self._changes["mode_allowed_property"] = ParameterMode.PROPERTY in new_value
+                    else:
+                        self._changes[func.__name__] = new_value
                     if self._node_context is not None and self not in self._node_context._tracked_parameters:
                         self._node_context._tracked_parameters.append(self)
                 return result
