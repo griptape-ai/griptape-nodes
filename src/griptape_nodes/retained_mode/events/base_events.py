@@ -31,6 +31,7 @@ class RequestPayload(Payload, ABC):
 
 
 # Result payload base class with abstract succeeded/failed methods, and indicator whether the current workflow was altered.
+@dataclass(kw_only=True)
 class ResultPayload(Payload, ABC):
     """Base class for all result payloads."""
 
@@ -65,6 +66,7 @@ class WorkflowNotAlteredMixin:
 
 
 # Success result payload abstract base class
+@dataclass(kw_only=True)
 class ResultPayloadSuccess(ResultPayload, ABC):
     """Abstract base class for success result payloads."""
 
@@ -78,8 +80,11 @@ class ResultPayloadSuccess(ResultPayload, ABC):
 
 
 # Failure result payload abstract base class
+@dataclass(kw_only=True)
 class ResultPayloadFailure(ResultPayload, ABC):
     """Abstract base class for failure result payloads."""
+
+    exception: Exception | None = None
 
     def succeeded(self) -> bool:
         """Returns False as this is a failure result.

@@ -43,6 +43,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     BaseEvent,
     RequestPayload,
     ResultPayload,
+    ResultPayloadFailure,
 )
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
@@ -226,11 +227,20 @@ class GriptapeNodes(metaclass=SingletonMeta):
         event_mgr = GriptapeNodes.EventManager()
         obj_depth_mgr = GriptapeNodes.OperationDepthManager()
         workflow_mgr = GriptapeNodes.WorkflowManager()
-        return event_mgr.handle_request(
-            request=request,
-            operation_depth_mgr=obj_depth_mgr,
-            workflow_mgr=workflow_mgr,
-        )
+
+        try:
+            return event_mgr.handle_request(
+                request=request,
+                operation_depth_mgr=obj_depth_mgr,
+                workflow_mgr=workflow_mgr,
+            )
+        except Exception as e:
+            logger.exception(
+                "Unhandled exception while processing request of type %s. "
+                "Consider saving your work and restarting the engine if issues persist.",
+                type(request).__name__,
+            )
+            return ResultPayloadFailure(exception=e)
 
     @classmethod
     def broadcast_app_event(cls, app_event: AppPayload) -> None:
