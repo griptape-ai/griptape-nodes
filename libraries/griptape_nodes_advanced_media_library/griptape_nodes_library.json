@@ -16,7 +16,7 @@
         "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "imageio-ffmpeg>=0.6.0",
-        "git+https://github.com/huggingface/diffusers.git@66394bf6c798a93a1e9536dac4999f77b690174c",
+        "git+https://github.com/huggingface/diffusers.git@00f95b9755718aabb65456e791b8408526ae6e76",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
         "peft>=0.15.2",
@@ -135,6 +135,15 @@
         "category": "image/flux",
         "description": "Generate an umasked portion of an Image with Flux via 🤗 Diffusers.",
         "display_name": "Flux Fill"
+      }
+    },
+    {
+      "class_name": "FluxKontextPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/flux_kontext_pipeline.py",
+      "metadata": {
+        "category": "image/flux",
+        "description": "Generate an Image with Flux Kontext via 🤗 Diffusers.",
+        "display_name": "Flux Kontext"
       }
     },
     {
