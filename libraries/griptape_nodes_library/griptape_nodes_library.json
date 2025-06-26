@@ -6,10 +6,7 @@
     "description": "Default nodes for Griptape Nodes",
     "library_version": "0.39.0",
     "engine_version": "0.39.0",
-    "tags": [
-      "Griptape",
-      "AI"
-    ]
+    "tags": ["Griptape", "AI"]
   },
   "categories": [
     {
@@ -618,6 +615,16 @@
       }
     },
     {
+      "class_name": "Dictionary",
+      "file_path": "griptape_nodes_library/dict/create_dict.py",
+      "metadata": {
+        "category": "dict",
+        "description": "Creates a dictionary from key-value pairs",
+        "display_name": "Create Dictionary",
+        "group": "general"
+      }
+    },
+    {
       "class_name": "DisplayDictionary",
       "file_path": "griptape_nodes_library/dict/display_dict.py",
       "metadata": {
@@ -666,6 +673,16 @@
         "description": "Save dictionary data to a file",
         "display_name": "Save Dictionary",
         "icon": "file-down",
+        "group": "general"
+      }
+    },
+    {
+      "class_name": "DictValues",
+      "file_path": "griptape_nodes_library/dict/dict_values.py",
+      "metadata": {
+        "category": "dict",
+        "description": "Extract a list of values from a dictionary",
+        "display_name": "Dict Values",
         "group": "general"
       }
     },
@@ -905,7 +922,7 @@
         "category": "image",
         "description": "Capture an image using the device's camera",
         "display_name": "Webcam",
-        "icon":"webcam",
+        "icon": "webcam",
         "group": "general"
       }
     },
@@ -1009,7 +1026,8 @@
         "icon": "file-text",
         "group": "general"
       }
-    },{
+    },
+    {
       "class_name": "MergeTexts",
       "file_path": "griptape_nodes_library/text/merge_texts.py",
       "metadata": {
@@ -1062,7 +1080,7 @@
         "group": "tasks"
       }
     },
-    
+
     {
       "class_name": "SaveText",
       "file_path": "griptape_nodes_library/text/save_text.py",
