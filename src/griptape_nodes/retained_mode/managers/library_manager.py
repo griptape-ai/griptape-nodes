@@ -1307,7 +1307,7 @@ class LibraryManager:
         sandbox_category = CategoryDefinition(
             title="Sandbox",
             description="Nodes loaded from the Sandbox Library.",
-            color="#ff0000",
+            color="#c7621a",
             icon="Folder",
         )
 
@@ -1334,10 +1334,18 @@ class LibraryManager:
                 ):
                     details = f"Found node '{class_name}' in sandbox library '{candidate}'."
                     logger.debug(details)
+
+                    # Get metadata from class attributes if they exist, otherwise use defaults
+                    node_icon = getattr(obj, "ICON", "square-dashed")
+                    node_description = getattr(obj, "DESCRIPTION", f"'{class_name}' (loaded from the Sandbox Library).")
+                    node_color = getattr(obj, "COLOR", None)
+
                     node_metadata = NodeMetadata(
                         category="Griptape Nodes Sandbox",
-                        description=f"'{class_name}' (loaded from the Sandbox Library).",
+                        description=node_description,
                         display_name=class_name,
+                        icon=node_icon,
+                        color=node_color,
                     )
                     node_definition = NodeDefinition(
                         class_name=class_name,
