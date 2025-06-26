@@ -2,7 +2,7 @@
 
 ## What is it?
 
-The LoadAudio node is a simple building block that lets you save an audio file from your workflow so you can use it elsewhere.
+The SaveAudio node is a simple building block that lets you save an audio file from your workflow so you can use it elsewhere.
 
 ## When would I use it?
 
