@@ -480,7 +480,7 @@ class BaseNode(ABC):
                 return element_item
         return None
 
-    def set_parameter_value(self, param_name: str, value: Any, *, emit_change: bool = True) -> None:
+    def set_parameter_value(self, param_name: str, value: Any, *, initial_setup:bool = False, emit_change: bool = True) -> None:
         """Attempt to set a Parameter's value.
 
         The Node may choose to store a different value (or type) than what was passed in.
@@ -526,23 +526,25 @@ class BaseNode(ABC):
 
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
-        try:
-            final_value = self.before_value_set(parameter=parameter, value=candidate_value)
-        except TypeError:
-            final_value = self.before_value_set(
-                parameter=parameter, value=candidate_value, modified_parameters_set=set()
-            )
-        # ACTUALLY SET THE NEW VALUE
-        self.parameter_values[param_name] = final_value
-
-        # If a parameter value has been set at the top level of a container, wipe all children.
-        # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
-        try:
-            self.after_value_set(parameter=parameter, value=final_value)
-        except TypeError:
-            self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=set())
-        if emit_change:
-            self._emit_parameter_lifecycle_event(parameter)
+        if not initial_setup:
+            try:
+                final_value = self.before_value_set(parameter=parameter, value=candidate_value)
+            except TypeError:
+                final_value = self.before_value_set(
+                    parameter=parameter, value=candidate_value, modified_parameters_set=set()
+                )
+            # ACTUALLY SET THE NEW VALUE
+            self.parameter_values[param_name] = final_value
+            # If a parameter value has been set at the top level of a container, wipe all children.
+            # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
+            try:
+                self.after_value_set(parameter=parameter, value=final_value)
+            except TypeError:
+                self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=set())
+            if emit_change:
+                self._emit_parameter_lifecycle_event(parameter)
+        else:
+            self.parameter_values[param_name] = candidate_value
         # handle with container parameters
         if parameter.parent_container_name is not None:
             # Does it have a parent container
@@ -553,7 +555,7 @@ class BaseNode(ABC):
                 new_parent_value = handle_container_parameter(self, parent_parameter)
                 if new_parent_value is not None:
                     # set that new value if it exists.
-                    self.set_parameter_value(parameter.parent_container_name, new_parent_value, emit_change=False)
+                    self.set_parameter_value(parameter.parent_container_name, new_parent_value, initial_setup=initial_setup,emit_change=False)
 
     def kill_parameter_children(self, parameter: Parameter) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes

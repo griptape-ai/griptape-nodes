@@ -1478,7 +1478,7 @@ class NodeManager:
             return NodeManager.ModifiedReturnValue(object_created, modified)
         # Otherwise use set_parameter_value. This calls our converters and validators.
         old_value = node.get_parameter_value(request.parameter_name)
-        node.set_parameter_value(request.parameter_name, object_created)
+        node.set_parameter_value(request.parameter_name, object_created, initial_setup=request.initial_setup)
         # Get the "converted" value here.
         finalized_value = node.get_parameter_value(request.parameter_name)
         if old_value != finalized_value:
