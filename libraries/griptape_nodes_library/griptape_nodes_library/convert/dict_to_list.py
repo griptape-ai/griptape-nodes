@@ -7,8 +7,8 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import DataNode
 
 
-class DictValues(DataNode):
-    """Extract a list of values from a dictionary."""
+class DictToList(DataNode):
+    """Extract lists of keys and values from a dictionary."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
@@ -25,7 +25,19 @@ class DictValues(DataNode):
             )
         )
 
-        # Add list output parameter
+        # Add keys output parameter
+        self.add_parameter(
+            Parameter(
+                name="keys",
+                output_type="list",
+                allowed_modes={ParameterMode.OUTPUT},
+                default_value=[],
+                tooltip="List of dictionary keys",
+                ui_options={"hide_property": True},
+            )
+        )
+
+        # Add values output parameter
         self.add_parameter(
             Parameter(
                 name="values",
@@ -50,8 +62,14 @@ class DictValues(DataNode):
             if not isinstance(input_dict, dict):
                 input_dict = {}
 
-            # Extract values as a list
+            # Extract keys and values as lists
+            keys_list = list(input_dict.keys())
             values_list = list(input_dict.values())
+
+            # Set output keys
+            self.parameter_output_values["keys"] = keys_list
+            self.set_parameter_value("keys", keys_list)
+            self.show_parameter_by_name("keys")
 
             # Set output values
             self.parameter_output_values["values"] = values_list
@@ -61,5 +79,6 @@ class DictValues(DataNode):
         return super().after_value_set(parameter, value)
 
     def process(self) -> None:
-        """Process the node by extracting values from the dictionary."""
+        """Process the node by extracting keys and values from the dictionary."""
+        self.parameter_output_values["keys"] = self.parameter_values["keys"]
         self.parameter_output_values["values"] = self.parameter_values["values"]

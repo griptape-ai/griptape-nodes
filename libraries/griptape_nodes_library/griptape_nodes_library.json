@@ -587,6 +587,15 @@
       }
     },
     {
+      "class_name": "DictToList",
+      "file_path": "griptape_nodes_library/convert/dict_to_list.py",
+      "metadata": {
+        "category": "convert",
+        "description": "Extract lists of keys and values from a dictionary",
+        "display_name": "Dict to List"
+      }
+    },
+    {
       "class_name": "ToFloat",
       "file_path": "griptape_nodes_library/convert/to_float.py",
       "metadata": {
@@ -673,16 +682,6 @@
         "description": "Save dictionary data to a file",
         "display_name": "Save Dictionary",
         "icon": "file-down",
-        "group": "general"
-      }
-    },
-    {
-      "class_name": "DictValues",
-      "file_path": "griptape_nodes_library/dict/dict_values.py",
-      "metadata": {
-        "category": "dict",
-        "description": "Extract a list of values from a dictionary",
-        "display_name": "Dict Values",
         "group": "general"
       }
     },
