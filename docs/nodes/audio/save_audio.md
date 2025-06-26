@@ -31,7 +31,7 @@ Imagine you've generated some audio and want to save it on your computer, so tha
 
 1. Create a SaveAudio node
 1. Connect the output of a parameter that generates audio
-1. Enter the name of the file that you want to save the audio in 
+1. Enter the name of the file that you want to save the audio in
 1. Resolve the node, either by clicking the run icon on the node itself, or using the run workflow or run selected options at the top of the editor.
 
 ## Important Notes
