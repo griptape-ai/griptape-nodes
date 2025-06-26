@@ -506,17 +506,6 @@
       }
     },
     {
-      "class_name": "SaveAudio",
-      "file_path": "griptape_nodes_library/audio/save_audio.py",
-      "metadata": {
-        "category": "audio",
-        "description": "Saves audio files from your workflow",
-        "display_name": "Save Audio",
-        "icon": "file-down",
-        "group": "general"
-      }
-    },
-    {
       "class_name": "Microphone",
       "file_path": "griptape_nodes_library/audio/microphone.py",
       "metadata": {
@@ -524,6 +513,17 @@
         "description": "Can record audio from your microphone.",
         "display_name": "Microphone",
         "icon": "mic",
+        "group": "general"
+      }
+    },
+    {
+    "class_name": "SaveAudio",
+      "file_path": "griptape_nodes_library/audio/save_audio.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Saves audio files from your workflow",
+        "display_name": "Save Audio",
+        "icon": "file-down",
         "group": "general"
       }
     },
