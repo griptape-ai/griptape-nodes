@@ -20,7 +20,8 @@ def to_audio_artifact(audio: AudioArtifact | dict) -> AudioArtifact:
         # Load audio from URL if provided in dictionary
         if "url" in audio:
             return AudioLoader().parse(audio["url"])
-        raise ValueError("Dictionary must contain 'url' key")
+        error_msg = "Dictionary must contain 'url' key"
+        raise ValueError(error_msg)
     return audio
 
 
@@ -76,4 +77,4 @@ class SaveAudio(ControlNode):
         except Exception as e:
             error_message = str(e)
             msg = f"Error saving audio: {error_message}"
-            raise ValueError(msg) from e 
+            raise ValueError(msg) from e
