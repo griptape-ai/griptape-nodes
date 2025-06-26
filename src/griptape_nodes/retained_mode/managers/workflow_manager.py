@@ -1149,7 +1149,7 @@ class WorkflowManager:
             kwonlyargs=[],
             kw_defaults=[],
             kwarg=None,
-            defaults=[ast.Constant(StorageBackend.LOCAL)],
+            defaults=[ast.Constant(StorageBackend.LOCAL.value)],
         )
         #   return annotation: dict | None
         return_annotation = ast.BinOp(
@@ -1236,11 +1236,11 @@ class WorkflowManager:
                         ast.keyword(
                             arg="choices",
                             value=ast.List(
-                                elts=[ast.Constant(StorageBackend.LOCAL), ast.Constant(StorageBackend.GTC)],
+                                elts=[ast.Constant(StorageBackend.LOCAL.value), ast.Constant(StorageBackend.GTC.value)],
                                 ctx=ast.Load(),
                             ),
                         ),
-                        ast.keyword(arg="default", value=ast.Constant(StorageBackend.LOCAL)),
+                        ast.keyword(arg="default", value=ast.Constant(StorageBackend.LOCAL.value)),
                         ast.keyword(
                             arg="help",
                             value=ast.Constant(

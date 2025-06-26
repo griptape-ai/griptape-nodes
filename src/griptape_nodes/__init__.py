@@ -157,7 +157,7 @@ def _handle_bucket_config(config: InitConfig, storage_backend: str | None) -> st
     """Handle bucket configuration step (depends on API key and storage backend)."""
     storage_backend_bucket_id = None
 
-    if storage_backend == StorageBackend.GTC:
+    if storage_backend == StorageBackend.GTC.value:
         if config.interactive:
             storage_backend_bucket_id = _prompt_for_gtc_bucket_name(default_bucket_name=config.bucket_name)
         elif config.bucket_name is not None:
