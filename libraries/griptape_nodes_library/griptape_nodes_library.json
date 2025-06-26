@@ -868,6 +868,16 @@
       }
     },
     {
+      "class_name": "ImageBash",
+      "file_path": "griptape_nodes_library/image/image_bash.py",
+      "metadata": {
+        "category": "image",
+        "description": "Bash an image together with lots of other images",
+        "display_name": "Image Bash",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "MergeImages",
       "file_path": "griptape_nodes_library/image/merge_images.py",
       "metadata": {
