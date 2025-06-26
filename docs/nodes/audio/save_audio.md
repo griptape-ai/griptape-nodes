@@ -36,6 +36,6 @@ Imagine you've generated some audio and want to save it on your computer, so tha
 
 ## Important Notes
 
-- The LoadAudio simply saves the audio to a file - it doesn't change the audio itself
+- The SaveAudio node simply saves the audio to a file - it doesn't change the audio itself
 - The audio will be saved in your current working directory
 - The audio can be played by clicking the play button
