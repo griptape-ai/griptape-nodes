@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import uv
-from packaging.requirements import Requirement
+from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import ValidationError
 from rich.box import HEAVY_EDGE
 from rich.console import Console
@@ -615,8 +615,8 @@ class LibraryManager:
     def register_library_from_requirement_specifier_request(
         self, request: RegisterLibraryFromRequirementSpecifierRequest
     ) -> ResultPayload:
-        package_name = Requirement(request.requirement_specifier).name
         try:
+            package_name = Requirement(request.requirement_specifier).name
             # Determine venv path for dependency installation
             venv_path = self._get_library_venv_path(package_name, None)
 
@@ -650,6 +650,10 @@ class LibraryManager:
                 )
         except subprocess.CalledProcessError as e:
             details = f"Attempted to install library '{request.requirement_specifier}'. Failed: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
+            logger.error(details)
+            return RegisterLibraryFromRequirementSpecifierResultFailure()
+        except InvalidRequirement as e:
+            details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to invalid requirement specifier: {e}"
             logger.error(details)
             return RegisterLibraryFromRequirementSpecifierResultFailure()
 
