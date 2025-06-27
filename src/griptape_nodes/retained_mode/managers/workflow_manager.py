@@ -3010,8 +3010,6 @@ class WorkflowManager:
         such that a client invoking the Workflow can understand what values to provide
         as well as what values to expect back as output.
         """
-        workflow_shape: dict[str, Any] = {"input": {}, "output": {}}
-
         flow_manager = GriptapeNodes.FlowManager()
         result = flow_manager.on_get_top_level_flow_request(GetTopLevelFlowRequest())
         if result.failed():
@@ -3024,6 +3022,11 @@ class WorkflowManager:
             logger.error(details)
             raise ValueError(details)
 
+        return self._extract_flow_shape(flow_name=flow_name)
+
+    def _extract_flow_shape(self, flow_name: str) -> dict[str, Any]:
+        workflow_shape: dict[str, Any] = {"input": {}, "output": {}}
+        flow_manager = GriptapeNodes.FlowManager()
         control_flow = flow_manager.get_flow_by_name(flow_name)
         nodes = control_flow.nodes
 
@@ -3037,10 +3040,10 @@ class WorkflowManager:
             elif isinstance(node, EndNode):
                 end_nodes.append(node)
         if len(start_nodes) < 1:
-            details = f"Workflow '{workflow_name}' does not have a StartNode."
+            details = f"Flow '{flow_name}' does not have a StartNode."
             raise ValueError(details)
         if len(end_nodes) < 1:
-            details = f"Workflow '{workflow_name}' does not have an EndNode."
+            details = f"Flow '{flow_name}' does not have an EndNode."
             raise ValueError(details)
 
         # Now, we need to gather the input and output parameters for each node type.

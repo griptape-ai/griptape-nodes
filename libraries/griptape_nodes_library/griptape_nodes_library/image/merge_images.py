@@ -29,9 +29,9 @@ class MergeImages(ControlNode):
         self.LAYOUTS = list(self.LAYOUT_METHODS.keys())
         # Add ParameterList for images (dynamic add/remove, max 4)
         self.add_parameter(
-            ParameterList(
+            Parameter(
                 name="Images",
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
+                input_types=["list[ImageUrlArtifact]", "list[ImageArtifact]"],
                 default_value=None,
                 tooltip="Images to merge (add up to 4)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},

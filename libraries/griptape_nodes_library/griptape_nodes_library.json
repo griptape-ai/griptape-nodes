@@ -1412,6 +1412,15 @@
       }
     },
     {
+      "class_name": "Workflow",
+      "file_path": "griptape_nodes_library/workflows/workflow.py",
+      "metadata": {
+        "category": "workflows",
+        "description": "Import a workflow file and execute it",
+        "display_name": "Workflow"
+      }
+    },
+    {
       "class_name": "Reroute",
       "file_path": "griptape_nodes_library/execution/reroute.py",
       "metadata": {
