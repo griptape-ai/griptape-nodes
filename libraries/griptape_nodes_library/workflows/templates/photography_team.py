@@ -2,7 +2,7 @@
 # dependencies = []
 #
 # [tool.griptape-nodes]
-# name = "photography_team_new"
+# name = "photography_team"
 # schema_version = "0.4.0"
 # engine_version_created_with = "0.39.0"
 # node_libraries_referenced = [["Griptape Nodes Library", "0.39.0"]]
