@@ -7,25 +7,58 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
 
-BASE_OPTIONS = ["HD", "2K", "4K", "A4", "A3", "square", "landscape", "portrait", "custom"]
+CANVAS_DIMENSIONS = {
+    "HD": {"width": 1920, "height": 1080},  # 16:9 HD
+    "2K": {"width": 2560, "height": 1440},  # 16:9 2K
+    "4K": {"width": 3840, "height": 2160},  # 16:9 4K
+    "A4": {"width": 2480, "height": 3508},  # A4 at 300dpi
+    "A3": {"width": 3508, "height": 4961},  # A3 at 300dpi
+    "square": {"width": 2000, "height": 2000},  # Square format
+    "landscape": {"width": 2000, "height": 1500},  # 4:3 landscape
+    "portrait": {"width": 1500, "height": 2000},  # 3:4 portrait
+    "custom": {"width": 1920, "height": 1080},  # Default custom size
+}
+BASE_CANVAS_OPTIONS = [*list(CANVAS_DIMENSIONS.keys())]
 
 
 class ImageBash(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        # self.add_parameter(
-        #     Parameter(
-        #         name="base_canvas",
-        #         default_value=BASE_OPTIONS[0],
-        #         input_types=["string", "ImageArtifact", "ImageUrlArtifact"],
-        #         type="string",
-        #         tooltip="The size of the image to create, or connect a base image to use as a canvas",
-        #         allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-        #     )
-        # )
+        self.base_canvas = Parameter(
+            name="base_canvas",
+            default_value=BASE_CANVAS_OPTIONS[0],
+            input_types=["string", "ImageArtifact", "ImageUrlArtifact"],
+            type="string",
+            tooltip="The size of the image to create, or connect a base image to use as a canvas",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+        )
+        self.add_parameter(self.base_canvas)
+        self.base_canvas.add_trait(Options(choices=BASE_CANVAS_OPTIONS))
+        self.canvas_width = Parameter(
+            name="width",
+            default_value=1920,
+            input_types=["int"],
+            type="int",
+            tooltip="The width of the image to create",
+            allowed_modes={ParameterMode.PROPERTY},
+            ui_options={"ghost": True},
+        )
+
+        self.canvas_height = Parameter(
+            name="height",
+            default_value=1080,
+            input_types=["int"],
+            type="int",
+            tooltip="The height of the image to create",
+            allowed_modes={ParameterMode.PROPERTY},
+            ui_options={"ghost": True},
+        )
+        self.add_parameter(self.canvas_width)
+        self.add_parameter(self.canvas_height)
 
         self.add_parameter(
             ParameterList(
@@ -167,17 +200,34 @@ class ImageBash(DataNode):
             # Update konva images, preserving existing positions and transformations
             konva_images = []
 
-            # Get canvas dimensions from the bash_image
-            if isinstance(bash_image_value, dict):
-                canvas_width, canvas_height = self._get_image_dimensions(bash_image_value["value"])
-            else:
-                canvas_width, canvas_height = self._get_image_dimensions(bash_image_value.value)
+            # Get canvas dimensions from parameters
+            canvas_width = self.get_parameter_value("width") or CANVAS_DIMENSIONS["HD"]["width"]
+            canvas_height = self.get_parameter_value("height") or CANVAS_DIMENSIONS["HD"]["height"]
+
+            # Add background layer first
+            konva_images.append(
+                {
+                    "id": "background",
+                    "name": "background",
+                    "source_id": None,
+                    "x": canvas_width // 2,
+                    "y": canvas_height // 2,
+                    "width": canvas_width,
+                    "height": canvas_height,
+                    "rotation": 0,
+                    "scaleX": 1.0,
+                    "scaleY": 1.0,
+                    "type": "background",
+                }
+            )
 
             for i, input_img in enumerate(input_images):
                 # Try to find existing konva image data
                 existing_konva_img = None
-                if i < len(existing_konva.get("images", [])):
-                    existing_konva_img = existing_konva["images"][i]
+                for img in existing_konva.get("images", []):
+                    if img.get("source_id") == f"source-img-{i + 1}":
+                        existing_konva_img = img
+                        break
 
                 if existing_konva_img:
                     # Preserve existing konva data, just update source_id if needed
@@ -261,11 +311,27 @@ class ImageBash(DataNode):
 
             input_images.append({"id": f"source-img-{i + 1}", "url": img_artifact.value, "name": image_name})
 
-        # Get canvas dimensions from the first image
-        canvas_width, canvas_height = self._get_image_dimensions(image_artifact.value)
+        # Get canvas dimensions from parameters
+        canvas_width = self.get_parameter_value("width") or CANVAS_DIMENSIONS["HD"]["width"]
+        canvas_height = self.get_parameter_value("height") or CANVAS_DIMENSIONS["HD"]["height"]
 
-        # Create basic Konva JSON structure with image elements
-        konva_images = []
+        # Create basic Konva JSON structure with background and image elements
+        konva_images = [
+            {
+                "id": "background",
+                "name": "background",
+                "source_id": None,
+                "x": canvas_width // 2,
+                "y": canvas_height // 2,
+                "width": canvas_width,
+                "height": canvas_height,
+                "rotation": 0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "type": "background",
+            }
+        ]
+
         for i, input_img in enumerate(input_images):
             # Get actual image dimensions
             width, height = self._get_image_dimensions(input_img["url"])
@@ -297,15 +363,55 @@ class ImageBash(DataNode):
         self.set_parameter_value("bash_image", bash_image_artifact)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter.name == "base_canvas" and value is not None:
-            if isinstance(value, dict):
-                value = dict_to_image_url_artifact(value)
-            if isinstance(value, ImageUrlArtifact):
-                self._create_new_bash_image(value)
+        if parameter.name == "base_canvas":
+            if value == "custom":
+                width_ui_options = self.canvas_width.ui_options
+                width_ui_options["ghost"] = False
+                self.canvas_width.ui_options = width_ui_options
+
+                height_ui_options = self.canvas_height.ui_options
+                height_ui_options["ghost"] = False
+                self.canvas_height.ui_options = height_ui_options
+
+                self.publish_update_to_parameter("width", self.canvas_width.default_value)
+                self.publish_update_to_parameter("height", self.canvas_height.default_value)
+            elif isinstance(value, str) and value in CANVAS_DIMENSIONS:
+                width_ui_options = self.canvas_width.ui_options
+                width_ui_options["ghost"] = True
+                self.canvas_width.ui_options = width_ui_options
+
+                height_ui_options = self.canvas_height.ui_options
+                height_ui_options["ghost"] = True
+                self.canvas_height.ui_options = height_ui_options
+
+                dimensions = CANVAS_DIMENSIONS[value]
+                self.publish_update_to_parameter("width", dimensions["width"])
+                self.publish_update_to_parameter("height", dimensions["height"])
+
+        # Update bash image when width or height changes
+        elif parameter.name in ["width", "height"] and value is not None:
+            bash_image = self.get_parameter_value("bash_image")
+            if bash_image is not None:
+                # Get the first image from input_images to use as base for recreating bash_image
+                input_images = self.get_parameter_value("input_images")
+                if input_images and len(input_images) > 0:
+                    first_image = input_images[0]
+                    if isinstance(first_image, dict):
+                        image_artifact = dict_to_image_url_artifact(first_image)
+                    elif isinstance(first_image, ImageUrlArtifact):
+                        image_artifact = first_image
+                        self._create_new_bash_image(image_artifact)
 
         if parameter.name == "input_images" and value is not None and len(value) > 0:
             # When input_images changes, create/update bash_image with first image as base
-            self._create_new_bash_image(value[0])
+            first_image = value[0]
+            if isinstance(first_image, dict):
+                image_artifact = dict_to_image_url_artifact(first_image)
+            elif isinstance(first_image, ImageUrlArtifact):
+                image_artifact = first_image
+            else:
+                return None  # Skip if not a valid type
+            self._create_new_bash_image(image_artifact)
 
         if parameter.name == "bash_image" and value is not None:
             # Create clean output image without konva_json metadata
