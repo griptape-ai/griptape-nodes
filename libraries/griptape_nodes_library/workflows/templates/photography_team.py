@@ -7,6 +7,7 @@
 # engine_version_created_with = "0.39.0"
 # node_libraries_referenced = [["Griptape Nodes Library", "0.39.0"]]
 # is_griptape_provided = true
+# image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/libraries/griptape_nodes_library/workflows/templates/thumbnail_photography_team.webp"
 # is_template = true
 # creation_date = 2025-05-01T00:00:00.000000+00:00
 # last_modified_date = 2025-05-17T06:40:00.145097+12:00
