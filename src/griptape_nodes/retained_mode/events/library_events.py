@@ -1,6 +1,8 @@
-from dataclasses import dataclass
+from __future__ import annotations
 
-from griptape_nodes.node_library.library_registry import LibraryMetadata, NodeMetadata
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -9,6 +11,10 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+if TYPE_CHECKING:
+    from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema, NodeMetadata
+    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 
 @dataclass
@@ -64,6 +70,64 @@ class GetNodeMetadataFromLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPay
 @PayloadRegistry.register
 class GetNodeMetadataFromLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadLibraryMetadataFromFileRequest(RequestPayload):
+    """Request to load library metadata from a JSON file without loading node modules.
+
+    This provides a lightweight way to get library schema information without the overhead
+    of dynamically importing Python modules. Useful for metadata queries, validation,
+    and library discovery operations.
+
+    Args:
+        file_path: Absolute path to the library JSON schema file to load.
+    """
+
+    file_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadLibraryMetadataFromFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Successful result from loading library metadata.
+
+    Contains the validated library schema that can be used for metadata queries,
+    node type discovery, and other operations that don't require the actual
+    node classes to be loaded.
+
+    Args:
+        library_schema: The validated LibrarySchema object containing all metadata
+                       about the library including nodes, categories, and settings.
+    """
+
+    library_schema: LibrarySchema
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadLibraryMetadataFromFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed result from loading library metadata with detailed error information.
+
+    Provides comprehensive error details including the specific failure type and
+    a list of problems encountered during loading. This allows callers to understand
+    exactly what went wrong and take appropriate action.
+
+    Args:
+        library_path: Path to the library file that failed to load.
+        library_name: Name of the library if it could be extracted from the JSON,
+                     None if the name couldn't be determined.
+        status: The LibraryStatus enum indicating the type of failure
+               (MISSING, UNUSABLE, etc.).
+        problems: List of specific error messages describing what went wrong
+                 during loading (JSON parse errors, validation failures, etc.).
+    """
+
+    library_path: str
+    library_name: str | None
+    status: LibraryManager.LibraryStatus
+    problems: list[str]
 
 
 @dataclass

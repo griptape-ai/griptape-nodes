@@ -66,6 +66,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListNodeTypesInLibraryResultSuccess,
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
+    LoadLibraryMetadataFromFileRequest,
+    LoadLibraryMetadataFromFileResultFailure,
+    LoadLibraryMetadataFromFileResultSuccess,
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromFileResultFailure,
     RegisterLibraryFromFileResultSuccess,
@@ -150,6 +153,10 @@ class LibraryManager:
         event_manager.assign_manager_to_request_type(
             GetNodeMetadataFromLibraryRequest,
             self.get_node_metadata_from_library_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            LoadLibraryMetadataFromFileRequest,
+            self.load_library_metadata_from_file_request,
         )
         event_manager.assign_manager_to_request_type(
             RegisterLibraryFromFileRequest,
@@ -317,6 +324,90 @@ class LibraryManager:
         result = GetLibraryMetadataResultSuccess(metadata=metadata)
         return result
 
+    def load_library_metadata_from_file_request(self, request: LoadLibraryMetadataFromFileRequest) -> ResultPayload:
+        """Load library metadata from a JSON file without loading the actual node modules.
+
+        This method provides a lightweight way to get library schema information
+        without the overhead of dynamically importing Python modules.
+        """
+        file_path = request.file_path
+
+        # Convert to Path object if it's a string
+        json_path = Path(file_path)
+
+        # Check if the file exists
+        if not json_path.exists():
+            details = f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=None,
+                status=LibraryManager.LibraryStatus.MISSING,
+                problems=[
+                    "Library could not be found at the file path specified. It will be removed from the configuration."
+                ],
+            )
+
+        # Load the JSON
+        try:
+            with json_path.open("r", encoding="utf-8") as f:
+                library_json = json.load(f)
+        except json.JSONDecodeError:
+            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' was improperly formatted."
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=None,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=["Library file not formatted as proper JSON."],
+            )
+        except Exception as err:
+            details = f"Attempted to load Library JSON file from location '{json_path}'. Failed because an exception occurred: {err}"
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=None,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=[f"Exception occurred when attempting to load the library: {err}."],
+            )
+
+        # Try to extract library name from JSON for better error reporting
+        library_name = library_json.get("name") if isinstance(library_json, dict) else None
+
+        # Do you comport, my dude
+        try:
+            library_data = LibrarySchema.model_validate(library_json)
+        except ValidationError as err:
+            # Do some more hardcore error handling.
+            problems = []
+            for error in err.errors():
+                loc = " -> ".join(map(str, error["loc"]))
+                msg = error["msg"]
+                error_type = error["type"]
+                problem = f"Error in section '{loc}': {error_type}, {msg}"
+                problems.append(problem)
+            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=library_name,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=problems,
+            )
+        except Exception as err:
+            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=library_name,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=[f"Library file did not match the library schema specified due to: {err}"],
+            )
+
+        details = f"Successfully loaded library metadata from JSON file at {json_path}"
+        logger.debug(details)
+        return LoadLibraryMetadataFromFileResultSuccess(library_schema=library_data)
+
     def get_node_metadata_from_library_request(self, request: GetNodeMetadataFromLibraryRequest) -> ResultPayload:
         # Does this library exist?
         try:
@@ -380,62 +471,24 @@ class LibraryManager:
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
-        # Load the JSON
-        try:
-            with json_path.open("r", encoding="utf-8") as f:
-                library_json = json.load(f)
-        except json.JSONDecodeError:
+        # Use the new metadata loading functionality
+        metadata_request = LoadLibraryMetadataFromFileRequest(file_path=file_path)
+        metadata_result = self.load_library_metadata_from_file_request(metadata_request)
+
+        if not isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+            # Metadata loading failed, use the detailed error information from the failure result
+            failure_result = cast("LoadLibraryMetadataFromFileResultFailure", metadata_result)
+
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
-                library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=["Library file not formatted as proper JSON."],
+                library_name=failure_result.library_name,
+                status=failure_result.status,
+                problems=failure_result.problems,
             )
-            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' was improperly formatted."
-            logger.error(details)
-            return RegisterLibraryFromFileResultFailure()
-        except Exception as err:
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[f"Exception occurred when attempting to load the library: {err}."],
-            )
-            details = f"Attempted to load Library JSON file from location '{json_path}'. Failed because an exception occurred: {err}"
-            logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
-        # Do you comport, my dude
-        try:
-            library_data = LibrarySchema.model_validate(library_json)
-        except ValidationError as err:
-            # Do some more hardcore error handling.
-            problems = []
-            for error in err.errors():
-                loc = " -> ".join(map(str, error["loc"]))
-                msg = error["msg"]
-                error_type = error["type"]
-                problem = f"Error in section '{loc}': {error_type}, {msg}"
-                problems.append(problem)
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=problems,
-            )
-            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
-            logger.error(details)
-            return RegisterLibraryFromFileResultFailure()
-        except Exception as err:
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[f"Library file did not match the library schema specified due to: {err}"],
-            )
-            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
-            logger.error(details)
-            return RegisterLibraryFromFileResultFailure()
+        # Get the validated library data
+        library_data = metadata_result.library_schema
 
         # Make sure the version string is copacetic.
         library_version = library_data.metadata.library_version
