@@ -153,6 +153,13 @@ class ImageBash(DataNode):
 
             # Update konva images, preserving existing positions and transformations
             konva_images = []
+
+            # Get canvas dimensions from the bash_image
+            if isinstance(bash_image_value, dict):
+                canvas_width, canvas_height = self._get_image_dimensions(bash_image_value["value"])
+            else:
+                canvas_width, canvas_height = self._get_image_dimensions(bash_image_value.value)
+
             for i, input_img in enumerate(input_images):
                 # Try to find existing konva image data
                 existing_konva_img = None
@@ -165,14 +172,19 @@ class ImageBash(DataNode):
                     konva_img["source_id"] = input_img["id"]
                     konva_images.append(konva_img)
                 else:
-                    # Create new konva image with default positioning
+                    # Create new konva image with centered positioning
                     width, height = self._get_image_dimensions(input_img["url"])
+
+                    # Center the image on the canvas
+                    x = canvas_width // 2
+                    y = canvas_height // 2
+
                     konva_images.append(
                         {
                             "id": f"canvas-img-{i + 1}",
                             "source_id": input_img["id"],
-                            "x": 100 + (i * 50),
-                            "y": 50 + (i * 30),
+                            "x": x,
+                            "y": y,
                             "width": width,
                             "height": height,
                             "rotation": 0,
@@ -236,18 +248,25 @@ class ImageBash(DataNode):
 
             input_images.append({"id": f"source-img-{i + 1}", "url": img_artifact.value, "name": image_name})
 
+        # Get canvas dimensions from the first image
+        canvas_width, canvas_height = self._get_image_dimensions(image_artifact.value)
+
         # Create basic Konva JSON structure with image elements
         konva_images = []
         for i, input_img in enumerate(input_images):
             # Get actual image dimensions
             width, height = self._get_image_dimensions(input_img["url"])
 
+            # Center the image on the canvas
+            x = canvas_width // 2
+            y = canvas_height // 2
+
             konva_images.append(
                 {
                     "id": f"canvas-img-{i + 1}",
                     "source_id": input_img["id"],
-                    "x": 100 + (i * 50),
-                    "y": 50 + (i * 30),
+                    "x": x,
+                    "y": y,
                     "width": width,
                     "height": height,
                     "rotation": 0,
