@@ -136,7 +136,6 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
         return
@@ -146,7 +145,6 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
         return
@@ -156,7 +154,6 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         return
@@ -166,7 +163,6 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
         return
@@ -175,7 +171,6 @@ class BaseNode(ABC):
         self,
         parameter: Parameter,  # noqa: ARG002
         value: Any,
-        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> Any:
         """Callback when a Parameter's value is ABOUT to be set.
 
@@ -191,7 +186,6 @@ class BaseNode(ABC):
         Args:
             parameter: the Parameter on this node that is about to be changed
             value: the value intended to be set (this has already gone through any converters and validators on the Parameter)
-            modified_parameters_set: A set of parameter names within this node that were modified as a result of this call.
 
         Returns:
             The final value to set for the Parameter. This gives the Node logic one last opportunity to mutate the value
@@ -204,7 +198,6 @@ class BaseNode(ABC):
         self,
         parameter: Parameter,  # noqa: ARG002
         value: Any,  # noqa: ARG002
-        modified_parameters_set: set[str] | None = None,  # noqa: ARG002
     ) -> None:
         """Callback AFTER a Parameter's value was set.
 
@@ -225,8 +218,6 @@ class BaseNode(ABC):
         Args:
             parameter: the Parameter on this node that was just changed
             value: the value that was set (already converted, validated, and possibly mutated by the node code)
-            modified_parameters_set: Optional set of parameter names within this node
-                that were modified as a result of this call. The Parameter this was called on does NOT need to be part of the return.
 
         Returns:
             Nothing
@@ -526,21 +517,13 @@ class BaseNode(ABC):
 
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
-        try:
-            final_value = self.before_value_set(parameter=parameter, value=candidate_value)
-        except TypeError:
-            final_value = self.before_value_set(
-                parameter=parameter, value=candidate_value, modified_parameters_set=set()
-            )
+        final_value = self.before_value_set(parameter=parameter, value=candidate_value)
         # ACTUALLY SET THE NEW VALUE
         self.parameter_values[param_name] = final_value
 
         # If a parameter value has been set at the top level of a container, wipe all children.
         # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
-        try:
-            self.after_value_set(parameter=parameter, value=final_value)
-        except TypeError:
-            self.after_value_set(parameter=parameter, value=final_value, modified_parameters_set=set())
+        self.after_value_set(parameter=parameter, value=final_value)
         if emit_change:
             self._emit_parameter_lifecycle_event(parameter)
         # handle with container parameters
