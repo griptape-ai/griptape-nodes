@@ -100,9 +100,11 @@ class LoadLibraryMetadataFromFileResultSuccess(WorkflowNotAlteredMixin, ResultPa
     Args:
         library_schema: The validated LibrarySchema object containing all metadata
                        about the library including nodes, categories, and settings.
+        file_path: The file path from which the library metadata was loaded.
     """
 
     library_schema: LibrarySchema
+    file_path: str
 
 
 @dataclass
@@ -128,6 +130,50 @@ class LoadLibraryMetadataFromFileResultFailure(WorkflowNotAlteredMixin, ResultPa
     library_name: str | None
     status: LibraryManager.LibraryStatus
     problems: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadMetadataForAllLibrariesRequest(RequestPayload):
+    """Request to load metadata for all libraries from configuration without loading node modules.
+
+    This loads metadata from both:
+    1. Library JSON files specified in configuration
+    2. Sandbox library (dynamically generated from Python files)
+
+    Provides a lightweight way to discover all available libraries and their schemas
+    without the overhead of importing Python modules or registering them in the system.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadMetadataForAllLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Successful result from loading metadata for all libraries.
+
+    Contains metadata for all discoverable libraries from both configuration files
+    and sandbox directory, with clear separation between successful loads and failures.
+
+    Args:
+        successful_libraries: List of successful library metadata loading results,
+                             including both config-based libraries and sandbox library if applicable.
+        failed_libraries: List of detailed failure results for libraries that couldn't be loaded,
+                         including both config-based libraries and sandbox library if applicable.
+    """
+
+    successful_libraries: list[LoadLibraryMetadataFromFileResultSuccess]
+    failed_libraries: list[LoadLibraryMetadataFromFileResultFailure]
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadMetadataForAllLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed result from loading metadata for all libraries.
+
+    This indicates a systemic failure (e.g., configuration access issues)
+    rather than individual library loading failures, which are captured
+    in the success result's failed_libraries list.
+    """
 
 
 @dataclass
