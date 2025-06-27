@@ -154,12 +154,26 @@ class FluxKontextPipelineParameters:
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._huggingface_repo_parameter.validate_before_node_run() or []
 
+        # Check for if prompt exists: 
+        prompt = self.get_prompt()
+        prompt_2 = self.get_prompt_2()
+        if not prompt and not prompt_2:
+            errors.append(ValueError("At least one prompt must be provided"))
+
         # Validate dimensions based on diffusers source logic
         width = self.get_width()
         height = self.get_height()
 
-        # VAE scale factor is typically 8 for Flux models, so multiple_of = 8 * 2 = 16
-        multiple_of = 16
+        # Get actual VAE scale factor from model config
+        try:
+            repo_id, revision = self.get_repo_revision()
+            vae = diffusers.AutoencoderKL.from_pretrained(repo_id, subfolder="vae", revision=revision)
+            vae_scale_factor = 2 ** (len(vae.config.block_out_channels) - 1)
+            # Flux latents are packed into 2x2 patches, so multiply by 2
+            multiple_of = vae_scale_factor * 2
+        except Exception:
+            # Fallback to standard Flux values if model loading fails
+            multiple_of = 16
 
         if width % multiple_of != 0:
             errors.append(ValueError(f"Width ({width}) must be divisible by {multiple_of}"))
