@@ -13,21 +13,34 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
 @dataclass
+class RunAgentRequestArtifact(dict):
+    type: str
+    value: str
+
+
+@dataclass
 @PayloadRegistry.register
 class RunAgentRequest(RequestPayload):
     input: str
+    url_artifacts: list[RunAgentRequestArtifact]
+
+
+@dataclass
+@PayloadRegistry.register
+class RunAgentResultStarted(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    pass
 
 
 @dataclass
 @PayloadRegistry.register
 class RunAgentResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    output: str
+    output: dict
 
 
 @dataclass
 @PayloadRegistry.register
 class RunAgentResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    error: str
+    error: dict
 
 
 @dataclass
