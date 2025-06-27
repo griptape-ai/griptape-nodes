@@ -172,7 +172,7 @@ class Agent(ControlNode):
         self.add_parameter(
             ParameterList(
                 name="tools",
-                input_types=["Tool"],
+                input_types=["Tool", "list[Tool]"],
                 default_value=[],
                 tooltip="Connect Griptape Tools for the agent to use.\nOr connect individual tools.",
                 allowed_modes={ParameterMode.INPUT},
@@ -181,7 +181,7 @@ class Agent(ControlNode):
         self.add_parameter(
             ParameterList(
                 name="rulesets",
-                input_types=["Ruleset"],
+                input_types=["Ruleset", "list[Ruleset]"],
                 tooltip="Rulesets to apply to the agent to control its behavior.",
                 default_value=[],
                 allowed_modes={ParameterMode.INPUT},

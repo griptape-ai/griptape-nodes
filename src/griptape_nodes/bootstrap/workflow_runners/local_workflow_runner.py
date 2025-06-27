@@ -35,7 +35,7 @@ class LocalWorkflowRunner(WorkflowRunner):
         file_path = Path(path_to_workflow)
 
         # Generate a unique module name
-        module_name = f"dynamic_module_{file_path.name.replace('.', '_')}_{hash(str(file_path))}"
+        module_name = f"gtn_dynamic_module_{file_path.name.replace('.', '_')}_{hash(str(file_path))}"
 
         # Load the module specification
         spec = importlib.util.spec_from_file_location(module_name, file_path)
