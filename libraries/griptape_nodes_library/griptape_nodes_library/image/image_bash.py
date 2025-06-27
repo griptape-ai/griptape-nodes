@@ -9,10 +9,23 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterList, Parame
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
 
+BASE_OPTIONS = ["HD", "2K", "4K", "A4", "A3", "square", "landscape", "portrait", "custom"]
+
 
 class ImageBash(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+
+        # self.add_parameter(
+        #     Parameter(
+        #         name="base_canvas",
+        #         default_value=BASE_OPTIONS[0],
+        #         input_types=["string", "ImageArtifact", "ImageUrlArtifact"],
+        #         type="string",
+        #         tooltip="The size of the image to create, or connect a base image to use as a canvas",
+        #         allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+        #     )
+        # )
 
         self.add_parameter(
             ParameterList(
@@ -284,6 +297,12 @@ class ImageBash(DataNode):
         self.set_parameter_value("bash_image", bash_image_artifact)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "base_canvas" and value is not None:
+            if isinstance(value, dict):
+                value = dict_to_image_url_artifact(value)
+            if isinstance(value, ImageUrlArtifact):
+                self._create_new_bash_image(value)
+
         if parameter.name == "input_images" and value is not None and len(value) > 0:
             # When input_images changes, create/update bash_image with first image as base
             self._create_new_bash_image(value[0])
