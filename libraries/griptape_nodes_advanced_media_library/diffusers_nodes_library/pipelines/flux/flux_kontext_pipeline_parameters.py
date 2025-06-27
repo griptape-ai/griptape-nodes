@@ -154,7 +154,7 @@ class FluxKontextPipelineParameters:
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._huggingface_repo_parameter.validate_before_node_run() or []
 
-        # Check for if prompt exists: 
+        # Check for if prompt exists:
         prompt = self.get_prompt()
         prompt_2 = self.get_prompt_2()
         if not prompt and not prompt_2:
