@@ -66,6 +66,11 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListNodeTypesInLibraryResultSuccess,
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
+    LoadLibraryMetadataFromFileRequest,
+    LoadLibraryMetadataFromFileResultFailure,
+    LoadLibraryMetadataFromFileResultSuccess,
+    LoadMetadataForAllLibrariesRequest,
+    LoadMetadataForAllLibrariesResultSuccess,
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromFileResultFailure,
     RegisterLibraryFromFileResultSuccess,
@@ -93,6 +98,8 @@ logger = logging.getLogger("griptape_nodes")
 
 
 class LibraryManager:
+    SANDBOX_LIBRARY_NAME = "Sandbox Library"
+
     class LibraryStatus(StrEnum):
         """Status of the library that was attempted to be loaded."""
 
@@ -152,6 +159,10 @@ class LibraryManager:
             self.get_node_metadata_from_library_request,
         )
         event_manager.assign_manager_to_request_type(
+            LoadLibraryMetadataFromFileRequest,
+            self.load_library_metadata_from_file_request,
+        )
+        event_manager.assign_manager_to_request_type(
             RegisterLibraryFromFileRequest,
             self.register_library_from_file_request,
         )
@@ -169,6 +180,9 @@ class LibraryManager:
         event_manager.assign_manager_to_request_type(GetAllInfoForLibraryRequest, self.get_all_info_for_library_request)
         event_manager.assign_manager_to_request_type(
             GetAllInfoForAllLibrariesRequest, self.get_all_info_for_all_libraries_request
+        )
+        event_manager.assign_manager_to_request_type(
+            LoadMetadataForAllLibrariesRequest, self.load_metadata_for_all_libraries_request
         )
         event_manager.assign_manager_to_request_type(
             UnloadLibraryFromRegistryRequest, self.unload_library_from_registry_request
@@ -317,6 +331,241 @@ class LibraryManager:
         result = GetLibraryMetadataResultSuccess(metadata=metadata)
         return result
 
+    def load_library_metadata_from_file_request(self, request: LoadLibraryMetadataFromFileRequest) -> ResultPayload:
+        """Load library metadata from a JSON file without loading the actual node modules.
+
+        This method provides a lightweight way to get library schema information
+        without the overhead of dynamically importing Python modules.
+        """
+        file_path = request.file_path
+
+        # Convert to Path object if it's a string
+        json_path = Path(file_path)
+
+        # Check if the file exists
+        if not json_path.exists():
+            details = f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=None,
+                status=LibraryManager.LibraryStatus.MISSING,
+                problems=[
+                    "Library could not be found at the file path specified. It will be removed from the configuration."
+                ],
+            )
+
+        # Load the JSON
+        try:
+            with json_path.open("r", encoding="utf-8") as f:
+                library_json = json.load(f)
+        except json.JSONDecodeError:
+            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' was improperly formatted."
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=None,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=["Library file not formatted as proper JSON."],
+            )
+        except Exception as err:
+            details = f"Attempted to load Library JSON file from location '{json_path}'. Failed because an exception occurred: {err}"
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=None,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=[f"Exception occurred when attempting to load the library: {err}."],
+            )
+
+        # Try to extract library name from JSON for better error reporting
+        library_name = library_json.get("name") if isinstance(library_json, dict) else None
+
+        # Do you comport, my dude
+        try:
+            library_data = LibrarySchema.model_validate(library_json)
+        except ValidationError as err:
+            # Do some more hardcore error handling.
+            problems = []
+            for error in err.errors():
+                loc = " -> ".join(map(str, error["loc"]))
+                msg = error["msg"]
+                error_type = error["type"]
+                problem = f"Error in section '{loc}': {error_type}, {msg}"
+                problems.append(problem)
+            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=library_name,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=problems,
+            )
+        except Exception as err:
+            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=library_name,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=[f"Library file did not match the library schema specified due to: {err}"],
+            )
+
+        details = f"Successfully loaded library metadata from JSON file at {json_path}"
+        logger.debug(details)
+        return LoadLibraryMetadataFromFileResultSuccess(library_schema=library_data, file_path=file_path)
+
+    def load_metadata_for_all_libraries_request(self, request: LoadMetadataForAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
+        """Load metadata for all libraries from configuration without loading node modules.
+
+        This loads metadata from both library JSON files specified in configuration
+        and generates sandbox library metadata by scanning Python files without importing them.
+        """
+        successful_libraries = []
+        failed_libraries = []
+
+        # Load metadata from config libraries
+        config_mgr = GriptapeNodes.ConfigManager()
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+        libraries_to_register: list[str] = config_mgr.get_config_value(user_libraries_section)
+
+        if libraries_to_register is not None:
+            for library_to_register in libraries_to_register:
+                if library_to_register and library_to_register.endswith(".json"):
+                    # Load metadata for this library file
+                    metadata_request = LoadLibraryMetadataFromFileRequest(file_path=library_to_register)
+                    metadata_result = self.load_library_metadata_from_file_request(metadata_request)
+
+                    if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+                        successful_libraries.append(metadata_result)
+                    else:
+                        failed_libraries.append(cast("LoadLibraryMetadataFromFileResultFailure", metadata_result))
+                # Note: We skip requirement specifier libraries (non-.json) as they don't have
+                # JSON files we can load metadata from without installation
+
+        # Generate sandbox library metadata
+        sandbox_result = self._generate_sandbox_library_metadata()
+        if isinstance(sandbox_result, LoadLibraryMetadataFromFileResultSuccess):
+            successful_libraries.append(sandbox_result)
+        elif isinstance(sandbox_result, LoadLibraryMetadataFromFileResultFailure):
+            failed_libraries.append(sandbox_result)
+        # If sandbox_result is None, sandbox was not configured or no files found - skip it
+
+        details = (
+            f"Successfully loaded metadata for {len(successful_libraries)} libraries, {len(failed_libraries)} failed"
+        )
+        logger.debug(details)
+        return LoadMetadataForAllLibrariesResultSuccess(
+            successful_libraries=successful_libraries,
+            failed_libraries=failed_libraries,
+        )
+
+    def _generate_sandbox_library_metadata(
+        self,
+    ) -> LoadLibraryMetadataFromFileResultSuccess | LoadLibraryMetadataFromFileResultFailure | None:
+        """Generate sandbox library metadata by scanning Python files without importing them.
+
+        Returns None if no sandbox directory is configured or no files are found.
+        """
+        config_mgr = GriptapeNodes.ConfigManager()
+        sandbox_library_subdir = config_mgr.get_config_value("sandbox_library_directory")
+        if not sandbox_library_subdir:
+            logger.debug("No sandbox directory specified in config. Skipping sandbox library metadata generation.")
+            return None
+
+        # Prepend the workflow directory; if the sandbox dir starts with a slash, the workflow dir will be ignored.
+        sandbox_library_dir = config_mgr.workspace_path / sandbox_library_subdir
+        sandbox_library_dir_as_posix = sandbox_library_dir.as_posix()
+
+        if not sandbox_library_dir.exists():
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=sandbox_library_dir_as_posix,
+                library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
+                status=LibraryManager.LibraryStatus.MISSING,
+                problems=["Sandbox directory does not exist."],
+            )
+
+        sandbox_node_candidates = self._find_files_in_dir(directory=sandbox_library_dir, extension=".py")
+        if not sandbox_node_candidates:
+            logger.debug(
+                "No candidate files found in sandbox directory '%s'. Skipping sandbox library metadata generation.",
+                sandbox_library_dir,
+            )
+            return None
+
+        # For metadata-only generation, we create placeholder node definitions
+        # based on file names since we can't inspect the classes without importing
+        node_definitions = []
+        for candidate in sandbox_node_candidates:
+            # Use the full file name (with extension) as a placeholder to make it clear this is a file candidate
+            file_name = candidate.name
+
+            # Create a placeholder node definition - we can't get the actual class metadata
+            # without importing, so we use defaults
+            node_metadata = NodeMetadata(
+                category="Griptape Nodes Sandbox",
+                description=f"'{file_name}' may contain one or more nodes defined in this candidate file.",
+                display_name=file_name,
+                icon="square-dashed",
+                color=None,
+            )
+            node_definition = NodeDefinition(
+                class_name=file_name,
+                file_path=str(candidate),
+                metadata=node_metadata,
+            )
+            node_definitions.append(node_definition)
+
+        if not node_definitions:
+            logger.debug(
+                "No valid node files found in sandbox directory '%s'. Skipping sandbox library metadata generation.",
+                sandbox_library_dir,
+            )
+            return None
+
+        # Create the library schema
+        sandbox_category = CategoryDefinition(
+            title="Sandbox",
+            description=f"Nodes loaded from the {LibraryManager.SANDBOX_LIBRARY_NAME}.",
+            color="#c7621a",
+            icon="Folder",
+        )
+
+        engine_version = GriptapeNodes().handle_engine_version_request(request=GetEngineVersionRequest())
+        if not isinstance(engine_version, GetEngineVersionResultSuccess):
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=sandbox_library_dir_as_posix,
+                library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=["Could not get engine version for sandbox library generation."],
+            )
+
+        engine_version_str = f"{engine_version.major}.{engine_version.minor}.{engine_version.patch}"
+        library_metadata = LibraryMetadata(
+            author="Author needs to be specified when library is published.",
+            description="Nodes loaded from the sandbox library.",
+            library_version=engine_version_str,
+            engine_version=engine_version_str,
+            tags=["sandbox"],
+            is_griptape_nodes_searchable=False,
+        )
+        categories = [
+            {"Griptape Nodes Sandbox": sandbox_category},
+        ]
+        library_schema = LibrarySchema(
+            name=LibraryManager.SANDBOX_LIBRARY_NAME,
+            library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
+            metadata=library_metadata,
+            categories=categories,
+            nodes=node_definitions,
+        )
+
+        details = f"Successfully generated sandbox library metadata with {len(node_definitions)} nodes from {sandbox_library_dir}"
+        logger.debug(details)
+        return LoadLibraryMetadataFromFileResultSuccess(
+            library_schema=library_schema, file_path=str(sandbox_library_dir)
+        )
+
     def get_node_metadata_from_library_request(self, request: GetNodeMetadataFromLibraryRequest) -> ResultPayload:
         # Does this library exist?
         try:
@@ -380,62 +629,24 @@ class LibraryManager:
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
-        # Load the JSON
-        try:
-            with json_path.open("r", encoding="utf-8") as f:
-                library_json = json.load(f)
-        except json.JSONDecodeError:
+        # Use the new metadata loading functionality
+        metadata_request = LoadLibraryMetadataFromFileRequest(file_path=file_path)
+        metadata_result = self.load_library_metadata_from_file_request(metadata_request)
+
+        if not isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+            # Metadata loading failed, use the detailed error information from the failure result
+            failure_result = cast("LoadLibraryMetadataFromFileResultFailure", metadata_result)
+
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
-                library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=["Library file not formatted as proper JSON."],
+                library_name=failure_result.library_name,
+                status=failure_result.status,
+                problems=failure_result.problems,
             )
-            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' was improperly formatted."
-            logger.error(details)
-            return RegisterLibraryFromFileResultFailure()
-        except Exception as err:
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[f"Exception occurred when attempting to load the library: {err}."],
-            )
-            details = f"Attempted to load Library JSON file from location '{json_path}'. Failed because an exception occurred: {err}"
-            logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
-        # Do you comport, my dude
-        try:
-            library_data = LibrarySchema.model_validate(library_json)
-        except ValidationError as err:
-            # Do some more hardcore error handling.
-            problems = []
-            for error in err.errors():
-                loc = " -> ".join(map(str, error["loc"]))
-                msg = error["msg"]
-                error_type = error["type"]
-                problem = f"Error in section '{loc}': {error_type}, {msg}"
-                problems.append(problem)
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=problems,
-            )
-            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
-            logger.error(details)
-            return RegisterLibraryFromFileResultFailure()
-        except Exception as err:
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[f"Library file did not match the library schema specified due to: {err}"],
-            )
-            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
-            logger.error(details)
-            return RegisterLibraryFromFileResultFailure()
+        # Get the validated library data
+        library_data = metadata_result.library_schema
 
         # Make sure the version string is copacetic.
         library_version = library_data.metadata.library_version
@@ -1159,16 +1370,50 @@ class LibraryManager:
         return node_class
 
     def load_all_libraries_from_config(self) -> None:
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
-        self._load_libraries_from_config_category(config_category=user_libraries_section, load_as_default_library=False)
+        # Load metadata for all libraries to determine which ones can be safely loaded
+        metadata_request = LoadMetadataForAllLibrariesRequest()
+        metadata_result = self.load_metadata_for_all_libraries_request(metadata_request)
 
-        sandbox_library_section = "sandbox_library_directory"
-        self._attempt_generate_sandbox_library(config_category=sandbox_library_section)
+        # Check if metadata loading succeeded
+        if not isinstance(metadata_result, LoadMetadataForAllLibrariesResultSuccess):
+            logger.error("Failed to load metadata for all libraries, skipping library registration")
+            return
+
+        # Record all failed libraries in our tracking immediately
+        for failed_library in metadata_result.failed_libraries:
+            self._library_file_path_to_info[failed_library.library_path] = LibraryManager.LibraryInfo(
+                library_path=failed_library.library_path,
+                library_name=failed_library.library_name,
+                status=failed_library.status,
+                problems=failed_library.problems,
+            )
+
+        # Use metadata results to selectively load libraries
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+
+        # Load libraries that had successful metadata loading
+        for library_result in metadata_result.successful_libraries:
+            if library_result.library_schema.name == LibraryManager.SANDBOX_LIBRARY_NAME:
+                # Handle sandbox library - use the schema we already have
+                self._attempt_generate_sandbox_library_from_schema(
+                    library_schema=library_result.library_schema, sandbox_directory=library_result.file_path
+                )
+            else:
+                # Handle config-based library - register it directly using the file path
+                register_request = RegisterLibraryFromFileRequest(
+                    file_path=library_result.file_path, load_as_default_library=False
+                )
+                register_result = self.register_library_from_file_request(register_request)
+                if isinstance(register_result, RegisterLibraryFromFileResultFailure):
+                    # Registration failed - the failure info is already recorded in _library_file_path_to_info
+                    # by register_library_from_file_request, so we just log it here for visibility
+                    logger.warning(f"Failed to register library from {library_result.file_path}")  # noqa: G004
 
         # Print 'em all pretty
         self.print_library_load_status()
 
         # Remove any missing libraries AFTER we've printed them for the user.
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         self._remove_missing_libraries_from_config(config_category=user_libraries_section)
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
@@ -1292,39 +1537,24 @@ class LibraryManager:
             problems=problems,
         )
 
-    def _attempt_generate_sandbox_library(self, config_category: str) -> None:
-        config_mgr = GriptapeNodes.ConfigManager()
-        sandbox_library_subdir = config_mgr.get_config_value(config_category)
-        if not sandbox_library_subdir:
-            logger.debug("No sandbox directory specified in config at key '%s'. Skipping.", config_category)
-            return
-
-        # Prepend the workflow directory; if the sandbox dir starts with a slash, the workflow dir will be ignored.
-        sandbox_library_dir = config_mgr.workspace_path / sandbox_library_subdir
+    def _attempt_generate_sandbox_library_from_schema(
+        self, library_schema: LibrarySchema, sandbox_directory: str
+    ) -> None:
+        """Generate sandbox library using an existing schema, loading actual node classes."""
+        sandbox_library_dir = Path(sandbox_directory)
         sandbox_library_dir_as_posix = sandbox_library_dir.as_posix()
-
-        sandbox_node_candidates = self._find_files_in_dir(directory=sandbox_library_dir, extension=".py")
-        if not sandbox_node_candidates:
-            logger.debug("No candidate files found in sandbox directory '%s'. Skipping.", sandbox_library_dir)
-            return
-
-        sandbox_category = CategoryDefinition(
-            title="Sandbox",
-            description="Nodes loaded from the Sandbox Library.",
-            color="#c7621a",
-            icon="Folder",
-        )
 
         problems = []
 
-        # Trawl through the Python files and find those that are nodes.
-        node_definitions = []
-        for candidate in sandbox_node_candidates:
+        # Get the file paths from the schema's node definitions to load actual classes
+        actual_node_definitions = []
+        for node_def in library_schema.nodes:
+            candidate_path = Path(node_def.file_path)
             try:
-                module = self._load_module_from_file(candidate, "Sandbox Library")
+                module = self._load_module_from_file(candidate_path, LibraryManager.SANDBOX_LIBRARY_NAME)
             except Exception as err:
-                problems.append(f"Could not load module in sandbox library '{candidate}': {err}")
-                details = f"Attempted to load module in sandbox library '{candidate}'. Failed because an exception occurred: {err}."
+                problems.append(f"Could not load module in sandbox library '{candidate_path}': {err}")
+                details = f"Attempted to load module in sandbox library '{candidate_path}'. Failed because an exception occurred: {err}."
                 logger.warning(details)
                 continue  # SKIP IT
 
@@ -1336,12 +1566,14 @@ class LibraryManager:
                     and type(obj) is not BaseNode
                     and obj.__module__ == module.__name__
                 ):
-                    details = f"Found node '{class_name}' in sandbox library '{candidate}'."
+                    details = f"Found node '{class_name}' in sandbox library '{candidate_path}'."
                     logger.debug(details)
 
                     # Get metadata from class attributes if they exist, otherwise use defaults
                     node_icon = getattr(obj, "ICON", "square-dashed")
-                    node_description = getattr(obj, "DESCRIPTION", f"'{class_name}' (loaded from the Sandbox Library).")
+                    node_description = getattr(
+                        obj, "DESCRIPTION", f"'{class_name}' (loaded from the {LibraryManager.SANDBOX_LIBRARY_NAME})."
+                    )
                     node_color = getattr(obj, "COLOR", None)
 
                     node_metadata = NodeMetadata(
@@ -1353,38 +1585,22 @@ class LibraryManager:
                     )
                     node_definition = NodeDefinition(
                         class_name=class_name,
-                        file_path=str(candidate),
+                        file_path=str(candidate_path),
                         metadata=node_metadata,
                     )
-                    node_definitions.append(node_definition)
+                    actual_node_definitions.append(node_definition)
 
-        if not node_definitions:
+        if not actual_node_definitions:
             logger.info("No nodes found in sandbox library '%s'. Skipping.", sandbox_library_dir)
             return
 
-        # Create the library schema and metadata.
-        engine_version = GriptapeNodes().handle_engine_version_request(request=GetEngineVersionRequest())
-        if not isinstance(engine_version, GetEngineVersionResultSuccess):
-            logger.error("Could not get engine version. Skipping sandbox library.")
-            return
-        engine_version_str = f"{engine_version.major}.{engine_version.minor}.{engine_version.patch}"
-        library_metadata = LibraryMetadata(
-            author="Author needs to be specified when library is published.",
-            description="Nodes loaded from the sandbox library.",
-            library_version=engine_version_str,
-            engine_version=engine_version_str,
-            tags=["sandbox"],
-            is_griptape_nodes_searchable=False,
-        )
-        categories = [
-            {"Griptape Nodes Sandbox": sandbox_category},
-        ]
+        # Use the existing schema but replace nodes with actual discovered ones
         library_data = LibrarySchema(
-            name="Sandbox Library",
-            library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
-            metadata=library_metadata,
-            categories=categories,
-            nodes=node_definitions,
+            name=library_schema.name,
+            library_schema_version=library_schema.library_schema_version,
+            metadata=library_schema.metadata,
+            categories=library_schema.categories,
+            nodes=actual_node_definitions,
         )
 
         # Register the library.
@@ -1401,22 +1617,24 @@ class LibraryManager:
             self._library_file_path_to_info[sandbox_library_dir_as_posix] = LibraryManager.LibraryInfo(
                 library_path=sandbox_library_dir_as_posix,
                 library_name=library_data.name,
-                library_version=engine_version_str,
+                library_version=library_data.metadata.library_version,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=["Failed because a library with this name was already registered."],
+                problems=[
+                    "Failed because a library with this name was already registered. Check the Settings to ensure duplicate libraries are not being loaded."
+                ],
             )
 
             details = f"Attempted to load Library JSON file from '{sandbox_library_dir}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
             logger.error(details)
             return
 
-        # Attempt to load nodes from the library.
+        # Load nodes into the library
         library_load_results = self._attempt_load_nodes_from_library(
             library_data=library_data,
             library=library,
-            base_dir=sandbox_library_dir_as_posix,
+            base_dir=sandbox_library_dir,
             library_file_path=sandbox_library_dir_as_posix,
-            library_version=engine_version_str,
+            library_version=library_data.metadata.library_version,
             problems=problems,
         )
         self._library_file_path_to_info[sandbox_library_dir_as_posix] = library_load_results
