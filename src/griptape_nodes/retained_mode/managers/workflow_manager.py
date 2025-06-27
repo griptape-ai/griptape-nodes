@@ -2229,11 +2229,9 @@ class WorkflowManager:
                 end_nodes.append(node)
         if len(start_nodes) < 1:
             details = f"Workflow '{workflow_name}' does not have a StartNode."
-            logger.error(details)
             raise ValueError(details)
         if len(end_nodes) < 1:
             details = f"Workflow '{workflow_name}' does not have an EndNode."
-            logger.error(details)
             raise ValueError(details)
 
         # Now, we need to gather the input and output parameters for each node type.
