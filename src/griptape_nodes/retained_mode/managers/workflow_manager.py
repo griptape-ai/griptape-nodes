@@ -2207,12 +2207,10 @@ class WorkflowManager:
         result = flow_manager.on_get_top_level_flow_request(GetTopLevelFlowRequest())
         if result.failed():
             details = f"Workflow '{workflow_name}' does not have a top-level flow."
-            logger.error(details)
             raise ValueError(details)
         flow_name = cast("GetTopLevelFlowResultSuccess", result).flow_name
         if flow_name is None:
             details = f"Workflow '{workflow_name}' does not have a top-level flow."
-            logger.error(details)
             raise ValueError(details)
 
         control_flow = flow_manager.get_flow_by_name(flow_name)
