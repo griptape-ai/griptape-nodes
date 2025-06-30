@@ -471,7 +471,7 @@ class BaseNode(ABC):
                 return element_item
         return None
 
-    def set_parameter_value(  # noqa: C901
+    def set_parameter_value(
         self, param_name: str, value: Any, *, initial_setup: bool = False, emit_change: bool = True
     ) -> None:
         """Attempt to set a Parameter's value.
@@ -522,11 +522,11 @@ class BaseNode(ABC):
         # Record any parameters modified for cascading.
         if not initial_setup:
             final_value = self.before_value_set(parameter=parameter, value=candidate_value)
-        # ACTUALLY SET THE NEW VALUE
+            # ACTUALLY SET THE NEW VALUE
             self.parameter_values[param_name] = final_value
 
-        # If a parameter value has been set at the top level of a container, wipe all children.
-        # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
+            # If a parameter value has been set at the top level of a container, wipe all children.
+            # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
             self.after_value_set(parameter=parameter, value=final_value)
             if emit_change:
                 self._emit_parameter_lifecycle_event(parameter)
