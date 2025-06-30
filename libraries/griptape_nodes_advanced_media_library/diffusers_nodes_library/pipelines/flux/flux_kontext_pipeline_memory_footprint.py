@@ -32,6 +32,10 @@ def _check_cuda_memory_sufficient(pipe: diffusers.FluxKontextPipeline, device: t
     model_memory = get_total_memory_footprint(pipe, FLUX_KONTEXT_PIPELINE_COMPONENT_NAMES)
     total_memory = torch.cuda.get_device_properties(device).total_memory
     free_memory = total_memory - torch.cuda.memory_allocated(device)
+    # Let's make sure that there is at least 1 GB of free memory available after loading the model,
+    # since inference we may need additional memory for activations.
+    MINIMUM_FREE_MEMORY = 1 * 1024 * 1024 * 1024  # 1 GB
+    free_memory = free_memory - MINIMUM_FREE_MEMORY
     return model_memory <= free_memory
 
 
