@@ -39,6 +39,7 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
+from griptape_nodes.retained_mode.events.base_events import Payload
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultSuccess,
@@ -58,6 +59,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetNodeMetadataFromLibraryRequest,
     GetNodeMetadataFromLibraryResultFailure,
     GetNodeMetadataFromLibraryResultSuccess,
+    ListCapableEventHandlersRequest,
+    ListCapableEventHandlersResultFailure,
+    ListCapableEventHandlersResultSuccess,
     ListCategoriesInLibraryRequest,
     ListCategoriesInLibraryResultFailure,
     ListCategoriesInLibraryResultSuccess,
@@ -85,14 +89,16 @@ from griptape_nodes.retained_mode.events.library_events import (
     UnloadLibraryFromRegistryResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from types import ModuleType
 
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
-    from griptape_nodes.retained_mode.events.base_events import ResultPayload
+    from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -124,6 +130,13 @@ class LibraryManager:
 
     _library_file_path_to_info: dict[str, LibraryInfo]
 
+    @dataclass
+    class RegisteredEventHandler:
+        """Information regarding an event handler from a registered library."""
+
+        handler: Callable[[RequestPayload], ResultPayload]
+        library_data: LibrarySchema
+
     # Stable module namespace mappings for workflow serialization
     # These mappings ensure that dynamically loaded modules can be reliably imported
     # in generated workflow code by providing stable, predictable import paths.
@@ -148,9 +161,13 @@ class LibraryManager:
         self._dynamic_to_stable_module_mapping = {}
         self._stable_to_dynamic_module_mapping = {}
         self._library_to_stable_modules = {}
+        self._library_event_handler_mappings: dict[type[Payload], dict[str, LibraryManager.RegisteredEventHandler]] = {}
 
         event_manager.assign_manager_to_request_type(
             ListRegisteredLibrariesRequest, self.on_list_registered_libraries_request
+        )
+        event_manager.assign_manager_to_request_type(
+            ListCapableEventHandlersRequest, self.on_list_capable_event_handlers
         )
         event_manager.assign_manager_to_request_type(
             ListNodeTypesInLibraryRequest, self.on_list_node_types_in_library_request
@@ -276,6 +293,33 @@ class LibraryManager:
             if library_info.library_name == library_name:
                 return library_info
         return None
+
+    def on_register_event_handler(
+        self,
+        request_type: type[RequestPayload],
+        handler: Callable[[RequestPayload], ResultPayload],
+        library_data: LibrarySchema,
+    ) -> None:
+        """Register an event handler for a specific request type from a library."""
+        if self._library_event_handler_mappings.get(request_type) is None:
+            self._library_event_handler_mappings[request_type] = {}
+        self._library_event_handler_mappings[request_type][library_data.name] = LibraryManager.RegisteredEventHandler(
+            handler=handler, library_data=library_data
+        )
+
+    def get_registered_event_handlers(self, request_type: type[Payload]) -> dict[str, RegisteredEventHandler]:
+        """Get all registered event handlers for a specific request type."""
+        return self._library_event_handler_mappings.get(request_type, {})
+
+    def on_list_capable_event_handlers(self, request: ListCapableEventHandlersRequest) -> ResultPayload:
+        """Get all registered event handlers for a specific request type."""
+        request_type = PayloadRegistry.get_type(request.request_type)
+        if request_type is None:
+            return ListCapableEventHandlersResultFailure(
+                exception=KeyError(f"Request type '{request.request_type}' is not registered in the PayloadRegistry.")
+            )
+        handler_mappings = self.get_registered_event_handlers(request_type)
+        return ListCapableEventHandlersResultSuccess(handlers=list(handler_mappings.keys()))
 
     def on_list_registered_libraries_request(self, _request: ListRegisteredLibrariesRequest) -> ResultPayload:
         # Make a COPY of the list

@@ -181,6 +181,7 @@ class LoadWorkflowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 @PayloadRegistry.register
 class PublishWorkflowRequest(RequestPayload):
     workflow_name: str
+    publisher_name: str
 
 
 @dataclass

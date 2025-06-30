@@ -37,6 +37,24 @@ class ListRegisteredLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 
 @dataclass
 @PayloadRegistry.register
+class ListCapableEventHandlersRequest(RequestPayload):
+    request_type: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ListCapableEventHandlersResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    handlers: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class ListCapableEventHandlersResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
 class ListNodeTypesInLibraryRequest(RequestPayload):
     library: str
 
