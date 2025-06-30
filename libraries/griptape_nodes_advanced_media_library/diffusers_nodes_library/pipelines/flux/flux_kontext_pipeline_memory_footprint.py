@@ -73,13 +73,13 @@ def optimize_flux_kontext_pipeline_memory_footprint(pipe: diffusers.FluxKontextP
     if device.type == "cuda":
         _log_memory_info(pipe, device)
 
-        if _check_cuda_memory_sufficient(pipe, device):
-            logger.info("Sufficient memory on %s for Pipeline.", device)
-            logger.info("Moving pipeline to %s", device)
-            pipe.to(device)
-            return
+        # if _check_cuda_memory_sufficient(pipe, device):
+        #     logger.info("Sufficient memory on %s for Pipeline.", device)
+        #     logger.info("Moving pipeline to %s", device)
+        #     pipe.to(device)
+        #     return
 
-        logger.warning("Insufficient memory on %s for Pipeline. Applying VRAM optimizations.", device)
+        # logger.warning("Insufficient memory on %s for Pipeline. Applying VRAM optimizations.", device)
 
         # Apply fp8 layerwise caching
         logger.info("Enabling fp8 layerwise caching for transformer")
