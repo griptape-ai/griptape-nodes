@@ -165,6 +165,9 @@ class FluxKontextPipelineParameters:
         width = self.get_width()
         height = self.get_height()
 
+        if width * height > (1024 * 1024):
+            errors.append(ValueError(f"Width ({width}) * Height ({height}) must be less than 1024*1024"))
+
         # Get actual VAE scale factor from model config
         try:
             repo_id, revision = self.get_repo_revision()
