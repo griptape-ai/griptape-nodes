@@ -35,7 +35,9 @@
         "bitsandbytes>=0.46.0; sys_platform == 'win32'",
         "ftfy>=6.3.1",
         "git+https://github.com/dylanholmes/cosmos-guardrail.git",
-        "sam2>=1.1.0"
+        "sam2>=1.1.0",
+        "scipy>=1.10.0",
+        "matplotlib>=3.10.3"
       ],
       "pip_install_flags": [
         "--preview",
@@ -75,6 +77,15 @@
       }
     },
     {
+      "class_name": "OpenPoseImageDetection",
+      "file_path": "openpose_nodes_library/openpose_image_detection.py",
+      "metadata": {
+        "category": "image/pose",
+        "description": "Detect human poses in images using OpenPose models converted to SafeTensors format",
+        "display_name": "OpenPose Image Detection"
+      }
+    },
+    {
       "class_name": "DinoSam2ImageDetector",
       "file_path": "dino_sam2_library/dino_sam_2_image_detector.py",
       "metadata": {
@@ -90,6 +101,15 @@
         "category": "video/depth",
         "description": "Generate Depth Maps for video with Depth Anything V2 and 🤗 Transformers. Processes each frame for depth estimation.",
         "display_name": "Depth Anything V2 Video"
+      }
+    },
+    {
+      "class_name": "OpenPoseVideoDetection",
+      "file_path": "openpose_nodes_library/openpose_video_detection.py",
+      "metadata": {
+        "category": "video/pose",
+        "description": "Detect human poses in videos using OpenPose models converted to SafeTensors format",
+        "display_name": "OpenPose Video Detection"
       }
     },
     {
