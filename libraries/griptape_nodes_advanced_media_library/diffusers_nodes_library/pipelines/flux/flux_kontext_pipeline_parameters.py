@@ -1,8 +1,6 @@
 import logging
 from typing import Any
 
-from numpy import imag
-
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
 from griptape.artifacts import ImageUrlArtifact
