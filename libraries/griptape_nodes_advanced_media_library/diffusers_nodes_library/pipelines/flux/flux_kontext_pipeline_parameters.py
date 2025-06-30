@@ -1,6 +1,8 @@
 import logging
 from typing import Any
 
+from numpy import imag
+
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
 from griptape.artifacts import ImageUrlArtifact
@@ -155,10 +157,11 @@ class FluxKontextPipelineParameters:
         errors = self._huggingface_repo_parameter.validate_before_node_run() or []
 
         # Check for if prompt exists:
-        prompt = self.get_prompt()
-        prompt_2 = self.get_prompt_2()
-        if not prompt and not prompt_2:
-            errors.append(ValueError("At least one prompt must be provided"))
+        prompt_exists = self.get_prompt() or self.get_prompt_2()
+        negative_prompt_exists = self.get_negative_prompt() or self.get_negative_prompt_2()
+        image_exists = self.get_input_image_pil()
+        if not prompt_exists and not negative_prompt_exists and not image_exists:
+            errors.append(ValueError("At least one prompt, negative prompt, or image must be provided."))
 
         # Validate dimensions based on diffusers source logic
         width = self.get_width()
