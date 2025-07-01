@@ -148,13 +148,32 @@ class SaveWorkflowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
+class SaveWorkflowWithImageRequest(RequestPayload):
+    file_name: str | None = None
+    image_path: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
 class SaveWorkflowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     file_path: str
 
 
 @dataclass
 @PayloadRegistry.register
+class SaveWorkflowWithImageResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    file_path: str
+
+
+@dataclass
+@PayloadRegistry.register
 class SaveWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class SaveWorkflowWithImageResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass
 
 
