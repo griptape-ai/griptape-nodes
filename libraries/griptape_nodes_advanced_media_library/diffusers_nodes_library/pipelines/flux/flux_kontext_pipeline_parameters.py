@@ -1,8 +1,5 @@
-from email.policy import default
 import logging
 from typing import Any
-
-from griptape_nodes.traits.options import Options
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
@@ -18,6 +15,7 @@ from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -109,28 +107,28 @@ class FluxKontextPipelineParameters:
         self._node.add_parameter(
             Parameter(
                 name="width_by_height",
-                default_value="1024,1024",
+                default_value="1024 by 1024",
                 input_types=["str"],
                 type="str",
                 tooltip="width by height",
                 traits={
                     Options(
                         choices=[
-                            "688,1504",
-                            "720,1456",
-                            "752,1392",
-                            "800,1328",
-                            "832,1248",
-                            "880,1184",
-                            "944,1104",
-                            "1024,1024",
-                            "1104,944",
-                            "1184,880",
-                            "1248,832",
-                            "1328,800",
-                            "1392,752",
-                            "1456,720",
-                            "1504,688",
+                            "688 by 1504",
+                            "720 by 1456",
+                            "752 by 1392",
+                            "800 by 1328",
+                            "832 by 1248",
+                            "880 by 1184",
+                            "944 by 1104",
+                            "1024 by 1024",
+                            "1104 by 944",
+                            "1184 by 880",
+                            "1248 by 832",
+                            "1328 by 800",
+                            "1392 by 752",
+                            "1456 by 720",
+                            "1504 by 688",
                         ]
                     )
                 },
@@ -248,11 +246,11 @@ class FluxKontextPipelineParameters:
 
     def get_width(self) -> int:
         width_by_height = self._node.get_parameter_value("width_by_height")
-        return int(width_by_height.split(",")[0])
+        return int(width_by_height.split(" by ")[0])
 
     def get_height(self) -> int:
         width_by_height = self._node.get_parameter_value("width_by_height")
-        return int(width_by_height.split(",")[1])
+        return int(width_by_height.split(" by ")[1])
 
     def get_num_inference_steps(self) -> int:
         return int(self._node.get_parameter_value("num_inference_steps"))
