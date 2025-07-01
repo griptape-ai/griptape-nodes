@@ -38,7 +38,6 @@ class AdvancedNodeLibrary:
             library_data: The library schema containing metadata and node definitions
             library: The library instance that will contain the loaded nodes
         """
-        pass
 
     def after_library_nodes_loaded(self, library_data: LibrarySchema, library: Library) -> None:
         """Called after all nodes have been loaded from the library.
@@ -50,4 +49,3 @@ class AdvancedNodeLibrary:
             library_data: The library schema containing metadata and node definitions
             library: The library instance containing the loaded nodes
         """
-        pass
