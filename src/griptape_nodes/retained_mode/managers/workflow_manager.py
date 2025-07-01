@@ -1101,9 +1101,12 @@ class WorkflowManager:
                     # Re-save the workflow to update the metadata
                     self.on_save_workflow_request(SaveWorkflowRequest(file_name=file_name))
 
-                    logger.info(f"Updated workflow '{file_name}' with image path: {request.image_path}")
+                    logger.info("Updated workflow '%s' with image path: %s", file_name, request.image_path)
 
             except Exception as e:
+                # Get file_name from the save result for error reporting
+                file_path = Path(save_result.file_path)
+                file_name = file_path.stem
                 details = f"Failed to update workflow image for '{file_name}'. Error: {e}"
                 logger.error(details)
                 return SaveWorkflowWithImageResultFailure()
