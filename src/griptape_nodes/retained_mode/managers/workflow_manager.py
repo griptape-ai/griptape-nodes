@@ -46,9 +46,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
     DeleteWorkflowResultFailure,
     DeleteWorkflowResultSuccess,
-    ImportWorkflowAsFlowRequest,
-    ImportWorkflowAsFlowResultFailure,
-    ImportWorkflowAsFlowResultSuccess,
+    ImportWorkflowAsReferencedSubFlowRequest,
+    ImportWorkflowAsReferencedSubFlowResultFailure,
+    ImportWorkflowAsReferencedSubFlowResultSuccess,
     ListAllWorkflowsRequest,
     ListAllWorkflowsResultFailure,
     ListAllWorkflowsResultSuccess,
@@ -211,8 +211,8 @@ class WorkflowManager:
             self.on_publish_workflow_request,
         )
         event_manager.assign_manager_to_request_type(
-            ImportWorkflowAsFlowRequest,
-            self.on_import_workflow_as_flow_request,
+            ImportWorkflowAsReferencedSubFlowRequest,
+            self.on_import_workflow_as_referenced_sub_flow_request,
         )
 
     def on_libraries_initialization_complete(self) -> None:
@@ -2298,15 +2298,20 @@ class WorkflowManager:
             logger.exception(details)
             return PublishWorkflowResultFailure(exception=e)
 
-    def on_import_workflow_as_flow_request(self, request: ImportWorkflowAsFlowRequest) -> ResultPayload:
-        """Import a workflow file as a new flow in the current context."""
+    def on_import_workflow_as_referenced_sub_flow_request(
+        self, request: ImportWorkflowAsReferencedSubFlowRequest
+    ) -> ResultPayload:
+        """Import a workflow file as a new referenced sub flow in the current context."""
         # Validate the file path exists
         file_path = Path(request.file_path)
         if not file_path.exists():
             relative_file_path = WorkflowRegistry.get_complete_file_path(request.file_path)
             if relative_file_path is None:
-                logger.error("Attempted to import workflow '%s'. Failed because file does not exist", request.file_path)
-                return ImportWorkflowAsFlowResultFailure()
+                logger.error(
+                    "Attempted to import workflow '%s' as referenced sub flow. Failed because file does not exist",
+                    request.file_path,
+                )
+                return ImportWorkflowAsReferencedSubFlowResultFailure()
             file_path = Path(relative_file_path)
 
         # Get current flows before importing
@@ -2318,31 +2323,36 @@ class WorkflowManager:
 
         if not workflow_result.execution_successful:
             logger.error(
-                "Attempted to import workflow '%s'. Failed because workflow execution failed: %s",
+                "Attempted to import workflow '%s' as referenced sub flow. Failed because workflow execution failed: %s",
                 request.file_path,
                 workflow_result.execution_details,
             )
-            return ImportWorkflowAsFlowResultFailure()
+            return ImportWorkflowAsReferencedSubFlowResultFailure()
 
-        # Get flows after importing to find the new one
+        # Get flows after importing to find the new referenced sub flow
         flows_after = set(obj_manager.get_filtered_subset(type=ControlFlow).keys())
         new_flows = flows_after - flows_before
 
         if not new_flows:
-            logger.error("Attempted to import workflow '%s'. Failed because no new flow was created", request.file_path)
-            return ImportWorkflowAsFlowResultFailure()
+            logger.error(
+                "Attempted to import workflow '%s' as referenced sub flow. Failed because no new flow was created",
+                request.file_path,
+            )
+            return ImportWorkflowAsReferencedSubFlowResultFailure()
 
-        # If multiple flows were created, use the first one
+        # If multiple referenced sub flows were created, use the first one
         created_flow_name = next(iter(new_flows))
         if len(new_flows) > 1:
             logger.warning(
-                "Multiple flows created during import of '%s'. Using first one: %s",
+                "Multiple referenced sub flows created during import of '%s'. Using first one: %s",
                 request.file_path,
                 created_flow_name,
             )
 
-        logger.info("Successfully imported workflow '%s' as flow '%s'", request.file_path, created_flow_name)
-        return ImportWorkflowAsFlowResultSuccess(created_flow_name=created_flow_name)
+        logger.info(
+            "Successfully imported workflow '%s' as referenced sub flow '%s'", request.file_path, created_flow_name
+        )
+        return ImportWorkflowAsReferencedSubFlowResultSuccess(created_flow_name=created_flow_name)
 
     def _walk_object_tree(
         self, obj: Any, process_class_fn: Callable[[type, Any], None], visited: set[int] | None = None

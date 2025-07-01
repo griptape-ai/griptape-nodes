@@ -149,19 +149,19 @@ class SaveWorkflowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ImportWorkflowAsFlowRequest(RequestPayload):
+class ImportWorkflowAsReferencedSubFlowRequest(RequestPayload):
     file_path: str
 
 
 @dataclass
 @PayloadRegistry.register
-class ImportWorkflowAsFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+class ImportWorkflowAsReferencedSubFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     created_flow_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class ImportWorkflowAsFlowResultFailure(ResultPayloadFailure):
+class ImportWorkflowAsReferencedSubFlowResultFailure(ResultPayloadFailure):
     pass
 
 
