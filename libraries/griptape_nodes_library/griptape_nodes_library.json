@@ -936,6 +936,16 @@
       }
     },
     {
+      "class_name": "ColorPicker",
+      "file_path": "griptape_nodes_library/misc/color_picker/color_picker.py",
+      "metadata": {
+        "category": "misc",
+        "description": "Color Picker",
+        "display_name": "Color Picker",
+        "icon": "webcam"
+      }
+    },
+    {
       "class_name": "Askulator",
       "file_path": "griptape_nodes_library/number/askulator.py",
       "metadata": {

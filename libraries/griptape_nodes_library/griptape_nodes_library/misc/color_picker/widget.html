@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Color Picker</title>
+    <script src="https://cdn.jsdelivr.net/npm/@jaames/iro@5.5.2/dist/iro.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #ffffff;
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: #0a0a0a;
+        }
+
+        body {
+            background: var(--bg-primary);
+            margin: 0;
+            padding: 0;
+            transition: background-color 0.3s ease;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .color-picker-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        .color-picker-container.vertical {
+            flex-direction: column;
+            align-items: stretch;
+            padding: 10px 0;
+        }
+
+        .color-picker-container.horizontal {
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Resize preview skeleton */
+        .resize-preview {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-primary);
+            opacity: 1;
+            z-index: 1000;
+            display: none;
+            padding: 10px;
+            box-sizing: border-box;
+            
+            /* CSS variables for skeleton sizing */
+            --available-width: calc(100vw - 40px);
+            --available-height: calc(100vh - 40px);
+        }
+
+        .resize-preview.active {
+            display: flex;
+            gap: 10px;
+        }
+
+        /* Default to vertical layout */
+        .resize-preview.active {
+            flex-direction: column;
+            align-items: center;
+            
+            /* Vertical layout calculations */
+            --skeleton-width: var(--available-width);
+            --skeleton-slider-height: 20px;
+            --skeleton-box-height: calc(var(--available-height) - 20px - 2 * var(--skeleton-slider-height));
+        }
+
+        /* Switch to horizontal layout when width > height (landscape) */
+        @media (min-aspect-ratio: 1/1) {
+            .resize-preview.active {
+                flex-direction: row;
+                align-items: center;
+                justify-content: center;
+                
+                /* Horizontal layout calculations */
+                --skeleton-height: var(--available-height);
+                --skeleton-slider-width: 20px;
+                --skeleton-box-width: calc(var(--available-width) - 2 * var(--skeleton-slider-width));
+            }
+        }
+
+        .skeleton-box, .skeleton-slider {
+            background: #e5e5e5;
+            border-radius: 8px;
+            animation: skeleton-pulse 1.5s ease-in-out infinite alternate;
+        }
+
+        /* Skeleton box sizing - default vertical */
+        .resize-preview.active .skeleton-box {
+            width: var(--skeleton-width);
+            height: var(--skeleton-box-height);
+        }
+
+        /* Skeleton slider sizing - default vertical */
+        .resize-preview.active .skeleton-slider {
+            width: var(--skeleton-width);
+            height: var(--skeleton-slider-height);
+        }
+
+        /* Skeleton sizing for horizontal layout */
+        @media (min-aspect-ratio: 1/1) {
+            .resize-preview.active .skeleton-box {
+                width: var(--skeleton-box-width);
+                height: var(--skeleton-height);
+            }
+
+            .resize-preview.active .skeleton-slider {
+                width: var(--skeleton-slider-width);
+                height: var(--skeleton-height);
+            }
+        }
+
+        [data-theme="dark"] .skeleton-box, 
+        [data-theme="dark"] .skeleton-slider {
+            background: #333333;
+        }
+
+        @keyframes skeleton-pulse {
+            0% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+
+
+    </style>
+</head>
+<body>
+    <div class="color-picker-container" id="container">
+        <div class="color-box" id="colorBox"></div>
+        <div id="hueSlider"></div>
+        <div id="alphaSlider"></div>
+    </div>
+    
+    <!-- Resize preview skeleton -->
+    <div class="resize-preview" id="resizePreview">
+        <div class="skeleton-box" id="skeletonBox"></div>
+        <div class="skeleton-slider" id="skeletonHue"></div>
+        <div class="skeleton-slider" id="skeletonAlpha"></div>
+    </div>
+
+    <script>
+        // =================================================================
+        // CONFIGURATION AND STATE
+        // =================================================================
+        
+        let widgetConfig = {
+            theme: 'light',
+            format: 'hex',
+            alpha: true
+        };
+        
+        let currentParameterValue = '#ff0000';
+        let previousLayoutDirection = null;
+        let isInitialized = false;
+        let lastUpdateTime = 0;
+        let pendingUpdate = null;
+        let updateTimeout = null;
+        let updateRequested = false;
+        let resizeObserver = null;
+        let isResizing = false;
+        let isPointerDown = false;
+        let lastWidgetChangeTime = 0;
+        
+        let colorBox = null;
+        let hueSlider = null;
+        let alphaSlider = null;
+
+        // =================================================================
+        // HOST COMMUNICATION SYSTEM
+        // =================================================================
+        
+        const MessageTypes = {
+            WIDGET_READY: 'widget-ready',
+            PARAMETER_CHANGED: 'parameter-changed',
+            PARAMETER_RESPONSE: 'parameter-response',
+            SET_PARAMETER: 'set-parameter',
+            GET_PARAMETER: 'get-parameter',
+            SET_CONFIG: 'set-config',
+            RESIZE_START: 'resize-start',
+            RESIZE_END: 'resize-end'
+        };
+
+        function sendToHost(message) {
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage(message, '*');
+                console.debug('Widget → Host:', message.type, message);
+            }
+        }
+
+        function throttledNotifyHost(parameterName, value) {
+            pendingUpdate = { parameterName, value };
+            
+            if (updateRequested) {
+                return;
+            }
+            
+            const now = performance.now();
+            const timeSinceLastUpdate = now - lastUpdateTime;
+            const minInterval = 1000 / 30;
+            
+            if (timeSinceLastUpdate >= minInterval) {
+                notifyHostParameterChanged(parameterName, value);
+                lastUpdateTime = now;
+            } else {
+                updateRequested = true;
+                const delay = minInterval - timeSinceLastUpdate;
+                
+                if (updateTimeout) {
+                    clearTimeout(updateTimeout);
+                }
+                
+                updateTimeout = setTimeout(() => {
+                    if (pendingUpdate) {
+                        notifyHostParameterChanged(pendingUpdate.parameterName, pendingUpdate.value);
+                        lastUpdateTime = performance.now();
+                    }
+                    updateRequested = false;
+                    updateTimeout = null;
+                }, delay);
+            }
+        }
+
+        function notifyHostParameterChanged(parameterName, value) {
+            currentParameterValue = value;
+            lastWidgetChangeTime = performance.now();
+            sendToHost({
+                type: MessageTypes.PARAMETER_CHANGED,
+                parameterName: parameterName,
+                value: value
+            });
+        }
+
+        function handleHostMessage(event) {
+            if (event.source !== window.parent) {
+                return;
+            }
+
+            const message = event.data;
+            console.debug('Host → Widget:', message.type, message);
+
+            switch (message.type) {
+                case MessageTypes.SET_PARAMETER:
+                    handleSetParameter(message.parameterName, message.value);
+                    break;
+                case MessageTypes.GET_PARAMETER:
+                    handleGetParameter(message.parameterName, message.requestId);
+                    break;
+                case MessageTypes.SET_CONFIG:
+                    handleSetConfig(message.config);
+                    break;
+                case MessageTypes.RESIZE_START:
+                    handleResizeStart();
+                    break;
+                case MessageTypes.RESIZE_END:
+                    handleResizeEnd();
+                    break;
+                default:
+                    console.warn('Unknown message type from host:', message.type);
+            }
+        }
+
+        function handleSetConfig(config) {
+            widgetConfig = { ...widgetConfig, ...config };
+            applyConfiguration();
+        }
+
+        function handleSetParameter(parameterName, value) {
+            // Check if this update is likely an echo of our own recent change
+            const timeSinceWidgetChange = performance.now() - lastWidgetChangeTime;
+            const isLikelyEcho = timeSinceWidgetChange < 1000; // 1 second threshold
+            
+            if (parameterName === 'color' && value !== currentParameterValue) {
+                if (isLikelyEcho) {
+                    console.debug('Ignoring color parameter update - likely echo of widget change');
+                    return;
+                }
+                updateColorFromHost(value);
+            } else if (parameterName === 'color_picker' && value) {
+                // Handle widget state parameter - contains JSON with color property
+                try {
+                    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+                    if (parsed && parsed.color && parsed.color !== currentParameterValue) {
+                        if (isLikelyEcho) {
+                            console.debug('Ignoring color_picker parameter update - likely echo of widget change');
+                            return;
+                        }
+                        updateColorFromHost(parsed.color);
+                    }
+                } catch (e) {
+                    console.warn('Failed to parse color_picker parameter:', e);
+                }
+            }
+        }
+
+        function handleGetParameter(parameterName, requestId) {
+            let value = null;
+            
+            if (parameterName === 'color') {
+                value = currentParameterValue;
+            } else if (parameterName === 'color_picker') {
+                value = JSON.stringify({ color: currentParameterValue });
+            }
+            
+            sendToHost({
+                type: MessageTypes.PARAMETER_RESPONSE,
+                parameterName: parameterName,
+                value: value,
+                requestId: requestId
+            });
+        }
+
+        function updateColorFromHost(color) {
+            if (!isValidColor(color)) {
+                console.warn('Invalid color format from host:', color);
+                return;
+            }
+            
+            currentParameterValue = color;
+            if (colorBox) {
+                colorBox.color.hexString = color;
+            }
+        }
+
+        function handleResizeStart() {
+            if (!isResizing) {
+                isResizing = true;
+                showResizePreview();
+                console.debug('Resize started - showing preview');
+            }
+        }
+
+        function handleResizeEnd() {
+            if (isResizing) {
+                resizeColorPickers();
+                isResizing = false;
+                console.debug('Resize ended - updating color pickers');
+            }
+        }
+
+        // =================================================================
+        // CONFIGURATION MANAGEMENT
+        // =================================================================
+        
+        function applyConfiguration() {
+            document.body.setAttribute('data-theme', widgetConfig.theme);
+        }
+
+        // =================================================================
+        // COLOR PICKER FUNCTIONALITY
+        // =================================================================
+        
+        function isValidColor(color) {
+            return /^#[0-9A-F]{6}$/i.test(color) || 
+                   /^#[0-9A-F]{8}$/i.test(color) || 
+                   /^rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)$/i.test(color) ||
+                   /^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*[\d.]+\s*\)$/i.test(color);
+        }
+
+        function calculateOptimalSize() {
+            const containerWidth = window.innerWidth;
+            const containerHeight = window.innerHeight;
+            
+            // Account for padding and gap
+            const availableWidth = containerWidth; // 20px padding + gap
+            const availableHeight = containerHeight - 40;
+            
+            // Determine if we should use vertical or horizontal layout
+            const isVerticalLayout = availableHeight > availableWidth;
+            
+            return {
+                availableWidth,
+                availableHeight,
+                isVerticalLayout
+            };
+        }
+
+        function initializeColorPickers() {
+            const { availableWidth, availableHeight, isVerticalLayout } = calculateOptimalSize();
+            
+            
+            // Set layout class
+            const container = document.getElementById('container');
+            container.className = `color-picker-container ${isVerticalLayout ? 'vertical' : 'horizontal'}`;
+            
+            let boxWidth, boxHeight, sliderWidth, sliderHeight;
+            
+            if (isVerticalLayout) {
+                // Vertical layout: box and sliders use full width
+                width = availableWidth;
+                sliderWidth = width;
+                boxWidth = width;
+
+                sliderHeight = 20;
+                boxHeight = availableHeight-20-2*sliderHeight;
+            } else {
+                // Horizontal layout: box and sliders use available height
+                height = availableHeight;
+                sliderHeight = height;
+                boxHeight = height;
+
+                sliderWidth = 20;
+                boxWidth = availableWidth-40-2*sliderWidth;
+            }
+            
+            // Create color box
+            document.getElementById('colorBox').innerHTML = '';
+            colorBox = new iro.ColorPicker('#colorBox', {
+                width: boxWidth,
+                color: currentParameterValue,
+                borderWidth: 1,
+                borderColor: "#fff",
+                layout: [
+                    {
+                        component: iro.ui.Box,
+                        options: {
+                            boxHeight,
+                        }
+                    }
+                ]
+            });
+
+            let sliderLayoutDirection = isVerticalLayout ? 'vertical' : 'horizontal';
+            
+            // Create hue slider
+            document.getElementById('hueSlider').innerHTML = '';
+            hueSlider = new iro.ColorPicker('#hueSlider', {
+                width: isVerticalLayout ? sliderWidth : sliderHeight,
+                color: currentParameterValue,
+                borderWidth: 1,
+                borderColor: "#fff",
+                layout: [
+                    {
+                        component: iro.ui.Slider,
+                        options: {
+                            sliderType: 'hue',
+                            layoutDirection: sliderLayoutDirection,
+                        }
+                    }
+                ]
+            });
+            
+            // Create alpha slider
+            document.getElementById('alphaSlider').innerHTML = '';
+            alphaSlider = new iro.ColorPicker('#alphaSlider', {
+                width: isVerticalLayout ? sliderWidth : sliderHeight,
+                color: currentParameterValue,
+                borderWidth: 1,
+                borderColor: "#fff",
+                layout: [
+                    {
+                        component: iro.ui.Slider,
+                        options: {
+                            sliderType: 'alpha',
+                            layoutDirection: sliderLayoutDirection,
+                        }
+                    }
+                ]
+            });
+            
+            // Sync all components
+            const syncColors = (color, source) => {
+                if (source !== colorBox) colorBox.color.set(color);
+                if (source !== hueSlider) hueSlider.color.set(color);
+                if (source !== alphaSlider) alphaSlider.color.set(color);
+                
+                const hexColor = color.alpha < 1 ? color.hex8String : color.hexString;
+                
+                // Update both parameters
+                throttledNotifyHost('color', hexColor);
+                throttledNotifyHost('color_picker', JSON.stringify({ color: hexColor }));
+            };
+            
+            colorBox.on('color:change', (color) => syncColors(color, colorBox));
+            hueSlider.on('color:change', (color) => syncColors(color, hueSlider));
+            alphaSlider.on('color:change', (color) => syncColors(color, alphaSlider));
+        }
+
+        function showResizePreview() {
+            const preview = document.getElementById('resizePreview');
+            
+            // Simply activate the preview - CSS will handle layout direction automatically
+            preview.className = 'resize-preview active';
+        }
+        
+        function hideResizePreview() {
+            const preview = document.getElementById('resizePreview');
+            preview.classList.remove('active');
+        }
+
+        function resizeColorPickers() {
+            if (!colorBox) return;
+            
+            hideResizePreview();
+            
+            // Store current color
+            const currentColor = colorBox.color.hexString;
+            
+            // Reinitialize
+            initializeColorPickers();
+            
+            // Restore color
+            if (currentColor !== currentParameterValue) {
+                colorBox.color.hexString = currentColor;
+            }
+        }
+
+        // =================================================================
+        // INITIALIZATION
+        // =================================================================
+
+        function initializeWidget() {
+            if (isInitialized) return;
+            
+            try {
+                window.addEventListener('message', handleHostMessage);
+                
+                // Setup ResizeObserver as fallback for programmatic resizes
+                resizeObserver = new ResizeObserver(entries => {
+                    // Only handle if host hasn't started explicit resize
+                    if (!isResizing) {
+                        resizeColorPickers();
+                    }
+                });
+                
+                resizeObserver.observe(document.body);
+                
+                initializeColorPickers();
+                applyConfiguration();
+                
+                isInitialized = true;
+                
+                sendToHost({
+                    type: MessageTypes.WIDGET_READY,
+                    name: 'iro.js Color Picker Widget',
+                    capabilities: ['color-selection', 'theme-support', 'iro-integration', 'responsive-design']
+                });
+                
+                console.log('iro.js color picker widget initialized successfully');
+                
+            } catch (error) {
+                console.error('Failed to initialize iro.js color picker widget:', error);
+            }
+        }
+
+        function checkAndInitialize() {
+            if (typeof iro !== 'undefined') {
+                setTimeout(initializeWidget, 100);
+            } else {
+                setTimeout(checkAndInitialize, 50);
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', checkAndInitialize);
+        } else {
+            checkAndInitialize();
+        }
+    </script>
+</body>
+</html>
