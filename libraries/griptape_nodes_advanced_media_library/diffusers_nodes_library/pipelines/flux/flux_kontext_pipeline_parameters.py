@@ -1,5 +1,8 @@
+from email.policy import default
 import logging
 from typing import Any
+
+from griptape_nodes.traits.options import Options
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
@@ -105,22 +108,31 @@ class FluxKontextPipelineParameters:
         )
         self._node.add_parameter(
             Parameter(
-                name="width",
-                default_value=1024,
-                input_types=["int"],
-                type="int",
-                tooltip="width",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="height",
-                default_value=1024,
-                input_types=["int"],
-                type="int",
-                tooltip="height",
-            )
-        )
+                name="width_by_height",
+                default_value=(1024, 1024),
+                input_types=["tuple[int,int]", "str", "list"],
+                type="str",
+                tooltip="width x height",
+                traits={Options(
+                        choices=[
+                              (688, 1504),
+                            (720, 1456),
+                            (752, 1392),
+                            (800, 1328),
+                            (832, 1248),
+                            (880, 1184),
+                            (944, 1104),
+                            (1024, 1024),
+                            (1104, 944),
+                            (1184, 880),
+                            (1248, 832),
+                            (1328, 800),
+                            (1392, 752),
+                            (1456, 720),
+                            (1504, 688),
+                        ]
+                )}
+        ))
         self._node.add_parameter(
             Parameter(
                 name="num_inference_steps",
@@ -153,7 +165,6 @@ class FluxKontextPipelineParameters:
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._huggingface_repo_parameter.validate_before_node_run() or []
-
         # Check for if prompt exists:
         prompt_exists = self.get_prompt() or self.get_prompt_2()
         negative_prompt_exists = self.get_negative_prompt() or self.get_negative_prompt_2()
@@ -233,10 +244,12 @@ class FluxKontextPipelineParameters:
         return float(self._node.get_parameter_value("true_cfg_scale"))
 
     def get_width(self) -> int:
-        return int(self._node.get_parameter_value("width"))
+        width_by_height = self._node.get_parameter_value("width_by_height")
+        return int(width_by_height[1])
 
     def get_height(self) -> int:
-        return int(self._node.get_parameter_value("height"))
+        width_by_height = self._node.get_parameter_value("width_by_height")
+        return int(width_by_height[0])
 
     def get_num_inference_steps(self) -> int:
         return int(self._node.get_parameter_value("num_inference_steps"))
