@@ -33,6 +33,7 @@ from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
+from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowMetadata, WorkflowRegistry
@@ -62,6 +63,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
     DeleteWorkflowResultFailure,
     DeleteWorkflowResultSuccess,
+    ImportWorkflowAsFlowRequest,
+    ImportWorkflowAsFlowResultFailure,
+    ImportWorkflowAsFlowResultSuccess,
     ListAllWorkflowsRequest,
     ListAllWorkflowsResultFailure,
     ListAllWorkflowsResultSuccess,
@@ -222,6 +226,10 @@ class WorkflowManager:
         event_manager.assign_manager_to_request_type(
             PublishWorkflowRequest,
             self.on_publish_workflow_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            ImportWorkflowAsFlowRequest,
+            self.on_import_workflow_as_flow_request,
         )
 
     def on_libraries_initialization_complete(self) -> None:
@@ -2603,6 +2611,52 @@ class WorkflowManager:
             details = f"Failed to publish workflow '{request.workflow_name}'. Error: {e}"
             logger.error(details)
             return PublishWorkflowResultFailure()
+
+    def on_import_workflow_as_flow_request(self, request: ImportWorkflowAsFlowRequest) -> ResultPayload:
+        """Import a workflow file as a new flow in the current context."""
+        # Validate the file path exists
+        file_path = Path(request.file_path)
+        if not file_path.exists():
+            relative_file_path = WorkflowRegistry.get_complete_file_path(request.file_path)
+            if relative_file_path is None:
+                logger.error("Attempted to import workflow '%s'. Failed because file does not exist", request.file_path)
+                return ImportWorkflowAsFlowResultFailure()
+            file_path = Path(relative_file_path)
+
+        # Get current flows before importing
+        obj_manager = GriptapeNodes.ObjectManager()
+        flows_before = set(obj_manager.get_filtered_subset(type=ControlFlow).keys())
+
+        # Execute the workflow (this will create the flow structure)
+        workflow_result = self.run_workflow(str(file_path))
+
+        if not workflow_result.execution_successful:
+            logger.error(
+                "Attempted to import workflow '%s'. Failed because workflow execution failed: %s",
+                request.file_path,
+                workflow_result.execution_details,
+            )
+            return ImportWorkflowAsFlowResultFailure()
+
+        # Get flows after importing to find the new one
+        flows_after = set(obj_manager.get_filtered_subset(type=ControlFlow).keys())
+        new_flows = flows_after - flows_before
+
+        if not new_flows:
+            logger.error("Attempted to import workflow '%s'. Failed because no new flow was created", request.file_path)
+            return ImportWorkflowAsFlowResultFailure()
+
+        # If multiple flows were created, use the first one
+        created_flow_name = next(iter(new_flows))
+        if len(new_flows) > 1:
+            logger.warning(
+                "Multiple flows created during import of '%s'. Using first one: %s",
+                request.file_path,
+                created_flow_name,
+            )
+
+        logger.info("Successfully imported workflow '%s' as flow '%s'", request.file_path, created_flow_name)
+        return ImportWorkflowAsFlowResultSuccess(created_flow_name=created_flow_name)
 
     def _walk_object_tree(
         self, obj: Any, process_class_fn: Callable[[type, Any], None], visited: set[int] | None = None
