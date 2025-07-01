@@ -109,30 +109,33 @@ class FluxKontextPipelineParameters:
         self._node.add_parameter(
             Parameter(
                 name="width_by_height",
-                default_value=(1024, 1024),
-                input_types=["tuple[int,int]", "str", "list"],
+                default_value="1024,1024",
+                input_types=["str"],
                 type="str",
-                tooltip="width x height",
-                traits={Options(
+                tooltip="width by height",
+                traits={
+                    Options(
                         choices=[
-                              (688, 1504),
-                            (720, 1456),
-                            (752, 1392),
-                            (800, 1328),
-                            (832, 1248),
-                            (880, 1184),
-                            (944, 1104),
-                            (1024, 1024),
-                            (1104, 944),
-                            (1184, 880),
-                            (1248, 832),
-                            (1328, 800),
-                            (1392, 752),
-                            (1456, 720),
-                            (1504, 688),
+                            "688,1504",
+                            "720,1456",
+                            "752,1392",
+                            "800,1328",
+                            "832,1248",
+                            "880,1184",
+                            "944,1104",
+                            "1024,1024",
+                            "1104,944",
+                            "1184,880",
+                            "1248,832",
+                            "1328,800",
+                            "1392,752",
+                            "1456,720",
+                            "1504,688",
                         ]
-                )}
-        ))
+                    )
+                },
+            )
+        )
         self._node.add_parameter(
             Parameter(
                 name="num_inference_steps",
@@ -245,11 +248,11 @@ class FluxKontextPipelineParameters:
 
     def get_width(self) -> int:
         width_by_height = self._node.get_parameter_value("width_by_height")
-        return int(width_by_height[1])
+        return int(width_by_height.split(",")[0])
 
     def get_height(self) -> int:
         width_by_height = self._node.get_parameter_value("width_by_height")
-        return int(width_by_height[0])
+        return int(width_by_height.split(",")[1])
 
     def get_num_inference_steps(self) -> int:
         return int(self._node.get_parameter_value("num_inference_steps"))
