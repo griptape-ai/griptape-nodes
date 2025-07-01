@@ -183,8 +183,10 @@ class FluxKontextPipelineParameters:
         # Get actual VAE scale factor from model config
         try:
             repo_id, revision = self.get_repo_revision()
-            vae = diffusers.AutoencoderKL.from_pretrained(repo_id, subfolder="vae", revision=revision)
-            vae_scale_factor = 2 ** (len(vae.config.block_out_channels) - 1)
+            vae_config = diffusers.AutoencoderKLConfig.from_pretrained(
+                pretrained_model_name_or_path=repo_id, revision=revision, local_files_only=True, subfolder="vae"
+            )
+            vae_scale_factor = 2 ** (len(vae_config.block_out_channels) - 1)
             # Flux latents are packed into 2x2 patches, so multiply by 2
             multiple_of = vae_scale_factor * 2
         except Exception:
