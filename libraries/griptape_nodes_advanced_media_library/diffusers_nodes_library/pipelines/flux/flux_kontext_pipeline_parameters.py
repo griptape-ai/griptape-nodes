@@ -107,28 +107,28 @@ class FluxKontextPipelineParameters:
         self._node.add_parameter(
             Parameter(
                 name="width_by_height",
-                default_value="1024 by 1024",
+                default_value="1024x1024",
                 input_types=["str"],
                 type="str",
-                tooltip="width by height",
+                tooltip="widthxheight",
                 traits={
                     Options(
                         choices=[
-                            "688 by 1504",
-                            "720 by 1456",
-                            "752 by 1392",
-                            "800 by 1328",
-                            "832 by 1248",
-                            "880 by 1184",
-                            "944 by 1104",
-                            "1024 by 1024",
-                            "1104 by 944",
-                            "1184 by 880",
-                            "1248 by 832",
-                            "1328 by 800",
-                            "1392 by 752",
-                            "1456 by 720",
-                            "1504 by 688",
+                            "688x1504",
+                            "720x1456",
+                            "752x1392",
+                            "800x1328",
+                            "832x1248",
+                            "880x1184",
+                            "944x1104",
+                            "1024x1024",
+                            "1104x944",
+                            "1184x880",
+                            "1248x832",
+                            "1328x800",
+                            "1392x752",
+                            "1456x720",
+                            "1504x688",
                         ]
                     )
                 },
@@ -246,11 +246,11 @@ class FluxKontextPipelineParameters:
 
     def get_width(self) -> int:
         width_by_height = self._node.get_parameter_value("width_by_height")
-        return int(width_by_height.split(" by ")[0])
+        return int(width_by_height.split("x")[0])
 
     def get_height(self) -> int:
         width_by_height = self._node.get_parameter_value("width_by_height")
-        return int(width_by_height.split(" by ")[1])
+        return int(width_by_height.split("x")[1])
 
     def get_num_inference_steps(self) -> int:
         return int(self._node.get_parameter_value("num_inference_steps"))
