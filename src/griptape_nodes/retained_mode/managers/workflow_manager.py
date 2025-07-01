@@ -1080,34 +1080,34 @@ class WorkflowManager:
         # Create a regular save workflow request
         save_request = SaveWorkflowRequest(file_name=request.file_name)
         save_result = self.on_save_workflow_request(save_request)
-        
+
         if not isinstance(save_result, SaveWorkflowResultSuccess):
             return SaveWorkflowWithImageResultFailure()
-        
+
         # If an image path was provided, update the workflow metadata
         if request.image_path is not None:
             try:
                 # Get the file name from the save result
                 file_path = Path(save_result.file_path)
                 file_name = file_path.stem
-                
+
                 # Get the current workflow from registry
                 if WorkflowRegistry.has_workflow_with_name(file_name):
                     workflow = WorkflowRegistry.get_workflow_by_name(file_name)
-                    
+
                     # Update the image path in the metadata
                     workflow.metadata.image = request.image_path
-                    
+
                     # Re-save the workflow to update the metadata
                     self.on_save_workflow_request(SaveWorkflowRequest(file_name=file_name))
-                    
+
                     logger.info(f"Updated workflow '{file_name}' with image path: {request.image_path}")
-                
+
             except Exception as e:
                 details = f"Failed to update workflow image for '{file_name}'. Error: {e}"
                 logger.error(details)
                 return SaveWorkflowWithImageResultFailure()
-        
+
         return SaveWorkflowWithImageResultSuccess(file_path=save_result.file_path)
 
     def _generate_workflow_metadata(
