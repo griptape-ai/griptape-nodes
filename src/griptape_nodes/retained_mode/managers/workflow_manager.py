@@ -861,7 +861,7 @@ class WorkflowManager:
         return import_statements
 
     def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
-        logger.info("SaveWorkflowRequest payload: %r (image_path: %r)", request, getattr(request, "image_path", None))
+        logger.debug("SaveWorkflowRequest payload: %r (image_path: %r)", request, getattr(request, "image_path", None))
         local_tz = datetime.now().astimezone().tzinfo
 
         # Start with the file name provided; we may change it.
@@ -961,7 +961,7 @@ class WorkflowManager:
             return SaveWorkflowResultFailure()
 
         # Set the image if provided
-        if getattr(request, "image_path", None) is not None:
+        if request.image_path:
             workflow_metadata.image = request.image_path
 
         metadata_block = self._generate_workflow_metadata_header(workflow_metadata=workflow_metadata)
@@ -1069,24 +1069,6 @@ class WorkflowManager:
         if file_name not in registered_workflows:
             GriptapeNodes.ConfigManager().save_user_workflow_json(str(file_path))
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
-        details = f"Successfully saved workflow to: {serialized_file_path}"
-        logger.info(details)
-        return SaveWorkflowResultSuccess(file_path=str(serialized_file_path))
-
-        # If an image path was provided, update the workflow metadata
-        if getattr(request, "image_path", None) is not None:
-            file_path = Path(serialized_file_path)
-            file_name = file_path.stem
-            if WorkflowRegistry.has_workflow_with_name(file_name):
-                workflow = WorkflowRegistry.get_workflow_by_name(file_name)
-                workflow.metadata.image = request.image_path
-                # Re-save the workflow to update the metadata
-                self.on_save_workflow_request(SaveWorkflowRequest(file_name=file_name))
-                logger.info("Updated workflow '%s' with image path: %s", file_name, request.image_path)
-            else:
-                logger.error(
-                    "Failed to update image: workflow with name '%s' not found in registry after save.", file_name
-                )
         details = f"Successfully saved workflow to: {serialized_file_path}"
         logger.info(details)
         return SaveWorkflowResultSuccess(file_path=str(serialized_file_path))
