@@ -861,6 +861,7 @@ class WorkflowManager:
         return import_statements
 
     def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+        logger.info("SaveWorkflowRequest payload: %r (image_path: %r)", request, getattr(request, "image_path", None))
         local_tz = datetime.now().astimezone().tzinfo
 
         # Start with the file name provided; we may change it.
@@ -958,6 +959,10 @@ class WorkflowManager:
             details = f"Attempted to save workflow '{relative_file_path}'. Failed to generate metadata."
             logger.error(details)
             return SaveWorkflowResultFailure()
+
+        # Set the image if provided
+        if getattr(request, "image_path", None) is not None:
+            workflow_metadata.image = request.image_path
 
         metadata_block = self._generate_workflow_metadata_header(workflow_metadata=workflow_metadata)
         if metadata_block is None:
@@ -1082,6 +1087,9 @@ class WorkflowManager:
                 logger.error(
                     "Failed to update image: workflow with name '%s' not found in registry after save.", file_name
                 )
+        details = f"Successfully saved workflow to: {serialized_file_path}"
+        logger.info(details)
+        return SaveWorkflowResultSuccess(file_path=str(serialized_file_path))
 
     def _generate_workflow_metadata(
         self,
