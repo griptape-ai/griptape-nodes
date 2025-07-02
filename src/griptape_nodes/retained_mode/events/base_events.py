@@ -207,6 +207,8 @@ class EventRequest(BaseEvent, Generic[P]):
     """Request event."""
 
     request: P
+    request_id: str | None = None
+    response_channel: str | None = None
 
     def __init__(self, **data) -> None:
         """Initialize an EventRequest, inferring the generic type if needed."""
@@ -262,7 +264,7 @@ class EventRequest(BaseEvent, Generic[P]):
             raise ValueError(msg)
 
         # Create the event instance with the payload
-        return cls(request=request_payload)
+        return cls(request=request_payload, **event_data)
 
 
 class EventResult(BaseEvent, Generic[P, R], ABC):
@@ -270,6 +272,8 @@ class EventResult(BaseEvent, Generic[P, R], ABC):
 
     request: P
     result: R
+    request_id: str | None = None
+    response_channel: str | None = None
     retained_mode: str | None = None
 
     def __init__(self, **data) -> None:

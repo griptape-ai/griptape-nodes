@@ -66,7 +66,13 @@ class EventManager:
             del self._request_type_to_manager[request_type]
 
     def handle_request(
-        self, request: RP, operation_depth_mgr: "OperationDepthManager", workflow_mgr: "WorkflowManager"
+        self,
+        request: RP,
+        *,
+        operation_depth_mgr: "OperationDepthManager",
+        workflow_mgr: "WorkflowManager",
+        response_channel: str | None = None,
+        request_id: str | None = None,
     ) -> ResultPayload:
         """Publish an event to the manager assigned to its type.
 
@@ -74,6 +80,8 @@ class EventManager:
             request: The request to handle
             operation_depth_mgr: The operation depth manager to use
             workflow_mgr: The workflow manager to use
+            response_channel: The channel to send the response to (optional)
+            request_id: The ID of the request to correlate with the response (optional)
         """
         # Notify the manager of the event type
         with operation_depth_mgr as depth_manager:
@@ -91,7 +99,7 @@ class EventManager:
 
                 retained_mode_str = None
                 # If request_id exists, that means it's a direct request from the GUI (not internal), and should be echoed by retained mode.
-                if depth_manager.is_top_level() and request.request_id is not None:
+                if depth_manager.is_top_level() and request_id is not None:
                     retained_mode_str = depth_manager.request_retained_mode_translation(request)
 
                 # Some requests have fields marked as "omit_from_result" which should be removed from the request
@@ -101,8 +109,10 @@ class EventManager:
                 if result_payload.succeeded():
                     result_event = EventResultSuccess(
                         request=request,
+                        request_id=request_id,
                         result=result_payload,
                         retained_mode=retained_mode_str,
+                        response_channel=response_channel,
                     )
                     # If the result is a success, and the WorkflowAlteredMixin is present, that means the flow has been changed in some way.
                     # In that case, we need to flush the element changes, so we add one to the event queue.
@@ -114,8 +124,10 @@ class EventManager:
                 else:
                     result_event = EventResultFailure(
                         request=request,
+                        request_id=request_id,
                         result=result_payload,
                         retained_mode=retained_mode_str,
+                        response_channel=response_channel,
                     )
                 wrapped_event = GriptapeNodeEvent(wrapped_event=result_event)
                 EventBus.publish_event(wrapped_event)
