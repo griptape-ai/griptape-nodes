@@ -91,6 +91,7 @@ from griptape_nodes.retained_mode.managers.os_manager import OSManager
 if TYPE_CHECKING:
     from types import ModuleType
 
+    from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -668,12 +669,35 @@ class LibraryManager:
         # Add the directory to the Python path to allow for relative imports
         sys.path.insert(0, str(base_dir))
 
+        # Load the advanced library module if specified
+        advanced_library_instance = None
+        if library_data.advanced_library_path:
+            try:
+                advanced_library_instance = self._load_advanced_library_module(
+                    library_data=library_data,
+                    base_dir=base_dir,
+                )
+            except Exception as err:
+                self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                    library_path=file_path,
+                    library_name=library_data.name,
+                    library_version=library_version,
+                    status=LibraryManager.LibraryStatus.UNUSABLE,
+                    problems=[
+                        f"Failed to load Advanced Library module from '{library_data.advanced_library_path}': {err}"
+                    ],
+                )
+                details = f"Attempted to load Library '{library_data.name}' from '{json_path}'. Failed to load Advanced Library module: {err}"
+                logger.error(details)
+                return RegisterLibraryFromFileResultFailure()
+
         # Create or get the library
         try:
             # Try to create a new library
             library = LibraryRegistry.generate_new_library(
                 library_data=library_data,
                 mark_as_default_library=request.load_as_default_library,
+                advanced_library=advanced_library_instance,
             )
 
         except KeyError as err:
@@ -1455,7 +1479,73 @@ class LibraryManager:
         # Go tell the Workflow Manager that it's turn is now.
         GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
 
-    def _attempt_load_nodes_from_library(  # noqa: PLR0913, C901
+    def _load_advanced_library_module(
+        self,
+        library_data: LibrarySchema,
+        base_dir: Path,
+    ) -> AdvancedNodeLibrary | None:
+        """Load the advanced library module and return an instance.
+
+        Args:
+            library_data: The library schema data
+            base_dir: Base directory containing the library files
+
+        Returns:
+            An instance of the AdvancedNodeLibrary class from the module, or None if not specified
+
+        Raises:
+            ImportError: If the module cannot be loaded
+            AttributeError: If no AdvancedNodeLibrary subclass is found
+            TypeError: If the found class cannot be instantiated
+        """
+        from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
+
+        if not library_data.advanced_library_path:
+            return None
+
+        # Resolve relative path to absolute path
+        advanced_library_module_path = Path(library_data.advanced_library_path)
+        if not advanced_library_module_path.is_absolute():
+            advanced_library_module_path = base_dir / advanced_library_module_path
+
+        # Load the module (supports hot reloading)
+        try:
+            module = self._load_module_from_file(advanced_library_module_path, library_data.name)
+        except Exception as err:
+            msg = f"Failed to load Advanced Library module from '{advanced_library_module_path}': {err}"
+            raise ImportError(msg) from err
+
+        # Find an AdvancedNodeLibrary subclass in the module
+        advanced_library_class = None
+        for obj in vars(module).values():
+            if (
+                isinstance(obj, type)
+                and issubclass(obj, AdvancedNodeLibrary)
+                and obj is not AdvancedNodeLibrary
+                and obj.__module__ == module.__name__
+            ):
+                advanced_library_class = obj
+                break
+
+        if not advanced_library_class:
+            msg = f"No AdvancedNodeLibrary subclass found in Advanced Library module '{advanced_library_module_path}'"
+            raise AttributeError(msg)
+
+        # Create an instance
+        try:
+            advanced_library_instance = advanced_library_class()
+        except Exception as err:
+            msg = f"Failed to instantiate AdvancedNodeLibrary class '{advanced_library_class.__name__}': {err}"
+            raise TypeError(msg) from err
+
+        # Validate the instance
+        if not isinstance(advanced_library_instance, AdvancedNodeLibrary):
+            msg = f"Created instance is not an AdvancedNodeLibrary subclass: {type(advanced_library_instance)}"
+            raise TypeError(msg)
+
+        return advanced_library_instance
+
+    def _attempt_load_nodes_from_library(  # noqa: PLR0913, PLR0912, PLR0915, C901
         self,
         library_data: LibrarySchema,
         library: Library,
@@ -1483,6 +1573,21 @@ class LibraryManager:
                 status=LibraryManager.LibraryStatus.UNUSABLE,
                 problems=problems,
             )
+
+        # Call the before_library_nodes_loaded callback if available
+        advanced_library = library.get_advanced_library()
+        if advanced_library:
+            try:
+                advanced_library.before_library_nodes_loaded(library_data, library)
+                details = f"Successfully called before_library_nodes_loaded callback for library '{library_data.name}'"
+                logger.debug(details)
+            except Exception as err:
+                problem = f"Error calling before_library_nodes_loaded callback: {err}"
+                problems.append(problem)
+                details = (
+                    f"Failed to call before_library_nodes_loaded callback for library '{library_data.name}': {err}"
+                )
+                logger.error(details)
 
         # Process each node in the metadata
         for node_definition in library_data.nodes:
@@ -1517,6 +1622,18 @@ class LibraryManager:
 
             # If we got here, at least one node came in.
             any_nodes_loaded_successfully = True
+
+        # Call the after_library_nodes_loaded callback if available
+        if advanced_library:
+            try:
+                advanced_library.after_library_nodes_loaded(library_data, library)
+                details = f"Successfully called after_library_nodes_loaded callback for library '{library_data.name}'"
+                logger.debug(details)
+            except Exception as err:
+                problem = f"Error calling after_library_nodes_loaded callback: {err}"
+                problems.append(problem)
+                details = f"Failed to call after_library_nodes_loaded callback for library '{library_data.name}': {err}"
+                logger.error(details)
 
         # Create a LibraryInfo object based on load successes and problem count.
         if not any_nodes_loaded_successfully:

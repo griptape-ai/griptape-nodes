@@ -904,6 +904,7 @@ class WorkflowManager:
         return import_statements
 
     def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+        logger.debug("SaveWorkflowRequest payload: %r (image_path: %r)", request, getattr(request, "image_path", None))
         local_tz = datetime.now().astimezone().tzinfo
 
         # Start with the file name provided; we may change it.
@@ -1001,6 +1002,10 @@ class WorkflowManager:
             details = f"Attempted to save workflow '{relative_file_path}'. Failed to generate metadata."
             logger.error(details)
             return SaveWorkflowResultFailure()
+
+        # Set the image if provided
+        if request.image_path:
+            workflow_metadata.image = request.image_path
 
         metadata_block = self._generate_workflow_metadata_header(workflow_metadata=workflow_metadata)
         if metadata_block is None:
