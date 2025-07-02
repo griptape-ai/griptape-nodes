@@ -223,3 +223,46 @@ class DeserializeFlowFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPaylo
 @PayloadRegistry.register
 class DeserializeFlowFromCommandsResultFailure(ResultPayloadFailure):
     pass
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowDetailsRequest(RequestPayload):
+    """Request payload to get detailed information about a flow.
+
+    This provides metadata about a flow including its reference status and parent hierarchy,
+    useful for editor integration to display flows appropriately.
+
+    Attributes:
+        flow_name (str | None): The name of the flow to get details for. If None is passed,
+            assumes we're getting details for the flow in the Current Context.
+    """
+
+    # If None is passed, assumes we're getting details for the flow in the Current Context.
+    flow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Success result containing flow details.
+
+    Attributes:
+        referenced_workflow_source_path (str | None): The file path of the workflow that was
+            imported to create this flow. None if this flow was created standalone.
+        parent_flow_name (str | None): The name of the parent flow, or None if this is a
+            top-level flow.
+    """
+
+    referenced_workflow_source_path: str | None
+    parent_flow_name: str | None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failure result when flow details cannot be retrieved.
+
+    This occurs when the specified flow doesn't exist, the current context is empty
+    (when flow_name is None), or there are issues with the flow's parent mapping.
+    """

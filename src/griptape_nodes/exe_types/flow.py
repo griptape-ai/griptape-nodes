@@ -55,6 +55,14 @@ class ControlFlow:
         """
         return self._referenced_workflow_source_path is not None
 
+    def get_referenced_workflow_source_path(self) -> str | None:
+        """Get the source path of the referenced workflow, if any.
+
+        Returns the file path of the workflow that was imported to create this flow,
+        or None if this flow was created standalone.
+        """
+        return self._referenced_workflow_source_path
+
     def add_node(self, node: BaseNode) -> None:
         self.nodes[node.name] = node
 

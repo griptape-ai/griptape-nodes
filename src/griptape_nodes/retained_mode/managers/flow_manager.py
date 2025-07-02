@@ -57,6 +57,9 @@ from griptape_nodes.retained_mode.events.flow_events import (
     DeserializeFlowFromCommandsRequest,
     DeserializeFlowFromCommandsResultFailure,
     DeserializeFlowFromCommandsResultSuccess,
+    GetFlowDetailsRequest,
+    GetFlowDetailsResultFailure,
+    GetFlowDetailsResultSuccess,
     GetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess,
     ListFlowsInCurrentContextRequest,
@@ -126,6 +129,7 @@ class FlowManager:
             ValidateFlowDependenciesRequest, self.on_validate_flow_dependencies_request
         )
         event_manager.assign_manager_to_request_type(GetTopLevelFlowRequest, self.on_get_top_level_flow_request)
+        event_manager.assign_manager_to_request_type(GetFlowDetailsRequest, self.on_get_flow_details_request)
         event_manager.assign_manager_to_request_type(SerializeFlowToCommandsRequest, self.on_serialize_flow_to_commands)
         event_manager.assign_manager_to_request_type(
             DeserializeFlowFromCommandsRequest, self.on_deserialize_flow_from_commands
@@ -147,6 +151,41 @@ class FlowManager:
         msg = "Attempted to get top level flow, but no such flow exists"
         logger.debug(msg)
         return GetTopLevelFlowResultSuccess(flow_name=None)
+
+    def on_get_flow_details_request(self, request: GetFlowDetailsRequest) -> ResultPayload:
+        flow_name = request.flow_name
+        flow = None
+
+        if flow_name is None:
+            # We want to get details for whatever is at the top of the Current Context.
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = "Attempted to get Flow details from the Current Context. Failed because the Current Context was empty."
+                logger.error(details)
+                return GetFlowDetailsResultFailure()
+            flow = GriptapeNodes.ContextManager().get_current_flow()
+            flow_name = flow.name
+        else:
+            flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+            if flow is None:
+                details = (
+                    f"Attempted to get Flow details for '{flow_name}'. Failed because no Flow with that name exists."
+                )
+                logger.error(details)
+                return GetFlowDetailsResultFailure()
+
+        try:
+            parent_flow_name = self.get_parent_flow(flow_name)
+        except ValueError:
+            details = f"Attempted to get Flow details for '{flow_name}'. Failed because Flow does not exist in parent mapping."
+            logger.error(details)
+            return GetFlowDetailsResultFailure()
+
+        details = f"Successfully retrieved Flow details for '{flow_name}'."
+        logger.debug(details)
+        return GetFlowDetailsResultSuccess(
+            referenced_workflow_source_path=flow.get_referenced_workflow_source_path(),
+            parent_flow_name=parent_flow_name,
+        )
 
     def does_canvas_exist(self) -> bool:
         """Determines if there is already an existing flow with no parent flow.Returns True if there is an existing flow with no parent flow.Return False if there is no existing flow with no parent flow."""
