@@ -28,7 +28,7 @@ from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -114,10 +114,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         input_image = self.get_parameter_value("input_image")
         if input_image is None:
             return [ValueError("input_image is required")]
-        return super().validate_before_node_run()
-
-    def validate_before_workflow_run(self) -> list[Exception] | None:
-        return self.validate_before_node_run()
+        return []
 
     def preprocess(self) -> None:
         self.flux_params.preprocess()
