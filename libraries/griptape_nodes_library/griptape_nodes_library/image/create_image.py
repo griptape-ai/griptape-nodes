@@ -78,6 +78,16 @@ class GenerateImage(ControlNode):
                 traits={Options(choices=AVAILABLE_SIZES)},
             )
         )
+        self.add_parameter(
+            Parameter(
+                name="run_in_background",
+                type="bool",
+                default_value=False,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                tooltip="If enabled, this node will run in the background.",
+                ui_options={"display_name": "Run in Background"},
+            )
+        )
 
         self.add_parameter(
             Parameter(
