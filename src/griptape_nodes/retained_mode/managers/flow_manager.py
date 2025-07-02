@@ -198,7 +198,14 @@ class FlowManager:
         final_flow_name = GriptapeNodes.ObjectManager().generate_name_for_object(
             type_name="ControlFlow", requested_name=request.flow_name
         )
-        flow = ControlFlow(name=final_flow_name)
+        # Check if we're creating this flow within a referenced workflow context
+        # This will inform the engine to maintain a reference to the workflow
+        # when serializing it. It may inform the editor to render it differently.
+        workflow_manager = GriptapeNodes.WorkflowManager()
+        reference_path = None
+        if workflow_manager.has_current_referenced_workflow():
+            reference_path = workflow_manager.get_current_referenced_workflow()
+        flow = ControlFlow(name=final_flow_name, referenced_workflow_source_path=reference_path)
         GriptapeNodes.ObjectManager().add_object_by_name(name=final_flow_name, obj=flow)
         self._name_to_parent_name[final_flow_name] = parent_name
 

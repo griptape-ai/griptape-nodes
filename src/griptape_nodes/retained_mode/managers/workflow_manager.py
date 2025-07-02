@@ -163,6 +163,28 @@ class WorkflowManager:
 
     _squelch_workflow_altered_count: int = 0
 
+    # Track referenced workflow import context stack
+    class ReferencedWorkflowContext:
+        """Context manager for tracking workflow import operations."""
+
+        def __init__(self, manager: WorkflowManager, source_path: str):
+            self.manager = manager
+            self.source_path = source_path
+
+        def __enter__(self) -> WorkflowManager.ReferencedWorkflowContext:
+            self.manager._referenced_workflow_stack.append(self.source_path)
+            return self
+
+        def __exit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc_value: BaseException | None,
+            exc_traceback: TracebackType | None,
+        ) -> None:
+            self.manager._referenced_workflow_stack.pop()
+
+    _referenced_workflow_stack: list[str] = field(default_factory=list)
+
     class WorkflowExecutionResult(NamedTuple):
         """Result of a workflow execution."""
 
@@ -172,6 +194,7 @@ class WorkflowManager:
     def __init__(self, event_manager: EventManager) -> None:
         self._workflow_file_path_to_info = {}
         self._squelch_workflow_altered_count = 0
+        self._referenced_workflow_stack = []
 
         event_manager.assign_manager_to_request_type(
             RunWorkflowFromScratchRequest, self.on_run_workflow_from_scratch_request
@@ -214,6 +237,18 @@ class WorkflowManager:
             ImportWorkflowAsReferencedSubFlowRequest,
             self.on_import_workflow_as_referenced_sub_flow_request,
         )
+
+    def has_current_referenced_workflow(self) -> bool:
+        """Check if there is currently a referenced workflow context active."""
+        return len(self._referenced_workflow_stack) > 0
+
+    def get_current_referenced_workflow(self) -> str:
+        """Get the current workflow source path from the context stack.
+
+        Raises:
+            IndexError: If no referenced workflow context is active.
+        """
+        return self._referenced_workflow_stack[-1]
 
     def on_libraries_initialization_complete(self) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
@@ -2318,8 +2353,9 @@ class WorkflowManager:
         obj_manager = GriptapeNodes.ObjectManager()
         flows_before = set(obj_manager.get_filtered_subset(type=ControlFlow).keys())
 
-        # Execute the workflow (this will create the flow structure)
-        workflow_result = self.run_workflow(str(file_path))
+        # Execute the workflow within referenced context (this will create the flow structure)
+        with self.ReferencedWorkflowContext(self, request.file_path):
+            workflow_result = self.run_workflow(str(file_path))
 
         if not workflow_result.execution_successful:
             logger.error(
