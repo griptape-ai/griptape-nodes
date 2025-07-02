@@ -9,7 +9,7 @@ from griptape.events import EventBus
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState, StartLoopNode, StartNode
-from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
+from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine, ParallelExecutionMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import ControlFlowCancelledEvent
 
@@ -34,6 +34,7 @@ class ControlFlow:
     connections: Connections
     nodes: dict[str, BaseNode]
     control_flow_machine: ControlFlowMachine
+    parallel_execution_machine: ParallelExecutionMachine
     single_node_resolution: bool
     flow_queue: Queue[BaseNode]
 
@@ -42,6 +43,7 @@ class ControlFlow:
         self.connections = Connections()
         self.nodes = {}
         self.control_flow_machine = ControlFlowMachine(self)
+        self.parallel_execution_machine = ParallelExecutionMachine(self)
         self.single_node_resolution = False
         self.flow_queue = Queue()
 
@@ -105,6 +107,30 @@ class ControlFlow:
         except Exception:
             if self.check_for_existing_running_flow():
                 self.cancel_flow_run()
+            raise
+
+    def start_flow_parallel(self, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:
+        """Starts the flow in parallel mode, using continue_executing_parallel as the step function."""
+        if self.check_for_existing_running_flow():
+            errormsg = "This workflow is already in progress. Please wait for the current process to finish before starting again."
+            raise RuntimeError(errormsg)
+
+        if start_node is None:
+            if self.flow_queue.empty():
+                errormsg = "No Flow exists. You must create at least one control connection."
+                raise RuntimeError(errormsg)
+            start_node = self.flow_queue.get()
+            self.flow_queue.task_done()
+
+        try:
+            # Do NOT call self.control_flow_machine.start_flow(...)
+            # Instead, set up for parallel execution as needed
+            # (e.g., set the start node, mark as running, etc.)
+            # Then call the parallel execution stepper:
+            self.parallel_execution_machine.continue_executing_parallel()
+        except Exception:
+            # Optionally do cleanup
+            self.cancel_flow_run()
             raise
 
     def check_for_existing_running_flow(self) -> bool:
