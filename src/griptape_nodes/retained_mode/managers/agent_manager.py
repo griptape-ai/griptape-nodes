@@ -1,11 +1,25 @@
+import json
 import logging
+import threading
+import uuid
 
-from griptape.artifacts import ErrorArtifact
+from attrs import define, field
+from griptape.artifacts import ErrorArtifact, ImageUrlArtifact, JsonArtifact
+from griptape.drivers.image_generation import BaseImageGenerationDriver
+from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
+from griptape.events import EventBus, EventListener, FinishTaskEvent, TextChunkEvent
+from griptape.loaders import ImageLoader
 from griptape.memory.structure import ConversationMemory
-from griptape.tasks import PromptTask
+from griptape.rules import Rule, Ruleset
+from griptape.structures import Agent
+from griptape.tools import BaseImageGenerationTool
+from griptape.utils.decorators import activity
+from json_repair import repair_json
+from schema import Literal, Schema
 
 from griptape_nodes.retained_mode.events.agent_events import (
+    AgentStreamEvent,
     ConfigureAgentRequest,
     ConfigureAgentResultFailure,
     ConfigureAgentResultSuccess,
@@ -17,12 +31,16 @@ from griptape_nodes.retained_mode.events.agent_events import (
     ResetAgentConversationMemoryResultSuccess,
     RunAgentRequest,
     RunAgentResultFailure,
+    RunAgentResultStarted,
     RunAgentResultSuccess,
 )
-from griptape_nodes.retained_mode.events.base_events import ResultPayload
+from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ResultPayload
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+from griptape_nodes.retained_mode.managers.static_files_manager import (
+    StaticFilesManager,
+)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -33,10 +51,40 @@ config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
 
 
+@define
+class NodesPromptImageGenerationTool(BaseImageGenerationTool):
+    image_generation_driver: BaseImageGenerationDriver = field(kw_only=True)
+    static_files_manager: StaticFilesManager = field(kw_only=True)
+
+    @activity(
+        config={
+            "description": "Generates an image from text prompts. Both prompt and negative_prompt are required.",
+            "schema": Schema(
+                {
+                    Literal("prompt", description=BaseImageGenerationTool.PROMPT_DESCRIPTION): str,
+                    Literal("negative_prompt", description=BaseImageGenerationTool.NEGATIVE_PROMPT_DESCRIPTION): str,
+                }
+            ),
+        },
+    )
+    def generate_image(self, params: dict[str, dict[str, str]]) -> ImageUrlArtifact | ErrorArtifact:
+        prompt = params["values"]["prompt"]
+        negative_prompt = params["values"]["negative_prompt"]
+
+        output_artifact = self.image_generation_driver.run_text_to_image(
+            prompts=[prompt], negative_prompts=[negative_prompt]
+        )
+        filename = f"{uuid.uuid4()}.png"
+        image_url = self.static_files_manager.save_static_file(output_artifact.to_bytes(), filename)
+        return ImageUrlArtifact(image_url)
+
+
 class AgentManager:
-    def __init__(self, event_manager: EventManager | None = None) -> None:
+    def __init__(self, static_files_manager: StaticFilesManager, event_manager: EventManager | None = None) -> None:
         self.conversation_memory = ConversationMemory()
         self.prompt_driver = None
+        self.image_tool = None
+        self.static_files_manager = static_files_manager
 
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(RunAgentRequest, self.on_handle_run_agent_request)
@@ -53,22 +101,93 @@ class AgentManager:
         if not api_key:
             msg = f"Secret '{API_KEY_ENV_VAR}' not found"
             raise ValueError(msg)
-        return GriptapeCloudPromptDriver(api_key=api_key)
+        return GriptapeCloudPromptDriver(api_key=api_key, stream=True)
+
+    def _initialize_image_tool(self) -> NodesPromptImageGenerationTool:
+        api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
+        if not api_key:
+            msg = f"Secret '{API_KEY_ENV_VAR}' not found"
+            raise ValueError(msg)
+        return NodesPromptImageGenerationTool(
+            image_generation_driver=GriptapeCloudImageGenerationDriver(api_key=api_key, model="dall-e-3"),
+            static_files_manager=self.static_files_manager,
+        )
 
     def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
+        if self.prompt_driver is None:
+            self.prompt_driver = self._initialize_prompt_driver()
+        if self.image_tool is None:
+            self.image_tool = self._initialize_image_tool()
+        threading.Thread(target=self._on_handle_run_agent_request, args=(request, EventBus.event_listeners)).start()
+        return RunAgentResultStarted()
+
+    def _on_handle_run_agent_request(
+        self, request: RunAgentRequest, event_listeners: list[EventListener]
+    ) -> ResultPayload:
+        EventBus.event_listeners = event_listeners
         try:
-            if self.prompt_driver is None:
-                self.prompt_driver = self._initialize_prompt_driver()
-            task_output = PromptTask(
-                request.input, prompt_driver=self.prompt_driver, conversation_memory=self.conversation_memory
-            ).run()
-            if isinstance(task_output, ErrorArtifact):
-                details = f"Error running agent: {task_output.value}"
-                logger.error(details)
-                return RunAgentResultFailure(error=task_output.to_json())
-            return RunAgentResultSuccess(output=task_output.to_json())
+            artifacts = [
+                ImageLoader().parse(ImageUrlArtifact.from_dict(url_artifact).to_bytes())
+                for url_artifact in request.url_artifacts
+                if url_artifact["type"] == "ImageUrlArtifact"
+            ]
+
+            output_schema = Schema(
+                {
+                    "generated_image_urls": [str],
+                    "conversation_output": str,
+                }
+            )
+            agent = Agent(
+                prompt_driver=self.prompt_driver,
+                conversation_memory=self.conversation_memory,
+                tools=[self.image_tool] if self.image_tool else [],
+                output_schema=output_schema,
+                rulesets=[
+                    Ruleset(
+                        name="generated_image_urls",
+                        rules=[
+                            Rule("Do not hallucinate generated_image_urls."),
+                            Rule("Only set generated_image_urls with images generated with your tools."),
+                        ],
+                    ),
+                ],
+            )
+            *events, last_event = agent.run_stream([request.input, *artifacts])
+            full_result = ""
+            last_conversation_output = ""
+            for event in events:
+                if isinstance(event, TextChunkEvent):
+                    full_result += event.token
+                    try:
+                        result_json = json.loads(repair_json(full_result))
+                        if "conversation_output" in result_json:
+                            new_conversation_output = result_json["conversation_output"]
+                            if new_conversation_output != last_conversation_output:
+                                EventBus.publish_event(
+                                    ExecutionGriptapeNodeEvent(
+                                        wrapped_event=ExecutionEvent(
+                                            payload=AgentStreamEvent(
+                                                token=new_conversation_output[len(last_conversation_output) :]
+                                            )
+                                        )
+                                    )
+                                )
+                                last_conversation_output = new_conversation_output
+                    except json.JSONDecodeError:
+                        pass  # Ignore incomplete JSON
+            if isinstance(last_event, FinishTaskEvent):
+                if isinstance(last_event.task_output, ErrorArtifact):
+                    return RunAgentResultFailure(last_event.task_output.to_dict())
+                if isinstance(last_event.task_output, JsonArtifact):
+                    return RunAgentResultSuccess(last_event.task_output.to_dict())
+            err_msg = f"Unexpected final event: {last_event}"
+            logger.error(err_msg)
+            return RunAgentResultFailure(ErrorArtifact(last_event).to_dict())
         except Exception as e:
-            return RunAgentResultFailure(ErrorArtifact(e).to_json())
+            err_msg = f"Error running agent: {e}"
+            logger.error(err_msg)
+            return RunAgentResultFailure(ErrorArtifact(e).to_dict())
 
     def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
         try:

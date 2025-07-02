@@ -12,6 +12,9 @@ from griptape.structures import Structure
 from griptape.tools import BaseTool
 from pydantic import BaseModel, Field
 
+from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
+from griptape_nodes.retained_mode.utils.session_persistence import SessionPersistence
+
 if TYPE_CHECKING:
     import builtins
 
@@ -28,6 +31,7 @@ class RequestPayload(Payload, ABC):
 
 
 # Result payload base class with abstract succeeded/failed methods, and indicator whether the current workflow was altered.
+@dataclass(kw_only=True)
 class ResultPayload(Payload, ABC):
     """Base class for all result payloads."""
 
@@ -62,6 +66,7 @@ class WorkflowNotAlteredMixin:
 
 
 # Success result payload abstract base class
+@dataclass(kw_only=True)
 class ResultPayloadSuccess(ResultPayload, ABC):
     """Abstract base class for success result payloads."""
 
@@ -75,8 +80,11 @@ class ResultPayloadSuccess(ResultPayload, ABC):
 
 
 # Failure result payload abstract base class
+@dataclass(kw_only=True)
 class ResultPayloadFailure(ResultPayload, ABC):
     """Abstract base class for failure result payloads."""
+
+    exception: Exception | None = None
 
     def succeeded(self) -> bool:
         """Returns False as this is a failure result.
@@ -108,9 +116,28 @@ class BaseEvent(BaseModel, ABC):
     # Keeping here instead of in GriptapeNodes to avoid circular import hell.
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/848
     _session_id: ClassVar[str | None] = None
+    _engine_id: ClassVar[str | None] = None
 
-    # Instance variable with a default_factory that references the class variable
+    # Instance variables with a default_factory that references the class variable
+    engine_id: str | None = Field(default_factory=lambda: BaseEvent._engine_id)
     session_id: str | None = Field(default_factory=lambda: BaseEvent._session_id)
+
+    @classmethod
+    def initialize_engine_id(cls) -> None:
+        """Initialize the engine ID if not already set."""
+        if cls._engine_id is None:
+            persisted_engine_id = cls._engine_id = EngineIdentity.get_engine_id()
+            if persisted_engine_id:
+                cls._engine_id = persisted_engine_id
+
+    @classmethod
+    def initialize_session_id(cls) -> None:
+        """Initialize the session ID from persisted storage if available."""
+        if cls._session_id is None:
+            # Check if there's a persisted session ID
+            persisted_session_id = SessionPersistence.get_persisted_session_id()
+            if persisted_session_id:
+                cls._session_id = persisted_session_id
 
     # Custom JSON encoder for the payload
     class Config:
@@ -557,3 +584,19 @@ class ProgressEvent(GtBaseEvent):
     value: Any = field()
     node_name: str = field()
     parameter_name: str = field()
+
+
+# Special internal request for flushing parameter changes
+@dataclass(kw_only=True)
+class FlushParameterChangesRequest(RequestPayload, WorkflowNotAlteredMixin):
+    pass
+
+
+@dataclass
+class FlushParameterChangesResultSuccess(ResultPayloadSuccess):
+    pass
+
+
+@dataclass
+class FlushParameterChangesResultFailure(ResultPayloadFailure):
+    pass

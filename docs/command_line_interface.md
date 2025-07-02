@@ -69,17 +69,17 @@ Subcommands:
 - `uninstall` - Uninstall the CLI, removing configuration and data directories
 - `version` - Display the current version of the CLI
 
-### `assets`
+### `libraries`
 
-Manage local assets (libraries, workflows, etc.).
+Manage local libraries.
 
 ```
-griptape-nodes assets SUBCOMMAND
+griptape-nodes libraries SUBCOMMAND
 ```
 
 Subcommands:
 
-- `update` - Update bundled assets to the latest version
+- `sync` - Sync libraries with your current engine version
 
 ## Configuration
 

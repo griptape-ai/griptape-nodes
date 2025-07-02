@@ -11,7 +11,9 @@ def update_ui_option_hide(node: BaseNode, parameter_name: str, *, hide: bool) ->
     """
     parameter = node.get_parameter_by_name(parameter_name)
     if parameter is not None:
-        parameter._ui_options["hide"] = hide
+        ui_options = parameter.ui_options
+        ui_options["hide"] = hide
+        parameter.ui_options = ui_options
     else:
         msg = f"Parameter '{parameter_name}' not found for updating ui_option hide."
         raise ValueError(msg)

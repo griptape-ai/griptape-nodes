@@ -23,8 +23,52 @@ jobs:
       - name: uv Publish
         run: uv publish --token ${{ secrets.PYPI_TOKEN }}
 
-  push_to_registries:
-    name: Push Docker images to multiple registries
+  push_cpu_image:
+    name: Push CPU Docker image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            griptape/griptape-nodes
+            ghcr.io/${{ github.repository }}
+
+      - name: Build and push CPU image
+        id: push_cpu
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            BUILD_TYPE=cpu
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  push_gpu_image:
+    name: Push GPU Docker image
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -81,17 +125,6 @@ jobs:
           done
 
           echo "tags=$GPU_TAGS" >> $GITHUB_OUTPUT
-
-      - name: Build and push CPU image
-        id: push_cpu
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          build-args: |
-            BUILD_TYPE=cpu
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
 
       - name: Build and push GPU image
         id: push_gpu

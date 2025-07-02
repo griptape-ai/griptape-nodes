@@ -31,6 +31,7 @@ from rich.table import Table
 from rich.text import Text
 from xdg_base_dirs import xdg_config_home
 
+from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
@@ -51,9 +52,6 @@ from griptape_nodes.retained_mode.events.flow_events import (
 from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
     GetLibraryMetadataResultSuccess,
-    ListRegisteredLibrariesRequest,
-    ListRegisteredLibrariesResultSuccess,
-    UnloadLibraryFromRegistryRequest,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.secrets_events import (
@@ -98,7 +96,7 @@ from griptape_nodes.retained_mode.griptape_nodes import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from types import TracebackType
 
     from griptape_nodes.exe_types.core_types import Parameter
@@ -376,10 +374,7 @@ class WorkflowManager:
         else:
             complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         try:
-            # TODO: scope the libraries loaded to JUST those used by this workflow, eventually: https://github.com/griptape-ai/griptape-nodes/issues/284
-            # Load (or reload, which should trigger a hot reload) all libraries
-            GriptapeNodes.LibraryManager().load_all_libraries_from_config()
-
+            # Libraries are now loaded only on app initialization and explicit reload requests
             # Now execute the workflow.
             with Path(complete_file_path).open(encoding="utf-8") as file:
                 workflow_content = file.read()
@@ -463,22 +458,6 @@ class WorkflowManager:
                     details = f"Failed to clear the existing object state when preparing to run workflow '{request.workflow_name}'."
                     logger.error(details)
                     return RunWorkflowFromRegistryResultFailure()
-
-                # Unload all libraries now.
-                all_libraries_request = ListRegisteredLibrariesRequest()
-                all_libraries_result = GriptapeNodes.handle_request(all_libraries_request)
-                if not isinstance(all_libraries_result, ListRegisteredLibrariesResultSuccess):
-                    details = f"When preparing to run a workflow '{request.workflow_name}', failed to get registered libraries."
-                    logger.error(details)
-                    return RunWorkflowFromRegistryResultFailure()
-
-                for library_name in all_libraries_result.libraries:
-                    unload_library_request = UnloadLibraryFromRegistryRequest(library_name=library_name)
-                    unload_library_result = GriptapeNodes.handle_request(unload_library_request)
-                    if not unload_library_result.succeeded():
-                        details = f"When preparing to run a workflow '{request.workflow_name}', failed to unload library '{library_name}'."
-                        logger.error(details)
-                        return RunWorkflowFromRegistryResultFailure()
 
             # Let's run under the assumption that this Workflow will become our Current Context; if we fail, it will revert.
             GriptapeNodes.ContextManager().push_workflow(request.workflow_name)
@@ -749,18 +728,18 @@ class WorkflowManager:
                     had_critical_error = True
                 elif delta > WorkflowManager.MAX_MINOR_VERSION_DEVIATION:
                     problems.append(
-                        f"Library '{library_name}' is at version '{library_version}', but this workflow requested '{desired_version}'. This version difference is too far out of tolerance to recommend proceeding."
+                        f"This workflow was built with library '{library_name}' v{desired_version}, but you have v{library_version}. This large version difference may cause compatibility issues. You can update the library to a compatible version or save this workflow to update it to your current library versions."
                     )
                     status = WorkflowManager.WorkflowDependencyStatus.BAD
                     had_critical_error = True
                 else:
                     problems.append(
-                        f"Library '{library_name}' is at version '{library_version}', but this workflow requested '{desired_version}'. There may be incompatibilities. Proceed at your own risk."
+                        f"This workflow was built with library '{library_name}' v{desired_version}, but you have v{library_version}. Minor differences are usually compatible. If you experience issues, you can update the library or save this workflow to update it to your current library versions."
                     )
                     status = WorkflowManager.WorkflowDependencyStatus.CAUTION
             else:
                 problems.append(
-                    f"Library '{library_name}' is at version '{library_version}', but this workflow requested '{desired_version}'. Major version differences have breaking changes that this Workflow may not support."
+                    f"This workflow requires library '{library_name}' v{desired_version}, but you have v{library_version}. Major version changes may include breaking changes. Consider updating the library to match, or save this workflow to update it to your current library versions."
                 )
                 status = WorkflowManager.WorkflowDependencyStatus.BAD
                 had_critical_error = True
@@ -793,7 +772,7 @@ class WorkflowManager:
 
     def register_workflows_from_config(self, config_section: str) -> None:
         workflows_to_register = GriptapeNodes.ConfigManager().get_config_value(config_section)
-        if workflows_to_register is not None:
+        if workflows_to_register:
             self.register_list_of_workflows(workflows_to_register)
 
     def register_list_of_workflows(self, workflows_to_register: list[str]) -> None:
@@ -882,6 +861,7 @@ class WorkflowManager:
         return import_statements
 
     def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+        logger.debug("SaveWorkflowRequest payload: %r (image_path: %r)", request, getattr(request, "image_path", None))
         local_tz = datetime.now().astimezone().tzinfo
 
         # Start with the file name provided; we may change it.
@@ -980,6 +960,10 @@ class WorkflowManager:
             logger.error(details)
             return SaveWorkflowResultFailure()
 
+        # Set the image if provided
+        if request.image_path:
+            workflow_metadata.image = request.image_path
+
         metadata_block = self._generate_workflow_metadata_header(workflow_metadata=workflow_metadata)
         if metadata_block is None:
             details = f"Attempted to save workflow '{relative_file_path}'. Failed to generate metadata block."
@@ -990,6 +974,12 @@ class WorkflowManager:
         import_recorder.add_from_import("griptape_nodes.retained_mode.griptape_nodes", "GriptapeNodes")
 
         ast_container = ASTContainer()
+
+        prereq_code = self._generate_workflow_run_prerequisite_code(
+            workflow_name=workflow_metadata.name, import_recorder=import_recorder
+        )
+        for node in prereq_code:
+            ast_container.add_node(node)
 
         # Generate unique values code AST node.
         unique_values_node = self._generate_unique_values_code(
@@ -1047,12 +1037,24 @@ class WorkflowManager:
             )
             ast_container.nodes.extend(set_parameter_value_asts)
 
+        workflow_execution_code = (
+            self._generate_workflow_execution(
+                flow_name=top_level_flow_name,
+                import_recorder=import_recorder,
+            )
+            if top_level_flow_name
+            else None
+        )
+        if workflow_execution_code is not None:
+            for node in workflow_execution_code:
+                ast_container.add_node(node)
+
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1190 do child workflows
 
         # Generate final code from ASTContainer
         ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
         import_output = import_recorder.generate_imports()
-        final_code_output = f"{metadata_block}\n\n{import_output}\n\n{ast_output}"
+        final_code_output = f"{metadata_block}\n\n{import_output}\n\n{ast_output}\n"
 
         # Create the pathing and write the file
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1122,6 +1124,466 @@ class WorkflowManager:
 
         return metadata_block
 
+    def _generate_workflow_execution(
+        self,
+        flow_name: str,
+        import_recorder: ImportRecorder,
+    ) -> list[ast.AST] | None:
+        """Generates execute_workflow(...) and the __main__ guard."""
+        try:
+            workflow_shape = self._extract_workflow_shape(flow_name)
+        except ValueError:
+            logger.info("Workflow shape does not have required Start or End Nodes. Skipping local execution block.")
+            return None
+
+        # === imports ===
+        import_recorder.add_import("argparse")
+        import_recorder.add_import("json")
+        import_recorder.add_from_import(
+            "griptape_nodes.bootstrap.workflow_executors.local_workflow_executor", "LocalWorkflowExecutor"
+        )
+
+        # === 1) build the `def execute_workflow(input: dict, storage_backend: str = StorageBackend.LOCAL) -> dict | None:` ===
+        #   args
+        arg_input = ast.arg(arg="input", annotation=ast.Name(id="dict", ctx=ast.Load()))
+        arg_storage_backend = ast.arg(arg="storage_backend", annotation=ast.Name(id="str", ctx=ast.Load()))
+        args = ast.arguments(
+            posonlyargs=[],
+            args=[arg_input, arg_storage_backend],
+            vararg=None,
+            kwonlyargs=[],
+            kw_defaults=[],
+            kwarg=None,
+            defaults=[ast.Constant(StorageBackend.LOCAL.value)],
+        )
+        #   return annotation: dict | None
+        return_annotation = ast.BinOp(
+            left=ast.Name(id="dict", ctx=ast.Load()),
+            op=ast.BitOr(),
+            right=ast.Constant(value=None),
+        )
+
+        executor_assign = ast.Assign(
+            targets=[ast.Name(id="workflow_executor", ctx=ast.Store())],
+            value=ast.Call(
+                func=ast.Name(id="LocalWorkflowExecutor", ctx=ast.Load()),
+                args=[],
+                keywords=[],
+            ),
+        )
+        run_call = ast.Expr(
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="workflow_executor", ctx=ast.Load()),
+                    attr="run",
+                    ctx=ast.Load(),
+                ),
+                args=[],
+                keywords=[
+                    ast.keyword(arg="workflow_name", value=ast.Constant(flow_name)),
+                    ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
+                    ast.keyword(arg="storage_backend", value=ast.Name(id="storage_backend", ctx=ast.Load())),
+                ],
+            )
+        )
+        return_stmt = ast.Return(
+            value=ast.Attribute(
+                value=ast.Name(id="workflow_executor", ctx=ast.Load()),
+                attr="output",
+                ctx=ast.Load(),
+            )
+        )
+
+        func_def = ast.FunctionDef(
+            name="execute_workflow",
+            args=args,
+            body=[executor_assign, run_call, return_stmt],
+            decorator_list=[],
+            returns=return_annotation,
+            type_params=[],
+        )
+        ast.fix_missing_locations(func_def)
+
+        # === 2) build the `if __name__ == "__main__":` block ===
+        main_test = ast.Compare(
+            left=ast.Name(id="__name__", ctx=ast.Load()),
+            ops=[ast.Eq()],
+            comparators=[ast.Constant(value="__main__")],
+        )
+
+        parser_assign = ast.Assign(
+            targets=[ast.Name(id="parser", ctx=ast.Store())],
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="argparse", ctx=ast.Load()),
+                    attr="ArgumentParser",
+                    ctx=ast.Load(),
+                ),
+                args=[],
+                keywords=[],
+            ),
+        )
+
+        # Generate parser.add_argument(...) calls for each parameter in workflow_shape
+        add_arg_calls = []
+
+        # Add storage backend argument
+        add_arg_calls.append(
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="parser", ctx=ast.Load()),
+                        attr="add_argument",
+                        ctx=ast.Load(),
+                    ),
+                    args=[ast.Constant("--storage-backend")],
+                    keywords=[
+                        ast.keyword(
+                            arg="choices",
+                            value=ast.List(
+                                elts=[ast.Constant(StorageBackend.LOCAL.value), ast.Constant(StorageBackend.GTC.value)],
+                                ctx=ast.Load(),
+                            ),
+                        ),
+                        ast.keyword(arg="default", value=ast.Constant(StorageBackend.LOCAL.value)),
+                        ast.keyword(
+                            arg="help",
+                            value=ast.Constant(
+                                "Storage backend to use: 'local' for local filesystem or 'gtc' for Griptape Cloud"
+                            ),
+                        ),
+                    ],
+                )
+            )
+        )
+
+        # Generate individual arguments for each parameter in workflow_shape["input"]
+        if "input" in workflow_shape:
+            for node_name, node_params in workflow_shape["input"].items():
+                if isinstance(node_params, dict):
+                    for param_name, param_info in node_params.items():
+                        # Create CLI argument name: --{param_name}
+                        arg_name = f"--{param_name}".lower()
+
+                        # Get help text from parameter info
+                        help_text = param_info.get("tooltip", f"Parameter {param_name} for node {node_name}")
+
+                        add_arg_calls.append(
+                            ast.Expr(
+                                value=ast.Call(
+                                    func=ast.Attribute(
+                                        value=ast.Name(id="parser", ctx=ast.Load()),
+                                        attr="add_argument",
+                                        ctx=ast.Load(),
+                                    ),
+                                    args=[ast.Constant(arg_name)],
+                                    keywords=[
+                                        ast.keyword(arg="default", value=ast.Constant(None)),
+                                        ast.keyword(arg="help", value=ast.Constant(help_text)),
+                                    ],
+                                )
+                            )
+                        )
+
+        parse_args = ast.Assign(
+            targets=[ast.Name(id="args", ctx=ast.Store())],
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="parser", ctx=ast.Load()),
+                    attr="parse_args",
+                    ctx=ast.Load(),
+                ),
+                args=[],
+                keywords=[],
+            ),
+        )
+
+        # Build flow_input dictionary from individual CLI arguments
+        flow_input_init = ast.Assign(
+            targets=[ast.Name(id="flow_input", ctx=ast.Store())],
+            value=ast.Dict(keys=[], values=[]),
+        )
+
+        # Build the flow_input dict structure from individual arguments
+        build_flow_input_stmts = []
+
+        # For each node, ensure it exists in flow_input
+        build_flow_input_stmts.extend(
+            [
+                ast.If(
+                    test=ast.Compare(
+                        left=ast.Constant(value=node_name),
+                        ops=[ast.NotIn()],
+                        comparators=[ast.Name(id="flow_input", ctx=ast.Load())],
+                    ),
+                    body=[
+                        ast.Assign(
+                            targets=[
+                                ast.Subscript(
+                                    value=ast.Name(id="flow_input", ctx=ast.Load()),
+                                    slice=ast.Constant(value=node_name),
+                                    ctx=ast.Store(),
+                                )
+                            ],
+                            value=ast.Dict(keys=[], values=[]),
+                        )
+                    ],
+                    orelse=[],
+                )
+                for node_name in workflow_shape.get("input", {})
+            ]
+        )
+
+        # For each parameter, get its value from args and add to flow_input
+        build_flow_input_stmts.extend(
+            [
+                ast.If(
+                    test=ast.Compare(
+                        left=ast.Attribute(
+                            value=ast.Name(id="args", ctx=ast.Load()),
+                            attr=param_name.lower(),
+                            ctx=ast.Load(),
+                        ),
+                        ops=[ast.IsNot()],
+                        comparators=[ast.Constant(value=None)],
+                    ),
+                    body=[
+                        ast.Assign(
+                            targets=[
+                                ast.Subscript(
+                                    value=ast.Subscript(
+                                        value=ast.Name(id="flow_input", ctx=ast.Load()),
+                                        slice=ast.Constant(value=node_name),
+                                        ctx=ast.Load(),
+                                    ),
+                                    slice=ast.Constant(value=param_name),
+                                    ctx=ast.Store(),
+                                )
+                            ],
+                            value=ast.Attribute(
+                                value=ast.Name(id="args", ctx=ast.Load()),
+                                attr=param_name.lower(),
+                                ctx=ast.Load(),
+                            ),
+                        )
+                    ],
+                    orelse=[],
+                )
+                for node_name, node_params in workflow_shape.get("input", {}).items()
+                if isinstance(node_params, dict)
+                for param_name in node_params
+            ]
+        )
+
+        workflow_output = ast.Assign(
+            targets=[ast.Name(id="workflow_output", ctx=ast.Store())],
+            value=ast.Call(
+                func=ast.Name(id="execute_workflow", ctx=ast.Load()),
+                args=[],
+                keywords=[
+                    ast.keyword(arg="input", value=ast.Name(id="flow_input", ctx=ast.Load())),
+                    ast.keyword(
+                        arg="storage_backend",
+                        value=ast.Attribute(
+                            value=ast.Name(id="args", ctx=ast.Load()),
+                            attr="storage_backend",
+                            ctx=ast.Load(),
+                        ),
+                    ),
+                ],
+            ),
+        )
+        print_output = ast.Expr(
+            value=ast.Call(
+                func=ast.Name(id="print", ctx=ast.Load()),
+                args=[ast.Name(id="workflow_output", ctx=ast.Load())],
+                keywords=[],
+            )
+        )
+
+        if_node = ast.If(
+            test=main_test,
+            body=[
+                parser_assign,
+                *add_arg_calls,
+                parse_args,
+                flow_input_init,
+                *build_flow_input_stmts,
+                workflow_output,
+                print_output,
+            ],
+            orelse=[],
+        )
+        ast.fix_missing_locations(if_node)
+
+        return [func_def, if_node]
+
+    def _generate_workflow_run_prerequisite_code(
+        self,
+        workflow_name: str,
+        import_recorder: ImportRecorder,
+    ) -> list[ast.AST]:
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.library_events", "GetAllInfoForAllLibrariesRequest"
+        )
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.library_events", "GetAllInfoForAllLibrariesResultSuccess"
+        )
+
+        code_blocks: list[ast.AST] = []
+
+        response_assign = ast.Assign(
+            targets=[ast.Name(id="response", ctx=ast.Store())],
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                            attr="LibraryManager",
+                            ctx=ast.Load(),
+                        ),
+                        args=[],
+                        keywords=[],
+                    ),
+                    attr="get_all_info_for_all_libraries_request",
+                    ctx=ast.Load(),
+                ),
+                args=[
+                    ast.Call(
+                        func=ast.Name(id="GetAllInfoForAllLibrariesRequest", ctx=ast.Load()),
+                        args=[],
+                        keywords=[],
+                    )
+                ],
+                keywords=[],
+            ),
+        )
+        ast.fix_missing_locations(response_assign)
+        code_blocks.append(response_assign)
+
+        isinstance_test = ast.Call(
+            func=ast.Name(id="isinstance", ctx=ast.Load()),
+            args=[
+                ast.Name(id="response", ctx=ast.Load()),
+                ast.Name(id="GetAllInfoForAllLibrariesResultSuccess", ctx=ast.Load()),
+            ],
+            keywords=[],
+        )
+        ast.fix_missing_locations(isinstance_test)
+
+        len_call = ast.Call(
+            func=ast.Name(id="len", ctx=ast.Load()),
+            args=[
+                ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Attribute(
+                            value=ast.Name(id="response", ctx=ast.Load()),
+                            attr="library_name_to_library_info",
+                            ctx=ast.Load(),
+                        ),
+                        attr="keys",
+                        ctx=ast.Load(),
+                    ),
+                    args=[],
+                    keywords=[],
+                )
+            ],
+            keywords=[],
+        )
+        compare_len = ast.Compare(
+            left=len_call,
+            ops=[ast.Lt()],
+            comparators=[ast.Constant(value=1)],
+        )
+        ast.fix_missing_locations(compare_len)
+
+        test = ast.BoolOp(
+            op=ast.And(),
+            values=[isinstance_test, compare_len],
+        )
+        ast.fix_missing_locations(test)
+
+        # 3) the body: GriptapeNodes.LibraryManager().load_all_libraries_from_config()
+        # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1615): Generate requests to load ONLY the libraries used in this workflow
+        load_call = ast.Expr(
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                            attr="LibraryManager",
+                            ctx=ast.Load(),
+                        ),
+                        args=[],
+                        keywords=[],
+                    ),
+                    attr="load_all_libraries_from_config",
+                    ctx=ast.Load(),
+                ),
+                args=[],
+                keywords=[],
+            )
+        )
+        ast.fix_missing_locations(load_call)
+
+        # 4) assemble the `if` statement
+        if_node = ast.If(
+            test=test,
+            body=[load_call],
+            orelse=[],
+        )
+        ast.fix_missing_locations(if_node)
+        code_blocks.append(if_node)
+
+        # 5) context_manager = GriptapeNodes.ContextManager()
+        assign_context_manager = ast.Assign(
+            targets=[ast.Name(id="context_manager", ctx=ast.Store())],
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                    attr="ContextManager",
+                    ctx=ast.Load(),
+                ),
+                args=[],
+                keywords=[],
+            ),
+        )
+        ast.fix_missing_locations(assign_context_manager)
+        code_blocks.append(assign_context_manager)
+
+        has_check = ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id="context_manager", ctx=ast.Load()),
+                attr="has_current_workflow",
+                ctx=ast.Load(),
+            ),
+            args=[],
+            keywords=[],
+        )
+        test = ast.UnaryOp(op=ast.Not(), operand=has_check)
+
+        push_call = ast.Expr(
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="context_manager", ctx=ast.Load()),
+                    attr="push_workflow",
+                    ctx=ast.Load(),
+                ),
+                args=[],
+                keywords=[ast.keyword(arg="workflow_name", value=ast.Constant(value=workflow_name))],
+            )
+        )
+        ast.fix_missing_locations(push_call)
+
+        if_stmt = ast.If(
+            test=test,
+            body=[push_call],
+            orelse=[],
+        )
+        ast.fix_missing_locations(if_stmt)
+        code_blocks.append(if_stmt)
+        return code_blocks
+
     def _generate_unique_values_code(
         self,
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
@@ -1137,19 +1599,35 @@ class WorkflowManager:
         global_modules_set = {"builtins", "__main__"}
 
         # Serialize the unique values as pickled strings.
+        # IMPORTANT: We patch dynamic module names to stable namespaces before pickling
+        # to ensure generated workflows can reliably import the required classes.
         unique_parameter_dict = {}
+
         for uuid, unique_parameter_value in unique_parameter_uuid_to_values.items():
-            unique_parameter_bytes = pickle.dumps(unique_parameter_value)
+            # Dynamic Module Patching Strategy:
+            # When we pickle objects from dynamically loaded modules (like VideoUrlArtifact),
+            # pickle stores the class's __module__ attribute in the binary data. If we don't
+            # patch this, the pickle data would contain something like:
+            #   "gtn_dynamic_module_image_to_video_py_123456789.VideoUrlArtifact"
+            #
+            # When the workflow runs later, Python tries to import this module name, which
+            # fails because dynamic modules don't exist in fresh Python processes.
+            #
+            # Our solution: Temporarily patch the class's __module__ to use the stable namespace
+            # before pickling, so the pickle data contains:
+            #   "griptape_nodes.node_libraries.runwayml_library.image_to_video.VideoUrlArtifact"
+            #
+            # This includes recursive patching for nested objects in containers (lists, tuples, dicts)
+
+            # Apply recursive dynamic module patching, pickle, then restore
+            unique_parameter_bytes = self._patch_and_pickle_object(unique_parameter_value)
+
             # Encode the bytes as a string using latin1
             unique_parameter_byte_str = unique_parameter_bytes.decode("latin1")
             unique_parameter_dict[uuid] = unique_parameter_byte_str
 
-            # Add import for the unique parameter value's class/module. But not globals.
-            value_type = type(unique_parameter_value)
-            if isclass(value_type):
-                module = getmodule(value_type)
-                if module and module.__name__ not in global_modules_set:
-                    import_recorder.add_from_import(module.__name__, value_type.__name__)
+            # Collect import statements for all classes in the object tree
+            self._collect_object_imports(unique_parameter_value, import_recorder, global_modules_set)
 
         # Generate a comment explaining what we're doing:
         comment_text = (
@@ -1348,6 +1826,7 @@ class WorkflowManager:
     ) -> list[ast.stmt]:
         # Ensure necessary imports are recorded
         import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "NodeMetadata")
+        import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "IconVariant")
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeRequest")
         import_recorder.add_from_import(
             "griptape_nodes.retained_mode.events.parameter_events", "AddParameterToNodeRequest"
@@ -1720,8 +2199,8 @@ class WorkflowManager:
                         }
         return workflow_shape
 
-    def _validate_workflow_shape_for_publish(self, workflow_name: str) -> dict[str, Any]:
-        """Validates the workflow shape for publishing.
+    def _extract_workflow_shape(self, workflow_name: str) -> dict[str, Any]:
+        """Extracts the input and output shape for a workflow.
 
         Here we gather information about the Workflow's exposed input and output Parameters
         such that a client invoking the Workflow can understand what values to provide
@@ -1755,11 +2234,9 @@ class WorkflowManager:
                 end_nodes.append(node)
         if len(start_nodes) < 1:
             details = f"Workflow '{workflow_name}' does not have a StartNode."
-            logger.error(details)
             raise ValueError(details)
         if len(end_nodes) < 1:
             details = f"Workflow '{workflow_name}' does not have an EndNode."
-            logger.error(details)
             raise ValueError(details)
 
         # Now, we need to gather the input and output parameters for each node type.
@@ -2101,7 +2578,7 @@ class WorkflowManager:
     def on_publish_workflow_request(self, request: PublishWorkflowRequest) -> ResultPayload:
         try:
             # Get the workflow shape
-            workflow_shape = self._validate_workflow_shape_for_publish(request.workflow_name)
+            workflow_shape = self._extract_workflow_shape(request.workflow_name)
             logger.info("Workflow shape: %s", workflow_shape)
 
             # Package the workflow
@@ -2131,6 +2608,158 @@ class WorkflowManager:
             details = f"Failed to publish workflow '{request.workflow_name}'. Error: {e}"
             logger.error(details)
             return PublishWorkflowResultFailure()
+
+    def _walk_object_tree(
+        self, obj: Any, process_class_fn: Callable[[type, Any], None], visited: set[int] | None = None
+    ) -> None:
+        """Recursively walk through object tree, calling process_class_fn for each class found.
+
+        This unified helper handles the common pattern of recursively traversing nested objects
+        to find all class instances. Used by both patching and import collection.
+
+        Args:
+            obj: Object to traverse (can contain nested lists, dicts, class instances)
+            process_class_fn: Function to call for each class found, signature: (class_type, instance)
+            visited: Set of object IDs already visited (for circular reference protection)
+
+        Example:
+            # Collect all class types in a nested structure
+            def collect_type(cls, instance):
+                print(f"Found {cls.__name__} instance")
+
+            data = [SomeClass(), {"key": AnotherClass()}]
+            self._walk_object_tree(data, collect_type)
+        """
+        if visited is None:
+            visited = set()
+
+        obj_id = id(obj)
+        if obj_id in visited:
+            return
+        visited.add(obj_id)
+
+        # Process the object if it's a class instance
+        obj_type = type(obj)
+        if isclass(obj_type):
+            process_class_fn(obj_type, obj)
+
+        # Recursively traverse containers
+        if isinstance(obj, (list, tuple)):
+            for item in obj:
+                self._walk_object_tree(item, process_class_fn, visited)
+        elif isinstance(obj, dict):
+            for key, value in obj.items():
+                self._walk_object_tree(key, process_class_fn, visited)
+                self._walk_object_tree(value, process_class_fn, visited)
+        elif hasattr(obj, "__dict__"):
+            for attr_value in obj.__dict__.values():
+                self._walk_object_tree(attr_value, process_class_fn, visited)
+
+    def _patch_and_pickle_object(self, obj: Any) -> bytes:
+        """Patch dynamic module references to stable namespaces, pickle object, then restore.
+
+        This solves the "pickle data was truncated" error that occurs when workflows containing
+        objects from dynamically loaded modules (like VideoUrlArtifact, ReferenceImageArtifact)
+        are serialized and later reloaded in a fresh Python process.
+
+        The Problem:
+            Dynamic modules get names like "gtn_dynamic_module_image_to_video_py_123456789"
+            When pickle serializes objects, it embeds these module names in the binary data
+            When workflows run later, Python can't import these non-existent module names
+
+        The Solution:
+            1. Recursively find all objects from dynamic modules (even nested in containers)
+            2. Temporarily patch their __module__ and module_name to stable namespaces
+            3. Pickle with stable references like "griptape_nodes.node_libraries.runwayml_library.image_to_video"
+            4. Restore original names to avoid side effects
+
+        Args:
+            obj: Object to patch and pickle (may contain nested structures)
+
+        Returns:
+            Pickled bytes with stable module references
+
+        Example:
+            Before: pickle contains "gtn_dynamic_module_image_to_video_py_123456789.VideoUrlArtifact"
+            After:  pickle contains "griptape_nodes.node_libraries.runwayml_library.image_to_video.VideoUrlArtifact"
+        """
+        patched_classes: list[tuple[type, str]] = []
+        patched_instances: list[tuple[Any, str]] = []
+
+        def patch_class(class_type: type, instance: Any) -> None:
+            """Patch a single class instance to use stable namespace."""
+            module = getmodule(class_type)
+            if module and GriptapeNodes.LibraryManager().is_dynamic_module(module.__name__):
+                stable_namespace = GriptapeNodes.LibraryManager().get_stable_namespace_for_dynamic_module(
+                    module.__name__
+                )
+                if stable_namespace:
+                    # Patch class __module__ (affects pickle class reference)
+                    if class_type.__module__ != stable_namespace:
+                        patched_classes.append((class_type, class_type.__module__))
+                        class_type.__module__ = stable_namespace
+
+                    # Patch instance module_name field (affects SerializableMixin serialization)
+                    if hasattr(instance, "module_name") and instance.module_name != stable_namespace:
+                        patched_instances.append((instance, instance.module_name))
+                        instance.module_name = stable_namespace
+
+        try:
+            # Apply patches to entire object tree
+            self._walk_object_tree(obj, patch_class)
+            return pickle.dumps(obj)
+        finally:
+            # Always restore original names to avoid affecting other code
+            for class_obj, original_name in patched_classes:
+                class_obj.__module__ = original_name
+            for instance_obj, original_name in patched_instances:
+                instance_obj.module_name = original_name
+
+    def _collect_object_imports(self, obj: Any, import_recorder: Any, global_modules_set: set[str]) -> None:
+        """Recursively collect import statements needed for all classes in object tree.
+
+        This ensures that generated workflows have all necessary import statements,
+        including for classes nested deep within containers like ParameterArrays.
+
+        The Process:
+            1. Walk through entire object tree (lists, dicts, object attributes)
+            2. For each class found, determine the correct import statement
+            3. For dynamic modules, use stable namespace imports
+            4. For regular modules, use standard imports
+            5. Record all imports for workflow generation
+
+        Args:
+            obj: Object tree to analyze for required imports
+            import_recorder: Collector that will generate the import statements
+            global_modules_set: Built-in modules that don't need explicit imports
+
+        Example:
+            Input object tree: [ReferenceImageArtifact(), {"data": ImageUrlArtifact()}]
+            Generated imports:
+                from griptape_nodes.node_libraries.runwayml_library.create_reference_image import ReferenceImageArtifact
+                from griptape.artifacts.image_url_artifact import ImageUrlArtifact
+        """
+
+        def collect_class_import(class_type: type, _instance: Any) -> None:
+            """Collect import statement for a single class."""
+            module = getmodule(class_type)
+            if module and module.__name__ not in global_modules_set:
+                if GriptapeNodes.LibraryManager().is_dynamic_module(module.__name__):
+                    # Use stable namespace for dynamic modules
+                    stable_namespace = GriptapeNodes.LibraryManager().get_stable_namespace_for_dynamic_module(
+                        module.__name__
+                    )
+                    if stable_namespace:
+                        import_recorder.add_from_import(stable_namespace, class_type.__name__)
+                    else:
+                        msg = f"Missing stable namespace for {module.__name__} type {class_type.__name__}"
+                        logger.error(msg)
+                        raise RuntimeError(msg)
+                else:
+                    # Use regular module name for standard modules
+                    import_recorder.add_from_import(module.__name__, class_type.__name__)
+
+        self._walk_object_tree(obj, collect_class_import)
 
 
 class ASTContainer:

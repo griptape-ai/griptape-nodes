@@ -5,6 +5,7 @@ import logging
 import httpx
 from xdg_base_dirs import xdg_config_home
 
+from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
 from griptape_nodes.retained_mode.events.static_file_events import (
@@ -45,17 +46,26 @@ class StaticFilesManager:
         """
         self.config_manager = config_manager
 
-        storage_backend = config_manager.get_config_value("storage_backend", default="local")
+        storage_backend = config_manager.get_config_value("storage_backend", default=StorageBackend.LOCAL)
 
         match storage_backend:
-            case "gtc":
-                self.storage_driver = GriptapeCloudStorageDriver(
-                    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1332
-                    # Automatically provision a bucket if it doesn't exist
-                    bucket_id=secrets_manager.get_secret("GT_CLOUD_BUCKET_ID"),
-                    api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"),
+            case StorageBackend.GTC:
+                bucket_id = secrets_manager.get_secret("GT_CLOUD_BUCKET_ID")
+
+                if not bucket_id:
+                    msg = "GT_CLOUD_BUCKET_ID secret is required for gtc storage backend"
+                    logger.error(msg)
+                    raise ValueError(msg)
+
+                static_files_directory = config_manager.get_config_value(
+                    "static_files_directory", default="staticfiles"
                 )
-            case "local":
+                self.storage_driver = GriptapeCloudStorageDriver(
+                    bucket_id=bucket_id,
+                    api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"),
+                    static_files_directory=static_files_directory,
+                )
+            case StorageBackend.LOCAL:
                 self.storage_driver = LocalStorageDriver()
             case _:
                 msg = f"Invalid storage backend: {storage_backend}"

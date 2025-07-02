@@ -5,12 +5,12 @@ import diffusers  # type: ignore[reportMissingImports]
 import numpy as np
 import PIL.Image
 from griptape.artifacts import ImageUrlArtifact
-from griptape.loaders import ImageLoader
 from PIL.Image import Image
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
     pil_to_image_artifact,
 )
+from utils.image_utils import load_image_from_url_artifact
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
@@ -115,8 +115,8 @@ class DiptychFluxFillPipelineParameters:
         errors = self._huggingface_repo_parameter.validate_before_node_run() or []
         return errors or None
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self._seed_parameter.after_value_set(parameter, value, modified_parameters_set)
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        self._seed_parameter.after_value_set(parameter, value)
 
     def validate_before_node_process(self) -> None:
         input_image_pil = self.get_input_image_pil()
@@ -133,7 +133,7 @@ class DiptychFluxFillPipelineParameters:
     def get_input_image_pil(self) -> Image:
         input_image_artifact = self._node.get_parameter_value("input_image")
         if isinstance(input_image_artifact, ImageUrlArtifact):
-            input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
+            input_image_artifact = load_image_from_url_artifact(input_image_artifact)
         input_image_pil = image_artifact_to_pil(input_image_artifact)
         return input_image_pil.convert("RGB")
 

@@ -26,16 +26,53 @@ from griptape_nodes_library.utils.error_utils import try_throw_error
 # --- Constants ---
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
-MODEL_CHOICES = [
-    "gpt-4.1",
-    "gpt-4.1-mini",
-    "gpt-4.1-nano",
-    "gpt-4.5-preview",
-    "o1",
-    "o1-mini",
-    "o3-mini",
+MODEL_CHOICES_ARGS = [
+    {
+        "name": "claude-sonnet-4-20250514",
+        "icon": "logos/anthropic.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool", "max_tokens": 64000},
+    },
+    {
+        "name": "claude-3-7-sonnet",
+        "icon": "logos/anthropic.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool", "max_tokens": 64000},
+    },
+    {
+        "name": "deepseek.r1-v1",
+        "icon": "logos/deepseek.svg",
+        "args": {"stream": False, "structured_output_strategy": "tool", "top_p": None},
+    },
+    {
+        "name": "gemini-2.5-flash-preview-05-20",
+        "icon": "logos/google.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool"},
+    },
+    {
+        "name": "gemini-2.0-flash",
+        "icon": "logos/google.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool"},
+    },
+    {
+        "name": "llama3-3-70b-instruct-v1",
+        "icon": "logos/meta.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool"},
+    },
+    {
+        "name": "llama3-1-70b-instruct-v1",
+        "icon": "logos/meta.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool"},
+    },
+    {"name": "gpt-4.1", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "gpt-4.1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "gpt-4.1-nano", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "gpt-4.5-preview", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "o1", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "o1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "o3-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
 ]
-DEFAULT_MODEL = MODEL_CHOICES[0]
+
+MODEL_CHOICES = [model["name"] for model in MODEL_CHOICES_ARGS]
+DEFAULT_MODEL = MODEL_CHOICES[8]
 
 
 class Agent(ControlNode):
@@ -97,7 +134,7 @@ class Agent(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="Choose a model, or connect a Prompt Model Configuration",
                 traits={Options(choices=MODEL_CHOICES)},
-                ui_options={"display_name": "prompt model"},
+                ui_options={"display_name": "prompt model", "data": MODEL_CHOICES_ARGS},
             )
         )
         # Main prompt input for the agent.
@@ -135,7 +172,7 @@ class Agent(ControlNode):
         self.add_parameter(
             ParameterList(
                 name="tools",
-                input_types=["Tool"],
+                input_types=["Tool", "list[Tool]"],
                 default_value=[],
                 tooltip="Connect Griptape Tools for the agent to use.\nOr connect individual tools.",
                 allowed_modes={ParameterMode.INPUT},
@@ -144,7 +181,7 @@ class Agent(ControlNode):
         self.add_parameter(
             ParameterList(
                 name="rulesets",
-                input_types=["Ruleset"],
+                input_types=["Ruleset", "list[Ruleset]"],
                 tooltip="Rulesets to apply to the agent to control its behavior.",
                 default_value=[],
                 allowed_modes={ParameterMode.INPUT},
@@ -181,18 +218,12 @@ class Agent(ControlNode):
     # --- UI Interaction Hooks ---
 
     def after_incoming_connection(
-        self,
-        source_node: BaseNode,
-        source_parameter: Parameter,
-        target_parameter: Parameter,
-        modified_parameters_set: set[str],
+        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
         # If an existing agent is connected, hide parameters related to creating a new one.
         if target_parameter.name == "agent":
             params_to_toggle = ["model", "tools", "rulesets"]
             self.hide_parameter_by_name(params_to_toggle)
-            for param_name in params_to_toggle:
-                modified_parameters_set.add(param_name)
 
         if target_parameter.name == "model" and source_parameter.name == "prompt_model_config":
             # Remove the options trait
@@ -205,36 +236,27 @@ class Agent(ControlNode):
             target_parameter.allowed_modes = {ParameterMode.INPUT}
 
             # Set the display name to be appropriate
-            target_parameter._ui_options["display_name"] = source_parameter.ui_options.get(
-                "display_name", source_parameter.name
-            )
-
-            # make sure we update the model
-            modified_parameters_set.add("model")
+            ui_options = target_parameter.ui_options
+            ui_options["display_name"] = source_parameter.ui_options.get("display_name", source_parameter.name)
+            target_parameter.ui_options = ui_options
 
         # If additional context is connected, prevent editing via property panel.
         # NOTE: This is a workaround. Ideally this is done automatically.
         if target_parameter.name == "additional_context":
             target_parameter.allowed_modes = {ParameterMode.INPUT}
-            modified_parameters_set.add("additional_context")
 
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         # If the agent connection is removed, show agent creation parameters.
         if target_parameter.name == "agent":
             params_to_toggle = ["model", "tools", "rulesets"]
             self.show_parameter_by_name(params_to_toggle)
-            for param_name in params_to_toggle:
-                modified_parameters_set.add(param_name)
 
         if target_parameter.name == "model":
             # Reset the parameter type
@@ -252,19 +274,16 @@ class Agent(ControlNode):
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
 
             # Change the display name to be appropriate
-            target_parameter._ui_options["display_name"] = "prompt model"
-
-            modified_parameters_set.add("model")
+            ui_options = target_parameter.ui_options
+            ui_options["display_name"] = "prompt model"
+            target_parameter.ui_options = ui_options
 
         # If the additional context connection is removed, make it editable again.
         # NOTE: This is a workaround. Ideally this is done automatically.
         if target_parameter.name == "additional_context":
             target_parameter.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY}
-            modified_parameters_set.add(target_parameter.name)
 
-        return super().after_incoming_connection_removed(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
     # --- Validation ---
     def validate_before_workflow_run(self) -> list[Exception] | None:
@@ -391,8 +410,12 @@ class Agent(ControlNode):
         elif isinstance(model_input, str):
             if model_input not in MODEL_CHOICES:
                 model_input = DEFAULT_MODEL
+            # Get the appropriate args
+            args = next((model["args"] for model in MODEL_CHOICES_ARGS if model["name"] == model_input), {})
+            # Remove any None values from args
+            args = {k: v for k, v in args.items() if v is not None}
             prompt_driver = GriptapeCloudPromptDriver(
-                model=model_input, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
+                model=model_input, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), **args
             )
             agent = GtAgent(prompt_driver=prompt_driver, tools=tools, rulesets=rulesets)
 
@@ -432,28 +455,38 @@ class Agent(ControlNode):
         args = [prompt] if prompt else []
         structure_id_stack = []
         active_structure_id = None
-        for event in agent.run_stream(
-            *args, event_types=[StartStructureRunEvent, TextChunkEvent, ActionChunkEvent, FinishStructureRunEvent]
-        ):
-            if isinstance(event, StartStructureRunEvent):
-                active_structure_id = event.structure_id
-                structure_id_stack.append(active_structure_id)
-            if isinstance(event, FinishStructureRunEvent):
-                structure_id_stack.pop()
-                active_structure_id = structure_id_stack[-1] if structure_id_stack else None
 
-            # If an Agent uses other Agents (via `StructureRunTool`), we will receive those events too.
-            # We want to ignore those events and only show the events for this node's Agent.
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/984
-            if agent.id == active_structure_id:
-                # If the artifact is a TextChunkEvent, append it to the output parameter.
-                if isinstance(event, TextChunkEvent):
-                    self.append_value_to_parameter("output", value=event.token)
-                    if include_details:
-                        self.append_value_to_parameter("logs", value=event.token)
+        task = agent.tasks[0]
+        if not isinstance(task, PromptTask):
+            msg = "Agent must have a PromptTask"
+            raise TypeError(msg)
+        prompt_driver = task.prompt_driver
+        if prompt_driver.stream:
+            for event in agent.run_stream(
+                *args, event_types=[StartStructureRunEvent, TextChunkEvent, ActionChunkEvent, FinishStructureRunEvent]
+            ):
+                if isinstance(event, StartStructureRunEvent):
+                    active_structure_id = event.structure_id
+                    structure_id_stack.append(active_structure_id)
+                if isinstance(event, FinishStructureRunEvent):
+                    structure_id_stack.pop()
+                    active_structure_id = structure_id_stack[-1] if structure_id_stack else None
 
-                # If the artifact is an ActionChunkEvent, append it to the logs parameter.
-                if include_details and isinstance(event, ActionChunkEvent) and event.name:
-                    self.append_value_to_parameter("logs", f"\n[Using tool {event.name}: ({event.path})]\n")
+                # If an Agent uses other Agents (via `StructureRunTool`), we will receive those events too.
+                # We want to ignore those events and only show the events for this node's Agent.
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/984
+                if agent.id == active_structure_id:
+                    # If the artifact is a TextChunkEvent, append it to the output parameter.
+                    if isinstance(event, TextChunkEvent):
+                        self.append_value_to_parameter("output", value=event.token)
+                        if include_details:
+                            self.append_value_to_parameter("logs", value=event.token)
 
+                    # If the artifact is an ActionChunkEvent, append it to the logs parameter.
+                    if include_details and isinstance(event, ActionChunkEvent) and event.name:
+                        self.append_value_to_parameter("logs", f"\n[Using tool {event.name}: ({event.path})]\n")
+        else:
+            agent.run(*args)
+            self.append_value_to_parameter("output", value=str(agent.output))
+            try_throw_error(agent.output)
         return agent

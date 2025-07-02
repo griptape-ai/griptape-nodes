@@ -9,6 +9,7 @@ from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
+    from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -42,6 +43,13 @@ class LibraryMetadata(BaseModel):
     is_griptape_nodes_searchable: bool = True
 
 
+class IconVariant(BaseModel):
+    """Icon variant for light and dark themes."""
+
+    light: str
+    dark: str
+
+
 class NodeMetadata(BaseModel):
     """Metadata about each node within the library, which informs where in the hierarchy it sits, details on usage, and tags to assist search."""
 
@@ -49,6 +57,9 @@ class NodeMetadata(BaseModel):
     description: str
     display_name: str
     tags: list[str] | None = None
+    icon: str | IconVariant | None = None
+    color: str | None = None
+    group: str | None = None
 
 
 class CategoryDefinition(BaseModel):
@@ -84,7 +95,7 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.1.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.2.0"
 
     name: str
     library_schema_version: str
@@ -95,6 +106,7 @@ class LibrarySchema(BaseModel):
     scripts: list[str] | None = None
     settings: list[Setting] | None = None
     is_default_library: bool | None = None
+    advanced_library_path: str | None = None
 
 
 class LibraryRegistry(metaclass=SingletonMeta):
@@ -110,13 +122,16 @@ class LibraryRegistry(metaclass=SingletonMeta):
         library_data: LibrarySchema,
         *,
         mark_as_default_library: bool = False,
+        advanced_library: AdvancedNodeLibrary | None = None,
     ) -> Library:
         instance = cls()
 
         if library_data.name in instance._libraries:
             msg = f"Library '{library_data.name}' already registered."
             raise KeyError(msg)
-        library = Library(library_data=library_data, is_default_library=mark_as_default_library)
+        library = Library(
+            library_data=library_data, is_default_library=mark_as_default_library, advanced_library=advanced_library
+        )
         instance._libraries[library_data.name] = library
         return library
 
@@ -227,12 +242,14 @@ class Library:
     # Maintain fast lookups for node class name to class and to its metadata.
     _node_types: dict[str, type[BaseNode]]
     _node_metadata: dict[str, NodeMetadata]
+    _advanced_library: AdvancedNodeLibrary | None
 
     def __init__(
         self,
         library_data: LibrarySchema,
         *,
         is_default_library: bool = False,
+        advanced_library: AdvancedNodeLibrary | None = None,
     ) -> None:
         self._library_data = library_data
 
@@ -244,6 +261,7 @@ class Library:
 
         self._node_types = {}
         self._node_metadata = {}
+        self._advanced_library = advanced_library
 
     def register_new_node_type(self, node_class: type[BaseNode], metadata: NodeMetadata) -> str | None:
         """Register a new node type in this library. Returns an error string for forensics, or None if all clear."""
@@ -303,3 +321,11 @@ class Library:
 
     def get_metadata(self) -> LibraryMetadata:
         return self._library_data.metadata
+
+    def get_advanced_library(self) -> AdvancedNodeLibrary | None:
+        """Get the advanced library instance for this library.
+
+        Returns:
+            The AdvancedNodeLibrary instance, or None if not set
+        """
+        return self._advanced_library

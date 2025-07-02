@@ -73,15 +73,17 @@ class DateAndTime(BaseTask):
             )
         )
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
         if parameter.name == "format":
             if "Custom" in value:
                 self.show_parameter_by_name("custom_format")
-                modified_parameters_set.add("custom_format")
             else:
                 self.hide_parameter_by_name("custom_format")
-                modified_parameters_set.add("custom_format")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def process(self) -> AsyncResult[Structure]:
         prompt = self.get_parameter_value("prompt")

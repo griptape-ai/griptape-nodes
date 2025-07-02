@@ -1,7 +1,6 @@
 from griptape.artifacts import ImageUrlArtifact
 from griptape.drivers.prompt.base_prompt_driver import BasePromptDriver
 from griptape.drivers.prompt.griptape_cloud_prompt_driver import GriptapeCloudPromptDriver
-from griptape.loaders import ImageLoader
 from griptape.structures import Structure
 from griptape.tasks import PromptTask
 
@@ -10,6 +9,7 @@ from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNo
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
+from griptape_nodes_library.utils.image_utils import load_image_from_url_artifact
 
 SERVICE = "Griptape"
 API_KEY_URL = "https://cloud.griptape.ai/configuration/api-keys"
@@ -114,11 +114,9 @@ class DescribeImage(ControlNode):
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "agent":
             self.hide_parameter_by_name("model")
-            modified_parameters_set.add("model")
 
         if target_parameter.name == "model" and source_parameter.name == "prompt_model_config":
             # Check and see if the incoming connection is from a prompt model config or an agent.
@@ -127,25 +125,20 @@ class DescribeImage(ControlNode):
             target_parameter.allowed_modes = {ParameterMode.INPUT}
 
             target_parameter.remove_trait(trait_type=target_parameter.find_elements_by_type(Options)[0])
-            target_parameter._ui_options["display_name"] = source_parameter.ui_options.get(
-                "display_name", source_parameter.name
-            )
-            modified_parameters_set.add("model")
+            ui_options = target_parameter.ui_options
+            ui_options["display_name"] = source_parameter.ui_options.get("display_name", source_parameter.name)
+            target_parameter.ui_options = ui_options
 
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         if target_parameter.name == "agent":
             self.show_parameter_by_name("model")
-            modified_parameters_set.add("model")
         # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter
         if target_parameter.name == "model":
             target_parameter.type = "str"
@@ -155,13 +148,12 @@ class DescribeImage(ControlNode):
             target_parameter.add_trait(Options(choices=MODEL_CHOICES))
             target_parameter.set_default_value(DEFAULT_MODEL)
             target_parameter.default_value = DEFAULT_MODEL
-            target_parameter._ui_options["display_name"] = "prompt model"
+            ui_options = target_parameter.ui_options
+            ui_options["display_name"] = "prompt model"
+            target_parameter.ui_options = ui_options
             self.set_parameter_value("model", DEFAULT_MODEL)
 
-            modified_parameters_set.add("model")
-        return super().after_incoming_connection_removed(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
     def process(self) -> AsyncResult[Structure]:
         # Get the parameters from the node
@@ -202,7 +194,7 @@ class DescribeImage(ControlNode):
         image_artifact = params.get("image", None)
 
         if isinstance(image_artifact, ImageUrlArtifact):
-            image_artifact = ImageLoader().parse(image_artifact.to_bytes())
+            image_artifact = load_image_from_url_artifact(image_artifact)
         if image_artifact is None:
             self.parameter_output_values["output"] = "No image provided"
             return

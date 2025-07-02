@@ -4,12 +4,9 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.34.0",
-    "engine_version": "0.34.0",
-    "tags": [
-      "Griptape",
-      "AI"
-    ]
+    "library_version": "0.39.0",
+    "engine_version": "0.39.0",
+    "tags": ["Griptape", "AI"]
   },
   "categories": [
     {
@@ -25,35 +22,35 @@
         "color": "border-green-500",
         "title": "Execution Flow",
         "description": "Execution Nodes",
-        "icon": "Braces"
+        "icon": "split"
       }
     },
     {
       "agents": {
-        "color": "border-red-500",
+        "color": "border-purple-500",
         "title": "Agent",
         "description": "Nodes related to Agents",
         "icon": "UserCircle"
       }
     },
     {
-      "prompt_models": {
-        "color": "border-lime-500",
-        "title": "Prompt",
+      "agents/prompt_models": {
+        "color": "border-indigo-500",
+        "title": "Prompt Models",
         "description": "Prompt Drivers for Griptape Agents",
-        "icon": "Truck"
+        "icon": "brain"
       }
     },
     {
-      "rules": {
-        "color": "border-amber-500",
+      "agents/rules": {
+        "color": "border-violet-500",
         "title": "Rules",
         "description": "Basic nodes",
         "icon": "Scale"
       }
     },
     {
-      "tasks": {
+      "agents/tasks": {
         "color": "border-cyan-500",
         "title": "Tasks",
         "description": "Run various tasks",
@@ -61,7 +58,7 @@
       }
     },
     {
-      "tools": {
+      "agents/tools": {
         "color": "border-cyan-500",
         "title": "Tools",
         "description": "Tools an agent can use",
@@ -69,7 +66,7 @@
       }
     },
     {
-      "tools/config": {
+      "agents/tools/config": {
         "color": "border-cyan-500",
         "title": "Drivers",
         "description": "Drivers for Griptape Agents",
@@ -89,7 +86,7 @@
         "color": "border-sky-500",
         "title": "Audio",
         "description": "Audio related nodes",
-        "icon": "SpeakerWave"
+        "icon": "audio-lines"
       }
     },
     {
@@ -109,11 +106,11 @@
       }
     },
     {
-      "image_models": {
-        "color": "border-lime-500",
-        "title": "Image",
-        "description": "Image Drivers for Griptape Agents",
-        "icon": "Truck"
+      "image/image_models": {
+        "color": "border-indigo-500",
+        "title": "Image Models",
+        "description": "Image Generation Models for Griptape Agents",
+        "icon": "brain"
       }
     },
     {
@@ -206,9 +203,9 @@
     },
     {
       "lists": {
-        "color": "border-gray-500",
+        "color": "border-slate-500",
         "title": "Lists",
-        "description": "Nodes to interact with an work with Lists",
+        "description": "Nodes to interact with and work with Lists",
         "icon": "List"
       }
     },
@@ -219,9 +216,263 @@
         "description": "Nodes for executing Workflows",
         "icon": "Workflow"
       }
+    },
+    {
+      "audio/audioldm": {
+        "color": "border-sky-500",
+        "title": "Audio/AudioLDM",
+        "description": "Audio generation with AudioLDM",
+        "icon": "SpeakerWave"
+      }
+    },
+    {
+      "audio/audioldm2": {
+        "color": "border-sky-500",
+        "title": "Audio/AudioLDM2",
+        "description": "Audio generation with AudioLDM 2",
+        "icon": "SpeakerWave"
+      }
+    },
+    {
+      "image/amused": {
+        "color": "border-purple-500",
+        "title": "Image/aMUSEd",
+        "description": "Image generation with aMUSEd",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion": {
+        "color": "border-purple-500",
+        "title": "Image/Stable Diffusion",
+        "description": "Image generation with Stable Diffusion",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_3": {
+        "color": "border-purple-500",
+        "title": "Image/Stable Diffusion 3",
+        "description": "Image generation with Stable Diffusion 3",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_attend_and_excite": {
+        "color": "border-purple-500",
+        "title": "Image/SD Attend and Excite",
+        "description": "Enhanced attention control",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/stable_diffusion_diffedit": {
+        "color": "border-purple-500",
+        "title": "Image/SD DiffEdit",
+        "description": "Image editing with DiffEdit",
+        "icon": "Image"
+      }
+    },
+    {
+      "image/würstchen": {
+        "color": "border-purple-500",
+        "title": "image/würstchen",
+        "description": "Efficient generation with Würstchen",
+        "icon": "Image"
+      }
+    },
+    {
+      "video/allegro": {
+        "color": "border-pink-500",
+        "title": "Video/Allegro",
+        "description": "Video generation with Allegro",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/wan": {
+        "color": "border-pink-500",
+        "title": "video/wan",
+        "description": "",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/wan/aux": {
+        "color": "border-pink-500",
+        "title": "Video/WAN/Aux",
+        "description": "Auxiliary nodes for WAN video generation",
+        "icon": "Video"
+      }
+    },
+    {
+      "video/wan/loras": {
+        "color": "border-pink-500",
+        "title": "video/wan/loras",
+        "description": "",
+        "icon": "Video"
+      }
+    },
+    {
+      "image/cosmos": {
+        "color": "border-purple-500",
+        "title": "Image/Cosmos",
+        "description": "Image generation with Cosmos",
+        "icon": "Image"
+      }
     }
   ],
   "nodes": [
+    {
+      "class_name": "AddToList",
+      "file_path": "griptape_nodes_library/lists/add_to_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list input and adds a value to the list at the specified index.",
+        "display_name": "Add To List",
+        "icon": "list-plus"
+      }
+    },
+    {
+      "class_name": "CombineLists",
+      "file_path": "griptape_nodes_library/lists/combine_lists.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes two lists and combines them into a single flattened list.",
+        "display_name": "Combine Lists"
+      }
+    },
+    {
+      "class_name": "CreateList",
+      "file_path": "griptape_nodes_library/lists/create_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and creates a list.",
+        "display_name": "Create List"
+      }
+    },
+    {
+      "class_name": "BoolInput",
+      "file_path": "griptape_nodes_library/number/create_bool.py",
+      "metadata": {
+        "category": "number",
+        "description": "Creates a boolean value.",
+        "display_name": "Bool Input",
+        "icon": "toggle-right",
+        "group": "general"
+      }
+    },
+    {
+      "class_name": "CreateBoolList",
+      "file_path": "griptape_nodes_library/lists/create_bool_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Creates a list of boolean values.",
+        "display_name": "Create Bool List"
+      }
+    },
+    {
+      "class_name": "CreateFloatList",
+      "file_path": "griptape_nodes_library/lists/create_float_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Creates a list of float values.",
+        "display_name": "Create Float List"
+      }
+    },
+    {
+      "class_name": "CreateIntList",
+      "file_path": "griptape_nodes_library/lists/create_int_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Creates a list of integer values.",
+        "display_name": "Create Int List"
+      }
+    },
+    {
+      "class_name": "CreateTextList",
+      "file_path": "griptape_nodes_library/lists/create_text_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Creates a list of text items",
+        "display_name": "Create Text List"
+      }
+    },
+    {
+      "class_name": "GetFromList",
+      "file_path": "griptape_nodes_library/lists/get_from_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and gets an item at a specified index from the list.",
+        "display_name": "Get From List"
+      }
+    },
+    {
+      "class_name": "GetIndexOfItem",
+      "file_path": "griptape_nodes_library/lists/get_index_of_item.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and gets the index of an item in the list.",
+        "display_name": "Get Index Of Item"
+      }
+    },
+    {
+      "class_name": "GetListContainsItem",
+      "file_path": "griptape_nodes_library/lists/get_list_contains_item.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and checks if the list contains an item.",
+        "display_name": "Get List Contains Item"
+      }
+    },
+    {
+      "class_name": "GetListIsEmpty",
+      "file_path": "griptape_nodes_library/lists/get_list_is_empty.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and checks if the list is empty.",
+        "display_name": "Get List Is Empty"
+      }
+    },
+    {
+      "class_name": "GetListLength",
+      "file_path": "griptape_nodes_library/lists/get_list_length.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list of items and gets the length of the list.",
+        "display_name": "Get List Length"
+      }
+    },
+    {
+      "class_name": "RemoveFromList",
+      "file_path": "griptape_nodes_library/lists/remove_from_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list input and removes an item from the list at the specified index or by value.",
+        "display_name": "Remove From List",
+        "icon": "list-minus"
+      }
+    },
+    {
+      "class_name": "ReplaceInList",
+      "file_path": "griptape_nodes_library/lists/replace_in_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list input and replaces an item either by matching the item or by index.",
+        "display_name": "Replace In List",
+        "icon": "list-restart"
+      }
+    },
+    {
+      "class_name": "SplitList",
+      "file_path": "griptape_nodes_library/lists/split_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a list input and splits it either by index or by item value, with options for keeping the split item.",
+        "display_name": "Split List",
+        "icon": "square-split-vertical"
+      }
+    },
     {
       "class_name": "DisplayList",
       "file_path": "griptape_nodes_library/lists/display_list.py",
@@ -255,7 +506,9 @@
       "metadata": {
         "category": "audio",
         "description": "Loads audio files into your workflow",
-        "display_name": "Load Audio"
+        "display_name": "Load Audio",
+        "icon": "file-up",
+        "group": "general"
       }
     },
     {
@@ -264,7 +517,9 @@
       "metadata": {
         "category": "audio",
         "description": "Can record audio from your microphone.",
-        "display_name": "Microphone"
+        "display_name": "Microphone",
+        "icon": "mic",
+        "group": "general"
       }
     },
     {
@@ -273,7 +528,9 @@
       "metadata": {
         "category": "audio",
         "description": "Transcribe audio files into text.\nRequires an OpenAI API key.",
-        "display_name": "Transcribe Audio"
+        "display_name": "Transcribe Audio",
+        "icon": "ear",
+        "group": "tasks"
       }
     },
     {
@@ -282,7 +539,9 @@
       "metadata": {
         "category": "video",
         "description": "Loads video files into your workflow",
-        "display_name": "Load Video"
+        "display_name": "Load Video",
+        "icon": "file-video",
+        "group": "general"
       }
     },
     {
@@ -291,7 +550,20 @@
       "metadata": {
         "category": "video",
         "description": "Display a video",
-        "display_name": "Display Video"
+        "display_name": "Display Video",
+        "icon": "monitor-play",
+        "group": "general"
+      }
+    },
+    {
+      "class_name": "ResizeVideo",
+      "file_path": "griptape_nodes_library/video/resize_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Resize a video using imageio_ffmpeg",
+        "display_name": "Resize Video",
+        "icon": "picture-in-picture",
+        "group": "edit"
       }
     },
     {
@@ -300,7 +572,9 @@
       "metadata": {
         "category": "video",
         "description": "Save a video to a file",
-        "display_name": "Save Video"
+        "display_name": "Save Video",
+        "icon": "file-down",
+        "group": "general"
       }
     },
     {
@@ -319,6 +593,15 @@
         "category": "convert",
         "description": "Converts incoming value to a dictionary",
         "display_name": "To Dictionary"
+      }
+    },
+    {
+      "class_name": "DictToList",
+      "file_path": "griptape_nodes_library/convert/dict_to_list.py",
+      "metadata": {
+        "category": "convert",
+        "description": "Extract lists of keys and values from a dictionary",
+        "display_name": "Dict to List"
       }
     },
     {
@@ -350,12 +633,23 @@
       }
     },
     {
+      "class_name": "Dictionary",
+      "file_path": "griptape_nodes_library/dict/create_dict.py",
+      "metadata": {
+        "category": "dict",
+        "description": "Creates a dictionary from key-value pairs",
+        "display_name": "Create Dictionary",
+        "group": "general"
+      }
+    },
+    {
       "class_name": "DisplayDictionary",
       "file_path": "griptape_nodes_library/dict/display_dict.py",
       "metadata": {
         "category": "dict",
         "description": "Displays dictionary data",
-        "display_name": "Display Dictionary"
+        "display_name": "Display Dictionary",
+        "group": "general"
       }
     },
     {
@@ -364,7 +658,8 @@
       "metadata": {
         "category": "dict",
         "description": "Create a Key Value Pair",
-        "display_name": "Key Value Pair"
+        "display_name": "Key Value Pair",
+        "group": "general"
       }
     },
     {
@@ -373,7 +668,9 @@
       "metadata": {
         "category": "dict",
         "description": "Loads a dictionary from disk",
-        "display_name": "Load Dictionary"
+        "display_name": "Load Dictionary",
+        "group": "general",
+        "icon": "file-up"
       }
     },
     {
@@ -382,7 +679,8 @@
       "metadata": {
         "category": "dict",
         "description": "Merges multiple Key/Value Pairs into a single dictionary",
-        "display_name": "Merge Key Value Pairs"
+        "display_name": "Merge Key Value Pairs",
+        "group": "edit"
       }
     },
     {
@@ -391,124 +689,136 @@
       "metadata": {
         "category": "dict",
         "description": "Save dictionary data to a file",
-        "display_name": "Save Dictionary"
+        "display_name": "Save Dictionary",
+        "icon": "file-down",
+        "group": "general"
       }
     },
     {
       "class_name": "GriptapeCloudImage",
       "file_path": "griptape_nodes_library/config/image/griptape_cloud_image_driver.py",
       "metadata": {
-        "category": "image_models",
+        "category": "image/image_models",
         "description": "Image Generation Models available from Griptape Cloud",
-        "display_name": "Griptape Cloud Image"
+        "display_name": "Griptape Cloud Image",
+        "icon": {
+          "dark": "logos/griptape_cloud.svg",
+          "light": "logos/griptape_cloud_dark.svg"
+        }
       }
     },
     {
       "class_name": "GrokImage",
       "file_path": "griptape_nodes_library/config/image/grok_image_driver.py",
       "metadata": {
-        "category": "image_models",
+        "category": "image/image_models",
         "description": "Image Generation Models available from xAI Grok",
-        "display_name": "Grok Image"
+        "display_name": "Grok Image",
+        "icon": {
+          "dark": "logos/grok.svg",
+          "light": "logos/grok_dark.svg"
+        }
       }
     },
     {
       "class_name": "OpenAiImage",
       "file_path": "griptape_nodes_library/config/image/openai_image_driver.py",
       "metadata": {
-        "category": "image_models",
+        "category": "image/image_models",
         "description": "Image Generation Models available from OpenAI",
-        "display_name": "Open Ai Image"
+        "display_name": "Open Ai Image",
+        "icon": {
+          "dark": "logos/openai.svg",
+          "light": "logos/openai_dark.svg"
+        }
       }
     },
     {
       "class_name": "AmazonBedrockPrompt",
       "file_path": "griptape_nodes_library/config/prompt/amazon_bedrock_prompt.py",
       "metadata": {
-        "category": "prompt_models",
+        "category": "agents/prompt_models",
         "description": "Prompt Models available from Amazon Bedrock",
-        "display_name": "Amazon Bedrock Prompt"
+        "display_name": "Amazon Bedrock Prompt",
+        "icon": {
+          "dark": "logos/aws.svg",
+          "light": "logos/aws_dark.svg"
+        }
       }
     },
     {
       "class_name": "AnthropicPrompt",
       "file_path": "griptape_nodes_library/config/prompt/anthropic_prompt.py",
       "metadata": {
-        "category": "prompt_models",
+        "category": "agents/prompt_models",
         "description": "Prompt Models available from Anthropic",
-        "display_name": "Anthropic Prompt"
+        "display_name": "Anthropic Prompt",
+        "icon": {
+          "dark": "logos/anthropic.svg",
+          "light": "logos/anthropic_dark.svg"
+        }
       }
     },
     {
       "class_name": "CoherePrompt",
       "file_path": "griptape_nodes_library/config/prompt/cohere_prompt.py",
       "metadata": {
-        "category": "prompt_models",
+        "category": "agents/prompt_models",
         "description": "Prompt Models available from Cohere",
-        "display_name": "Cohere Prompt"
+        "display_name": "Cohere Prompt",
+        "icon": "logos/cohere.svg"
       }
     },
     {
       "class_name": "GriptapeCloudPrompt",
       "file_path": "griptape_nodes_library/config/prompt/griptape_cloud_prompt.py",
       "metadata": {
-        "category": "prompt_models",
+        "category": "agents/prompt_models",
         "description": "Prompt Models available from Griptape Cloud",
-        "display_name": "Griptape Cloud Prompt"
+        "display_name": "Griptape Cloud Prompt",
+        "icon": {
+          "dark": "logos/griptape_cloud.svg",
+          "light": "logos/griptape_cloud_dark.svg"
+        }
       }
     },
     {
       "class_name": "GrokPrompt",
       "file_path": "griptape_nodes_library/config/prompt/grok_prompt.py",
       "metadata": {
-        "category": "prompt_models",
+        "category": "agents/prompt_models",
         "description": "Prompt Models available from xAI Grok",
-        "display_name": "Grok Prompt"
+        "display_name": "Grok Prompt",
+        "icon": {
+          "dark": "logos/grok.svg",
+          "light": "logos/grok_dark.svg"
+        }
       }
     },
     {
       "class_name": "GroqPrompt",
       "file_path": "griptape_nodes_library/config/prompt/groq_prompt.py",
       "metadata": {
-        "category": "prompt_models",
+        "category": "agents/prompt_models",
         "description": "Prompt Models available from Groq",
-        "display_name": "Groq Prompt"
+        "display_name": "Groq Prompt",
+        "icon": {
+          "dark": "logos/groq.svg",
+          "light": "logos/groq_dark.svg"
+        }
       }
     },
     {
       "class_name": "OpenAiPrompt",
       "file_path": "griptape_nodes_library/config/prompt/openai_prompt.py",
       "metadata": {
-        "category": "prompt_models",
+        "category": "agents/prompt_models",
         "description": "Prompt Models available from OpenAi",
-        "display_name": "Open Ai Prompt"
-      }
-    },
-    {
-      "class_name": "DescribeImage",
-      "file_path": "griptape_nodes_library/image/describe_image.py",
-      "metadata": {
-        "category": "image",
-        "description": "Can be used to describe an image",
-        "display_name": "Describe Image"
-      }
-    },
-    {
-      "class_name": "MergeImages",
-      "file_path": "griptape_nodes_library/image/merge_images.py",
-      "metadata": {
-        "category": "image",
-        "description": "Merge images together in different layouts with grid options and dynamic image input list",
-        "display_name": "Merge Images"
-      }
-    },
-    {
-      "class_name": "CompareImages",
-      "file_path": "griptape_nodes_library/image/compare_images.py",
-      "metadata": {
-        "category": "image",
-        "description": "Can be used to compare two images",
-        "display_name": "Compare Images"
+        "display_name": "Open Ai Prompt",
+        "icon": {
+          "dark": "logos/openai.svg",
+          "light": "logos/openai_dark.svg"
+        }
       }
     },
     {
@@ -517,7 +827,38 @@
       "metadata": {
         "category": "image",
         "description": "Display an image",
-        "display_name": "Display Image"
+        "display_name": "Display Image",
+        "group": "general"
+      }
+    },
+    {
+      "class_name": "CompareImages",
+      "file_path": "griptape_nodes_library/image/compare_images.py",
+      "metadata": {
+        "category": "image",
+        "description": "Can be used to compare two images",
+        "display_name": "Compare Images",
+        "group": "tasks"
+      }
+    },
+    {
+      "class_name": "DescribeImage",
+      "file_path": "griptape_nodes_library/image/describe_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Can be used to describe an image",
+        "display_name": "Describe Image",
+        "group": "tasks"
+      }
+    },
+    {
+      "class_name": "DisplayMask",
+      "file_path": "griptape_nodes_library/image/display_mask.py",
+      "metadata": {
+        "category": "image",
+        "description": "Display a mask from an image's alpha channel.",
+        "display_name": "Display Mask",
+        "group": "mask"
       }
     },
     {
@@ -526,7 +867,18 @@
       "metadata": {
         "category": "image",
         "description": "Generates an image using Griptape Cloud, or other provided image generation models",
-        "display_name": "Generate Image"
+        "display_name": "Generate Image",
+        "group": "tasks"
+      }
+    },
+    {
+      "class_name": "InvertMask",
+      "file_path": "griptape_nodes_library/image/invert_mask.py",
+      "metadata": {
+        "category": "image",
+        "description": "Invert a mask image.",
+        "display_name": "Invert Mask",
+        "group": "mask"
       }
     },
     {
@@ -535,7 +887,19 @@
       "metadata": {
         "category": "image",
         "description": "Loads an image from disk",
-        "display_name": "Load Image"
+        "display_name": "Load Image",
+        "icon": "image-up",
+        "group": "general"
+      }
+    },
+    {
+      "class_name": "MergeImages",
+      "file_path": "griptape_nodes_library/image/merge_images.py",
+      "metadata": {
+        "category": "image",
+        "description": "Merge images together in different layouts with grid options and dynamic image input list",
+        "display_name": "Merge Images",
+        "group": "edit"
       }
     },
     {
@@ -544,7 +908,8 @@
       "metadata": {
         "category": "image",
         "description": "Paint a mask on an image.",
-        "display_name": "Paint Mask"
+        "display_name": "Paint Mask",
+        "group": "mask"
       }
     },
     {
@@ -553,7 +918,9 @@
       "metadata": {
         "category": "image",
         "description": "Save an image to a file",
-        "display_name": "Save Image"
+        "display_name": "Save Image",
+        "icon": "image-down",
+        "group": "general"
       }
     },
     {
@@ -562,7 +929,9 @@
       "metadata": {
         "category": "image",
         "description": "Capture an image using the device's camera",
-        "display_name": "Webcam"
+        "display_name": "Webcam",
+        "icon": "webcam",
+        "group": "general"
       }
     },
     {
@@ -571,7 +940,8 @@
       "metadata": {
         "category": "misc",
         "description": "Create a note node to provide helpful context in your workflow",
-        "display_name": "Note"
+        "display_name": "Note",
+        "icon": "notepad-text"
       }
     },
     {
@@ -580,7 +950,9 @@
       "metadata": {
         "category": "number",
         "description": "Askulator was once a humble desk calculator in a university math lab. One day, lightning struck the building during a particularly spicy differential equations final. Now imbued with the power of language... and attitude... it nodes among us. Solving math, interpreting riddles, and offering just a hint of sarcasm.",
-        "display_name": "Askulator"
+        "display_name": "Askulator",
+        "icon": "message-circle-question-mark",
+        "group": "tasks"
       }
     },
     {
@@ -589,7 +961,9 @@
       "metadata": {
         "category": "number",
         "description": "Create a float value",
-        "display_name": "Float Input"
+        "display_name": "Float Input",
+        "icon": "decimals-arrow-right",
+        "group": "general"
       }
     },
     {
@@ -598,7 +972,8 @@
       "metadata": {
         "category": "number",
         "description": "Create an integer value",
-        "display_name": "Integer Input"
+        "display_name": "Integer Input",
+        "group": "general"
       }
     },
     {
@@ -607,7 +982,8 @@
       "metadata": {
         "category": "number",
         "description": "Display a float value",
-        "display_name": "Display Float"
+        "display_name": "Display Float",
+        "group": "general"
       }
     },
     {
@@ -625,15 +1001,17 @@
       "metadata": {
         "category": "number",
         "description": "Perform mathematical operations on numbers",
-        "display_name": "Math"
+        "display_name": "Math",
+        "icon": "calculator",
+        "group": "tasks"
       }
     },
     {
       "class_name": "Ruleset",
       "file_path": "griptape_nodes_library/rules/create_ruleset.py",
       "metadata": {
-        "category": "rules",
-        "description": "Ruleset node",
+        "category": "agents/rules",
+        "description": "Give an agent a set of rules and behaviors to follow",
         "display_name": "Ruleset"
       }
     },
@@ -641,45 +1019,9 @@
       "class_name": "RulesetList",
       "file_path": "griptape_nodes_library/rules/ruleset_list.py",
       "metadata": {
-        "category": "rules",
+        "category": "agents/rules",
         "description": "Combine rulesets to give an agent a more complex set of behaviors",
         "display_name": "Ruleset List"
-      }
-    },
-    {
-      "class_name": "DateAndTime",
-      "file_path": "griptape_nodes_library/text/date_and_time.py",
-      "metadata": {
-        "category": "text",
-        "description": "Get the date and time",
-        "display_name": "Date and Time"
-      }
-    },
-    {
-      "class_name": "DisplayText",
-      "file_path": "griptape_nodes_library/text/display_text.py",
-      "metadata": {
-        "category": "text",
-        "description": "DisplayText node",
-        "display_name": "Display Text"
-      }
-    },
-    {
-      "class_name": "EvaluateTextResult",
-      "file_path": "griptape_nodes_library/text/evaluate_text_result.py",
-      "metadata": {
-        "category": "text",
-        "description": "Evaluate the results of some text against some criteria",
-        "display_name": "Evaluate Text Result"
-      }
-    },
-    {
-      "class_name": "ListTexts",
-      "file_path": "griptape_nodes_library/text/list_texts.py",
-      "metadata": {
-        "category": "text",
-        "description": "Create a list of strings from multiple input values, and immediately forwards to output",
-        "display_name": "List Texts"
       }
     },
     {
@@ -688,7 +1030,9 @@
       "metadata": {
         "category": "text",
         "description": "LoadText node",
-        "display_name": "Load Text"
+        "display_name": "Load Text",
+        "icon": "file-text",
+        "group": "general"
       }
     },
     {
@@ -697,7 +1041,9 @@
       "metadata": {
         "category": "text",
         "description": "MergeTexts node",
-        "display_name": "Merge Texts"
+        "display_name": "Merge Texts",
+        "icon": "merge",
+        "group": "edit"
       }
     },
     {
@@ -706,16 +1052,52 @@
       "metadata": {
         "category": "text",
         "description": "Selects a random character, word, sentence, or paragraph from input text, or generates random content if no input is provided.",
-        "display_name": "Random Text"
+        "display_name": "Random Text",
+        "icon": "dices",
+        "group": "tasks"
       }
     },
+    {
+      "class_name": "DateAndTime",
+      "file_path": "griptape_nodes_library/text/date_and_time.py",
+      "metadata": {
+        "category": "text",
+        "description": "Get the date and time",
+        "display_name": "Date and Time",
+        "icon": "calendar",
+        "group": "tasks"
+      }
+    },
+    {
+      "class_name": "DisplayText",
+      "file_path": "griptape_nodes_library/text/display_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "DisplayText node",
+        "display_name": "Display Text",
+        "group": "general"
+      }
+    },
+    {
+      "class_name": "EvaluateTextResult",
+      "file_path": "griptape_nodes_library/text/evaluate_text_result.py",
+      "metadata": {
+        "category": "text",
+        "description": "Evaluate the results of some text against some criteria",
+        "display_name": "Evaluate Text Result",
+        "group": "tasks"
+      }
+    },
+
     {
       "class_name": "SaveText",
       "file_path": "griptape_nodes_library/text/save_text.py",
       "metadata": {
         "category": "text",
         "description": "Save text to a file",
-        "display_name": "Save Text"
+        "display_name": "Save Text",
+        "icon": "file-down",
+        "group": "general"
       }
     },
     {
@@ -724,7 +1106,9 @@
       "metadata": {
         "category": "text",
         "description": "Scrape the web for information",
-        "display_name": "Scrape Web"
+        "display_name": "Scrape Web",
+        "icon": "globe",
+        "group": "tasks"
       }
     },
     {
@@ -733,7 +1117,9 @@
       "metadata": {
         "category": "text",
         "description": "Perform search and replace operations on text content with support for regex and case sensitivity",
-        "display_name": "Search Replace Text"
+        "display_name": "Search Replace Text",
+        "icon": "regex",
+        "group": "edit"
       }
     },
     {
@@ -742,7 +1128,9 @@
       "metadata": {
         "category": "text",
         "description": "Search the web for information",
-        "display_name": "Search Web"
+        "display_name": "Search Web",
+        "icon": "binoculars",
+        "group": "tasks"
       }
     },
     {
@@ -751,7 +1139,9 @@
       "metadata": {
         "category": "text",
         "description": "Summarize text",
-        "display_name": "Summarize Text"
+        "display_name": "Summarize Text",
+        "icon": "message-square-text",
+        "group": "tasks"
       }
     },
     {
@@ -760,61 +1150,69 @@
       "metadata": {
         "category": "text",
         "description": "TextInput node",
-        "display_name": "Text Input"
+        "display_name": "Text Input",
+        "icon": "text-cursor",
+        "group": "general"
       }
     },
     {
       "class_name": "Calculator",
       "file_path": "griptape_nodes_library/tools/calculator_tool.py",
       "metadata": {
-        "category": "tools",
+        "category": "agents/tools",
         "description": "Give an agent the ability to use a calculator",
-        "display_name": "Calculator"
+        "display_name": "Calculator",
+        "icon": "calculator"
       }
     },
     {
       "class_name": "DateTime",
       "file_path": "griptape_nodes_library/tools/date_time_tool.py",
       "metadata": {
-        "category": "tools",
+        "category": "agents/tools",
         "description": "Give an agent the ability to know what day and time it is",
-        "display_name": "Date Time"
+        "display_name": "Date Time",
+        "icon": "calendar"
       }
     },
     {
       "class_name": "FileManager",
       "file_path": "griptape_nodes_library/tools/file_manager_tool.py",
       "metadata": {
-        "category": "tools",
+        "category": "agents/tools",
         "description": "Give an agent the ability to load files from disk",
-        "display_name": "File Manager"
+        "display_name": "File Manager",
+        "icon": "folder"
       }
     },
     {
       "class_name": "ToolList",
       "file_path": "griptape_nodes_library/tools/tool_list.py",
       "metadata": {
-        "category": "tools",
+        "category": "agents/tools",
         "description": "Combine tools to give an agent a more complex set of tools",
-        "display_name": "Tool List"
+        "display_name": "Tool List",
+        "icon": "list-check"
       }
     },
     {
       "class_name": "WebSearch",
       "file_path": "griptape_nodes_library/tools/web_search_tool.py",
       "metadata": {
-        "category": "tools",
+        "category": "agents/tools",
         "description": "Give an agent the ability to search the web",
-        "display_name": "Web Search"
+        "display_name": "Web Search",
+        "icon": "binoculars"
       }
     },
     {
       "class_name": "WebScraper",
       "file_path": "griptape_nodes_library/tools/web_scraper_tool.py",
       "metadata": {
-        "category": "tools",
+        "category": "agents/tools",
         "description": "Give an agent the ability to scrape the web for information",
-        "display_name": "Web Scraper"
+        "display_name": "Web Scraper",
+        "icon": "globe"
       }
     },
     {
@@ -841,7 +1239,8 @@
       "metadata": {
         "category": "execution_flow",
         "description": "Provides a node to allow you to redirect a flow, matching inputs and outputs",
-        "display_name": "Reroute"
+        "display_name": "Reroute",
+        "group": "flow control"
       }
     },
     {
@@ -850,7 +1249,8 @@
       "metadata": {
         "category": "execution_flow",
         "description": "Create a branching workflow based on whether a value is true or false",
-        "display_name": "IfElse"
+        "display_name": "IfElse",
+        "group": "comparison"
       }
     },
     {
@@ -859,7 +1259,8 @@
       "metadata": {
         "category": "execution_flow",
         "description": "Branch your workflow based on a comparison of two numbers",
-        "display_name": "Compare Numbers"
+        "display_name": "Compare Numbers",
+        "group": "comparison"
       }
     },
     {
@@ -868,7 +1269,8 @@
       "metadata": {
         "category": "execution_flow",
         "description": "Branch your workflow based on a comparison of two strings",
-        "display_name": "Compare Strings"
+        "display_name": "Compare Strings",
+        "group": "comparison"
       }
     },
     {
@@ -877,7 +1279,8 @@
       "metadata": {
         "category": "execution_flow",
         "description": "Let's you choose which direction you want a flow to go, based on the output of previous nodes",
-        "display_name": "Output Selector"
+        "display_name": "Output Selector",
+        "group": "flow control"
       }
     },
     {
@@ -886,7 +1289,9 @@
       "metadata": {
         "category": "execution_flow",
         "description": "Start node for iterating through a list of items and running a flow for each one",
-        "display_name": "ForEach Start"
+        "display_name": "ForEach Start",
+        "icon": "list-start",
+        "group": "iteration"
       }
     },
     {
@@ -895,7 +1300,9 @@
       "metadata": {
         "category": "execution_flow",
         "description": "End node that completes a loop iteration and connects back to the ForEachStartNode",
-        "display_name": "ForEach End"
+        "display_name": "ForEach End",
+        "icon": "list-end",
+        "group": "iteration"
       }
     },
     {
@@ -923,6 +1330,28 @@
         "category": "3D",
         "description": "Loads a GLTF file into your workflow",
         "display_name": "Load GLTF"
+      }
+    },
+    {
+      "class_name": "ForLoopStartNode",
+      "file_path": "griptape_nodes_library/execution/for_loop_start.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Start node for iterating through a range of numbers with a specified step value",
+        "display_name": "For Loop Start",
+        "icon": "repeat",
+        "group": "iteration"
+      }
+    },
+    {
+      "class_name": "ForLoopEndNode",
+      "file_path": "griptape_nodes_library/execution/for_loop_end.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "End node that completes a loop iteration and connects back to the ForLoopStartNode",
+        "display_name": "For Loop End",
+        "icon": "repeat",
+        "group": "iteration"
       }
     }
   ],

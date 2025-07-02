@@ -32,8 +32,10 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ParameterValueUpdateEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
+    RemoveElementEvent,
     RemoveParameterFromNodeRequest,
 )
+from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -62,6 +64,7 @@ class BaseNode(ABC):
     parameter_output_values: dict[str, Any]
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
+    _tracked_parameters: list[BaseNodeElement]
 
     @property
     def parameters(self) -> list[Parameter]:
@@ -83,9 +86,12 @@ class BaseNode(ABC):
         else:
             self.metadata = metadata
         self.parameter_values = {}
-        self.parameter_output_values = {}
+        self.parameter_output_values = TrackedParameterOutputValues(self)
         self.root_ui_element = BaseNodeElement()
+        # Set the node context for the root element
+        self.root_ui_element._node_context = self
         self.process_generator = None
+        self._tracked_parameters = []
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
@@ -100,6 +106,12 @@ class BaseNode(ABC):
                 )
             )
         self.state = NodeResolutionState.UNRESOLVED
+
+    def emit_parameter_changes(self) -> None:
+        if self._tracked_parameters:
+            for parameter in self._tracked_parameters:
+                parameter._emit_alter_element_event_if_possible()
+            self._tracked_parameters.clear()
 
     def allow_incoming_connection(
         self,
@@ -123,8 +135,7 @@ class BaseNode(ABC):
         self,
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
-        target_parameter: Parameter,  # noqa: ARG002,
-        modified_parameters_set: set[str],  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
         return
@@ -134,7 +145,6 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
         return
@@ -144,7 +154,6 @@ class BaseNode(ABC):
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
         return
@@ -154,12 +163,15 @@ class BaseNode(ABC):
         source_parameter: Parameter,  # noqa: ARG002
         target_node: BaseNode,  # noqa: ARG002
         target_parameter: Parameter,  # noqa: ARG002
-        modified_parameters_set: set[str],  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
         return
 
-    def before_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> Any:  # noqa: ARG002
+    def before_value_set(
+        self,
+        parameter: Parameter,  # noqa: ARG002
+        value: Any,
+    ) -> Any:
         """Callback when a Parameter's value is ABOUT to be set.
 
         Custom nodes may elect to override the default behavior by implementing this function in their node code.
@@ -174,8 +186,6 @@ class BaseNode(ABC):
         Args:
             parameter: the Parameter on this node that is about to be changed
             value: the value intended to be set (this has already gone through any converters and validators on the Parameter)
-            modified_parameters_set: A set of parameter names within this node that were modified as a result
-                of this call. The Parameter this was called on does NOT need to be part of the return.
 
         Returns:
             The final value to set for the Parameter. This gives the Node logic one last opportunity to mutate the value
@@ -184,7 +194,11 @@ class BaseNode(ABC):
         # Default behavior is to do nothing to the supplied value, and indicate no other modified Parameters.
         return value
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:  # noqa: ARG002
+    def after_value_set(
+        self,
+        parameter: Parameter,  # noqa: ARG002
+        value: Any,  # noqa: ARG002
+    ) -> None:
         """Callback AFTER a Parameter's value was set.
 
         Custom nodes may elect to override the default behavior by implementing this function in their node code.
@@ -193,11 +207,17 @@ class BaseNode(ABC):
         changing other Parameters on the node. If other Parameters are changed, the engine needs a list of which
         ones have changed to cascade unresolved state.
 
+        NOTE: Subclasses can override this method with either signature:
+        - def after_value_set(self, parameter, value) -> None:  (most common)
+        - def after_value_set(self, parameter, value, **kwargs) -> None:  (advanced)
+        The base implementation uses **kwargs for compatibility with both patterns.
+        The engine will try calling with 2 arguments first, then fall back to 3 if needed.
+        Pyright may show false positive "incompatible override" warnings for the 2-argument
+        version - this is expected and the code will work correctly at runtime.
+
         Args:
             parameter: the Parameter on this node that was just changed
             value: the value that was set (already converted, validated, and possibly mutated by the node code)
-            modified_parameters_set: A set of parameter names within this node that were modified as a result
-                of this call. The Parameter this was called on does NOT need to be part of the return.
 
         Returns:
             Nothing
@@ -205,7 +225,7 @@ class BaseNode(ABC):
         # Default behavior is to do nothing, and indicate no other modified Parameters.
         return None  # noqa: RET501
 
-    def after_settings_changed(self, modified_parameters_set: set[str]) -> None:  # noqa: ARG002
+    def after_settings_changed(self, **kwargs: Any) -> None:  # noqa: ARG002
         """Callback for when the settings of this Node are changed."""
         # Waiting for https://github.com/griptape-ai/griptape-nodes/issues/1309
         return
@@ -229,6 +249,7 @@ class BaseNode(ABC):
             msg = "Cannot have duplicate names on parameters."
             raise ValueError(msg)
         self.add_node_element(param)
+        self._emit_parameter_lifecycle_event(param)
 
     def remove_parameter_element_by_name(self, element_name: str) -> None:
         element = self.root_ui_element.find_element_by_name(element_name)
@@ -236,6 +257,9 @@ class BaseNode(ABC):
             self.remove_parameter_element(element)
 
     def remove_parameter_element(self, param: BaseNodeElement) -> None:
+        # Emit event before removal if it's a Parameter
+        if isinstance(param, Parameter):
+            self._emit_parameter_lifecycle_event(param)
         for child in param.find_elements_by_type(BaseNodeElement):
             self.remove_node_element(child)
         self.remove_node_element(param)
@@ -248,6 +272,8 @@ class BaseNode(ABC):
         return None
 
     def add_node_element(self, ui_element: BaseNodeElement) -> None:
+        # Set the node context before adding to ensure proper propagation
+        ui_element._node_context = self
         self.root_ui_element.add_child(ui_element)
 
     def remove_node_element(self, ui_element: BaseNodeElement) -> None:
@@ -269,7 +295,9 @@ class BaseNode(ABC):
         for name in names:
             parameter = self.get_parameter_by_name(name)
             if parameter is not None:
-                parameter._ui_options["hide"] = not visible
+                ui_options = parameter.ui_options
+                ui_options["hide"] = not visible
+                parameter.ui_options = ui_options
 
     def get_message_by_name_or_element_id(self, element: str) -> ParameterMessage | None:
         element_items = self.root_ui_element.find_elements_by_type(ParameterMessage)
@@ -291,7 +319,9 @@ class BaseNode(ABC):
         for name in names:
             message = self.get_message_by_name_or_element_id(name)
             if message is not None:
-                message.ui_options["hide"] = not visible
+                ui_options = message.ui_options
+                ui_options["hide"] = not visible
+                message.ui_options = ui_options
 
     def hide_message_by_name(self, names: str | list[str]) -> None:
         self._set_message_visibility(names, visible=False)
@@ -307,8 +337,91 @@ class BaseNode(ABC):
         """Shows one or more parameters by name."""
         self._set_parameter_visibility(names, visible=True)
 
+    def _update_option_choices(self, param: str, choices: list[str], default: str) -> None:
+        """Updates the model selection parameter with a new set of choices.
+
+        This method is intended to be called by subclasses to set the available
+        models for the driver. It modifies the 'model' parameter's `Options` trait
+        to reflect the provided choices.
+
+        Args:
+            param: The name of the parameter representing the model selection or the Parameter object itself.
+            choices: A list of model names to be set as choices.
+            default: The default model name to be set. It must be one of the provided choices.
+        """
+        parameter = self.get_parameter_by_name(param)
+        if parameter is not None:
+            trait = parameter.find_element_by_id("Options")
+            if trait and isinstance(trait, Options):
+                trait.choices = choices
+
+                if default in choices:
+                    parameter.default_value = default
+                    self.set_parameter_value(param, default)
+                else:
+                    msg = f"Default model '{default}' is not in the provided choices."
+                    raise ValueError(msg)
+        else:
+            msg = f"Parameter '{param}' not found for updating model choices."
+            raise ValueError(msg)
+
+    def _remove_options_trait(self, param: str) -> None:
+        """Removes the options trait from the specified parameter.
+
+        This method is intended to be called by subclasses to remove the
+        `Options` trait from a parameter, if it exists.
+
+        Args:
+            param: The name of the parameter from which to remove the `Options` trait.
+        """
+        parameter = self.get_parameter_by_name(param)
+        if parameter is not None:
+            trait = parameter.find_element_by_id("Options")
+            if trait and isinstance(trait, Options):
+                parameter.remove_trait(trait)
+        else:
+            msg = f"Parameter '{param}' not found for removing options trait."
+            raise ValueError(msg)
+
+    def _replace_param_by_name(  # noqa: PLR0913
+        self,
+        param_name: str,
+        new_param_name: str,
+        new_output_type: str | None = None,
+        tooltip: str | list[dict] | None = None,
+        default_value: Any = None,
+        ui_options: dict | None = None,
+    ) -> None:
+        """Replaces a parameter in the node configuration.
+
+        This method is used to replace a parameter with a new name and
+        optionally update its tooltip and default value.
+
+        Args:
+            param_name (str): The name of the parameter to replace.
+            new_param_name (str): The new name for the parameter.
+            new_output_type (str, optional): The new output type for the parameter.
+            tooltip (str, list[dict], optional): The new tooltip for the parameter.
+            default_value (Any, optional): The new default value for the parameter.
+            ui_options (dict, optional): UI options for the parameter.
+        """
+        param = self.get_parameter_by_name(param_name)
+        if param is not None:
+            param.name = new_param_name
+            if tooltip is not None:
+                param.tooltip = tooltip
+            if default_value is not None:
+                param.default_value = default_value
+            if new_output_type is not None:
+                param.output_type = new_output_type
+            if ui_options is not None:
+                param.ui_options = ui_options
+        else:
+            msg = f"Parameter '{param_name}' not found in node configuration."
+            raise ValueError(msg)
+
     def initialize_spotlight(self) -> None:
-        # Make a deep copy of all of the parameters and create the linked list.
+        # Create a linked list of parameters for spotlight navigation.
         curr_param = None
         prev_param = None
         for parameter in self.parameters:
@@ -317,14 +430,13 @@ class BaseNode(ABC):
                 and ParameterTypeBuiltin.CONTROL_TYPE.value not in parameter.input_types
             ):
                 if not self.current_spotlight_parameter or prev_param is None:
-                    # make a copy of the parameter and assign it to current spotlight
-                    param_copy = parameter.copy()
-                    self.current_spotlight_parameter = param_copy
-                    prev_param = param_copy
+                    # Use the original parameter and assign it to current spotlight
+                    self.current_spotlight_parameter = parameter
+                    prev_param = parameter
                     # go on to the next one because prev and next don't need to be set yet.
                     continue
                 # prev_param will have been initialized at this point
-                curr_param = parameter.copy()
+                curr_param = parameter
                 prev_param.next = curr_param
                 curr_param.prev = prev_param
                 prev_param = curr_param
@@ -349,7 +461,19 @@ class BaseNode(ABC):
                 return parameter
         return None
 
-    def set_parameter_value(self, param_name: str, value: Any) -> set[str] | None:
+    def get_element_by_name_and_type(
+        self, elem_name: str, element_type: type[BaseNodeElement] | None = None
+    ) -> BaseNodeElement | None:
+        find_type = element_type if element_type is not None else BaseNodeElement
+        element_items = self.root_ui_element.find_elements_by_type(find_type)
+        for element_item in element_items:
+            if elem_name == element_item.name:
+                return element_item
+        return None
+
+    def set_parameter_value(
+        self, param_name: str, value: Any, *, initial_setup: bool = False, emit_change: bool = True
+    ) -> None:
         """Attempt to set a Parameter's value.
 
         The Node may choose to store a different value (or type) than what was passed in.
@@ -367,6 +491,8 @@ class BaseNode(ABC):
         Args:
             param_name: the name of the Parameter on this node that is about to be changed
             value: the value intended to be set
+            emit_change: whether to emit a parameter lifecycle event, defaults to True
+            initial_setup: Whether this value is being set as the initial setup on the node, defaults to False. When True, the value is not given to any before/after hooks.
 
         Returns:
             A set of parameter names within this node that were modified as a result
@@ -392,25 +518,20 @@ class BaseNode(ABC):
         for validator in parameter.validators:
             validator(parameter, candidate_value)
 
-        # Keep track of which other parameters got modified as a result of any node-specific logic.
-        modified_parameters: set[str] = set()
-
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
-        final_value = self.before_value_set(
-            parameter=parameter,
-            value=candidate_value,
-            modified_parameters_set=modified_parameters,
-        )
-        # ACTUALLY SET THE NEW VALUE
-        self.parameter_values[param_name] = final_value
-        # If a parameter value has been set at the top level of a container, wipe all children.
-        # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
-        self.after_value_set(
-            parameter=parameter,
-            value=final_value,
-            modified_parameters_set=modified_parameters,
-        )
+        if not initial_setup:
+            final_value = self.before_value_set(parameter=parameter, value=candidate_value)
+            # ACTUALLY SET THE NEW VALUE
+            self.parameter_values[param_name] = final_value
+
+            # If a parameter value has been set at the top level of a container, wipe all children.
+            # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
+            self.after_value_set(parameter=parameter, value=final_value)
+            if emit_change:
+                self._emit_parameter_lifecycle_event(parameter)
+        else:
+            self.parameter_values[param_name] = candidate_value
         # handle with container parameters
         if parameter.parent_container_name is not None:
             # Does it have a parent container
@@ -421,13 +542,12 @@ class BaseNode(ABC):
                 new_parent_value = handle_container_parameter(self, parent_parameter)
                 if new_parent_value is not None:
                     # set that new value if it exists.
-                    modified_parameters_from_container = self.set_parameter_value(
-                        parameter.parent_container_name, new_parent_value
+                    self.set_parameter_value(
+                        parameter.parent_container_name,
+                        new_parent_value,
+                        initial_setup=initial_setup,
+                        emit_change=False,
                     )
-                    # Return the complete set of modified parameters.
-                    if modified_parameters_from_container:
-                        modified_parameters = modified_parameters | modified_parameters_from_container
-        return modified_parameters
 
     def kill_parameter_children(self, parameter: Parameter) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -436,13 +556,13 @@ class BaseNode(ABC):
             GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(parameter_name=child.name, node_name=self.name))
 
     def get_parameter_value(self, param_name: str) -> Any:
-        if param_name in self.parameter_values:
-            return self.parameter_values[param_name]
         param = self.get_parameter_by_name(param_name)
-        if param:
+        if param and isinstance(param, ParameterContainer):
             value = handle_container_parameter(self, param)
             if value:
                 return value
+        if param_name in self.parameter_values:
+            return self.parameter_values[param_name]
         return param.default_value if param else None
 
     def get_parameter_list_value(self, param: str) -> list:
@@ -543,11 +663,16 @@ class BaseNode(ABC):
         self.state = NodeResolutionState.UNRESOLVED
         # delete all output values potentially generated
         self.parameter_output_values.clear()
-        # Remove the current spotlight
-        while self.current_spotlight_parameter is not None:
-            temp = self.current_spotlight_parameter.next
-            del self.current_spotlight_parameter
-            self.current_spotlight_parameter = temp
+        # Clear the spotlight linked list
+        # First, clear all next/prev pointers to break the linked list
+        current = self.current_spotlight_parameter
+        while current is not None:
+            next_param = current.next
+            current.next = None
+            current.prev = None
+            current = next_param
+        # Then clear the reference to the first spotlight parameter
+        self.current_spotlight_parameter = None
 
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
         # Add the value to the node
@@ -685,6 +810,25 @@ class BaseNode(ABC):
         # Use reorder_elements to apply the move
         self.reorder_elements(list(new_order))
 
+    def _emit_parameter_lifecycle_event(self, parameter: BaseNodeElement, *, remove: bool = False) -> None:
+        """Emit an AlterElementEvent for parameter add/remove operations."""
+        from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+        from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+
+        # Create event data using the parameter's to_event method
+        if remove:
+            event = ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=RemoveElementEvent(element_id=parameter.element_id))
+            )
+        else:
+            event_data = parameter.to_event(self)
+
+            # Publish the event
+            event = ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
+            )
+        EventBus.publish_event(event)
+
     def _get_element_name(self, element: str | int, element_names: list[str]) -> str:
         """Convert an element identifier (name or index) to its name.
 
@@ -775,6 +919,68 @@ class BaseNode(ABC):
 
         # Use reorder_elements to apply the move
         self.reorder_elements(list(new_order))
+
+
+class TrackedParameterOutputValues(dict[str, Any]):
+    """A dictionary that tracks modifications and emits AlterElementEvent when parameter output values change."""
+
+    def __init__(self, node: BaseNode) -> None:
+        super().__init__()
+        self._node = node
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        old_value = self.get(key)
+        super().__setitem__(key, value)
+
+        # Only emit event if value actually changed
+        if old_value != value:
+            self._emit_parameter_change_event(key, value)
+
+    def __delitem__(self, key: str) -> None:
+        if key in self:
+            super().__delitem__(key)
+            self._emit_parameter_change_event(key, None, deleted=True)
+
+    def clear(self) -> None:
+        if self:  # Only emit events if there were values to clear
+            keys_to_clear = list(self.keys())
+            super().clear()
+            for key in keys_to_clear:
+                self._emit_parameter_change_event(key, None, deleted=True)
+
+    def update(self, *args, **kwargs) -> None:
+        # Handle both dict.update(other) and dict.update(**kwargs) patterns
+        if args:
+            other = args[0]
+            if hasattr(other, "items"):
+                for key, value in other.items():
+                    self[key] = value  # Use __setitem__ to trigger events
+            else:
+                for key, value in other:
+                    self[key] = value
+
+        for key, value in kwargs.items():
+            self[key] = value
+
+    def _emit_parameter_change_event(self, parameter_name: str, value: Any, *, deleted: bool = False) -> None:
+        """Emit an AlterElementEvent for parameter output value changes."""
+        parameter = self._node.get_parameter_by_name(parameter_name)
+        if parameter is not None:
+            from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+            from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+
+            # Create event data using the parameter's to_event method
+            event_data = parameter.to_event(self._node)
+            event_data["value"] = value
+
+            # Add modification metadata
+            event_data["modification_type"] = "deleted" if deleted else "set"
+
+            # Publish the event
+            event = ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
+            )
+            EventBus.publish_event(event)
 
 
 class ControlNode(BaseNode):

@@ -14,7 +14,6 @@ from typing import Any, cast
 from urllib.parse import urljoin
 
 import uvicorn
-from dotenv import get_key
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -28,7 +27,6 @@ from rich.logging import RichHandler
 from rich.panel import Panel
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
-from xdg_base_dirs import xdg_config_home
 
 # This import is necessary to register all events, even if not technically used
 from griptape_nodes.retained_mode.events import app_events, execution_events
@@ -123,8 +121,8 @@ def _serve_static_server() -> None:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
-            os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai"),
-            "https://nodes-staging.griptape.ai",
+            os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://app.nodes.griptape.ai"),
+            "https://app.nodes-staging.griptape.ai",
             "http://localhost:5173",
         ],
         allow_credentials=True,
@@ -240,16 +238,7 @@ async def _alisten_for_api_requests() -> None:
                     data = json.loads(message)
 
                     payload = data.get("payload", {})
-                    # With heartbeat events, we skip the regular processing and just send the heartbeat
-                    # Technically no longer needed since https://github.com/griptape-ai/griptape-nodes/pull/369
-                    # but we don't have a proper EventRequest for it yet.
-                    if payload.get("request_type") == "Heartbeat":
-                        session_id = GriptapeNodes.get_session_id()
-                        await __send_heartbeat(
-                            session_id=session_id, request=payload["request"], ws_connection=ws_connection
-                        )
-                    else:
-                        __process_api_event(payload)
+                    __process_api_event(payload)
                 except Exception:
                     logger.exception("Error processing event, skipping.")
         except ConnectionClosed:
@@ -343,7 +332,8 @@ def _process_event_queue() -> None:
 
 def __create_async_websocket_connection() -> Any:
     """Create an async WebSocket connection to the Nodes API."""
-    api_key = get_key(xdg_config_home() / "griptape_nodes" / ".env", "GT_CLOUD_API_KEY")
+    secrets_manager = GriptapeNodes.SecretsManager()
+    api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY")
     if api_key is None:
         message = Panel(
             Align.center(
@@ -385,29 +375,6 @@ async def __emit_message(event_type: str, payload: str) -> None:
         logger.error("Unexpected error while sending event to Nodes API: %s", e)
 
 
-async def __send_heartbeat(*, session_id: str | None, request: dict, ws_connection: Any) -> None:
-    """Send a heartbeat response via WebSocket."""
-    heartbeat_response = {
-        "request": request,
-        "result": {},
-        "request_type": "Heartbeat",
-        "event_type": "EventResultSuccess",
-        "result_type": "HeartbeatSuccess",
-        **({"session_id": session_id} if session_id is not None else {}),
-    }
-
-    body = {"type": "success_result", "payload": heartbeat_response}
-    try:
-        await ws_connection.send(json.dumps(body))
-        logger.debug(
-            "Responded to heartbeat request with session: %s and request: %s", session_id, request.get("request_id")
-        )
-    except WebSocketException as e:
-        logger.error("Error sending heartbeat response: %s", e)
-    except Exception as e:
-        logger.error("Unexpected error while sending heartbeat response: %s", e)
-
-
 def __schedule_async_task(coro: Any) -> None:
     """Schedule an async coroutine to run in the event loop from a sync context."""
     if event_loop and event_loop.is_running():
@@ -421,6 +388,12 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
 
     This is used to notify the GUI that the app is ready to receive events.
     """
+    # Initialize engine ID and persistent data
+    from griptape_nodes.retained_mode.events.base_events import BaseEvent
+
+    BaseEvent.initialize_engine_id()
+    BaseEvent.initialize_session_id()
+
     # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
     payload = app_events.AppInitializationComplete()
     app_event = AppEvent(payload=payload)
@@ -433,6 +406,10 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
     else:
         engine_version = "<UNKNOWN ENGINE VERSION>"
 
+    # Get current session ID
+    session_id = GriptapeNodes.get_session_id()
+    session_info = f" | Session: {session_id[:8]}..." if session_id else " | No Session"
+
     message = Panel(
         Align.center(
             f"[bold green]Engine is ready to receive events[/bold green]\n"
@@ -440,7 +417,7 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
             vertical="middle",
         ),
         title="🚀 Griptape Nodes Engine Started",
-        subtitle=f"[green]{engine_version}[/green]",
+        subtitle=f"[green]{engine_version}{session_info}[/green]",
         border_style="green",
         padding=(1, 4),
     )

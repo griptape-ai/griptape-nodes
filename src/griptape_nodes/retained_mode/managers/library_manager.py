@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import uv
-from packaging.requirements import Requirement
+from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import ValidationError
 from rich.box import HEAVY_EDGE
 from rich.console import Console
@@ -66,22 +66,32 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListNodeTypesInLibraryResultSuccess,
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
+    LoadLibraryMetadataFromFileRequest,
+    LoadLibraryMetadataFromFileResultFailure,
+    LoadLibraryMetadataFromFileResultSuccess,
+    LoadMetadataForAllLibrariesRequest,
+    LoadMetadataForAllLibrariesResultSuccess,
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromFileResultFailure,
     RegisterLibraryFromFileResultSuccess,
     RegisterLibraryFromRequirementSpecifierRequest,
     RegisterLibraryFromRequirementSpecifierResultFailure,
     RegisterLibraryFromRequirementSpecifierResultSuccess,
+    ReloadAllLibrariesRequest,
+    ReloadAllLibrariesResultFailure,
+    ReloadAllLibrariesResultSuccess,
     UnloadLibraryFromRegistryRequest,
     UnloadLibraryFromRegistryResultFailure,
     UnloadLibraryFromRegistryResultSuccess,
 )
+from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 if TYPE_CHECKING:
     from types import ModuleType
 
+    from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -89,6 +99,8 @@ logger = logging.getLogger("griptape_nodes")
 
 
 class LibraryManager:
+    SANDBOX_LIBRARY_NAME = "Sandbox Library"
+
     class LibraryStatus(StrEnum):
         """Status of the library that was attempted to be loaded."""
 
@@ -112,8 +124,30 @@ class LibraryManager:
 
     _library_file_path_to_info: dict[str, LibraryInfo]
 
+    # Stable module namespace mappings for workflow serialization
+    # These mappings ensure that dynamically loaded modules can be reliably imported
+    # in generated workflow code by providing stable, predictable import paths.
+    #
+    # Example mappings:
+    # dynamic to stable module mapping:
+    #     "gtn_dynamic_module_image_to_video_py_123456789": "griptape_nodes.node_libraries.runwayml_library.image_to_video"
+    #
+    # stable to dynamic module mapping:
+    #     "griptape_nodes.node_libraries.runwayml_library.image_to_video": "gtn_dynamic_module_image_to_video_py_123456789"
+    #
+    # library to stable modules:
+    #     "RunwayML Library": {"griptape_nodes.node_libraries.runwayml_library.image_to_video", "griptape_nodes.node_libraries.runwayml_library.text_to_image"},
+    #     "Sandbox Library": {"griptape_nodes.node_libraries.sandbox.my_custom_node"}
+    #
+    _dynamic_to_stable_module_mapping: dict[str, str]  # dynamic_module_name -> stable_namespace
+    _stable_to_dynamic_module_mapping: dict[str, str]  # stable_namespace -> dynamic_module_name
+    _library_to_stable_modules: dict[str, set[str]]  # library_name -> set of stable_namespaces
+
     def __init__(self, event_manager: EventManager) -> None:
         self._library_file_path_to_info = {}
+        self._dynamic_to_stable_module_mapping = {}
+        self._stable_to_dynamic_module_mapping = {}
+        self._library_to_stable_modules = {}
 
         event_manager.assign_manager_to_request_type(
             ListRegisteredLibrariesRequest, self.on_list_registered_libraries_request
@@ -124,6 +158,10 @@ class LibraryManager:
         event_manager.assign_manager_to_request_type(
             GetNodeMetadataFromLibraryRequest,
             self.get_node_metadata_from_library_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            LoadLibraryMetadataFromFileRequest,
+            self.load_library_metadata_from_file_request,
         )
         event_manager.assign_manager_to_request_type(
             RegisterLibraryFromFileRequest,
@@ -145,8 +183,12 @@ class LibraryManager:
             GetAllInfoForAllLibrariesRequest, self.get_all_info_for_all_libraries_request
         )
         event_manager.assign_manager_to_request_type(
+            LoadMetadataForAllLibrariesRequest, self.load_metadata_for_all_libraries_request
+        )
+        event_manager.assign_manager_to_request_type(
             UnloadLibraryFromRegistryRequest, self.unload_library_from_registry_request
         )
+        event_manager.assign_manager_to_request_type(ReloadAllLibrariesRequest, self.reload_all_libraries_request)
 
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
@@ -290,6 +332,241 @@ class LibraryManager:
         result = GetLibraryMetadataResultSuccess(metadata=metadata)
         return result
 
+    def load_library_metadata_from_file_request(self, request: LoadLibraryMetadataFromFileRequest) -> ResultPayload:
+        """Load library metadata from a JSON file without loading the actual node modules.
+
+        This method provides a lightweight way to get library schema information
+        without the overhead of dynamically importing Python modules.
+        """
+        file_path = request.file_path
+
+        # Convert to Path object if it's a string
+        json_path = Path(file_path)
+
+        # Check if the file exists
+        if not json_path.exists():
+            details = f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=None,
+                status=LibraryManager.LibraryStatus.MISSING,
+                problems=[
+                    "Library could not be found at the file path specified. It will be removed from the configuration."
+                ],
+            )
+
+        # Load the JSON
+        try:
+            with json_path.open("r", encoding="utf-8") as f:
+                library_json = json.load(f)
+        except json.JSONDecodeError:
+            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' was improperly formatted."
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=None,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=["Library file not formatted as proper JSON."],
+            )
+        except Exception as err:
+            details = f"Attempted to load Library JSON file from location '{json_path}'. Failed because an exception occurred: {err}"
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=None,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=[f"Exception occurred when attempting to load the library: {err}."],
+            )
+
+        # Try to extract library name from JSON for better error reporting
+        library_name = library_json.get("name") if isinstance(library_json, dict) else None
+
+        # Do you comport, my dude
+        try:
+            library_data = LibrarySchema.model_validate(library_json)
+        except ValidationError as err:
+            # Do some more hardcore error handling.
+            problems = []
+            for error in err.errors():
+                loc = " -> ".join(map(str, error["loc"]))
+                msg = error["msg"]
+                error_type = error["type"]
+                problem = f"Error in section '{loc}': {error_type}, {msg}"
+                problems.append(problem)
+            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=library_name,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=problems,
+            )
+        except Exception as err:
+            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
+            logger.error(details)
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=library_name,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=[f"Library file did not match the library schema specified due to: {err}"],
+            )
+
+        details = f"Successfully loaded library metadata from JSON file at {json_path}"
+        logger.debug(details)
+        return LoadLibraryMetadataFromFileResultSuccess(library_schema=library_data, file_path=file_path)
+
+    def load_metadata_for_all_libraries_request(self, request: LoadMetadataForAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
+        """Load metadata for all libraries from configuration without loading node modules.
+
+        This loads metadata from both library JSON files specified in configuration
+        and generates sandbox library metadata by scanning Python files without importing them.
+        """
+        successful_libraries = []
+        failed_libraries = []
+
+        # Load metadata from config libraries
+        config_mgr = GriptapeNodes.ConfigManager()
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+        libraries_to_register: list[str] = config_mgr.get_config_value(user_libraries_section)
+
+        if libraries_to_register is not None:
+            for library_to_register in libraries_to_register:
+                if library_to_register and library_to_register.endswith(".json"):
+                    # Load metadata for this library file
+                    metadata_request = LoadLibraryMetadataFromFileRequest(file_path=library_to_register)
+                    metadata_result = self.load_library_metadata_from_file_request(metadata_request)
+
+                    if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+                        successful_libraries.append(metadata_result)
+                    else:
+                        failed_libraries.append(cast("LoadLibraryMetadataFromFileResultFailure", metadata_result))
+                # Note: We skip requirement specifier libraries (non-.json) as they don't have
+                # JSON files we can load metadata from without installation
+
+        # Generate sandbox library metadata
+        sandbox_result = self._generate_sandbox_library_metadata()
+        if isinstance(sandbox_result, LoadLibraryMetadataFromFileResultSuccess):
+            successful_libraries.append(sandbox_result)
+        elif isinstance(sandbox_result, LoadLibraryMetadataFromFileResultFailure):
+            failed_libraries.append(sandbox_result)
+        # If sandbox_result is None, sandbox was not configured or no files found - skip it
+
+        details = (
+            f"Successfully loaded metadata for {len(successful_libraries)} libraries, {len(failed_libraries)} failed"
+        )
+        logger.debug(details)
+        return LoadMetadataForAllLibrariesResultSuccess(
+            successful_libraries=successful_libraries,
+            failed_libraries=failed_libraries,
+        )
+
+    def _generate_sandbox_library_metadata(
+        self,
+    ) -> LoadLibraryMetadataFromFileResultSuccess | LoadLibraryMetadataFromFileResultFailure | None:
+        """Generate sandbox library metadata by scanning Python files without importing them.
+
+        Returns None if no sandbox directory is configured or no files are found.
+        """
+        config_mgr = GriptapeNodes.ConfigManager()
+        sandbox_library_subdir = config_mgr.get_config_value("sandbox_library_directory")
+        if not sandbox_library_subdir:
+            logger.debug("No sandbox directory specified in config. Skipping sandbox library metadata generation.")
+            return None
+
+        # Prepend the workflow directory; if the sandbox dir starts with a slash, the workflow dir will be ignored.
+        sandbox_library_dir = config_mgr.workspace_path / sandbox_library_subdir
+        sandbox_library_dir_as_posix = sandbox_library_dir.as_posix()
+
+        if not sandbox_library_dir.exists():
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=sandbox_library_dir_as_posix,
+                library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
+                status=LibraryManager.LibraryStatus.MISSING,
+                problems=["Sandbox directory does not exist."],
+            )
+
+        sandbox_node_candidates = self._find_files_in_dir(directory=sandbox_library_dir, extension=".py")
+        if not sandbox_node_candidates:
+            logger.debug(
+                "No candidate files found in sandbox directory '%s'. Skipping sandbox library metadata generation.",
+                sandbox_library_dir,
+            )
+            return None
+
+        # For metadata-only generation, we create placeholder node definitions
+        # based on file names since we can't inspect the classes without importing
+        node_definitions = []
+        for candidate in sandbox_node_candidates:
+            # Use the full file name (with extension) as a placeholder to make it clear this is a file candidate
+            file_name = candidate.name
+
+            # Create a placeholder node definition - we can't get the actual class metadata
+            # without importing, so we use defaults
+            node_metadata = NodeMetadata(
+                category="Griptape Nodes Sandbox",
+                description=f"'{file_name}' may contain one or more nodes defined in this candidate file.",
+                display_name=file_name,
+                icon="square-dashed",
+                color=None,
+            )
+            node_definition = NodeDefinition(
+                class_name=file_name,
+                file_path=str(candidate),
+                metadata=node_metadata,
+            )
+            node_definitions.append(node_definition)
+
+        if not node_definitions:
+            logger.debug(
+                "No valid node files found in sandbox directory '%s'. Skipping sandbox library metadata generation.",
+                sandbox_library_dir,
+            )
+            return None
+
+        # Create the library schema
+        sandbox_category = CategoryDefinition(
+            title="Sandbox",
+            description=f"Nodes loaded from the {LibraryManager.SANDBOX_LIBRARY_NAME}.",
+            color="#c7621a",
+            icon="Folder",
+        )
+
+        engine_version = GriptapeNodes().handle_engine_version_request(request=GetEngineVersionRequest())
+        if not isinstance(engine_version, GetEngineVersionResultSuccess):
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=sandbox_library_dir_as_posix,
+                library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=["Could not get engine version for sandbox library generation."],
+            )
+
+        engine_version_str = f"{engine_version.major}.{engine_version.minor}.{engine_version.patch}"
+        library_metadata = LibraryMetadata(
+            author="Author needs to be specified when library is published.",
+            description="Nodes loaded from the sandbox library.",
+            library_version=engine_version_str,
+            engine_version=engine_version_str,
+            tags=["sandbox"],
+            is_griptape_nodes_searchable=False,
+        )
+        categories = [
+            {"Griptape Nodes Sandbox": sandbox_category},
+        ]
+        library_schema = LibrarySchema(
+            name=LibraryManager.SANDBOX_LIBRARY_NAME,
+            library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
+            metadata=library_metadata,
+            categories=categories,
+            nodes=node_definitions,
+        )
+
+        details = f"Successfully generated sandbox library metadata with {len(node_definitions)} nodes from {sandbox_library_dir}"
+        logger.debug(details)
+        return LoadLibraryMetadataFromFileResultSuccess(
+            library_schema=library_schema, file_path=str(sandbox_library_dir)
+        )
+
     def get_node_metadata_from_library_request(self, request: GetNodeMetadataFromLibraryRequest) -> ResultPayload:
         # Does this library exist?
         try:
@@ -353,62 +630,24 @@ class LibraryManager:
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
-        # Load the JSON
-        try:
-            with json_path.open("r", encoding="utf-8") as f:
-                library_json = json.load(f)
-        except json.JSONDecodeError:
+        # Use the new metadata loading functionality
+        metadata_request = LoadLibraryMetadataFromFileRequest(file_path=file_path)
+        metadata_result = self.load_library_metadata_from_file_request(metadata_request)
+
+        if not isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+            # Metadata loading failed, use the detailed error information from the failure result
+            failure_result = cast("LoadLibraryMetadataFromFileResultFailure", metadata_result)
+
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
-                library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=["Library file not formatted as proper JSON."],
+                library_name=failure_result.library_name,
+                status=failure_result.status,
+                problems=failure_result.problems,
             )
-            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' was improperly formatted."
-            logger.error(details)
-            return RegisterLibraryFromFileResultFailure()
-        except Exception as err:
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[f"Exception occurred when attempting to load the library: {err}."],
-            )
-            details = f"Attempted to load Library JSON file from location '{json_path}'. Failed because an exception occurred: {err}"
-            logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
-        # Do you comport, my dude
-        try:
-            library_data = LibrarySchema.model_validate(library_json)
-        except ValidationError as err:
-            # Do some more hardcore error handling.
-            problems = []
-            for error in err.errors():
-                loc = " -> ".join(map(str, error["loc"]))
-                msg = error["msg"]
-                error_type = error["type"]
-                problem = f"Error in section '{loc}': {error_type}, {msg}"
-                problems.append(problem)
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=problems,
-            )
-            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
-            logger.error(details)
-            return RegisterLibraryFromFileResultFailure()
-        except Exception as err:
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[f"Library file did not match the library schema specified due to: {err}"],
-            )
-            details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
-            logger.error(details)
-            return RegisterLibraryFromFileResultFailure()
+        # Get the validated library data
+        library_data = metadata_result.library_schema
 
         # Make sure the version string is copacetic.
         library_version = library_data.metadata.library_version
@@ -430,12 +669,35 @@ class LibraryManager:
         # Add the directory to the Python path to allow for relative imports
         sys.path.insert(0, str(base_dir))
 
+        # Load the advanced library module if specified
+        advanced_library_instance = None
+        if library_data.advanced_library_path:
+            try:
+                advanced_library_instance = self._load_advanced_library_module(
+                    library_data=library_data,
+                    base_dir=base_dir,
+                )
+            except Exception as err:
+                self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                    library_path=file_path,
+                    library_name=library_data.name,
+                    library_version=library_version,
+                    status=LibraryManager.LibraryStatus.UNUSABLE,
+                    problems=[
+                        f"Failed to load Advanced Library module from '{library_data.advanced_library_path}': {err}"
+                    ],
+                )
+                details = f"Attempted to load Library '{library_data.name}' from '{json_path}'. Failed to load Advanced Library module: {err}"
+                logger.error(details)
+                return RegisterLibraryFromFileResultFailure()
+
         # Create or get the library
         try:
             # Try to create a new library
             library = LibraryRegistry.generate_new_library(
                 library_data=library_data,
                 mark_as_default_library=request.load_as_default_library,
+                advanced_library=advanced_library_instance,
             )
 
         except KeyError as err:
@@ -462,35 +724,61 @@ class LibraryManager:
                     pip_install_flags = []
                 pip_dependencies = library_data.metadata.dependencies.pip_dependencies
 
-                # Grab the python executable from the virtual environment so that we can pip install there
-                library_venv_python_path = self._get_library_venv_python_path(library_data.name)
-                subprocess.run(  # noqa: S603
-                    [
-                        sys.executable,
-                        "-m",
-                        "uv",
-                        "pip",
-                        "install",
-                        *pip_dependencies,
-                        *pip_install_flags,
-                        "--python",
-                        str(library_venv_python_path),
-                    ],
-                    check=True,
-                    text=True,
-                )
+                # Determine venv path for dependency installation
+                venv_path = self._get_library_venv_path(library_data.name, file_path)
+
+                # Only install dependencies if conditions are met
+                try:
+                    library_venv_python_path = self._init_library_venv(venv_path)
+                except RuntimeError as e:
+                    self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                        library_path=file_path,
+                        library_name=library_data.name,
+                        library_version=library_version,
+                        status=LibraryManager.LibraryStatus.UNUSABLE,
+                        problems=[str(e)],
+                    )
+                    details = f"Attempted to load Library JSON file from '{json_path}'. Failed when creating the virtual environment: {e}."
+                    logger.error(details)
+                    return RegisterLibraryFromFileResultFailure()
+                if self._can_write_to_venv_location(library_venv_python_path):
+                    # Grab the python executable from the virtual environment so that we can pip install there
+                    logger.info(
+                        "Installing dependencies for library '%s' with pip in venv at %s", library_data.name, venv_path
+                    )
+                    subprocess.run(  # noqa: S603
+                        [
+                            sys.executable,
+                            "-m",
+                            "uv",
+                            "pip",
+                            "install",
+                            *pip_dependencies,
+                            *pip_install_flags,
+                            "--python",
+                            str(library_venv_python_path),
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                else:
+                    logger.debug(
+                        "Skipping dependency installation for library '%s' - venv location at %s is not writable",
+                        library_data.name,
+                        venv_path,
+                    )
         except subprocess.CalledProcessError as e:
             # Failed to create the library
+            error_details = f"return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=library_data.name,
                 library_version=library_version,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[f"Failed to create the library: {e}"],
+                problems=[f"Dependency installation failed: {error_details}"],
             )
-            details = (
-                f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {e}."
-            )
+            details = f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {error_details}"
             logger.error(details)
             return RegisterLibraryFromFileResultFailure()
 
@@ -562,23 +850,45 @@ class LibraryManager:
     def register_library_from_requirement_specifier_request(
         self, request: RegisterLibraryFromRequirementSpecifierRequest
     ) -> ResultPayload:
-        package_name = Requirement(request.requirement_specifier).name
         try:
-            library_python_venv_path = self._get_library_venv_python_path(package_name)
-            subprocess.run(  # noqa: S603
-                [
-                    uv.find_uv_bin(),
-                    "pip",
-                    "install",
-                    request.requirement_specifier,
-                    "--python",
-                    library_python_venv_path,
-                ],
-                check=True,
-                text=True,
-            )
+            package_name = Requirement(request.requirement_specifier).name
+            # Determine venv path for dependency installation
+            venv_path = self._get_library_venv_path(package_name, None)
+
+            # Only install dependencies if conditions are met
+            try:
+                library_python_venv_path = self._init_library_venv(venv_path)
+            except RuntimeError as e:
+                details = f"Attempted to install library '{request.requirement_specifier}'. Failed when creating the virtual environment: {e}"
+                logger.error(details)
+                return RegisterLibraryFromRequirementSpecifierResultFailure()
+            if self._can_write_to_venv_location(library_python_venv_path):
+                logger.info("Installing dependency '%s' with pip in venv at %s", package_name, venv_path)
+                subprocess.run(  # noqa: S603
+                    [
+                        uv.find_uv_bin(),
+                        "pip",
+                        "install",
+                        request.requirement_specifier,
+                        "--python",
+                        library_python_venv_path,
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            else:
+                logger.debug(
+                    "Skipping dependency installation for package '%s' - venv location at %s is not writable",
+                    package_name,
+                    venv_path,
+                )
         except subprocess.CalledProcessError as e:
-            details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to {e}"
+            details = f"Attempted to install library '{request.requirement_specifier}'. Failed: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
+            logger.error(details)
+            return RegisterLibraryFromRequirementSpecifierResultFailure()
+        except InvalidRequirement as e:
+            details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to invalid requirement specifier: {e}"
             logger.error(details)
             return RegisterLibraryFromRequirementSpecifierResultFailure()
 
@@ -592,20 +902,37 @@ class LibraryManager:
 
         return RegisterLibraryFromRequirementSpecifierResultSuccess(library_name=request.requirement_specifier)
 
-    def _get_library_venv_python_path(self, library_name: str) -> Path:
+    def _init_library_venv(self, library_venv_path: Path) -> Path:
+        """Initialize a virtual environment for the library.
+
+        If the virtual environment already exists, it will not be recreated.
+
+        Args:
+            library_venv_path: Path to the virtual environment directory
+
+        Returns:
+            Path to the Python executable in the virtual environment
+
+        Raises:
+            RuntimeError: If the virtual environment cannot be created.
+        """
         # Create a virtual environment for the library
         python_version = platform.python_version()
-        library_venv_path = (
-            xdg_data_home() / "griptape_nodes" / "venvs" / python_version / library_name.replace(" ", "_").strip()
-        )
+
         if library_venv_path.exists():
             logger.debug("Virtual environment already exists at %s", library_venv_path)
         else:
-            subprocess.run(  # noqa: S603
-                [sys.executable, "-m", "uv", "venv", str(library_venv_path), "--python", python_version],
-                check=True,
-                text=True,
-            )
+            try:
+                logger.info("Creating virtual environment at %s with Python %s", library_venv_path, python_version)
+                subprocess.run(  # noqa: S603
+                    [sys.executable, "-m", "uv", "venv", str(library_venv_path), "--python", python_version],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                msg = f"Failed to create virtual environment at {library_venv_path} with Python {python_version}: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
+                raise RuntimeError(msg) from e
             logger.debug("Created virtual environment at %s", library_venv_path)
 
         # Grab the python executable from the virtual environment so that we can pip install there
@@ -627,6 +954,57 @@ class LibraryManager:
 
         return library_venv_python_path
 
+    def _get_library_venv_path(self, library_name: str, library_file_path: str | None = None) -> Path:
+        """Get the path to the virtual environment directory for a library.
+
+        Args:
+            library_name: Name of the library
+            library_file_path: Optional path to the library JSON file
+
+        Returns:
+            Path to the virtual environment directory
+        """
+        clean_library_name = library_name.replace(" ", "_").strip()
+
+        if library_file_path is not None:
+            # Create venv relative to the library.json file
+            library_dir = Path(library_file_path).parent.absolute()
+            return library_dir / ".venv"
+
+        # Create venv relative to the xdg data home
+        return xdg_data_home() / "griptape_nodes" / "libraries" / clean_library_name / ".venv"
+
+    def _can_write_to_venv_location(self, venv_python_path: Path) -> bool:
+        """Check if we can write to the venv location (either create it or modify existing).
+
+        Args:
+            venv_python_path: Path to the python executable in the virtual environment
+
+        Returns:
+            True if we can write to the location, False otherwise
+        """
+        # On Windows, permission checks are hard. Assume we can write
+        if OSManager.is_windows():
+            return True
+
+        venv_path = venv_python_path.parent.parent
+
+        # If venv doesn't exist, check if parent directory is writable
+        if not venv_path.exists():
+            parent_dir = venv_path.parent
+            try:
+                return parent_dir.exists() and os.access(parent_dir, os.W_OK)
+            except (OSError, AttributeError) as e:
+                logger.debug("Could not check parent directory permissions for %s: %s", parent_dir, e)
+                return False
+
+        # If venv exists, check if we can write to it
+        try:
+            return os.access(venv_path, os.W_OK)
+        except (OSError, AttributeError) as e:
+            logger.debug("Could not check venv write permissions for %s: %s", venv_path, e)
+            return False
+
     def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
         try:
             LibraryRegistry.unregister_library(library_name=request.library_name)
@@ -634,6 +1012,9 @@ class LibraryManager:
             details = f"Attempted to unload library '{request.library_name}'. Failed due to {e}"
             logger.error(details)
             return UnloadLibraryFromRegistryResultFailure()
+
+        # Clean up all stable module aliases for this library
+        self._unregister_all_stable_module_aliases_for_library(request.library_name)
 
         # Remove the library from our library info list. This prevents it from still showing
         # up in the table of attempted library loads.
@@ -759,11 +1140,149 @@ class LibraryManager:
         )
         return result
 
-    def _load_module_from_file(self, file_path: Path | str) -> ModuleType:
+    def _create_stable_namespace(self, library_name: str, file_path: Path) -> str:
+        """Create a stable namespace for a dynamic module.
+
+        Args:
+            library_name: Name of the library
+            file_path: Path to the Python file
+
+        Returns:
+            Stable namespace string like 'griptape_nodes.node_libraries.runwayml_library.image_to_video'
+        """
+        # Convert library name to safe module name
+        safe_library_name = library_name.lower().replace(" ", "_").replace("-", "_")
+        # Remove invalid characters
+        safe_library_name = "".join(c for c in safe_library_name if c.isalnum() or c == "_")
+
+        # Convert file path to safe module name
+        safe_file_name = file_path.stem.replace("-", "_")
+
+        return f"griptape_nodes.node_libraries.{safe_library_name}.{safe_file_name}"
+
+    def _register_stable_module_alias(
+        self, dynamic_module_name: str, stable_namespace: str, module: ModuleType, library_name: str
+    ) -> None:
+        """Register a stable alias for a dynamic module in sys.modules.
+
+        Args:
+            dynamic_module_name: Original dynamic module name
+            stable_namespace: Stable namespace to alias to
+            module: The loaded module
+            library_name: Name of the library
+        """
+        # Update our mapping
+        self._dynamic_to_stable_module_mapping[dynamic_module_name] = stable_namespace
+        self._stable_to_dynamic_module_mapping[stable_namespace] = dynamic_module_name
+
+        # Track library-to-modules mapping for bulk cleanup
+        library_key = library_name
+        if library_key not in self._library_to_stable_modules:
+            self._library_to_stable_modules[library_key] = set()
+        self._library_to_stable_modules[library_key].add(stable_namespace)
+
+        # Register the stable alias in sys.modules
+        sys.modules[stable_namespace] = module
+
+        details = f"Registered stable alias: {stable_namespace} -> {dynamic_module_name} (library: {library_key})"
+        logger.debug(details)
+
+    def _unregister_stable_module_alias(self, dynamic_module_name: str) -> None:
+        """Unregister a stable alias for a dynamic module during hot reload.
+
+        Args:
+            dynamic_module_name: Original dynamic module name
+        """
+        if dynamic_module_name in self._dynamic_to_stable_module_mapping:
+            stable_namespace = self._dynamic_to_stable_module_mapping[dynamic_module_name]
+
+            # Remove from sys.modules if it exists
+            if stable_namespace in sys.modules:
+                del sys.modules[stable_namespace]
+
+            # Remove from library tracking
+            for library_modules in self._library_to_stable_modules.values():
+                library_modules.discard(stable_namespace)
+
+            # Remove from our mappings
+            del self._dynamic_to_stable_module_mapping[dynamic_module_name]
+            del self._stable_to_dynamic_module_mapping[stable_namespace]
+
+            details = f"Unregistered stable alias: {stable_namespace}"
+            logger.debug(details)
+
+    def _unregister_all_stable_module_aliases_for_library(self, library_name: str) -> None:
+        """Unregister all stable module aliases for a library during library unload/reload.
+
+        Args:
+            library_name: Name of the library to clean up
+        """
+        library_key = library_name
+        if library_key not in self._library_to_stable_modules:
+            return
+
+        stable_namespaces = self._library_to_stable_modules[library_key].copy()
+        details = f"Unregistering {len(stable_namespaces)} stable aliases for library: {library_name}"
+        logger.debug(details)
+
+        for stable_namespace in stable_namespaces:
+            # Remove from sys.modules if it exists
+            if stable_namespace in sys.modules:
+                del sys.modules[stable_namespace]
+
+            # Find and remove from dynamic mapping
+            dynamic_module_name = self._stable_to_dynamic_module_mapping.get(stable_namespace)
+            if dynamic_module_name:
+                self._dynamic_to_stable_module_mapping.pop(dynamic_module_name, None)
+            self._stable_to_dynamic_module_mapping.pop(stable_namespace, None)
+
+        # Clear the library's module set
+        del self._library_to_stable_modules[library_key]
+        details = f"Completed cleanup of stable aliases for library: '{library_name}'."
+        logger.debug(details)
+
+    def get_stable_namespace_for_dynamic_module(self, dynamic_module_name: str) -> str | None:
+        """Get the stable namespace for a dynamic module name.
+
+        This method is used during workflow serialization to convert dynamic module names
+        (like "gtn_dynamic_module_image_to_video_py_123456789") to stable namespace imports
+        (like "griptape_nodes.node_libraries.runwayml_library.image_to_video").
+
+        Args:
+            dynamic_module_name: The dynamic module name to look up
+
+        Returns:
+            The stable namespace string, or None if not found
+
+        Example:
+            >>> manager.get_stable_namespace_for_dynamic_module("gtn_dynamic_module_image_to_video_py_123456789")
+            "griptape_nodes.node_libraries.runwayml_library.image_to_video"
+        """
+        return self._dynamic_to_stable_module_mapping.get(dynamic_module_name)
+
+    def is_dynamic_module(self, module_name: str) -> bool:
+        """Check if a module name represents a dynamically loaded module.
+
+        Args:
+            module_name: The module name to check
+
+        Returns:
+            True if this is a dynamic module name, False otherwise
+
+        Example:
+            >>> manager.is_dynamic_module("gtn_dynamic_module_image_to_video_py_123456789")
+            True
+            >>> manager.is_dynamic_module("griptape.artifacts")
+            False
+        """
+        return module_name.startswith("gtn_dynamic_module_")
+
+    def _load_module_from_file(self, file_path: Path | str, library_name: str) -> ModuleType:
         """Dynamically load a module from a Python file with support for hot reloading.
 
         Args:
             file_path: Path to the Python file
+            library_name: Name of the library
 
         Returns:
             The loaded module
@@ -775,12 +1294,18 @@ class LibraryManager:
         file_path = Path(file_path)
 
         # Generate a unique module name
-        module_name = f"dynamic_module_{file_path.name.replace('.', '_')}_{hash(str(file_path))}"
+        module_name = f"gtn_dynamic_module_{file_path.name.replace('.', '_')}_{hash(str(file_path))}"
+
+        # Create stable namespace
+        stable_namespace = self._create_stable_namespace(library_name, file_path)
 
         # Check if this module is already loaded
         if module_name in sys.modules:
             # For dynamically loaded modules, we need to re-create the module
             # with a fresh spec rather than using importlib.reload
+
+            # Unregister old stable alias
+            self._unregister_stable_module_alias(module_name)
 
             # Remove the old module from sys.modules
             old_module = sys.modules.pop(module_name)
@@ -797,6 +1322,8 @@ class LibraryManager:
             try:
                 # Execute the module with the new code
                 spec.loader.exec_module(module)
+                # Register new stable alias
+                self._register_stable_module_alias(module_name, stable_namespace, module, library_name)
                 details = f"Hot reloaded module: {module_name} from {file_path}"
                 logger.debug(details)
             except Exception as e:
@@ -822,18 +1349,21 @@ class LibraryManager:
             # Execute the module
             try:
                 spec.loader.exec_module(module)
+                # Register stable alias
+                self._register_stable_module_alias(module_name, stable_namespace, module, library_name)
             except Exception as err:
                 msg = f"Module at '{file_path}' failed to load with error: {err}"
                 raise ImportError(msg) from err
 
         return module
 
-    def _load_class_from_file(self, file_path: Path | str, class_name: str) -> type[BaseNode]:
+    def _load_class_from_file(self, file_path: Path | str, class_name: str, library_name: str) -> type[BaseNode]:
         """Dynamically load a class from a Python file with support for hot reloading.
 
         Args:
             file_path: Path to the Python file
             class_name: Name of the class to load
+            library_name: Name of the library
 
         Returns:
             The loaded class
@@ -844,7 +1374,7 @@ class LibraryManager:
             TypeError: If the loaded class isn't a BaseNode-derived class
         """
         try:
-            module = self._load_module_from_file(file_path)
+            module = self._load_module_from_file(file_path, library_name)
         except ImportError as err:
             msg = f"Attempted to load class '{class_name}'. Error: {err}"
             raise ImportError(msg) from err
@@ -864,16 +1394,50 @@ class LibraryManager:
         return node_class
 
     def load_all_libraries_from_config(self) -> None:
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
-        self._load_libraries_from_config_category(config_category=user_libraries_section, load_as_default_library=False)
+        # Load metadata for all libraries to determine which ones can be safely loaded
+        metadata_request = LoadMetadataForAllLibrariesRequest()
+        metadata_result = self.load_metadata_for_all_libraries_request(metadata_request)
 
-        sandbox_library_section = "sandbox_library_directory"
-        self._attempt_generate_sandbox_library(config_category=sandbox_library_section)
+        # Check if metadata loading succeeded
+        if not isinstance(metadata_result, LoadMetadataForAllLibrariesResultSuccess):
+            logger.error("Failed to load metadata for all libraries, skipping library registration")
+            return
+
+        # Record all failed libraries in our tracking immediately
+        for failed_library in metadata_result.failed_libraries:
+            self._library_file_path_to_info[failed_library.library_path] = LibraryManager.LibraryInfo(
+                library_path=failed_library.library_path,
+                library_name=failed_library.library_name,
+                status=failed_library.status,
+                problems=failed_library.problems,
+            )
+
+        # Use metadata results to selectively load libraries
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+
+        # Load libraries that had successful metadata loading
+        for library_result in metadata_result.successful_libraries:
+            if library_result.library_schema.name == LibraryManager.SANDBOX_LIBRARY_NAME:
+                # Handle sandbox library - use the schema we already have
+                self._attempt_generate_sandbox_library_from_schema(
+                    library_schema=library_result.library_schema, sandbox_directory=library_result.file_path
+                )
+            else:
+                # Handle config-based library - register it directly using the file path
+                register_request = RegisterLibraryFromFileRequest(
+                    file_path=library_result.file_path, load_as_default_library=False
+                )
+                register_result = self.register_library_from_file_request(register_request)
+                if isinstance(register_result, RegisterLibraryFromFileResultFailure):
+                    # Registration failed - the failure info is already recorded in _library_file_path_to_info
+                    # by register_library_from_file_request, so we just log it here for visibility
+                    logger.warning(f"Failed to register library from {library_result.file_path}")  # noqa: G004
 
         # Print 'em all pretty
         self.print_library_load_status()
 
         # Remove any missing libraries AFTER we've printed them for the user.
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         self._remove_missing_libraries_from_config(config_category=user_libraries_section)
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
@@ -915,7 +1479,73 @@ class LibraryManager:
         # Go tell the Workflow Manager that it's turn is now.
         GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
 
-    def _attempt_load_nodes_from_library(  # noqa: PLR0913
+    def _load_advanced_library_module(
+        self,
+        library_data: LibrarySchema,
+        base_dir: Path,
+    ) -> AdvancedNodeLibrary | None:
+        """Load the advanced library module and return an instance.
+
+        Args:
+            library_data: The library schema data
+            base_dir: Base directory containing the library files
+
+        Returns:
+            An instance of the AdvancedNodeLibrary class from the module, or None if not specified
+
+        Raises:
+            ImportError: If the module cannot be loaded
+            AttributeError: If no AdvancedNodeLibrary subclass is found
+            TypeError: If the found class cannot be instantiated
+        """
+        from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
+
+        if not library_data.advanced_library_path:
+            return None
+
+        # Resolve relative path to absolute path
+        advanced_library_module_path = Path(library_data.advanced_library_path)
+        if not advanced_library_module_path.is_absolute():
+            advanced_library_module_path = base_dir / advanced_library_module_path
+
+        # Load the module (supports hot reloading)
+        try:
+            module = self._load_module_from_file(advanced_library_module_path, library_data.name)
+        except Exception as err:
+            msg = f"Failed to load Advanced Library module from '{advanced_library_module_path}': {err}"
+            raise ImportError(msg) from err
+
+        # Find an AdvancedNodeLibrary subclass in the module
+        advanced_library_class = None
+        for obj in vars(module).values():
+            if (
+                isinstance(obj, type)
+                and issubclass(obj, AdvancedNodeLibrary)
+                and obj is not AdvancedNodeLibrary
+                and obj.__module__ == module.__name__
+            ):
+                advanced_library_class = obj
+                break
+
+        if not advanced_library_class:
+            msg = f"No AdvancedNodeLibrary subclass found in Advanced Library module '{advanced_library_module_path}'"
+            raise AttributeError(msg)
+
+        # Create an instance
+        try:
+            advanced_library_instance = advanced_library_class()
+        except Exception as err:
+            msg = f"Failed to instantiate AdvancedNodeLibrary class '{advanced_library_class.__name__}': {err}"
+            raise TypeError(msg) from err
+
+        # Validate the instance
+        if not isinstance(advanced_library_instance, AdvancedNodeLibrary):
+            msg = f"Created instance is not an AdvancedNodeLibrary subclass: {type(advanced_library_instance)}"
+            raise TypeError(msg)
+
+        return advanced_library_instance
+
+    def _attempt_load_nodes_from_library(  # noqa: PLR0913, PLR0912, PLR0915, C901
         self,
         library_data: LibrarySchema,
         library: Library,
@@ -925,6 +1555,40 @@ class LibraryManager:
         problems: list[str],
     ) -> LibraryManager.LibraryInfo:
         any_nodes_loaded_successfully = False
+
+        # Check for version-based compatibility issues and add to problems
+        version_issues = GriptapeNodes.VersionCompatibilityManager().check_library_version_compatibility(library_data)
+        has_disqualifying_issues = False
+        for issue in version_issues:
+            problems.append(issue.message)
+            if issue.severity == LibraryManager.LibraryStatus.UNUSABLE:
+                has_disqualifying_issues = True
+
+        # Early exit if any version issues are disqualifying
+        if has_disqualifying_issues:
+            return LibraryManager.LibraryInfo(
+                library_path=library_file_path,
+                library_name=library_data.name,
+                library_version=library_version,
+                status=LibraryManager.LibraryStatus.UNUSABLE,
+                problems=problems,
+            )
+
+        # Call the before_library_nodes_loaded callback if available
+        advanced_library = library.get_advanced_library()
+        if advanced_library:
+            try:
+                advanced_library.before_library_nodes_loaded(library_data, library)
+                details = f"Successfully called before_library_nodes_loaded callback for library '{library_data.name}'"
+                logger.debug(details)
+            except Exception as err:
+                problem = f"Error calling before_library_nodes_loaded callback: {err}"
+                problems.append(problem)
+                details = (
+                    f"Failed to call before_library_nodes_loaded callback for library '{library_data.name}': {err}"
+                )
+                logger.error(details)
+
         # Process each node in the metadata
         for node_definition in library_data.nodes:
             # Resolve relative path to absolute path
@@ -934,7 +1598,7 @@ class LibraryManager:
 
             try:
                 # Dynamically load the module containing the node class
-                node_class = self._load_class_from_file(node_file_path, node_definition.class_name)
+                node_class = self._load_class_from_file(node_file_path, node_definition.class_name, library_data.name)
             except Exception as err:
                 problems.append(
                     f"Failed to load node '{node_definition.class_name}' from '{node_file_path}' with error: {err}"
@@ -959,6 +1623,18 @@ class LibraryManager:
             # If we got here, at least one node came in.
             any_nodes_loaded_successfully = True
 
+        # Call the after_library_nodes_loaded callback if available
+        if advanced_library:
+            try:
+                advanced_library.after_library_nodes_loaded(library_data, library)
+                details = f"Successfully called after_library_nodes_loaded callback for library '{library_data.name}'"
+                logger.debug(details)
+            except Exception as err:
+                problem = f"Error calling after_library_nodes_loaded callback: {err}"
+                problems.append(problem)
+                details = f"Failed to call after_library_nodes_loaded callback for library '{library_data.name}': {err}"
+                logger.error(details)
+
         # Create a LibraryInfo object based on load successes and problem count.
         if not any_nodes_loaded_successfully:
             status = LibraryManager.LibraryStatus.UNUSABLE
@@ -978,39 +1654,24 @@ class LibraryManager:
             problems=problems,
         )
 
-    def _attempt_generate_sandbox_library(self, config_category: str) -> None:
-        config_mgr = GriptapeNodes.ConfigManager()
-        sandbox_library_subdir = config_mgr.get_config_value(config_category)
-        if not sandbox_library_subdir:
-            logger.debug("No sandbox directory specified in config at key '%s'. Skipping.", config_category)
-            return
-
-        # Prepend the workflow directory; if the sandbox dir starts with a slash, the workflow dir will be ignored.
-        sandbox_library_dir = config_mgr.workspace_path / sandbox_library_subdir
+    def _attempt_generate_sandbox_library_from_schema(
+        self, library_schema: LibrarySchema, sandbox_directory: str
+    ) -> None:
+        """Generate sandbox library using an existing schema, loading actual node classes."""
+        sandbox_library_dir = Path(sandbox_directory)
         sandbox_library_dir_as_posix = sandbox_library_dir.as_posix()
-
-        sandbox_node_candidates = self._find_files_in_dir(directory=sandbox_library_dir, extension=".py")
-        if not sandbox_node_candidates:
-            logger.debug("No candidate files found in sandbox directory '%s'. Skipping.", sandbox_library_dir)
-            return
-
-        sandbox_category = CategoryDefinition(
-            title="Sandbox",
-            description="Nodes loaded from the Sandbox Library.",
-            color="#ff0000",
-            icon="Folder",
-        )
 
         problems = []
 
-        # Trawl through the Python files and find those that are nodes.
-        node_definitions = []
-        for candidate in sandbox_node_candidates:
+        # Get the file paths from the schema's node definitions to load actual classes
+        actual_node_definitions = []
+        for node_def in library_schema.nodes:
+            candidate_path = Path(node_def.file_path)
             try:
-                module = self._load_module_from_file(candidate)
+                module = self._load_module_from_file(candidate_path, LibraryManager.SANDBOX_LIBRARY_NAME)
             except Exception as err:
-                problems.append(f"Could not load module in sandbox library '{candidate}': {err}")
-                details = f"Attempted to load module in sandbox library '{candidate}'. Failed because an exception occurred: {err}."
+                problems.append(f"Could not load module in sandbox library '{candidate_path}': {err}")
+                details = f"Attempted to load module in sandbox library '{candidate_path}'. Failed because an exception occurred: {err}."
                 logger.warning(details)
                 continue  # SKIP IT
 
@@ -1022,47 +1683,41 @@ class LibraryManager:
                     and type(obj) is not BaseNode
                     and obj.__module__ == module.__name__
                 ):
-                    details = f"Found node '{class_name}' in sandbox library '{candidate}'."
+                    details = f"Found node '{class_name}' in sandbox library '{candidate_path}'."
                     logger.debug(details)
+
+                    # Get metadata from class attributes if they exist, otherwise use defaults
+                    node_icon = getattr(obj, "ICON", "square-dashed")
+                    node_description = getattr(
+                        obj, "DESCRIPTION", f"'{class_name}' (loaded from the {LibraryManager.SANDBOX_LIBRARY_NAME})."
+                    )
+                    node_color = getattr(obj, "COLOR", None)
+
                     node_metadata = NodeMetadata(
                         category="Griptape Nodes Sandbox",
-                        description=f"'{class_name}' (loaded from the Sandbox Library).",
+                        description=node_description,
                         display_name=class_name,
+                        icon=node_icon,
+                        color=node_color,
                     )
                     node_definition = NodeDefinition(
                         class_name=class_name,
-                        file_path=str(candidate),
+                        file_path=str(candidate_path),
                         metadata=node_metadata,
                     )
-                    node_definitions.append(node_definition)
+                    actual_node_definitions.append(node_definition)
 
-        if not node_definitions:
+        if not actual_node_definitions:
             logger.info("No nodes found in sandbox library '%s'. Skipping.", sandbox_library_dir)
             return
 
-        # Create the library schema and metadata.
-        engine_version = GriptapeNodes().handle_engine_version_request(request=GetEngineVersionRequest())
-        if not isinstance(engine_version, GetEngineVersionResultSuccess):
-            logger.error("Could not get engine version. Skipping sandbox library.")
-            return
-        engine_version_str = f"{engine_version.major}.{engine_version.minor}.{engine_version.patch}"
-        library_metadata = LibraryMetadata(
-            author="Author needs to be specified when library is published.",
-            description="Nodes loaded from the sandbox library.",
-            library_version=engine_version_str,
-            engine_version=engine_version_str,
-            tags=["sandbox"],
-            is_griptape_nodes_searchable=False,
-        )
-        categories = [
-            {"Griptape Nodes Sandbox": sandbox_category},
-        ]
+        # Use the existing schema but replace nodes with actual discovered ones
         library_data = LibrarySchema(
-            name="Sandbox Library",
-            library_schema_version=LibrarySchema.LATEST_SCHEMA_VERSION,
-            metadata=library_metadata,
-            categories=categories,
-            nodes=node_definitions,
+            name=library_schema.name,
+            library_schema_version=library_schema.library_schema_version,
+            metadata=library_schema.metadata,
+            categories=library_schema.categories,
+            nodes=actual_node_definitions,
         )
 
         # Register the library.
@@ -1079,22 +1734,24 @@ class LibraryManager:
             self._library_file_path_to_info[sandbox_library_dir_as_posix] = LibraryManager.LibraryInfo(
                 library_path=sandbox_library_dir_as_posix,
                 library_name=library_data.name,
-                library_version=engine_version_str,
+                library_version=library_data.metadata.library_version,
                 status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=["Failed because a library with this name was already registered."],
+                problems=[
+                    "Failed because a library with this name was already registered. Check the Settings to ensure duplicate libraries are not being loaded."
+                ],
             )
 
             details = f"Attempted to load Library JSON file from '{sandbox_library_dir}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
             logger.error(details)
             return
 
-        # Attempt to load nodes from the library.
+        # Load nodes into the library
         library_load_results = self._attempt_load_nodes_from_library(
             library_data=library_data,
             library=library,
-            base_dir=sandbox_library_dir_as_posix,
+            base_dir=sandbox_library_dir,
             library_file_path=sandbox_library_dir_as_posix,
-            library_version=engine_version_str,
+            library_version=library_data.metadata.library_version,
             problems=problems,
         )
         self._library_file_path_to_info[sandbox_library_dir_as_posix] = library_load_results
@@ -1142,3 +1799,37 @@ class LibraryManager:
                 library for library in libraries_to_register_category if library.lower() not in paths_to_remove
             ]
             config_mgr.set_config_value(config_category, libraries_to_register_category)
+
+    def reload_all_libraries_request(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
+        # Start with a clean slate.
+        clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
+        clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+        if not clear_all_result.succeeded():
+            details = "Failed to clear the existing object state when preparing to reload all libraries."
+            logger.error(details)
+            return ReloadAllLibrariesResultFailure()
+
+        # Unload all libraries now.
+        all_libraries_request = ListRegisteredLibrariesRequest()
+        all_libraries_result = GriptapeNodes.handle_request(all_libraries_request)
+        if not isinstance(all_libraries_result, ListRegisteredLibrariesResultSuccess):
+            details = "When preparing to reload all libraries, failed to get registered libraries."
+            logger.error(details)
+            return ReloadAllLibrariesResultFailure()
+
+        for library_name in all_libraries_result.libraries:
+            unload_library_request = UnloadLibraryFromRegistryRequest(library_name=library_name)
+            unload_library_result = GriptapeNodes.handle_request(unload_library_request)
+            if not unload_library_result.succeeded():
+                details = f"When preparing to reload all libraries, failed to unload library '{library_name}'."
+                logger.error(details)
+                return ReloadAllLibrariesResultFailure()
+
+        # Load (or reload, which should trigger a hot reload) all libraries
+        self.load_all_libraries_from_config()
+
+        details = (
+            "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."
+        )
+        logger.info(details)
+        return ReloadAllLibrariesResultSuccess()

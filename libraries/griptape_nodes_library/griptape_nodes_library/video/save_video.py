@@ -95,7 +95,10 @@ class SaveVideo(ControlNode):
         return None
 
     def after_incoming_connection(
-        self, source_node: Any, source_parameter: Any, target_parameter: Any, modified_parameters_set: set[str]
+        self,
+        source_node: Any,
+        source_parameter: Any,
+        target_parameter: Any,
     ) -> None:
         """Handle automatic extension detection when video connection is made."""
         if target_parameter.name == "video":
@@ -109,12 +112,9 @@ class SaveVideo(ControlNode):
                 current_output_path = self.get_parameter_value("output_path")
                 new_filename = str(Path(current_output_path).with_suffix(extension))
                 self.parameter_output_values["output_path"] = new_filename
-                modified_parameters_set.add("output_path")
                 logger.info(f"Updated extension to {extension}: {new_filename}")
 
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
         exceptions = []

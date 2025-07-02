@@ -5,7 +5,6 @@ from griptape_nodes.exe_types.core_types import (
     ControlParameterOutput,
     Parameter,
     ParameterGroup,
-    ParameterList,
     ParameterMode,
     ParameterTypeBuiltin,
 )
@@ -33,10 +32,10 @@ class ForEachStartNode(StartLoopNode):
         self.add_parameter(self.exec_out)
         self.exec_in = ControlParameterInput()
         self.add_parameter(self.exec_in)
-        self.items_list = ParameterList(
+        self.items_list = Parameter(
             name="items",
             tooltip="List of items to iterate through",
-            input_types=[ParameterTypeBuiltin.ANY.value],
+            input_types=["list"],
             allowed_modes={ParameterMode.INPUT},
         )
         self.add_parameter(self.items_list)
@@ -56,6 +55,7 @@ class ForEachStartNode(StartLoopNode):
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 settable=False,
                 default_value=0,
+                ui_options={"hide_property": True},
             )
         self.add_node_element(group)
 
@@ -70,7 +70,13 @@ class ForEachStartNode(StartLoopNode):
         if self.current_index == 0:
             # Initialize everything!
             list_values = self.get_parameter_value("items")
-            self._items = list_values
+            # Ensure the list is flattened
+            if isinstance(list_values, list):
+                self._items = [
+                    item for sublist in list_values for item in (sublist if isinstance(sublist, list) else [sublist])
+                ]
+            else:
+                self._items = []
         # Get the current item and pass it along.
         # I need to unresolve all future nodes (all of them in the for each loop).
         self._flow.connections.unresolve_future_nodes(self)
@@ -93,7 +99,8 @@ class ForEachStartNode(StartLoopNode):
         self._items = []
         self.finished = False
         if self.end_node is None:
-            exceptions.append(Exception("End node not found or connected."))
+            msg = f"{self.name}: End node not found or connected."
+            exceptions.append(Exception(msg))
         try:
             flow = GriptapeNodes.ObjectManager().get_object_by_name(
                 GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
@@ -110,7 +117,8 @@ class ForEachStartNode(StartLoopNode):
 
         exceptions = []
         if self.end_node is None:
-            exceptions.append(Exception("End node not found or connected."))
+            msg = f"{self.name}: End node not found or connected."
+            exceptions.append(Exception(msg))
         try:
             flow = GriptapeNodes.ObjectManager().get_object_by_name(
                 GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
@@ -129,10 +137,7 @@ class ForEachStartNode(StartLoopNode):
         source_parameter: Parameter,
         target_node: BaseNode,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         if source_parameter == self.loop and isinstance(target_node, EndLoopNode):
             self.end_node = target_node
-        return super().after_outgoing_connection(
-            source_parameter, target_node, target_parameter, modified_parameters_set
-        )
+        return super().after_outgoing_connection(source_parameter, target_node, target_parameter)

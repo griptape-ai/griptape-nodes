@@ -298,3 +298,34 @@ class GetNodeElementDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
 @PayloadRegistry.register
 class AlterElementEvent(ExecutionPayload):
     element_details: dict[str, Any]
+
+
+@dataclass
+@PayloadRegistry.register
+class RenameParameterRequest(RequestPayload):
+    parameter_name: str
+    new_parameter_name: str
+    # If node name is None, use the Current Context
+    node_name: str | None = None
+    # initial_setup prevents unnecessary work when we are loading a workflow from a file.
+    initial_setup: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class RenameParameterResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    old_parameter_name: str
+    new_parameter_name: str
+    node_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class RenameParameterResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class RemoveElementEvent(ExecutionPayload):
+    element_id: str

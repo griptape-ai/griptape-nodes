@@ -28,7 +28,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ResumeNodeProcessingEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
-    AlterElementEvent,
     SetParameterValueRequest,
 )
 
@@ -199,7 +198,7 @@ class ExecuteNodeState(State):
         current_node.parameter_output_values.clear()
 
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: C901
+    def on_enter(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         # Clear all of the current output values
         ExecuteNodeState.clear_parameter_output_values(context)
@@ -210,18 +209,7 @@ class ExecuteNodeState(State):
                 # If a parameter value is not already set
                 value = current_node.get_parameter_value(parameter.name)
                 if value is not None:
-                    modified_parameters = current_node.set_parameter_value(parameter.name, value)
-                    if modified_parameters:
-                        for modified_parameter_name in modified_parameters:
-                            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/865
-                            modified_parameter = current_node.get_parameter_by_name(modified_parameter_name)
-                            if modified_parameter is not None:
-                                modified_request = AlterElementEvent(
-                                    element_details=modified_parameter.to_event(current_node)
-                                )
-                                EventBus.publish_event(
-                                    ExecutionGriptapeNodeEvent(ExecutionEvent(payload=modified_request))
-                                )
+                    current_node.set_parameter_value(parameter.name, value)
 
             if parameter.name in current_node.parameter_values:
                 parameter_value = current_node.get_parameter_value(parameter.name)
@@ -242,7 +230,11 @@ class ExecuteNodeState(State):
                     )
                 )
 
-        current_node.validate_before_node_run()
+        exceptions = current_node.validate_before_node_run()
+        if exceptions:
+            msg = f"Canceling flow run. Node '{current_node.name}' encountered problems: {exceptions}"
+            # Mark the node as unresolved, broadcasting to everyone.
+            raise RuntimeError(msg)
         if not context.paused:
             return ExecuteNodeState
         return None

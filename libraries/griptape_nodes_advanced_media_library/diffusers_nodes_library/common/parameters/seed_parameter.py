@@ -31,7 +31,7 @@ class SeedParameter:
             )
         )
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name != "randomize_seed":
             return
 
@@ -47,11 +47,11 @@ class SeedParameter:
             # Enable editing the seed if randomize_seed is False
             seed_parameter.allowed_modes = {ParameterMode.PROPERTY, ParameterMode.INPUT, ParameterMode.OUTPUT}
 
-        modified_parameters_set.add("seed")
-
     def preprocess(self) -> None:
         if self._node.get_parameter_value("randomize_seed"):
-            self._node.publish_update_to_parameter("seed", torch.Generator().seed())
+            seed = torch.Generator().seed()
+            self._node.set_parameter_value("seed", seed)
+            self._node.publish_update_to_parameter("seed", seed)
 
     def get_seed(self) -> int:
         return int(self._node.get_parameter_value("seed"))

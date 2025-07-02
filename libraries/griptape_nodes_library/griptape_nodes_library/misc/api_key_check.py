@@ -47,7 +47,11 @@ class ApiCheck(BaseNode):
         )
         # self.clear_api_key_check() #TODO(jason): Test once this is resolved: https://github.com/griptape-ai/griptape-nodes/issues/1309  # noqa: ERA001
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
         if parameter.name == "hide_messages":
             # If the hide_messages parameter is set to True, we want to show the message
             if value:
@@ -56,10 +60,8 @@ class ApiCheck(BaseNode):
             else:
                 self.show_parameter_by_name("test_parameter")
                 self.show_message_by_name("api_key_message")
-            modified_parameters_set.add("test_parameter")
-            modified_parameters_set.add("api_key_message")
 
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def clear_api_key_check(self) -> bool:
         # Check to see if the API key is set, if not we'll show the message

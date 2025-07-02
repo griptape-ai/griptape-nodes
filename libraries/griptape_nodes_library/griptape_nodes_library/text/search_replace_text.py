@@ -121,13 +121,16 @@ class SearchReplaceText(DataNode):
             # If there's an error (e.g., invalid regex), return the original text
             return input_text
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
         if parameter.name != "output":
             result = self._search_replace()
             self.parameter_output_values["output"] = result
             self.set_parameter_value("output", result)
-            modified_parameters_set.add("output")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def process(self) -> None:
         # Perform the search and replace

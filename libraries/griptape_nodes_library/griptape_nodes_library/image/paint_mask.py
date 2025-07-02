@@ -8,7 +8,7 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     save_pil_image_to_static_file,
@@ -94,19 +94,16 @@ class PaintMask(DataNode):
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         """Handle input connections and update outputs accordingly."""
         if target_parameter.name == "input_image":
             input_image = self.get_parameter_value("input_image")
             if input_image is not None:
-                self._handle_input_image_change(input_image, modified_parameters_set)
+                self._handle_input_image_change(input_image)
 
-        return super().after_incoming_connection(
-            source_node, source_parameter, target_parameter, modified_parameters_set
-        )
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
-    def _handle_input_image_change(self, value: Any, modified_parameters_set: set[str]) -> None:
+    def _handle_input_image_change(self, value: Any) -> None:
         # Normalize input image to ImageUrlArtifact if needed
         image_artifact = value
         if isinstance(value, dict):
@@ -115,11 +112,11 @@ class PaintMask(DataNode):
         # Check and see if the output_mask is set
         output_mask_value = self.get_parameter_value("output_mask")
         if output_mask_value is None:
-            self._create_new_mask(image_artifact, modified_parameters_set)
+            self._create_new_mask(image_artifact)
         else:
-            self._update_existing_mask(output_mask_value, image_artifact, modified_parameters_set)
+            self._update_existing_mask(output_mask_value, image_artifact)
 
-    def _create_new_mask(self, image_artifact: ImageUrlArtifact, modified_parameters_set: set[str]) -> None:
+    def _create_new_mask(self, image_artifact: ImageUrlArtifact) -> None:
         output_mask_value = self.generate_initial_mask(image_artifact)
         mask_buffer = BytesIO()
         output_mask_value.save(mask_buffer, format="PNG")
@@ -128,33 +125,38 @@ class PaintMask(DataNode):
         mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_buffer.getvalue(), mask_filename)
         output_mask_artifact = ImageUrlArtifact(mask_url, meta={"source_image_url": image_artifact.value})
         self.set_parameter_value("output_mask", output_mask_artifact)
-        modified_parameters_set.add("output_mask")
         self.set_parameter_value("output_image", image_artifact)
-        modified_parameters_set.add("output_image")
 
-    def _update_existing_mask(
-        self, output_mask_value: Any, image_artifact: ImageUrlArtifact, modified_parameters_set: set[str]
-    ) -> None:
+    def _update_existing_mask(self, output_mask_value: Any, image_artifact: ImageUrlArtifact) -> None:
+        # If we have a dict representation, check if it's been edited
         if isinstance(output_mask_value, dict):
             if "meta" not in output_mask_value:
                 output_mask_value["meta"] = {}
             output_mask_value["meta"]["source_image_url"] = image_artifact.value
             self.set_parameter_value("output_mask", output_mask_value)
-            modified_parameters_set.add("output_mask")
         else:
-            mask_url = output_mask_value.value
-            response = httpx.get(mask_url, timeout=30)
-            response.raise_for_status()
-            mask_content = response.content
-            new_mask_filename = f"mask_{uuid.uuid4()}.png"
-            mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_content, new_mask_filename)
-            mask_artifact = ImageUrlArtifact(mask_url, meta={"source_image_url": image_artifact.value})
-            self.set_parameter_value("output_mask", mask_artifact)
-            modified_parameters_set.add("output_mask")
-            self._apply_mask_to_input(image_artifact, mask_artifact)
-            modified_parameters_set.add("output_image")
+            # For ImageUrlArtifact, check if it's been edited
+            meta = getattr(output_mask_value, "meta", {})
+            if isinstance(meta, dict) and meta.get("maskEdited", False):
+                # If mask was edited, keep it but update source image URL
+                mask_url = output_mask_value.value
+                response = httpx.get(mask_url, timeout=30)
+                response.raise_for_status()
+                mask_content = response.content
+                new_mask_filename = f"mask_{uuid.uuid4()}.png"
+                mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_content, new_mask_filename)
+                mask_artifact = ImageUrlArtifact(
+                    mask_url, meta={"source_image_url": image_artifact.value, "maskEdited": True}
+                )
+                self.set_parameter_value("output_mask", mask_artifact)
+            else:
+                # If mask wasn't edited, generate a new one
+                self._create_new_mask(image_artifact)
+                return
 
-    def _handle_output_mask_change(self, value: Any, modified_parameters_set: set[str]) -> None:
+            self._apply_mask_to_input(image_artifact, mask_artifact)
+
+    def _handle_output_mask_change(self, value: Any) -> None:
         input_image = self.get_parameter_value("input_image")
         if input_image is not None:
             if isinstance(input_image, dict):
@@ -168,16 +170,14 @@ class PaintMask(DataNode):
                     self.set_parameter_value("output_mask", mask_artifact)
                     value = mask_artifact
             self._apply_mask_to_input(input_image, value)
-            modified_parameters_set.add("output_image")
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "input_image" and value is not None:
-            self._handle_input_image_change(value, modified_parameters_set)
+            self._handle_input_image_change(value)
         elif parameter.name == "output_mask" and value is not None:
-            self._handle_output_mask_change(value, modified_parameters_set)
+            self._handle_output_mask_change(value)
 
-        logger.info(f"modified_parameters_set: {modified_parameters_set}")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def _needs_mask_regeneration(self, input_image: ImageUrlArtifact) -> bool:
         """Check if mask needs to be regenerated based on mask editing status and source image."""

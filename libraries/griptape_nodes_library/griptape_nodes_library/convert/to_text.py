@@ -34,12 +34,23 @@ class ToText(DataNode):
             )
         )
 
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "from":
+            value = str(value)
+
+            # Set Parameter Output Values
+            self.parameter_output_values["output"] = str(value)
+
+            # Publish Update to Parameter
+            self.publish_update_to_parameter("output", value)
+
+        return super().after_value_set(parameter, value)
+
     def after_incoming_connection(
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
         target_parameter: Parameter,
-        modified_parameters_set: set[str],
     ) -> None:
         pass
 

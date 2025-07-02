@@ -5,12 +5,12 @@ import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
 import torch  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
-from griptape.loaders import ImageLoader
 from PIL.Image import Image
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,  # type: ignore[reportMissingImports]
     pil_to_image_artifact,  # type: ignore[reportMissingImports]
 )
+from utils.image_utils import load_image_from_url_artifact
 
 from diffusers_nodes_library.common.misc.tiling_image_processor import (
     TilingImageProcessor,  # type: ignore[reportMissingImports]
@@ -107,8 +107,8 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         self.flux_params.add_output_parameters()
         self.log_params.add_output_parameters()
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
-        self.flux_params.after_value_set(parameter, value, modified_parameters_set)
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        self.flux_params.after_value_set(parameter, value)
 
     def preprocess(self) -> None:
         self.flux_params.preprocess()
@@ -125,7 +125,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         strength = float(self.get_parameter_value("strength"))
 
         if isinstance(input_image_artifact, ImageUrlArtifact):
-            input_image_artifact = ImageLoader().parse(input_image_artifact.to_bytes())
+            input_image_artifact = load_image_from_url_artifact(input_image_artifact)
         input_image_pil = image_artifact_to_pil(input_image_artifact)
         input_image_pil = input_image_pil.convert("RGB")
 

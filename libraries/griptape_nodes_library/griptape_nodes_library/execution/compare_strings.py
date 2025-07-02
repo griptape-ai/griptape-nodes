@@ -76,12 +76,15 @@ class CompareStrings(BaseNode):
             )
         )
 
-    def after_value_set(self, parameter: Parameter, value: Any, modified_parameters_set: set[str]) -> None:
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
         if parameter.name in ["evaluate", "A", "B"]:
             self.parameter_values["result"] = self.get_comparison()
 
-            modified_parameters_set.add("result")
-        return super().after_value_set(parameter, value, modified_parameters_set)
+        return super().after_value_set(parameter, value)
 
     def get_comparison(self) -> bool:
         value = self.get_parameter_value("evaluate")

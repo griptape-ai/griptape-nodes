@@ -25,5 +25,11 @@ class DisplayFloat(DataNode):
             )
         )
 
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if "float" in parameter.name:
+            self.parameter_output_values["float"] = value
+            self.publish_update_to_parameter("float", value)
+        return super().after_value_set(parameter, value)
+
     def process(self) -> None:
         self.parameter_output_values["float"] = self.parameter_values.get("float")

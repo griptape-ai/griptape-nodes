@@ -4,8 +4,8 @@
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
-    "library_version": "0.34.0",
-    "engine_version": "0.34.0",
+    "library_version": "0.39.0",
+    "engine_version": "0.39.0",
     "tags": [
       "Griptape",
       "AI"
@@ -13,9 +13,10 @@
     "dependencies": {
       "pip_dependencies": [
         "accelerate>=1.6.0",
+        "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "imageio-ffmpeg>=0.6.0",
-        "diffusers>=0.33.1",
+        "git+https://github.com/huggingface/diffusers.git@00f95b9755718aabb65456e791b8408526ae6e76",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
         "peft>=0.15.2",
@@ -31,7 +32,12 @@
         "tqdm>=4.67.1",
         "protobuf>=6.31.0",
         "prodigyopt>=1.1.2; sys_platform == 'win32'",
-        "bitsandbytes>=0.46.0; sys_platform == 'win32'"
+        "bitsandbytes>=0.46.0; sys_platform == 'win32'",
+        "ftfy>=6.3.1",
+        "git+https://github.com/dylanholmes/cosmos-guardrail.git",
+        "sam2>=1.1.0",
+        "scipy>=1.10.0",
+        "matplotlib>=3.10.3"
       ],
       "pip_install_flags": [
         "--preview",
@@ -47,7 +53,8 @@
       "metadata": {
         "category": "image",
         "description": "Desaturate an image via the 🛏️ pillow python package. Pairs well with ControlNet Image Generation in grayscale mode.",
-        "display_name": "Desaturate"
+        "display_name": "Desaturate",
+        "group": "edit"
       }
     },
     {
@@ -56,16 +63,62 @@
       "metadata": {
         "category": "image",
         "description": "Apply a gaussian blur to an image with the 🛏️ pillow python package. Pairs well with ControlNet Image Generation in blur or tile mode.",
-        "display_name": "Gaussian Blur"
+        "display_name": "Gaussian Blur",
+        "group": "edit"
       }
     },
     {
-      "class_name": "DepthAnythingForDepthEstimation",
-      "file_path": "transformers_nodes_library/depth_anything_for_depth_estimation.py",
+      "class_name": "DepthAnythingForDepthEstimationImage",
+      "file_path": "transformers_nodes_library/depth_anything_for_depth_estimation_image.py",
       "metadata": {
         "category": "image/depth",
         "description": "Generate a Depth Map with Depth Anything V2 and 🤗 Transformers Pairs well with ControlNet Image Generation in depth mode.",
-        "display_name": "Depth Anything V2"
+        "display_name": "Depth Anything V2 Image"
+      }
+    },
+    {
+      "class_name": "OpenPoseImageDetection",
+      "file_path": "openpose_nodes_library/openpose_image_detection.py",
+      "metadata": {
+        "category": "image/pose",
+        "description": "Detect human poses in images using OpenPose models converted to SafeTensors format",
+        "display_name": "OpenPose Image Detection"
+      }
+    },
+    {
+      "class_name": "DinoSam2ImageDetector",
+      "file_path": "dino_sam2_library/dino_sam_2_image_detector.py",
+      "metadata": {
+        "category": "image/segmentation",
+        "description": "Generate an image mask from a prompt. Uses Grounding DINO to transform prompt to bounding boxes, then uses Segment Anything Model 2 (SAM2) from Meta to generate the mask from the bounding boxes.",
+        "display_name": "Image Mask via G-DINO + SAM2"
+      }
+    },
+    {
+      "class_name": "DepthAnythingForDepthEstimationVideo",
+      "file_path": "transformers_nodes_library/depth_anything_for_depth_estimation_video.py",
+      "metadata": {
+        "category": "video/depth",
+        "description": "Generate Depth Maps for video with Depth Anything V2 and 🤗 Transformers. Processes each frame for depth estimation.",
+        "display_name": "Depth Anything V2 Video"
+      }
+    },
+    {
+      "class_name": "OpenPoseVideoDetection",
+      "file_path": "openpose_nodes_library/openpose_video_detection.py",
+      "metadata": {
+        "category": "video/pose",
+        "description": "Detect human poses in videos using OpenPose models converted to SafeTensors format",
+        "display_name": "OpenPose Video Detection"
+      }
+    },
+    {
+      "class_name": "DinoSam2VideoDetector", 
+      "file_path": "dino_sam2_library/dino_sam_2_video_detector.py",
+      "metadata": {
+        "category": "video/segmentation",
+        "description": "Generate a video mask from a prompt. Uses Grounding DINO to transform prompt to bounding boxes on a single frame, then uses Segment Anything Model 2 (SAM2) from Meta to generate the mask from the bounding boxes across all frames.",
+        "display_name": "Video Mask via G-DINO + SAM2"
       }
     },
     {
@@ -102,6 +155,15 @@
         "category": "image/flux",
         "description": "Generate an umasked portion of an Image with Flux via 🤗 Diffusers.",
         "display_name": "Flux Fill"
+      }
+    },
+    {
+      "class_name": "FluxKontextPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/flux/flux_kontext_pipeline.py",
+      "metadata": {
+        "category": "image/flux",
+        "description": "Generate an Image with Flux Kontext via 🤗 Diffusers.",
+        "display_name": "Flux Kontext"
       }
     },
     {
@@ -219,6 +281,213 @@
         "category": "image/flux/loras",
         "description": "TrainFluxLora node.",
         "display_name": "Train Flux Lora"
+      }
+    },
+    {
+      "class_name": "AllegroPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/allegro/allegro_pipeline.py",
+      "metadata": {
+        "category": "video/allegro",
+        "description": "Generate a video with Allegro via 🤗 Diffusers.",
+        "display_name": "Allegro"
+      }
+    },
+    {
+      "class_name": "AmusedPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_pipeline.py",
+      "metadata": {
+        "category": "image/amused",
+        "description": "Generate an Image with aMUSEd via 🤗 Diffusers.",
+        "display_name": "aMUSEd"
+      }
+    },
+    {
+      "class_name": "AmusedImg2ImgPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_img2img_pipeline.py",
+      "metadata": {
+        "category": "image/amused",
+        "description": "Generate Image Variations with aMUSEd via 🤗 Diffusers.",
+        "display_name": "aMUSEd Img2Img"
+      }
+    },
+    {
+      "class_name": "AmusedInpaintPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/amused/amused_inpaint_pipeline.py",
+      "metadata": {
+        "category": "image/amused",
+        "description": "Inpaint Images with aMUSEd via 🤗 Diffusers.",
+        "display_name": "aMUSEd Inpaint"
+      }
+    },
+    {
+      "class_name": "AudioldmPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/audioldm/audioldm_pipeline.py",
+      "metadata": {
+        "category": "audio/audioldm",
+        "description": "Generate audio from text via 🤗 Diffusers.",
+        "display_name": "AudioLDM"
+      }
+    },
+    {
+      "class_name": "Audioldm2Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/audioldm2/audioldm2_pipeline.py",
+      "metadata": {
+        "category": "audio/audioldm2",
+        "description": "Generate audio from text via 🤗 Diffusers.",
+        "display_name": "AudioLDM 2"
+      }
+    },
+    {
+      "class_name": "StableDiffusionPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion/stable_diffusion_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion",
+        "description": "Generate images with Stable Diffusion via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion"
+      }
+    },
+    {
+      "class_name": "StableDiffusion3Pipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_3/stable_diffusion_3_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_3",
+        "description": "Generate images with Stable Diffusion 3 via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion 3"
+      }
+    },
+    {
+      "class_name": "StableDiffusionAttendAndExcitePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_ae/stable_diffusion_ae_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_attend_and_excite",
+        "description": "Generate images with enhanced attention control via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion Attend and Excite"
+      }
+    },
+    {
+      "class_name": "StableDiffusionDiffeditPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/stable_diffusion_diffedit/stable_diffusion_diffedit_pipeline.py",
+      "metadata": {
+        "category": "image/stable_diffusion_diffedit",
+        "description": "Edit images using DiffEdit technique via 🤗 Diffusers.",
+        "display_name": "Stable Diffusion DiffEdit"
+      }
+    },
+    {
+      "class_name": "WanPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/wan/wan_pipeline.py",
+      "metadata": {
+        "category": "video/wan",
+        "description": "Generate videos from text with Wan",
+        "display_name": "Wan T2V"
+      }
+    },
+    {
+      "class_name": "WanImageToVideoPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/wan/wan_image_to_video_pipeline.py",
+      "metadata": {
+        "category": "video/wan",
+        "description": "Generate videos from image and text with Wan",
+        "display_name": "Wan I2V"
+      }
+    },
+    {
+      "class_name": "WanVideoToVideoPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/wan/wan_video_to_video_pipeline.py",
+      "metadata": {
+        "category": "video/wan",
+        "description": "Generate videos from video and text with Wan",
+        "display_name": "Wan V2V"
+      }
+    },
+    {
+      "class_name": "WanVacePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/wan/wan_vace_pipeline.py",
+      "metadata": {
+        "category": "video/wan",
+        "description": "Generate videos with VACE control via 🤗 Diffusers",
+        "display_name": "Wan VACE"
+      }
+    },
+    {
+      "class_name": "FirstFrameToVideoWanVaceAux",
+      "file_path": "diffusers_nodes_library/pipelines/wan/auxiliary/first_frame_to_video_wan_vace_aux.py",
+      "metadata": {
+        "category": "video/wan/aux",
+        "description": "Generate video with input image as first frame for WAN VACE conditioning.",
+        "display_name": "WAN First Frame Aux"
+      }
+    },
+    {
+      "class_name": "FirstLastFrameToVideoWanVaceAux",
+      "file_path": "diffusers_nodes_library/pipelines/wan/auxiliary/first_last_frame_to_video_wan_vace_aux.py",
+      "metadata": {
+        "category": "video/wan/aux",
+        "description": "Generate video with input images as first and last frames for WAN VACE conditioning.",
+        "display_name": "WAN First+Last Frame Aux"
+      }
+    },
+    {
+      "class_name": "LastFrameToVideoWanVaceAux",
+      "file_path": "diffusers_nodes_library/pipelines/wan/auxiliary/last_frame_to_video_wan_vace_aux.py",
+      "metadata": {
+        "category": "video/wan/aux",
+        "description": "Generate video with input image as last frame for WAN VACE conditioning.",
+        "display_name": "WAN Last Frame Aux"
+      }
+    },
+    {
+      "class_name": "RandomFramesToVideoWanVaceAux",
+      "file_path": "diffusers_nodes_library/pipelines/wan/auxiliary/random_frames_to_video_wan_vace_aux.py",
+      "metadata": {
+        "category": "video/wan/aux",
+        "description": "Generate video with input images at random frame positions for WAN VACE conditioning.",
+        "display_name": "WAN Random Frames Aux"
+      }
+    },
+    {
+      "class_name": "StaticMaskWanVaceAux",
+      "file_path": "diffusers_nodes_library/pipelines/wan/auxiliary/static_mask_wan_vace_aux.py",
+      "metadata": {
+        "category": "video/wan/aux",
+        "description": "Generate static mask video for WAN VACE conditioning.",
+        "display_name": "WAN Static Mask Aux"
+      }
+    },
+    {
+      "class_name": "Kijai1Dot3BWanLora",
+      "file_path": "diffusers_nodes_library/pipelines/wan/lora/kijai_1_dot_3_b_wan_lora.py",
+      "metadata": {
+        "category": "video/wan/loras",
+        "description": "Experimental LoRA extractions from CausVid finetunes. Enables generating videos in 2-8 steps.",
+        "display_name": "Kijai CausVid 1.3B"
+      }
+    },
+    {
+      "class_name": "Kijai14BWanLora",
+      "file_path": "diffusers_nodes_library/pipelines/wan/lora/kijai_14_b_wan_lora.py",
+      "metadata": {
+        "category": "video/wan/loras",
+        "description": "Experimental LoRA extractions from CausVid finetunes. Enables generating videos in 2-8 steps.",
+        "display_name": "Kijai CausVid 14B"
+      }
+    },
+    {
+      "class_name": "WuerstchenCombinedPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/wuerstchen/wuerstchen_combined_pipeline.py",
+      "metadata": {
+        "category": "image/würstchen",
+        "description": "Generate images efficiently with Würstchen via 🤗 Diffusers.",
+        "display_name": "Würstchen"
+      }
+    },
+    {
+      "class_name": "Cosmos2TextToImagePipeline",
+      "file_path": "diffusers_nodes_library/pipelines/cosmos/cosmos_2_text_to_image_pipeline.py",
+      "metadata": {
+        "category": "image/cosmos",
+        "description": "Generate images with Cosmos2 text-to-image via 🤗 Diffusers.",
+        "display_name": "Cosmos2 Text2Image"
       }
     }
   ]
