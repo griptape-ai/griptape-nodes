@@ -1027,26 +1027,40 @@ class WorkflowManager:
         )
         ast_container.add_node(unique_values_node)
 
-        # See if this serialized flow has a create flow command; if it does, we'll need to insert that.
-        create_flow_command = serialized_flow_commands.create_flow_command
+        # See if this serialized flow has a flow initialization command; if it does, we'll need to insert that.
+        flow_initialization_command = serialized_flow_commands.flow_initialization_command
 
-        if create_flow_command is not None:
-            # Generate create flow context AST node
-            create_flow_context_node = self._generate_create_flow(
-                create_flow_command, import_recorder, flow_creation_index
-            )
-            ast_container.add_node(create_flow_context_node)
+        match flow_initialization_command:
+            case CreateFlowRequest():
+                # Generate create flow context AST node
+                create_flow_context_node = self._generate_create_flow(
+                    flow_initialization_command, import_recorder, flow_creation_index
+                )
+                ast_container.add_node(create_flow_context_node)
+            case ImportWorkflowAsReferencedSubFlowRequest():
+                # Generate import workflow context AST node
+                import_workflow_context_node = self._generate_import_workflow(
+                    flow_initialization_command, import_recorder, flow_creation_index
+                )
+                ast_container.add_node(import_workflow_context_node)
+            case None:
+                # No initialization command, deserialize into current context
+                pass
 
         # Generate assign flow context AST node, if we have any children commands.
-        if (
+        # Skip content generation for referenced workflows - they should only have the import command
+        is_referenced_workflow = isinstance(flow_initialization_command, ImportWorkflowAsReferencedSubFlowRequest)
+        has_content_to_serialize = (
             len(serialized_flow_commands.serialized_node_commands) > 0
             or len(serialized_flow_commands.serialized_connections) > 0
             or len(serialized_flow_commands.set_parameter_value_commands) > 0
             or len(serialized_flow_commands.sub_flows_commands) > 0
-        ):
+        )
+
+        if not is_referenced_workflow and has_content_to_serialize:
             # Create the "with..." statement
             assign_flow_context_node = self._generate_assign_flow_context(
-                create_flow_command=create_flow_command, flow_creation_index=flow_creation_index
+                flow_initialization_command=flow_initialization_command, flow_creation_index=flow_creation_index
             )
 
             # Generate nodes in flow AST node. This will create the node and apply all element modifiers.
@@ -1056,6 +1070,26 @@ class WorkflowManager:
 
             # Add the nodes to the body of the Current Context flow's "with" statement
             assign_flow_context_node.body.extend(nodes_in_flow)
+
+            # Process sub-flows - for each sub-flow, generate its initialization command
+            for sub_flow_index, sub_flow_commands in enumerate(serialized_flow_commands.sub_flows_commands):
+                sub_flow_creation_index = flow_creation_index + 1 + sub_flow_index
+
+                # Generate initialization command for the sub-flow
+                sub_flow_initialization_command = sub_flow_commands.flow_initialization_command
+                if sub_flow_initialization_command is not None:
+                    match sub_flow_initialization_command:
+                        case CreateFlowRequest():
+                            sub_flow_create_node = self._generate_create_flow(
+                                sub_flow_initialization_command, import_recorder, sub_flow_creation_index
+                            )
+                            assign_flow_context_node.body.append(cast("ast.stmt", sub_flow_create_node))
+                        case ImportWorkflowAsReferencedSubFlowRequest():
+                            sub_flow_import_node = self._generate_import_workflow(
+                                sub_flow_initialization_command, import_recorder, sub_flow_creation_index
+                            )
+                            assign_flow_context_node.body.append(cast("ast.stmt", sub_flow_import_node))
+
             ast_container.add_node(assign_flow_context_node)
 
             # Now generate the connection code.
@@ -1769,8 +1803,89 @@ class WorkflowManager:
 
         return create_flow_result
 
+    def _generate_import_workflow(
+        self,
+        import_workflow_command: ImportWorkflowAsReferencedSubFlowRequest,
+        import_recorder: ImportRecorder,
+        flow_creation_index: int,
+    ) -> ast.AST:
+        """Generate AST code for importing a referenced workflow.
+
+        Creates an assignment statement that executes an ImportWorkflowAsReferencedSubFlowRequest
+        and stores the resulting flow name in a variable.
+
+        Args:
+            import_workflow_command: The import request containing the workflow file path
+            import_recorder: Tracks imports needed for the generated code
+            flow_creation_index: Index used to generate unique variable names
+
+        Returns:
+            AST assignment node representing the import workflow command
+
+        Example output:
+            flow1_name = GriptapeNodes.handle_request(ImportWorkflowAsReferencedSubFlowRequest(
+                file_path='/path/to/workflow.py'
+            )).created_flow_name
+        """
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.workflow_events", "ImportWorkflowAsReferencedSubFlowRequest"
+        )
+
+        # Prepare arguments for ImportWorkflowAsReferencedSubFlowRequest
+        import_workflow_request_args = []
+
+        # Omit values that match default values.
+        if is_dataclass(import_workflow_command):
+            for field in fields(import_workflow_command):
+                field_value = getattr(import_workflow_command, field.name)
+                if field_value != field.default:
+                    import_workflow_request_args.append(
+                        ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
+                    )
+
+        # Construct the AST for importing the workflow
+        flow_variable_name = f"flow{flow_creation_index}_name"
+        import_workflow_result = ast.Assign(
+            targets=[ast.Name(id=flow_variable_name, ctx=ast.Store(), lineno=1, col_offset=0)],
+            value=ast.Attribute(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                        attr="handle_request",
+                        ctx=ast.Load(),
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    args=[
+                        ast.Call(
+                            func=ast.Name(
+                                id="ImportWorkflowAsReferencedSubFlowRequest", ctx=ast.Load(), lineno=1, col_offset=0
+                            ),
+                            args=[],
+                            keywords=import_workflow_request_args,
+                            lineno=1,
+                            col_offset=0,
+                        )
+                    ],
+                    keywords=[],
+                    lineno=1,
+                    col_offset=0,
+                ),
+                attr="created_flow_name",
+                ctx=ast.Load(),
+                lineno=1,
+                col_offset=0,
+            ),
+            lineno=1,
+            col_offset=0,
+        )
+
+        return import_workflow_result
+
     def _generate_assign_flow_context(
-        self, create_flow_command: CreateFlowRequest | None, flow_creation_index: int
+        self,
+        flow_initialization_command: CreateFlowRequest | ImportWorkflowAsReferencedSubFlowRequest | None,
+        flow_creation_index: int,
     ) -> ast.With:
         context_manager = ast.Attribute(
             value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
@@ -1780,7 +1895,7 @@ class WorkflowManager:
             col_offset=0,
         )
 
-        if create_flow_command is None:
+        if flow_initialization_command is None:
             # Construct AST for "GriptapeNodes.ContextManager().flow(GriptapeNodes.ContextManager().get_current_flow_name())"
             flow_call = ast.Call(
                 func=ast.Attribute(
