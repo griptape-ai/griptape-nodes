@@ -15,6 +15,7 @@ from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -105,20 +106,32 @@ class FluxKontextPipelineParameters:
         )
         self._node.add_parameter(
             Parameter(
-                name="width",
-                default_value=1024,
-                input_types=["int"],
-                type="int",
-                tooltip="width",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="height",
-                default_value=1024,
-                input_types=["int"],
-                type="int",
-                tooltip="height",
+                name="width_by_height",
+                default_value="1024x1024",
+                input_types=["str"],
+                type="str",
+                tooltip="widthxheight",
+                traits={
+                    Options(
+                        choices=[
+                            "688x1504",
+                            "720x1456",
+                            "752x1392",
+                            "800x1328",
+                            "832x1248",
+                            "880x1184",
+                            "944x1104",
+                            "1024x1024",
+                            "1104x944",
+                            "1184x880",
+                            "1248x832",
+                            "1328x800",
+                            "1392x752",
+                            "1456x720",
+                            "1504x688",
+                        ]
+                    )
+                },
             )
         )
         self._node.add_parameter(
@@ -153,13 +166,32 @@ class FluxKontextPipelineParameters:
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._huggingface_repo_parameter.validate_before_node_run() or []
+        # Check for if prompt exists:
+        prompt_exists = self.get_prompt() or self.get_prompt_2()
+        negative_prompt_exists = self.get_negative_prompt() or self.get_negative_prompt_2()
+        image_exists = self.get_input_image_pil()
+        if not prompt_exists and not negative_prompt_exists and not image_exists:
+            errors.append(ValueError("At least one prompt, negative prompt, or image must be provided."))
 
         # Validate dimensions based on diffusers source logic
         width = self.get_width()
         height = self.get_height()
 
-        # VAE scale factor is typically 8 for Flux models, so multiple_of = 8 * 2 = 16
-        multiple_of = 16
+        if width * height > (1024 * 1024):
+            errors.append(ValueError(f"Width ({width}) * Height ({height}) must be less than 1024*1024"))
+
+        # Get actual VAE scale factor from model config
+        try:
+            repo_id, revision = self.get_repo_revision()
+            vae_config = diffusers.AutoencoderKLConfig.from_pretrained(
+                pretrained_model_name_or_path=repo_id, revision=revision, local_files_only=True, subfolder="vae"
+            )
+            vae_scale_factor = 2 ** (len(vae_config.block_out_channels) - 1)
+            # Flux latents are packed into 2x2 patches, so multiply by 2
+            multiple_of = vae_scale_factor * 2
+        except Exception:
+            # Fallback to standard Flux values if model loading fails
+            multiple_of = 16
 
         if width % multiple_of != 0:
             errors.append(ValueError(f"Width ({width}) must be divisible by {multiple_of}"))
@@ -215,10 +247,12 @@ class FluxKontextPipelineParameters:
         return float(self._node.get_parameter_value("true_cfg_scale"))
 
     def get_width(self) -> int:
-        return int(self._node.get_parameter_value("width"))
+        width_by_height = self._node.get_parameter_value("width_by_height")
+        return int(width_by_height.split("x")[0])
 
     def get_height(self) -> int:
-        return int(self._node.get_parameter_value("height"))
+        width_by_height = self._node.get_parameter_value("width_by_height")
+        return int(width_by_height.split("x")[1])
 
     def get_num_inference_steps(self) -> int:
         return int(self._node.get_parameter_value("num_inference_steps"))

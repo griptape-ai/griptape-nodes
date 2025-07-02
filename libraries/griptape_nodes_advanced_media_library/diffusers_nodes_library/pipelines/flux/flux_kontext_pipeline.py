@@ -39,6 +39,9 @@ class FluxKontextPipeline(ControlNode):
         errors = self.pipe_params.validate_before_node_run()
         return errors or None
 
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        return self.pipe_params.validate_before_node_run()
+
     def preprocess(self) -> None:
         self.pipe_params.preprocess()
 
