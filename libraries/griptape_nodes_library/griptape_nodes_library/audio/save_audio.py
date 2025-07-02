@@ -35,7 +35,7 @@ class SaveAudio(ControlNode):
         self.add_parameter(
             Parameter(
                 name="audio",
-                input_types=["AudioArtifact", "dict"],
+                input_types=["AudioUrlArtifact", "AudioArtifact", "dict"],
                 type="AudioArtifact",
                 allowed_modes={ParameterMode.INPUT},
                 tooltip="The audio to save to file",
@@ -50,19 +50,19 @@ class SaveAudio(ControlNode):
                 type="str",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 default_value=DEFAULT_FILENAME,
-                tooltip="The output filename with extension (.mp3, .wav, etc.)",
+                tooltip="The output filename with extension (.mp3, .wav, etc.). Note that the audio is not transcoded, so the extension should match the original format.",
                 traits={Button(button_type="save")},
             )
         )
 
     def process(self) -> None:
-        audio = self.parameter_values.get("audio")
+        audio = self.get_parameter_value("audio")
 
         if not audio:
             logger.info("No audio provided to save")
             return
 
-        output_file = self.parameter_values.get("output_path", DEFAULT_FILENAME)
+        output_file = self.get_parameter_value("output_path")
 
         # Set output values BEFORE transforming to workspace-relative
         self.parameter_output_values["output_path"] = output_file
