@@ -22,7 +22,7 @@ class CompareImagesTrait(Trait):
                 msg = f"Parameter {parameter.name} value must be a dictionary, got a {type(value).__name__} instead."
                 raise TypeError(msg)
 
-            expected_keys = {"input_image_1", "input_image_2"}
+            expected_keys = {"input_image_a", "input_image_b"}
             actual_keys = set(value.keys())
             if actual_keys != expected_keys:
                 missing = expected_keys - actual_keys
@@ -33,7 +33,7 @@ class CompareImagesTrait(Trait):
                 if extra:
                     details.append(f"unexpected keys: {sorted(extra)}")
                 detail_msg = "; ".join(details)
-                msg = f"Dictionary for Parameter '{parameter.name}' must contain exactly 'input_image_1' and 'input_image_2' keys; {detail_msg}"
+                msg = f"Dictionary for Parameter '{parameter.name}' must contain exactly 'input_image_a' and 'input_image_b' keys; {detail_msg}"
                 raise ValueError(msg)
 
             return value
