@@ -28,7 +28,7 @@ from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("diffusers_nodes_library")
