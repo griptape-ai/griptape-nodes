@@ -372,7 +372,7 @@ wheels = [
 [[package]]
 name = "griptape"
 version = "1.8.0"
-source = { git = "https://github.com/griptape-ai/griptape?rev=feature%2Fmcp_tool#d7bd44de04c7d0e611f540f3b69fee03830bb1a3" }
+source = { git = "https://github.com/griptape-ai/griptape?rev=feature%2Fmcp_tool#07a5ad751b95f0c5abea4d68c05837aeb3314801" }
 dependencies = [
     { name = "attrs" },
     { name = "filetype" },
