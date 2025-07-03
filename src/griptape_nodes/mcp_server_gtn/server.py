@@ -37,9 +37,7 @@ def main() -> int:
 
     @app.list_tools()
     async def list_tools() -> list[Tool]:
-        foo = [Tool(name=event.__name__, description=event.__doc__, inputSchema=TypeAdapter(event).json_schema()) for (name, event) in SUPPORTED_REQUEST_EVENTS.items()]
-        logger.info(f"Listing tools: {foo}")
-        return foo
+        return [Tool(name=event.__name__, description=event.__doc__, inputSchema=TypeAdapter(event).json_schema()) for (name, event) in SUPPORTED_REQUEST_EVENTS.items()]
 
     @app.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[TextContent]:
