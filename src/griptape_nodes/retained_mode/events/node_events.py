@@ -31,6 +31,25 @@ class NewPosition(NamedTuple):
 @dataclass
 @PayloadRegistry.register
 class CreateNodeRequest(RequestPayload):
+    """Creates a node of the specified type and adds it to the current or a specified parent flow.
+
+    Supports custom naming and metadata (e.g., UI position, display name, tags).
+
+    Args:
+        node_type (str): Type of node to create (e.g. "Agent", "Prompt", "MergeText").
+        specific_library_name (str, optional): Library to search for the node type.
+        node_name (str, optional): Custom name for the new node.
+        override_parent_flow_name (str, optional): Parent flow to insert the node into (defaults to current).
+        metadata (dict, optional): Extra node metadata such as {"position": {"x": 100, "y": 200"}}.
+
+    Returns:
+        ResultPayload: Contains the name of the created node if successful.
+
+    Example:
+        CreateNodeRequest("Agent")
+        CreateNodeRequest("Prompt", node_name="intro_prompt")
+        CreateNodeRequest("Agent", metadata={"position": {"x": 100, "y": 200}})
+    """
     node_type: str
     specific_library_name: str | None = None
     node_name: str | None = None

@@ -14,6 +14,8 @@ from griptape.memory.structure import ConversationMemory
 from griptape.rules import Rule, Ruleset
 from griptape.structures import Agent
 from griptape.tools import BaseImageGenerationTool
+from griptape.tools.mcp.tool import MCPTool
+from griptape.tools.mcp.sessions import StreamableHttpConnection
 from griptape.utils.decorators import activity
 from json_repair import repair_json
 from schema import Literal, Schema
@@ -35,6 +37,7 @@ from griptape_nodes.retained_mode.events.agent_events import (
     RunAgentResultSuccess,
 )
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ResultPayload
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -84,6 +87,7 @@ class AgentManager:
         self.conversation_memory = ConversationMemory()
         self.prompt_driver = None
         self.image_tool = None
+        self.mcp_tool = None
         self.static_files_manager = static_files_manager
 
         if event_manager is not None:
@@ -112,12 +116,26 @@ class AgentManager:
             image_generation_driver=GriptapeCloudImageGenerationDriver(api_key=api_key, model="dall-e-3"),
             static_files_manager=self.static_files_manager,
         )
+    
+    def _initialize_mcp_tool(self) -> MCPTool:
+        api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
+        if not api_key:
+            msg = f"Secret '{API_KEY_ENV_VAR}' not found"
+            raise ValueError(msg)
+
+        connection: StreamableHttpConnection = {
+            "transport": "streamable_http",
+            "url": "http://localhost:9927/mcp/",
+        }
+        return MCPTool(connection=connection)
 
     def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         if self.prompt_driver is None:
             self.prompt_driver = self._initialize_prompt_driver()
         if self.image_tool is None:
             self.image_tool = self._initialize_image_tool()
+        if self.mcp_tool is None:
+            self.mcp_tool = self._initialize_mcp_tool()
         threading.Thread(target=self._on_handle_run_agent_request, args=(request, EventBus.event_listeners)).start()
         return RunAgentResultStarted()
 
@@ -141,7 +159,7 @@ class AgentManager:
             agent = Agent(
                 prompt_driver=self.prompt_driver,
                 conversation_memory=self.conversation_memory,
-                tools=[self.image_tool] if self.image_tool else [],
+                tools=[self.mcp_tool],
                 output_schema=output_schema,
                 rulesets=[
                     Ruleset(
@@ -186,7 +204,7 @@ class AgentManager:
             return RunAgentResultFailure(ErrorArtifact(last_event).to_dict())
         except Exception as e:
             err_msg = f"Error running agent: {e}"
-            logger.error(err_msg)
+            logger.exception(err_msg)
             return RunAgentResultFailure(ErrorArtifact(e).to_dict())
 
     def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:

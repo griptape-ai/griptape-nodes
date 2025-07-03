@@ -43,6 +43,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.mcp_server_gtn import main as mcp_server_gtn
 
 # This is a global event queue that will be used to pass events between threads
 event_queue = Queue()
@@ -98,6 +99,8 @@ def start_app() -> None:
     # Listen for any signals to exit the app
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: sys.exit(0))
+
+    threading.Thread(target=mcp_server_gtn, daemon=True).start()
 
     # SSE subscription pushes events into event_queue
     threading.Thread(target=_listen_for_api_events, daemon=True).start()
