@@ -167,12 +167,12 @@ class WorkflowManager:
     class ReferencedWorkflowContext:
         """Context manager for tracking workflow import operations."""
 
-        def __init__(self, manager: WorkflowManager, source_path: str):
+        def __init__(self, manager: WorkflowManager, workflow_name: str):
             self.manager = manager
-            self.source_path = source_path
+            self.workflow_name = workflow_name
 
         def __enter__(self) -> WorkflowManager.ReferencedWorkflowContext:
-            self.manager._referenced_workflow_stack.append(self.source_path)
+            self.manager._referenced_workflow_stack.append(self.workflow_name)
             return self
 
         def __exit__(
@@ -421,9 +421,7 @@ class WorkflowManager:
                 flow_manager = GriptapeNodes.FlowManager()
                 flow_obj = flow_manager.get_flow_by_name(top_level_flow_result.flow_name)
                 context_manager.push_flow(flow_obj)
-                details = (
-                    f"Workflow execution completed. Set '{top_level_flow_result.flow_name}' as current context."
-                )
+                details = f"Workflow execution completed. Set '{top_level_flow_result.flow_name}' as current context."
                 logger.debug(details)
 
             # If we still don't have a flow, that's a critical error
@@ -2514,56 +2512,93 @@ class WorkflowManager:
     def on_import_workflow_as_referenced_sub_flow_request(
         self, request: ImportWorkflowAsReferencedSubFlowRequest
     ) -> ResultPayload:
-        """Import a workflow file as a new referenced sub flow in the current context."""
-        # Validate the file path exists
-        file_path = Path(request.file_path)
-        if not file_path.exists():
-            relative_file_path = WorkflowRegistry.get_complete_file_path(request.file_path)
-            if relative_file_path is None:
-                logger.error(
-                    "Attempted to import workflow '%s' as referenced sub flow. Failed because file does not exist",
-                    request.file_path,
-                )
-                return ImportWorkflowAsReferencedSubFlowResultFailure()
-            file_path = Path(relative_file_path)
+        """Import a registered workflow as a new referenced sub flow in the current context."""
+        # Validate prerequisites
+        validation_error = self._validate_import_prerequisites(request)
+        if validation_error:
+            return validation_error
 
-        # Get current flows before importing
-        obj_manager = GriptapeNodes.ObjectManager()
-        flows_before = set(obj_manager.get_filtered_subset(type=ControlFlow).keys())
+        # Get the workflow (validation passed, so we know it exists)
+        workflow = self._get_workflow_by_name(request.workflow_name)
 
-        # Determine the target flow. If none is provided, get it from the Current Context.
+        # Determine target flow name
+        if request.flow_name is not None:
+            flow_name = request.flow_name
+        else:
+            flow_name = GriptapeNodes.ContextManager().get_current_flow().name
+
+        # Execute the import
+        return self._execute_workflow_import(request, workflow, flow_name)
+
+    def _validate_import_prerequisites(self, request: ImportWorkflowAsReferencedSubFlowRequest) -> ResultPayload | None:
+        """Validate all prerequisites for import. Returns error result or None if valid."""
+        # Check workflow exists and get it
+        try:
+            workflow = self._get_workflow_by_name(request.workflow_name)
+        except KeyError:
+            logger.error(
+                "Attempted to import workflow '%s' as referenced sub flow. Failed because workflow is not registered",
+                request.workflow_name,
+            )
+            return ImportWorkflowAsReferencedSubFlowResultFailure()
+
+        # Check workflow version - Schema version 0.5.0+ required for referenced workflow imports
+        # (workflow schema was fixed in 0.5.0 to support importing workflows)
+        required_version = Version(major=0, minor=5, patch=0)
+        workflow_version = Version.from_string(workflow.metadata.schema_version)
+        if workflow_version is None or workflow_version < required_version:
+            logger.error(
+                "Attempted to import workflow '%s' as referenced sub flow. Failed because workflow version '%s' is less than required version '0.5.0'",
+                request.workflow_name,
+                workflow.metadata.schema_version,
+            )
+            return ImportWorkflowAsReferencedSubFlowResultFailure()
+
+        # Check target flow
         flow_name = request.flow_name
         if flow_name is None:
-            # Use current context flow
             if not GriptapeNodes.ContextManager().has_current_flow():
                 logger.error(
                     "Attempted to import workflow '%s' into Current Context. Failed because Current Context was empty",
-                    request.file_path,
+                    request.workflow_name,
                 )
                 return ImportWorkflowAsReferencedSubFlowResultFailure()
-            flow_name = GriptapeNodes.ContextManager().get_current_flow().name
         else:
             # Validate that the specified flow exists
             flow_manager = GriptapeNodes.FlowManager()
             try:
-                flow_manager.get_flow_by_name(flow_name)  # This will raise KeyError if flow doesn't exist
+                flow_manager.get_flow_by_name(flow_name)
             except KeyError:
                 logger.error(
                     "Attempted to import workflow '%s' into flow '%s'. Failed because target flow does not exist",
-                    request.file_path,
+                    request.workflow_name,
                     flow_name,
                 )
                 return ImportWorkflowAsReferencedSubFlowResultFailure()
 
+        return None
+
+    def _get_workflow_by_name(self, workflow_name: str) -> Workflow:
+        """Get workflow by name from the registry."""
+        return WorkflowRegistry.get_workflow_by_name(workflow_name)
+
+    def _execute_workflow_import(
+        self, request: ImportWorkflowAsReferencedSubFlowRequest, workflow: Workflow, flow_name: str
+    ) -> ResultPayload:
+        """Execute the actual workflow import."""
+        # Get current flows before importing
+        obj_manager = GriptapeNodes.ObjectManager()
+        flows_before = set(obj_manager.get_filtered_subset(type=ControlFlow).keys())
+
         # Execute the workflow within the target flow context and referenced context
         with GriptapeNodes.ContextManager().flow(flow_name):  # noqa: SIM117
-            with self.ReferencedWorkflowContext(self, request.file_path):
-                workflow_result = self.run_workflow(str(file_path))
+            with self.ReferencedWorkflowContext(self, request.workflow_name):
+                workflow_result = self.run_workflow(workflow.file_path)
 
         if not workflow_result.execution_successful:
             logger.error(
                 "Attempted to import workflow '%s' as referenced sub flow. Failed because workflow execution failed: %s",
-                request.file_path,
+                request.workflow_name,
                 workflow_result.execution_details,
             )
             return ImportWorkflowAsReferencedSubFlowResultFailure()
@@ -2575,7 +2610,7 @@ class WorkflowManager:
         if not new_flows:
             logger.error(
                 "Attempted to import workflow '%s' as referenced sub flow. Failed because no new flow was created",
-                request.file_path,
+                request.workflow_name,
             )
             return ImportWorkflowAsReferencedSubFlowResultFailure()
 
@@ -2586,13 +2621,13 @@ class WorkflowManager:
         if len(new_flows) > 1:
             logger.debug(
                 "Multiple flows created during import of '%s'. Main flow: %s, Sub-flows: %s",
-                request.file_path,
+                request.workflow_name,
                 created_flow_name,
                 [flow for flow in new_flows if flow != created_flow_name],
             )
 
         logger.info(
-            "Successfully imported workflow '%s' as referenced sub flow '%s'", request.file_path, created_flow_name
+            "Successfully imported workflow '%s' as referenced sub flow '%s'", request.workflow_name, created_flow_name
         )
         return ImportWorkflowAsReferencedSubFlowResultSuccess(created_flow_name=created_flow_name)
 
