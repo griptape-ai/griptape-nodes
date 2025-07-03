@@ -151,6 +151,7 @@ class SaveWorkflowRequest(RequestPayload):
 @PayloadRegistry.register
 class ImportWorkflowAsReferencedSubFlowRequest(RequestPayload):
     file_path: str
+    flow_name: str | None = None  # If None, import into current context flow
 
 
 @dataclass
