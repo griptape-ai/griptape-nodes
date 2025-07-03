@@ -227,7 +227,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         cls,
         request: RequestPayload,
         *,
-        response_channel: str | None = None,
+        response_topic: str | None = None,
         request_id: str | None = None,
     ) -> ResultPayload:
         event_mgr = GriptapeNodes.EventManager()
@@ -238,7 +238,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 request=request,
                 operation_depth_mgr=obj_depth_mgr,
                 workflow_mgr=workflow_mgr,
-                response_channel=response_channel,
+                response_topic=response_topic,
                 request_id=request_id,
             )
         except Exception as e:

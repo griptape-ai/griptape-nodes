@@ -208,7 +208,7 @@ class EventRequest(BaseEvent, Generic[P]):
 
     request: P
     request_id: str | None = None
-    response_channel: str | None = None
+    response_topic: str | None = None
 
     def __init__(self, **data) -> None:
         """Initialize an EventRequest, inferring the generic type if needed."""
@@ -273,7 +273,7 @@ class EventResult(BaseEvent, Generic[P, R], ABC):
     request: P
     result: R
     request_id: str | None = None
-    response_channel: str | None = None
+    response_topic: str | None = None
     retained_mode: str | None = None
 
     def __init__(self, **data) -> None:

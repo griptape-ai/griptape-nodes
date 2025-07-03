@@ -272,7 +272,7 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
         raise TypeError(msg) from None
 
     # Don't send events over the wire that don't have a request_id set (e.g. engine-internal events)
-    __schedule_async_task(__emit_message(dest_socket, result_event.json(), channel=result_event.response_channel))
+    __schedule_async_task(__emit_message(dest_socket, result_event.json(), topic=result_event.response_topic))
 
 
 def __handle_session_events(result_event: EventResultSuccess) -> None:
@@ -280,20 +280,20 @@ def __handle_session_events(result_event: EventResultSuccess) -> None:
     global ws_connection_for_sending  # noqa: PLW0602
 
     if isinstance(result_event.result, AppStartSessionResultSuccess):
-        # Subscribe to the new session channel
+        # Subscribe to the new session topic
         session_id = result_event.result.session_id
         if session_id and ws_connection_for_sending:
-            channel = f"sessions/{session_id}/request"
-            __schedule_async_task(__subscribe_to_channel(ws_connection_for_sending, channel))
-            logger.info("Subscribed to new session channel: %s", channel)
+            topic = f"sessions/{session_id}/request"
+            __schedule_async_task(__subscribe_to_topic(ws_connection_for_sending, topic))
+            logger.info("Subscribed to new session topic: %s", topic)
 
     elif isinstance(result_event.result, AppEndSessionResultSuccess):
-        # Unsubscribe from the ended session channel
+        # Unsubscribe from the ended session topic
         session_id = result_event.result.session_id
         if session_id and ws_connection_for_sending:
-            channel = f"sessions/{session_id}/request"
-            __schedule_async_task(__unsubscribe_from_channel(ws_connection_for_sending, channel))
-            logger.info("Unsubscribed from ended session channel: %s", channel)
+            topic = f"sessions/{session_id}/request"
+            __schedule_async_task(__unsubscribe_from_topic(ws_connection_for_sending, topic))
+            logger.info("Unsubscribed from ended session topic: %s", topic)
 
 
 def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
@@ -347,7 +347,7 @@ def _process_event_queue() -> None:
         if isinstance(event, EventRequest):
             request_payload = event.request
             GriptapeNodes.handle_request(
-                request_payload, response_channel=event.response_channel, request_id=event.request_id
+                request_payload, response_topic=event.response_topic, request_id=event.request_id
             )
         elif isinstance(event, AppEvent):
             __process_app_event(event)
@@ -386,7 +386,7 @@ def __create_async_websocket_connection() -> Any:
     )
 
 
-async def __emit_message(event_type: str, payload: str, channel: str | None = None) -> None:
+async def __emit_message(event_type: str, payload: str, topic: str | None = None) -> None:
     """Send a message via WebSocket asynchronously."""
     global ws_connection_for_sending  # noqa: PLW0602
     if ws_connection_for_sending is None:
@@ -394,11 +394,11 @@ async def __emit_message(event_type: str, payload: str, channel: str | None = No
         return
 
     try:
-        # Determine channel based on session_id and engine_id in the payload
-        if channel is None:
-            channel = _determine_response_channel()
+        # Determine topic based on session_id and engine_id in the payload
+        if topic is None:
+            topic = _determine_response_topic()
 
-        body = {"type": event_type, "payload": json.loads(payload), "channel": channel}
+        body = {"type": event_type, "payload": json.loads(payload), "topic": topic}
 
         await ws_connection_for_sending.send(json.dumps(body))
     except WebSocketException as e:
@@ -407,12 +407,12 @@ async def __emit_message(event_type: str, payload: str, channel: str | None = No
         logger.error("Unexpected error while sending event to Nodes API: %s", e)
 
 
-def _determine_response_channel() -> str | None:
-    """Determine the response channel based on session_id and engine_id in the payload."""
+def _determine_response_topic() -> str | None:
+    """Determine the response topic based on session_id and engine_id in the payload."""
     engine_id = GriptapeNodes.get_engine_id()
     session_id = GriptapeNodes.get_session_id()
 
-    # Normal channel determination logic
+    # Normal topic determination logic
     # Check for session_id first (highest priority)
     if session_id:
         return f"sessions/{session_id}/response"
@@ -421,60 +421,60 @@ def _determine_response_channel() -> str | None:
     if engine_id:
         return f"engines/{engine_id}/response"
 
-    # Default to generic response channel
+    # Default to generic response topic
     return "response"
 
 
-async def __subscribe_to_channel(ws_connection: Any, channel: str) -> None:
-    """Subscribe to a specific channel in the message bus."""
+async def __subscribe_to_topic(ws_connection: Any, topic: str) -> None:
+    """Subscribe to a specific topic in the message bus."""
     if ws_connection is None:
-        logger.warning("WebSocket connection not available for subscribing to channel")
+        logger.warning("WebSocket connection not available for subscribing to topic")
         return
 
     try:
-        body = {"type": "subscribe", "channel": channel, "payload": {}}
+        body = {"type": "subscribe", "topic": topic, "payload": {}}
         await ws_connection.send(json.dumps(body))
-        logger.info("Subscribed to channel: %s", channel)
+        logger.info("Subscribed to topic: %s", topic)
     except WebSocketException as e:
-        logger.error("Error subscribing to channel %s: %s", channel, e)
+        logger.error("Error subscribing to topic %s: %s", topic, e)
     except Exception as e:
-        logger.error("Unexpected error while subscribing to channel %s: %s", channel, e)
+        logger.error("Unexpected error while subscribing to topic %s: %s", topic, e)
 
 
-async def __unsubscribe_from_channel(ws_connection: Any, channel: str) -> None:
-    """Unsubscribe from a specific channel in the message bus."""
+async def __unsubscribe_from_topic(ws_connection: Any, topic: str) -> None:
+    """Unsubscribe from a specific topic in the message bus."""
     if ws_connection is None:
-        logger.warning("WebSocket connection not available for unsubscribing from channel")
+        logger.warning("WebSocket connection not available for unsubscribing from topic")
         return
 
     try:
-        body = {"type": "unsubscribe", "channel": channel, "payload": {}}
+        body = {"type": "unsubscribe", "topic": topic, "payload": {}}
         await ws_connection.send(json.dumps(body))
-        logger.info("Unsubscribed from channel: %s", channel)
+        logger.info("Unsubscribed from topic: %s", topic)
     except WebSocketException as e:
-        logger.error("Error unsubscribing from channel %s: %s", channel, e)
+        logger.error("Error unsubscribing from topic %s: %s", topic, e)
     except Exception as e:
-        logger.error("Unexpected error while unsubscribing from channel %s: %s", channel, e)
+        logger.error("Unexpected error while unsubscribing from topic %s: %s", topic, e)
 
 
 async def __subscribe_to_engine_and_session(ws_connection: Any) -> None:
-    """Subscribe to engine ID, session ID, and request channels on WebSocket connection."""
-    # Subscribe to request channel (engine discovery)
-    await __subscribe_to_channel(ws_connection, "request")
+    """Subscribe to engine ID, session ID, and request topics on WebSocket connection."""
+    # Subscribe to request topic (engine discovery)
+    await __subscribe_to_topic(ws_connection, "request")
 
     # Get engine ID and subscribe to engine_id/request
     engine_id = GriptapeNodes.get_engine_id()
     if engine_id:
-        await __subscribe_to_channel(ws_connection, f"engines/{engine_id}/request")
+        await __subscribe_to_topic(ws_connection, f"engines/{engine_id}/request")
     else:
         logger.warning("Engine ID not available for subscription")
 
     # Get session ID and subscribe to session_id/request if available
     session_id = GriptapeNodes.get_session_id()
     if session_id:
-        channel = f"sessions/{session_id}/request"
-        await __subscribe_to_channel(ws_connection, channel)
-        logger.info("Subscribed to session channel: %s", channel)
+        topic = f"sessions/{session_id}/request"
+        await __subscribe_to_topic(ws_connection, topic)
+        logger.info("Subscribed to session topic: %s", topic)
     else:
         logger.info("No session ID available for subscription")
 
