@@ -187,7 +187,7 @@ class FlowManager:
         details = f"Successfully retrieved Flow details for '{flow_name}'."
         logger.debug(details)
         return GetFlowDetailsResultSuccess(
-            referenced_workflow_source_path=flow.get_referenced_workflow_source_path(),
+            referenced_workflow_name=flow.get_referenced_workflow_name(),
             parent_flow_name=parent_flow_name,
         )
 
@@ -245,10 +245,10 @@ class FlowManager:
         # This will inform the engine to maintain a reference to the workflow
         # when serializing it. It may inform the editor to render it differently.
         workflow_manager = GriptapeNodes.WorkflowManager()
-        reference_path = None
+        referenced_workflow_name = None
         if workflow_manager.has_current_referenced_workflow():
-            reference_path = workflow_manager.get_current_referenced_workflow()
-        flow = ControlFlow(name=final_flow_name, referenced_workflow_source_path=reference_path)
+            referenced_workflow_name = workflow_manager.get_current_referenced_workflow()
+        flow = ControlFlow(name=final_flow_name, referenced_workflow_name=referenced_workflow_name)
         GriptapeNodes.ObjectManager().add_object_by_name(name=final_flow_name, obj=flow)
         self._name_to_parent_name[final_flow_name] = parent_name
 
@@ -1171,13 +1171,11 @@ class FlowManager:
             if request.include_create_flow_command:
                 # Check if this flow is a referenced workflow
                 if flow.is_referenced_workflow():
-                    referenced_source_path = flow.get_referenced_workflow_source_path()
-                    if referenced_source_path is None:
-                        details = f"Flow '{flow_name}' is marked as referenced but has no source path."
-                        logger.error(details)
-                        return SerializeFlowToCommandsResultFailure()
-                    create_flow_request = ImportWorkflowAsReferencedSubFlowRequest(file_path=referenced_source_path)
-                    referenced_workflows_in_use.add(referenced_source_path)
+                    referenced_workflow_name = flow.get_referenced_workflow_name()
+                    create_flow_request = ImportWorkflowAsReferencedSubFlowRequest(
+                        workflow_name=referenced_workflow_name  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
+                    )
+                    referenced_workflows_in_use.add(referenced_workflow_name)  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
                 else:
                     create_flow_request = CreateFlowRequest(parent_flow_name=None)
             else:
@@ -1264,12 +1262,10 @@ class FlowManager:
                 # Check if this is a referenced workflow
                 if flow.is_referenced_workflow():
                     # For referenced workflows, create a minimal SerializedFlowCommands with just the import command
-                    referenced_source_path = flow.get_referenced_workflow_source_path()
-                    if referenced_source_path is None:
-                        details = f"Flow '{child_flow}' is marked as referenced but has no source path."
-                        logger.error(details)
-                        return SerializeFlowToCommandsResultFailure()
-                    import_command = ImportWorkflowAsReferencedSubFlowRequest(file_path=referenced_source_path)
+                    referenced_workflow_name = flow.get_referenced_workflow_name()
+                    import_command = ImportWorkflowAsReferencedSubFlowRequest(
+                        workflow_name=referenced_workflow_name  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
+                    )
 
                     serialized_flow = SerializedFlowCommands(
                         node_libraries_used=set(),
@@ -1279,12 +1275,12 @@ class FlowManager:
                         unique_parameter_uuid_to_values={},
                         set_parameter_value_commands={},
                         sub_flows_commands=[],
-                        referenced_workflows={referenced_source_path},
+                        referenced_workflows={referenced_workflow_name},  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
                     )
                     sub_flow_commands.append(serialized_flow)
 
                     # Add this referenced workflow to our accumulation
-                    referenced_workflows_in_use.add(referenced_source_path)
+                    referenced_workflows_in_use.add(referenced_workflow_name)  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
                 else:
                     # For standalone sub-flows, use the existing recursive serialization
                     with GriptapeNodes.ContextManager().flow(flow=flow):
@@ -1342,7 +1338,7 @@ class FlowManager:
                     flow_name = flow_initialization_result.flow_name
                 case ImportWorkflowAsReferencedSubFlowRequest():
                     if not isinstance(flow_initialization_result, ImportWorkflowAsReferencedSubFlowResultSuccess):
-                        details = f"Attempted to deserialize a serialized set of Flow Creation commands. Failed to import workflow '{flow_initialization_command.file_path}'."
+                        details = f"Attempted to deserialize a serialized set of Flow Creation commands. Failed to import workflow '{flow_initialization_command.workflow_name}'."
                         logger.error(details)
                         return DeserializeFlowFromCommandsResultFailure()
                     flow_name = flow_initialization_result.created_flow_name

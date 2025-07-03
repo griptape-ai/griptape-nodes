@@ -253,13 +253,13 @@ class GetFlowDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess)
     """Success result containing flow details.
 
     Attributes:
-        referenced_workflow_source_path (str | None): The file path of the workflow that was
+        referenced_workflow_name (str | None): The name of the workflow that was
             imported to create this flow. None if this flow was created standalone.
         parent_flow_name (str | None): The name of the parent flow, or None if this is a
             top-level flow.
     """
 
-    referenced_workflow_source_path: str | None
+    referenced_workflow_name: str | None
     parent_flow_name: str | None
 
 
