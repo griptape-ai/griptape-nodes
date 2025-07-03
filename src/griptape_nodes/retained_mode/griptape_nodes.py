@@ -223,16 +223,23 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return cls()
 
     @classmethod
-    def handle_request(cls, request: RequestPayload) -> ResultPayload:
+    def handle_request(
+        cls,
+        request: RequestPayload,
+        *,
+        response_topic: str | None = None,
+        request_id: str | None = None,
+    ) -> ResultPayload:
         event_mgr = GriptapeNodes.EventManager()
         obj_depth_mgr = GriptapeNodes.OperationDepthManager()
         workflow_mgr = GriptapeNodes.WorkflowManager()
-
         try:
             return event_mgr.handle_request(
                 request=request,
                 operation_depth_mgr=obj_depth_mgr,
                 workflow_mgr=workflow_mgr,
+                response_topic=response_topic,
+                request_id=request_id,
             )
         except Exception as e:
             logger.exception(
@@ -250,6 +257,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def get_session_id(cls) -> str | None:
         return BaseEvent._session_id
+
+    @classmethod
+    def get_engine_id(cls) -> str | None:
+        return BaseEvent._engine_id
 
     @classmethod
     def EventManager(cls) -> EventManager:
