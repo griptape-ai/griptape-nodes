@@ -2215,7 +2215,7 @@ class NodeManager:
             details = "Failed to serialized selected nodes."
             logger.error(details)
             return DuplicateSelectedNodesResultFailure()
-        result = GriptapeNodes.handle_request(DeserializeSelectedNodesFromCommandsRequest(positions=None))
+        result = GriptapeNodes.handle_request(DeserializeSelectedNodesFromCommandsRequest(positions=request.positions))
         if not isinstance(result, DeserializeSelectedNodesFromCommandsResultSuccess):
             details = "Failed to deserialize selected nodes."
             logger.error(details)

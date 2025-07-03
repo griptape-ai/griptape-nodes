@@ -408,6 +408,7 @@ class DeserializeNodeFromCommandsResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class DuplicateSelectedNodesRequest(WorkflowNotAlteredMixin, RequestPayload):
     nodes_to_duplicate: list[list[str]]
+    positions: list[NewPosition] | None = None
 
 
 @dataclass
