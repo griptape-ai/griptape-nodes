@@ -71,7 +71,7 @@ class EventManager:
         *,
         operation_depth_mgr: "OperationDepthManager",
         workflow_mgr: "WorkflowManager",
-        response_channel: str | None = None,
+        response_topic: str | None = None,
         request_id: str | None = None,
     ) -> ResultPayload:
         """Publish an event to the manager assigned to its type.
@@ -80,7 +80,7 @@ class EventManager:
             request: The request to handle
             operation_depth_mgr: The operation depth manager to use
             workflow_mgr: The workflow manager to use
-            response_channel: The channel to send the response to (optional)
+            response_topic: The topic to send the response to (optional)
             request_id: The ID of the request to correlate with the response (optional)
         """
         # Notify the manager of the event type
@@ -112,7 +112,7 @@ class EventManager:
                         request_id=request_id,
                         result=result_payload,
                         retained_mode=retained_mode_str,
-                        response_channel=response_channel,
+                        response_topic=response_topic,
                     )
                     # If the result is a success, and the WorkflowAlteredMixin is present, that means the flow has been changed in some way.
                     # In that case, we need to flush the element changes, so we add one to the event queue.
@@ -127,7 +127,7 @@ class EventManager:
                         request_id=request_id,
                         result=result_payload,
                         retained_mode=retained_mode_str,
-                        response_channel=response_channel,
+                        response_topic=response_topic,
                     )
                 wrapped_event = GriptapeNodeEvent(wrapped_event=result_event)
                 EventBus.publish_event(wrapped_event)
