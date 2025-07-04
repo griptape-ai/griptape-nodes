@@ -700,21 +700,36 @@ class LibraryManager:
                 advanced_library=advanced_library_instance,
             )
 
-        except KeyError as err:
-            # Library already exists
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=library_data.name,
-                library_version=library_version,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
-                problems=[
-                    "Failed because a library with this name was already registered. Check the Settings to ensure duplicate libraries are not being loaded."
-                ],
-            )
+        except KeyError:
+            # Library already exists - this is a reload scenario
+            # Clear all modules from the existing library to ensure fresh reload
+            try:
+                # Use both approaches: tracked modules and directory-based clearing
+                self._clear_all_library_modules(library_data.name)
+                self._clear_all_modules_by_base_directory(base_dir)
+                logger.info("Cleared existing modules for library reload: %s", library_data.name)
+            except Exception as clear_err:
+                logger.warning(
+                    "Failed to clear modules for library '%s' during reload: %s", library_data.name, clear_err
+                )
 
-            details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
-            logger.error(details)
-            return RegisterLibraryFromFileResultFailure()
+            # Get the existing library for reload
+            try:
+                library = LibraryRegistry.get_library(name=library_data.name)
+                # Clear existing nodes from the library
+                library.clear_all_nodes()
+                logger.debug("Cleared existing nodes from library: %s", library_data.name)
+            except Exception as get_err:
+                self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                    library_path=file_path,
+                    library_name=library_data.name,
+                    library_version=library_version,
+                    status=LibraryManager.LibraryStatus.UNUSABLE,
+                    problems=[f"Failed to reload library '{library_data.name}': {get_err}"],
+                )
+                details = f"Attempted to reload Library '{library_data.name}' from '{json_path}'. Failed to get existing library: {get_err}."
+                logger.error(details)
+                return RegisterLibraryFromFileResultFailure()
 
         # Install node library dependencies
         try:
@@ -1225,6 +1240,16 @@ class LibraryManager:
         details = f"Unregistering {len(stable_namespaces)} stable aliases for library: {library_name}"
         logger.debug(details)
 
+        # Find the library's base directory for aggressive module clearing
+        library_info = self.get_library_info_by_library_name(library_name)
+        if library_info and library_info.library_path:
+            try:
+                base_dir = Path(library_info.library_path).parent.absolute()
+                logger.debug("Clearing all modules from library directory: %s", base_dir)
+                self._clear_all_modules_by_base_directory(base_dir)
+            except Exception as e:
+                logger.warning("Failed to clear modules by directory for library '%s': %s", library_name, e)
+
         for stable_namespace in stable_namespaces:
             # Remove from sys.modules if it exists
             if stable_namespace in sys.modules:
@@ -1233,6 +1258,9 @@ class LibraryManager:
             # Find and remove from dynamic mapping
             dynamic_module_name = self._stable_to_dynamic_module_mapping.get(stable_namespace)
             if dynamic_module_name:
+                # Also remove the dynamic module from sys.modules
+                if dynamic_module_name in sys.modules:
+                    del sys.modules[dynamic_module_name]
                 self._dynamic_to_stable_module_mapping.pop(dynamic_module_name, None)
             self._stable_to_dynamic_module_mapping.pop(stable_namespace, None)
 
@@ -1240,6 +1268,96 @@ class LibraryManager:
         del self._library_to_stable_modules[library_key]
         details = f"Completed cleanup of stable aliases for library: '{library_name}'."
         logger.debug(details)
+
+    def _clear_all_library_modules(self, library_name: str) -> None:
+        """Clear all modules (both stable and dynamic) for a library during reload.
+
+        This method ensures that when a library is reloaded, all its modules are cleared
+        from sys.modules, including dependencies within the library. This fixes the issue
+        where base classes are not reloaded when child classes are refreshed.
+
+        Args:
+            library_name: Name of the library to clear modules for
+        """
+        library_key = library_name
+        if library_key not in self._library_to_stable_modules:
+            return
+
+        stable_namespaces = self._library_to_stable_modules[library_key].copy()
+        details = f"Clearing {len(stable_namespaces)} modules for library reload: {library_name}"
+        logger.debug(details)
+
+        dynamic_modules_to_clear = []
+
+        for stable_namespace in stable_namespaces:
+            # Find the corresponding dynamic module
+            dynamic_module_name = self._stable_to_dynamic_module_mapping.get(stable_namespace)
+            if dynamic_module_name:
+                dynamic_modules_to_clear.append(dynamic_module_name)
+
+            # Remove from sys.modules if it exists
+            if stable_namespace in sys.modules:
+                del sys.modules[stable_namespace]
+                logger.debug("Cleared stable module from sys.modules: %s", stable_namespace)
+
+        # Clear all dynamic modules from sys.modules
+        for dynamic_module_name in dynamic_modules_to_clear:
+            if dynamic_module_name in sys.modules:
+                del sys.modules[dynamic_module_name]
+                logger.debug("Cleared dynamic module from sys.modules: %s", dynamic_module_name)
+
+        # Clear the mappings for this library
+        for stable_namespace in stable_namespaces:
+            dynamic_module_name = self._stable_to_dynamic_module_mapping.get(stable_namespace)
+            if dynamic_module_name:
+                self._dynamic_to_stable_module_mapping.pop(dynamic_module_name, None)
+            self._stable_to_dynamic_module_mapping.pop(stable_namespace, None)
+
+        # Clear the library's module set
+        del self._library_to_stable_modules[library_key]
+        details = "Completed clearing all modules for library reload: '%s'."
+        logger.debug(details, library_name)
+
+    def _clear_all_modules_by_base_directory(self, base_dir: Path) -> None:
+        """Clear all modules that originate from a specific base directory.
+
+        This method provides a more aggressive approach to clearing modules,
+        targeting any module that was loaded from files in the given directory.
+        This helps ensure that all dependencies within a library directory are
+        properly cleared during reload.
+
+        Args:
+            base_dir: Base directory path to clear modules from
+        """
+        base_dir_str = str(base_dir.resolve())
+        base_dir_resolved = base_dir.resolve()
+        modules_to_remove = []
+
+        # Find all modules that originate from this directory
+        for module_name, module in sys.modules.items():
+            if module is None or not hasattr(module, "__file__") or not module.__file__:
+                continue
+
+            try:
+                module_file = Path(module.__file__).resolve()
+                module_parent = module_file.parent
+
+                # Check if module file is in the target directory or subdirectories
+                if str(module_file).startswith(base_dir_str) or module_parent == base_dir_resolved:
+                    modules_to_remove.append(module_name)
+                    logger.debug("Found module to clear from directory %s: %s", base_dir_str, module_name)
+
+            except (OSError, ValueError):
+                # Skip modules with problematic file paths
+                continue
+
+        # Remove the identified modules
+        for module_name in modules_to_remove:
+            if module_name in sys.modules:
+                del sys.modules[module_name]
+                logger.debug("Cleared module from sys.modules: %s", module_name)
+
+        logger.info("Cleared %d modules from directory: %s", len(modules_to_remove), base_dir_str)
 
     def get_stable_namespace_for_dynamic_module(self, dynamic_module_name: str) -> str | None:
         """Get the stable namespace for a dynamic module name.

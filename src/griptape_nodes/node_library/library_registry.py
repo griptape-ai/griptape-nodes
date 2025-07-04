@@ -329,3 +329,16 @@ class Library:
             The AdvancedNodeLibrary instance, or None if not set
         """
         return self._advanced_library
+
+    def clear_all_nodes(self) -> None:
+        """Clear all registered nodes from this library.
+
+        This method is used during library reload to ensure that old node classes
+        are removed before new ones are loaded. This helps prevent stale references
+        and ensures proper hot reloading of library changes.
+        """
+        # Clear the local dictionaries - the LibraryRegistry cleanup will be handled
+        # when the library is unregistered/re-registered during the reload process
+        self._node_types.clear()
+        self._node_metadata.clear()
+        logger.debug("Cleared all nodes from library: %s", self._library_data.name)
