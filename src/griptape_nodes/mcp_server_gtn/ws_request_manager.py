@@ -43,6 +43,7 @@ class WebSocketConnectionManager:
     async def _process_messages(self) -> None:
         """Process incoming WebSocket messages"""
         if not self.websocket:
+            logger.warning("WebSocket is not connected, cannot process messages")
             return
             
         try:
