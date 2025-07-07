@@ -11,9 +11,9 @@ class CompareImages(ControlNode):
 
         self.add_parameter(
             Parameter(
-                name="Image_1",
+                name="A",
                 input_types=["ImageUrlArtifact", "ImageArtifact"],
-                tooltip="Image 1",
+                tooltip="Image A",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
                 type="hidden",
@@ -22,9 +22,9 @@ class CompareImages(ControlNode):
 
         self.add_parameter(
             Parameter(
-                name="Image_2",
+                name="B",
                 input_types=["ImageUrlArtifact", "ImageArtifact"],
-                tooltip="Image 2",
+                tooltip="Image B",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
                 type="hidden",
@@ -36,7 +36,7 @@ class CompareImages(ControlNode):
                 name="Compare",
                 type="dict",
                 tooltip="Compare two images",
-                default_value={"input_image_1": None, "input_image_2": None},
+                default_value={"input_image_a": None, "input_image_b": None},
                 allowed_modes={ParameterMode.PROPERTY},
                 traits={CompareImagesTrait()},
                 ui_options={"compare": True},
@@ -51,21 +51,21 @@ class CompareImages(ControlNode):
         if parameter.name in {"Image_1", "Image_2"}:
             current_value = self.get_parameter_value("Compare")
             if current_value is None:
-                current_value = {"input_image_1": None, "input_image_2": None}
-            if parameter.name == "Image_1":
-                current_value["input_image_1"] = value
-            elif parameter.name == "Image_2":
-                current_value["input_image_2"] = value
+                current_value = {"input_image_a": None, "input_image_b": None}
+            if parameter.name == "A":
+                current_value["input_image_a"] = value
+            elif parameter.name == "B":
+                current_value["input_image_b"] = value
             self.set_parameter_value("Compare", current_value)
         return super().after_value_set(parameter, value)
 
     def process(self) -> None:
         """Process the node by creating a dictionary from the input images."""
         # Get the input images
-        image_1 = self.get_parameter_value("Image_1")
-        image_2 = self.get_parameter_value("Image_2")
+        image_a = self.get_parameter_value("A")
+        image_b = self.get_parameter_value("B")
         # Create a dictionary with the images
-        result_dict = {"input_image_1": image_1, "input_image_2": image_2}
+        result_dict = {"input_image_a": image_a, "input_image_b": image_b}
 
         # Set output values
         self.parameter_output_values["Compare"] = result_dict
