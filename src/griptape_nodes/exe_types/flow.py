@@ -36,32 +36,14 @@ class ControlFlow:
     control_flow_machine: ControlFlowMachine
     single_node_resolution: bool
     flow_queue: Queue[BaseNode]
-    _referenced_workflow_name: str | None
 
-    def __init__(self, name: str, referenced_workflow_name: str | None) -> None:
+    def __init__(self, name: str) -> None:
         self.name = name
         self.connections = Connections()
         self.nodes = {}
         self.control_flow_machine = ControlFlowMachine(self)
         self.single_node_resolution = False
         self.flow_queue = Queue()
-        self._referenced_workflow_name = referenced_workflow_name
-
-    def is_referenced_workflow(self) -> bool:
-        """Check if this flow was created by importing a referenced workflow.
-
-        Returns True if this flow originated from a workflow import operation,
-        False if it was created standalone.
-        """
-        return self._referenced_workflow_name is not None
-
-    def get_referenced_workflow_name(self) -> str | None:
-        """Get the name of the referenced workflow, if any.
-
-        Returns the workflow name that was imported to create this flow,
-        or None if this flow was created standalone.
-        """
-        return self._referenced_workflow_name
 
     def add_node(self, node: BaseNode) -> None:
         self.nodes[node.name] = node
