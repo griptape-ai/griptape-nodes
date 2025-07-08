@@ -19,6 +19,7 @@ class WorkflowMetadata(BaseModel):
     schema_version: str
     engine_version_created_with: str
     node_libraries_referenced: list[LibraryNameAndVersion]
+    workflows_referenced: list[str] | None = None
     description: str | None = None
     image: str | None = None
     is_griptape_provided: bool | None = False
