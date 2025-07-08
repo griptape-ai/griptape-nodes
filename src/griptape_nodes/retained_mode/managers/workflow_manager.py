@@ -1837,15 +1837,11 @@ class WorkflowManager:
                         ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
                     )
 
-        # With Workflow Schema version 0.5.0+: Always set set_as_new_context=False to avoid double-pushing flows
-        create_flow_request_args.append(
-            ast.keyword(arg="set_as_new_context", value=ast.Constant(value=False, lineno=1, col_offset=0))
-        )
 
         # Create a comment explaining the behavior
         comment_ast = ast.Expr(
             value=ast.Constant(
-                value="# Create the Flow, but do not rely on it being set as the current context.",
+                value="# Create the Flow using the serialized flow command's context settings.",
                 lineno=1,
                 col_offset=0,
             ),
