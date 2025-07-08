@@ -110,6 +110,12 @@ class TilingFluxImg2ImgPipeline(ControlNode):
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         self.flux_params.after_value_set(parameter, value)
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        input_image = self.get_parameter_value("input_image")
+        if input_image is None:
+            return [ValueError("input_image is required")]
+        return []
+
     def preprocess(self) -> None:
         self.flux_params.preprocess()
 
