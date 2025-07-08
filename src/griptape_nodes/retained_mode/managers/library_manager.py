@@ -742,6 +742,28 @@ class LibraryManager:
                     logger.error(details)
                     return RegisterLibraryFromFileResultFailure()
                 if self._can_write_to_venv_location(library_venv_python_path):
+                    # Check disk space before installing dependencies
+                    config_manager = GriptapeNodes.ConfigManager()
+                    min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_libraries")
+                    if not OSManager.check_available_disk_space(Path(venv_path), min_space_gb):
+                        error_msg = OSManager.format_disk_space_error(Path(venv_path))
+                        logger.error(
+                            "Attempted to load Library JSON from '%s'. Failed when installing dependencies (requires %.1f GB): %s",
+                            json_path,
+                            min_space_gb,
+                            error_msg,
+                        )
+                        self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                            library_path=file_path,
+                            library_name=library_data.name,
+                            library_version=library_version,
+                            status=LibraryManager.LibraryStatus.UNUSABLE,
+                            problems=[
+                                f"Insufficient disk space for dependencies (requires {min_space_gb} GB): {error_msg}"
+                            ],
+                        )
+                        return RegisterLibraryFromFileResultFailure()
+
                     # Grab the python executable from the virtual environment so that we can pip install there
                     logger.info(
                         "Installing dependencies for library '%s' with pip in venv at %s", library_data.name, venv_path
@@ -771,6 +793,7 @@ class LibraryManager:
         except subprocess.CalledProcessError as e:
             # Failed to create the library
             error_details = f"return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
+
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=library_data.name,
@@ -863,6 +886,19 @@ class LibraryManager:
                 logger.error(details)
                 return RegisterLibraryFromRequirementSpecifierResultFailure()
             if self._can_write_to_venv_location(library_python_venv_path):
+                # Check disk space before installing dependencies
+                config_manager = GriptapeNodes.ConfigManager()
+                min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_libraries")
+                if not OSManager.check_available_disk_space(Path(venv_path), min_space_gb):
+                    error_msg = OSManager.format_disk_space_error(Path(venv_path))
+                    logger.error(
+                        "Attempted to install library '%s'. Failed when installing dependencies (requires %.1f GB): %s",
+                        request.requirement_specifier,
+                        min_space_gb,
+                        error_msg,
+                    )
+                    return RegisterLibraryFromRequirementSpecifierResultFailure()
+
                 logger.info("Installing dependency '%s' with pip in venv at %s", package_name, venv_path)
                 subprocess.run(  # noqa: S603
                     [
@@ -922,6 +958,19 @@ class LibraryManager:
         if library_venv_path.exists():
             logger.debug("Virtual environment already exists at %s", library_venv_path)
         else:
+            # Check disk space before creating virtual environment
+            config_manager = GriptapeNodes.ConfigManager()
+            min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_libraries")
+            if not OSManager.check_available_disk_space(library_venv_path.parent, min_space_gb):
+                error_msg = OSManager.format_disk_space_error(library_venv_path.parent)
+                logger.error(
+                    "Attempted to create virtual environment (requires %.1f GB). Failed: %s", min_space_gb, error_msg
+                )
+                error_message = (
+                    f"Disk space error creating virtual environment (requires {min_space_gb} GB): {error_msg}"
+                )
+                raise RuntimeError(error_message)
+
             try:
                 logger.info("Creating virtual environment at %s with Python %s", library_venv_path, python_version)
                 subprocess.run(  # noqa: S603
