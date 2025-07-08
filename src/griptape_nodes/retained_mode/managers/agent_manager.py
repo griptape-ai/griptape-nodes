@@ -113,7 +113,7 @@ class AgentManager:
             msg = f"Secret '{API_KEY_ENV_VAR}' not found"
             raise ValueError(msg)
         return NodesPromptImageGenerationTool(
-            image_generation_driver=GriptapeCloudImageGenerationDriver(api_key=api_key, model="dall-e-3"),
+            image_generation_driver=GriptapeCloudImageGenerationDriver(api_key=api_key, model="gpt-image-1"),
             static_files_manager=self.static_files_manager,
         )
     

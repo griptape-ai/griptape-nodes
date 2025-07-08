@@ -4,8 +4,8 @@
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
-    "library_version": "0.39.0",
-    "engine_version": "0.39.0",
+    "library_version": "0.41.0",
+    "engine_version": "0.41.0",
     "tags": [
       "Griptape",
       "AI"
@@ -113,7 +113,7 @@
       }
     },
     {
-      "class_name": "DinoSam2VideoDetector", 
+      "class_name": "DinoSam2VideoDetector",
       "file_path": "dino_sam2_library/dino_sam_2_video_detector.py",
       "metadata": {
         "category": "video/segmentation",
@@ -253,7 +253,7 @@
       "metadata": {
         "category": "image/upscale",
         "description": "Generate Image Variation with Flux via 🤗 Diffusers using a tiling strategy that allows efficient processing of hi-res images. Without the tiling the quadratic cost of transformer models will consume your GPU and time.",
-        "display_name": "Flux Post-Upscale"
+        "display_name": "Flux Post Upscale"
       }
     },
     {

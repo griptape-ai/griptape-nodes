@@ -144,6 +144,7 @@ class RenameWorkflowResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class SaveWorkflowRequest(RequestPayload):
     file_name: str | None = None
+    image_path: str | None = None
 
 
 @dataclass
