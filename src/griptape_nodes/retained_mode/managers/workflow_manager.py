@@ -1033,12 +1033,17 @@ class WorkflowManager:
         serialized_flow_commands = serialized_flow_result.serialized_flow_commands
 
         # Create the Workflow Metadata header.
+        workflows_referenced = None
+        if serialized_flow_commands.referenced_workflows:
+            workflows_referenced = list(serialized_flow_commands.referenced_workflows)
+
         workflow_metadata = self._generate_workflow_metadata(
             file_name=file_name,
             engine_version=engine_version,
             creation_date=creation_date,
             node_libraries_referenced=list(serialized_flow_commands.node_libraries_used),
             published_workflow_id=prior_workflow.metadata.published_workflow_id if prior_workflow else None,
+            workflows_referenced=workflows_referenced,
         )
         if workflow_metadata is None:
             details = f"Attempted to save workflow '{relative_file_path}'. Failed to generate metadata."
@@ -1194,13 +1199,14 @@ class WorkflowManager:
         logger.info(details)
         return SaveWorkflowResultSuccess(file_path=str(serialized_file_path))
 
-    def _generate_workflow_metadata(
+    def _generate_workflow_metadata(  # noqa: PLR0913
         self,
         file_name: str,
         engine_version: str,
         creation_date: datetime,
         node_libraries_referenced: list[LibraryNameAndVersion],
         published_workflow_id: str | None,
+        workflows_referenced: list[str] | None = None,
     ) -> WorkflowMetadata | None:
         local_tz = datetime.now().astimezone().tzinfo
         workflow_metadata = WorkflowMetadata(
@@ -1208,6 +1214,7 @@ class WorkflowManager:
             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
             engine_version_created_with=engine_version,
             node_libraries_referenced=node_libraries_referenced,
+            workflows_referenced=workflows_referenced,
             creation_date=creation_date,
             last_modified_date=datetime.now(tz=local_tz),
             published_workflow_id=published_workflow_id,
