@@ -371,8 +371,8 @@ wheels = [
 
 [[package]]
 name = "griptape"
-version = "1.7.1"
-source = { registry = "https://pypi.org/simple" }
+version = "1.8.0"
+source = { git = "https://github.com/griptape-ai/griptape?rev=main#b0b8a17e0f583511948ae3a1e21b1457ab02a316" }
 dependencies = [
     { name = "attrs" },
     { name = "filetype" },
@@ -391,10 +391,6 @@ dependencies = [
     { name = "tiktoken" },
     { name = "urllib3" },
     { name = "wrapt" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/2f/cb/cd10bf0c650facd4d6b217738776fdbc108a1e1709239e01f73990bd2a6e/griptape-1.7.1.tar.gz", hash = "sha256:90c5ae7247608f38e298d8afeec84261384359291c5a50800134b0145accd897", size = 184897, upload-time = "2025-05-09T16:17:35.747Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5e/18/5bb10170736a34844adcf669c48297458ae5eb686d7903b982c9fbf49bf8/griptape-1.7.1-py3-none-any.whl", hash = "sha256:02336cc0326410dfcd269a2da1338475be19fb636e518d19c551a9cfc8f556fb", size = 417442, upload-time = "2025-05-09T16:17:33.881Z" },
 ]
 
 [package.optional-dependencies]
@@ -477,7 +473,7 @@ test = [
 requires-dist = [
     { name = "austin-dist", marker = "extra == 'profiling'", specifier = ">=3.7.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "griptape", extras = ["drivers-prompt-cohere", "drivers-prompt-anthropic", "drivers-prompt-ollama", "drivers-prompt-amazon-bedrock", "loaders-image", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "drivers-web-search-exa"], specifier = ">=1.7.1" },
+    { name = "griptape", extras = ["drivers-prompt-amazon-bedrock", "drivers-prompt-anthropic", "drivers-prompt-cohere", "drivers-prompt-ollama", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "drivers-web-search-exa", "loaders-image"], git = "https://github.com/griptape-ai/griptape?rev=main" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "imageio-ffmpeg", specifier = ">=0.6.0" },
     { name = "json-repair", specifier = ">=0.46.1" },
