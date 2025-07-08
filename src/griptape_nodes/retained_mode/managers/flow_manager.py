@@ -1177,7 +1177,9 @@ class FlowManager:
                     )
                     referenced_workflows_in_use.add(referenced_workflow_name)  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
                 else:
-                    create_flow_request = CreateFlowRequest(parent_flow_name=None)
+                    # Always set set_as_new_context=False during serialization - let the workflow manager
+                    # that loads this serialized flow decide whether to push it to context or not
+                    create_flow_request = CreateFlowRequest(parent_flow_name=None, set_as_new_context=False)
             else:
                 create_flow_request = None
 
