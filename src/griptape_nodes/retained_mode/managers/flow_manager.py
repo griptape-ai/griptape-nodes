@@ -107,6 +107,7 @@ logger = logging.getLogger("griptape_nodes")
 
 class FlowManager:
     _name_to_parent_name: dict[str, str | None]
+    _flow_to_referenced_workflow_name: dict[ControlFlow, str]
 
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(CreateFlowRequest, self.on_create_flow_request)
@@ -141,12 +142,29 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(FlushParameterChangesRequest, self.on_flush_request)
 
         self._name_to_parent_name = {}
+        self._flow_to_referenced_workflow_name = {}
 
     def get_parent_flow(self, flow_name: str) -> str | None:
         if flow_name in self._name_to_parent_name:
             return self._name_to_parent_name[flow_name]
         msg = f"Flow with name {flow_name} doesn't exist"
         raise ValueError(msg)
+
+    def is_referenced_workflow(self, flow: ControlFlow) -> bool:
+        """Check if this flow was created by importing a referenced workflow.
+
+        Returns True if this flow originated from a workflow import operation,
+        False if it was created standalone.
+        """
+        return flow in self._flow_to_referenced_workflow_name
+
+    def get_referenced_workflow_name(self, flow: ControlFlow) -> str | None:
+        """Get the name of the referenced workflow, if any.
+
+        Returns the workflow name that was imported to create this flow,
+        or None if this flow was created standalone.
+        """
+        return self._flow_to_referenced_workflow_name.get(flow)
 
     def on_get_top_level_flow_request(self, request: GetTopLevelFlowRequest) -> ResultPayload:  # noqa: ARG002 (the request has to be assigned to the method)
         for flow_name, parent in self._name_to_parent_name.items():
@@ -184,10 +202,14 @@ class FlowManager:
             logger.error(details)
             return GetFlowDetailsResultFailure()
 
+        referenced_workflow_name = None
+        if self.is_referenced_workflow(flow):
+            referenced_workflow_name = self.get_referenced_workflow_name(flow)
+
         details = f"Successfully retrieved Flow details for '{flow_name}'."
         logger.debug(details)
         return GetFlowDetailsResultSuccess(
-            referenced_workflow_name=flow.get_referenced_workflow_name(),
+            referenced_workflow_name=referenced_workflow_name,
             parent_flow_name=parent_flow_name,
         )
 
@@ -245,12 +267,14 @@ class FlowManager:
         # This will inform the engine to maintain a reference to the workflow
         # when serializing it. It may inform the editor to render it differently.
         workflow_manager = GriptapeNodes.WorkflowManager()
-        referenced_workflow_name = None
-        if workflow_manager.has_current_referenced_workflow():
-            referenced_workflow_name = workflow_manager.get_current_referenced_workflow()
-        flow = ControlFlow(name=final_flow_name, referenced_workflow_name=referenced_workflow_name)
+        flow = ControlFlow(name=final_flow_name)
         GriptapeNodes.ObjectManager().add_object_by_name(name=final_flow_name, obj=flow)
         self._name_to_parent_name[final_flow_name] = parent_name
+
+        # Track referenced workflow if this flow was created within a referenced workflow context
+        if workflow_manager.has_current_referenced_workflow():
+            referenced_workflow_name = workflow_manager.get_current_referenced_workflow()
+            self._flow_to_referenced_workflow_name[flow] = referenced_workflow_name
 
         # See if we need to push it as the current context.
         if request.set_as_new_context:
@@ -355,6 +379,10 @@ class FlowManager:
             # Remove the flow from our map.
             obj_mgr.del_obj_by_name(flow.name)
             del self._name_to_parent_name[flow.name]
+
+            # Clean up referenced workflow tracking
+            if flow in self._flow_to_referenced_workflow_name:
+                del self._flow_to_referenced_workflow_name[flow]
 
         details = f"Successfully deleted Flow '{flow_name}'."
         logger.debug(details)
@@ -1170,8 +1198,8 @@ class FlowManager:
             # The base flow creation, if desired.
             if request.include_create_flow_command:
                 # Check if this flow is a referenced workflow
-                if flow.is_referenced_workflow():
-                    referenced_workflow_name = flow.get_referenced_workflow_name()
+                if self.is_referenced_workflow(flow):
+                    referenced_workflow_name = self.get_referenced_workflow_name(flow)
                     create_flow_request = ImportWorkflowAsReferencedSubFlowRequest(
                         workflow_name=referenced_workflow_name  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
                     )
@@ -1262,9 +1290,9 @@ class FlowManager:
                     return SerializeFlowToCommandsResultFailure()
 
                 # Check if this is a referenced workflow
-                if flow.is_referenced_workflow():
+                if self.is_referenced_workflow(flow):
                     # For referenced workflows, create a minimal SerializedFlowCommands with just the import command
-                    referenced_workflow_name = flow.get_referenced_workflow_name()
+                    referenced_workflow_name = self.get_referenced_workflow_name(flow)
                     import_command = ImportWorkflowAsReferencedSubFlowRequest(
                         workflow_name=referenced_workflow_name  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
                     )
