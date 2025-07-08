@@ -1815,11 +1815,10 @@ class WorkflowManager:
                         ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
                     )
 
-
         # Create a comment explaining the behavior
         comment_ast = ast.Expr(
             value=ast.Constant(
-                value="# Create the Flow using the serialized flow command's context settings.",
+                value="# Create the Flow, then do work within it as context.",
                 lineno=1,
                 col_offset=0,
             ),
