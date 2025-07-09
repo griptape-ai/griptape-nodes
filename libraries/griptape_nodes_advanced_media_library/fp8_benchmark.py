@@ -37,7 +37,7 @@ def benchmark_pipeline(
     }
 
 
-def print_benchmark_table(standard_stats, fp8_stats):
+def print_benchmark_table(standard_stats, standard_caching_stats, fp8_stats, fp8_caching_stats):
     """Print benchmark results in a formatted table."""
     print("\n" + "=" * 60)
     print("BENCHMARK RESULTS")
@@ -59,6 +59,16 @@ def print_benchmark_table(standard_stats, fp8_stats):
         f"{'Max Time (s)':<20} {standard_stats['max_time']:<15.2f} {fp8_stats['max_time']:<15.2f} {max_speedup:<10.2f}x"
     )
     print("=" * 60)
+
+    # Standard cache vs standard stats comparison
+    print("\nStandard Cache vs Standard Stats:")
+    std_cache_speedup = standard_stats["average_time"] / standard_caching_stats["average_time"]
+    print(f"{'Cache Speedup':<20} {standard_caching_stats['average_time']:<15.2f} {standard_stats['average_time']:<15.2f} {std_cache_speedup:<10.2f}x")
+
+    # FP8 cache vs FP8 stats comparison
+    print("\nFP8 Cache vs FP8 Stats:")
+    fp8_cache_speedup = fp8_stats["average_time"] / fp8_caching_stats["average_time"]
+    print(f"{'Cache Speedup':<20} {fp8_caching_stats['average_time']:<15.2f} {fp8_stats['average_time']:<15.2f} {fp8_cache_speedup:<10.2f}x")
 
     print("\nDetailed Times:")
     print(f"Standard: {[f'{t:.2f}' for t in standard_stats['all_times']]}")
