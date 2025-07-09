@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, Generic, Optional, TypeVar, List, Tuple
 from urllib.parse import urljoin
 import websockets
 
-logger = logging.getLogger("griptape_nodes")
+logger = logging.getLogger("griptape_nodes_mcp_server")
 
 T = TypeVar('T')
 
@@ -16,14 +16,13 @@ class WebSocketConnectionManager:
     
     def __init__(self, websocket_url: str = urljoin(
         os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai").replace("http", "ws"),
-        "/ws/engines/events?publish_channel=responses&subscribe_channel=requests",
+        "/ws/engines/events?publish_channel=requests&subscribe_channel=responses",
     )):
         self.websocket_url = websocket_url
         self.websocket = None
         self.connected = False
         self.event_handlers: Dict[str, List[Callable]] = {}
         self.request_handlers: Dict[str, Tuple[Callable, Callable]] = {}
-        logger = logging.getLogger(__name__)
         self._connect_task = None
         self._process_task = None
     
@@ -35,7 +34,7 @@ class WebSocketConnectionManager:
         try:
             message = json.dumps(data)
             await self.websocket.send(message)
-            logger.debug(f"📤 Sent message: {message[:100]}{'...' if len(message) > 100 else ''}")
+            logger.debug(f"📤 Sent message: {message}")
         except Exception as e:
             logger.error(f"Failed to send message: {str(e)}")
             raise
@@ -50,7 +49,7 @@ class WebSocketConnectionManager:
             async for message in self.websocket:
                 try:
                     data = json.loads(message)
-                    logger.debug(f"📥 Received message: {message[:100]}{'...' if len(message) > 100 else ''}")
+                    # logger.debug(f"📥 Received message: {message}")
                     await self._handle_message(data)
                 except json.JSONDecodeError:
                     logger.error(f"Failed to parse message: {message}")
@@ -67,44 +66,18 @@ class WebSocketConnectionManager:
             self.connected = False
     
     async def _handle_message(self, data: Dict[str, Any]) -> None:
-        """Handle an incoming message based on its type"""
-        payload_type = data.get("payload_type")
-        event_type = data.get("event_type")
-        
-        if payload_type in self.event_handlers:
-            for handler in self.event_handlers[payload_type]:
-                try:
-                    handler(data.get("payload", {}), data.get("request", {}), data.get("session_id"))
-                except Exception as e:
-                    logger.error(f"Error in event handler: {str(e)}")
-        
-        # Handle request responses
-        request = data.get("request", {})
+        request = data.get("payload", {}).get("request", {})
         request_id = request.get("request_id")
         
         if request_id and request_id in self.request_handlers:
             success_handler, failure_handler = self.request_handlers[request_id]
             try:
-                if "error" in data:
-                    failure_handler(data, request)
-                else:
+                if data.get("type") == "success_result":
                     success_handler(data, request)
+                else:
+                    failure_handler(data, request)
             except Exception as e:
                 logger.error(f"Error in request handler: {str(e)}")
-    
-    def subscribe_to_event(self, event_type: str, handler: Callable) -> Callable:
-        """Subscribe to events of a specific type"""
-        if event_type not in self.event_handlers:
-            self.event_handlers[event_type] = []
-        
-        self.event_handlers[event_type].append(handler)
-        
-        # Return unsubscribe function
-        def unsubscribe():
-            if event_type in self.event_handlers and handler in self.event_handlers[event_type]:
-                self.event_handlers[event_type].remove(handler)
-        
-        return unsubscribe
     
     def subscribe_to_request_event(
         self, 
@@ -137,7 +110,7 @@ class AsyncRequestManager(Generic[T]):
                 additional_headers=headers
             )
             self.connection_manager.connected = True
-            logger.info("🟢 WebSocket connection established")
+            logger.debug(f"🟢 WebSocket connection established: {self.connection_manager.websocket}")
             
             # Start processing messages
             self.connection_manager._process_task = asyncio.create_task(self.connection_manager._process_messages())
@@ -163,7 +136,7 @@ class AsyncRequestManager(Generic[T]):
                 pass
             self.connection_manager._process_task = None
 
-        logger.info("WebSocket disconnected")
+        logger.debug("WebSocket disconnected")
         
     async def send_api_message(self, data: Dict[str, Any]) -> None:
         """Send a message to the API via WebSocket"""
@@ -221,12 +194,16 @@ class AsyncRequestManager(Generic[T]):
         # Define handlers that will resolve/reject the future
         def success_handler(response, request):
             if not response_future.done():
-                response_future.set_result(response)
-                
+                result = response.get('payload', {}).get('result', 'Success')
+                logger.debug(f"✅ Request succeeded: {result}")
+                response_future.set_result(result)
+
         def failure_handler(response, request):
             if not response_future.done():
-                response_future.set_exception(Exception(response.get("error", "Unknown error")))
-        
+                error = response.get('payload', {}).get("result", {}).get("exception", "Unknown error") or "Unknown error"
+                logger.error(f"❌ Request failed: {error}")
+                response_future.set_exception(Exception(error))
+
         # Generate request ID and subscribe
         request_id = self.connection_manager.subscribe_to_request_event(success_handler, failure_handler)
         payload["request_id"] = request_id

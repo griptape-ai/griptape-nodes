@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import contextlib
 import logging
@@ -6,6 +7,7 @@ from collections.abc import AsyncIterator
 
 from mcp.server.lowlevel import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from rich.logging import RichHandler
 from starlette.applications import Starlette
 from starlette.routing import Mount
 from starlette.types import Receive, Scope, Send
@@ -21,14 +23,15 @@ from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
 from griptape_nodes.mcp_server_gtn.ws_request_manager import AsyncRequestManager, WebSocketConnectionManager
 
 
-logger = logging.getLogger("griptape_nodes")
-
 SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "CreateNodeRequest": CreateNodeRequest,
 }
 
 def main() -> int:
-    logger.info("Starting MCP GTN server...")
+    mcp_server_logger = logging.getLogger("griptape_nodes_mcp_server")
+    mcp_server_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
+    mcp_server_logger.setLevel(logging.INFO)
+    mcp_server_logger.info("Starting MCP GTN server...")
 
     connection_manager = WebSocketConnectionManager()
     request_manager = AsyncRequestManager(connection_manager)
@@ -54,18 +57,15 @@ def main() -> int:
                 request_payload.__dict__, 
                 timeout_ms=5000
             )
-            logger.info(f"Got result: {result}")
+            mcp_server_logger.debug(f"Got result: {result}")
 
-            if isinstance(result, ResultPayload):
-                return [TextContent(text=str(result))]
-            else:
-                raise ValueError("Unexpected result type")
+            return [TextContent(type="text", text=json.dumps(result))]
 
         except asyncio.TimeoutError as e:
-            logger.error("Request timed out")
+            mcp_server_logger.error("Request timed out")
             raise e
         except Exception as e:
-            logger.exception(f"Request failed: {str(e)}")
+            mcp_server_logger.exception(f"Request failed: {str(e)}")
             raise e
 
     # Create the session manager with our app and event store
@@ -83,11 +83,11 @@ def main() -> int:
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
         """Context manager for managing session manager lifecycle."""
         async with session_manager.run():
-            logger.info("Application started with StreamableHTTP session manager!")
+            mcp_server_logger.info("Application started with StreamableHTTP session manager!")
             try:
                 yield
             finally:
-                logger.info("Application shutting down...")
+                mcp_server_logger.info("Application shutting down...")
 
     # Create an ASGI application using the transport
     starlette_app = Starlette(
