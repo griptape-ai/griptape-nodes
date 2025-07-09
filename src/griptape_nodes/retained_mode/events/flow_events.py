@@ -21,6 +21,7 @@ class CreateFlowRequest(RequestPayload):
     flow_name: str | None = None
     # When True, this Flow will be pushed as the new Current Context.
     set_as_new_context: bool = True
+    metadata: dict | None = None
 
 
 @dataclass
@@ -271,3 +272,42 @@ class GetFlowDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
     This occurs when the specified flow doesn't exist, the current context is empty
     (when flow_name is None), or there are issues with the flow's parent mapping.
     """
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowMetadataRequest(RequestPayload):
+    # If None is passed, assumes we're using the Flow in the Current Context
+    flow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowMetadataResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    metadata: dict
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class SetFlowMetadataRequest(RequestPayload):
+    metadata: dict
+    # If None is passed, assumes we're using the Flow in the Current Context
+    flow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class SetFlowMetadataResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class SetFlowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
