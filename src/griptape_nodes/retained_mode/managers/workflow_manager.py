@@ -76,6 +76,7 @@ from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
     Version,
 )
+from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -1010,7 +1011,7 @@ class WorkflowManager:
 
         return final_code_output, workflow_metadata
 
-    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:
+    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         local_tz = datetime.now().astimezone().tzinfo
 
         # Start with the file name provided; we may change it.
@@ -1064,17 +1065,40 @@ class WorkflowManager:
             return SaveWorkflowResultFailure()
 
         # Create the pathing and write the file
-        file_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            logger.error("Attempted to save workflow '%s'. Failed when creating directory: %s", file_name, str(e))
+            return SaveWorkflowResultFailure()
 
         relative_serialized_file_path = f"{file_name}.py"
         serialized_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_serialized_file_path)
-        with serialized_file_path.open("w", encoding="utf-8") as file:
-            file.write(final_code_output)
+
+        # Check disk space before writing
+        config_manager = GriptapeNodes.ConfigManager()
+        min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_workflows")
+        if not OSManager.check_available_disk_space(serialized_file_path.parent, min_space_gb):
+            error_msg = OSManager.format_disk_space_error(serialized_file_path.parent)
+            logger.error(
+                "Attempted to save workflow '%s' (requires %.1f GB). Failed: %s", file_name, min_space_gb, error_msg
+            )
+            return SaveWorkflowResultFailure()
+
+        try:
+            with serialized_file_path.open("w", encoding="utf-8") as file:
+                file.write(final_code_output)
+        except OSError as e:
+            logger.error("Attempted to save workflow '%s'. Failed when writing file: %s", file_name, str(e))
+            return SaveWorkflowResultFailure()
 
         # save the created workflow as an entry in the JSON config file.
         registered_workflows = WorkflowRegistry.list_workflows()
         if file_name not in registered_workflows:
-            GriptapeNodes.ConfigManager().save_user_workflow_json(str(file_path))
+            try:
+                GriptapeNodes.ConfigManager().save_user_workflow_json(str(file_path))
+            except OSError as e:
+                logger.error("Attempted to save workflow '%s'. Failed when saving configuration: %s", file_name, str(e))
+                return SaveWorkflowResultFailure()
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
         details = f"Successfully saved workflow to: {serialized_file_path}"
         logger.info(details)
