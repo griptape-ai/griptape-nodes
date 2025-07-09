@@ -14,24 +14,30 @@ fi
 cecho() { printf "%b%s%b\n" "$1" "$2" "$RESET"; } # colour echo
 # -----------------------------------
 
-echo ""
-cecho "$CYAN$BOLD" "Installing uv..."
-echo ""
-curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null
+# Check if uv is already installed
+if command -v uv >/dev/null 2>&1; then
+  cecho "$CYAN" "uv is already installed. Using existing installation..."
+  UV_PATH=$(command -v uv)
+else
+  cecho "$CYAN" "Installing uv..."
+  export UV_UNMANAGED_INSTALL="$HOME/.local/share/griptape_nodes/bin"
+  curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null
+  UV_PATH="$HOME/.local/share/griptape_nodes/bin/uv"
+fi
+
 cecho "$GREEN$BOLD" "uv installed successfully!"
 
-# Verify uv is on the user's PATH
-if ! command -v uv >/dev/null 2>&1; then
-  cecho "$RED" "Error: Griptape Nodes dependency 'uv' was installed but requires the terminal instance to be restarted to be run."
-  cecho "$RED" "Please close this terminal instance, open a new terminal instance, and then run the install command you performed earlier."
+# Verify uv installation
+if [ ! -f "$UV_PATH" ]; then
+  cecho "$RED" "Error: uv installation failed at expected path: $UV_PATH"
   exit 1
 fi
 
 echo ""
 cecho "$CYAN$BOLD" "Installing Griptape Nodes Engine..."
 echo ""
-~/.local/bin/uv tool update-shell
-~/.local/bin/uv tool install --force --python python3.12 griptape-nodes >/dev/null
+"$UV_PATH" tool update-shell
+"$UV_PATH" tool install --force --python python3.12 griptape-nodes >/dev/null
 
 cecho "$GREEN$BOLD" "**************************************"
 cecho "$GREEN$BOLD" "*      Installation complete!        *"
