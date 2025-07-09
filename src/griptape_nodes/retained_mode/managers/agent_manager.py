@@ -14,8 +14,8 @@ from griptape.memory.structure import ConversationMemory
 from griptape.rules import Rule, Ruleset
 from griptape.structures import Agent
 from griptape.tools import BaseImageGenerationTool
-from griptape.tools.mcp.tool import MCPTool
 from griptape.tools.mcp.sessions import StreamableHttpConnection
+from griptape.tools.mcp.tool import MCPTool
 from griptape.utils.decorators import activity
 from json_repair import repair_json
 from schema import Literal, Schema
@@ -37,7 +37,6 @@ from griptape_nodes.retained_mode.events.agent_events import (
     RunAgentResultSuccess,
 )
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ResultPayload
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -116,7 +115,7 @@ class AgentManager:
             image_generation_driver=GriptapeCloudImageGenerationDriver(api_key=api_key, model="gpt-image-1"),
             static_files_manager=self.static_files_manager,
         )
-    
+
     def _initialize_mcp_tool(self) -> MCPTool:
         api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
         if not api_key:

@@ -1,31 +1,28 @@
-import asyncio
-import json
-import logging
 import contextlib
+import json
 import logging
 from collections.abc import AsyncIterator
 
 from mcp.server.lowlevel import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-from rich.logging import RichHandler
-from starlette.applications import Starlette
-from starlette.routing import Mount
-from starlette.types import Receive, Scope, Send
-
 from mcp.types import (
     TextContent,
     Tool,
 )
 from pydantic import TypeAdapter
+from rich.logging import RichHandler
+from starlette.applications import Starlette
+from starlette.routing import Mount
+from starlette.types import Receive, Scope, Send
 
-from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
-from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
 from griptape_nodes.mcp_server_gtn.ws_request_manager import AsyncRequestManager, WebSocketConnectionManager
-
+from griptape_nodes.retained_mode.events.base_events import RequestPayload
+from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
 
 SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "CreateNodeRequest": CreateNodeRequest,
 }
+
 
 def main() -> int:
     mcp_server_logger = logging.getLogger("griptape_nodes_mcp_server")
@@ -40,32 +37,33 @@ def main() -> int:
 
     @app.list_tools()
     async def list_tools() -> list[Tool]:
-        return [Tool(name=event.__name__, description=event.__doc__, inputSchema=TypeAdapter(event).json_schema()) for (name, event) in SUPPORTED_REQUEST_EVENTS.items()]
+        return [
+            Tool(name=event.__name__, description=event.__doc__, inputSchema=TypeAdapter(event).json_schema())
+            for (name, event) in SUPPORTED_REQUEST_EVENTS.items()
+        ]
 
     @app.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if name not in SUPPORTED_REQUEST_EVENTS:
             raise ValueError(f"Unsupported tool: {name}")
-        
+
         request_payload = SUPPORTED_REQUEST_EVENTS[name](**arguments)
         # Add session ID to the request
 
         try:
             await request_manager.connect(token="gt-Hu0tXsSHSijSBIGr37v1abSJlBUR3JpcHRhcGU6KatAFMuKI4rwN1Np12tqCitlzQ")
             result = await request_manager.create_request_event(
-                request_payload.__class__.__name__, 
-                request_payload.__dict__, 
-                timeout_ms=5000
+                request_payload.__class__.__name__, request_payload.__dict__, timeout_ms=5000
             )
             mcp_server_logger.debug(f"Got result: {result}")
 
             return [TextContent(type="text", text=json.dumps(result))]
 
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             mcp_server_logger.error("Request timed out")
             raise e
         except Exception as e:
-            mcp_server_logger.exception(f"Request failed: {str(e)}")
+            mcp_server_logger.exception(f"Request failed: {e!s}")
             raise e
 
     # Create the session manager with our app and event store
@@ -74,9 +72,7 @@ def main() -> int:
     )
 
     # ASGI handler for streamable HTTP connections
-    async def handle_streamable_http(
-        scope: Scope, receive: Receive, send: Send
-    ) -> None:
+    async def handle_streamable_http(scope: Scope, receive: Receive, send: Send) -> None:
         await session_manager.handle_request(scope, receive, send)
 
     @contextlib.asynccontextmanager

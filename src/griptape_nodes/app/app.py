@@ -28,6 +28,8 @@ from rich.panel import Panel
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
+from griptape_nodes.mcp_server_gtn import main as mcp_server_gtn
+
 # This import is necessary to register all events, even if not technically used
 from griptape_nodes.retained_mode.events import app_events, execution_events
 from griptape_nodes.retained_mode.events.base_events import (
@@ -43,7 +45,6 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.mcp_server_gtn import main as mcp_server_gtn
 
 # This is a global event queue that will be used to pass events between threads
 event_queue = Queue()

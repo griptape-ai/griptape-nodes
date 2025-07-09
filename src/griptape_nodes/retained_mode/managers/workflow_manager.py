@@ -2306,7 +2306,7 @@ class WorkflowManager:
                 pkg_dir = Path(str(dist.locate_file(""))).resolve()
                 git_root = next(p for p in (pkg_dir, *pkg_dir.parents) if (p / ".git").is_dir())
                 commit = (
-                    subprocess.check_output(  # noqa: S603
+                    subprocess.check_output(
                         ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
                         cwd=git_root,
                         stderr=subprocess.DEVNULL,

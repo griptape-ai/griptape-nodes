@@ -50,6 +50,7 @@ class CreateNodeRequest(RequestPayload):
         CreateNodeRequest("Prompt", node_name="intro_prompt")
         CreateNodeRequest("Agent", metadata={"position": {"x": 100, "y": 200}})
     """
+
     node_type: str
     specific_library_name: str | None = None
     node_name: str | None = None

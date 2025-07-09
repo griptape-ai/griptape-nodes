@@ -30,7 +30,7 @@ class ReloadHandler(PatternMatchingEventHandler):
     def start_process(self) -> None:
         if self.process:
             self.process.terminate()
-        self.process = subprocess.Popen(  # noqa: S603
+        self.process = subprocess.Popen(
             ["uv", "run", "gtn"],  # noqa: S607
             stdout=sys.stdout,
             stderr=sys.stderr,
