@@ -116,16 +116,16 @@ def load_bf16_pipeline_as_fp8_with_caching(*, cache:bool = False):
     return pipeline
 
 
-def load_bf16_pipeline_with_official_caching():
+def load_bf16_pipeline_with_official_caching(artifacts):
     pipeline = diffusers.FluxPipeline.from_pretrained(
         model_id,
         torch_dtype=torch.bfloat16,
-        local_files_only=True,
-        cache_dir=f"{Path(__file__).parent/"pipeline_compile_cache"}",
+        local_files_only=True
     ).to(device)
-    torch.compiler.load_cache_artifacts()
+    if artifacts:
+        torch.compiler.load_cache_artifacts(artifacts)
     pipeline.transformer.compile()
-    torch.compiler.save_cache_artifacts()
+    #artifacts = torch.compiler.save_cache_artifacts()
     return pipeline
 
 
