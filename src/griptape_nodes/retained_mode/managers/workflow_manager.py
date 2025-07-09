@@ -1090,9 +1090,7 @@ class WorkflowManager:
             try:
                 GriptapeNodes.ConfigManager().save_user_workflow_json(str(file_path))
             except OSError as e:
-                logger.error(
-                    "Attempted to save workflow '%s'. Failed when saving configuration: %s", file_name, str(e)
-                )
+                logger.error("Attempted to save workflow '%s'. Failed when saving configuration: %s", file_name, str(e))
                 return SaveWorkflowResultFailure()
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
         details = f"Successfully saved workflow to: {serialized_file_path}"
