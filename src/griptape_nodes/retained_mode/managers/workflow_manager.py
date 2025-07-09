@@ -1011,7 +1011,7 @@ class WorkflowManager:
 
         return final_code_output, workflow_metadata
 
-    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:
+    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         local_tz = datetime.now().astimezone().tzinfo
 
         # Start with the file name provided; we may change it.
