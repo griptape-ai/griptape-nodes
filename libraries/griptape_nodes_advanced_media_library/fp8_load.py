@@ -1,4 +1,6 @@
 from pathlib import Path
+
+import pip
 import diffusers
 import torch
 from fp8_convert import convert
@@ -34,6 +36,21 @@ def load_pipeline_as_fp8_with_caching():
 
 def load_pipeline():
     pipeline = PipelineClass.from_pretrained(model_id, torch_dtype=torch.bfloat16, local_files_only=True).to(device)
+    return pipeline
+
+
+def load_pipeline_with_caching():
+    pipeline = PipelineClass.from_pretrained(model_id, torch_dtype=torch.bfloat16, local_files_only=True).to(device)
+
+    # A trival compile: `fp8_pipeline.transformer` seems better than the stuff below so far.
+    # but it need to take advantage of compile artifact caching to be justifiable.
+    # # Compile transformer with fast mode for additional speedupe
+    print("Compiling transformer with fast mode...")
+    optimizer = TorchCompileOptimizer(cache_dir=f"{Path(__file__).parent/"pipeline_compile_cache"}")
+    pipeline.transformer = optimizer.compile_transformer(pipeline.transformer)
+    print("Compilation completed!")
+    pipeline.transformer.compile()
+
     return pipeline
 
 
