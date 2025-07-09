@@ -25,37 +25,27 @@ from fp8_benchmark import benchmark_pipeline, print_benchmark_table
 # artifacts to see if that speeds up the cold start time on second loads
 # (not second inferences).
 if __name__ == "__main__":
-    # print("Exporting FP8 model...")
-    # export_fp8()
+    print("Exporting FP8 model...")
+    export_fp8()
 
-    # print("Loading FP8 pipeline...")
-    # fp8_pipeline = load_bf16_pipeline_as_fp8()
-    # fp8_pipeline_stats = benchmark_pipeline(fp8_pipeline)
+    print("Loading FP8 pipeline...")
+    fp8_pipeline = load_bf16_pipeline_as_fp8()
+    fp8_pipeline_stats = benchmark_pipeline(fp8_pipeline)
 
     # print("Loading FP8 pipeline with caching...")
     # fp8_cached_pipeline = load_bf16_pipeline_as_fp8_with_caching(cache=False)
     # fp8_cached_pipeline_stats = benchmark_pipeline(fp8_cached_pipeline)
 
-    # print("Loading standard pipeline...")
-    # pipeline = load_pipeline()
-    # pipeline_stats = benchmark_pipeline(pipeline)
-
-    # first run
-    pipeline = load_bf16_pipeline_with_official_caching()
+    print("Loading standard pipeline...")
+    pipeline = load_pipeline()
     pipeline_stats = benchmark_pipeline(pipeline)
-    print(pipeline_stats)
-
-    #second run 
-    pipeline = load_bf16_pipeline_with_official_caching()
-    pipeline_stats = benchmark_pipeline(pipeline)
-    print(pipeline_stats)
 
     # print("Loading standard pipeline with caching...")
     # cached_pipeline = load_pipeline_with_caching()
     # cached_pipeline_stats = benchmark_pipeline(cached_pipeline)
 
-    # print("Benchmarking results:")
-    # print(fp8_cached_pipeline_stats)
-    # print(fp8_pipeline_stats)
+    print("Benchmarking results:")
+    print(pipeline_stats)
+    print(fp8_pipeline_stats)
 
-    # print_benchmark_table(pipeline_stats, fp8_pipeline_stats, fp8_cached_pipeline_stats, cached_pipeline_stats)
+    print_benchmark_table(pipeline_stats, fp8_pipeline_stats)
