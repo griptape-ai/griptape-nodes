@@ -149,6 +149,26 @@ class SaveWorkflowRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
+class ImportWorkflowAsReferencedSubFlowRequest(RequestPayload):
+    workflow_name: str
+    flow_name: str | None = None  # If None, import into current context flow
+    imported_flow_metadata: dict | None = None  # Metadata to apply to the imported flow
+
+
+@dataclass
+@PayloadRegistry.register
+class ImportWorkflowAsReferencedSubFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    created_flow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ImportWorkflowAsReferencedSubFlowResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
 class SaveWorkflowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     file_path: str
 
