@@ -461,7 +461,7 @@ class WorkflowManager:
 
             # After workflow execution, ensure there's always a current context by pushing
             # the top-level flow if the context is empty. This fixes regressions where
-            # with Workflow Schema version 0.5.0+ workflows expect context to be established.
+            # with Workflow Schema version 0.6.0+ workflows expect context to be established.
             self._ensure_workflow_context_established()
 
         except Exception as e:
@@ -2863,13 +2863,13 @@ class WorkflowManager:
             )
             return ImportWorkflowAsReferencedSubFlowResultFailure()
 
-        # Check workflow version - Schema version 0.5.0+ required for referenced workflow imports
-        # (workflow schema was fixed in 0.5.0 to support importing workflows)
-        required_version = Version(major=0, minor=5, patch=0)
+        # Check workflow version - Schema version 0.6.0+ required for referenced workflow imports
+        # (workflow schema was fixed in 0.6.0 to support importing workflows)
+        required_version = Version(major=0, minor=6, patch=0)
         workflow_version = Version.from_string(workflow.metadata.schema_version)
         if workflow_version is None or workflow_version < required_version:
             logger.error(
-                "Attempted to import workflow '%s' as referenced sub flow. Failed because workflow version '%s' is less than required version '0.5.0'",
+                "Attempted to import workflow '%s' as referenced sub flow. Failed because workflow version '%s' is less than required version '0.6.0'. To remedy, open the workflow you are attempting to import and save it again to upgrade it to the latest version.",
                 request.workflow_name,
                 workflow.metadata.schema_version,
             )
