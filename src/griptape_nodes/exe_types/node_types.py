@@ -88,8 +88,19 @@ class BaseNode(ABC):
         self.parameter_values = {}
         self.parameter_output_values = TrackedParameterOutputValues(self)
         self.root_ui_element = BaseNodeElement()
-        # Set the node context for the root element
-        self.root_ui_element._node_context = self
+        # Add thread_run parameter with options 1,2,3,4
+        self.add_parameter(
+            Parameter(
+                name="thread_run",
+                tooltip="Number of threads to use for running this node.",
+                type="int",
+                input_types=["int"],
+                default_value=1,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["1", "2", "3", "4"])}
+            )
+        )
+        print("parameter added")
         self.process_generator = None
         self._tracked_parameters = []
 
@@ -388,9 +399,9 @@ class BaseNode(ABC):
         param_name: str,
         new_param_name: str,
         new_output_type: str | None = None,
-        tooltip: str | list[dict] | None = None,
+        tooltip: str | list[dict[str, Any]] | None = None,
         default_value: Any = None,
-        ui_options: dict | None = None,
+        ui_options: dict[str, Any] | None = None,
     ) -> None:
         """Replaces a parameter in the node configuration.
 
@@ -565,7 +576,7 @@ class BaseNode(ABC):
             return self.parameter_values[param_name]
         return param.default_value if param else None
 
-    def get_parameter_list_value(self, param: str) -> list:
+    def get_parameter_list_value(self, param: str) -> list[Any]:
         """Flattens the given param from self.params into a single list.
 
         Args:

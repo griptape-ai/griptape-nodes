@@ -12,12 +12,13 @@ from griptape_nodes.exe_types.node_types import NodeResolutionState, StartLoopNo
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine, ParallelExecutionMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import ControlFlowCancelledEvent
+from griptape_nodes.exe_types.node_types import Connection
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.node_types import BaseNode
 
-
+PARALLEL = True
 logger = logging.getLogger("griptape_nodes")
 
 
@@ -102,35 +103,14 @@ class ControlFlow:
             start_node = self.flow_queue.get()
 
         try:
-            self.control_flow_machine.start_flow(start_node, debug_mode)
+            if PARALLEL:
+                self.parallel_execution_machine.start()
+            else:
+                self.control_flow_machine.start_flow(start_node, debug_mode)
             self.flow_queue.task_done()
         except Exception:
             if self.check_for_existing_running_flow():
                 self.cancel_flow_run()
-            raise
-
-    def start_flow_parallel(self, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:
-        """Starts the flow in parallel mode, using continue_executing_parallel as the step function."""
-        if self.check_for_existing_running_flow():
-            errormsg = "This workflow is already in progress. Please wait for the current process to finish before starting again."
-            raise RuntimeError(errormsg)
-
-        if start_node is None:
-            if self.flow_queue.empty():
-                errormsg = "No Flow exists. You must create at least one control connection."
-                raise RuntimeError(errormsg)
-            start_node = self.flow_queue.get()
-            self.flow_queue.task_done()
-
-        try:
-            # Do NOT call self.control_flow_machine.start_flow(...)
-            # Instead, set up for parallel execution as needed
-            # (e.g., set the start node, mark as running, etc.)
-            # Then call the parallel execution stepper:
-            self.parallel_execution_machine.continue_executing_parallel()
-        except Exception:
-            # Optionally do cleanup
-            self.cancel_flow_run()
             raise
 
     def check_for_existing_running_flow(self) -> bool:
@@ -268,14 +248,15 @@ class ControlFlow:
                     connections.append((connection.target_node, connection.target_parameter))
         return connections
 
-    def get_connected_input_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
+    def get_control_output_connections(self, node: BaseNode) -> list[Connection]:
         connections = []
-        if node.name in self.connections.incoming_index:
-            incoming_params = self.connections.incoming_index[node.name]
-            if param.name in incoming_params:
-                for connection_id in incoming_params[param.name]:
-                    connection = self.connections.connections[connection_id]
-                    connections.append((connection.source_node, connection.source_parameter))
+        if node.name in self.connections.outgoing_index:
+            entry = self.connections.outgoing_index[node.name]
+            for param_name in entry:
+                for id in entry.get(param_name):
+                    conn = self.connections.connections[id]
+                    if conn.source_parameter.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
+                        connections.append(conn)
         return connections
 
     def get_connected_output_from_node(self, node: BaseNode) -> list[tuple[BaseNode, Parameter]]:

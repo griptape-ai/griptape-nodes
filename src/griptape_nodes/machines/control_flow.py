@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from threading import Thread
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from concurrent.futures import ThreadPoolExecutor
 
 from griptape.events import EventBus
-from concurrent.futures import ThreadPoolExecutor
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
@@ -31,12 +32,15 @@ class ControlFlowContext:
     resolution_machine: NodeResolutionMachine
     selected_output: Parameter | None
     paused: bool = False
+    parallel_node_list: list[list[BaseNode]] = []
 
     def __init__(self, flow: ControlFlow) -> None:
         self.resolution_machine = NodeResolutionMachine(flow)
         self.flow = flow
         self.current_node = None
-
+        self.parallel_node_list = []
+        self.current_nodes: list[BaseNode] = []
+        self.thread_pool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=4)
     def get_next_node(self, output_parameter: Parameter) -> BaseNode | None:
         if self.current_node is not None:
             node = self.flow.connections.get_connected_node(self.current_node, output_parameter)
@@ -166,64 +170,6 @@ class CompleteState(State):
         return None
 
 
-class ParallelProcessingState(State):
-    """
-    State for handling parallel processing of nodes.
-    Manages concurrent execution, dependency tracking, and completion detection.
-    """
-    @staticmethod
-    def on_enter(context: ControlFlowContext) -> type[State] | None:
-        """Called when entering parallel processing state."""
-        if context.current_node is None:
-            return CompleteState
-        
-        # Mark the node as being processed in parallel
-        context.current_node.make_node_unresolved(
-            current_states_to_trigger_change_event={
-                NodeResolutionState.UNRESOLVED,
-                NodeResolutionState.RESOLVED,
-                NodeResolutionState.RESOLVING
-            }
-        )
-        
-        # Broadcast that we're starting parallel processing
-        EventBus.publish_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(
-                    payload=CurrentControlNodeEvent(node_name=context.current_node.name)
-                )
-            )
-        )
-        
-        logger.info("Starting parallel processing for %s", context.current_node.name)
-        
-        if not context.paused:
-            return ParallelProcessingState
-        return None
-
-    @staticmethod
-    def on_update(context: ControlFlowContext) -> type[State] | None:
-        """Called each update to advance parallel processing."""
-        if context.current_node is None:
-            return CompleteState
-        
-        # TODO: Add parallel processing logic here
-        # 1. Check if current node is ready for parallel execution
-        # 2. Start parallel execution if not already started
-        # 3. Monitor parallel execution progress
-        # 4. Check if parallel execution is complete
-        
-        # Placeholder: For now, just transition to NextNodeState
-        # In the actual implementation, you would:
-        # - Use ThreadPoolExecutor or ProcessPoolExecutor
-        # - Track futures and their completion
-        # - Handle parallel dependency resolution
-        # - Manage parallel error handling
-        
-        logger.info("Parallel processing complete for %s", context.current_node.name)
-        return NextNodeState
-
-
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
     def __init__(self, flow: ControlFlow) -> None:
@@ -274,94 +220,115 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         self._current_state = None
 
 
-class ParallelExecutionMachine:
+class ParallelExecutionMachine(FSM[ControlFlowContext]):
     """
     State machine for managing parallel execution of nodes in a workflow.
     Framework only; parallel features and node selection logic to be added later.
     """
-    def __init__(self, flow):
+    
+    def __init__(self, flow: ControlFlow) -> None:
         """Initialize with a reference to the flow object."""
-        self.flow = flow
-        self._current_state = None
-        self._context = None
-        self._active_futures = {}  # Track running parallel tasks
-        self._thread_pool = None   # Thread pool for parallel execution
-        self._thread_states = {}   # Track state for each thread/node
-
-    def start(self, start_node=None, debug_mode=False):
+        context = ControlFlowContext(flow)
+        self.context: ControlFlowContext = context
+        super().__init__(context)   # Thread pool for parallel execution
+        self.thread_nodes: list[list[BaseNode]] = [[], [], [], []]
+        self._current_state: State | None = None
+        self.flow: ControlFlow = flow
+    def start_flow_parallel(self) -> None:
         """Start the parallel execution process."""
         # Initialize thread pool for parallel execution
-        self._thread_pool = ThreadPoolExecutor(max_workers=4)
-        
-        # Set up initial state for parallel execution
-        self._current_state = "parallel_initializing"
-        self._active_futures = {}
-        self._thread_states = {}
-        
+        node_list: list[BaseNode] = list(self.flow.nodes.values())
+        thread_run_value: str = ""
+
+        for node in node_list:
+            thread_run_value = node.get_parameter_value("thread_run")
+            if thread_run_value == "1":
+                self.thread_nodes[0].append(node)
+            elif thread_run_value == "2":
+                self.thread_nodes[1].append(node)
+            elif thread_run_value == "3":
+                self.thread_nodes[2].append(node)
+            else:
+                self.thread_nodes[3].append(node)
+        self._context.parallel_node_list = self.thread_nodes
+        self.start(ParallelNextNodeState)
         logger.info("Starting parallel execution machine")
         
-        # TODO: Initialize parallel context and start first parallel batch
-
-    def update(self):
+    def update(self) -> None:
         """Advance the parallel execution state machine by one step."""
-        if self._current_state is None:
-            return
 
         # Check if any parallel tasks have completed
-        completed_futures = []
-        for node_name, future in self._active_futures.items():
-            if future.done():
-                completed_futures.append(node_name)
-                try:
-                    result = future.result()
-                    logger.info(f"Parallel task {node_name} completed successfully")
-                    # Update thread state to completed
-                    self._thread_states[node_name] = "completed"
-                except Exception as e:
-                    logger.error(f"Parallel task {node_name} failed: {e}")
-                    # Update thread state to failed
-                    self._thread_states[node_name] = "failed"
-        
-        # Remove completed futures
-        for node_name in completed_futures:
-            del self._active_futures[node_name]
-        
-        # Update state for each active thread
-        for node_name in self._active_futures.keys():
-            if node_name not in self._thread_states:
-                self._thread_states[node_name] = "running"
-            elif self._thread_states[node_name] == "initializing":
-                self._thread_states[node_name] = "running"
-        
+        if self._current_state is None:
+            msg = "Attempted to run the next step of a workflow that was either already complete or has not started."
+            raise RuntimeError(msg)
+        super().update()
         # TODO: Add logic to start new parallel tasks when dependencies are met
         # TODO: Add logic to transition between parallel states
-        
-        logger.debug(f"Parallel execution update: {len(self._active_futures)} active tasks")
-        logger.debug(f"Thread states: {self._thread_states}")
 
-    def complete(self):
+    def complete(self) -> None:
         """Mark the parallel execution as complete."""
         # Wait for all active futures to complete
-        if self._active_futures:
-            logger.info(f"Waiting for {len(self._active_futures)} parallel tasks to complete")
-            for future in self._active_futures.values():
-                future.result()  # This will raise any exceptions
         
         # Shutdown thread pool
         if self._thread_pool:
             self._thread_pool.shutdown(wait=True)
             self._thread_pool = None
-        
-        self._current_state = None
-        self._active_futures = {}
-        self._thread_states = {}
         logger.info("Parallel execution machine completed")
 
-    def get_thread_state(self, node_name):
-        """Get the current state of a specific thread/node."""
-        return self._thread_states.get(node_name, "unknown")
 
-    def set_thread_state(self, node_name, state):
-        """Set the state of a specific thread/node."""
-        self._thread_states[node_name] = state
-        logger.debug(f"Thread {node_name} state changed to: {state}")
+class ParallelResolveNodeState(State):
+    """State for resolving nodes in parallel execution."""
+    
+    @staticmethod
+    def on_enter(context: ControlFlowContext) -> type[State] | None:
+        """Called when entering the parallel resolve node state."""
+        logger.debug("Entering parallel resolve node state")
+        for node in context.current_nodes:
+            
+        return None
+
+    @staticmethod
+    def on_update(context: Any) -> type[State] | None:
+        """Called when updating the parallel resolve node state."""
+        
+        logger.debug("Updating parallel resolve node state")
+        return ResolveNodeState
+
+    @staticmethod
+    def on_exit(context: Any) -> None:
+        """Called when exiting the parallel resolve node state."""
+        logger.debug("Exiting parallel resolve node state")
+
+
+class ParallelNextNodeState(State):
+    """State for resolving nodes in parallel execution."""
+    
+    @staticmethod
+    def on_enter(context: ControlFlowContext) -> type[State] | None:
+        """Called when entering the parallel next node state."""
+        if not context.current_nodes:
+            for node_list in context.parallel_node_list:
+                for node in node_list:
+                    if not context.flow.get_connected_input_from_node(node):
+                        context.current_nodes.append(node)
+                        break
+        else:
+            new_current_nodes = []
+            for node in context.current_nodes:
+                connections = context.flow.get_control_output_connections(node)
+                for connection in connections:
+                    if connection.target_node not in context.current_nodes:
+                        new_current_nodes.append(connection.target_node)
+            context.current_nodes = new_current_nodes
+        logger.debug("Entering parallel next node state")
+        return ParallelResolveNodeState
+
+    @staticmethod
+    def on_update(context: Any) -> type[State] | None:
+        """Called when updating the parallel next node state."""
+        return ParallelResolveNodeState
+
+    @staticmethod
+    def on_exit(context: Any) -> None:
+        """Called when exiting the parallel next node state."""
+        logger.debug("Exiting parallel next node state")
