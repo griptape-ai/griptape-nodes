@@ -426,7 +426,7 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
     # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
     payload = app_events.AppInitializationComplete()
     app_event = AppEvent(payload=payload)
-    __process_app_event(app_event)
+    event_queue.put(app_event)
 
     engine_version_request = app_events.GetEngineVersionRequest()
     engine_version_result = GriptapeNodes.get_instance().handle_engine_version_request(engine_version_request)
