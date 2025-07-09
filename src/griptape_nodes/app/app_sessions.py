@@ -30,8 +30,10 @@ from websockets.exceptions import ConnectionClosed, WebSocketException
 
 # This import is necessary to register all events, even if not technically used
 from griptape_nodes.retained_mode.events import app_events, execution_events
+from griptape_nodes.retained_mode.events.app_events import AppEndSessionResultSuccess, AppStartSessionResultSuccess
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
+    BaseEvent,
     EventRequest,
     EventResultFailure,
     EventResultSuccess,
@@ -176,8 +178,7 @@ def _serve_static_server() -> None:
     @app.post("/engines/request")
     async def create_event(request: Request) -> None:
         body = await request.json()
-        if "payload" in body:
-            __process_api_event(body["payload"])
+        __process_api_event(body)
 
     logging.getLogger("uvicorn").addHandler(
         RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)
@@ -229,16 +230,19 @@ async def _alisten_for_api_requests() -> None:
     async for ws_connection in connection_stream:
         try:
             ws_connection_for_sending = ws_connection  # Store for sending events
+
             if not initialized:
                 __broadcast_app_initialization_complete(nodes_app_url)
                 initialized = True
+
+            # Subscribe to engine ID and session ID on every new connection
+            await __subscribe_to_engine_and_session(ws_connection)
 
             async for message in ws_connection:
                 try:
                     data = json.loads(message)
 
-                    payload = data.get("payload", {})
-                    __process_api_event(payload)
+                    __process_api_event(data)
                 except Exception:
                     logger.exception("Error processing event, skipping.")
         except ConnectionClosed:
@@ -259,6 +263,8 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
     result_event = event.wrapped_event
     if isinstance(result_event, EventResultSuccess):
         dest_socket = "success_result"
+        # Handle session start events specially
+        __handle_session_events(result_event)
     elif isinstance(result_event, EventResultFailure):
         dest_socket = "failure_result"
     else:
@@ -266,8 +272,28 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
         raise TypeError(msg) from None
 
     # Don't send events over the wire that don't have a request_id set (e.g. engine-internal events)
-    event_json = result_event.json()
-    __schedule_async_task(__emit_message(dest_socket, event_json))
+    __schedule_async_task(__emit_message(dest_socket, result_event.json(), topic=result_event.response_topic))
+
+
+def __handle_session_events(result_event: EventResultSuccess) -> None:
+    """Handle session start/end events by managing subscriptions."""
+    global ws_connection_for_sending  # noqa: PLW0602
+
+    if isinstance(result_event.result, AppStartSessionResultSuccess):
+        # Subscribe to the new session topic
+        session_id = result_event.result.session_id
+        if session_id and ws_connection_for_sending:
+            topic = f"sessions/{session_id}/request"
+            __schedule_async_task(__subscribe_to_topic(ws_connection_for_sending, topic))
+            logger.info("Subscribed to new session topic: %s", topic)
+
+    elif isinstance(result_event.result, AppEndSessionResultSuccess):
+        # Unsubscribe from the ended session topic
+        session_id = result_event.result.session_id
+        if session_id and ws_connection_for_sending:
+            topic = f"sessions/{session_id}/request"
+            __schedule_async_task(__unsubscribe_from_topic(ws_connection_for_sending, topic))
+            logger.info("Unsubscribed from ended session topic: %s", topic)
 
 
 def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
@@ -275,7 +301,6 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
     result_event = event.wrapped_event
     if type(result_event.payload).__name__ == "NodeStartProcessEvent":
         GriptapeNodes.EventManager().current_active_node = result_event.payload.node_name
-    event_json = result_event.json()
 
     if type(result_event.payload).__name__ == "ResumeNodeProcessingEvent":
         node_name = result_event.payload.node_name
@@ -289,7 +314,7 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
             msg = "Node start and finish do not match."
             raise KeyError(msg) from None
         GriptapeNodes.EventManager().current_active_node = None
-    __schedule_async_task(__emit_message("execution_event", event_json))
+    __schedule_async_task(__emit_message("execution_event", result_event.json()))
 
 
 def __process_progress_event(gt_event: ProgressEvent) -> None:
@@ -321,7 +346,9 @@ def _process_event_queue() -> None:
         event = event_queue.get(block=True)
         if isinstance(event, EventRequest):
             request_payload = event.request
-            GriptapeNodes.handle_request(request_payload)
+            GriptapeNodes.handle_request(
+                request_payload, response_topic=event.response_topic, request_id=event.request_id
+            )
         elif isinstance(event, AppEvent):
             __process_app_event(event)
         else:
@@ -350,7 +377,7 @@ def __create_async_websocket_connection() -> Any:
 
     endpoint = urljoin(
         os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai").replace("http", "ws"),
-        "/ws/engines/events?publish_channel=responses&subscribe_channel=requests",
+        "/ws/engines/events?version=v2",
     )
 
     return connect(
@@ -359,7 +386,7 @@ def __create_async_websocket_connection() -> Any:
     )
 
 
-async def __emit_message(event_type: str, payload: str) -> None:
+async def __emit_message(event_type: str, payload: str, topic: str | None = None) -> None:
     """Send a message via WebSocket asynchronously."""
     global ws_connection_for_sending  # noqa: PLW0602
     if ws_connection_for_sending is None:
@@ -367,12 +394,89 @@ async def __emit_message(event_type: str, payload: str) -> None:
         return
 
     try:
-        body = {"type": event_type, "payload": json.loads(payload) if payload else {}}
+        # Determine topic based on session_id and engine_id in the payload
+        if topic is None:
+            topic = _determine_response_topic()
+
+        body = {"type": event_type, "payload": json.loads(payload), "topic": topic}
+
         await ws_connection_for_sending.send(json.dumps(body))
     except WebSocketException as e:
         logger.error("Error sending event to Nodes API: %s", e)
     except Exception as e:
         logger.error("Unexpected error while sending event to Nodes API: %s", e)
+
+
+def _determine_response_topic() -> str | None:
+    """Determine the response topic based on session_id and engine_id in the payload."""
+    engine_id = GriptapeNodes.get_engine_id()
+    session_id = GriptapeNodes.get_session_id()
+
+    # Normal topic determination logic
+    # Check for session_id first (highest priority)
+    if session_id:
+        return f"sessions/{session_id}/response"
+
+    # Check for engine_id if no session_id
+    if engine_id:
+        return f"engines/{engine_id}/response"
+
+    # Default to generic response topic
+    return "response"
+
+
+async def __subscribe_to_topic(ws_connection: Any, topic: str) -> None:
+    """Subscribe to a specific topic in the message bus."""
+    if ws_connection is None:
+        logger.warning("WebSocket connection not available for subscribing to topic")
+        return
+
+    try:
+        body = {"type": "subscribe", "topic": topic, "payload": {}}
+        await ws_connection.send(json.dumps(body))
+        logger.info("Subscribed to topic: %s", topic)
+    except WebSocketException as e:
+        logger.error("Error subscribing to topic %s: %s", topic, e)
+    except Exception as e:
+        logger.error("Unexpected error while subscribing to topic %s: %s", topic, e)
+
+
+async def __unsubscribe_from_topic(ws_connection: Any, topic: str) -> None:
+    """Unsubscribe from a specific topic in the message bus."""
+    if ws_connection is None:
+        logger.warning("WebSocket connection not available for unsubscribing from topic")
+        return
+
+    try:
+        body = {"type": "unsubscribe", "topic": topic, "payload": {}}
+        await ws_connection.send(json.dumps(body))
+        logger.info("Unsubscribed from topic: %s", topic)
+    except WebSocketException as e:
+        logger.error("Error unsubscribing from topic %s: %s", topic, e)
+    except Exception as e:
+        logger.error("Unexpected error while unsubscribing from topic %s: %s", topic, e)
+
+
+async def __subscribe_to_engine_and_session(ws_connection: Any) -> None:
+    """Subscribe to engine ID, session ID, and request topics on WebSocket connection."""
+    # Subscribe to request topic (engine discovery)
+    await __subscribe_to_topic(ws_connection, "request")
+
+    # Get engine ID and subscribe to engine_id/request
+    engine_id = GriptapeNodes.get_engine_id()
+    if engine_id:
+        await __subscribe_to_topic(ws_connection, f"engines/{engine_id}/request")
+    else:
+        logger.warning("Engine ID not available for subscription")
+
+    # Get session ID and subscribe to session_id/request if available
+    session_id = GriptapeNodes.get_session_id()
+    if session_id:
+        topic = f"sessions/{session_id}/request"
+        await __subscribe_to_topic(ws_connection, topic)
+        logger.info("Subscribed to session topic: %s", topic)
+    else:
+        logger.info("No session ID available for subscription")
 
 
 def __schedule_async_task(coro: Any) -> None:
@@ -388,9 +492,7 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
 
     This is used to notify the GUI that the app is ready to receive events.
     """
-    # Initialize engine ID and persistent data
-    from griptape_nodes.retained_mode.events.base_events import BaseEvent
-
+    # Initialize engine and session IDs on all events
     BaseEvent.initialize_engine_id()
     BaseEvent.initialize_session_id()
 
@@ -424,16 +526,18 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
     console.print(message)
 
 
-def __process_api_event(data: dict) -> None:
+def __process_api_event(event: dict) -> None:
     """Process API events and send them to the event queue."""
+    payload = event.get("payload", {})
+
     try:
-        data["request"]
+        payload["request"]
     except KeyError:
         msg = "Error: 'request' was expected but not found."
         raise RuntimeError(msg) from None
 
     try:
-        event_type = data["event_type"]
+        event_type = payload["event_type"]
         if event_type != "EventRequest":
             msg = "Error: 'event_type' was found on request, but did not match 'EventRequest' as expected."
             raise RuntimeError(msg) from None
@@ -443,16 +547,10 @@ def __process_api_event(data: dict) -> None:
 
     # Now attempt to convert it into an EventRequest.
     try:
-        request_event: EventRequest = cast("EventRequest", deserialize_event(json_data=data))
+        request_event: EventRequest = cast("EventRequest", deserialize_event(json_data=payload))
     except Exception as e:
         msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{e}'"
         raise RuntimeError(msg) from None
 
-    # Add a request_id to the payload
-    request_id = request_event.request.request_id
-    request_event.request.request_id = request_id
-
     # Add the event to the queue
     event_queue.put(request_event)
-
-    return request_id

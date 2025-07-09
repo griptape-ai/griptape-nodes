@@ -26,7 +26,6 @@ class WorkflowMetadata(BaseModel):
     is_template: bool | None = False
     creation_date: datetime | None = Field(default=None)
     last_modified_date: datetime | None = Field(default=None)
-    published_workflow_id: str | None = Field(default=None)
 
 
 class WorkflowRegistry(metaclass=SingletonMeta):
