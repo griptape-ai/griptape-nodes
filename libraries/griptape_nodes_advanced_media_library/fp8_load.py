@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pip
+import os
 import diffusers
 import torch
 from fp8_convert import convert
@@ -29,7 +30,7 @@ def load_pipeline_as_fp8_with_caching():
     optimizer = TorchCompileOptimizer()
     pipeline.transformer = optimizer.compile_transformer(pipeline.transformer)
     print("Compilation completed!")
-    pipeline.transformer.compile()
+    #pipeline.transformer.compile()
 
     return pipeline
 
@@ -71,24 +72,29 @@ def load_fp8_pipeline():
     # A trival compile: `fp8_pipeline.transformer` seems better than the stuff below so far.
     # but it need to take advantage of compile artifact caching to be justifiable.
 
-    optimizer = TorchCompileOptimizer()
+    #optimizer = TorchCompileOptimizer()
 
-    fp8_pipeline.transformer.compile()
+    #fp8_pipeline.transformer.compile()
 
     # Warm up:
-    sample_inputs = create_sample_inputs_for_flux()
-    optimizer.warmup_compiled_model(fp8_pipeline.transformer, sample_inputs)
+    #sample_inputs = create_sample_inputs_for_flux()
+    #optimizer.warmup_compiled_model(fp8_pipeline.transformer, sample_inputs)
     # Add in compile artifact caching
 
     return fp8_pipeline
 
 
-def load_bf16_pipeline_as_fp8_with_caching():
+def load_bf16_pipeline_as_fp8_with_caching(*, cache:bool = False):
     print(f"Loading BF16 pipeline from {model_id}")
     pipeline = PipelineClass.from_pretrained(model_id, torch_dtype=torch.bfloat16, local_files_only=True).to(device)
 
     # Setup Torch Caching
-    optimizer = TorchCompileOptimizer()
+    if cache:
+        optimizer = TorchCompileOptimizer()
+    else:
+        os.environ["TORCHINDUCTOR_CACHE_DIR"] = "torch_compile_cache"
+        os.environ["TRITON_CACHE_DIR"] = "torch_compile_cache/triton"
+        torch.compiler.load_cache_artifacts()
 
     print("Applying FP8 to all linear layers...")
     pipeline.transformer = replace_linear_with_fp8(pipeline.transformer)
@@ -97,11 +103,29 @@ def load_bf16_pipeline_as_fp8_with_caching():
     pipeline.transformer = replace_attention_layers_with_fp8(pipeline.transformer)
 
     # Adding in torch compilation here
+    if cache:
+        pipeline.transformer = optimizer.compile_transformer(pipeline.transformer)
+        torch.compiler.save_cache_artifacts()
+    else:
+        pipeline.transformer.compile()
+
+    if cache:
+        sample_inputs = create_sample_inputs_for_flux()
+        optimizer.warmup_compiled_model(pipeline.transformer, sample_inputs)
+
+    return pipeline
+
+
+def load_bf16_pipeline_with_official_caching():
+    pipeline = diffusers.FluxPipeline.from_pretrained(
+        model_id,
+        torch_dtype=torch.bfloat16,
+        local_files_only=True,
+        cache_dir=f"{Path(__file__).parent/"pipeline_compile_cache"}",
+    ).to(device)
+    torch.compiler.load_cache_artifacts()
     pipeline.transformer.compile()
-
-    sample_inputs = create_sample_inputs_for_flux()
-    optimizer.warmup_compiled_model(pipeline.transformer, sample_inputs)
-
+    torch.compiler.save_cache_artifacts()
     return pipeline
 
 
