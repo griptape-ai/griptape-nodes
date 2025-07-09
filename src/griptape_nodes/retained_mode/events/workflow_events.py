@@ -152,6 +152,7 @@ class SaveWorkflowRequest(RequestPayload):
 class ImportWorkflowAsReferencedSubFlowRequest(RequestPayload):
     workflow_name: str
     flow_name: str | None = None  # If None, import into current context flow
+    imported_flow_metadata: dict | None = None  # Metadata to apply to the imported flow
 
 
 @dataclass

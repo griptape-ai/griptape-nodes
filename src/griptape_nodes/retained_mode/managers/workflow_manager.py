@@ -36,6 +36,8 @@ from griptape_nodes.retained_mode.events.flow_events import (
     SerializedNodeCommands,
     SerializeFlowToCommandsRequest,
     SerializeFlowToCommandsResultSuccess,
+    SetFlowMetadataRequest,
+    SetFlowMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
@@ -2626,6 +2628,25 @@ class WorkflowManager:
                 request.workflow_name,
                 created_flow_name,
                 [flow for flow in new_flows if flow != created_flow_name],
+            )
+
+        # Apply imported flow metadata if provided
+        if request.imported_flow_metadata:
+            set_metadata_request = SetFlowMetadataRequest(
+                flow_name=created_flow_name, metadata=request.imported_flow_metadata
+            )
+            set_metadata_result = GriptapeNodes.handle_request(set_metadata_request)
+
+            if not isinstance(set_metadata_result, SetFlowMetadataResultSuccess):
+                logger.error(
+                    "Attempted to import workflow '%s' as referenced sub flow. Failed because metadata could not be applied to created flow '%s'",
+                    request.workflow_name,
+                    created_flow_name,
+                )
+                return ImportWorkflowAsReferencedSubFlowResultFailure()
+
+            logger.debug(
+                "Applied imported flow metadata to '%s': %s", created_flow_name, request.imported_flow_metadata
             )
 
         logger.info(

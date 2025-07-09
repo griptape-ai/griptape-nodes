@@ -1267,7 +1267,8 @@ class FlowManager:
                 if self.is_referenced_workflow(flow):
                     referenced_workflow_name = self.get_referenced_workflow_name(flow)
                     create_flow_request = ImportWorkflowAsReferencedSubFlowRequest(
-                        workflow_name=referenced_workflow_name  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
+                        workflow_name=referenced_workflow_name,  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
+                        imported_flow_metadata=flow.metadata,
                     )
                     referenced_workflows_in_use.add(referenced_workflow_name)  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
                 else:
@@ -1362,7 +1363,8 @@ class FlowManager:
                     # For referenced workflows, create a minimal SerializedFlowCommands with just the import command
                     referenced_workflow_name = self.get_referenced_workflow_name(flow)
                     import_command = ImportWorkflowAsReferencedSubFlowRequest(
-                        workflow_name=referenced_workflow_name  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
+                        workflow_name=referenced_workflow_name,  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
+                        imported_flow_metadata=flow.metadata,
                     )
 
                     serialized_flow = SerializedFlowCommands(
