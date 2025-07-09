@@ -5,10 +5,7 @@ from diffusers import AutoencoderKL
 from claude_vae_to_onnx_export import ONNXVAEDecoder
 
 # Load both models
-vae_pytorch = AutoencoderKL.from_pretrained(
-    "black-forest-labs/FLUX.1-Kontext-dev",
-    subfolder="vae"
-).to("cuda").eval()
+vae_pytorch = AutoencoderKL.from_pretrained("black-forest-labs/FLUX.1-Kontext-dev", subfolder="vae").to("cuda").eval()
 vae_onnx = ONNXVAEDecoder("flux_kontext_vae_decoder.onnx").to("cuda")
 
 # Benchmark
@@ -30,4 +27,4 @@ onnx_time = time.time() - start
 
 print(f"PyTorch: {pytorch_time:.3f}s")
 print(f"ONNX: {onnx_time:.3f}s")
-print(f"Speedup: {pytorch_time/onnx_time:.2f}x")
+print(f"Speedup: {pytorch_time / onnx_time:.2f}x")

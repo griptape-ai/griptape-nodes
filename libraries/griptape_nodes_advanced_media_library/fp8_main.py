@@ -31,7 +31,6 @@ if __name__ == "__main__":
     fp8_pipeline = load_bf16_pipeline_as_fp8()
     fp8_pipeline_stats = benchmark_pipeline(fp8_pipeline)
 
-
     print("Loading FP8 pipeline with caching...")
     fp8_cached_pipeline = load_bf16_pipeline_as_fp8_with_caching()
     fp8_cached_pipeline_stats = benchmark_pipeline(fp8_cached_pipeline)
@@ -39,10 +38,6 @@ if __name__ == "__main__":
     # print("Loading standard pipeline...")
     # pipeline = load_pipeline()
     # pipeline_stats = benchmark_pipeline(pipeline)
-    
+
     print("Benchmarking results:")
     print_benchmark_table(fp8_pipeline_stats, fp8_cached_pipeline_stats)
-
-
-
-

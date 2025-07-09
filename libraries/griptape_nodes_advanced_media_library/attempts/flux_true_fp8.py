@@ -1,6 +1,7 @@
 import copy
 import torch
 
+
 class ToyLinearModel(torch.nn.Module):
     def __init__(self, m: int, n: int, k: int):
         super().__init__()
@@ -12,10 +13,12 @@ class ToyLinearModel(torch.nn.Module):
         x = self.linear2(x)
         return x
 
+
 model = ToyLinearModel(1024, 1024, 1024).eval().to(torch.bfloat16).to("cuda")
 model_bf16 = copy.deepcopy(model)
 
 from torchao.quantization import int4_weight_only, quantize_
+
 quantize_(model, int4_weight_only(group_size=32))
 
 print("model.linear1", model.linear1)

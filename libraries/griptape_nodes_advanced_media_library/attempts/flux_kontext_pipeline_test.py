@@ -6,7 +6,6 @@ import time
 import contextlib
 
 
-
 from diffusers_nodes_library.common.utils.logging_utils import seconds_to_human_readable
 from diffusers_nodes_library.pipelines.flux.flux_kontext_pipeline_memory_footprint import (
     FLUX_KONTEXT_PIPELINE_COMPONENT_NAMES,
@@ -18,6 +17,7 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger("diffusers_nodes_library")
+
 
 @contextlib.contextmanager
 def time_then_print(label: str) -> Iterator[None]:
@@ -62,13 +62,8 @@ def benchmark_function(func, n=10, verbose=True):
         print(f"P50 time: {p50_time:.4f} seconds")
         print(f"P100 time: {p100_time:.4f} seconds")
 
-    return {
-        "avg": avg_time,
-        "p0": p0_time,
-        "p50": p50_time,
-        "p100": p100_time,
-        "all": times
-    }
+    return {"avg": avg_time, "p0": p0_time, "p50": p50_time, "p100": p100_time, "all": times}
+
 
 def pipe_info_after_from_pretrained(**kwargs):
     print(kwargs or "NONE", "-" * 80)
@@ -97,11 +92,11 @@ def pipe_info_after_from_pretrained(**kwargs):
 
 
 def load_model(
-        from_pretrained_kwargs={},
-        pipe_to_kwargs=None,
-        torch__dynamo_config_cache_size_limit=None,
-        pipe_transformer_compile_repeated_blocks_kwargs=None,
-        enable_xformers_memory_efficient_attention=False,
+    from_pretrained_kwargs={},
+    pipe_to_kwargs=None,
+    torch__dynamo_config_cache_size_limit=None,
+    pipe_transformer_compile_repeated_blocks_kwargs=None,
+    enable_xformers_memory_efficient_attention=False,
 ):
     pipe = diffusers.FluxKontextPipeline.from_pretrained(
         pretrained_model_name_or_path="black-forest-labs/FLUX.1-Kontext-dev",
@@ -120,7 +115,7 @@ def load_model(
     # torch._inductor.config.coordinate_descent_tuning = True
     # torch._inductor.config.epilogue_fusion = False
     # torch._inductor.config.coordinate_descent_check_all_directions = True
-    
+
     # # This works, does help? shrug
     # logger.info("Enabling max-autotune for VAE")
     # pipe.vae = torch.compile(pipe.vae, mode="max-autotune", fullgraph=True)
@@ -170,7 +165,6 @@ def main():
     # )
     # benchmark_inference(pipe)
 
-
     # First inference: ~1.23 seconds
     # Second inference: ~0.5 seconds
     pipe = load_model(
@@ -187,6 +181,7 @@ def main():
     pipe.enable_xformers_memory_efficient_attention()
     benchmark_inference(pipe)
 
+
 # xformers
 # https://github.com/facebookresearch/xformers
 # uv pip install install -U xformers --index-url https://download.pytorch.org/whl/cu128
@@ -197,5 +192,3 @@ def main():
 # uv run optimum-cli export onnx --model "black-forest-labs/FLUX.1-Kontext-dev" flux_kontext_onnx
 if __name__ == "__main__":
     main()
-
-

@@ -36,12 +36,13 @@ example_inputs = {
 num_runs = 10  # Reduced runs since diffusion models are slower
 torch._dynamo.reset()
 
+
 # Benchmark function for diffusion models
 def benchmark_diffusion_model(pipe, num_runs, inputs):
     torch.cuda.synchronize()
     start_time = torch.cuda.Event(enable_timing=True)
     end_time = torch.cuda.Event(enable_timing=True)
-    
+
     times = []
     for _ in range(num_runs):
         start_time.record()
@@ -50,8 +51,9 @@ def benchmark_diffusion_model(pipe, num_runs, inputs):
         end_time.record()
         torch.cuda.synchronize()
         times.append(start_time.elapsed_time(end_time))
-    
+
     return sum(times) / len(times)
+
 
 # Run benchmarks
 print("Running bf16 benchmark...")

@@ -5,6 +5,7 @@ from transformers import AutoConfig
 from optimum.exporters.onnx.base import ConfigBehavior
 from typing import Dict
 
+
 class CustomWhisperOnnxConfig(WhisperOnnxConfig):
     @property
     def outputs(self) -> Dict[str, Dict[int, str]]:
@@ -18,13 +19,13 @@ class CustomWhisperOnnxConfig(WhisperOnnxConfig):
                 common_outputs[f"decoder_attentions.{i}"] = {
                     0: "batch_size",
                     2: "decoder_sequence_length",
-                    3: "past_decoder_sequence_length + 1"
+                    3: "past_decoder_sequence_length + 1",
                 }
             for i in range(self._config.decoder_layers):
                 common_outputs[f"cross_attentions.{i}"] = {
                     0: "batch_size",
                     2: "decoder_sequence_length",
-                    3: "encoder_sequence_length_out"
+                    3: "encoder_sequence_length_out",
                 }
 
         return common_outputs
@@ -37,19 +38,20 @@ class CustomWhisperOnnxConfig(WhisperOnnxConfig):
         else:
             return {}
 
+
 model_id = "black-forest-labs/FLUX.1-Kontext-dev"
 config = AutoConfig.from_pretrained("black-forest-labs/FLUX.1-Kontext-dev", local_files_only=True)
 
 custom_flux_kontext_onnx_config = CustomWhisperOnnxConfig(
-        config=config,
-        task="automatic-speech-recognition",
+    config=config,
+    task="automatic-speech-recognition",
 )
 
 encoder_config = custom_flux_kontext_onnx_config.with_behavior("encoder")
 decoder_config = custom_flux_kontext_onnx_config.with_behavior("decoder", use_past=False)
 decoder_with_past_config = custom_flux_kontext_onnx_config.with_behavior("decoder", use_past=True)
 
-custom_onnx_configs={
+custom_onnx_configs = {
     "encoder_model": encoder_config,
     "decoder_model": decoder_config,
     "decoder_with_past_model": decoder_with_past_config,
@@ -60,5 +62,5 @@ main_export(
     output="custom_flux_kontext_onnx",
     no_post_process=True,
     model_kwargs={"output_attentions": True},
-    custom_onnx_configs=custom_onnx_configs
+    custom_onnx_configs=custom_onnx_configs,
 )

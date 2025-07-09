@@ -1,9 +1,10 @@
 import torch
 
+
 def convert(pipeline, dtype: torch.dtype):
     # Get expected modules for this pipeline class
     expected_modules, _ = pipeline._get_signature_keys(pipeline.__class__)
-    
+
     # Convert weights to FP8 for all nn.Module components
     modules_total = 0
     modules_converted = 0
