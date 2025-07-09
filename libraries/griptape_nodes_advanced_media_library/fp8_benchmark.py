@@ -7,6 +7,7 @@ def benchmark_pipeline(
     prompt: str = "A beautiful landscape",
     num_runs: int = 3,
     num_inference_steps: int = 4,
+    model_loading_time: float = 0.0,
     **kwargs,
 ) -> dict[str, Any]:
     # Warm up
@@ -34,10 +35,11 @@ def benchmark_pipeline(
         "min_time": min_time,
         "max_time": max_time,
         "all_times": times,
+        "model_loading_time": model_loading_time,
     }
 
 
-def print_benchmark_table(standard_stats,fp8_stats):
+def print_benchmark_table(standard_stats: dict[str, Any], fp8_stats: dict[str, Any]) -> None:
     """Print benchmark results in a formatted table."""
     print("\n" + "=" * 60)
     print("BENCHMARK RESULTS")
@@ -45,6 +47,16 @@ def print_benchmark_table(standard_stats,fp8_stats):
     print(f"{'Metric':<20} {'Standard':<15} {'FP8':<15} {'Speedup':<10}")
     print("-" * 60)
 
+    # Model loading time comparison
+    std_loading_time = standard_stats.get("model_loading_time", 0.0)
+    fp8_loading_time = fp8_stats.get("model_loading_time", 0.0)
+    loading_speedup = std_loading_time / fp8_loading_time if fp8_loading_time > 0 else 0.0
+
+    print(
+        f"{'Loading Time (s)':<20} {std_loading_time:<15.2f} {fp8_loading_time:<15.2f} {loading_speedup:<10.2f}x"
+    )
+
+    # Inference time comparison
     avg_speedup = standard_stats["average_time"] / fp8_stats["average_time"]
     min_speedup = standard_stats["min_time"] / fp8_stats["min_time"]
     max_speedup = standard_stats["max_time"] / fp8_stats["max_time"]

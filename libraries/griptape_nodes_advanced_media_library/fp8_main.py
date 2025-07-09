@@ -1,6 +1,7 @@
 from functools import cache
+import time
 from fp8_export import export_fp8
-from fp8_load import load_bf16_pipeline_with_official_caching, load_pipeline, load_fp8_pipeline, load_bf16_pipeline_as_fp8, load_bf16_pipeline_as_fp8_with_caching, load_pipeline_with_caching
+from fp8_load import load_bf16_pipeline_with_official_caching, load_pipeline, load_fp8_pipeline, load_bf16_pipeline_as_fp8, load_bf16_pipeline_as_fp8_with_caching, load_pipeline_with_caching, load_pipeline_with_timing, load_bf16_pipeline_as_fp8_with_timing
 from fp8_benchmark import benchmark_pipeline, print_benchmark_table
 
 # Look at the table in https://huggingface.co/blog/diffusers-quantization
@@ -29,16 +30,16 @@ if __name__ == "__main__":
     export_fp8()
 
     print("Loading FP8 pipeline...")
-    fp8_pipeline = load_bf16_pipeline_as_fp8()
-    fp8_pipeline_stats = benchmark_pipeline(fp8_pipeline)
+    fp8_pipeline, fp8_loading_time = load_bf16_pipeline_as_fp8_with_timing()
+    fp8_pipeline_stats = benchmark_pipeline(fp8_pipeline, model_loading_time=fp8_loading_time)
 
     # print("Loading FP8 pipeline with caching...")
     # fp8_cached_pipeline = load_bf16_pipeline_as_fp8_with_caching(cache=False)
     # fp8_cached_pipeline_stats = benchmark_pipeline(fp8_cached_pipeline)
 
     print("Loading standard pipeline...")
-    pipeline = load_pipeline()
-    pipeline_stats = benchmark_pipeline(pipeline)
+    pipeline, pipeline_loading_time = load_pipeline_with_timing()
+    pipeline_stats = benchmark_pipeline(pipeline, model_loading_time=pipeline_loading_time)
 
     # print("Loading standard pipeline with caching...")
     # cached_pipeline = load_pipeline_with_caching()

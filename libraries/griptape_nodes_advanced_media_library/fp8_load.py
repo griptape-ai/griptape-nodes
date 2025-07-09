@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 
 import pip
 import os
@@ -147,3 +148,36 @@ def load_bnb_int4_pipeline():
     pipeline = PipelineClass.from_pretrained("diffusers/FLUX.1-dev-bnb-4bit", torch_dtype=torch.bfloat16)
     pipeline.to(device)
     return pipeline
+
+
+# Timing wrapper functions
+def load_pipeline_with_timing():
+    """Load pipeline and return both pipeline and loading time."""
+    start_time = time.time()
+    pipeline = load_pipeline()
+    loading_time = time.time() - start_time
+    return pipeline, loading_time
+
+
+def load_bf16_pipeline_as_fp8_with_timing():
+    """Load FP8 pipeline and return both pipeline and loading time."""
+    start_time = time.time()
+    pipeline = load_bf16_pipeline_as_fp8()
+    loading_time = time.time() - start_time
+    return pipeline, loading_time
+
+
+def load_pipeline_with_caching_with_timing():
+    """Load cached pipeline and return both pipeline and loading time."""
+    start_time = time.time()
+    pipeline = load_pipeline_with_caching()
+    loading_time = time.time() - start_time
+    return pipeline, loading_time
+
+
+def load_bf16_pipeline_as_fp8_with_caching_with_timing(*, cache: bool = False):
+    """Load cached FP8 pipeline and return both pipeline and loading time."""
+    start_time = time.time()
+    pipeline = load_bf16_pipeline_as_fp8_with_caching(cache=cache)
+    loading_time = time.time() - start_time
+    return pipeline, loading_time
