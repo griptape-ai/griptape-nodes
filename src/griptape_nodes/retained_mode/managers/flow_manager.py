@@ -60,6 +60,9 @@ from griptape_nodes.retained_mode.events.flow_events import (
     GetFlowDetailsRequest,
     GetFlowDetailsResultFailure,
     GetFlowDetailsResultSuccess,
+    GetFlowMetadataRequest,
+    GetFlowMetadataResultFailure,
+    GetFlowMetadataResultSuccess,
     GetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess,
     ListFlowsInCurrentContextRequest,
@@ -75,6 +78,9 @@ from griptape_nodes.retained_mode.events.flow_events import (
     SerializeFlowToCommandsRequest,
     SerializeFlowToCommandsResultFailure,
     SerializeFlowToCommandsResultSuccess,
+    SetFlowMetadataRequest,
+    SetFlowMetadataResultFailure,
+    SetFlowMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
     DeleteNodeRequest,
@@ -135,6 +141,8 @@ class FlowManager:
         )
         event_manager.assign_manager_to_request_type(GetTopLevelFlowRequest, self.on_get_top_level_flow_request)
         event_manager.assign_manager_to_request_type(GetFlowDetailsRequest, self.on_get_flow_details_request)
+        event_manager.assign_manager_to_request_type(GetFlowMetadataRequest, self.on_get_flow_metadata_request)
+        event_manager.assign_manager_to_request_type(SetFlowMetadataRequest, self.on_set_flow_metadata_request)
         event_manager.assign_manager_to_request_type(SerializeFlowToCommandsRequest, self.on_serialize_flow_to_commands)
         event_manager.assign_manager_to_request_type(
             DeserializeFlowFromCommandsRequest, self.on_deserialize_flow_from_commands
@@ -213,6 +221,64 @@ class FlowManager:
             parent_flow_name=parent_flow_name,
         )
 
+    def on_get_flow_metadata_request(self, request: GetFlowMetadataRequest) -> ResultPayload:
+        flow_name = request.flow_name
+        flow = None
+        if flow_name is None:
+            # Get from the current context.
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = "Attempted to get metadata for a Flow from the Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return GetFlowMetadataResultFailure()
+
+            flow = GriptapeNodes.ContextManager().get_current_flow()
+            flow_name = flow.name
+
+        # Does this flow exist?
+        if flow is None:
+            obj_mgr = GriptapeNodes.ObjectManager()
+            flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+            if flow is None:
+                details = f"Attempted to get metadata for a Flow '{flow_name}', but no such Flow was found."
+                logger.error(details)
+                return GetFlowMetadataResultFailure()
+
+        metadata = flow.metadata
+        details = f"Successfully retrieved metadata for a Flow '{flow_name}'."
+        logger.debug(details)
+
+        return GetFlowMetadataResultSuccess(metadata=metadata)
+
+    def on_set_flow_metadata_request(self, request: SetFlowMetadataRequest) -> ResultPayload:
+        flow_name = request.flow_name
+        flow = None
+        if flow_name is None:
+            # Get from the current context.
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = "Attempted to set metadata for a Flow from the Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return SetFlowMetadataResultFailure()
+
+            flow = GriptapeNodes.ContextManager().get_current_flow()
+            flow_name = flow.name
+
+        # Does this flow exist?
+        if flow is None:
+            obj_mgr = GriptapeNodes.ObjectManager()
+            flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+            if flow is None:
+                details = f"Attempted to set metadata for a Flow '{flow_name}', but no such Flow was found."
+                logger.error(details)
+                return SetFlowMetadataResultFailure()
+
+        # We can't completely overwrite metadata.
+        for key, value in request.metadata.items():
+            flow.metadata[key] = value
+        details = f"Successfully set metadata for a Flow '{flow_name}'."
+        logger.debug(details)
+
+        return SetFlowMetadataResultSuccess()
+
     def does_canvas_exist(self) -> bool:
         """Determines if there is already an existing flow with no parent flow.Returns True if there is an existing flow with no parent flow.Return False if there is no existing flow with no parent flow."""
         return any([parent is None for parent in self._name_to_parent_name.values()])  # noqa: C419
@@ -267,7 +333,7 @@ class FlowManager:
         # This will inform the engine to maintain a reference to the workflow
         # when serializing it. It may inform the editor to render it differently.
         workflow_manager = GriptapeNodes.WorkflowManager()
-        flow = ControlFlow(name=final_flow_name)
+        flow = ControlFlow(name=final_flow_name, metadata=request.metadata)
         GriptapeNodes.ObjectManager().add_object_by_name(name=final_flow_name, obj=flow)
         self._name_to_parent_name[final_flow_name] = parent_name
 
@@ -1207,7 +1273,9 @@ class FlowManager:
                 else:
                     # Always set set_as_new_context=False during serialization - let the workflow manager
                     # that loads this serialized flow decide whether to push it to context or not
-                    create_flow_request = CreateFlowRequest(parent_flow_name=None, set_as_new_context=False)
+                    create_flow_request = CreateFlowRequest(
+                        parent_flow_name=None, set_as_new_context=False, metadata=flow.metadata
+                    )
             else:
                 create_flow_request = None
 
