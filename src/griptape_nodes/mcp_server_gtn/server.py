@@ -30,6 +30,7 @@ API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
 
+
 def main() -> int:
     mcp_server_logger = logging.getLogger("griptape_nodes_mcp_server")
     mcp_server_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
@@ -61,21 +62,13 @@ def main() -> int:
 
         request_payload = SUPPORTED_REQUEST_EVENTS[name](**arguments)
 
-        try:
-            await request_manager.connect(token=api_key)
-            result = await request_manager.create_request_event(
-                request_payload.__class__.__name__, request_payload.__dict__, timeout_ms=5000
-            )
-            mcp_server_logger.debug(f"Got result: {result}")
+        await request_manager.connect(token=api_key)
+        result = await request_manager.create_request_event(
+            request_payload.__class__.__name__, request_payload.__dict__, timeout_ms=5000
+        )
+        mcp_server_logger.debug(f"Got result: {result}")
 
-            return [TextContent(type="text", text=json.dumps(result))]
-
-        except TimeoutError as e:
-            mcp_server_logger.error("Request timed out")
-            raise e
-        except Exception as e:
-            mcp_server_logger.exception(f"Request failed: {e!s}")
-            raise e
+        return [TextContent(type="text", text=json.dumps(result))]
 
     # Create the session manager with our app and event store
     session_manager = StreamableHTTPSessionManager(

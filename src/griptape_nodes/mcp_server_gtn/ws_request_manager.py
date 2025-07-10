@@ -6,8 +6,10 @@ import uuid
 from collections.abc import Callable
 from typing import Any, Generic, TypeVar
 from urllib.parse import urljoin
-
 import websockets
+
+from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
+from griptape_nodes.retained_mode.utils.session_persistence import SessionPersistence
 
 logger = logging.getLogger("griptape_nodes_mcp_server")
 
@@ -21,7 +23,7 @@ class WebSocketConnectionManager:
         self,
         websocket_url: str = urljoin(
             os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai").replace("http", "ws"),
-            "/ws/engines/events?publish_channel=requests&subscribe_channel=responses",
+            "/ws/engines/events?version=v2",
         ),
     ):
         self.websocket_url = websocket_url
@@ -102,6 +104,41 @@ class WebSocketConnectionManager:
 class AsyncRequestManager(Generic[T]):
     def __init__(self, connection_manager: WebSocketConnectionManager):
         self.connection_manager = connection_manager
+        self.engine_id = None
+        self.session_id = None
+
+    async def _subscribe_to_topic(self, ws_connection: Any, topic: str) -> None:
+        """Subscribe to a specific topic in the message bus."""
+
+        if ws_connection is None:
+            logger.warning("WebSocket connection not available for subscribing to topic")
+            return
+
+        try:
+            body = {"type": "subscribe", "topic": topic, "payload": {}}
+            await ws_connection.send(json.dumps(body))
+            logger.info("Subscribed to topic: %s", topic)
+        except websockets.exceptions.WebSocketException as e:
+            logger.error("Error subscribing to topic %s: %s", topic, e)
+        except Exception as e:
+            logger.error("Unexpected error while subscribing to topic %s: %s", topic, e)
+
+    async def _subscribe_to_engine_and_session(self, ws_connection: Any) -> None:
+        """Subscribe to engine ID, session ID, and request topics on WebSocket connection."""
+
+        # Subscribe to response topic (engine discovery)
+        await self._subscribe_to_topic(ws_connection, "response")
+
+        if self.engine_id:
+            await self._subscribe_to_topic(ws_connection, f"engines/{self.engine_id}/response")
+        else:
+            logger.warning("Engine ID not available for subscription")
+
+        if self.session_id:
+            topic = f"sessions/{self.session_id}/response"
+            await self._subscribe_to_topic(ws_connection, topic)
+        else:
+            logger.info("No session ID available for subscription")
 
     async def connect(self, token: str | None = None) -> None:
         """Connect to the WebSocket server"""
@@ -115,6 +152,10 @@ class AsyncRequestManager(Generic[T]):
             )
             self.connection_manager.connected = True
             logger.debug(f"🟢 WebSocket connection established: {self.connection_manager.websocket}")
+
+            self.engine_id = EngineIdentity.get_engine_id()
+            self.session_id = SessionPersistence.get_persisted_session_id()
+            await self._subscribe_to_engine_and_session(self.connection_manager.websocket)
 
             # Start processing messages
             self.connection_manager._process_task = asyncio.create_task(self.connection_manager._process_messages())
@@ -153,13 +194,29 @@ class AsyncRequestManager(Generic[T]):
             logger.error(f"Unexpected error sending API message: {e!s}")
             raise
 
+    def _determine_request_topic(self) -> str | None:
+        """Determine the request topic based on session_id and engine_id in the payload."""
+
+        # Normal topic determination logic
+        # Check for session_id first (highest priority)
+        if self.session_id:
+            return f"sessions/{self.session_id}/request"
+
+        # Check for engine_id if no session_id
+        if self.engine_id:
+            return f"engines/{self.engine_id}/request"
+
+        # Default to generic request topic
+        return "request"
+
     async def create_event(self, request_type: str, payload: dict[str, Any]) -> None:
         """Send an event to the API without waiting for a response."""
         logger.debug(f"📝 Creating Event: {request_type} - {json.dumps(payload)}")
 
         data = {"event_type": "EventRequest", "request_type": request_type, "request": payload}
+        topic = self._determine_request_topic()
 
-        request_data = {"payload": data, "type": data["event_type"]}
+        request_data = {"payload": data, "type": data["event_type"], "topic": topic}
 
         if not request_data["payload"]["request"].get("request_id"):
             request_data["payload"]["request"]["request_id"] = ""
