@@ -11,7 +11,17 @@ Function ColorWrite {
 }
 # -----------------------------------
 
-ColorWrite "`nInstalling uv...`n" 'Cyan'
+# Check if uv is already installed
+$existingUv = Get-Command uv -ErrorAction SilentlyContinue
+if ($existingUv) {
+    ColorWrite "uv is already installed. Using existing installation..." 'Cyan'
+    $uvInstallPath = $existingUv.Source
+} else {
+    ColorWrite "Installing uv..." 'Cyan'
+    $env:UV_UNMANAGED_INSTALL = Join-Path $env:USERPROFILE '.local\share\griptape_nodes\bin'
+    $uvInstallPath = Join-Path $env:USERPROFILE '.local\share\griptape_nodes\bin\uv.exe'
+}
+
 try {
     powershell -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | iex" > $null
 } catch {
@@ -21,11 +31,15 @@ try {
 ColorWrite "uv installed successfully." 'Green'
 
 ColorWrite "`nInstalling Griptape Nodes Engine...`n" 'Cyan'
-$localBin = Join-Path $env:USERPROFILE '.local\bin'
-$uvPath = Join-Path $localBin 'uv.exe'
+
+# Verify uv installation
+if (-not (Test-Path $uvInstallPath)) {
+    ColorWrite "Error: uv installation failed at expected path: $uvInstallPath" 'Red'
+    exit 1
+}
 
 # Install griptape-nodes
-& $uvPath tool install --force --python python3.12 griptape-nodes > $null
+& $uvInstallPath tool install --force --python python3.12 griptape-nodes > $null
 
 if (-not (Get-Command griptape-nodes -ErrorAction SilentlyContinue)) {
     ColorWrite "**************************************" 'Green'
