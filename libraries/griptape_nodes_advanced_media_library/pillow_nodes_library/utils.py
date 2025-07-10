@@ -21,7 +21,8 @@ def pil_to_image_artifact(pil_image: Image, *, use_temp_storage: bool = False) -
     image_bytes = image_io.getvalue()
 
     if use_temp_storage:
-        filename = f"intermediates/{uuid.uuid4()}.png"
+        # Use temp prefix instead of directory for static server compatibility
+        filename = f"temp_{uuid.uuid4()}.png"
     else:
         filename = f"{uuid.uuid4()}.png"
 
