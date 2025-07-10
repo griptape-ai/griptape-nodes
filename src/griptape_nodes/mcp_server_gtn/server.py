@@ -58,7 +58,8 @@ def main() -> int:
     @app.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if name not in SUPPORTED_REQUEST_EVENTS:
-            raise ValueError(f"Unsupported tool: {name}")
+            msg = f"Unsupported tool: {name}"
+            raise ValueError(msg)
 
         request_payload = SUPPORTED_REQUEST_EVENTS[name](**arguments)
 

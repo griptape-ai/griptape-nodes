@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -15,7 +16,7 @@ T = TypeVar("T")
 
 
 class WebSocketConnectionManager:
-    """Python equivalent of WebSocketConnectionManager in TypeScript"""
+    """Python equivalent of WebSocketConnectionManager in TypeScript."""
 
     def __init__(
         self,
@@ -32,9 +33,10 @@ class WebSocketConnectionManager:
         self._process_task: asyncio.Task | None = None
 
     async def send(self, data: dict[str, Any]) -> None:
-        """Send a message to the WebSocket server"""
+        """Send a message to the WebSocket server."""
         if not self.connected or not self.websocket:
-            raise ConnectionError("Not connected to WebSocket server")
+            msg = "Not connected to WebSocket server"
+            raise ConnectionError(msg)
 
         logger.error(type(self.websocket))
 
@@ -47,7 +49,7 @@ class WebSocketConnectionManager:
             raise
 
     async def _process_messages(self) -> None:
-        """Process incoming WebSocket messages"""
+        """Process incoming WebSocket messages."""
         if not self.websocket:
             logger.warning("WebSocket is not connected, cannot process messages")
             return
@@ -89,13 +91,13 @@ class WebSocketConnectionManager:
     def subscribe_to_request_event(
         self, success_handler: Callable[[Any, Any], None], failure_handler: Callable[[Any, Any], None]
     ) -> str:
-        """Subscribe to a request-response event"""
+        """Subscribe to a request-response event."""
         request_id = str(uuid.uuid4())
         self.request_handlers[request_id] = (success_handler, failure_handler)
         return request_id
 
     def unsubscribe_from_request_event(self, request_id: str) -> None:
-        """Unsubscribe from a request-response event"""
+        """Unsubscribe from a request-response event."""
         if request_id in self.request_handlers:
             del self.request_handlers[request_id]
 
@@ -138,7 +140,7 @@ class AsyncRequestManager(Generic[T]):
             logger.info("No session ID available for subscription")
 
     async def connect(self, token: str | None = None) -> None:
-        """Connect to the WebSocket server"""
+        """Connect to the WebSocket server."""
         from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
         from griptape_nodes.retained_mode.utils.session_persistence import SessionPersistence
 
@@ -163,10 +165,11 @@ class AsyncRequestManager(Generic[T]):
         except Exception as e:
             self.connection_manager.connected = False
             logger.error("🔴 WebSocket connection failed: %s", str(e))
-            raise ConnectionError(f"Failed to connect to WebSocket: {e!s}")
+            msg = f"Failed to connect to WebSocket: {e!s}"
+            raise ConnectionError(msg)
 
     async def disconnect(self) -> None:
-        """Disconnect from the WebSocket server"""
+        """Disconnect from the WebSocket server."""
         if self.connection_manager.websocket:
             await self.connection_manager.websocket.close()
             self.connection_manager.websocket = None
@@ -175,16 +178,14 @@ class AsyncRequestManager(Generic[T]):
         # Cancel processing task if it's running
         if self.connection_manager._process_task:
             self.connection_manager._process_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self.connection_manager._process_task
-            except asyncio.CancelledError:
-                pass
             self.connection_manager._process_task = None
 
         logger.debug("WebSocket disconnected")
 
     async def send_api_message(self, data: dict[str, Any]) -> None:
-        """Send a message to the API via WebSocket"""
+        """Send a message to the API via WebSocket."""
         try:
             await self.connection_manager.send(data)
         except ConnectionError as e:
@@ -246,13 +247,13 @@ class AsyncRequestManager(Generic[T]):
         timeout_sec = timeout_ms / 1000 if timeout_ms else None
 
         # Define handlers that will resolve/reject the future
-        def success_handler(response, _):
+        def success_handler(response, _) -> None:
             if not response_future.done():
                 result = response.get("payload", {}).get("result", "Success")
                 logger.debug("✅ Request succeeded: %s", result)
                 response_future.set_result(result)
 
-        def failure_handler(response, _):
+        def failure_handler(response, _) -> None:
             if not response_future.done():
                 error = (
                     response.get("payload", {}).get("result", {}).get("exception", "Unknown error") or "Unknown error"
