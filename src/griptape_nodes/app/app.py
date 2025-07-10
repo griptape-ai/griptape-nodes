@@ -149,7 +149,7 @@ def _serve_static_server() -> None:
 
         return {"url": url}
 
-    @app.put("/static-uploads/{file_name:str}")
+    @app.put("/static-uploads/{file_name:path}")
     async def create_static_file(request: Request, file_name: str) -> dict:
         """Upload a static file to the static server."""
         if not STATIC_SERVER_ENABLED:
