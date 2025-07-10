@@ -410,7 +410,7 @@ dependencies = [
     { name = "httpx" },
     { name = "imageio-ffmpeg" },
     { name = "json-repair" },
-    { name = "mcp" },
+    { name = "mcp", extra = ["ws"] },
     { name = "packaging" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -458,7 +458,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "imageio-ffmpeg", specifier = ">=0.6.0" },
     { name = "json-repair", specifier = ">=0.46.1" },
-    { name = "mcp", specifier = ">=1.10.1" },
+    { name = "mcp", extras = ["ws"], specifier = ">=1.10.1" },
     { name = "packaging", specifier = ">=25.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
@@ -836,6 +836,11 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/3a/f5/9506eb5578d5bbe9819ee8ba3198d0ad0e2fbe3bab8b257e4131ceb7dfb6/mcp-1.11.0.tar.gz", hash = "sha256:49a213df56bb9472ff83b3132a4825f5c8f5b120a90246f08b0dac6bedac44c8", size = 406907, upload-time = "2025-07-10T16:41:09.388Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/92/9c/c9ca79f9c512e4113a5d07043013110bb3369fc7770040c61378c7fbcf70/mcp-1.11.0-py3-none-any.whl", hash = "sha256:58deac37f7483e4b338524b98bc949b7c2b7c33d978f5fafab5bde041c5e2595", size = 155880, upload-time = "2025-07-10T16:41:07.935Z" },
+]
+
+[package.optional-dependencies]
+ws = [
+    { name = "websockets" },
 ]
 
 [[package]]
