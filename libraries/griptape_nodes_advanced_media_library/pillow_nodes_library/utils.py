@@ -12,14 +12,20 @@ def image_artifact_to_pil(image_artifact: ImageArtifact) -> Image:
     return PIL.Image.open(io.BytesIO(image_artifact.value))
 
 
-def pil_to_image_artifact(pil_image: Image) -> ImageUrlArtifact:
+def pil_to_image_artifact(pil_image: Image, *, use_temp_storage: bool = False) -> ImageUrlArtifact:
     """Converts Pillow Image to Griptape ImageArtifact."""
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
     image_io = io.BytesIO()
     pil_image.save(image_io, "PNG")
     image_bytes = image_io.getvalue()
-    url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, f"{uuid.uuid4()}.png")
+
+    if use_temp_storage:
+        filename = f"temp/{uuid.uuid4()}.png"
+    else:
+        filename = f"{uuid.uuid4()}.png"
+
+    url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, filename)
     return ImageUrlArtifact(url)
 
 
