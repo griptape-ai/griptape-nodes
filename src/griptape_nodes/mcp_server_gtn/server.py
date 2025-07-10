@@ -18,11 +18,17 @@ from starlette.types import Receive, Scope, Send
 from griptape_nodes.mcp_server_gtn.ws_request_manager import AsyncRequestManager, WebSocketConnectionManager
 from griptape_nodes.retained_mode.events.base_events import RequestPayload
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
+from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "CreateNodeRequest": CreateNodeRequest,
 }
 
+API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
+
+config_manager = ConfigManager()
+secrets_manager = SecretsManager(config_manager)
 
 def main() -> int:
     mcp_server_logger = logging.getLogger("griptape_nodes_mcp_server")
@@ -30,6 +36,12 @@ def main() -> int:
     mcp_server_logger.setLevel(logging.INFO)
     mcp_server_logger.info("Starting MCP GTN server...")
 
+    api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
+    if not api_key:
+        msg = f"Secret '{API_KEY_ENV_VAR}' not found"
+        raise ValueError(msg)
+
+    # Give these a session ID
     connection_manager = WebSocketConnectionManager()
     request_manager = AsyncRequestManager(connection_manager)
 
@@ -48,10 +60,9 @@ def main() -> int:
             raise ValueError(f"Unsupported tool: {name}")
 
         request_payload = SUPPORTED_REQUEST_EVENTS[name](**arguments)
-        # Add session ID to the request
 
         try:
-            await request_manager.connect(token="gt-Hu0tXsSHSijSBIGr37v1abSJlBUR3JpcHRhcGU6KatAFMuKI4rwN1Np12tqCitlzQ")
+            await request_manager.connect(token=api_key)
             result = await request_manager.create_request_event(
                 request_payload.__class__.__name__, request_payload.__dict__, timeout_ms=5000
             )
