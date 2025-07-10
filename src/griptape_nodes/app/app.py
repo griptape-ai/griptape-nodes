@@ -160,7 +160,9 @@ def _serve_static_server() -> None:
             static_dir.mkdir(parents=True, exist_ok=True)
         data = await request.body()
         try:
-            Path(static_dir / file_name).write_bytes(data)
+            file_path = Path(static_dir / file_name)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_bytes(data)
         except binascii.Error as e:
             msg = f"Invalid base64 encoding for file {file_name}."
             logger.error(msg)
