@@ -614,13 +614,28 @@ class BaseNode(ABC):
             raise KeyError(err)
 
     def get_next_control_output(self) -> Parameter | None:
+        """Get the first control output parameter.
+        
+        This method maintains backward compatibility by returning the first control output.
+        For nodes with multiple control outputs, consider using get_all_control_outputs().
+        """
+        control_outputs = self.get_all_control_outputs()
+        return control_outputs[0] if control_outputs else None
+
+    def get_all_control_outputs(self) -> list[Parameter]:
+        """Get all control output parameters for this node.
+        
+        Returns:
+            A list of all control output parameters.
+        """
+        control_outputs = []
         for param in self.parameters:
             if (
                 ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type
                 and ParameterMode.OUTPUT in param.allowed_modes
             ):
-                return param
-        return None
+                control_outputs.append(param)
+        return control_outputs
 
     # Abstract method to process the node. Must be defined by the type
     # Must save the values of the output parameters in NodeContext.

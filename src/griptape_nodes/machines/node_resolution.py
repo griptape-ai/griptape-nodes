@@ -449,9 +449,10 @@ class NodeResolutionMachine(FSM[ResolutionContext]):
         resolution_context = ResolutionContext(flow)  # Gets the flow
         super().__init__(resolution_context)
 
-    def resolve_node(self, node: BaseNode) -> None:
+    def resolve_node(self, node: BaseNode) -> BaseNode:
         self._context.focus_stack.append(Focus(node=node))
         self.start(InitializeSpotlightState)
+        return node
 
     def change_debug_mode(self, debug_mode: bool) -> None:  # noqa: FBT001
         self._context.paused = debug_mode

@@ -104,7 +104,7 @@ class ControlFlow:
 
         try:
             if PARALLEL:
-                self.parallel_execution_machine.start()
+                self.parallel_execution_machine.start_flow_parallel()
             else:
                 self.control_flow_machine.start_flow(start_node, debug_mode)
             self.flow_queue.task_done()

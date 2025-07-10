@@ -1,8 +1,7 @@
 from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING, cast
-
+import traceback
 from griptape_nodes.exe_types.core_types import (
     ParameterContainer,
     ParameterMode,
@@ -863,6 +862,7 @@ class FlowManager:
         except Exception as e:
             details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed: {e}"
             logger.error(details)
+            traceback.print_exc()
             return StartFlowResultFailure(validation_exceptions=[e])
         # By now, it has been validated with no exceptions.
         try:
@@ -870,6 +870,7 @@ class FlowManager:
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             logger.error(details)
+            traceback.print_exc()
             return StartFlowResultFailure(validation_exceptions=[e])
 
         details = f"Successfully kicked off flow with name {flow_name}"

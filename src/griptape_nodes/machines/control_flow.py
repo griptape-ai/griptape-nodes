@@ -1,11 +1,12 @@
 # Control flow machine
 from __future__ import annotations
+from collections import defaultdict
 
 import logging
 from threading import Thread
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor
-
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape.events import EventBus
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -32,14 +33,17 @@ class ControlFlowContext:
     resolution_machine: NodeResolutionMachine
     selected_output: Parameter | None
     paused: bool = False
-    parallel_node_list: list[list[BaseNode]] = []
+    parallel_node_list: list[BaseNode] = []
 
     def __init__(self, flow: ControlFlow) -> None:
         self.resolution_machine = NodeResolutionMachine(flow)
         self.flow = flow
         self.current_node = None
         self.parallel_node_list = []
+        self.about_to_start_nodes: list[BaseNode] = []
         self.current_nodes: list[BaseNode] = []
+        self.finished_nodes: list[BaseNode] = []
+        self.node_dependencies: dict[BaseNode, set[BaseNode]] = defaultdict(set)
         self.thread_pool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=4)
     def get_next_node(self, output_parameter: Parameter) -> BaseNode | None:
         if self.current_node is not None:
@@ -231,26 +235,21 @@ class ParallelExecutionMachine(FSM[ControlFlowContext]):
         context = ControlFlowContext(flow)
         self.context: ControlFlowContext = context
         super().__init__(context)   # Thread pool for parallel execution
-        self.thread_nodes: list[list[BaseNode]] = [[], [], [], []]
         self._current_state: State | None = None
         self.flow: ControlFlow = flow
+
     def start_flow_parallel(self) -> None:
         """Start the parallel execution process."""
         # Initialize thread pool for parallel execution
-        node_list: list[BaseNode] = list(self.flow.nodes.values())
-        thread_run_value: str = ""
-
-        for node in node_list:
-            thread_run_value = node.get_parameter_value("thread_run")
-            if thread_run_value == "1":
-                self.thread_nodes[0].append(node)
-            elif thread_run_value == "2":
-                self.thread_nodes[1].append(node)
-            elif thread_run_value == "3":
-                self.thread_nodes[2].append(node)
-            else:
-                self.thread_nodes[3].append(node)
-        self._context.parallel_node_list = self.thread_nodes
+        self.context.parallel_node_list= list(self.flow.nodes.values())
+        # Add dependencies to the node_dependencies dictionary
+        for node in self.context.parallel_node_list:
+            input_params = [param for param in node.parameters if ParameterMode.INPUT in param.allowed_modes]
+            for param in input_params:
+                connected_node_to_param = self.flow.connections.get_connected_node(node, param)
+                if connected_node_to_param:
+                    connected_node_to_param, _ = connected_node_to_param
+                    self.context.node_dependencies[node].add(connected_node_to_param)
         self.start(ParallelNextNodeState)
         logger.info("Starting parallel execution machine")
         
@@ -283,16 +282,55 @@ class ParallelResolveNodeState(State):
     def on_enter(context: ControlFlowContext) -> type[State] | None:
         """Called when entering the parallel resolve node state."""
         logger.debug("Entering parallel resolve node state")
-        for node in context.current_nodes:
-            
-        return None
+        return ParallelResolveNodeState
 
     @staticmethod
-    def on_update(context: Any) -> type[State] | None:
+    def on_update(context: ControlFlowContext) -> type[State] | None:
         """Called when updating the parallel resolve node state."""
-        
+        if context.finished_nodes in context.parallel_node_list:
+            # no more work to do so flow is done
+            logger.info("flow is done")
+            return None
+        flag = False
+        for node in context.about_to_start_nodes:
+            if node in context.node_dependencies:
+                for node_dependency in context.node_dependencies[node]:
+                    print(f"node_dependency: {node_dependency.name}")
+                    print("finished_nodes: ", context.finished_nodes)
+                    if node_dependency not in context.finished_nodes:
+                        logger.info(f"node {node.name} has dependencies that are not finished")
+                        flag = True
+                        break
+            if flag:
+                logger.info(f"node {node.name} has dependencies that are not finished")
+                print("finished_nodes: ", context.finished_nodes)
+                continue
+            else:
+                logger.info(f"Starting node: {node.name}")
+            # Get all input parameters
+            logger.info(f"About to start nodes: {context.about_to_start_nodes}")
+            future = context.thread_pool.submit(context.resolution_machine.resolve_node, node)
+            # I honestly don't know why we need to use a lambda here, but it works for now.
+            context.current_nodes.append(node)
+            context.about_to_start_nodes.remove(node)
         logger.debug("Updating parallel resolve node state")
-        return ResolveNodeState
+        return ParallelNextNodeState
+
+    @staticmethod
+    def on_done(context: ControlFlowContext, fut: Future[BaseNode]) -> None:
+        node = fut.result()
+        context.finished_nodes.append(node)
+        context.current_nodes.remove(node)
+        # add next node to about_to_start_nodes
+        for node in context.finished_nodes:
+            # Look over all control output connections of the finished node
+            connections = context.flow.get_control_output_connections(node)
+            logger.info(f"connections: {connections}")
+            for connection in connections:
+                # replace the finished node with it
+                if connection.target_node not in context.about_to_start_nodes:
+                    context.about_to_start_nodes.append(connection.target_node)
+                    logger.info(f"target node added: {connection.target_node.name}")
 
     @staticmethod
     def on_exit(context: Any) -> None:
@@ -306,20 +344,12 @@ class ParallelNextNodeState(State):
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
         """Called when entering the parallel next node state."""
-        if not context.current_nodes:
-            for node_list in context.parallel_node_list:
-                for node in node_list:
-                    if not context.flow.get_connected_input_from_node(node):
-                        context.current_nodes.append(node)
-                        break
-        else:
-            new_current_nodes = []
-            for node in context.current_nodes:
-                connections = context.flow.get_control_output_connections(node)
-                for connection in connections:
-                    if connection.target_node not in context.current_nodes:
-                        new_current_nodes.append(connection.target_node)
-            context.current_nodes = new_current_nodes
+        if not context.about_to_start_nodes and not context.finished_nodes and not context.current_nodes:
+            # First time: find nodes with no incoming connections
+            for node in context.parallel_node_list:
+                if not context.flow.get_connected_input_from_node(node):
+                    context.about_to_start_nodes.append(node)
+                    break
         logger.debug("Entering parallel next node state")
         return ParallelResolveNodeState
 
