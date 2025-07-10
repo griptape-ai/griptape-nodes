@@ -1,0 +1,9 @@
+Enhance the following prompt based on the following criteria, and fix common issues. Do not include any additional statements outside of the prompt. Only include the example if specified.
+
+Criteria:
+{criteria}
+Common Issues:
+{common_issue}
+Prompt:
+{prompt} 
+You should {include_example} include an example in the prompt

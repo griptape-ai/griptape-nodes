@@ -9,15 +9,16 @@ from griptape.events import EventBus
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState, StartLoopNode, StartNode
-from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
+from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine, ParallelExecutionMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import ControlFlowCancelledEvent
+from griptape_nodes.exe_types.node_types import Connection
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.node_types import BaseNode
 
-
+PARALLEL = True
 logger = logging.getLogger("griptape_nodes")
 
 
@@ -34,6 +35,7 @@ class ControlFlow:
     connections: Connections
     nodes: dict[str, BaseNode]
     control_flow_machine: ControlFlowMachine
+    parallel_execution_machine: ParallelExecutionMachine
     single_node_resolution: bool
     flow_queue: Queue[BaseNode]
     metadata: dict
@@ -43,6 +45,7 @@ class ControlFlow:
         self.connections = Connections()
         self.nodes = {}
         self.control_flow_machine = ControlFlowMachine(self)
+        self.parallel_execution_machine = ParallelExecutionMachine(self)
         self.single_node_resolution = False
         self.flow_queue = Queue()
         self.metadata = metadata or {}
@@ -102,7 +105,10 @@ class ControlFlow:
             start_node = self.flow_queue.get()
 
         try:
-            self.control_flow_machine.start_flow(start_node, debug_mode)
+            if PARALLEL:
+                self.parallel_execution_machine.start_flow_parallel()
+            else:
+                self.control_flow_machine.start_flow(start_node, debug_mode)
             self.flow_queue.task_done()
         except Exception:
             if self.check_for_existing_running_flow():
@@ -244,14 +250,15 @@ class ControlFlow:
                     connections.append((connection.target_node, connection.target_parameter))
         return connections
 
-    def get_connected_input_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
+    def get_control_output_connections(self, node: BaseNode) -> list[Connection]:
         connections = []
-        if node.name in self.connections.incoming_index:
-            incoming_params = self.connections.incoming_index[node.name]
-            if param.name in incoming_params:
-                for connection_id in incoming_params[param.name]:
-                    connection = self.connections.connections[connection_id]
-                    connections.append((connection.source_node, connection.source_parameter))
+        if node.name in self.connections.outgoing_index:
+            entry = self.connections.outgoing_index[node.name]
+            for param_name in entry:
+                for id in entry.get(param_name):
+                    conn = self.connections.connections[id]
+                    if conn.source_parameter.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
+                        connections.append(conn)
         return connections
 
     def get_connected_output_from_node(self, node: BaseNode) -> list[tuple[BaseNode, Parameter]]:
