@@ -247,13 +247,13 @@ class AsyncRequestManager(Generic[T]):
         timeout_sec = timeout_ms / 1000 if timeout_ms else None
 
         # Define handlers that will resolve/reject the future
-        def success_handler(response: dict[str, Any]) -> None:
+        def success_handler(response: Any, _: Any) -> None:
             if not response_future.done():
                 result = response.get("payload", {}).get("result", "Success")
                 logger.debug("✅ Request succeeded: %s", result)
                 response_future.set_result(result)
 
-        def failure_handler(response: dict[str, Any]) -> None:
+        def failure_handler(response: Any, _: Any) -> None:
             if not response_future.done():
                 error = (
                     response.get("payload", {}).get("result", {}).get("exception", "Unknown error") or "Unknown error"

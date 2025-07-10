@@ -82,7 +82,7 @@ def main() -> int:
         await session_manager.handle_request(scope, receive, send)
 
     @contextlib.asynccontextmanager
-    async def lifespan() -> AsyncIterator[None]:
+    async def lifespan(_: Starlette) -> AsyncIterator[None]:
         """Context manager for managing session manager lifecycle."""
         async with session_manager.run():
             mcp_server_logger.info("Application started with StreamableHTTP session manager!")
