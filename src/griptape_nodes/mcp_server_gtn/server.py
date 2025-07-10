@@ -32,6 +32,7 @@ secrets_manager = SecretsManager(config_manager)
 
 
 def main() -> int:
+    """Main entry point for the Griptape Nodes MCP server."""
     mcp_server_logger = logging.getLogger("griptape_nodes_mcp_server")
     mcp_server_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
     mcp_server_logger.setLevel(logging.INFO)
@@ -67,7 +68,7 @@ def main() -> int:
         result = await request_manager.create_request_event(
             request_payload.__class__.__name__, request_payload.__dict__, timeout_ms=5000
         )
-        mcp_server_logger.debug(f"Got result: {result}")
+        mcp_server_logger.debug("Got result: %s", result)
 
         return [TextContent(type="text", text=json.dumps(result))]
 
@@ -81,7 +82,7 @@ def main() -> int:
         await session_manager.handle_request(scope, receive, send)
 
     @contextlib.asynccontextmanager
-    async def lifespan(app: Starlette) -> AsyncIterator[None]:
+    async def lifespan() -> AsyncIterator[None]:
         """Context manager for managing session manager lifecycle."""
         async with session_manager.run():
             mcp_server_logger.info("Application started with StreamableHTTP session manager!")

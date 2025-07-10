@@ -166,7 +166,7 @@ class AsyncRequestManager(Generic[T]):
             self.connection_manager.connected = False
             logger.error("🔴 WebSocket connection failed: %s", str(e))
             msg = f"Failed to connect to WebSocket: {e!s}"
-            raise ConnectionError(msg)
+            raise ConnectionError(msg) from e
 
     async def disconnect(self) -> None:
         """Disconnect from the WebSocket server."""
@@ -189,10 +189,10 @@ class AsyncRequestManager(Generic[T]):
         try:
             await self.connection_manager.send(data)
         except ConnectionError as e:
-            logger.error(f"Failed to send API message: {e!s}")
+            logger.error("Failed to send API message: %s", e)
             raise
         except Exception as e:
-            logger.error(f"Unexpected error sending API message: {e!s}")
+            logger.error("Unexpected error sending API message: %s", e)
             raise
 
     def _determine_request_topic(self) -> str | None:
@@ -247,13 +247,13 @@ class AsyncRequestManager(Generic[T]):
         timeout_sec = timeout_ms / 1000 if timeout_ms else None
 
         # Define handlers that will resolve/reject the future
-        def success_handler(response, _) -> None:
+        def success_handler(response: dict[str, Any]) -> None:
             if not response_future.done():
                 result = response.get("payload", {}).get("result", "Success")
                 logger.debug("✅ Request succeeded: %s", result)
                 response_future.set_result(result)
 
-        def failure_handler(response, _) -> None:
+        def failure_handler(response: dict[str, Any]) -> None:
             if not response_future.done():
                 error = (
                     response.get("payload", {}).get("result", {}).get("exception", "Unknown error") or "Unknown error"
