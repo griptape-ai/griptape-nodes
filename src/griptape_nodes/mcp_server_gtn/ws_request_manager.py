@@ -6,10 +6,8 @@ import uuid
 from collections.abc import Callable
 from typing import Any, Generic, TypeVar
 from urllib.parse import urljoin
-import websockets
 
-from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
-from griptape_nodes.retained_mode.utils.session_persistence import SessionPersistence
+import websockets
 
 logger = logging.getLogger("griptape_nodes_mcp_server")
 
@@ -27,24 +25,25 @@ class WebSocketConnectionManager:
         ),
     ):
         self.websocket_url = websocket_url
-        self.websocket = None
+        self.websocket: Any = None
         self.connected = False
         self.event_handlers: dict[str, list[Callable]] = {}
         self.request_handlers: dict[str, tuple[Callable, Callable]] = {}
-        self._connect_task = None
-        self._process_task = None
+        self._process_task: asyncio.Task | None = None
 
     async def send(self, data: dict[str, Any]) -> None:
         """Send a message to the WebSocket server"""
         if not self.connected or not self.websocket:
             raise ConnectionError("Not connected to WebSocket server")
 
+        logger.error(type(self.websocket))
+
         try:
             message = json.dumps(data)
             await self.websocket.send(message)
-            logger.debug(f"📤 Sent message: {message}")
+            logger.debug("📤 Sent message: %s", message)
         except Exception as e:
-            logger.error(f"Failed to send message: {e!s}")
+            logger.error("Failed to send message: %s", e)
             raise
 
     async def _process_messages(self) -> None:
@@ -57,12 +56,12 @@ class WebSocketConnectionManager:
             async for message in self.websocket:
                 try:
                     data = json.loads(message)
-                    # logger.debug(f"📥 Received message: {message}")
+                    logger.debug("📥 Received message: %s", message)
                     await self._handle_message(data)
                 except json.JSONDecodeError:
-                    logger.error(f"Failed to parse message: {message}")
+                    logger.error("Failed to parse message: %s", message)
                 except Exception as e:
-                    logger.error(f"Error processing message: {e!s}")
+                    logger.error("Error processing message: %s", e)
         except websockets.exceptions.ConnectionClosed:
             logger.warning("WebSocket connection closed")
             self.connected = False
@@ -70,7 +69,7 @@ class WebSocketConnectionManager:
             # Task was cancelled, just exit
             pass
         except Exception as e:
-            logger.error(f"Error in message processing loop: {e!s}")
+            logger.error("Error in message processing loop: %s", e)
             self.connected = False
 
     async def _handle_message(self, data: dict[str, Any]) -> None:
@@ -85,7 +84,7 @@ class WebSocketConnectionManager:
                 else:
                     failure_handler(data, request)
             except Exception as e:
-                logger.error(f"Error in request handler: {e!s}")
+                logger.error("Error in request handler: %s", e)
 
     def subscribe_to_request_event(
         self, success_handler: Callable[[Any, Any], None], failure_handler: Callable[[Any, Any], None]
@@ -109,7 +108,6 @@ class AsyncRequestManager(Generic[T]):
 
     async def _subscribe_to_topic(self, ws_connection: Any, topic: str) -> None:
         """Subscribe to a specific topic in the message bus."""
-
         if ws_connection is None:
             logger.warning("WebSocket connection not available for subscribing to topic")
             return
@@ -125,7 +123,6 @@ class AsyncRequestManager(Generic[T]):
 
     async def _subscribe_to_engine_and_session(self, ws_connection: Any) -> None:
         """Subscribe to engine ID, session ID, and request topics on WebSocket connection."""
-
         # Subscribe to response topic (engine discovery)
         await self._subscribe_to_topic(ws_connection, "response")
 
@@ -142,6 +139,9 @@ class AsyncRequestManager(Generic[T]):
 
     async def connect(self, token: str | None = None) -> None:
         """Connect to the WebSocket server"""
+        from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
+        from griptape_nodes.retained_mode.utils.session_persistence import SessionPersistence
+
         headers = {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -151,7 +151,7 @@ class AsyncRequestManager(Generic[T]):
                 self.connection_manager.websocket_url, additional_headers=headers
             )
             self.connection_manager.connected = True
-            logger.debug(f"🟢 WebSocket connection established: {self.connection_manager.websocket}")
+            logger.debug("🟢 WebSocket connection established: %s", self.connection_manager.websocket)
 
             self.engine_id = EngineIdentity.get_engine_id()
             self.session_id = SessionPersistence.get_persisted_session_id()
@@ -162,7 +162,7 @@ class AsyncRequestManager(Generic[T]):
 
         except Exception as e:
             self.connection_manager.connected = False
-            logger.error(f"🔴 WebSocket connection failed: {e!s}")
+            logger.error("🔴 WebSocket connection failed: %s", str(e))
             raise ConnectionError(f"Failed to connect to WebSocket: {e!s}")
 
     async def disconnect(self) -> None:
@@ -196,7 +196,6 @@ class AsyncRequestManager(Generic[T]):
 
     def _determine_request_topic(self) -> str | None:
         """Determine the request topic based on session_id and engine_id in the payload."""
-
         # Normal topic determination logic
         # Check for session_id first (highest priority)
         if self.session_id:
@@ -211,7 +210,7 @@ class AsyncRequestManager(Generic[T]):
 
     async def create_event(self, request_type: str, payload: dict[str, Any]) -> None:
         """Send an event to the API without waiting for a response."""
-        logger.debug(f"📝 Creating Event: {request_type} - {json.dumps(payload)}")
+        logger.debug("📝 Creating Event: %s - %s", request_type, json.dumps(payload))
 
         data = {"event_type": "EventRequest", "request_type": request_type, "request": payload}
         topic = self._determine_request_topic()
@@ -247,25 +246,25 @@ class AsyncRequestManager(Generic[T]):
         timeout_sec = timeout_ms / 1000 if timeout_ms else None
 
         # Define handlers that will resolve/reject the future
-        def success_handler(response, request):
+        def success_handler(response, _):
             if not response_future.done():
                 result = response.get("payload", {}).get("result", "Success")
-                logger.debug(f"✅ Request succeeded: {result}")
+                logger.debug("✅ Request succeeded: %s", result)
                 response_future.set_result(result)
 
-        def failure_handler(response, request):
+        def failure_handler(response, _):
             if not response_future.done():
                 error = (
                     response.get("payload", {}).get("result", {}).get("exception", "Unknown error") or "Unknown error"
                 )
-                logger.error(f"❌ Request failed: {error}")
+                logger.error("❌ Request failed: %s", error)
                 response_future.set_exception(Exception(error))
 
         # Generate request ID and subscribe
         request_id = self.connection_manager.subscribe_to_request_event(success_handler, failure_handler)
         payload["request_id"] = request_id
 
-        logger.debug(f"🚀 Request ({request_id}): {request_type} {json.dumps(payload)}")
+        logger.debug("🚀 Request (%s): %s %s", request_id, request_type, json.dumps(payload))
 
         try:
             # Send the event
@@ -277,11 +276,11 @@ class AsyncRequestManager(Generic[T]):
             return await response_future
 
         except TimeoutError:
-            logger.error(f"Request timed out after {timeout_ms}ms: {request_id}")
+            logger.error("Request timed out after %s ms: %s", timeout_ms, request_id)
             self.connection_manager.unsubscribe_from_request_event(request_id)
             raise
 
         except Exception as e:
-            logger.error(f"Request failed: {request_id} - {e!s}")
+            logger.error("Request failed: %s - %s", request_id, e)
             self.connection_manager.unsubscribe_from_request_event(request_id)
             raise

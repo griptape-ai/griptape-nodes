@@ -2,6 +2,7 @@ import json
 import logging
 import threading
 import uuid
+from typing import TYPE_CHECKING
 
 from attrs import define, field
 from griptape.artifacts import ErrorArtifact, ImageUrlArtifact, JsonArtifact
@@ -14,7 +15,6 @@ from griptape.memory.structure import ConversationMemory
 from griptape.rules import Rule, Ruleset
 from griptape.structures import Agent
 from griptape.tools import BaseImageGenerationTool
-from griptape.tools.mcp.sessions import StreamableHttpConnection
 from griptape.tools.mcp.tool import MCPTool
 from griptape.utils.decorators import activity
 from json_repair import repair_json
@@ -43,6 +43,9 @@ from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.retained_mode.managers.static_files_manager import (
     StaticFilesManager,
 )
+
+if TYPE_CHECKING:
+    from griptape.tools.mcp.sessions import StreamableHttpConnection
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -122,7 +125,7 @@ class AgentManager:
             msg = f"Secret '{API_KEY_ENV_VAR}' not found"
             raise ValueError(msg)
 
-        connection: StreamableHttpConnection = {
+        connection: StreamableHttpConnection = {  # type: ignore[reportAssignmentType]
             "transport": "streamable_http",
             "url": "http://localhost:9927/mcp/",
         }
@@ -138,6 +141,36 @@ class AgentManager:
         threading.Thread(target=self._on_handle_run_agent_request, args=(request, EventBus.event_listeners)).start()
         return RunAgentResultStarted()
 
+    def _create_agent(self) -> Agent:
+        output_schema = Schema(
+            {
+                "generated_image_urls": [str],
+                "conversation_output": str,
+            }
+        )
+
+        tools = []
+        if self.image_tool is not None:
+            tools.append(self.image_tool)
+        if self.mcp_tool is not None:
+            tools.append(self.mcp_tool)
+
+        return Agent(
+            prompt_driver=self.prompt_driver,
+            conversation_memory=self.conversation_memory,
+            tools=tools,
+            output_schema=output_schema,
+            rulesets=[
+                Ruleset(
+                    name="generated_image_urls",
+                    rules=[
+                        Rule("Do not hallucinate generated_image_urls."),
+                        Rule("Only set generated_image_urls with images generated with your tools."),
+                    ],
+                ),
+            ],
+        )
+
     def _on_handle_run_agent_request(
         self, request: RunAgentRequest, event_listeners: list[EventListener]
     ) -> ResultPayload:
@@ -148,28 +181,7 @@ class AgentManager:
                 for url_artifact in request.url_artifacts
                 if url_artifact["type"] == "ImageUrlArtifact"
             ]
-
-            output_schema = Schema(
-                {
-                    "generated_image_urls": [str],
-                    "conversation_output": str,
-                }
-            )
-            agent = Agent(
-                prompt_driver=self.prompt_driver,
-                conversation_memory=self.conversation_memory,
-                tools=[self.mcp_tool],
-                output_schema=output_schema,
-                rulesets=[
-                    Ruleset(
-                        name="generated_image_urls",
-                        rules=[
-                            Rule("Do not hallucinate generated_image_urls."),
-                            Rule("Only set generated_image_urls with images generated with your tools."),
-                        ],
-                    ),
-                ],
-            )
+            agent = self._create_agent()
             *events, last_event = agent.run_stream([request.input, *artifacts])
             full_result = ""
             last_conversation_output = ""
