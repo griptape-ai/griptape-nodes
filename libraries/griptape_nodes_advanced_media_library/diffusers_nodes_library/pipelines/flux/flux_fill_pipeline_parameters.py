@@ -190,7 +190,9 @@ class FluxFillPipelineParameters:
         # Immediately set a preview placeholder image to make it react quickly and adjust
         # the size of the image preview on the node.
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
-        self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
+        self._node.publish_update_to_parameter(
+            "output_image", pil_to_image_artifact(preview_placeholder_image, use_temp_storage=True)
+        )
 
     def latents_to_image_pil(
         self, pipe: diffusers.FluxPipeline | diffusers.FluxControlNetPipeline, latents: Any
@@ -207,7 +209,7 @@ class FluxFillPipelineParameters:
         self, pipe: diffusers.FluxPipeline | diffusers.FluxControlNetPipeline, latents: Any
     ) -> None:
         preview_image_pil = self.latents_to_image_pil(pipe, latents)
-        preview_image_artifact = pil_to_image_artifact(preview_image_pil)
+        preview_image_artifact = pil_to_image_artifact(preview_image_pil, use_temp_storage=True)
         self._node.publish_update_to_parameter("output_image", preview_image_artifact)
 
     def publish_output_image(self, output_image_pil: Image) -> None:

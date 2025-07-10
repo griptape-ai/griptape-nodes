@@ -211,7 +211,7 @@ class StableDiffusionAttendAndExcitePipelineParameters:
 
     def publish_output_image_preview_placeholder(self) -> None:
         placeholder_image = PIL.Image.new("RGB", (self.get_width(), self.get_height()), "black")
-        placeholder_artifact = pil_to_image_artifact(placeholder_image)
+        placeholder_artifact = pil_to_image_artifact(placeholder_image, use_temp_storage=True)
         self._node.set_parameter_value("output_image", placeholder_artifact)
 
     def latents_to_image_pil(self, pipe: diffusers.StableDiffusionAttendAndExcitePipeline, latents: Any) -> Image:
@@ -225,7 +225,7 @@ class StableDiffusionAttendAndExcitePipelineParameters:
     ) -> None:
         try:
             preview_image_pil = self.latents_to_image_pil(pipe, latents)
-            preview_image_artifact = pil_to_image_artifact(preview_image_pil)
+            preview_image_artifact = pil_to_image_artifact(preview_image_pil, use_temp_storage=True)
             self._node.publish_update_to_parameter("output_image", preview_image_artifact)
         except Exception as e:
             logger.warning("Failed to publish preview from latents: %s", e)

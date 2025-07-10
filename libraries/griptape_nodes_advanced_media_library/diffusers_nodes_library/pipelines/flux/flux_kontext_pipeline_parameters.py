@@ -282,7 +282,9 @@ class FluxKontextPipelineParameters:
     def publish_output_image_preview_placeholder(self) -> None:
         width, height = self.get_effective_size()
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
-        self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
+        self._node.publish_update_to_parameter(
+            "output_image", pil_to_image_artifact(preview_placeholder_image, use_temp_storage=True)
+        )
 
     def latents_to_image_pil(self, pipe: diffusers.FluxKontextPipeline, latents: Any) -> Image:
         width, height = self.get_effective_size()

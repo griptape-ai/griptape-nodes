@@ -139,7 +139,9 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         # Immediately set a preview placeholder image to make it react quickly and adjust
         # the size of the image preview on the node.
         preview_placeholder_image = PIL.Image.new("RGB", input_image_pil.size, color="black")
-        self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
+        self.publish_update_to_parameter(
+            "output_image", pil_to_image_artifact(preview_placeholder_image, use_temp_storage=True)
+        )
 
         # Adjust tile size so that it is not much bigger than the input image.
         largest_reasonable_tile_width = next_multiple_ge(input_image_pil.width, 16)
@@ -200,7 +202,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                     # HERE -> need to update the tile by calling something in the tile processor.
                     preview_image_with_partial_tile = get_preview_image_with_partial_tile(intermediate_pil_image)
                     self.publish_update_to_parameter(
-                        "output_image", pil_to_image_artifact(preview_image_with_partial_tile)
+                        "output_image", pil_to_image_artifact(preview_image_with_partial_tile, use_temp_storage=True)
                     )
                     self.append_value_to_parameter(
                         "logs", f"Finished inference step {i + 1} of {num_inference_steps}.\n"
@@ -237,7 +239,9 @@ class TilingFluxImg2ImgPipeline(ControlNode):
 
         def callback_on_tile_end(i: int, preview_image_pil: Image) -> None:
             if i < num_tiles:
-                self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_image_pil))
+                self.publish_update_to_parameter(
+                    "output_image", pil_to_image_artifact(preview_image_pil, use_temp_storage=True)
+                )
                 self.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")
                 self.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")
 
