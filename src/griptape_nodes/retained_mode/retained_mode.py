@@ -32,8 +32,10 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowRequest,
     DeleteFlowRequest,
+    GetFlowMetadataRequest,
     ListFlowsInFlowRequest,
     ListNodesInFlowRequest,
+    SetFlowMetadataRequest,
 )
 from griptape_nodes.retained_mode.events.library_events import (
     GetNodeMetadataFromLibraryRequest,
@@ -1246,6 +1248,48 @@ class RetainedMode:
         """
         request = GetFlowStateRequest(flow_name=flow_name)
         return GriptapeNodes().handle_request(request)
+
+    @classmethod
+    def get_metadata_for_flow(cls, flow_name: str) -> ResultPayload:
+        """Retrieves metadata associated with a flow.
+
+        Flow metadata can include UI position, display name, tags, and other custom properties.
+
+        Args:
+            flow_name (str): Name of the flow to get metadata for.
+
+        Returns:
+            ResultPayload: Contains the flow's metadata.
+
+        Example:
+            # Get flow metadata
+            result = cmd.get_metadata_for_flow("my_flow")
+        """
+        request = GetFlowMetadataRequest(flow_name=flow_name)
+        result = GriptapeNodes().handle_request(request)
+        return result
+
+    @classmethod
+    def set_metadata_for_flow(cls, flow_name: str, metadata: dict[Any, Any]) -> ResultPayload:
+        """Sets metadata for a flow.
+
+        Args:
+            flow_name (str): Name of the flow to set metadata for.
+            metadata (dict): Dictionary containing the metadata to set.
+
+        Returns:
+            ResultPayload: Contains the result of the metadata update operation.
+
+        Example:
+            # Set flow position
+            metadata = {
+                "position": {"x": 100, "y": 200}
+            }
+            result = cmd.set_metadata_for_flow("my_flow", metadata)
+        """
+        request = SetFlowMetadataRequest(flow_name=flow_name, metadata=metadata)
+        result = GriptapeNodes().handle_request(request)
+        return result
 
     # ARBITRARY PYTHON EXECUTION
     @classmethod

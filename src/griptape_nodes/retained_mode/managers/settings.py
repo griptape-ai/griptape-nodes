@@ -88,3 +88,10 @@ class Settings(BaseModel):
     )
     log_level: str = Field(default="INFO")
     storage_backend: Literal["local", "gtc"] = Field(default="local")
+    minimum_disk_space_gb_libraries: float = Field(
+        default=10.0,
+        description="Minimum disk space in GB required for library installation and virtual environment operations",
+    )
+    minimum_disk_space_gb_workflows: float = Field(
+        default=1.0, description="Minimum disk space in GB required for saving workflows"
+    )

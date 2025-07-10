@@ -3,7 +3,7 @@ name = "griptape-nodes"
 version = "0.41.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = "~=3.12"
+requires-python = ">=3.12.0, <3.13"
 dependencies = [
   "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.7.1",
   "pydantic>=2.10.6",
