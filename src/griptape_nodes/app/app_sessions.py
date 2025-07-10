@@ -29,6 +29,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
 # This import is necessary to register all events, even if not technically used
+from griptape_nodes.mcp_server_gtn import main as mcp_server_gtn
 from griptape_nodes.retained_mode.events import app_events, execution_events
 from griptape_nodes.retained_mode.events.app_events import AppEndSessionResultSuccess, AppStartSessionResultSuccess
 from griptape_nodes.retained_mode.events.base_events import (
@@ -100,6 +101,8 @@ def start_app() -> None:
     # Listen for any signals to exit the app
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: sys.exit(0))
+
+    threading.Thread(target=mcp_server_gtn, daemon=True).start()
 
     # SSE subscription pushes events into event_queue
     threading.Thread(target=_listen_for_api_events, daemon=True).start()
