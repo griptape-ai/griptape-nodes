@@ -16,6 +16,25 @@ if TYPE_CHECKING:
     import builtins
 
 
+@dataclass
+class ResultDetail:
+    """A single detail about an operation result, including logging level and human readable message."""
+
+    level: Any  # Accept logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR
+    message: str
+
+
+@dataclass
+class ResultDetails:
+    """Container for multiple ResultDetail objects."""
+
+    details: list[ResultDetail]
+
+    def __init__(self, *details: ResultDetail):
+        """Initialize with one or more ResultDetail objects."""
+        self.details = list(details)
+
+
 # The Payload class is a marker interface
 class Payload(ABC):  # noqa: B024
     """Base class for all payload types. Customers will derive from this."""
@@ -32,6 +51,7 @@ class RequestPayload(Payload, ABC):
 class ResultPayload(Payload, ABC):
     """Base class for all result payloads."""
 
+    details: ResultDetails
     """When set to True, alerts clients that this result made changes to the workflow state.
     Editors can use this to determine if the workflow is dirty and needs to be re-saved, for example."""
     altered_workflow_state: bool = False
