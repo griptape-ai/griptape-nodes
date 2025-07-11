@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
+from griptape.events import EventBus
+
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -11,7 +13,10 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.machines.control_flow import CompleteState
 from griptape_nodes.retained_mode.events.base_events import (
+    ExecutionEvent,
+    ExecutionGriptapeNodeEvent,
     FlushParameterChangesRequest,
     FlushParameterChangesResultSuccess,
 )
@@ -30,6 +35,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ContinueExecutionStepRequest,
     ContinueExecutionStepResultFailure,
     ContinueExecutionStepResultSuccess,
+    ControlFlowCancelledEvent,
     GetFlowStateRequest,
     GetFlowStateResultFailure,
     GetFlowStateResultSuccess,
@@ -426,7 +432,7 @@ class FlowManager:
             logger.error(details)
             result = DeleteFlowResultFailure()
             return result
-        if flow.check_for_existing_running_flow():
+        if self.check_for_existing_running_flow(flow):
             result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow.name))
             if not result.succeeded():
                 details = f"Attempted to delete flow '{flow_name}'. Failed because running flow could not cancel."
@@ -508,7 +514,7 @@ class FlowManager:
             result = GetIsFlowRunningResultFailure()
             return result
         try:
-            is_running = flow.check_for_existing_running_flow()
+            is_running = self.check_for_existing_running_flow(flow)
         except Exception:
             details = f"Error while trying to get status of '{request.flow_name}'."
             logger.error(details)
@@ -993,7 +999,7 @@ class FlowManager:
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[err])
         # Check to see if the flow is already running.
-        if flow.check_for_existing_running_flow():
+        if self.check_for_existing_running_flow(flow):
             details = "Cannot start flow. Flow is already running."
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[])
@@ -1043,7 +1049,7 @@ class FlowManager:
             return StartFlowResultFailure(validation_exceptions=[e])
         # By now, it has been validated with no exceptions.
         try:
-            flow.start_flow(start_node, debug_mode)
+            self.start_flow(flow, start_node, debug_mode)
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             logger.error(details)
@@ -1067,7 +1073,7 @@ class FlowManager:
             logger.error(details)
             return GetFlowStateResultFailure()
         try:
-            control_node, resolving_node = flow.flow_state()
+            control_node, resolving_node = self.flow_state(flow)
         except Exception as e:
             details = f"Failed to get flow state of flow with name {flow_name}. Exception occurred: {e} "
             logger.exception(details)
@@ -1092,7 +1098,7 @@ class FlowManager:
             return CancelFlowResultFailure()
         try:
             flow = self.get_flow_by_name(flow_name)
-            flow.cancel_flow_run()
+            self.cancel_flow_run(flow)
         except Exception as e:
             details = f"Could not cancel flow execution. Exception: {e}"
             logger.error(details)
@@ -1119,7 +1125,7 @@ class FlowManager:
             return SingleNodeStepResultFailure(validation_exceptions=[err])
         try:
             flow = self.get_flow_by_name(flow_name)
-            flow.single_node_step()
+            self.single_node_step(flow)
         except Exception as e:
             details = f"Could not advance to the next step of a running workflow. Exception: {e}"
             logger.error(details)
@@ -1147,12 +1153,12 @@ class FlowManager:
             return SingleExecutionStepResultFailure()
         change_debug_mode = request.request_id is not None
         try:
-            flow.single_execution_step(change_debug_mode)
+            self.single_execution_step(flow, change_debug_mode)
         except Exception as e:
             # We REALLY don't want to fail here, else we'll take the whole engine down
             try:
-                if flow.check_for_existing_running_flow():
-                    flow.cancel_flow_run()
+                if self.check_for_existing_running_flow(flow):
+                    self.cancel_flow_run(flow)
             except Exception as e_inner:
                 details = f"Could not cancel flow execution. Exception: {e_inner}"
                 logger.error(details)
@@ -1180,7 +1186,7 @@ class FlowManager:
 
             return ContinueExecutionStepResultFailure()
         try:
-            flow.continue_executing()
+            self.continue_executing(flow)
         except Exception as e:
             details = f"Failed to continue execution step. An exception occurred: {e}."
             logger.error(details)
@@ -1202,7 +1208,7 @@ class FlowManager:
             logger.error(details)
             return UnresolveFlowResultFailure()
         try:
-            flow.unresolve_whole_flow()
+            self.unresolve_whole_flow(flow)
         except Exception as e:
             details = f"Failed to unresolve flow. An exception occurred: {e}."
             logger.error(details)
@@ -1597,3 +1603,145 @@ class FlowManager:
             if node._tracked_parameters:
                 node.emit_parameter_changes()
         return FlushParameterChangesResultSuccess()
+
+    def start_flow(self, flow: ControlFlow, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+        if self.check_for_existing_running_flow(flow):
+            # If flow already exists, throw an error
+            errormsg = "This workflow is already in progress. Please wait for the current process to finish before starting again."
+            raise RuntimeError(errormsg)
+
+        if start_node is None:
+            if flow.flow_queue.empty():
+                errormsg = "No Flow exists. You must create at least one control connection."
+                raise RuntimeError(errormsg)
+            start_node = flow.flow_queue.get()
+
+        try:
+            flow.control_flow_machine.start_flow(start_node, debug_mode)
+            flow.flow_queue.task_done()
+        except Exception:
+            if self.check_for_existing_running_flow(flow):
+                self.cancel_flow_run(flow)
+            raise
+
+    def check_for_existing_running_flow(self, flow: ControlFlow) -> bool:
+        if flow.control_flow_machine._current_state is not CompleteState and flow.control_flow_machine._current_state:
+            # Flow already exists in progress
+            return True
+        return bool(
+            not flow.control_flow_machine._context.resolution_machine.is_complete()
+            and flow.control_flow_machine._context.resolution_machine.is_started()
+        )
+
+    def cancel_flow_run(self, flow: ControlFlow) -> None:
+        if not self.check_for_existing_running_flow(flow):
+            errormsg = "Flow has not yet been started. Cannot cancel flow that hasn't begun."
+            raise RuntimeError(errormsg)
+        flow.clear_flow_queue()
+        flow.control_flow_machine.reset_machine()
+        # Reset control flow machine
+        flow.single_node_resolution = False
+        logger.debug("Cancelling flow run")
+
+        EventBus.publish_event(
+            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent()))
+        )
+
+    def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+        # Set that we are only working on one node right now! no other stepping allowed
+        if self.check_for_existing_running_flow(flow):
+            # If flow already exists, throw an error
+            errormsg = f"This workflow is already in progress. Please wait for the current process to finish before starting {node.name} again."
+            raise RuntimeError(errormsg)
+        flow.single_node_resolution = True
+        # Get the node resolution machine for the current flow!
+        flow.control_flow_machine._context.current_node = node
+        resolution_machine = flow.control_flow_machine._context.resolution_machine
+        # Set debug mode
+        resolution_machine.change_debug_mode(debug_mode)
+        # Resolve the node.
+        node.state = NodeResolutionState.UNRESOLVED
+        resolution_machine.resolve_node(node)
+        # decide if we can change it back to normal flow mode!
+        if resolution_machine.is_complete():
+            flow.single_node_resolution = False
+            flow.control_flow_machine._context.current_node = None
+
+    def single_execution_step(self, flow: ControlFlow, change_debug_mode: bool) -> None:  # noqa: FBT001
+        # do a granular step
+        if not self.check_for_existing_running_flow(flow):
+            if flow.flow_queue.empty():
+                errormsg = "Flow has not yet been started. Cannot step while no flow has begun."
+                raise RuntimeError(errormsg)
+            start_node = flow.flow_queue.get()
+            flow.control_flow_machine.start_flow(start_node, debug_mode=True)
+            start_node = flow.flow_queue.task_done()
+            return
+        flow.control_flow_machine.granular_step(change_debug_mode)
+        resolution_machine = flow.control_flow_machine._context.resolution_machine
+        if flow.single_node_resolution:
+            resolution_machine = flow.control_flow_machine._context.resolution_machine
+            if resolution_machine.is_complete():
+                flow.single_node_resolution = False
+
+    def single_node_step(self, flow: ControlFlow) -> None:
+        # It won't call single_node_step without an existing flow running from US.
+        if not self.check_for_existing_running_flow(flow):
+            if flow.flow_queue.empty():
+                errormsg = "Flow has not yet been started. Cannot step while no flow has begun."
+                raise RuntimeError(errormsg)
+            start_node = flow.flow_queue.get()
+            flow.control_flow_machine.start_flow(start_node, debug_mode=True)
+            start_node = flow.flow_queue.task_done()
+            return
+        # Step over a whole node
+        if flow.single_node_resolution:
+            msg = "Cannot step through the Control Flow in Single Node Execution"
+            raise RuntimeError(msg)
+        flow.control_flow_machine.node_step()
+        # Start the next resolution step now please.
+        if not self.check_for_existing_running_flow(flow) and not flow.flow_queue.empty():
+            start_node = flow.flow_queue.get()
+            flow.flow_queue.task_done()
+            flow.control_flow_machine.start_flow(start_node, debug_mode=True)
+
+    def continue_executing(self, flow: ControlFlow) -> None:
+        if not self.check_for_existing_running_flow(flow):
+            if flow.flow_queue.empty():
+                errormsg = "Flow has not yet been started. Cannot step while no flow has begun."
+                raise RuntimeError(errormsg)
+            start_node = flow.flow_queue.get()
+            flow.flow_queue.task_done()
+            flow.control_flow_machine.start_flow(start_node, debug_mode=False)
+            return
+        # Turn all debugging to false and continue on
+        flow.control_flow_machine.change_debug_mode(False)
+        if flow.single_node_resolution:
+            if flow.control_flow_machine._context.resolution_machine.is_complete():
+                flow.single_node_resolution = False
+            else:
+                flow.control_flow_machine._context.resolution_machine.update()
+        else:
+            flow.control_flow_machine.node_step()
+        # Now it is done executing. make sure it's actually done?
+        if not self.check_for_existing_running_flow(flow) and not flow.flow_queue.empty():
+            start_node = flow.flow_queue.get()
+            flow.flow_queue.task_done()
+            flow.control_flow_machine.start_flow(start_node, debug_mode=False)
+
+    def unresolve_whole_flow(self, flow: ControlFlow) -> None:
+        for node in flow.nodes.values():
+            node.make_node_unresolved(current_states_to_trigger_change_event=None)
+
+    def flow_state(self, flow: ControlFlow) -> tuple[str | None, str | None]:
+        if not self.check_for_existing_running_flow(flow):
+            msg = "Flow hasn't started."
+            raise RuntimeError(msg)
+        current_control_node = (
+            flow.control_flow_machine._context.current_node.name
+            if flow.control_flow_machine._context.current_node is not None
+            else None
+        )
+        focus_stack_for_node = flow.control_flow_machine._context.resolution_machine._context.focus_stack
+        current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
+        return current_control_node, current_resolving_node
