@@ -27,10 +27,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     SetNodeMetadataRequest,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
-    AddParameterToNodeRequest,
-    AlterParameterDetailsRequest,
-    GetParameterDetailsRequest,
+    GetParameterValueRequest,
     RemoveParameterFromNodeRequest,
+    SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -43,10 +42,9 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "GetNodeMetadataRequest": GetNodeMetadataRequest,
     "SetNodeMetadataRequest": SetNodeMetadataRequest,
     "ListConnectionsForNodeRequest": ListConnectionsForNodeRequest,
-    "AddParameterToNodeRequest": AddParameterToNodeRequest,
-    "AlterParameterDetailsRequest": AlterParameterDetailsRequest,
     "RemoveParameterFromNodeRequest": RemoveParameterFromNodeRequest,
-    "GetParameterDetailsRequest": GetParameterDetailsRequest,
+    "GetParameterValueRequest": GetParameterValueRequest,
+    "SetParameterValueRequest": SetParameterValueRequest,
 }
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"

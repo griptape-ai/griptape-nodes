@@ -138,6 +138,24 @@ class RemoveParameterFromNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class SetParameterValueRequest(RequestPayload):
+    """Sets the value of a parameter on a node.
+    Args:
+        parameter_name (str): Name of the parameter to set.
+        value (Any): The value to set for the parameter.
+        node_name (str | None): Name of the node to set the parameter on. If None, uses the Current Context.
+        data_type (str | None): The data type of the parameter value. If None, the type is inferred.
+        initial_setup (bool): If True, prevents unnecessary work when loading a workflow from a file.
+        is_output (bool): If True, indicates that the value being set is from an output value, used when loading a workflow from a file
+    Returns:
+        ResultPayload: Contains the result of the parameter value setting operation.
+    Example:
+        result = SetParameterValueRequest(
+            parameter_name="my_param",
+            value="new_value",
+            node_name="my_node"
+        )
+    """
+
     parameter_name: str
     value: Any
     # If node name is None, use the Current Context
@@ -323,6 +341,23 @@ class AlterParameterDetailsResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetParameterValueRequest(RequestPayload):
+    """Retrieves the value of a parameter on a node.
+
+    Args:
+        parameter_name (str): Name of the parameter to retrieve.
+        node_name (str | None): Name of the node to retrieve the parameter from. If None, uses the Current Context.
+
+    Returns:
+        ResultPayload: Contains the result of the parameter value retrieval operation.
+
+    Example:
+        # Retrieve the value of a parameter
+        result = GetParameterValueRequest(
+            parameter_name="my_param",
+            node_name="my_node",
+        )
+    """
+
     parameter_name: str
     # If node name is None, use the Current Context
     node_name: str | None = None
