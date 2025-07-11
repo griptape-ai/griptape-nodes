@@ -997,9 +997,6 @@ class FlowManager:
             details = "Cannot start flow. Flow is already running."
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[])
-        # Initialize start_queue to None
-        start_queue = None
-
         # A node has been provided to either start or to run up to.
         if request.flow_node_name:
             flow_node_name = request.flow_node_name
@@ -1020,12 +1017,8 @@ class FlowManager:
         else:
             # we wont hit this if we dont have a request id, our requests always have nodes
             # If there is a request, reinitialize the queue
-            start_queue = flow.get_start_node_queue()  # initialize the start flow queue!
-            if start_queue and not start_queue.empty():
-                start_node = start_queue.get()
-                start_queue.task_done()
-            else:
-                start_node = None
+            flow.get_start_node_queue()  # initialize the start flow queue!
+            start_node = None
         # Run Validation before starting a flow
         result = self.on_validate_flow_dependencies_request(
             ValidateFlowDependenciesRequest(flow_name=flow_name, flow_node_name=start_node.name if start_node else None)
@@ -1050,17 +1043,7 @@ class FlowManager:
             return StartFlowResultFailure(validation_exceptions=[e])
         # By now, it has been validated with no exceptions.
         try:
-            # Check if we have a valid start node
-            if start_node is None:
-                details = f"Failed to kick off flow with name {flow_name}. No start node found."
-                logger.error(details)
-                return StartFlowResultFailure(validation_exceptions=[])
-
-            # Start the flow execution
-            if start_node:
-                flow.resolve_singular_node(start_node, debug_mode)
-            elif start_queue:
-                flow.resolve_node_queue(start_queue, debug_mode)
+            flow.start_flow(start_node, debug_mode)
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             logger.error(details)
@@ -1078,15 +1061,13 @@ class FlowManager:
             logger.error(details)
             return GetFlowStateResultFailure()
         try:
-            self.get_flow_by_name(flow_name)
+            flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Could not get flow state. Error: {err}"
             logger.error(details)
             return GetFlowStateResultFailure()
         try:
-            flow = self.get_flow_by_name(flow_name)
-            control_node = flow.control_node_name
-            resolving_node = flow.resolving_node_name
+            control_node, resolving_node = flow.flow_state()
         except Exception as e:
             details = f"Failed to get flow state of flow with name {flow_name}. Exception occurred: {e} "
             logger.exception(details)
@@ -1111,7 +1092,7 @@ class FlowManager:
             return CancelFlowResultFailure()
         try:
             flow = self.get_flow_by_name(flow_name)
-            flow.cancel_execution()
+            flow.cancel_flow_run()
         except Exception as e:
             details = f"Could not cancel flow execution. Exception: {e}"
             logger.error(details)
@@ -1138,7 +1119,7 @@ class FlowManager:
             return SingleNodeStepResultFailure(validation_exceptions=[err])
         try:
             flow = self.get_flow_by_name(flow_name)
-            flow.node_step()
+            flow.single_node_step()
         except Exception as e:
             details = f"Could not advance to the next step of a running workflow. Exception: {e}"
             logger.error(details)
@@ -1158,7 +1139,7 @@ class FlowManager:
 
             return SingleExecutionStepResultFailure()
         try:
-            self.get_flow_by_name(flow_name)
+            flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Could not advance to the next step of a running workflow. Error: {err}."
             logger.error(details)
@@ -1166,15 +1147,19 @@ class FlowManager:
             return SingleExecutionStepResultFailure()
         change_debug_mode = request.request_id is not None
         try:
-            flow = self.get_flow_by_name(flow_name)
-            if flow.check_for_existing_running_flow():
-                flow.single_execution_step(change_debug_mode)
-            else:
-                logger.debug("Flow %s not running, ignoring SingleExecutionStepRequest", flow_name)
+            flow.single_execution_step(change_debug_mode)
         except Exception as e:
+            # We REALLY don't want to fail here, else we'll take the whole engine down
+            try:
+                if flow.check_for_existing_running_flow():
+                    flow.cancel_flow_run()
+            except Exception as e_inner:
+                details = f"Could not cancel flow execution. Exception: {e_inner}"
+                logger.error(details)
+
             details = f"Could not advance to the next step of a running workflow. Exception: {e}"
             logger.error(details)
-            return SingleExecutionStepResultFailure(validation_exceptions=[e])
+            return SingleNodeStepResultFailure(validation_exceptions=[e])
         details = f"Successfully advanced to the next step of a running workflow with name {flow_name}"
         logger.debug(details)
 
@@ -1188,15 +1173,14 @@ class FlowManager:
 
             return ContinueExecutionStepResultFailure()
         try:
-            self.get_flow_by_name(flow_name)
+            flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Failed to continue execution step. Error: {err}"
             logger.error(details)
 
             return ContinueExecutionStepResultFailure()
         try:
-            flow = self.get_flow_by_name(flow_name)
-            flow.continue_execution()
+            flow.continue_executing()
         except Exception as e:
             details = f"Failed to continue execution step. An exception occurred: {e}."
             logger.error(details)
