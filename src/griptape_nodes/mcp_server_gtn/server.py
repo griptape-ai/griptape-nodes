@@ -54,8 +54,6 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "ListParametersOnNodeRequest": ListParametersOnNodeRequest,
     "GetParameterValueRequest": GetParameterValueRequest,
     "SetParameterValueRequest": SetParameterValueRequest,
-    # Workflow
-    # TODO: Add workflow events here
 }
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"

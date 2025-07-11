@@ -21,8 +21,10 @@ class CreateConnectionRequest(RequestPayload):
         source_node_name (str | None): Name of the source node. If None, uses the Current Context.
         target_node_name (str | None): Name of the target node. If None, uses the Current Context.
         initial_setup (bool): If True, prevents unnecessary work when loading a workflow from a file.
+
     Returns:
         ResultPayload: Contains the result of the creation.
+
     Example:
         # Create a connection between two parameters
         CreateConnectionRequest(
@@ -64,8 +66,10 @@ class DeleteConnectionRequest(RequestPayload):
         target_parameter_name (str): Name of the target parameter.
         source_node_name (str | None): Name of the source node. If None, uses the Current Context.
         target_node_name (str | None): Name of the target node. If None, uses the Current Context.
+
     Returns:
         ResultPayload: Contains the result of the deletion.
+
     Example:
         # Delete a connection between two parameters
         DeleteConnectionRequest(

@@ -139,6 +139,7 @@ class RemoveParameterFromNodeResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class SetParameterValueRequest(RequestPayload):
     """Sets the value of a parameter on a node.
+
     Args:
         parameter_name (str): Name of the parameter to set.
         value (Any): The value to set for the parameter.
@@ -148,6 +149,7 @@ class SetParameterValueRequest(RequestPayload):
         is_output (bool): If True, indicates that the value being set is from an output value, used when loading a workflow from a file
     Returns:
         ResultPayload: Contains the result of the parameter value setting operation.
+
     Example:
         result = SetParameterValueRequest(
             parameter_name="my_param",
