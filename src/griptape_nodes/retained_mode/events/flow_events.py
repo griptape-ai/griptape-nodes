@@ -58,6 +58,20 @@ class DeleteFlowResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class ListNodesInFlowRequest(RequestPayload):
+    """Request payload to list nodes in a specific flow.
+
+    Args:
+        flow_name (str | None): The name of the flow to list nodes in. If None is passed, it assumes the flow in the Current Context.
+
+    Returns:
+        ResultPayload: Contains the result of the parameter value setting operation.
+
+    Example:
+        result = ListNodesInFlowRequest(
+            flow_name="my_flow"
+        )
+    """
+
     # If None is passed, assumes we're using the flow in the Current Context.
     flow_name: str | None = None
 

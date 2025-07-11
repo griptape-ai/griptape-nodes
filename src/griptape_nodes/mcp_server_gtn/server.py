@@ -17,7 +17,12 @@ from starlette.types import Receive, Scope, Send
 
 from griptape_nodes.mcp_server_gtn.ws_request_manager import AsyncRequestManager, WebSocketConnectionManager
 from griptape_nodes.retained_mode.events.base_events import RequestPayload
-from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeRequest
+from griptape_nodes.retained_mode.events.connection_events import (
+    CreateConnectionRequest,
+    DeleteConnectionRequest,
+    ListConnectionsForNodeRequest,
+)
+from griptape_nodes.retained_mode.events.flow_events import ListNodesInFlowRequest
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
     DeleteNodeRequest,
@@ -28,23 +33,29 @@ from griptape_nodes.retained_mode.events.node_events import (
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
-    RemoveParameterFromNodeRequest,
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
+    # Nodes
     "CreateNodeRequest": CreateNodeRequest,
     "DeleteNodeRequest": DeleteNodeRequest,
+    "ListNodesInFlowRequest": ListNodesInFlowRequest,
     "GetNodeResolutionStateRequest": GetNodeResolutionStateRequest,
-    "ListParametersOnNodeRequest": ListParametersOnNodeRequest,
     "GetNodeMetadataRequest": GetNodeMetadataRequest,
     "SetNodeMetadataRequest": SetNodeMetadataRequest,
+    # Connections
+    "CreateConnectionRequest": CreateConnectionRequest,
+    "DeleteConnectionRequest": DeleteConnectionRequest,
     "ListConnectionsForNodeRequest": ListConnectionsForNodeRequest,
-    "RemoveParameterFromNodeRequest": RemoveParameterFromNodeRequest,
+    # Parameters
+    "ListParametersOnNodeRequest": ListParametersOnNodeRequest,
     "GetParameterValueRequest": GetParameterValueRequest,
     "SetParameterValueRequest": SetParameterValueRequest,
+    # Workflow
+    # TODO: Add workflow events here
 }
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
