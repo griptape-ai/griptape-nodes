@@ -22,7 +22,7 @@ def pil_to_image_artifact(pil_image: Image, *, use_temp_storage: bool = False) -
 
     if use_temp_storage:
         # Use temp prefix instead of directory for static server compatibility
-        filename = f"intermediates{uuid.uuid4()}.png"
+        filename = f"intermediates/{uuid.uuid4()}.png"
     else:
         filename = f"{uuid.uuid4()}.png"
 
