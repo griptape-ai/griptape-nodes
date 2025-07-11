@@ -34,7 +34,6 @@ from griptape_nodes.retained_mode.events import app_events, execution_events
 from griptape_nodes.retained_mode.events.app_events import AppEndSessionResultSuccess, AppStartSessionResultSuccess
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
-    BaseEvent,
     EventRequest,
     EventResultFailure,
     EventResultSuccess,
@@ -495,9 +494,7 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
 
     This is used to notify the GUI that the app is ready to receive events.
     """
-    # Initialize engine and session IDs on all events
-    BaseEvent.initialize_engine_id()
-    BaseEvent.initialize_session_id()
+    GriptapeNodes.EngineIdentityManager().initialize_engine_id()
 
     # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
     payload = app_events.AppInitializationComplete()
