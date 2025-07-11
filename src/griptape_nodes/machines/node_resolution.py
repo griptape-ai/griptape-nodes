@@ -90,7 +90,9 @@ class InitializeSpotlightState(State):
         if current_node.state == NodeResolutionState.UNRESOLVED:
             # Mark all future nodes unresolved.
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/862
-            context.flow.connections.unresolve_future_nodes(current_node)
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(current_node)
             current_node.initialize_spotlight()
         # Set node to resolving - we are now resolving this node.
         current_node.state = NodeResolutionState.RESOLVING
@@ -132,7 +134,9 @@ class EvaluateParameterState(State):
     def on_update(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         current_parameter = current_node.get_current_parameter()
-        connections = context.flow.connections
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections = GriptapeNodes.FlowManager().get_connections()
         if current_parameter is None:
             msg = "No current parameter set."
             raise ValueError(msg)
@@ -270,7 +274,20 @@ class ExecuteNodeState(State):
             )
             current_focus.process_generator = None
             current_focus.scheduled_value = None
-            context.flow.cancel_flow_run()
+
+            # Check if we're running under global execution manager
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            flow_manager = GriptapeNodes.FlowManager()
+            if (
+                hasattr(flow_manager, "_global_execution_manager")
+                and flow_manager._global_execution_manager.is_running()
+            ):
+                # Cancel global execution instead of individual flow
+                flow_manager._global_execution_manager.cancel_execution()
+            else:
+                # Use traditional flow cancellation
+                context.flow.cancel_flow_run()
 
             EventBus.publish_event(
                 ExecutionGriptapeNodeEvent(
@@ -320,7 +337,7 @@ class ExecuteNodeState(State):
                 )
             )
             # Pass the value through to the new nodes.
-            conn_output_nodes = context.flow.get_connected_output_parameters(current_node, parameter)
+            conn_output_nodes = GriptapeNodes.FlowManager()._get_connected_output_parameters(current_node, parameter)
             for target_node, target_parameter in conn_output_nodes:
                 GriptapeNodes.get_instance().handle_request(
                     SetParameterValueRequest(
@@ -416,6 +433,7 @@ class ExecuteNodeState(State):
 
                 # Once we've passed on the scheduled value, we should clear it out just in case
                 current_focus.scheduled_value = None
+
                 future = ExecuteNodeState.executor.submit(with_contextvars(func))
                 future.add_done_callback(with_contextvars(on_future_done))
             except StopIteration:

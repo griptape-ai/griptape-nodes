@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from griptape.events import EventBus
 
-from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState, StartLoopNode, StartNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
@@ -28,10 +27,9 @@ class CurrentNodes(NamedTuple):
     current_resolving_node: str | None
 
 
-# The flow will own all of the nodes and the connections
+# The flow will own all of the nodes
 class ControlFlow:
     name: str
-    connections: Connections
     nodes: dict[str, BaseNode]
     control_flow_machine: ControlFlowMachine
     single_node_resolution: bool
@@ -40,7 +38,6 @@ class ControlFlow:
 
     def __init__(self, name: str, metadata: dict | None = None) -> None:
         self.name = name
-        self.connections = Connections()
         self.nodes = {}
         self.control_flow_machine = ControlFlowMachine(self)
         self.single_node_resolution = False
@@ -61,15 +58,25 @@ class ControlFlow:
         target_parameter: Parameter,
     ) -> bool:
         if source_node.name in self.nodes and target_node.name in self.nodes:
-            return self.connections.add_connection(source_node, source_parameter, target_node, target_parameter)
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            return (
+                GriptapeNodes.FlowManager()
+                .get_connections()
+                .add_connection(source_node, source_parameter, target_node, target_parameter)
+            )
         return False
 
     def remove_connection(
         self, source_node: BaseNode, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter
     ) -> bool:
         if source_node.name in self.nodes and target_node.name in self.nodes:
-            return self.connections.remove_connection(
-                source_node.name, source_parameter.name, target_node.name, target_parameter.name
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            return (
+                GriptapeNodes.FlowManager()
+                .get_connections()
+                .remove_connection(source_node.name, source_parameter.name, target_node.name, target_parameter.name)
             )
         return False
 
@@ -81,12 +88,11 @@ class ControlFlow:
         target_parameter: Parameter,
     ) -> bool:
         if source_node.name in self.nodes and target_node.name in self.nodes:
-            connected_node_tuple = self.get_connected_output_parameters(node=source_node, param=source_parameter)
-            if connected_node_tuple is not None:
-                for connected_node_values in connected_node_tuple:
-                    connected_node, connected_param = connected_node_values
-                    if connected_node is target_node and connected_param is target_parameter:
-                        return True
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            return GriptapeNodes.FlowManager()._has_connection(
+                source_node, source_parameter, target_node, target_parameter
+            )
         return False
 
     def start_flow(self, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
@@ -235,44 +241,48 @@ class ControlFlow:
         self.flow_queue.queue.clear()
 
     def get_connected_output_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
-        connections = []
-        if node.name in self.connections.outgoing_index:
-            outgoing_params = self.connections.outgoing_index[node.name]
-            if param.name in outgoing_params:
-                for connection_id in outgoing_params[param.name]:
-                    connection = self.connections.connections[connection_id]
-                    connections.append((connection.target_node, connection.target_parameter))
-        return connections
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        return GriptapeNodes.FlowManager()._get_connected_output_parameters(node, param)
 
     def get_connected_input_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        global_connections = GriptapeNodes.FlowManager().get_connections()
         connections = []
-        if node.name in self.connections.incoming_index:
-            incoming_params = self.connections.incoming_index[node.name]
+        if node.name in global_connections.incoming_index:
+            incoming_params = global_connections.incoming_index[node.name]
             if param.name in incoming_params:
                 for connection_id in incoming_params[param.name]:
-                    connection = self.connections.connections[connection_id]
+                    connection = global_connections.connections[connection_id]
                     connections.append((connection.source_node, connection.source_parameter))
         return connections
 
     def get_connected_output_from_node(self, node: BaseNode) -> list[tuple[BaseNode, Parameter]]:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        global_connections = GriptapeNodes.FlowManager().get_connections()
         connections = []
-        if node.name in self.connections.outgoing_index:
+        if node.name in global_connections.outgoing_index:
             connection_ids = [
-                item for value_list in self.connections.outgoing_index[node.name].values() for item in value_list
+                item for value_list in global_connections.outgoing_index[node.name].values() for item in value_list
             ]
             for connection_id in connection_ids:
-                connection = self.connections.connections[connection_id]
+                connection = global_connections.connections[connection_id]
                 connections.append((connection.target_node, connection.target_parameter))
         return connections
 
     def get_connected_input_from_node(self, node: BaseNode) -> list[tuple[BaseNode, Parameter]]:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        global_connections = GriptapeNodes.FlowManager().get_connections()
         connections = []
-        if node.name in self.connections.incoming_index:
+        if node.name in global_connections.incoming_index:
             connection_ids = [
-                item for value_list in self.connections.incoming_index[node.name].values() for item in value_list
+                item for value_list in global_connections.incoming_index[node.name].values() for item in value_list
             ]
             for connection_id in connection_ids:
-                connection = self.connections.connections[connection_id]
+                connection = global_connections.connections[connection_id]
                 connections.append((connection.source_node, connection.source_parameter))
         return connections
 
@@ -304,7 +314,9 @@ class ControlFlow:
                 data_nodes.append(node)
                 # If this node doesn't have a control connection..
                 continue
-            cn_mgr = self.connections
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            cn_mgr = GriptapeNodes.FlowManager().get_connections()
             # check if it has an incoming connection. If it does, it's not a start node
             has_control_connection = False
             if node.name in cn_mgr.incoming_index:
@@ -331,7 +343,9 @@ class ControlFlow:
         # If we've gotten to this point, there are no control parameters
         # Let's return a data node that has no OUTGOING data connections!
         for node in data_nodes:
-            cn_mgr = self.connections
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            cn_mgr = GriptapeNodes.FlowManager().get_connections()
             # check if it has an outgoing connection. We don't want it to (that means we get the most resolution)
             if node.name not in cn_mgr.outgoing_index:
                 valid_data_nodes.append(node)
@@ -359,15 +373,18 @@ class ControlFlow:
         return curr_node
 
     def get_prev_node(self, node: BaseNode) -> BaseNode | None:
-        if node.name in self.connections.incoming_index:
-            parameters = self.connections.incoming_index[node.name]
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+        if node.name in connections.incoming_index:
+            parameters = connections.incoming_index[node.name]
             for parameter_name in parameters:
                 parameter = node.get_parameter_by_name(parameter_name)
                 if parameter and ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
                     # this is a control connection
-                    connection_ids = self.connections.incoming_index[node.name][parameter_name]
+                    connection_ids = connections.incoming_index[node.name][parameter_name]
                     for connection_id in connection_ids:
-                        connection = self.connections.connections[connection_id]
+                        connection = connections.connections[connection_id]
                         return connection.get_source_node()
         return None
 
@@ -376,26 +393,29 @@ class ControlFlow:
         node.stop_flow = True
 
     def get_connections_on_node(self, node: BaseNode) -> list[BaseNode] | None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections = GriptapeNodes.FlowManager().get_connections()
         # get all of the connection ids
         connected_nodes = []
         # Handle outgoing connections
-        if node.name in self.connections.outgoing_index:
-            outgoing_params = self.connections.outgoing_index[node.name]
+        if node.name in connections.outgoing_index:
+            outgoing_params = connections.outgoing_index[node.name]
             outgoing_connection_ids = []
             for connection_ids in outgoing_params.values():
                 outgoing_connection_ids = outgoing_connection_ids + connection_ids
             for connection_id in outgoing_connection_ids:
-                connection = self.connections.connections[connection_id]
+                connection = connections.connections[connection_id]
                 if connection.source_node not in connected_nodes:
                     connected_nodes.append(connection.target_node)
         # Handle incoming connections
-        if node.name in self.connections.incoming_index:
-            incoming_params = self.connections.incoming_index[node.name]
+        if node.name in connections.incoming_index:
+            incoming_params = connections.incoming_index[node.name]
             incoming_connection_ids = []
             for connection_ids in incoming_params.values():
                 incoming_connection_ids = incoming_connection_ids + connection_ids
             for connection_id in incoming_connection_ids:
-                connection = self.connections.connections[connection_id]
+                connection = connections.connections[connection_id]
                 if connection.source_node not in connected_nodes:
                     connected_nodes.append(connection.source_node)
         # Return all connected nodes. No duplicates

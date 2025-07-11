@@ -39,7 +39,9 @@ class ControlFlowContext:
 
     def get_next_node(self, output_parameter: Parameter) -> BaseNode | None:
         if self.current_node is not None:
-            node = self.flow.connections.get_connected_node(self.current_node, output_parameter)
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            node = GriptapeNodes.FlowManager().get_connections().get_connected_node(self.current_node, output_parameter)
             if node is not None:
                 node, _ = node
             # Continue Execution to the next node that needs to be executed.

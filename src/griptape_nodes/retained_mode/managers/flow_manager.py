@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
+from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import (
+    Parameter,
     ParameterContainer,
     ParameterMode,
 )
@@ -114,6 +116,7 @@ logger = logging.getLogger("griptape_nodes")
 class FlowManager:
     _name_to_parent_name: dict[str, str | None]
     _flow_to_referenced_workflow_name: dict[ControlFlow, str]
+    _connections: Connections
 
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(CreateFlowRequest, self.on_create_flow_request)
@@ -151,6 +154,47 @@ class FlowManager:
 
         self._name_to_parent_name = {}
         self._flow_to_referenced_workflow_name = {}
+        self._connections = Connections()
+
+    def get_connections(self) -> Connections:
+        """Get the connections instance."""
+        return self._connections
+
+    def _has_connection(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_node: BaseNode,
+        target_parameter: Parameter,
+    ) -> bool:
+        """Check if a connection exists."""
+        connected_outputs = self._get_connected_output_parameters(source_node, source_parameter)
+        for connected_node, connected_param in connected_outputs:
+            if connected_node is target_node and connected_param is target_parameter:
+                return True
+        return False
+
+    def _get_connected_output_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
+        """Get connected output parameters."""
+        connections = []
+        if node.name in self._connections.outgoing_index:
+            outgoing_params = self._connections.outgoing_index[node.name]
+            if param.name in outgoing_params:
+                for connection_id in outgoing_params[param.name]:
+                    connection = self._connections.connections[connection_id]
+                    connections.append((connection.target_node, connection.target_parameter))
+        return connections
+
+    def _get_connections_for_flow(self, flow: ControlFlow) -> list:
+        """Get connections where both nodes are in the specified flow."""
+        flow_connections = []
+        for connection in self._connections.connections.values():
+            source_in_flow = connection.source_node.name in flow.nodes
+            target_in_flow = connection.target_node.name in flow.nodes
+            # Only include connection if BOTH nodes are in this flow (for serialization)
+            if source_in_flow and target_in_flow:
+                flow_connections.append(connection)
+        return flow_connections
 
     def get_parent_flow(self, flow_name: str) -> str | None:
         if flow_name in self._name_to_parent_name:
@@ -596,10 +640,9 @@ class FlowManager:
         # The two nodes exist.
         # Get the parent flows.
         source_flow_name = None
-        source_flow = None
         try:
             source_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(source_node_name)
-            source_flow = self.get_flow_by_name(flow_name=source_flow_name)
+            self.get_flow_by_name(flow_name=source_flow_name)
         except KeyError as err:
             details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" failed: {err}.'
             logger.error(details)
@@ -614,11 +657,7 @@ class FlowManager:
             logger.error(details)
             return CreateConnectionResultFailure()
 
-        # CURRENT RESTRICTION: Now vet the parents are in the same Flow (yes this sucks)
-        if target_flow_name != source_flow_name:
-            details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" failed: Different flows.'
-            logger.error(details)
-            return CreateConnectionResultFailure()
+        # Cross-flow connections are now supported via global connection storage
 
         # Now validate the parameters.
         source_param = source_node.get_parameter_by_name(request.source_parameter_name)
@@ -687,7 +726,7 @@ class FlowManager:
 
         # Some scenarios restrict when we can have more than one connection. See if we're in such a scenario and replace the
         # existing connection instead of adding a new one.
-        connection_mgr = source_flow.connections
+        connection_mgr = self._connections
         # Try the OUTGOING restricted scenario first.
         restricted_scenario_connection = connection_mgr.get_existing_connection_for_restricted_scenario(
             node=source_node, parameter=source_param, is_source=True
@@ -721,7 +760,7 @@ class FlowManager:
             logger.debug(details)
         try:
             # Actually create the Connection.
-            source_flow.add_connection(
+            self._connections.add_connection(
                 source_node=source_node,
                 source_parameter=source_param,
                 target_node=target_node,
@@ -843,10 +882,9 @@ class FlowManager:
         # The two nodes exist.
         # Get the parent flows.
         source_flow_name = None
-        source_flow = None
         try:
             source_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(source_node_name)
-            source_flow = self.get_flow_by_name(flow_name=source_flow_name)
+            self.get_flow_by_name(flow_name=source_flow_name)
         except KeyError as err:
             details = f'Connection not deleted "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}". Error: {err}'
             logger.error(details)
@@ -863,12 +901,7 @@ class FlowManager:
 
             return DeleteConnectionResultFailure()
 
-        # CURRENT RESTRICTION: Now vet the parents are in the same Flow (yes this sucks)
-        if target_flow_name != source_flow_name:
-            details = f'Connection not deleted "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}". They are in different Flows (TEMPORARY RESTRICTION).'
-            logger.error(details)
-
-            return DeleteConnectionResultFailure()
+        # Cross-flow connections are now supported via global connection storage
 
         # Now validate the parameters.
         source_param = source_node.get_parameter_by_name(request.source_parameter_name)
@@ -886,7 +919,7 @@ class FlowManager:
             return DeleteConnectionResultFailure()
 
         # Vet that a Connection actually exists between them already.
-        if not source_flow.has_connection(
+        if not self._has_connection(
             source_node=source_node,
             source_parameter=source_param,
             target_node=target_node,
@@ -898,11 +931,11 @@ class FlowManager:
             return DeleteConnectionResultFailure()
 
         # Remove the connection.
-        if not source_flow.remove_connection(
-            source_node=source_node,
-            source_parameter=source_param,
-            target_node=target_node,
-            target_parameter=target_param,
+        if not self._connections.remove_connection(
+            source_node=source_node.name,
+            source_parameter=source_param.name,
+            target_node=target_node.name,
+            target_parameter=target_param.name,
         ):
             details = f'Connection not deleted "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}". Unknown failure.'
             logger.error(details)
@@ -917,7 +950,7 @@ class FlowManager:
                     target_node.remove_parameter_value(target_param.name)
                 # It removed it accurately
                 # Unresolve future nodes that depended on that value
-                source_flow.connections.unresolve_future_nodes(target_node)
+                self._connections.unresolve_future_nodes(target_node)
                 target_node.make_node_unresolved(
                     current_states_to_trigger_change_event=set(
                         {NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
@@ -964,6 +997,9 @@ class FlowManager:
             details = "Cannot start flow. Flow is already running."
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[])
+        # Initialize start_queue to None
+        start_queue = None
+
         # A node has been provided to either start or to run up to.
         if request.flow_node_name:
             flow_node_name = request.flow_node_name
@@ -984,8 +1020,12 @@ class FlowManager:
         else:
             # we wont hit this if we dont have a request id, our requests always have nodes
             # If there is a request, reinitialize the queue
-            flow.get_start_node_queue()  # initialize the start flow queue!
-            start_node = None
+            start_queue = flow.get_start_node_queue()  # initialize the start flow queue!
+            if start_queue and not start_queue.empty():
+                start_node = start_queue.get()
+                start_queue.task_done()
+            else:
+                start_node = None
         # Run Validation before starting a flow
         result = self.on_validate_flow_dependencies_request(
             ValidateFlowDependenciesRequest(flow_name=flow_name, flow_node_name=start_node.name if start_node else None)
@@ -1010,7 +1050,17 @@ class FlowManager:
             return StartFlowResultFailure(validation_exceptions=[e])
         # By now, it has been validated with no exceptions.
         try:
-            flow.start_flow(start_node, debug_mode)
+            # Check if we have a valid start node
+            if start_node is None:
+                details = f"Failed to kick off flow with name {flow_name}. No start node found."
+                logger.error(details)
+                return StartFlowResultFailure(validation_exceptions=[])
+
+            # Start the flow execution
+            if start_node:
+                flow.resolve_singular_node(start_node, debug_mode)
+            elif start_queue:
+                flow.resolve_node_queue(start_queue, debug_mode)
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             logger.error(details)
@@ -1028,13 +1078,15 @@ class FlowManager:
             logger.error(details)
             return GetFlowStateResultFailure()
         try:
-            flow = self.get_flow_by_name(flow_name)
+            self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Could not get flow state. Error: {err}"
             logger.error(details)
             return GetFlowStateResultFailure()
         try:
-            control_node, resolving_node = flow.flow_state()
+            flow = self.get_flow_by_name(flow_name)
+            control_node = flow.control_node_name
+            resolving_node = flow.resolving_node_name
         except Exception as e:
             details = f"Failed to get flow state of flow with name {flow_name}. Exception occurred: {e} "
             logger.exception(details)
@@ -1051,14 +1103,15 @@ class FlowManager:
 
             return CancelFlowResultFailure()
         try:
-            flow = self.get_flow_by_name(flow_name)
+            self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Could not cancel flow execution. Error: {err}"
             logger.error(details)
 
             return CancelFlowResultFailure()
         try:
-            flow.cancel_flow_run()
+            flow = self.get_flow_by_name(flow_name)
+            flow.cancel_execution()
         except Exception as e:
             details = f"Could not cancel flow execution. Exception: {e}"
             logger.error(details)
@@ -1077,14 +1130,15 @@ class FlowManager:
 
             return SingleNodeStepResultFailure(validation_exceptions=[])
         try:
-            flow = self.get_flow_by_name(flow_name)
+            self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Could not advance to the next step of a running workflow. No flow with name {flow_name} exists. Error: {err}"
             logger.error(details)
 
             return SingleNodeStepResultFailure(validation_exceptions=[err])
         try:
-            flow.single_node_step()
+            flow = self.get_flow_by_name(flow_name)
+            flow.node_step()
         except Exception as e:
             details = f"Could not advance to the next step of a running workflow. Exception: {e}"
             logger.error(details)
@@ -1104,7 +1158,7 @@ class FlowManager:
 
             return SingleExecutionStepResultFailure()
         try:
-            flow = self.get_flow_by_name(flow_name)
+            self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Could not advance to the next step of a running workflow. Error: {err}."
             logger.error(details)
@@ -1112,19 +1166,15 @@ class FlowManager:
             return SingleExecutionStepResultFailure()
         change_debug_mode = request.request_id is not None
         try:
-            flow.single_execution_step(change_debug_mode)
+            flow = self.get_flow_by_name(flow_name)
+            if flow.check_for_existing_running_flow():
+                flow.single_execution_step(change_debug_mode)
+            else:
+                logger.debug("Flow %s not running, ignoring SingleExecutionStepRequest", flow_name)
         except Exception as e:
-            # We REALLY don't want to fail here, else we'll take the whole engine down
-            try:
-                if flow.check_for_existing_running_flow():
-                    flow.cancel_flow_run()
-            except Exception as e_inner:
-                details = f"Could not cancel flow execution. Exception: {e_inner}"
-                logger.error(details)
-
             details = f"Could not advance to the next step of a running workflow. Exception: {e}"
             logger.error(details)
-            return SingleNodeStepResultFailure(validation_exceptions=[e])
+            return SingleExecutionStepResultFailure(validation_exceptions=[e])
         details = f"Successfully advanced to the next step of a running workflow with name {flow_name}"
         logger.debug(details)
 
@@ -1138,14 +1188,15 @@ class FlowManager:
 
             return ContinueExecutionStepResultFailure()
         try:
-            flow = self.get_flow_by_name(flow_name)
+            self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Failed to continue execution step. Error: {err}"
             logger.error(details)
 
             return ContinueExecutionStepResultFailure()
         try:
-            flow.continue_executing()
+            flow = self.get_flow_by_name(flow_name)
+            flow.continue_execution()
         except Exception as e:
             details = f"Failed to continue execution step. An exception occurred: {e}."
             logger.error(details)
@@ -1329,7 +1380,7 @@ class FlowManager:
             # when we're restored.
             # Create all of the connections
             create_connection_commands = []
-            for connection in flow.connections.connections.values():
+            for connection in self._get_connections_for_flow(flow):
                 source_node_uuid = node_name_to_uuid[connection.source_node.name]
                 target_node_uuid = node_name_to_uuid[connection.target_node.name]
                 create_connection_command = SerializedFlowCommands.IndirectConnectionSerialization(
