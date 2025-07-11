@@ -139,8 +139,8 @@ class AsyncRequestManager(Generic[T]):
 
     async def connect(self, token: str | None = None) -> None:
         """Connect to the WebSocket server."""
-        from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
         from griptape_nodes.retained_mode.managers.session_manager import SessionManager
+        from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
 
         headers = {}
         if token:
