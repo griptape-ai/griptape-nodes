@@ -157,10 +157,10 @@ def _serve_static_server() -> None:
             raise ValueError(msg)
 
         file_full_path = Path(static_dir / file_path)
-        
+
         # Create parent directories if they don't exist
         file_full_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         data = await request.body()
         try:
             file_full_path.write_bytes(data)
