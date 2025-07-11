@@ -115,7 +115,9 @@ class StableDiffusionPipelineParameters:
         width = int(self._node.parameter_values["width"])
         height = int(self._node.parameter_values["height"])
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
-        self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
+        self._node.publish_update_to_parameter(
+            "output_image", pil_to_image_artifact(preview_placeholder_image, use_temp_storage=True)
+        )
 
     def get_prompt(self) -> str:
         return self._node.get_parameter_value("prompt")
@@ -159,7 +161,7 @@ class StableDiffusionPipelineParameters:
 
     def publish_output_image_preview_latents(self, pipe: diffusers.StableDiffusionPipeline, latents: Any) -> None:
         preview_image_pil = self.latents_to_image_pil(pipe, latents)
-        preview_image_artifact = pil_to_image_artifact(preview_image_pil)
+        preview_image_artifact = pil_to_image_artifact(preview_image_pil, use_temp_storage=True)
         self._node.publish_update_to_parameter("output_image", preview_image_artifact)
 
     def publish_output_image(self, output_image_pil: Image) -> None:

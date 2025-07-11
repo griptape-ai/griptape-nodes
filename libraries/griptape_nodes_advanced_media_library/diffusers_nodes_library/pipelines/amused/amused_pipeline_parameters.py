@@ -175,7 +175,9 @@ class AmusedPipelineParameters:
         width = self.get_width()
         height = self.get_height()
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
-        self._node.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
+        self._node.publish_update_to_parameter(
+            "output_image", pil_to_image_artifact(preview_placeholder_image, use_temp_storage=True)
+        )
 
     def latents_to_image_pil(self, pipe: diffusers.AmusedPipeline, latents: torch.Tensor) -> Image:
         """Convert latents to PIL image using the pipeline's VQ-VAE decoder."""
@@ -208,7 +210,7 @@ class AmusedPipelineParameters:
     def publish_output_image_preview_latents(self, pipe: diffusers.AmusedPipeline, latents: torch.Tensor) -> None:
         """Publish preview image from latents during inference."""
         preview_image_pil = self.latents_to_image_pil(pipe, latents)
-        preview_image_artifact = pil_to_image_artifact(preview_image_pil)
+        preview_image_artifact = pil_to_image_artifact(preview_image_pil, use_temp_storage=True)
         self._node.publish_update_to_parameter("output_image", preview_image_artifact)
 
     def publish_output_image(self, output_image_pil: Image) -> None:
