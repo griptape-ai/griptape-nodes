@@ -17,9 +17,21 @@ from starlette.types import Receive, Scope, Send
 
 from griptape_nodes.mcp_server_gtn.ws_request_manager import AsyncRequestManager, WebSocketConnectionManager
 from griptape_nodes.retained_mode.events.base_events import RequestPayload
-from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest, DeleteNodeRequest, GetNodeResolutionStateRequest, ListParametersOnNodeRequest, GetNodeMetadataRequest, SetNodeMetadataRequest
-from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeRequest, AlterParameterDetailsRequest, RemoveParameterFromNodeRequest, GetParameterDetailsRequest
 from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeRequest
+from griptape_nodes.retained_mode.events.node_events import (
+    CreateNodeRequest,
+    DeleteNodeRequest,
+    GetNodeMetadataRequest,
+    GetNodeResolutionStateRequest,
+    ListParametersOnNodeRequest,
+    SetNodeMetadataRequest,
+)
+from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterToNodeRequest,
+    AlterParameterDetailsRequest,
+    GetParameterDetailsRequest,
+    RemoveParameterFromNodeRequest,
+)
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
@@ -34,8 +46,7 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "AddParameterToNodeRequest": AddParameterToNodeRequest,
     "AlterParameterDetailsRequest": AlterParameterDetailsRequest,
     "RemoveParameterFromNodeRequest": RemoveParameterFromNodeRequest,
-    "GetParameterDetailsRequest": GetParameterDetailsRequest
-
+    "GetParameterDetailsRequest": GetParameterDetailsRequest,
 }
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"

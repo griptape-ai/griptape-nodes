@@ -73,8 +73,10 @@ class ListConnectionsForNodeRequest(RequestPayload):
         # List connections for a node
         ListConnectionsForNodeRequest("my_node")
     """
+
     # If node name is None, use the Current Context
     node_name: str | None = None
+
 
 @dataclass
 class IncomingConnection:

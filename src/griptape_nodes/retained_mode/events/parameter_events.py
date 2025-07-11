@@ -56,6 +56,7 @@ class AddParameterToNodeRequest(RequestPayload):
             type="string"
         )
     """
+
     # If node name is None, use the Current Context
     node_name: str | None = None
     parameter_name: str | None = None
@@ -116,6 +117,7 @@ class RemoveParameterFromNodeRequest(RequestPayload):
         # Remove a parameter
         result = RemoveParameterFromNodeRequest("my_node", "my_param")
     """
+
     parameter_name: str
     # If node name is None, use the Current Context
     node_name: str | None = None
@@ -180,6 +182,7 @@ class GetParameterDetailsRequest(RequestPayload):
         # Get parameter info using keyword arguments
         info = GetParameterDetailsRequest(node="my_node", param="my_param")
     """
+
     parameter_name: str
     # If node name is None, use the Current Context
     node_name: str | None = None
@@ -248,6 +251,7 @@ class AlterParameterDetailsRequest(RequestPayload):
             tooltip="Updated tooltip",
         )
     """
+
     parameter_name: str
     # If node name is None, use the Current Context
     node_name: str | None = None

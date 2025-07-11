@@ -93,6 +93,7 @@ class DeleteNodeRequest(RequestPayload):
         # Delete a node
         DeleteNodeRequest("my_node")
     """
+
     # If None is passed, assumes we're using the Node in the Current Context.
     node_name: str | None = None
 
@@ -127,6 +128,7 @@ class GetNodeResolutionStateRequest(RequestPayload):
         # Check if a node is resolved
         GetNodeResolutionStateRequest("my_node")
     """
+
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 
@@ -158,6 +160,7 @@ class ListParametersOnNodeRequest(RequestPayload):
         # List all parameters on a node
         ListParametersOnNodeRequest("my_node")
     """
+
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 
@@ -191,6 +194,7 @@ class GetNodeMetadataRequest(RequestPayload):
         # Get node metadata
         GetNodeMetadataRequest("my_node")
     """
+
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 
@@ -226,6 +230,7 @@ class SetNodeMetadataRequest(RequestPayload):
         }
         SetNodeMetadataRequest("my_node", metadata)
     """
+
     metadata: dict[str, str]
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
