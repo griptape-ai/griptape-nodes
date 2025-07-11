@@ -33,7 +33,10 @@ def try_throw_error(agent_output: BaseArtifact) -> None:
     """Throws an error if the agent output is an ErrorArtifact."""
     if isinstance(agent_output, ErrorArtifact):
         if isinstance(agent_output.exception, requests.HTTPError):
-            error_message = _parse_griptape_cloud_error_message(agent_output.exception.response.text)
+            if agent_output.exception.response.text:
+                error_message = _parse_griptape_cloud_error_message(agent_output.exception.response.text)
+            else:
+                error_message = str(agent_output.exception)
         else:
             error_message = str(agent_output.value)
         msg = f"Agent run failed because of an exception: {error_message}"
