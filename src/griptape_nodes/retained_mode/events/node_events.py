@@ -31,6 +31,26 @@ class NewPosition(NamedTuple):
 @dataclass
 @PayloadRegistry.register
 class CreateNodeRequest(RequestPayload):
+    """Creates a node of the specified type and adds it to the current or a specified parent flow.
+
+    Supports custom naming and metadata (e.g., UI position, display name, tags).
+
+    Args:
+        node_type (str): Type of node to create (e.g. "Agent", "Prompt", "MergeText").
+        specific_library_name (str, optional): Library to search for the node type.
+        node_name (str, optional): Custom name for the new node.
+        override_parent_flow_name (str, optional): Parent flow to insert the node into (defaults to current).
+        metadata (dict, optional): Extra node metadata such as {"position": {"x": 100, "y": 200"}}.
+
+    Returns:
+        ResultPayload: Contains the name of the created node if successful.
+
+    Example:
+        CreateNodeRequest("Agent")
+        CreateNodeRequest("Prompt", node_name="intro_prompt")
+        CreateNodeRequest("Agent", metadata={"position": {"x": 100, "y": 200}})
+    """
+
     node_type: str
     specific_library_name: str | None = None
     node_name: str | None = None
@@ -61,6 +81,19 @@ class CreateNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class DeleteNodeRequest(RequestPayload):
+    """Deletes a node from the system.
+
+    Args:
+        node_name (str): Name of the node to delete.
+
+    Returns:
+        ResultPayload: Contains the result of the node deletion operation.
+
+    Example:
+        # Delete a node
+        DeleteNodeRequest("my_node")
+    """
+
     # If None is passed, assumes we're using the Node in the Current Context.
     node_name: str | None = None
 
@@ -80,6 +113,22 @@ class DeleteNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetNodeResolutionStateRequest(RequestPayload):
+    """Gets the current resolution state of a node.
+
+    The resolution state indicates whether a node has been successfully resolved
+    and is ready for execution.
+
+    Args:
+        node_name (str, optional): Name of the node to check.
+
+    Returns:
+        ResultPayload: Contains the resolution state of the node.
+
+    Example:
+        # Check if a node is resolved
+        GetNodeResolutionStateRequest("my_node")
+    """
+
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 
@@ -99,6 +148,19 @@ class GetNodeResolutionStateResultFailure(WorkflowNotAlteredMixin, ResultPayload
 @dataclass
 @PayloadRegistry.register
 class ListParametersOnNodeRequest(RequestPayload):
+    """Lists all parameters associated with a node.
+
+    Args:
+        node (str, optional): Name of the node to list parameters for.
+
+    Returns:
+        ResultPayload: Contains a list of parameter names.
+
+    Example:
+        # List all parameters on a node
+        ListParametersOnNodeRequest("my_node")
+    """
+
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 
@@ -118,6 +180,21 @@ class ListParametersOnNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 @dataclass
 @PayloadRegistry.register
 class GetNodeMetadataRequest(RequestPayload):
+    """Retrieves metadata associated with a node.
+
+    Node metadata can include UI position, display name, tags, and other custom properties.
+
+    Args:
+        node_name (str, optional): Name of the node to get metadata for.
+
+    Returns:
+        ResultPayload: Contains the node's metadata.
+
+    Example:
+        # Get node metadata
+        GetNodeMetadataRequest("my_node")
+    """
+
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 
@@ -137,7 +214,24 @@ class GetNodeMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 @dataclass
 @PayloadRegistry.register
 class SetNodeMetadataRequest(RequestPayload):
-    metadata: dict
+    """Sets metadata for a node.
+
+    Args:
+        node_name (str, optional): Name of the node to set metadata for.
+        metadata (dict): Dictionary containing the metadata to set.
+
+    Returns:
+        ResultPayload: Contains the result of the metadata update operation.
+
+    Example:
+        # Set node position
+        metadata = {
+            "position": {"x": 100, "y": 200}
+        }
+        SetNodeMetadataRequest("my_node", metadata)
+    """
+
+    metadata: dict[str, str]
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 

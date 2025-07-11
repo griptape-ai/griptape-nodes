@@ -20,6 +20,43 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @dataclass
 @PayloadRegistry.register
 class AddParameterToNodeRequest(RequestPayload):
+    """Adds a parameter on a node.
+
+    This method can be used to either add a new parameter.
+    Parameters can have different modes (input, property, output) and can include
+    tooltips and UI options.
+
+    Args:
+        node_name (str): Name of the node to add the parameter on.
+        parameter_name (str): Name of the parameter.
+        default_value (Any, optional): Default value for the parameter.
+        tooltip (str | list[dict]): Tooltip text or structured tooltip data.
+        type (str, optional): Type of the parameter.
+        input_types (list[str], optional): List of allowed input types.
+        output_type (str, optional): Expected output type.
+        tooltip_as_input (str | list[dict], optional): Tooltip specific to input mode.
+        tooltip_as_property (str | list[dict], optional): Tooltip specific to property mode.
+        tooltip_as_output (str | list[dict], optional): Tooltip specific to output mode.
+        ui_options (dict, optional): Additional UI configuration options.
+        mode_allowed_input (bool, optional): Whether parameter can be used as input.
+        mode_allowed_property (bool, optional): Whether parameter can be used as property.
+        mode_allowed_output (bool, optional): Whether parameter can be used as output.
+        **kwargs: Additional keyword arguments that may be passed to the parameter creation/modification.
+
+    Returns:
+        ResultPayload: Contains the result of the parameter operation.
+
+    Example:
+        # Add a new parameter
+        result = AddParameterToNodeRequest(
+            node_name="my_node",
+            parameter_name="my_param",
+            default_value="default",
+            tooltip="My parameter tooltip",
+            type="string"
+        )
+    """
+
     # If node name is None, use the Current Context
     node_name: str | None = None
     parameter_name: str | None = None
@@ -67,6 +104,20 @@ class AddParameterToNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class RemoveParameterFromNodeRequest(RequestPayload):
+    """Removes a parameter from a node.
+
+    Args:
+        node_name (str): Name of the node containing the parameter.
+        parameter_name (str): Name of the parameter to remove.
+
+    Returns:
+        ResultPayload: Contains the result of the parameter deletion operation.
+
+    Example:
+        # Remove a parameter
+        result = RemoveParameterFromNodeRequest("my_node", "my_param")
+    """
+
     parameter_name: str
     # If node name is None, use the Current Context
     node_name: str | None = None
@@ -87,6 +138,26 @@ class RemoveParameterFromNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class SetParameterValueRequest(RequestPayload):
+    """Sets the value of a parameter on a node.
+
+    Args:
+        parameter_name (str): Name of the parameter to set.
+        value (Any): The value to set for the parameter.
+        node_name (str | None): Name of the node to set the parameter on. If None, uses the Current Context.
+        data_type (str | None): The data type of the parameter value. If None, the type is inferred.
+        initial_setup (bool): If True, prevents unnecessary work when loading a workflow from a file.
+        is_output (bool): If True, indicates that the value being set is from an output value, used when loading a workflow from a file
+    Returns:
+        ResultPayload: Contains the result of the parameter value setting operation.
+
+    Example:
+        result = SetParameterValueRequest(
+            parameter_name="my_param",
+            value="new_value",
+            node_name="my_node"
+        )
+    """
+
     parameter_name: str
     value: Any
     # If node name is None, use the Current Context
@@ -114,6 +185,24 @@ class SetParameterValueResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetParameterDetailsRequest(RequestPayload):
+    """Gets detailed information about a parameter.
+
+    Args:
+        node (str): Name of the node containing the parameter.
+        param (str): Name of the parameter to get info for.
+        **kwargs: Additional arguments.
+
+    Returns:
+        Any: Contains detailed parameter information.
+
+    Example:
+        # Get parameter info using node.param format
+        info = GetParameterDetailsRequest("my_node.my_param")
+
+        # Get parameter info using keyword arguments
+        info = GetParameterDetailsRequest(node="my_node", param="my_param")
+    """
+
     parameter_name: str
     # If node name is None, use the Current Context
     node_name: str | None = None
@@ -147,6 +236,42 @@ class GetParameterDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 @dataclass
 @PayloadRegistry.register
 class AlterParameterDetailsRequest(RequestPayload):
+    """Modifies a parameter on a node.
+
+    This method can be used to either modify an existing parameter.
+    Parameters can have different modes (input, property, output) and can include
+    tooltips and UI options.
+
+    Args:
+        node_name (str): Name of the node to modify the parameter on.
+        parameter_name (str): Name of the parameter.
+        default_value (Any, optional): Default value for the parameter.
+        tooltip (str | list[dict]): Tooltip text or structured tooltip data.
+        type (str, optional): Type of the parameter.
+        input_types (list[str], optional): List of allowed input types.
+        output_type (str, optional): Expected output type.
+        tooltip_as_input (str | list[dict], optional): Tooltip specific to input mode.
+        tooltip_as_property (str | list[dict], optional): Tooltip specific to property mode.
+        tooltip_as_output (str | list[dict], optional): Tooltip specific to output mode.
+        ui_options (dict, optional): Additional UI configuration options.
+        mode_allowed_input (bool, optional): Whether parameter can be used as input.
+        mode_allowed_property (bool, optional): Whether parameter can be used as property.
+        mode_allowed_output (bool, optional): Whether parameter can be used as output.
+        **kwargs: Additional keyword arguments that may be passed to the parameter creation/modification.
+
+    Returns:
+        ResultPayload: Contains the result of the parameter operation.
+
+    Example:
+        # Modify an existing parameter
+        result = AlterParameterDetailsRequest(
+            node_name="my_node",
+            parameter_name="my_param",
+            default_value="new_default",
+            tooltip="Updated tooltip",
+        )
+    """
+
     parameter_name: str
     # If node name is None, use the Current Context
     node_name: str | None = None
@@ -218,6 +343,23 @@ class AlterParameterDetailsResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetParameterValueRequest(RequestPayload):
+    """Retrieves the value of a parameter on a node.
+
+    Args:
+        parameter_name (str): Name of the parameter to retrieve.
+        node_name (str | None): Name of the node to retrieve the parameter from. If None, uses the Current Context.
+
+    Returns:
+        ResultPayload: Contains the result of the parameter value retrieval operation.
+
+    Example:
+        # Retrieve the value of a parameter
+        result = GetParameterValueRequest(
+            parameter_name="my_param",
+            node_name="my_node",
+        )
+    """
+
     parameter_name: str
     # If node name is None, use the Current Context
     node_name: str | None = None
