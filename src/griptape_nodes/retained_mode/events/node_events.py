@@ -118,7 +118,7 @@ class GetNodeResolutionStateRequest(RequestPayload):
     and is ready for execution.
 
     Args:
-        node_name (str): Name of the node to check.
+        node_name (str, optional): Name of the node to check.
 
     Returns:
         ResultPayload: Contains the resolution state of the node.
@@ -149,7 +149,7 @@ class ListParametersOnNodeRequest(RequestPayload):
     """Lists all parameters associated with a node.
 
     Args:
-        node (str): Name of the node to list parameters for.
+        node (str, optional): Name of the node to list parameters for.
 
     Returns:
         ResultPayload: Contains a list of parameter names.
@@ -182,7 +182,7 @@ class GetNodeMetadataRequest(RequestPayload):
     Node metadata can include UI position, display name, tags, and other custom properties.
 
     Args:
-        node_name (str): Name of the node to get metadata for.
+        node_name (str, optional): Name of the node to get metadata for.
 
     Returns:
         ResultPayload: Contains the node's metadata.
@@ -213,7 +213,7 @@ class SetNodeMetadataRequest(RequestPayload):
     """Sets metadata for a node.
 
     Args:
-        node_name (str): Name of the node to set metadata for.
+        node_name (str, optional): Name of the node to set metadata for.
         metadata (dict): Dictionary containing the metadata to set.
 
     Returns:

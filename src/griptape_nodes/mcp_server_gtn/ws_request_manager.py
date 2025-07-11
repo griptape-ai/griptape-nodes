@@ -38,8 +38,6 @@ class WebSocketConnectionManager:
             msg = "Not connected to WebSocket server"
             raise ConnectionError(msg)
 
-        logger.error(type(self.websocket))
-
         try:
             message = json.dumps(data)
             await self.websocket.send(message)
