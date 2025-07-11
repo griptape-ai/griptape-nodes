@@ -11,6 +11,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+from griptape_nodes.retained_mode.events.workflow_events import ImportWorkflowAsReferencedSubFlowRequest
 
 
 @dataclass(kw_only=True)
@@ -20,6 +21,7 @@ class CreateFlowRequest(RequestPayload):
     flow_name: str | None = None
     # When True, this Flow will be pushed as the new Current Context.
     set_as_new_context: bool = True
+    metadata: dict | None = None
 
 
 @dataclass
@@ -137,8 +139,9 @@ class SerializedFlowCommands:
     Attributes:
         node_libraries_used (set[LibraryNameAndVersion]): Set of libraries and versions used by the nodes,
             including those in child flows.
-        create_flow_command (CreateFlowRequest | None): Command to create the flow that contains all of this.
-            If None, will deserialize into whatever Flow is in the Current Context.
+        flow_initialization_command (CreateFlowRequest | ImportWorkflowAsReferencedSubFlowRequest | None): Command to initialize the flow that contains all of this.
+            Can be CreateFlowRequest for standalone flows, ImportWorkflowAsReferencedSubFlowRequest for referenced workflows,
+            or None to deserialize into whatever Flow is in the Current Context.
         serialized_node_commands (list[SerializedNodeCommands]): List of serialized commands for nodes.
             Handles creating all of the nodes themselves, along with configuring them. Does NOT set Parameter values,
             which is done as a separate step.
@@ -148,6 +151,8 @@ class SerializedFlowCommands:
         set_parameter_value_commands (dict[SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]]): List of commands
             to set parameter values, keyed by node UUID, during deserialization.
         sub_flows_commands (list["SerializedFlowCommands"]): List of sub-flow commands. Cascades into sub-flows within this serialization.
+        referenced_workflows (set[str]): Set of workflow file paths that are referenced by this flow and its sub-flows.
+            Used for validation before deserialization to ensure all referenced workflows are available.
     """
 
     @dataclass
@@ -169,7 +174,7 @@ class SerializedFlowCommands:
         target_parameter_name: str
 
     node_libraries_used: set[LibraryNameAndVersion]
-    create_flow_command: CreateFlowRequest | None
+    flow_initialization_command: CreateFlowRequest | ImportWorkflowAsReferencedSubFlowRequest | None
     serialized_node_commands: list[SerializedNodeCommands]
     serialized_connections: list[IndirectConnectionSerialization]
     unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]
@@ -177,6 +182,7 @@ class SerializedFlowCommands:
         SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
     ]
     sub_flows_commands: list["SerializedFlowCommands"]
+    referenced_workflows: set[str]
 
 
 @dataclass
@@ -222,4 +228,86 @@ class DeserializeFlowFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPaylo
 @dataclass
 @PayloadRegistry.register
 class DeserializeFlowFromCommandsResultFailure(ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowDetailsRequest(RequestPayload):
+    """Request payload to get detailed information about a flow.
+
+    This provides metadata about a flow including its reference status and parent hierarchy,
+    useful for editor integration to display flows appropriately.
+
+    Attributes:
+        flow_name (str | None): The name of the flow to get details for. If None is passed,
+            assumes we're getting details for the flow in the Current Context.
+    """
+
+    # If None is passed, assumes we're getting details for the flow in the Current Context.
+    flow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Success result containing flow details.
+
+    Attributes:
+        referenced_workflow_name (str | None): The name of the workflow that was
+            imported to create this flow. None if this flow was created standalone.
+        parent_flow_name (str | None): The name of the parent flow, or None if this is a
+            top-level flow.
+    """
+
+    referenced_workflow_name: str | None
+    parent_flow_name: str | None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failure result when flow details cannot be retrieved.
+
+    This occurs when the specified flow doesn't exist, the current context is empty
+    (when flow_name is None), or there are issues with the flow's parent mapping.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowMetadataRequest(RequestPayload):
+    # If None is passed, assumes we're using the Flow in the Current Context
+    flow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowMetadataResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    metadata: dict
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class SetFlowMetadataRequest(RequestPayload):
+    metadata: dict
+    # If None is passed, assumes we're using the Flow in the Current Context
+    flow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class SetFlowMetadataResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class SetFlowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass

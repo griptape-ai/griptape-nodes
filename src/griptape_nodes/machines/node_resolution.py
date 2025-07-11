@@ -230,7 +230,11 @@ class ExecuteNodeState(State):
                     )
                 )
 
-        current_node.validate_before_node_run()
+        exceptions = current_node.validate_before_node_run()
+        if exceptions:
+            msg = f"Canceling flow run. Node '{current_node.name}' encountered problems: {exceptions}"
+            # Mark the node as unresolved, broadcasting to everyone.
+            raise RuntimeError(msg)
         if not context.paused:
             return ExecuteNodeState
         return None

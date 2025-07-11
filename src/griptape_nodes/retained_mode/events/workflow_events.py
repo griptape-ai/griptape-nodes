@@ -144,6 +144,27 @@ class RenameWorkflowResultFailure(ResultPayloadFailure):
 @PayloadRegistry.register
 class SaveWorkflowRequest(RequestPayload):
     file_name: str | None = None
+    image_path: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class ImportWorkflowAsReferencedSubFlowRequest(RequestPayload):
+    workflow_name: str
+    flow_name: str | None = None  # If None, import into current context flow
+    imported_flow_metadata: dict | None = None  # Metadata to apply to the imported flow
+
+
+@dataclass
+@PayloadRegistry.register
+class ImportWorkflowAsReferencedSubFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    created_flow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ImportWorkflowAsReferencedSubFlowResultFailure(ResultPayloadFailure):
+    pass
 
 
 @dataclass
@@ -180,12 +201,13 @@ class LoadWorkflowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 @PayloadRegistry.register
 class PublishWorkflowRequest(RequestPayload):
     workflow_name: str
+    publisher_name: str
 
 
 @dataclass
 @PayloadRegistry.register
 class PublishWorkflowResultSuccess(ResultPayloadSuccess):
-    workflow_id: str
+    published_workflow_file_path: str
 
 
 @dataclass

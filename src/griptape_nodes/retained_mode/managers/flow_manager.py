@@ -57,6 +57,12 @@ from griptape_nodes.retained_mode.events.flow_events import (
     DeserializeFlowFromCommandsRequest,
     DeserializeFlowFromCommandsResultFailure,
     DeserializeFlowFromCommandsResultSuccess,
+    GetFlowDetailsRequest,
+    GetFlowDetailsResultFailure,
+    GetFlowDetailsResultSuccess,
+    GetFlowMetadataRequest,
+    GetFlowMetadataResultFailure,
+    GetFlowMetadataResultSuccess,
     GetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess,
     ListFlowsInCurrentContextRequest,
@@ -72,6 +78,9 @@ from griptape_nodes.retained_mode.events.flow_events import (
     SerializeFlowToCommandsRequest,
     SerializeFlowToCommandsResultFailure,
     SerializeFlowToCommandsResultSuccess,
+    SetFlowMetadataRequest,
+    SetFlowMetadataResultFailure,
+    SetFlowMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
     DeleteNodeRequest,
@@ -89,6 +98,10 @@ from griptape_nodes.retained_mode.events.validation_events import (
     ValidateFlowDependenciesResultFailure,
     ValidateFlowDependenciesResultSuccess,
 )
+from griptape_nodes.retained_mode.events.workflow_events import (
+    ImportWorkflowAsReferencedSubFlowRequest,
+    ImportWorkflowAsReferencedSubFlowResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
@@ -100,6 +113,7 @@ logger = logging.getLogger("griptape_nodes")
 
 class FlowManager:
     _name_to_parent_name: dict[str, str | None]
+    _flow_to_referenced_workflow_name: dict[ControlFlow, str]
 
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(CreateFlowRequest, self.on_create_flow_request)
@@ -126,6 +140,9 @@ class FlowManager:
             ValidateFlowDependenciesRequest, self.on_validate_flow_dependencies_request
         )
         event_manager.assign_manager_to_request_type(GetTopLevelFlowRequest, self.on_get_top_level_flow_request)
+        event_manager.assign_manager_to_request_type(GetFlowDetailsRequest, self.on_get_flow_details_request)
+        event_manager.assign_manager_to_request_type(GetFlowMetadataRequest, self.on_get_flow_metadata_request)
+        event_manager.assign_manager_to_request_type(SetFlowMetadataRequest, self.on_set_flow_metadata_request)
         event_manager.assign_manager_to_request_type(SerializeFlowToCommandsRequest, self.on_serialize_flow_to_commands)
         event_manager.assign_manager_to_request_type(
             DeserializeFlowFromCommandsRequest, self.on_deserialize_flow_from_commands
@@ -133,12 +150,29 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(FlushParameterChangesRequest, self.on_flush_request)
 
         self._name_to_parent_name = {}
+        self._flow_to_referenced_workflow_name = {}
 
     def get_parent_flow(self, flow_name: str) -> str | None:
         if flow_name in self._name_to_parent_name:
             return self._name_to_parent_name[flow_name]
         msg = f"Flow with name {flow_name} doesn't exist"
         raise ValueError(msg)
+
+    def is_referenced_workflow(self, flow: ControlFlow) -> bool:
+        """Check if this flow was created by importing a referenced workflow.
+
+        Returns True if this flow originated from a workflow import operation,
+        False if it was created standalone.
+        """
+        return flow in self._flow_to_referenced_workflow_name
+
+    def get_referenced_workflow_name(self, flow: ControlFlow) -> str | None:
+        """Get the name of the referenced workflow, if any.
+
+        Returns the workflow name that was imported to create this flow,
+        or None if this flow was created standalone.
+        """
+        return self._flow_to_referenced_workflow_name.get(flow)
 
     def on_get_top_level_flow_request(self, request: GetTopLevelFlowRequest) -> ResultPayload:  # noqa: ARG002 (the request has to be assigned to the method)
         for flow_name, parent in self._name_to_parent_name.items():
@@ -147,6 +181,103 @@ class FlowManager:
         msg = "Attempted to get top level flow, but no such flow exists"
         logger.debug(msg)
         return GetTopLevelFlowResultSuccess(flow_name=None)
+
+    def on_get_flow_details_request(self, request: GetFlowDetailsRequest) -> ResultPayload:
+        flow_name = request.flow_name
+        flow = None
+
+        if flow_name is None:
+            # We want to get details for whatever is at the top of the Current Context.
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = "Attempted to get Flow details from the Current Context. Failed because the Current Context was empty."
+                logger.error(details)
+                return GetFlowDetailsResultFailure()
+            flow = GriptapeNodes.ContextManager().get_current_flow()
+            flow_name = flow.name
+        else:
+            flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+            if flow is None:
+                details = (
+                    f"Attempted to get Flow details for '{flow_name}'. Failed because no Flow with that name exists."
+                )
+                logger.error(details)
+                return GetFlowDetailsResultFailure()
+
+        try:
+            parent_flow_name = self.get_parent_flow(flow_name)
+        except ValueError:
+            details = f"Attempted to get Flow details for '{flow_name}'. Failed because Flow does not exist in parent mapping."
+            logger.error(details)
+            return GetFlowDetailsResultFailure()
+
+        referenced_workflow_name = None
+        if self.is_referenced_workflow(flow):
+            referenced_workflow_name = self.get_referenced_workflow_name(flow)
+
+        details = f"Successfully retrieved Flow details for '{flow_name}'."
+        logger.debug(details)
+        return GetFlowDetailsResultSuccess(
+            referenced_workflow_name=referenced_workflow_name,
+            parent_flow_name=parent_flow_name,
+        )
+
+    def on_get_flow_metadata_request(self, request: GetFlowMetadataRequest) -> ResultPayload:
+        flow_name = request.flow_name
+        flow = None
+        if flow_name is None:
+            # Get from the current context.
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = "Attempted to get metadata for a Flow from the Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return GetFlowMetadataResultFailure()
+
+            flow = GriptapeNodes.ContextManager().get_current_flow()
+            flow_name = flow.name
+
+        # Does this flow exist?
+        if flow is None:
+            obj_mgr = GriptapeNodes.ObjectManager()
+            flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+            if flow is None:
+                details = f"Attempted to get metadata for a Flow '{flow_name}', but no such Flow was found."
+                logger.error(details)
+                return GetFlowMetadataResultFailure()
+
+        metadata = flow.metadata
+        details = f"Successfully retrieved metadata for a Flow '{flow_name}'."
+        logger.debug(details)
+
+        return GetFlowMetadataResultSuccess(metadata=metadata)
+
+    def on_set_flow_metadata_request(self, request: SetFlowMetadataRequest) -> ResultPayload:
+        flow_name = request.flow_name
+        flow = None
+        if flow_name is None:
+            # Get from the current context.
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = "Attempted to set metadata for a Flow from the Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return SetFlowMetadataResultFailure()
+
+            flow = GriptapeNodes.ContextManager().get_current_flow()
+            flow_name = flow.name
+
+        # Does this flow exist?
+        if flow is None:
+            obj_mgr = GriptapeNodes.ObjectManager()
+            flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+            if flow is None:
+                details = f"Attempted to set metadata for a Flow '{flow_name}', but no such Flow was found."
+                logger.error(details)
+                return SetFlowMetadataResultFailure()
+
+        # We can't completely overwrite metadata.
+        for key, value in request.metadata.items():
+            flow.metadata[key] = value
+        details = f"Successfully set metadata for a Flow '{flow_name}'."
+        logger.debug(details)
+
+        return SetFlowMetadataResultSuccess()
 
     def does_canvas_exist(self) -> bool:
         """Determines if there is already an existing flow with no parent flow.Returns True if there is an existing flow with no parent flow.Return False if there is no existing flow with no parent flow."""
@@ -198,9 +329,18 @@ class FlowManager:
         final_flow_name = GriptapeNodes.ObjectManager().generate_name_for_object(
             type_name="ControlFlow", requested_name=request.flow_name
         )
-        flow = ControlFlow(name=final_flow_name)
+        # Check if we're creating this flow within a referenced workflow context
+        # This will inform the engine to maintain a reference to the workflow
+        # when serializing it. It may inform the editor to render it differently.
+        workflow_manager = GriptapeNodes.WorkflowManager()
+        flow = ControlFlow(name=final_flow_name, metadata=request.metadata)
         GriptapeNodes.ObjectManager().add_object_by_name(name=final_flow_name, obj=flow)
         self._name_to_parent_name[final_flow_name] = parent_name
+
+        # Track referenced workflow if this flow was created within a referenced workflow context
+        if workflow_manager.has_current_referenced_workflow():
+            referenced_workflow_name = workflow_manager.get_current_referenced_workflow()
+            self._flow_to_referenced_workflow_name[flow] = referenced_workflow_name
 
         # See if we need to push it as the current context.
         if request.set_as_new_context:
@@ -305,6 +445,10 @@ class FlowManager:
             # Remove the flow from our map.
             obj_mgr.del_obj_by_name(flow.name)
             del self._name_to_parent_name[flow.name]
+
+            # Clean up referenced workflow tracking
+            if flow in self._flow_to_referenced_workflow_name:
+                del self._flow_to_referenced_workflow_name[flow]
 
         details = f"Successfully deleted Flow '{flow_name}'."
         logger.debug(details)
@@ -608,32 +752,16 @@ class FlowManager:
             return CreateConnectionResultFailure()
 
         # Let the source make any internal handling decisions now that the Connection has been made.
-        try:
-            source_node.after_outgoing_connection(
-                source_parameter=source_param, target_node=target_node, target_parameter=target_param
-            )
-        except TypeError:
-            source_node.after_outgoing_connection(
-                source_parameter=source_param,
-                target_node=target_node,
-                target_parameter=target_param,
-                modified_parameters_set=set(),
-            )
+        source_node.after_outgoing_connection(
+            source_parameter=source_param, target_node=target_node, target_parameter=target_param
+        )
 
         # And target.
-        try:
-            target_node.after_incoming_connection(
-                source_node=source_node,
-                source_parameter=source_param,
-                target_parameter=target_param,
-            )
-        except TypeError:
-            target_node.after_incoming_connection(
-                source_node=source_node,
-                source_parameter=source_param,
-                target_parameter=target_param,
-                modified_parameters_set=set(),
-            )
+        target_node.after_incoming_connection(
+            source_node=source_node,
+            source_parameter=source_param,
+            target_parameter=target_param,
+        )
 
         details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
         logger.debug(details)
@@ -798,32 +926,16 @@ class FlowManager:
             except KeyError as e:
                 logger.warning(e)
         # Let the source make any internal handling decisions now that the Connection has been REMOVED.
-        try:
-            source_node.after_outgoing_connection_removed(
-                source_parameter=source_param, target_node=target_node, target_parameter=target_param
-            )
-        except TypeError:
-            source_node.after_outgoing_connection_removed(
-                source_parameter=source_param,
-                target_node=target_node,
-                target_parameter=target_param,
-                modified_parameters_set=set(),
-            )
+        source_node.after_outgoing_connection_removed(
+            source_parameter=source_param, target_node=target_node, target_parameter=target_param
+        )
 
         # And target.
-        try:
-            target_node.after_incoming_connection_removed(
-                source_node=source_node,
-                source_parameter=source_param,
-                target_parameter=target_param,
-            )
-        except TypeError:
-            target_node.after_incoming_connection_removed(
-                source_node=source_node,
-                source_parameter=source_param,
-                target_parameter=target_param,
-                modified_parameters_set=set(),
-            )
+        target_node.after_incoming_connection_removed(
+            source_node=source_node,
+            source_parameter=source_param,
+            target_parameter=target_param,
+        )
 
         details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" deleted.'
         logger.debug(details)
@@ -1140,6 +1252,9 @@ class FlowManager:
         # Track all node libraries that were in use by these Nodes
         node_libraries_in_use = set()
 
+        # Track all referenced workflows used by this flow and its sub-flows
+        referenced_workflows_in_use = set()
+
         # Track all parameter values that were in use by these Nodes (maps UUID to Parameter value)
         unique_parameter_uuid_to_values = {}
         # And track how values map into that map.
@@ -1148,7 +1263,20 @@ class FlowManager:
         with GriptapeNodes.ContextManager().flow(flow):
             # The base flow creation, if desired.
             if request.include_create_flow_command:
-                create_flow_request = CreateFlowRequest(parent_flow_name=None)
+                # Check if this flow is a referenced workflow
+                if self.is_referenced_workflow(flow):
+                    referenced_workflow_name = self.get_referenced_workflow_name(flow)
+                    create_flow_request = ImportWorkflowAsReferencedSubFlowRequest(
+                        workflow_name=referenced_workflow_name,  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
+                        imported_flow_metadata=flow.metadata,
+                    )
+                    referenced_workflows_in_use.add(referenced_workflow_name)  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
+                else:
+                    # Always set set_as_new_context=False during serialization - let the workflow manager
+                    # that loads this serialized flow decide whether to push it to context or not
+                    create_flow_request = CreateFlowRequest(
+                        parent_flow_name=None, set_as_new_context=False, metadata=flow.metadata
+                    )
             else:
                 create_flow_request = None
 
@@ -1229,27 +1357,57 @@ class FlowManager:
                     details = f"Attempted to serialize Flow '{flow_name}', but no Flow with that name could be found."
                     logger.error(details)
                     return SerializeFlowToCommandsResultFailure()
-                with GriptapeNodes.ContextManager().flow(flow=flow):
-                    child_flow_request = SerializeFlowToCommandsRequest()
-                    child_flow_result = GriptapeNodes().handle_request(child_flow_request)
-                    if not isinstance(child_flow_result, SerializeFlowToCommandsResultSuccess):
-                        details = f"Attempted to serialize parent flow '{flow_name}'. Failed while serializing child flow '{child_flow}'."
-                        logger.error(details)
-                        return SerializeFlowToCommandsResultFailure()
-                    serialized_flow = child_flow_result.serialized_flow_commands
+
+                # Check if this is a referenced workflow
+                if self.is_referenced_workflow(flow):
+                    # For referenced workflows, create a minimal SerializedFlowCommands with just the import command
+                    referenced_workflow_name = self.get_referenced_workflow_name(flow)
+                    import_command = ImportWorkflowAsReferencedSubFlowRequest(
+                        workflow_name=referenced_workflow_name,  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
+                        imported_flow_metadata=flow.metadata,
+                    )
+
+                    serialized_flow = SerializedFlowCommands(
+                        node_libraries_used=set(),
+                        flow_initialization_command=import_command,
+                        serialized_node_commands=[],
+                        serialized_connections=[],
+                        unique_parameter_uuid_to_values={},
+                        set_parameter_value_commands={},
+                        sub_flows_commands=[],
+                        referenced_workflows={referenced_workflow_name},  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
+                    )
                     sub_flow_commands.append(serialized_flow)
 
-                    # Merge in all child flow library details.
-                    node_libraries_in_use.union(serialized_flow.node_libraries_used)
+                    # Add this referenced workflow to our accumulation
+                    referenced_workflows_in_use.add(referenced_workflow_name)  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
+                else:
+                    # For standalone sub-flows, use the existing recursive serialization
+                    with GriptapeNodes.ContextManager().flow(flow=flow):
+                        child_flow_request = SerializeFlowToCommandsRequest()
+                        child_flow_result = GriptapeNodes().handle_request(child_flow_request)
+                        if not isinstance(child_flow_result, SerializeFlowToCommandsResultSuccess):
+                            details = f"Attempted to serialize parent flow '{flow_name}'. Failed while serializing child flow '{child_flow}'."
+                            logger.error(details)
+                            return SerializeFlowToCommandsResultFailure()
+                        serialized_flow = child_flow_result.serialized_flow_commands
+                        sub_flow_commands.append(serialized_flow)
+
+                        # Merge in all child flow library details.
+                        node_libraries_in_use.union(serialized_flow.node_libraries_used)
+
+                        # Merge in all child flow referenced workflows.
+                        referenced_workflows_in_use.union(serialized_flow.referenced_workflows)
 
         serialized_flow = SerializedFlowCommands(
-            create_flow_command=create_flow_request,
+            flow_initialization_command=create_flow_request,
             serialized_node_commands=serialized_node_commands,
             serialized_connections=create_connection_commands,
             unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
             set_parameter_value_commands=set_parameter_value_commands_per_node,
             sub_flows_commands=sub_flow_commands,
             node_libraries_used=node_libraries_in_use,
+            referenced_workflows=referenced_workflows_in_use,
         )
         details = f"Successfully serialized Flow '{flow_name}' into commands."
         result = SerializeFlowToCommandsResultSuccess(serialized_flow_commands=serialized_flow)
@@ -1257,7 +1415,7 @@ class FlowManager:
 
     def on_deserialize_flow_from_commands(self, request: DeserializeFlowFromCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (I am big and complicated and have a lot of negative edge-cases)
         # Do we want to create a NEW Flow to deserialize into, or use the one in the Current Context?
-        if request.serialized_flow_commands.create_flow_command is None:
+        if request.serialized_flow_commands.flow_initialization_command is None:
             if GriptapeNodes.ContextManager().has_current_flow():
                 flow = GriptapeNodes.ContextManager().get_current_flow()
                 flow_name = flow.name
@@ -1267,18 +1425,32 @@ class FlowManager:
                 return DeserializeFlowFromCommandsResultFailure()
         else:
             # Issue the creation command first.
-            create_flow_request = request.serialized_flow_commands.create_flow_command
-            create_flow_result = GriptapeNodes.handle_request(create_flow_request)
-            if not isinstance(create_flow_result, CreateFlowResultSuccess):
-                details = f"Attempted to deserialize a serialized set of Flow Creation commands. Failed to create flow '{create_flow_request.flow_name}'."
-                logger.error(details)
-                return DeserializeFlowFromCommandsResultFailure()
+            flow_initialization_command = request.serialized_flow_commands.flow_initialization_command
+            flow_initialization_result = GriptapeNodes.handle_request(flow_initialization_command)
+
+            # Handle different types of creation commands
+            match flow_initialization_command:
+                case CreateFlowRequest():
+                    if not isinstance(flow_initialization_result, CreateFlowResultSuccess):
+                        details = f"Attempted to deserialize a serialized set of Flow Creation commands. Failed to create flow '{flow_initialization_command.flow_name}'."
+                        logger.error(details)
+                        return DeserializeFlowFromCommandsResultFailure()
+                    flow_name = flow_initialization_result.flow_name
+                case ImportWorkflowAsReferencedSubFlowRequest():
+                    if not isinstance(flow_initialization_result, ImportWorkflowAsReferencedSubFlowResultSuccess):
+                        details = f"Attempted to deserialize a serialized set of Flow Creation commands. Failed to import workflow '{flow_initialization_command.workflow_name}'."
+                        logger.error(details)
+                        return DeserializeFlowFromCommandsResultFailure()
+                    flow_name = flow_initialization_result.created_flow_name
+                case _:
+                    details = f"Attempted to deserialize Flow Creation commands with unknown command type: {type(flow_initialization_command).__name__}."
+                    logger.error(details)
+                    return DeserializeFlowFromCommandsResultFailure()
 
             # Adopt the newly-created flow as our current context.
-            flow_name = create_flow_result.flow_name
             flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(flow_name, ControlFlow)
             if flow is None:
-                details = f"Attempted to deserialize a serialized set of Flow Creation commands. Failed to create flow '{create_flow_request.flow_name}'."
+                details = f"Attempted to deserialize a serialized set of Flow Creation commands. Failed to find created flow '{flow_name}'."
                 logger.error(details)
                 return DeserializeFlowFromCommandsResultFailure()
             GriptapeNodes.ContextManager().push_flow(flow=flow)

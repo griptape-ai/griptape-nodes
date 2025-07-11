@@ -1,9 +1,10 @@
 import logging
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from rich.console import Console
 
@@ -17,6 +18,14 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 console = Console()
 logger = logging.getLogger("griptape_nodes")
+
+
+class DiskSpaceInfo(NamedTuple):
+    """Disk space information in bytes."""
+
+    total: int
+    used: int
+    free: int
 
 
 class OSManager:
@@ -129,3 +138,63 @@ class OSManager:
         except Exception as e:
             logger.error("Exception occurred when trying to open file: %s", type(e).__name__)
             return OpenAssociatedFileResultFailure()
+
+    @staticmethod
+    def get_disk_space_info(path: Path) -> DiskSpaceInfo:
+        """Get disk space information for a given path.
+
+        Args:
+            path: The path to check disk space for.
+
+        Returns:
+            DiskSpaceInfo with total, used, and free disk space in bytes.
+        """
+        stat = shutil.disk_usage(path)
+        return DiskSpaceInfo(total=stat.total, used=stat.used, free=stat.free)
+
+    @staticmethod
+    def check_available_disk_space(path: Path, required_gb: float) -> bool:
+        """Check if there is sufficient disk space available.
+
+        Args:
+            path: The path to check disk space for.
+            required_gb: The minimum disk space required in GB.
+
+        Returns:
+            True if sufficient space is available, False otherwise.
+        """
+        try:
+            disk_info = OSManager.get_disk_space_info(path)
+            required_bytes = int(required_gb * 1024 * 1024 * 1024)  # Convert GB to bytes
+            return disk_info.free >= required_bytes  # noqa: TRY300
+        except OSError:
+            return False
+
+    @staticmethod
+    def format_disk_space_error(path: Path, exception: Exception | None = None) -> str:
+        """Format a user-friendly disk space error message.
+
+        Args:
+            path: The path where the disk space issue occurred.
+            exception: The original exception, if any.
+
+        Returns:
+            A formatted error message with disk space information.
+        """
+        try:
+            disk_info = OSManager.get_disk_space_info(path)
+            free_gb = disk_info.free / (1024**3)
+            used_gb = disk_info.used / (1024**3)
+            total_gb = disk_info.total / (1024**3)
+
+            error_msg = f"Insufficient disk space at {path}. "
+            error_msg += f"Available: {free_gb:.2f} GB, Used: {used_gb:.2f} GB, Total: {total_gb:.2f} GB. "
+
+            if exception:
+                error_msg += f"Error: {exception}"
+            else:
+                error_msg += "Please free up disk space and try again."
+
+            return error_msg  # noqa: TRY300
+        except OSError:
+            return f"Disk space error at {path}. Unable to retrieve disk space information."

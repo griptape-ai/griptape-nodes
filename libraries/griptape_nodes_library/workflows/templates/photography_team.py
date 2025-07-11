@@ -4,20 +4,19 @@
 # [tool.griptape-nodes]
 # name = "photography_team"
 # schema_version = "0.4.0"
-# engine_version_created_with = "0.39.0"
-# node_libraries_referenced = [["Griptape Nodes Library", "0.39.0"]]
-# is_griptape_provided = true
+# engine_version_created_with = "0.41.0"
+# node_libraries_referenced = [["Griptape Nodes Library", "0.41.0"]]
 # description = "A team of experts develop a prompt."
 # image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/libraries/griptape_nodes_library/workflows/templates/thumbnail_photography_team.webp"
+# is_griptape_provided = true
 # is_template = true
 # creation_date = 2025-05-01T00:00:00.000000+00:00
-# last_modified_date = 2025-05-17T06:40:00.145097+12:00
+# last_modified_date = 2025-07-07T13:38:23.074102-07:00
 #
 # ///
 
 import pickle
-
-from griptape_nodes.node_library.library_registry import NodeMetadata
+from griptape_nodes.node_library.library_registry import IconVariant, NodeMetadata
 from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
 from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest
 from griptape_nodes.retained_mode.events.library_events import (
@@ -43,7 +42,7 @@ if (
 context_manager = GriptapeNodes.ContextManager()
 
 if not context_manager.has_current_workflow():
-    context_manager.push_workflow(workflow_name="photography_team_new")
+    context_manager.push_workflow(workflow_name="photography_team_1")
 
 """
 1. We've collated all of the unique parameter values into a dictionary so that we do not have to duplicate them.
@@ -54,77 +53,78 @@ if not context_manager.has_current_workflow():
    would be difficult to serialize.
 """
 top_level_unique_values_dict = {
-    "b20b6f8b-e01c-4f89-96e1-80f9c092b6e4": pickle.loads(
+    "50559f0c-cc50-46f9-ab4a-027f6855d089": pickle.loads(
         b'\x80\x04\x95\xbd\x01\x00\x00\x00\x00\x00\x00X\xb6\x01\x00\x00This workflow serves as the lesson material for the tutorial located at:\n\nhttps://docs.griptapenodes.com/en/stable/ftue/04_photography_team/FTUE_04_photography_team/\n\nThe concepts covered are:\n\n- Incorporating key upgrades available to agents:\n    - Rulesets to define and manage agent behaviors\n    - Tools to give agents more abilities\n- Converting agents into tools\n- Creating and orchestrating a team of "experts" with specific roles\n\x94.'
     ),
-    "e54613ac-3be5-4dc6-a7c8-9be8181249fe": pickle.loads(
+    "dd62ec46-eb64-4a76-860b-e55e6006328e": pickle.loads(
         b'\x80\x04\x95F\x00\x00\x00\x00\x00\x00\x00\x8cBGood job. You\'ve completed our "Getting Started" set of tutorials!\x94.'
     ),
-    "acf60b14-6db3-464b-b868-81c2456900cb": pickle.loads(
+    "8c6b814e-eb4a-465d-a36b-a6f4c84f40fa": pickle.loads(
         b"\x80\x04\x95\x0b\x00\x00\x00\x00\x00\x00\x00\x8c\x07gpt-4.1\x94."
     ),
-    "dddbac95-d3d6-4064-ab88-a001a62aea23": pickle.loads(b"\x80\x04]\x94."),
-    "21c7f153-13aa-4c0a-976f-1b1e1fed6266": pickle.loads(b"\x80\x04]\x94."),
-    "38b74ba3-2993-470e-892c-d466ff0f59ba": pickle.loads(b"\x80\x04\x89."),
-    "8dcae506-4127-496d-a024-821221e366c5": pickle.loads(
+    "f34765e1-6033-48a2-b524-17508ba1255f": pickle.loads(b"\x80\x04]\x94."),
+    "462a7a05-3a64-499f-80f9-2b8b2c774d4a": pickle.loads(b"\x80\x04]\x94."),
+    "eb55823c-e1fc-45c4-8c06-153487ce9b7e": pickle.loads(b"\x80\x04\x89."),
+    "7125b5c4-b527-4840-9047-116c20a4ef79": pickle.loads(
         b"\x80\x04\x95\x13\x00\x00\x00\x00\x00\x00\x00\x8c\x0fCinematographer\x94."
     ),
-    "ff2647c3-a694-416d-b09b-44c52d971194": pickle.loads(
+    "60c89258-eabb-4b29-b54b-2ef8d028c92a": pickle.loads(
         b"\x80\x04\x95)\x00\x00\x00\x00\x00\x00\x00\x8c%This agent understands cinematography\x94."
     ),
-    "03388e53-199a-4b40-a230-18113e567340": pickle.loads(b"\x80\x04]\x94."),
-    "35cbc3e6-8433-4084-a4bc-a47d12183e7e": pickle.loads(b"\x80\x04]\x94."),
-    "e660cb89-9835-4c2c-bc93-e09f19fc4dbf": pickle.loads(
+    "4d557289-1b11-4529-a880-4c2c324f1a7e": pickle.loads(b"\x80\x04]\x94."),
+    "485b1f4b-8b09-4b7a-9da1-b73d79602415": pickle.loads(b"\x80\x04]\x94."),
+    "bee7921f-1c3a-4ee9-ad60-bb90c6cfd534": pickle.loads(
         b"\x80\x04\x95\x12\x00\x00\x00\x00\x00\x00\x00\x8c\x0eColor_Theorist\x94."
     ),
-    "fb5e6d87-5f3a-4be3-8bc1-a84a86c1c4b1": pickle.loads(
+    "f8f5b675-a8a4-4961-b4f9-b77cb448bd7a": pickle.loads(
         b"\x80\x04\x954\x00\x00\x00\x00\x00\x00\x00\x8c0This agent can be used to ensure the best colors\x94."
     ),
-    "bd211a92-eaeb-40a6-b630-dabeff9ee172": pickle.loads(b"\x80\x04]\x94."),
-    "ab26282f-f4de-4a92-8eee-825b71360e33": pickle.loads(b"\x80\x04]\x94."),
-    "6ace4b72-2824-455d-a5ba-5de61deb0c3e": pickle.loads(
+    "1b116d00-1d98-47bc-a36d-ba2c90f87655": pickle.loads(b"\x80\x04]\x94."),
+    "84e9ecd5-698d-4c92-9b32-6964b1de605d": pickle.loads(b"\x80\x04]\x94."),
+    "e716264c-0b9c-4375-b4fa-f31929b831d0": pickle.loads(
         b"\x80\x04\x95\x15\x00\x00\x00\x00\x00\x00\x00\x8c\x11Detail_Enthusiast\x94."
     ),
-    "1992fe77-4bbf-4599-b5f8-1a6c36895c2b": pickle.loads(
+    "9e4eecf6-6f4c-4ef7-a83f-dadb4b46e674": pickle.loads(
         b"\x80\x04\x95n\x00\x00\x00\x00\x00\x00\x00\x8cjThis agent is into the fine details of an image. Use it to make sure descriptions are specific and unique.\x94."
     ),
-    "715b8861-eaeb-4bb9-a682-1e71226cc1f8": pickle.loads(b"\x80\x04]\x94."),
-    "36c8b764-fb47-4697-947b-2371aad8df8c": pickle.loads(b"\x80\x04]\x94."),
-    "2d107f31-7776-4eb7-9e79-2b65930712d0": pickle.loads(
+    "8ffb7d4b-cb19-4925-a583-d44334c85eca": pickle.loads(b"\x80\x04]\x94."),
+    "1a26d39d-6d7b-453e-8e09-3532cf279e3d": pickle.loads(b"\x80\x04]\x94."),
+    "1dca05e9-6a8a-48a9-be86-fcc5663867e1": pickle.loads(
         b"\x80\x04\x95\x1f\x00\x00\x00\x00\x00\x00\x00\x8c\x1bImage_Generation_Specialist\x94."
     ),
-    "ecfa18d1-3ae8-451c-add3-1a97db88eb2b": pickle.loads(
+    "dca8785d-e06b-4bda-880f-4e019075194e": pickle.loads(
         b'\x80\x04\x95\x9a\x00\x00\x00\x00\x00\x00\x00\x8c\x96Use all the tools at your disposal to create a spectacular image generation prompt about "a skateboarding lion", that is no longer than 500 characters\x94.'
     ),
-    "66d8e4a3-fe34-4948-8d82-db85586ae21f": pickle.loads(b"\x80\x04]\x94."),
-    "a024aea0-0c99-4792-97f1-300867710602": pickle.loads(
+    "6ba38b58-84d0-4eed-8692-e1c11f1cfa66": pickle.loads(b"\x80\x04\x95\x06\x00\x00\x00\x00\x00\x00\x00]\x94]\x94a."),
+    "2ac988b7-e121-4a24-a554-8d473fefebb5": pickle.loads(b"\x80\x04]\x94."),
+    "5947f900-1451-41b2-8c28-8eaa5d25c14d": pickle.loads(
         b"\x80\x04\x95\x1d\x00\x00\x00\x00\x00\x00\x00\x8c\x19Detail_Enthusiast Ruleset\x94."
     ),
-    "97ba7f16-6044-424b-b402-925ef60c353d": pickle.loads(
+    "626d052c-badc-4085-af28-dfec5d6a5ea9": pickle.loads(
         b'\x80\x04\x95\xa3\x01\x00\x00\x00\x00\x00\x00X\x9c\x01\x00\x00You care about the unique details and specific descriptions of items.\nWhen describing things, call out specific details and don\'t be generic. Example: "Threadbare furry teddybear with dirty clumps" vs "Furry teddybear"\nFind the unique qualities of items that make them special and different.\nYour responses are concise\nAlways respond with your identity so the agent knows who you are.\nKeep your responses brief.\n\x94.'
     ),
-    "c2ecb3c1-72e8-4a3c-ab22-743bef2f20c4": pickle.loads(
+    "8b158f82-84a2-4755-a6c5-1565ff735bbc": pickle.loads(
         b"\x80\x04\x95\x1b\x00\x00\x00\x00\x00\x00\x00\x8c\x17Cinematographer Ruleset\x94."
     ),
-    "be355baf-f684-412d-9b48-8333e357c55d": pickle.loads(
+    "bfd78fa7-b507-4a26-9943-b0031359c345": pickle.loads(
         b"\x80\x04\x95\xf0\x02\x00\x00\x00\x00\x00\x00X\xe9\x02\x00\x00You identify as a cinematographer\nThe main subject of the image should be well framed\nIf no environment is specified, set the image in a location that will evoke a deep and meaningful connection to the viewer.\nYou care deeply about light, shadow, color, and composition\nWhen coming up with image prompts, you always specify the position of the camera, the lens, and the color\nYou are specific about the technical details of a shot.\nYou like to add atmosphere to your shots, so you include depth of field, haze, dust particles in the air close to and far away from camera, and the way lighting reacts with each item.\nYour responses are brief and concise\nAlways respond with your identity so the agent knows who you are.\nKeep your responses brief.\x94."
     ),
-    "8c9a50e2-0d18-47a2-98e2-52cc5dd0e4f3": pickle.loads(
+    "26c1e501-3c89-4ed1-858a-2b234dbcc972": pickle.loads(
         b"\x80\x04\x95\x1a\x00\x00\x00\x00\x00\x00\x00\x8c\x16Color_Theorist Ruleset\x94."
     ),
-    "544b3629-42cd-429e-96aa-9517cf52530d": pickle.loads(
+    "0b087ec4-e53a-4790-90cf-b91f81b74a1f": pickle.loads(
         b"\x80\x04\x95'\x01\x00\x00\x00\x00\x00\x00X \x01\x00\x00You identify as an expert in color theory\nYou have a deep understanding of how color impacts one's psychological outlook\nYou are a fan of non-standard colors\nYour responses are brief and concise\nAlways respond with your identity  so the agent knows who you are.\nKeep your responses brief.\x94."
     ),
-    "9ff03863-7757-4f5b-aa15-2acafbbb4515": pickle.loads(
+    "3e052675-0612-4219-8c4f-8ddac002e217": pickle.loads(
         b"\x80\x04\x95'\x00\x00\x00\x00\x00\x00\x00\x8c#Image_Generation_Specialist Ruleset\x94."
     ),
-    "132a6511-3d73-46d8-a61e-7a7f32237089": pickle.loads(
+    "fb8a3f91-ee96-4c60-a32d-82935697bf22": pickle.loads(
         b"\x80\x04\x95Q\x02\x00\x00\x00\x00\x00\x00XJ\x02\x00\x00You are an expert in creating prompts for image generation engines\nYou use the latest knowledge available to you to generate the best prompts.\nYou create prompts that are direct and succinct and you understand they need to be under 800 characters long\nAlways include the following: subject, attributes of subject, visual characteristics of the image, film grain, camera angle, lighting, art style, color scheme, surrounding environment, camera used (ex: Nikon d850 film stock, polaroid, etc).\nAlways respond with your identity so the agent knows who you are.\nKeep your responses brief.\n\x94."
     ),
-    "d5bc0a5d-922a-4722-8c93-50ae5d023193": pickle.loads(
+    "0b96adbc-38f6-46b9-9f65-38cf677b4b28": pickle.loads(
         b"\x80\x04\x95\x0f\x00\x00\x00\x00\x00\x00\x00\x8c\x0bAgent Rules\x94."
     ),
-    "bff4d87b-7069-4c44-a39d-3ece298df4b3": pickle.loads(
+    "b8d54b19-b81b-4107-9528-e07797ffb39e": pickle.loads(
         b"\x80\x04\x95\xac\x02\x00\x00\x00\x00\x00\x00X\xa5\x02\x00\x00You are creating a prompt for an image generation engine.\nYou have access to topic experts in their respective fields\nWork with the experts to get the results you need\nYou facilitate communication between them.\nIf they ask for feedback, you can provide it.\nAsk the Image_Generation_Specialist for the final prompt.\nOutput only the final image generation prompt. Do not wrap in markdown context.\nKeep your responses brief.\nIMPORTANT: Always ensure image generation prompts are completely free of sexual, violent, hateful, or politically divisive content. When in doubt, err on the side of caution and choose wholesome, neutral themes that would be appropriate for all audiences.\x94."
     ),
 }
@@ -958,7 +958,7 @@ with GriptapeNodes.ContextManager().node(node0_name):
         SetParameterValueRequest(
             parameter_name="note",
             node_name=node0_name,
-            value=top_level_unique_values_dict["b20b6f8b-e01c-4f89-96e1-80f9c092b6e4"],
+            value=top_level_unique_values_dict["50559f0c-cc50-46f9-ab4a-027f6855d089"],
             initial_setup=True,
             is_output=False,
         )
@@ -969,7 +969,7 @@ with GriptapeNodes.ContextManager().node(node1_name):
         SetParameterValueRequest(
             parameter_name="note",
             node_name=node1_name,
-            value=top_level_unique_values_dict["e54613ac-3be5-4dc6-a7c8-9be8181249fe"],
+            value=top_level_unique_values_dict["dd62ec46-eb64-4a76-860b-e55e6006328e"],
             initial_setup=True,
             is_output=False,
         )
@@ -980,7 +980,7 @@ with GriptapeNodes.ContextManager().node(node3_name):
         SetParameterValueRequest(
             parameter_name="model",
             node_name=node3_name,
-            value=top_level_unique_values_dict["acf60b14-6db3-464b-b868-81c2456900cb"],
+            value=top_level_unique_values_dict["8c6b814e-eb4a-465d-a36b-a6f4c84f40fa"],
             initial_setup=True,
             is_output=False,
         )
@@ -989,7 +989,7 @@ with GriptapeNodes.ContextManager().node(node3_name):
         SetParameterValueRequest(
             parameter_name="tools",
             node_name=node3_name,
-            value=top_level_unique_values_dict["dddbac95-d3d6-4064-ab88-a001a62aea23"],
+            value=top_level_unique_values_dict["f34765e1-6033-48a2-b524-17508ba1255f"],
             initial_setup=True,
             is_output=False,
         )
@@ -998,7 +998,7 @@ with GriptapeNodes.ContextManager().node(node3_name):
         SetParameterValueRequest(
             parameter_name="rulesets",
             node_name=node3_name,
-            value=top_level_unique_values_dict["21c7f153-13aa-4c0a-976f-1b1e1fed6266"],
+            value=top_level_unique_values_dict["462a7a05-3a64-499f-80f9-2b8b2c774d4a"],
             initial_setup=True,
             is_output=False,
         )
@@ -1007,7 +1007,7 @@ with GriptapeNodes.ContextManager().node(node3_name):
         SetParameterValueRequest(
             parameter_name="include_details",
             node_name=node3_name,
-            value=top_level_unique_values_dict["38b74ba3-2993-470e-892c-d466ff0f59ba"],
+            value=top_level_unique_values_dict["eb55823c-e1fc-45c4-8c06-153487ce9b7e"],
             initial_setup=True,
             is_output=False,
         )
@@ -1018,7 +1018,7 @@ with GriptapeNodes.ContextManager().node(node4_name):
         SetParameterValueRequest(
             parameter_name="name",
             node_name=node4_name,
-            value=top_level_unique_values_dict["8dcae506-4127-496d-a024-821221e366c5"],
+            value=top_level_unique_values_dict["7125b5c4-b527-4840-9047-116c20a4ef79"],
             initial_setup=True,
             is_output=False,
         )
@@ -1027,7 +1027,7 @@ with GriptapeNodes.ContextManager().node(node4_name):
         SetParameterValueRequest(
             parameter_name="description",
             node_name=node4_name,
-            value=top_level_unique_values_dict["ff2647c3-a694-416d-b09b-44c52d971194"],
+            value=top_level_unique_values_dict["60c89258-eabb-4b29-b54b-2ef8d028c92a"],
             initial_setup=True,
             is_output=False,
         )
@@ -1036,7 +1036,7 @@ with GriptapeNodes.ContextManager().node(node4_name):
         SetParameterValueRequest(
             parameter_name="off_prompt",
             node_name=node4_name,
-            value=top_level_unique_values_dict["38b74ba3-2993-470e-892c-d466ff0f59ba"],
+            value=top_level_unique_values_dict["eb55823c-e1fc-45c4-8c06-153487ce9b7e"],
             initial_setup=True,
             is_output=False,
         )
@@ -1047,7 +1047,7 @@ with GriptapeNodes.ContextManager().node(node6_name):
         SetParameterValueRequest(
             parameter_name="model",
             node_name=node6_name,
-            value=top_level_unique_values_dict["acf60b14-6db3-464b-b868-81c2456900cb"],
+            value=top_level_unique_values_dict["8c6b814e-eb4a-465d-a36b-a6f4c84f40fa"],
             initial_setup=True,
             is_output=False,
         )
@@ -1056,7 +1056,7 @@ with GriptapeNodes.ContextManager().node(node6_name):
         SetParameterValueRequest(
             parameter_name="tools",
             node_name=node6_name,
-            value=top_level_unique_values_dict["03388e53-199a-4b40-a230-18113e567340"],
+            value=top_level_unique_values_dict["4d557289-1b11-4529-a880-4c2c324f1a7e"],
             initial_setup=True,
             is_output=False,
         )
@@ -1065,7 +1065,7 @@ with GriptapeNodes.ContextManager().node(node6_name):
         SetParameterValueRequest(
             parameter_name="rulesets",
             node_name=node6_name,
-            value=top_level_unique_values_dict["35cbc3e6-8433-4084-a4bc-a47d12183e7e"],
+            value=top_level_unique_values_dict["485b1f4b-8b09-4b7a-9da1-b73d79602415"],
             initial_setup=True,
             is_output=False,
         )
@@ -1074,7 +1074,7 @@ with GriptapeNodes.ContextManager().node(node6_name):
         SetParameterValueRequest(
             parameter_name="include_details",
             node_name=node6_name,
-            value=top_level_unique_values_dict["38b74ba3-2993-470e-892c-d466ff0f59ba"],
+            value=top_level_unique_values_dict["eb55823c-e1fc-45c4-8c06-153487ce9b7e"],
             initial_setup=True,
             is_output=False,
         )
@@ -1085,7 +1085,7 @@ with GriptapeNodes.ContextManager().node(node7_name):
         SetParameterValueRequest(
             parameter_name="name",
             node_name=node7_name,
-            value=top_level_unique_values_dict["e660cb89-9835-4c2c-bc93-e09f19fc4dbf"],
+            value=top_level_unique_values_dict["bee7921f-1c3a-4ee9-ad60-bb90c6cfd534"],
             initial_setup=True,
             is_output=False,
         )
@@ -1094,7 +1094,7 @@ with GriptapeNodes.ContextManager().node(node7_name):
         SetParameterValueRequest(
             parameter_name="description",
             node_name=node7_name,
-            value=top_level_unique_values_dict["fb5e6d87-5f3a-4be3-8bc1-a84a86c1c4b1"],
+            value=top_level_unique_values_dict["f8f5b675-a8a4-4961-b4f9-b77cb448bd7a"],
             initial_setup=True,
             is_output=False,
         )
@@ -1103,7 +1103,7 @@ with GriptapeNodes.ContextManager().node(node7_name):
         SetParameterValueRequest(
             parameter_name="off_prompt",
             node_name=node7_name,
-            value=top_level_unique_values_dict["38b74ba3-2993-470e-892c-d466ff0f59ba"],
+            value=top_level_unique_values_dict["eb55823c-e1fc-45c4-8c06-153487ce9b7e"],
             initial_setup=True,
             is_output=False,
         )
@@ -1114,7 +1114,7 @@ with GriptapeNodes.ContextManager().node(node9_name):
         SetParameterValueRequest(
             parameter_name="model",
             node_name=node9_name,
-            value=top_level_unique_values_dict["acf60b14-6db3-464b-b868-81c2456900cb"],
+            value=top_level_unique_values_dict["8c6b814e-eb4a-465d-a36b-a6f4c84f40fa"],
             initial_setup=True,
             is_output=False,
         )
@@ -1123,7 +1123,7 @@ with GriptapeNodes.ContextManager().node(node9_name):
         SetParameterValueRequest(
             parameter_name="tools",
             node_name=node9_name,
-            value=top_level_unique_values_dict["bd211a92-eaeb-40a6-b630-dabeff9ee172"],
+            value=top_level_unique_values_dict["1b116d00-1d98-47bc-a36d-ba2c90f87655"],
             initial_setup=True,
             is_output=False,
         )
@@ -1132,7 +1132,7 @@ with GriptapeNodes.ContextManager().node(node9_name):
         SetParameterValueRequest(
             parameter_name="rulesets",
             node_name=node9_name,
-            value=top_level_unique_values_dict["ab26282f-f4de-4a92-8eee-825b71360e33"],
+            value=top_level_unique_values_dict["84e9ecd5-698d-4c92-9b32-6964b1de605d"],
             initial_setup=True,
             is_output=False,
         )
@@ -1141,7 +1141,7 @@ with GriptapeNodes.ContextManager().node(node9_name):
         SetParameterValueRequest(
             parameter_name="include_details",
             node_name=node9_name,
-            value=top_level_unique_values_dict["38b74ba3-2993-470e-892c-d466ff0f59ba"],
+            value=top_level_unique_values_dict["eb55823c-e1fc-45c4-8c06-153487ce9b7e"],
             initial_setup=True,
             is_output=False,
         )
@@ -1152,7 +1152,7 @@ with GriptapeNodes.ContextManager().node(node10_name):
         SetParameterValueRequest(
             parameter_name="name",
             node_name=node10_name,
-            value=top_level_unique_values_dict["6ace4b72-2824-455d-a5ba-5de61deb0c3e"],
+            value=top_level_unique_values_dict["e716264c-0b9c-4375-b4fa-f31929b831d0"],
             initial_setup=True,
             is_output=False,
         )
@@ -1161,7 +1161,7 @@ with GriptapeNodes.ContextManager().node(node10_name):
         SetParameterValueRequest(
             parameter_name="description",
             node_name=node10_name,
-            value=top_level_unique_values_dict["1992fe77-4bbf-4599-b5f8-1a6c36895c2b"],
+            value=top_level_unique_values_dict["9e4eecf6-6f4c-4ef7-a83f-dadb4b46e674"],
             initial_setup=True,
             is_output=False,
         )
@@ -1170,7 +1170,7 @@ with GriptapeNodes.ContextManager().node(node10_name):
         SetParameterValueRequest(
             parameter_name="off_prompt",
             node_name=node10_name,
-            value=top_level_unique_values_dict["38b74ba3-2993-470e-892c-d466ff0f59ba"],
+            value=top_level_unique_values_dict["eb55823c-e1fc-45c4-8c06-153487ce9b7e"],
             initial_setup=True,
             is_output=False,
         )
@@ -1181,7 +1181,7 @@ with GriptapeNodes.ContextManager().node(node12_name):
         SetParameterValueRequest(
             parameter_name="model",
             node_name=node12_name,
-            value=top_level_unique_values_dict["acf60b14-6db3-464b-b868-81c2456900cb"],
+            value=top_level_unique_values_dict["8c6b814e-eb4a-465d-a36b-a6f4c84f40fa"],
             initial_setup=True,
             is_output=False,
         )
@@ -1190,7 +1190,7 @@ with GriptapeNodes.ContextManager().node(node12_name):
         SetParameterValueRequest(
             parameter_name="tools",
             node_name=node12_name,
-            value=top_level_unique_values_dict["715b8861-eaeb-4bb9-a682-1e71226cc1f8"],
+            value=top_level_unique_values_dict["8ffb7d4b-cb19-4925-a583-d44334c85eca"],
             initial_setup=True,
             is_output=False,
         )
@@ -1199,7 +1199,7 @@ with GriptapeNodes.ContextManager().node(node12_name):
         SetParameterValueRequest(
             parameter_name="rulesets",
             node_name=node12_name,
-            value=top_level_unique_values_dict["36c8b764-fb47-4697-947b-2371aad8df8c"],
+            value=top_level_unique_values_dict["1a26d39d-6d7b-453e-8e09-3532cf279e3d"],
             initial_setup=True,
             is_output=False,
         )
@@ -1208,7 +1208,7 @@ with GriptapeNodes.ContextManager().node(node12_name):
         SetParameterValueRequest(
             parameter_name="include_details",
             node_name=node12_name,
-            value=top_level_unique_values_dict["38b74ba3-2993-470e-892c-d466ff0f59ba"],
+            value=top_level_unique_values_dict["eb55823c-e1fc-45c4-8c06-153487ce9b7e"],
             initial_setup=True,
             is_output=False,
         )
@@ -1219,7 +1219,7 @@ with GriptapeNodes.ContextManager().node(node13_name):
         SetParameterValueRequest(
             parameter_name="name",
             node_name=node13_name,
-            value=top_level_unique_values_dict["2d107f31-7776-4eb7-9e79-2b65930712d0"],
+            value=top_level_unique_values_dict["1dca05e9-6a8a-48a9-be86-fcc5663867e1"],
             initial_setup=True,
             is_output=False,
         )
@@ -1228,7 +1228,7 @@ with GriptapeNodes.ContextManager().node(node13_name):
         SetParameterValueRequest(
             parameter_name="description",
             node_name=node13_name,
-            value=top_level_unique_values_dict["1992fe77-4bbf-4599-b5f8-1a6c36895c2b"],
+            value=top_level_unique_values_dict["9e4eecf6-6f4c-4ef7-a83f-dadb4b46e674"],
             initial_setup=True,
             is_output=False,
         )
@@ -1237,7 +1237,7 @@ with GriptapeNodes.ContextManager().node(node13_name):
         SetParameterValueRequest(
             parameter_name="off_prompt",
             node_name=node13_name,
-            value=top_level_unique_values_dict["38b74ba3-2993-470e-892c-d466ff0f59ba"],
+            value=top_level_unique_values_dict["eb55823c-e1fc-45c4-8c06-153487ce9b7e"],
             initial_setup=True,
             is_output=False,
         )
@@ -1248,7 +1248,7 @@ with GriptapeNodes.ContextManager().node(node14_name):
         SetParameterValueRequest(
             parameter_name="model",
             node_name=node14_name,
-            value=top_level_unique_values_dict["acf60b14-6db3-464b-b868-81c2456900cb"],
+            value=top_level_unique_values_dict["8c6b814e-eb4a-465d-a36b-a6f4c84f40fa"],
             initial_setup=True,
             is_output=False,
         )
@@ -1257,7 +1257,16 @@ with GriptapeNodes.ContextManager().node(node14_name):
         SetParameterValueRequest(
             parameter_name="prompt",
             node_name=node14_name,
-            value=top_level_unique_values_dict["ecfa18d1-3ae8-451c-add3-1a97db88eb2b"],
+            value=top_level_unique_values_dict["dca8785d-e06b-4bda-880f-4e019075194e"],
+            initial_setup=True,
+            is_output=False,
+        )
+    )
+    GriptapeNodes.handle_request(
+        SetParameterValueRequest(
+            parameter_name="tools",
+            node_name=node14_name,
+            value=top_level_unique_values_dict["6ba38b58-84d0-4eed-8692-e1c11f1cfa66"],
             initial_setup=True,
             is_output=False,
         )
@@ -1266,7 +1275,7 @@ with GriptapeNodes.ContextManager().node(node14_name):
         SetParameterValueRequest(
             parameter_name="rulesets",
             node_name=node14_name,
-            value=top_level_unique_values_dict["66d8e4a3-fe34-4948-8d82-db85586ae21f"],
+            value=top_level_unique_values_dict["2ac988b7-e121-4a24-a554-8d473fefebb5"],
             initial_setup=True,
             is_output=False,
         )
@@ -1275,7 +1284,7 @@ with GriptapeNodes.ContextManager().node(node14_name):
         SetParameterValueRequest(
             parameter_name="include_details",
             node_name=node14_name,
-            value=top_level_unique_values_dict["38b74ba3-2993-470e-892c-d466ff0f59ba"],
+            value=top_level_unique_values_dict["eb55823c-e1fc-45c4-8c06-153487ce9b7e"],
             initial_setup=True,
             is_output=False,
         )
@@ -1286,7 +1295,7 @@ with GriptapeNodes.ContextManager().node(node15_name):
         SetParameterValueRequest(
             parameter_name="enhance_prompt",
             node_name=node15_name,
-            value=top_level_unique_values_dict["38b74ba3-2993-470e-892c-d466ff0f59ba"],
+            value=top_level_unique_values_dict["eb55823c-e1fc-45c4-8c06-153487ce9b7e"],
             initial_setup=True,
             is_output=False,
         )
@@ -1297,7 +1306,7 @@ with GriptapeNodes.ContextManager().node(node17_name):
         SetParameterValueRequest(
             parameter_name="name",
             node_name=node17_name,
-            value=top_level_unique_values_dict["a024aea0-0c99-4792-97f1-300867710602"],
+            value=top_level_unique_values_dict["5947f900-1451-41b2-8c28-8eaa5d25c14d"],
             initial_setup=True,
             is_output=False,
         )
@@ -1306,7 +1315,7 @@ with GriptapeNodes.ContextManager().node(node17_name):
         SetParameterValueRequest(
             parameter_name="rules",
             node_name=node17_name,
-            value=top_level_unique_values_dict["97ba7f16-6044-424b-b402-925ef60c353d"],
+            value=top_level_unique_values_dict["626d052c-badc-4085-af28-dfec5d6a5ea9"],
             initial_setup=True,
             is_output=False,
         )
@@ -1317,7 +1326,7 @@ with GriptapeNodes.ContextManager().node(node18_name):
         SetParameterValueRequest(
             parameter_name="name",
             node_name=node18_name,
-            value=top_level_unique_values_dict["c2ecb3c1-72e8-4a3c-ab22-743bef2f20c4"],
+            value=top_level_unique_values_dict["8b158f82-84a2-4755-a6c5-1565ff735bbc"],
             initial_setup=True,
             is_output=False,
         )
@@ -1326,7 +1335,7 @@ with GriptapeNodes.ContextManager().node(node18_name):
         SetParameterValueRequest(
             parameter_name="rules",
             node_name=node18_name,
-            value=top_level_unique_values_dict["be355baf-f684-412d-9b48-8333e357c55d"],
+            value=top_level_unique_values_dict["bfd78fa7-b507-4a26-9943-b0031359c345"],
             initial_setup=True,
             is_output=False,
         )
@@ -1337,7 +1346,7 @@ with GriptapeNodes.ContextManager().node(node19_name):
         SetParameterValueRequest(
             parameter_name="name",
             node_name=node19_name,
-            value=top_level_unique_values_dict["8c9a50e2-0d18-47a2-98e2-52cc5dd0e4f3"],
+            value=top_level_unique_values_dict["26c1e501-3c89-4ed1-858a-2b234dbcc972"],
             initial_setup=True,
             is_output=False,
         )
@@ -1346,7 +1355,7 @@ with GriptapeNodes.ContextManager().node(node19_name):
         SetParameterValueRequest(
             parameter_name="rules",
             node_name=node19_name,
-            value=top_level_unique_values_dict["544b3629-42cd-429e-96aa-9517cf52530d"],
+            value=top_level_unique_values_dict["0b087ec4-e53a-4790-90cf-b91f81b74a1f"],
             initial_setup=True,
             is_output=False,
         )
@@ -1357,7 +1366,7 @@ with GriptapeNodes.ContextManager().node(node20_name):
         SetParameterValueRequest(
             parameter_name="name",
             node_name=node20_name,
-            value=top_level_unique_values_dict["9ff03863-7757-4f5b-aa15-2acafbbb4515"],
+            value=top_level_unique_values_dict["3e052675-0612-4219-8c4f-8ddac002e217"],
             initial_setup=True,
             is_output=False,
         )
@@ -1366,7 +1375,7 @@ with GriptapeNodes.ContextManager().node(node20_name):
         SetParameterValueRequest(
             parameter_name="rules",
             node_name=node20_name,
-            value=top_level_unique_values_dict["132a6511-3d73-46d8-a61e-7a7f32237089"],
+            value=top_level_unique_values_dict["fb8a3f91-ee96-4c60-a32d-82935697bf22"],
             initial_setup=True,
             is_output=False,
         )
@@ -1377,7 +1386,7 @@ with GriptapeNodes.ContextManager().node(node21_name):
         SetParameterValueRequest(
             parameter_name="name",
             node_name=node21_name,
-            value=top_level_unique_values_dict["d5bc0a5d-922a-4722-8c93-50ae5d023193"],
+            value=top_level_unique_values_dict["0b96adbc-38f6-46b9-9f65-38cf677b4b28"],
             initial_setup=True,
             is_output=False,
         )
@@ -1386,7 +1395,7 @@ with GriptapeNodes.ContextManager().node(node21_name):
         SetParameterValueRequest(
             parameter_name="rules",
             node_name=node21_name,
-            value=top_level_unique_values_dict["bff4d87b-7069-4c44-a39d-3ece298df4b3"],
+            value=top_level_unique_values_dict["b8d54b19-b81b-4107-9528-e07797ffb39e"],
             initial_setup=True,
             is_output=False,
         )

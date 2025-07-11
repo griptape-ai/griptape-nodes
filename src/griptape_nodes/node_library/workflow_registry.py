@@ -13,19 +13,19 @@ from griptape_nodes.utils.metaclasses import SingletonMeta
 
 
 class WorkflowMetadata(BaseModel):
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.4.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.6.0"
 
     name: str
     schema_version: str
     engine_version_created_with: str
     node_libraries_referenced: list[LibraryNameAndVersion]
+    workflows_referenced: list[str] | None = None
     description: str | None = None
     image: str | None = None
     is_griptape_provided: bool | None = False
     is_template: bool | None = False
     creation_date: datetime | None = Field(default=None)
     last_modified_date: datetime | None = Field(default=None)
-    published_workflow_id: str | None = Field(default=None)
 
 
 class WorkflowRegistry(metaclass=SingletonMeta):

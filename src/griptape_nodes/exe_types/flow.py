@@ -36,14 +36,16 @@ class ControlFlow:
     control_flow_machine: ControlFlowMachine
     single_node_resolution: bool
     flow_queue: Queue[BaseNode]
+    metadata: dict
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, metadata: dict | None = None) -> None:
         self.name = name
         self.connections = Connections()
         self.nodes = {}
         self.control_flow_machine = ControlFlowMachine(self)
         self.single_node_resolution = False
         self.flow_queue = Queue()
+        self.metadata = metadata or {}
 
     def add_node(self, node: BaseNode) -> None:
         self.nodes[node.name] = node

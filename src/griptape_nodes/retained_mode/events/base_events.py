@@ -12,9 +12,6 @@ from griptape.structures import Structure
 from griptape.tools import BaseTool
 from pydantic import BaseModel, Field
 
-from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
-from griptape_nodes.retained_mode.utils.session_persistence import SessionPersistence
-
 if TYPE_CHECKING:
     import builtins
 
@@ -31,6 +28,7 @@ class RequestPayload(Payload, ABC):
 
 
 # Result payload base class with abstract succeeded/failed methods, and indicator whether the current workflow was altered.
+@dataclass(kw_only=True)
 class ResultPayload(Payload, ABC):
     """Base class for all result payloads."""
 
@@ -65,6 +63,7 @@ class WorkflowNotAlteredMixin:
 
 
 # Success result payload abstract base class
+@dataclass(kw_only=True)
 class ResultPayloadSuccess(ResultPayload, ABC):
     """Abstract base class for success result payloads."""
 
@@ -78,8 +77,11 @@ class ResultPayloadSuccess(ResultPayload, ABC):
 
 
 # Failure result payload abstract base class
+@dataclass(kw_only=True)
 class ResultPayloadFailure(ResultPayload, ABC):
     """Abstract base class for failure result payloads."""
+
+    exception: Exception | None = None
 
     def succeeded(self) -> bool:
         """Returns False as this is a failure result.
@@ -108,31 +110,30 @@ A = TypeVar("A", bound=AppPayload)
 class BaseEvent(BaseModel, ABC):
     """Abstract base class for all events."""
 
-    # Keeping here instead of in GriptapeNodes to avoid circular import hell.
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/848
-    _session_id: ClassVar[str | None] = None
-    _engine_id: ClassVar[str | None] = None
+    # Instance fields for engine and session identification
+    engine_id: str | None = Field(default=None)
+    session_id: str | None = Field(default=None)
 
-    # Instance variables with a default_factory that references the class variable
-    engine_id: str | None = Field(default_factory=lambda: BaseEvent._engine_id)
-    session_id: str | None = Field(default_factory=lambda: BaseEvent._session_id)
+    def model_post_init(self, _context: Any) -> None:
+        """Post-initialization hook to auto-populate session_id and engine_id if not provided.
 
-    @classmethod
-    def initialize_engine_id(cls) -> None:
-        """Initialize the engine ID if not already set."""
-        if cls._engine_id is None:
-            persisted_engine_id = cls._engine_id = EngineIdentity.get_engine_id()
-            if persisted_engine_id:
-                cls._engine_id = persisted_engine_id
+        context: The context in which the model is being initialized.
 
-    @classmethod
-    def initialize_session_id(cls) -> None:
-        """Initialize the session ID from persisted storage if available."""
-        if cls._session_id is None:
-            # Check if there's a persisted session ID
-            persisted_session_id = SessionPersistence.get_persisted_session_id()
-            if persisted_session_id:
-                cls._session_id = persisted_session_id
+        """
+        # Auto-populate engine_id from class variable if not explicitly provided
+        if self.engine_id is None:
+            # Import here to avoid circular imports
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            self.engine_id = GriptapeNodes.EngineIdentityManager().initialize_engine_id()
+
+        # Auto-populate session_id from class variable if not explicitly provided
+        if self.session_id is None:
+            # Import here to avoid circular imports
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            # Get current session ID
+            self.session_id = GriptapeNodes.SessionManager().get_saved_session_id()
 
     # Custom JSON encoder for the payload
     class Config:
@@ -202,6 +203,8 @@ class EventRequest(BaseEvent, Generic[P]):
     """Request event."""
 
     request: P
+    request_id: str | None = None
+    response_topic: str | None = None
 
     def __init__(self, **data) -> None:
         """Initialize an EventRequest, inferring the generic type if needed."""
@@ -257,7 +260,7 @@ class EventRequest(BaseEvent, Generic[P]):
             raise ValueError(msg)
 
         # Create the event instance with the payload
-        return cls(request=request_payload)
+        return cls(request=request_payload, **event_data)
 
 
 class EventResult(BaseEvent, Generic[P, R], ABC):
@@ -265,6 +268,8 @@ class EventResult(BaseEvent, Generic[P, R], ABC):
 
     request: P
     result: R
+    request_id: str | None = None
+    response_topic: str | None = None
     retained_mode: str | None = None
 
     def __init__(self, **data) -> None:
