@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from queue import Queue
 from typing import TYPE_CHECKING, cast
 
 from griptape.events import EventBus
@@ -10,10 +11,11 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterContainer,
     ParameterMode,
+    ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
-from griptape_nodes.machines.control_flow import CompleteState
+from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState, StartLoopNode, StartNode
+from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -124,6 +126,11 @@ class FlowManager:
     _flow_to_referenced_workflow_name: dict[ControlFlow, str]
     _connections: Connections
 
+    # Global execution state (moved from individual ControlFlows)
+    _global_flow_queue: Queue[BaseNode]
+    _global_control_flow_machine: ControlFlowMachine | None
+    _global_single_node_resolution: bool
+
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(CreateFlowRequest, self.on_create_flow_request)
         event_manager.assign_manager_to_request_type(DeleteFlowRequest, self.on_delete_flow_request)
@@ -161,6 +168,11 @@ class FlowManager:
         self._name_to_parent_name = {}
         self._flow_to_referenced_workflow_name = {}
         self._connections = Connections()
+
+        # Initialize global execution state
+        self._global_flow_queue = Queue[BaseNode]()
+        self._global_control_flow_machine = None  # Will be initialized when first flow starts
+        self._global_single_node_resolution = False
 
     def get_connections(self) -> Connections:
         """Get the connections instance."""
@@ -432,7 +444,7 @@ class FlowManager:
             logger.error(details)
             result = DeleteFlowResultFailure()
             return result
-        if self.check_for_existing_running_flow(flow):
+        if self.check_for_existing_running_flow():
             result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow.name))
             if not result.succeeded():
                 details = f"Attempted to delete flow '{flow_name}'. Failed because running flow could not cancel."
@@ -514,7 +526,7 @@ class FlowManager:
             result = GetIsFlowRunningResultFailure()
             return result
         try:
-            is_running = self.check_for_existing_running_flow(flow)
+            is_running = self.check_for_existing_running_flow()
         except Exception:
             details = f"Error while trying to get status of '{request.flow_name}'."
             logger.error(details)
@@ -999,7 +1011,7 @@ class FlowManager:
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[err])
         # Check to see if the flow is already running.
-        if self.check_for_existing_running_flow(flow):
+        if self.check_for_existing_running_flow():
             details = "Cannot start flow. Flow is already running."
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[])
@@ -1012,7 +1024,7 @@ class FlowManager:
                 logger.error(details)
                 return StartFlowResultFailure(validation_exceptions=[])
             # lets get the first control node in the flow!
-            start_node = flow.get_start_node_from_node(flow_node)
+            start_node = self.get_start_node_from_node(flow, flow_node)
             # if the start is not the node provided, set a breakpoint at the stop (we're running up until there)
             if not start_node:
                 details = f"Start node for node with name {flow_node_name} does not exist"
@@ -1023,7 +1035,7 @@ class FlowManager:
         else:
             # we wont hit this if we dont have a request id, our requests always have nodes
             # If there is a request, reinitialize the queue
-            flow.get_start_node_queue()  # initialize the start flow queue!
+            self.get_start_node_queue(flow)  # initialize the start flow queue!
             start_node = None
         # Run Validation before starting a flow
         result = self.on_validate_flow_dependencies_request(
@@ -1097,8 +1109,7 @@ class FlowManager:
 
             return CancelFlowResultFailure()
         try:
-            flow = self.get_flow_by_name(flow_name)
-            self.cancel_flow_run(flow)
+            self.cancel_flow_run()
         except Exception as e:
             details = f"Could not cancel flow execution. Exception: {e}"
             logger.error(details)
@@ -1157,8 +1168,8 @@ class FlowManager:
         except Exception as e:
             # We REALLY don't want to fail here, else we'll take the whole engine down
             try:
-                if self.check_for_existing_running_flow(flow):
-                    self.cancel_flow_run(flow)
+                if self.check_for_existing_running_flow():
+                    self.cancel_flow_run()
             except Exception as e_inner:
                 details = f"Could not cancel flow execution. Exception: {e_inner}"
                 logger.error(details)
@@ -1605,43 +1616,62 @@ class FlowManager:
         return FlushParameterChangesResultSuccess()
 
     def start_flow(self, flow: ControlFlow, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
-        if self.check_for_existing_running_flow(flow):
+        if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
             errormsg = "This workflow is already in progress. Please wait for the current process to finish before starting again."
             raise RuntimeError(errormsg)
 
         if start_node is None:
-            if flow.flow_queue.empty():
+            if self._global_flow_queue.empty():
                 errormsg = "No Flow exists. You must create at least one control connection."
                 raise RuntimeError(errormsg)
-            start_node = flow.flow_queue.get()
+            start_node = self._global_flow_queue.get()
+
+        # Initialize global control flow machine if needed
+        if self._global_control_flow_machine is None:
+            self._global_control_flow_machine = ControlFlowMachine(flow)
 
         try:
-            flow.control_flow_machine.start_flow(start_node, debug_mode)
-            flow.flow_queue.task_done()
+            self._global_control_flow_machine.start_flow(start_node, debug_mode)
+            self._global_flow_queue.task_done()
         except Exception:
-            if self.check_for_existing_running_flow(flow):
-                self.cancel_flow_run(flow)
+            if self.check_for_existing_running_flow():
+                self.cancel_flow_run()
             raise
 
-    def check_for_existing_running_flow(self, flow: ControlFlow) -> bool:
-        if flow.control_flow_machine._current_state is not CompleteState and flow.control_flow_machine._current_state:
+    def check_for_existing_running_flow(self) -> bool:
+        if self._global_control_flow_machine is None:
+            return False
+        if (
+            self._global_control_flow_machine._current_state is not CompleteState
+            and self._global_control_flow_machine._current_state
+        ):
             # Flow already exists in progress
             return True
         return bool(
-            not flow.control_flow_machine._context.resolution_machine.is_complete()
-            and flow.control_flow_machine._context.resolution_machine.is_started()
+            not self._global_control_flow_machine._context.resolution_machine.is_complete()
+            and self._global_control_flow_machine._context.resolution_machine.is_started()
         )
 
-    def cancel_flow_run(self, flow: ControlFlow) -> None:
-        if not self.check_for_existing_running_flow(flow):
+    def cancel_flow_run(self) -> None:
+        if not self.check_for_existing_running_flow():
             errormsg = "Flow has not yet been started. Cannot cancel flow that hasn't begun."
             raise RuntimeError(errormsg)
-        flow.clear_flow_queue()
-        flow.control_flow_machine.reset_machine()
+        self._global_flow_queue.queue.clear()
+        if self._global_control_flow_machine is not None:
+            self._global_control_flow_machine.reset_machine()
         # Reset control flow machine
-        flow.single_node_resolution = False
+        self._global_single_node_resolution = False
         logger.debug("Cancelling flow run")
+
+    def reset_global_execution_state(self) -> None:
+        """Reset all global execution state - useful when clearing all workflows."""
+        self._global_flow_queue.queue.clear()
+        if self._global_control_flow_machine is not None:
+            self._global_control_flow_machine.reset_machine()
+        self._global_control_flow_machine = None
+        self._global_single_node_resolution = False
+        logger.debug("Reset global execution state")
 
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent()))
@@ -1649,14 +1679,17 @@ class FlowManager:
 
     def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         # Set that we are only working on one node right now! no other stepping allowed
-        if self.check_for_existing_running_flow(flow):
+        if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
             errormsg = f"This workflow is already in progress. Please wait for the current process to finish before starting {node.name} again."
             raise RuntimeError(errormsg)
-        flow.single_node_resolution = True
+        self._global_single_node_resolution = True
+        # Initialize global control flow machine if needed
+        if self._global_control_flow_machine is None:
+            self._global_control_flow_machine = ControlFlowMachine(flow)
         # Get the node resolution machine for the current flow!
-        flow.control_flow_machine._context.current_node = node
-        resolution_machine = flow.control_flow_machine._context.resolution_machine
+        self._global_control_flow_machine._context.current_node = node
+        resolution_machine = self._global_control_flow_machine._context.resolution_machine
         # Set debug mode
         resolution_machine.change_debug_mode(debug_mode)
         # Resolve the node.
@@ -1664,84 +1697,323 @@ class FlowManager:
         resolution_machine.resolve_node(node)
         # decide if we can change it back to normal flow mode!
         if resolution_machine.is_complete():
-            flow.single_node_resolution = False
-            flow.control_flow_machine._context.current_node = None
+            self._global_single_node_resolution = False
+            self._global_control_flow_machine._context.current_node = None
 
     def single_execution_step(self, flow: ControlFlow, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
-        if not self.check_for_existing_running_flow(flow):
-            if flow.flow_queue.empty():
+        if not self.check_for_existing_running_flow():
+            if self._global_flow_queue.empty():
                 errormsg = "Flow has not yet been started. Cannot step while no flow has begun."
                 raise RuntimeError(errormsg)
-            start_node = flow.flow_queue.get()
-            flow.control_flow_machine.start_flow(start_node, debug_mode=True)
-            start_node = flow.flow_queue.task_done()
+            start_node = self._global_flow_queue.get()
+            if self._global_control_flow_machine is None:
+                self._global_control_flow_machine = ControlFlowMachine(flow)
+            self._global_control_flow_machine.start_flow(start_node, debug_mode=True)
+            self._global_flow_queue.task_done()
             return
-        flow.control_flow_machine.granular_step(change_debug_mode)
-        resolution_machine = flow.control_flow_machine._context.resolution_machine
-        if flow.single_node_resolution:
-            resolution_machine = flow.control_flow_machine._context.resolution_machine
-            if resolution_machine.is_complete():
-                flow.single_node_resolution = False
+        if self._global_control_flow_machine is not None:
+            self._global_control_flow_machine.granular_step(change_debug_mode)
+            resolution_machine = self._global_control_flow_machine._context.resolution_machine
+            if self._global_single_node_resolution:
+                resolution_machine = self._global_control_flow_machine._context.resolution_machine
+                if resolution_machine.is_complete():
+                    self._global_single_node_resolution = False
 
     def single_node_step(self, flow: ControlFlow) -> None:
         # It won't call single_node_step without an existing flow running from US.
-        if not self.check_for_existing_running_flow(flow):
-            if flow.flow_queue.empty():
+        if not self.check_for_existing_running_flow():
+            if self._global_flow_queue.empty():
                 errormsg = "Flow has not yet been started. Cannot step while no flow has begun."
                 raise RuntimeError(errormsg)
-            start_node = flow.flow_queue.get()
-            flow.control_flow_machine.start_flow(start_node, debug_mode=True)
-            start_node = flow.flow_queue.task_done()
+            start_node = self._global_flow_queue.get()
+            if self._global_control_flow_machine is None:
+                self._global_control_flow_machine = ControlFlowMachine(flow)
+            self._global_control_flow_machine.start_flow(start_node, debug_mode=True)
+            self._global_flow_queue.task_done()
             return
         # Step over a whole node
-        if flow.single_node_resolution:
+        if self._global_single_node_resolution:
             msg = "Cannot step through the Control Flow in Single Node Execution"
             raise RuntimeError(msg)
-        flow.control_flow_machine.node_step()
+        if self._global_control_flow_machine is not None:
+            self._global_control_flow_machine.node_step()
         # Start the next resolution step now please.
-        if not self.check_for_existing_running_flow(flow) and not flow.flow_queue.empty():
-            start_node = flow.flow_queue.get()
-            flow.flow_queue.task_done()
-            flow.control_flow_machine.start_flow(start_node, debug_mode=True)
+        if not self.check_for_existing_running_flow() and not self._global_flow_queue.empty():
+            start_node = self._global_flow_queue.get()
+            self._global_flow_queue.task_done()
+            if self._global_control_flow_machine is not None:
+                self._global_control_flow_machine.start_flow(start_node, debug_mode=True)
 
     def continue_executing(self, flow: ControlFlow) -> None:
-        if not self.check_for_existing_running_flow(flow):
-            if flow.flow_queue.empty():
+        if not self.check_for_existing_running_flow():
+            if self._global_flow_queue.empty():
                 errormsg = "Flow has not yet been started. Cannot step while no flow has begun."
                 raise RuntimeError(errormsg)
-            start_node = flow.flow_queue.get()
-            flow.flow_queue.task_done()
-            flow.control_flow_machine.start_flow(start_node, debug_mode=False)
+            start_node = self._global_flow_queue.get()
+            self._global_flow_queue.task_done()
+            if self._global_control_flow_machine is None:
+                self._global_control_flow_machine = ControlFlowMachine(flow)
+            self._global_control_flow_machine.start_flow(start_node, debug_mode=False)
             return
         # Turn all debugging to false and continue on
-        flow.control_flow_machine.change_debug_mode(False)
-        if flow.single_node_resolution:
-            if flow.control_flow_machine._context.resolution_machine.is_complete():
-                flow.single_node_resolution = False
+        if self._global_control_flow_machine is not None:
+            self._global_control_flow_machine.change_debug_mode(False)
+            if self._global_single_node_resolution:
+                if self._global_control_flow_machine._context.resolution_machine.is_complete():
+                    self._global_single_node_resolution = False
+                else:
+                    self._global_control_flow_machine._context.resolution_machine.update()
             else:
-                flow.control_flow_machine._context.resolution_machine.update()
-        else:
-            flow.control_flow_machine.node_step()
+                self._global_control_flow_machine.node_step()
         # Now it is done executing. make sure it's actually done?
-        if not self.check_for_existing_running_flow(flow) and not flow.flow_queue.empty():
-            start_node = flow.flow_queue.get()
-            flow.flow_queue.task_done()
-            flow.control_flow_machine.start_flow(start_node, debug_mode=False)
+        if not self.check_for_existing_running_flow() and not self._global_flow_queue.empty():
+            start_node = self._global_flow_queue.get()
+            self._global_flow_queue.task_done()
+            if self._global_control_flow_machine is not None:
+                self._global_control_flow_machine.start_flow(start_node, debug_mode=False)
 
     def unresolve_whole_flow(self, flow: ControlFlow) -> None:
         for node in flow.nodes.values():
             node.make_node_unresolved(current_states_to_trigger_change_event=None)
 
-    def flow_state(self, flow: ControlFlow) -> tuple[str | None, str | None]:
-        if not self.check_for_existing_running_flow(flow):
+    def flow_state(self, flow: ControlFlow) -> tuple[str | None, str | None]:  # noqa: ARG002
+        if not self.check_for_existing_running_flow():
             msg = "Flow hasn't started."
             raise RuntimeError(msg)
+        if self._global_control_flow_machine is None:
+            return None, None
         current_control_node = (
-            flow.control_flow_machine._context.current_node.name
-            if flow.control_flow_machine._context.current_node is not None
+            self._global_control_flow_machine._context.current_node.name
+            if self._global_control_flow_machine._context.current_node is not None
             else None
         )
-        focus_stack_for_node = flow.control_flow_machine._context.resolution_machine._context.focus_stack
+        focus_stack_for_node = self._global_control_flow_machine._context.resolution_machine._context.focus_stack
         current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
         return current_control_node, current_resolving_node
+
+    def get_start_node_from_node(self, flow: ControlFlow, node: BaseNode) -> BaseNode | None:
+        # backwards chain in control outputs.
+        if node not in flow.nodes.values():
+            return None
+        # Go back through incoming control connections to get the start node
+        curr_node = node
+        prev_node = self.get_prev_node(flow, curr_node)
+        # Fencepost loop - get the first previous node name and then we go
+        while prev_node:
+            curr_node = prev_node
+            prev_node = self.get_prev_node(flow, prev_node)
+        return curr_node
+
+    def get_prev_node(self, flow: ControlFlow, node: BaseNode) -> BaseNode | None:  # noqa: ARG002
+        connections = self.get_connections()
+        if node.name in connections.incoming_index:
+            parameters = connections.incoming_index[node.name]
+            for parameter_name in parameters:
+                parameter = node.get_parameter_by_name(parameter_name)
+                if parameter and ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
+                    # this is a control connection
+                    connection_ids = connections.incoming_index[node.name][parameter_name]
+                    for connection_id in connection_ids:
+                        connection = connections.connections[connection_id]
+                        return connection.get_source_node()
+        return None
+
+    def get_start_node_queue(self, flow: ControlFlow) -> Queue | None:  # noqa: ARG002, C901, PLR0912
+        # For cross-flow execution, we need to consider ALL nodes across ALL flows
+        # Clear and use the global flow queue
+        self._global_flow_queue.queue.clear()
+
+        # Get all flows and collect all nodes across all flows
+        all_flows = GriptapeNodes.ObjectManager().get_filtered_subset(type=ControlFlow)
+        all_nodes = []
+        for current_flow in all_flows.values():
+            all_nodes.extend(current_flow.nodes.values())
+
+        # if no nodes across all flows, no execution possible
+        if not all_nodes:
+            return None
+
+        data_nodes = []
+        valid_data_nodes = []
+        start_nodes = []
+        control_nodes = []
+        for node in all_nodes:
+            # if it's a start node, start here! Return the first one!
+            if isinstance(node, StartNode):
+                start_nodes.append(node)
+                continue
+            # no start nodes. let's find the first control node.
+            # if it's a control node, there could be a flow.
+            control_param = False
+            for parameter in node.parameters:
+                if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
+                    control_param = True
+                    break
+            if not control_param:
+                # saving this for later
+                data_nodes.append(node)
+                # If this node doesn't have a control connection..
+                continue
+
+            cn_mgr = self.get_connections()
+            # check if it has an incoming connection. If it does, it's not a start node
+            has_control_connection = False
+            if node.name in cn_mgr.incoming_index:
+                for param_name in cn_mgr.incoming_index[node.name]:
+                    param = node.get_parameter_by_name(param_name)
+                    if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
+                        # there is a control connection coming in
+                        has_control_connection = True
+                        break
+            # if there is a connection coming in, isn't a start.
+            if has_control_connection and not isinstance(node, StartLoopNode):
+                continue
+            # Does it have an outgoing connection?
+            if node.name in cn_mgr.outgoing_index:
+                # If one of the outgoing connections is control, add it. otherwise don't.
+                for param_name in cn_mgr.outgoing_index[node.name]:
+                    param = node.get_parameter_by_name(param_name)
+                    if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
+                        control_nodes.append(node)
+                        break
+            else:
+                control_nodes.append(node)
+
+        # If we've gotten to this point, there are no control parameters
+        # Let's return a data node that has no OUTGOING data connections!
+        for node in data_nodes:
+            cn_mgr = self.get_connections()
+            # check if it has an outgoing connection. We don't want it to (that means we get the most resolution)
+            if node.name not in cn_mgr.outgoing_index:
+                valid_data_nodes.append(node)
+        # ok now - populate the global flow queue
+        for node in start_nodes:
+            self._global_flow_queue.put(node)
+        for node in control_nodes:
+            self._global_flow_queue.put(node)
+        for node in valid_data_nodes:
+            self._global_flow_queue.put(node)
+
+        return self._global_flow_queue
+
+    def get_connected_input_from_node(self, flow: ControlFlow, node: BaseNode) -> list[tuple[BaseNode, Parameter]]:  # noqa: ARG002
+        global_connections = self.get_connections()
+        connections = []
+        if node.name in global_connections.incoming_index:
+            connection_ids = [
+                item for value_list in global_connections.incoming_index[node.name].values() for item in value_list
+            ]
+            for connection_id in connection_ids:
+                connection = global_connections.connections[connection_id]
+                connections.append((connection.source_node, connection.source_parameter))
+        return connections
+
+    def get_connected_output_from_node(self, flow: ControlFlow, node: BaseNode) -> list[tuple[BaseNode, Parameter]]:  # noqa: ARG002
+        global_connections = self.get_connections()
+        connections = []
+        if node.name in global_connections.outgoing_index:
+            connection_ids = [
+                item for value_list in global_connections.outgoing_index[node.name].values() for item in value_list
+            ]
+            for connection_id in connection_ids:
+                connection = global_connections.connections[connection_id]
+                connections.append((connection.target_node, connection.target_parameter))
+        return connections
+
+    def get_connected_input_parameters(
+        self,
+        flow: ControlFlow,  # noqa: ARG002
+        node: BaseNode,
+        param: Parameter,
+    ) -> list[tuple[BaseNode, Parameter]]:
+        global_connections = self.get_connections()
+        connections = []
+        if node.name in global_connections.incoming_index:
+            incoming_params = global_connections.incoming_index[node.name]
+            if param.name in incoming_params:
+                for connection_id in incoming_params[param.name]:
+                    connection = global_connections.connections[connection_id]
+                    connections.append((connection.source_node, connection.source_parameter))
+        return connections
+
+    def get_connected_output_parameters(
+        self,
+        flow: ControlFlow,  # noqa: ARG002
+        node: BaseNode,
+        param: Parameter,
+    ) -> list[tuple[BaseNode, Parameter]]:
+        return self._get_connected_output_parameters(node, param)
+
+    def get_connections_on_node(self, flow: ControlFlow, node: BaseNode) -> list[BaseNode] | None:  # noqa: ARG002
+        connections = self.get_connections()
+        # get all of the connection ids
+        connected_nodes = []
+        # Handle outgoing connections
+        if node.name in connections.outgoing_index:
+            outgoing_params = connections.outgoing_index[node.name]
+            outgoing_connection_ids = []
+            for connection_ids in outgoing_params.values():
+                outgoing_connection_ids = outgoing_connection_ids + connection_ids
+            for connection_id in outgoing_connection_ids:
+                connection = connections.connections[connection_id]
+                if connection.source_node not in connected_nodes:
+                    connected_nodes.append(connection.target_node)
+        # Handle incoming connections
+        if node.name in connections.incoming_index:
+            incoming_params = connections.incoming_index[node.name]
+            incoming_connection_ids = []
+            for connection_ids in incoming_params.values():
+                incoming_connection_ids = incoming_connection_ids + connection_ids
+            for connection_id in incoming_connection_ids:
+                connection = connections.connections[connection_id]
+                if connection.source_node not in connected_nodes:
+                    connected_nodes.append(connection.source_node)
+        # Return all connected nodes. No duplicates
+        return connected_nodes
+
+    def get_all_connected_nodes(self, flow: ControlFlow, node: BaseNode) -> list[BaseNode]:
+        discovered = {}
+        processed = {}
+        queue = Queue()
+        queue.put(node)
+        discovered[node] = True
+        while not queue.empty():
+            curr_node = queue.get()
+            processed[curr_node] = True
+            next_nodes = self.get_connections_on_node(flow, curr_node)
+            if next_nodes:
+                for next_node in next_nodes:
+                    if next_node not in discovered:
+                        discovered[next_node] = True
+                        queue.put(next_node)
+        return list(processed.keys())
+
+    def get_node_dependencies(self, flow: ControlFlow, node: BaseNode) -> list[BaseNode]:
+        """Get all upstream nodes that the given node depends on.
+
+        This method performs a breadth-first search starting from the given node and working backwards through its non-control input connections to identify all nodes that must run before this node can be resolved.
+        It ignores control connections, since we're only focusing on node dependencies.
+
+        Args:
+            flow (ControlFlow): The flow containing the node
+            node (BaseNode): The node to find dependencies for
+
+        Returns:
+            list[BaseNode]: A list of all nodes that the given node depends on, including the node itself (as the first element)
+        """
+        node_list = [node]
+        node_queue = Queue()
+        node_queue.put(node)
+        while not node_queue.empty():
+            curr_node = node_queue.get()
+            input_connections = self.get_connected_input_from_node(flow, curr_node)
+            if input_connections:
+                for input_node, input_parameter in input_connections:
+                    if (
+                        ParameterTypeBuiltin.CONTROL_TYPE.value != input_parameter.output_type
+                        and input_node not in node_list
+                    ):
+                        node_list.append(input_node)
+                        node_queue.put(input_node)
+        return node_list

@@ -396,11 +396,11 @@ class NodeManager:
             This method also clears the flow queue regardless of whether cancellation occurred,
             to ensure the specified node is not processed in the future.
         """
-        if parent_flow.check_for_existing_running_flow():
+        if GriptapeNodes.FlowManager().check_for_existing_running_flow():
             # get the current node executing / resolving
             # if it's in connected nodes, cancel flow.
             # otherwise, leave it.
-            control_node_name, resolving_node_name = parent_flow.flow_state()
+            control_node_name, resolving_node_name = GriptapeNodes.FlowManager().flow_state(parent_flow)
             connected_nodes = parent_flow.get_all_connected_nodes(node)
             cancelled = False
             if control_node_name is not None:
@@ -1753,7 +1753,7 @@ class NodeManager:
             details = f'Failed to fetch parent flow for "{node_name}"'
             logger.error(details)
             return ResolveNodeResultFailure(validation_exceptions=[])
-        if flow.check_for_existing_running_flow():
+        if GriptapeNodes.FlowManager().check_for_existing_running_flow():
             details = f"Failed to resolve from node '{node_name}'. Flow is already running."
             logger.error(details)
             return ResolveNodeResultFailure(validation_exceptions=[])
@@ -1784,7 +1784,7 @@ class NodeManager:
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[e])
         try:
-            flow.resolve_singular_node(node, debug_mode)
+            GriptapeNodes.FlowManager().resolve_singular_node(flow, node, debug_mode)
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             logger.error(details)

@@ -44,10 +44,10 @@ class ControlFlowContext:
             node = GriptapeNodes.FlowManager().get_connections().get_connected_node(self.current_node, output_parameter)
             if node is not None:
                 node, _ = node
-            # Continue Execution to the next node that needs to be executed.
-            elif not self.flow.flow_queue.empty():
-                node = self.flow.flow_queue.get()
-                self.flow.flow_queue.task_done()
+            # Continue Execution to the next node that needs to be executed using global flow queue
+            elif not GriptapeNodes.FlowManager()._global_flow_queue.empty():
+                node = GriptapeNodes.FlowManager()._global_flow_queue.get()
+                GriptapeNodes.FlowManager()._global_flow_queue.task_done()
             return node
         return None
 
@@ -126,9 +126,12 @@ class NextNodeState(State):
                     )
                 )
             )
-        elif not context.flow.flow_queue.empty():
-            next_node = context.flow.flow_queue.get()
-            context.flow.flow_queue.task_done()
+        else:
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            if not GriptapeNodes.FlowManager()._global_flow_queue.empty():
+                next_node = GriptapeNodes.FlowManager()._global_flow_queue.get()
+                GriptapeNodes.FlowManager()._global_flow_queue.task_done()
         # The parameter that will be evaluated next
         if next_node is None:
             # If no node attached

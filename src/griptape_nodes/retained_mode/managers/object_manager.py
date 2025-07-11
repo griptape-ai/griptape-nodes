@@ -100,7 +100,7 @@ class ObjectManager:
         logger.log(level=log_level, msg=details)
         return RenameObjectResultSuccess(final_name=final_name)
 
-    def on_clear_all_object_state_request(self, request: ClearAllObjectStateRequest) -> ResultPayload:
+    def on_clear_all_object_state_request(self, request: ClearAllObjectStateRequest) -> ResultPayload:  # noqa: C901
         if not request.i_know_what_im_doing:
             logger.warning(
                 "Attempted to clear all object state and delete everything. Failed because they didn't know what they were doing."
@@ -109,13 +109,21 @@ class ObjectManager:
         # Let's try and clear it all.
         # Cancel any running flows.
         flows = self.get_filtered_subset(type=ControlFlow)
-        for flow_name, flow in flows.items():
-            if flow.check_for_existing_running_flow():
+        for flow_name in flows:
+            if GriptapeNodes.FlowManager().check_for_existing_running_flow():
                 result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow_name))
                 if not result.succeeded():
                     details = f"Attempted to clear all object state and delete everything. Failed because running flow '{flow_name}' could not cancel."
                     logger.error(details)
                     return ClearAllObjectStateResultFailure()
+
+        try:
+            # Reset global execution state first to eliminate all references before deletion
+            GriptapeNodes.FlowManager().reset_global_execution_state()
+        except Exception as e:
+            details = f"Attempted to reset global execution state. Failed with exception: {e}"
+            logger.error(details)
+            return ClearAllObjectStateResultFailure()
 
         try:
             # Delete the existing flows, which will clear all nodes and connections.

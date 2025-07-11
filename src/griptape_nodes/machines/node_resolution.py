@@ -275,7 +275,9 @@ class ExecuteNodeState(State):
             current_focus.process_generator = None
             current_focus.scheduled_value = None
 
-            context.flow.cancel_flow_run()
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            GriptapeNodes.FlowManager().cancel_flow_run()
 
             EventBus.publish_event(
                 ExecutionGriptapeNodeEvent(
@@ -325,7 +327,7 @@ class ExecuteNodeState(State):
                 )
             )
             # Pass the value through to the new nodes.
-            conn_output_nodes = context.flow.get_connected_output_parameters(current_node, parameter)
+            conn_output_nodes = GriptapeNodes.FlowManager().get_connected_output_parameters(context.flow, current_node, parameter)
             for target_node, target_parameter in conn_output_nodes:
                 GriptapeNodes.get_instance().handle_request(
                     SetParameterValueRequest(
