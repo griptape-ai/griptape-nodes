@@ -140,7 +140,7 @@ class AsyncRequestManager(Generic[T]):
     async def connect(self, token: str | None = None) -> None:
         """Connect to the WebSocket server."""
         from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
-        from griptape_nodes.retained_mode.utils.session_persistence import SessionPersistence
+        from griptape_nodes.retained_mode.managers.session_manager import SessionManager
 
         headers = {}
         if token:
@@ -154,7 +154,7 @@ class AsyncRequestManager(Generic[T]):
             logger.debug("🟢 WebSocket connection established: %s", self.connection_manager.websocket)
 
             self.engine_id = EngineIdentity.get_engine_id()
-            self.session_id = SessionPersistence.get_persisted_session_id()
+            self.session_id = SessionManager.get_saved_session_id()
             await self._subscribe_to_engine_and_session(self.connection_manager.websocket)
 
             # Start processing messages
