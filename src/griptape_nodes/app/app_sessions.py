@@ -494,8 +494,6 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
 
     This is used to notify the GUI that the app is ready to receive events.
     """
-    GriptapeNodes.EngineIdentityManager().initialize_engine_id()
-
     # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
     payload = app_events.AppInitializationComplete()
     app_event = AppEvent(payload=payload)

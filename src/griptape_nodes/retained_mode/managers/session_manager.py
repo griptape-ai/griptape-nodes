@@ -13,6 +13,7 @@ from pathlib import Path
 
 from xdg_base_dirs import xdg_state_home
 
+from griptape_nodes.retained_mode.events.base_events import BaseEvent
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -31,6 +32,7 @@ class SessionManager:
         Args:
             event_manager: The EventManager instance to use for event handling.
         """
+        BaseEvent._session_id = self._active_session_id
         if event_manager is not None:
             # Register event handlers here when session events are defined
             pass
@@ -197,6 +199,7 @@ class SessionManager:
 
         # Set as active session
         cls._active_session_id = session_id
+        BaseEvent._session_id = session_id
         logger.info("Saved and activated session: %s for engine: %s", session_id, engine_id)
 
     @classmethod
@@ -217,6 +220,7 @@ class SessionManager:
         if sessions:
             first_session_id = sessions[0].get("session_id")
             # Set as active for future calls
+            BaseEvent._session_id = first_session_id
             cls._active_session_id = first_session_id
             logger.debug("Retrieved first saved session as active: %s for engine: %s", first_session_id, engine_id)
             return first_session_id
@@ -228,6 +232,7 @@ class SessionManager:
         """Clear all saved session data for the current engine."""
         # Clear active session
         cls._active_session_id = None
+        BaseEvent._session_id = None
 
         engine_id = cls._get_current_engine_id()
         session_state_file = cls._get_session_state_file(engine_id)
