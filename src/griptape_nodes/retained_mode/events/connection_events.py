@@ -59,9 +59,22 @@ class DeleteConnectionResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class ListConnectionsForNodeRequest(RequestPayload):
+    """Gets the current connections for a node.
+
+    This includes both incoming and outgoing connections.
+
+    Args:
+        node_name (str): Name of the node to check.
+
+    Returns:
+        ResultPayload: Contains the connections for the node.
+
+    Example:
+        # List connections for a node
+        ListConnectionsForNodeRequest("my_node")
+    """
     # If node name is None, use the Current Context
     node_name: str | None = None
-
 
 @dataclass
 class IncomingConnection:

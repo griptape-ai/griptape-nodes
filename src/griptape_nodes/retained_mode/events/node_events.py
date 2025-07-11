@@ -81,6 +81,18 @@ class CreateNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class DeleteNodeRequest(RequestPayload):
+    """Deletes a node from the system.
+
+    Args:
+        node_name (str): Name of the node to delete.
+
+    Returns:
+        ResultPayload: Contains the result of the node deletion operation.
+
+    Example:
+        # Delete a node
+        DeleteNodeRequest("my_node")
+    """
     # If None is passed, assumes we're using the Node in the Current Context.
     node_name: str | None = None
 
@@ -100,6 +112,21 @@ class DeleteNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetNodeResolutionStateRequest(RequestPayload):
+    """Gets the current resolution state of a node.
+
+    The resolution state indicates whether a node has been successfully resolved
+    and is ready for execution.
+
+    Args:
+        node_name (str): Name of the node to check.
+
+    Returns:
+        ResultPayload: Contains the resolution state of the node.
+
+    Example:
+        # Check if a node is resolved
+        GetNodeResolutionStateRequest("my_node")
+    """
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 
@@ -119,6 +146,18 @@ class GetNodeResolutionStateResultFailure(WorkflowNotAlteredMixin, ResultPayload
 @dataclass
 @PayloadRegistry.register
 class ListParametersOnNodeRequest(RequestPayload):
+    """Lists all parameters associated with a node.
+
+    Args:
+        node (str): Name of the node to list parameters for.
+
+    Returns:
+        ResultPayload: Contains a list of parameter names.
+
+    Example:
+        # List all parameters on a node
+        ListParametersOnNodeRequest("my_node")
+    """
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 
@@ -138,6 +177,20 @@ class ListParametersOnNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 @dataclass
 @PayloadRegistry.register
 class GetNodeMetadataRequest(RequestPayload):
+    """Retrieves metadata associated with a node.
+
+    Node metadata can include UI position, display name, tags, and other custom properties.
+
+    Args:
+        node_name (str): Name of the node to get metadata for.
+
+    Returns:
+        ResultPayload: Contains the node's metadata.
+
+    Example:
+        # Get node metadata
+        GetNodeMetadataRequest("my_node")
+    """
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 
@@ -157,7 +210,23 @@ class GetNodeMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 @dataclass
 @PayloadRegistry.register
 class SetNodeMetadataRequest(RequestPayload):
-    metadata: dict
+    """Sets metadata for a node.
+
+    Args:
+        node_name (str): Name of the node to set metadata for.
+        metadata (dict): Dictionary containing the metadata to set.
+
+    Returns:
+        ResultPayload: Contains the result of the metadata update operation.
+
+    Example:
+        # Set node position
+        metadata = {
+            "position": {"x": 100, "y": 200}
+        }
+        SetNodeMetadataRequest("my_node", metadata)
+    """
+    metadata: dict[str, str]
     # If None is passed, assumes we're using the Node in the Current Context
     node_name: str | None = None
 
