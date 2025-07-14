@@ -3,6 +3,7 @@ from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
+    ResultDetails,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowNotAlteredMixin,
@@ -16,16 +17,23 @@ class GetConfigValueRequest(RequestPayload):
     category_and_key: str
 
 
-@dataclass
 @PayloadRegistry.register
 class GetConfigValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    value: Any
+    def __init__(self, value: Any, details: ResultDetails | str):
+        self.value = value
+        # Initialize the dataclass mixin first
+        WorkflowNotAlteredMixin.__init__(self)
+        # Then initialize the ResultPayload base class
+        ResultPayloadSuccess.__init__(self, details=details)
 
 
-@dataclass
 @PayloadRegistry.register
 class GetConfigValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    def __init__(self, details: ResultDetails | str):
+        # Initialize the dataclass mixin first
+        WorkflowNotAlteredMixin.__init__(self)
+        # Then initialize the ResultPayload base class
+        ResultPayloadFailure.__init__(self, details=details)
 
 
 @dataclass
@@ -35,13 +43,11 @@ class SetConfigValueRequest(RequestPayload):
     value: Any
 
 
-@dataclass
 @PayloadRegistry.register
 class SetConfigValueResultSuccess(ResultPayloadSuccess):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class SetConfigValueResultFailure(ResultPayloadFailure):
     pass
@@ -53,16 +59,23 @@ class GetConfigCategoryRequest(RequestPayload):
     category: str | None = None
 
 
-@dataclass
 @PayloadRegistry.register
 class GetConfigCategoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    contents: dict[str, Any]
+    def __init__(self, contents: dict[str, Any], details: ResultDetails | str):
+        self.contents = contents
+        # Initialize the dataclass mixin first
+        WorkflowNotAlteredMixin.__init__(self)
+        # Then initialize the ResultPayload base class
+        ResultPayloadSuccess.__init__(self, details=details)
 
 
-@dataclass
 @PayloadRegistry.register
 class GetConfigCategoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    def __init__(self, details: ResultDetails | str):
+        # Initialize the dataclass mixin first
+        WorkflowNotAlteredMixin.__init__(self)
+        # Then initialize the ResultPayload base class
+        ResultPayloadFailure.__init__(self, details=details)
 
 
 @dataclass
@@ -72,13 +85,11 @@ class SetConfigCategoryRequest(RequestPayload):
     category: str | None = None
 
 
-@dataclass
 @PayloadRegistry.register
 class SetConfigCategoryResultSuccess(ResultPayloadSuccess):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class SetConfigCategoryResultFailure(ResultPayloadFailure):
     pass
@@ -90,16 +101,23 @@ class GetConfigPathRequest(RequestPayload):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class GetConfigPathResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    config_path: str | None = None
+    def __init__(self, config_path: str | None = None, details: ResultDetails | str = "Success"):
+        self.config_path = config_path
+        # Initialize the dataclass mixin first
+        WorkflowNotAlteredMixin.__init__(self)
+        # Then initialize the ResultPayload base class
+        ResultPayloadSuccess.__init__(self, details=details)
 
 
-@dataclass
 @PayloadRegistry.register
 class GetConfigPathResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    def __init__(self, details: ResultDetails | str):
+        # Initialize the dataclass mixin first
+        WorkflowNotAlteredMixin.__init__(self)
+        # Then initialize the ResultPayload base class
+        ResultPayloadFailure.__init__(self, details=details)
 
 
 @dataclass
@@ -108,13 +126,11 @@ class ResetConfigRequest(RequestPayload):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class ResetConfigResultSuccess(ResultPayloadSuccess):
     pass
 
 
-@dataclass
 @PayloadRegistry.register
 class ResetConfigResultFailure(ResultPayloadFailure):
     pass
