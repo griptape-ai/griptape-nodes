@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from collections.abc import Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -33,6 +34,26 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 
 logger = logging.getLogger("griptape_nodes")
 
+# Directed Acyclic Graph
+class DAG:
+    def __init__(self):
+        self.graph = defaultdict(set)        # adjacency list
+        self.in_degree = defaultdict(int)    # number of unmet dependencies
+
+    def add_node(self, node):
+        self.graph[node]  # ensures node exists
+
+    def add_edge(self, from_node, to_node):
+        self.graph[from_node].add(to_node)
+        self.in_degree[to_node] += 1
+
+    def get_ready_nodes(self):
+        return [node for node in self.graph if self.in_degree[node] == 0]
+
+    def mark_processed(self, node):
+        for neighbor in self.graph[node]:
+            self.in_degree[neighbor] -= 1
+        self.in_degree[node] = -1  # Mark as done
 
 @dataclass
 class Focus:
