@@ -1,29 +1,37 @@
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-logger = logging.getLogger("pillow_nodes_library")
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+
+logger = logging.getLogger("griptape_nodes")
 
 
 class DirectoryManager:
-    """Utility class for managing directory size and cleaning up old files."""
+    """Manager for directory size management and cleanup operations."""
 
-    @staticmethod
-    def cleanup_directory_if_needed(directory_path: str) -> bool:
+    def __init__(self, config_manager: "ConfigManager") -> None:
+        """Initialize the DirectoryManager.
+
+        Args:
+            config_manager: The ConfigManager instance to use for accessing configuration.
+        """
+        self.config_manager = config_manager
+
+    def cleanup_directory_if_needed(self, directory_path: str, config_prefix: str = "advanced_media_library") -> bool:
         """Check directory size and cleanup old files if needed.
 
         Args:
             directory_path: Path to the directory to check and clean
+            config_prefix: Configuration prefix for the library (e.g., "advanced_media_library")
 
         Returns:
             True if cleanup was performed, False otherwise
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        config_manager = GriptapeNodes.ConfigManager()
-
-        # Get configuration values
-        max_size_mb = config_manager.get_config_value("advanced_media_library.max_directory_size_mb")
-        cleanup_enabled = config_manager.get_config_value("advanced_media_library.enable_directory_cleanup")
+        # Get configuration values with library prefix
+        max_size_mb = self.config_manager.get_config_value(f"{config_prefix}.max_directory_size_mb")
+        cleanup_enabled = self.config_manager.get_config_value(f"{config_prefix}.enable_directory_cleanup")
 
         # Default values if not configured
         if max_size_mb is None:
@@ -35,7 +43,7 @@ class DirectoryManager:
             return False
 
         # Calculate current directory size
-        current_size_mb = DirectoryManager._get_directory_size_mb(directory_path)
+        current_size_mb = self._get_directory_size_mb(directory_path)
 
         if current_size_mb <= max_size_mb:
             return False
@@ -48,10 +56,9 @@ class DirectoryManager:
         )
 
         # Perform cleanup
-        return DirectoryManager._cleanup_old_files(directory_path, max_size_mb)
+        return self._cleanup_old_files(directory_path, max_size_mb)
 
-    @staticmethod
-    def _get_directory_size_mb(directory_path: str) -> float:
+    def _get_directory_size_mb(self, directory_path: str) -> float:
         """Get total size of directory in MB.
 
         Args:
@@ -76,8 +83,7 @@ class DirectoryManager:
 
         return total_size / (1024 * 1024)  # Convert to MB
 
-    @staticmethod
-    def _cleanup_old_files(directory_path: str, target_size_mb: float) -> bool:
+    def _cleanup_old_files(self, directory_path: str, target_size_mb: float) -> bool:
         """Remove oldest files until directory is under target size.
 
         Args:
@@ -119,7 +125,7 @@ class DirectoryManager:
                 removed_count += 1
 
                 # Check if we're now under the target size
-                current_size_mb = DirectoryManager._get_directory_size_mb(directory_path)
+                current_size_mb = self._get_directory_size_mb(directory_path)
                 if current_size_mb <= target_cleanup_size:
                     break
 
@@ -128,7 +134,7 @@ class DirectoryManager:
                 continue
 
         if removed_count > 0:
-            final_size_mb = DirectoryManager._get_directory_size_mb(directory_path)
+            final_size_mb = self._get_directory_size_mb(directory_path)
             logger.info(
                 "Cleaned up %d old files from %s. Directory size reduced to %.1f MB",
                 removed_count,
