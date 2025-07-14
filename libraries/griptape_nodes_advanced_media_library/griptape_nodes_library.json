@@ -6,7 +6,9 @@
       "description": "Configuration settings for the Advanced Media Library temporary file storage",
       "category": "advanced_media_library",
       "contents": {
-        "temp_folder_name": "intermediates"
+        "temp_folder_name": "intermediates",
+        "max_directory_size_mb": 1000,
+        "enable_directory_cleanup": true
       }
     }
   ],

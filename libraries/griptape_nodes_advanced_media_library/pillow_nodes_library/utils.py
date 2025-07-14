@@ -15,13 +15,15 @@ def image_artifact_to_pil(image_artifact: ImageArtifact) -> Image:
 def pil_to_image_artifact(pil_image: Image, directory_path: str = "") -> ImageUrlArtifact:
     """Converts Pillow Image to Griptape ImageArtifact."""
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+    from pillow_nodes_library.directory_manager import DirectoryManager  # type: ignore[reportMissingImports]
 
     image_io = io.BytesIO()
     pil_image.save(image_io, "PNG")
     image_bytes = image_io.getvalue()
 
     if directory_path:
-        # Use the provided directory path
+        # Perform cleanup if needed before saving new file
+        DirectoryManager.cleanup_directory_if_needed(directory_path)
         filename = f"{directory_path}/{uuid.uuid4()}.png"
     else:
         # No directory prefix - direct storage
