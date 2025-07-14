@@ -36,7 +36,7 @@ class ResultDetails:
         *details: ResultDetail,
         message: str | None = None,
         level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None = None,
-        logger: Any | None = "default",
+        logger: logging.Logger | str | None = "griptape_nodes",
     ):
         """Initialize with ResultDetail objects or create a single one from message/level.
 
@@ -44,8 +44,7 @@ class ResultDetails:
             *details: Variable number of ResultDetail objects
             message: If provided, creates a single ResultDetail with this message
             level: Logging level for the single ResultDetail (required if message is provided)
-            logger: Logger to use for auto-logging. "default" uses griptape_nodes logger,
-                   None skips logging, or pass a custom logger
+            logger: Logger to use for auto-logging. String for logger name, Logger object, or None to skip
         """
         # Handle single message/level convenience
         if message is not None:
@@ -63,13 +62,17 @@ class ResultDetails:
             self.details = list(details)
 
         # Auto-log if logger is provided
-        if logger == "default":
-            logger = logging.getLogger("griptape_nodes")
+        if logger is not None:
+            try:
+                if isinstance(logger, str):
+                    logger = logging.getLogger(logger)
 
-        if logger:
-            for detail in self.details:
-                numeric_level = getattr(logging, detail.level)
-                logger.log(numeric_level, detail.message)
+                for detail in self.details:
+                    numeric_level = getattr(logging, detail.level)
+                    logger.log(numeric_level, detail.message)
+            except Exception:
+                # If logging fails for any reason, don't let it break the ResultDetails creation
+                pass
 
 
 # The Payload class is a marker interface
@@ -120,9 +123,14 @@ class WorkflowNotAlteredMixin:
 
 
 # Success result payload abstract base class
-@dataclass(kw_only=True)
 class ResultPayloadSuccess(ResultPayload, ABC):
     """Abstract base class for success result payloads."""
+
+    def __init__(self, details: ResultDetails | str):
+        """Initialize success result with INFO level default for strings."""
+        if isinstance(details, str):
+            details = ResultDetails(message=details, level="INFO")
+        super().__init__(details=details)
 
     def succeeded(self) -> bool:
         """Returns True as this is a success result.
@@ -134,11 +142,15 @@ class ResultPayloadSuccess(ResultPayload, ABC):
 
 
 # Failure result payload abstract base class
-@dataclass(kw_only=True)
 class ResultPayloadFailure(ResultPayload, ABC):
     """Abstract base class for failure result payloads."""
 
-    exception: Exception | None = None
+    def __init__(self, details: ResultDetails | str, exception: Exception | None = None):
+        """Initialize failure result with ERROR level default for strings."""
+        if isinstance(details, str):
+            details = ResultDetails(message=details, level="ERROR")
+        super().__init__(details=details)
+        self.exception = exception
 
     def succeeded(self) -> bool:
         """Returns False as this is a failure result.
