@@ -25,14 +25,62 @@ class ResultDetail:
 
 
 @dataclass
+class ResultDetailDebug(ResultDetail):
+    """A debug-level result detail."""
+
+    def __init__(self, message: str):
+        import logging
+
+        super().__init__(level=logging.DEBUG, message=message)
+
+
+@dataclass
+class ResultDetailInfo(ResultDetail):
+    """An info-level result detail."""
+
+    def __init__(self, message: str):
+        import logging
+
+        super().__init__(level=logging.INFO, message=message)
+
+
+@dataclass
+class ResultDetailWarning(ResultDetail):
+    """A warning-level result detail."""
+
+    def __init__(self, message: str):
+        import logging
+
+        super().__init__(level=logging.WARNING, message=message)
+
+
+@dataclass
+class ResultDetailError(ResultDetail):
+    """An error-level result detail."""
+
+    def __init__(self, message: str):
+        import logging
+
+        super().__init__(level=logging.ERROR, message=message)
+
+
+@dataclass
 class ResultDetails:
     """Container for multiple ResultDetail objects."""
 
     details: list[ResultDetail]
 
-    def __init__(self, *details: ResultDetail):
-        """Initialize with one or more ResultDetail objects."""
+    def __init__(self, *details: ResultDetail, logger: Any | None = None):
+        """Initialize with one or more ResultDetail objects, optionally logging them."""
+        if not details:
+            err_str = "ResultDetails requires at least one ResultDetail"
+            raise ValueError(err_str)
         self.details = list(details)
+
+        # Auto-log if logger is provided
+        if logger:
+            for detail in self.details:
+                logger.log(detail.level, detail.message)
 
 
 # The Payload class is a marker interface
