@@ -5,7 +5,7 @@ from collections.abc import Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
-
+from collections import defaultdict
 from griptape.events import EventBus
 from griptape.utils import with_contextvars
 
@@ -33,6 +33,26 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 
 logger = logging.getLogger("griptape_nodes")
 
+# Directed Acyclic Graph
+class DAG:
+    def __init__(self):
+        self.graph = defaultdict(set)        # adjacency list
+        self.in_degree = defaultdict(int)    # number of unmet dependencies
+
+    def add_node(self, node):
+        self.graph[node]  # ensures node exists
+
+    def add_edge(self, from_node, to_node):
+        self.graph[from_node].add(to_node)
+        self.in_degree[to_node] += 1
+
+    def get_ready_nodes(self):
+        return [node for node in self.graph if self.in_degree[node] == 0]
+
+    def mark_processed(self, node):
+        for neighbor in self.graph[node]:
+            self.in_degree[neighbor] -= 1
+        self.in_degree[node] = -1  # Mark as done
 
 @dataclass
 class Focus:
@@ -143,10 +163,13 @@ class EvaluateParameterState(State):
             if next_node.name in focus_stack_names:
                 msg = f"Cycle detected between node '{current_node.name}' and '{next_node.name}'."
                 raise RuntimeError(msg)
-
-            context.focus_stack.append(Focus(node=next_node))
+            if Focus(node=next_node) not in context.focus_stack:
+                context.focus_stack.append(Focus(node=next_node))
+            print(f"listing focus stack for node {current_node.name}")
+            for focus in context.focus_stack:
+                print(focus.node.name)
+            # Don't immediately stop whenever we find a node to resolve; keep going and append all nodes we have to resolve
             return InitializeSpotlightState
-
         if current_node.advance_parameter():
             return InitializeSpotlightState
         return ExecuteNodeState
