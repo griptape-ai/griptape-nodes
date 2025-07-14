@@ -52,7 +52,9 @@ if __name__ == "__main__":
     event_handler = ReloadHandler(patterns=["*.py"], ignore_patterns=["*.pyc", "*.pyo"], ignore_directories=True)
 
     observer = Observer()
-    observer.schedule(event_handler, path=".", recursive=True)
+    observer.schedule(event_handler, path="src", recursive=True)
+    observer.schedule(event_handler, path="libraries", recursive=True)
+    observer.schedule(event_handler, path="tests", recursive=True)
     observer.start()
 
     try:

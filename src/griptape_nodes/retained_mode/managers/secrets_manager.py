@@ -32,6 +32,10 @@ class SecretsManager:
     def __init__(self, config_manager: ConfigManager, event_manager: EventManager | None = None) -> None:
         self.config_manager = config_manager
 
+        # So that users can access secrets directly via `os.environ`
+        load_dotenv(self.workspace_env_path, override=False)
+        load_dotenv(ENV_VAR_PATH, override=False)
+
         # Register all our listeners.
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(GetSecretValueRequest, self.on_handle_get_secret_request)

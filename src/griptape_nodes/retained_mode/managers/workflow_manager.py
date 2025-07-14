@@ -900,9 +900,9 @@ class WorkflowManager:
             if workflow_metadata.is_griptape_provided:
                 workflow_metadata.image = workflow_metadata.image
             else:
-                workflow_metadata.image = str(
-                    GriptapeNodes.ConfigManager().workspace_path.joinpath(workflow_metadata.image)
-                )
+                # For user workflows, the image should be just the filename, not a full path
+                # The frontend now sends just filenames, so we don't need to prepend the workspace path
+                workflow_metadata.image = workflow_metadata.image
 
         # Register it as a success.
         workflow_register_request = RegisterWorkflowRequest(

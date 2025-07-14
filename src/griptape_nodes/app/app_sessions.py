@@ -33,7 +33,6 @@ from griptape_nodes.retained_mode.events import app_events, execution_events
 from griptape_nodes.retained_mode.events.app_events import AppEndSessionResultSuccess, AppStartSessionResultSuccess
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
-    BaseEvent,
     EventRequest,
     EventResultFailure,
     EventResultSuccess,
@@ -151,28 +150,31 @@ def _serve_static_server() -> None:
 
         return {"url": url}
 
-    @app.put("/static-uploads/{file_name:str}")
-    async def create_static_file(request: Request, file_name: str) -> dict:
+    @app.put("/static-uploads/{file_path:path}")
+    async def create_static_file(request: Request, file_path: str) -> dict:
         """Upload a static file to the static server."""
         if not STATIC_SERVER_ENABLED:
             msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
             raise ValueError(msg)
 
-        if not static_dir.exists():
-            static_dir.mkdir(parents=True, exist_ok=True)
+        file_full_path = Path(static_dir / file_path)
+
+        # Create parent directories if they don't exist
+        file_full_path.parent.mkdir(parents=True, exist_ok=True)
+
         data = await request.body()
         try:
-            Path(static_dir / file_name).write_bytes(data)
+            file_full_path.write_bytes(data)
         except binascii.Error as e:
-            msg = f"Invalid base64 encoding for file {file_name}."
+            msg = f"Invalid base64 encoding for file {file_path}."
             logger.error(msg)
             raise HTTPException(status_code=400, detail=msg) from e
         except (OSError, PermissionError) as e:
-            msg = f"Failed to write file {file_name} to {config_manager.workspace_path}: {e}"
+            msg = f"Failed to write file {file_path} to {config_manager.workspace_path}: {e}"
             logger.error(msg)
             raise HTTPException(status_code=500, detail=msg) from e
 
-        static_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}/{file_name}"
+        static_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}/{file_path}"
         return {"url": static_url}
 
     @app.post("/engines/request")
@@ -492,10 +494,6 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
 
     This is used to notify the GUI that the app is ready to receive events.
     """
-    # Initialize engine and session IDs on all events
-    BaseEvent.initialize_engine_id()
-    BaseEvent.initialize_session_id()
-
     # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
     payload = app_events.AppInitializationComplete()
     app_event = AppEvent(payload=payload)

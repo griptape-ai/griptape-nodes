@@ -103,6 +103,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
+def _find_griptape_uv_bin() -> str:
+    """Find the uv binary, checking dedicated Griptape installation first, then system uv.
+
+    Returns:
+        Path to the uv binary to use
+    """
+    # Check for dedicated Griptape uv installation first
+    dedicated_uv_path = xdg_data_home() / "griptape_nodes" / "bin" / "uv"
+    if dedicated_uv_path.exists():
+        return str(dedicated_uv_path)
+
+    # Fall back to system uv installation
+    return uv.find_uv_bin()
+
+
 class LibraryManager:
     SANDBOX_LIBRARY_NAME = "Sandbox Library"
 
@@ -945,7 +960,7 @@ class LibraryManager:
                 logger.info("Installing dependency '%s' with pip in venv at %s", package_name, venv_path)
                 subprocess.run(  # noqa: S603
                     [
-                        uv.find_uv_bin(),
+                        _find_griptape_uv_bin(),
                         "pip",
                         "install",
                         request.requirement_specifier,
@@ -1533,6 +1548,9 @@ class LibraryManager:
         self._remove_missing_libraries_from_config(config_category=user_libraries_section)
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+        GriptapeNodes.SessionManager().get_saved_session_id()
+        GriptapeNodes.EngineIdentityManager().initialize_engine_id()
+
         # App just got init'd. See if there are library JSONs to load!
         self.load_all_libraries_from_config()
 
