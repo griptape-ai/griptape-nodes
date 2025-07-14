@@ -44,7 +44,7 @@ class Hunyuan3dPipeline(ControlNode):
 
     def _process(self) -> AsyncResult | None:
         self.preprocess()
-        self.pipe_params.publish_output_image_preview_placeholder()
+        #self.pipe_params.publish_output_image_preview_placeholder()
         self.log_params.append_to_logs("Preparing Hunyuan 3D models...\n")
 
         with self.log_params.append_profile_to_logs("Loading model metadata"):
@@ -62,16 +62,16 @@ class Hunyuan3dPipeline(ControlNode):
 
         num_inference_steps = self.pipe_params.get_num_inference_steps()
 
-        def callback_on_step_end(
-            pipe: diffusers.HunyuanDiTPipeline,
-            i: int,
-            _t: Any,
-            callback_kwargs: dict,
-        ) -> dict:
-            if i < num_inference_steps - 1:
-                self.pipe_params.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
-                self.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")
-            return {}
+        # def callback_on_step_end(
+        #     pipe: diffusers.HunyuanDiTPipeline,
+        #     i: int,
+        #     _t: Any,
+        #     callback_kwargs: dict,
+        # ) -> dict:
+        #     if i < num_inference_steps - 1:
+        #         self.pipe_params.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
+        #         self.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")
+        #     return {}
 
         self.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")
         # Returns a list of the generated images.
