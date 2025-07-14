@@ -49,9 +49,11 @@ class Hunyuan3dPipeline(ControlNode):
 
         with self.log_params.append_profile_to_logs("Loading model metadata"):
             base_repo_id, base_revision = self.pipe_params.get_repo_revision()
+            # Hunyuan 3D model files are in a subdirectory
+            model_path = f"{base_repo_id}/hunyuan3d-paintpbr-v2-1"
             pipe = model_cache.from_pretrained(
                 diffusers.HunyuanDiTPipeline,
-                pretrained_model_name_or_path=base_repo_id,
+                pretrained_model_name_or_path=model_path,
                 revision=base_revision,
                 torch_dtype=torch.float16,
                 local_files_only=True,
