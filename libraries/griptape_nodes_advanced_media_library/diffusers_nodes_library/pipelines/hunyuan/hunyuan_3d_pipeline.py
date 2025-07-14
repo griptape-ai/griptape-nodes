@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
@@ -6,11 +7,12 @@ import torch  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
     LogParameter,  # type: ignore[reportMissingImports]
 )
-from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.utils.huggingface_utils import model_cache, quick_scan_diffuser_repos  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.hunyuan.hunyuan_3d_memory_footprint import (
     optimize_hunyuan_pipeline_memory_footprint,
 )
 from diffusers_nodes_library.pipelines.hunyuan.hunyuan_3d_parameters import HunyuanPipelineParameters
+from huggingface_hub.constants import HF_HUB_CACHE
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -49,12 +51,24 @@ class Hunyuan3dPipeline(ControlNode):
 
         with self.log_params.append_profile_to_logs("Loading model metadata"):
             base_repo_id, base_revision = self.pipe_params.get_repo_revision()
+            
+            # Find the local cache path for this repo
+            repos = quick_scan_diffuser_repos(HF_HUB_CACHE)
+            repo_path = None
+            for repo in repos:
+                if repo["name"] == base_repo_id and repo["hash"] == base_revision:
+                    repo_path = repo["path"]
+                    break
+            
+            if repo_path is None:
+                raise RuntimeError(f"Could not find local cache for {base_repo_id} revision {base_revision}")
+            
             # Hunyuan 3D model files are in a subdirectory
-            model_path = f"{base_repo_id}/hunyuan3d-paintpbr-v2-1"
+            model_path = Path(repo_path) / "hunyuan3d-paintpbr-v2-1"
+            
             pipe = model_cache.from_pretrained(
                 diffusers.HunyuanDiTPipeline,
-                pretrained_model_name_or_path=model_path,
-                revision=base_revision,
+                pretrained_model_name_or_path=str(model_path),
                 torch_dtype=torch.float16,
                 local_files_only=True,
             )
