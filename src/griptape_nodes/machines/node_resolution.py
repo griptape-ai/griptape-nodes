@@ -4,7 +4,7 @@ import logging
 from collections.abc import Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from griptape.events import EventBus
 from griptape.utils import with_contextvars
@@ -31,10 +31,6 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
 
-if TYPE_CHECKING:
-    from griptape_nodes.exe_types.flow import ControlFlow
-
-
 logger = logging.getLogger("griptape_nodes")
 
 
@@ -47,12 +43,10 @@ class Focus:
 
 # This is on a per-node basis
 class ResolutionContext:
-    flow: ControlFlow
     focus_stack: list[Focus]
     paused: bool
 
-    def __init__(self, flow: ControlFlow) -> None:
-        self.flow = flow
+    def __init__(self) -> None:
         self.focus_stack = []
         self.paused = False
 
@@ -327,7 +321,7 @@ class ExecuteNodeState(State):
                 )
             )
             # Pass the value through to the new nodes.
-            conn_output_nodes = GriptapeNodes.FlowManager().get_connected_output_parameters(context.flow, current_node, parameter)
+            conn_output_nodes = GriptapeNodes.FlowManager().get_connected_output_parameters(current_node, parameter)
             for target_node, target_parameter in conn_output_nodes:
                 GriptapeNodes.get_instance().handle_request(
                     SetParameterValueRequest(
@@ -453,8 +447,8 @@ class CompleteState(State):
 class NodeResolutionMachine(FSM[ResolutionContext]):
     """State machine for resolving node dependencies."""
 
-    def __init__(self, flow: ControlFlow) -> None:
-        resolution_context = ResolutionContext(flow)  # Gets the flow
+    def __init__(self) -> None:
+        resolution_context = ResolutionContext()
         super().__init__(resolution_context)
 
     def resolve_node(self, node: BaseNode) -> None:

@@ -424,8 +424,8 @@ class NodeManager:
                         )
                         logger.error(details)
                         return DeleteNodeResultFailure()
-            # Clear the queue, because we don't want to his this node eventually.
-            parent_flow.clear_flow_queue()
+            # Clear the execution queue, because we don't want to hit this node eventually.
+            parent_flow.clear_execution_queue()
         return None
 
     def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911 (complex logic, lots of edge cases)

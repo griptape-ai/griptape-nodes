@@ -36,7 +36,8 @@ class ResolveNodeResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class StartFlowRequest(RequestPayload):
-    flow_name: str
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
     flow_node_name: str | None = None
     debug_mode: bool = False
 
@@ -56,7 +57,8 @@ class StartFlowResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class CancelFlowRequest(RequestPayload):
-    flow_name: str
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
 
 
 @dataclass
@@ -74,7 +76,8 @@ class CancelFlowResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class UnresolveFlowRequest(RequestPayload):
-    flow_name: str
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
 
 
 @dataclass
@@ -96,7 +99,8 @@ class UnresolveFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class SingleExecutionStepRequest(RequestPayload):
-    flow_name: str
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
 
 
 @dataclass
@@ -114,7 +118,8 @@ class SingleExecutionStepResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class SingleNodeStepRequest(RequestPayload):
-    flow_name: str
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
 
 
 @dataclass
@@ -133,7 +138,8 @@ class SingleNodeStepResultFailure(ResolveNodeResultFailure):
 @dataclass
 @PayloadRegistry.register
 class ContinueExecutionStepRequest(RequestPayload):
-    flow_name: str
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
 
 
 @dataclass
@@ -151,7 +157,8 @@ class ContinueExecutionStepResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetFlowStateRequest(RequestPayload):
-    flow_name: str
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
 
 
 @dataclass
@@ -170,7 +177,8 @@ class GetFlowStateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetIsFlowRunningRequest(RequestPayload):
-    flow_name: str
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
 
 
 @dataclass
