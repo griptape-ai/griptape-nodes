@@ -131,29 +131,11 @@ class BaseEvent(BaseModel, ABC):
     """Abstract base class for all events."""
 
     # Instance fields for engine and session identification
-    engine_id: str | None = Field(default=None)
-    session_id: str | None = Field(default=None)
+    _engine_id: ClassVar[str | None] = None
+    _session_id: ClassVar[str | None] = None
 
-    def model_post_init(self, _context: Any) -> None:
-        """Post-initialization hook to auto-populate session_id and engine_id if not provided.
-
-        context: The context in which the model is being initialized.
-
-        """
-        # Auto-populate engine_id from class variable if not explicitly provided
-        if self.engine_id is None:
-            # Import here to avoid circular imports
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            self.engine_id = GriptapeNodes.EngineIdentityManager().initialize_engine_id()
-
-        # Auto-populate session_id from class variable if not explicitly provided
-        if self.session_id is None:
-            # Import here to avoid circular imports
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            # Get current session ID
-            self.session_id = GriptapeNodes.SessionManager().get_saved_session_id()
+    engine_id: str | None = Field(default_factory=lambda: BaseEvent._engine_id)
+    session_id: str | None = Field(default_factory=lambda: BaseEvent._session_id)
 
     # Custom JSON encoder for the payload
     class Config:
