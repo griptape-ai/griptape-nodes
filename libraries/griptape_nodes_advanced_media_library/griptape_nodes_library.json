@@ -1,6 +1,15 @@
 {
   "name": "Griptape Nodes Advanced Media Library",
   "library_schema_version": "0.1.0",
+  "settings": [
+    {
+      "description": "Configuration settings for the Advanced Media Library temporary file storage",
+      "category": "advanced_media_library",
+      "contents": {
+        "temp_folder_name": "intermediates"
+      }
+    }
+  ],
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
