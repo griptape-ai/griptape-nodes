@@ -3,11 +3,15 @@ from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
-
 from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.pipelines.hunyuan.hunyuan_3d_memory_footprint import (
+    optimize_hunyuan_pipeline_memory_footprint,
+)
+from diffusers_nodes_library.pipelines.hunyuan.hunyuan_3d_parameters import HunyuanPipelineParameters
+
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 
@@ -53,13 +57,13 @@ class Hunyuan3dPipeline(ControlNode):
                 local_files_only=True,
             )
 
-        with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
-            optimize_stable_diffusion_pipeline_memory_footprint(pipe)
+        # with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
+        #     optimize_hunyuan_pipeline_memory_footprint(pipe)
 
         num_inference_steps = self.pipe_params.get_num_inference_steps()
 
         def callback_on_step_end(
-            pipe: diffusers.StableDiffusionPipeline,
+            pipe: diffusers.HunyuanDiTPipeline,
             i: int,
             _t: Any,
             callback_kwargs: dict,
@@ -70,10 +74,12 @@ class Hunyuan3dPipeline(ControlNode):
             return {}
 
         self.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")
-        output_image_pil = pipe(
+        # Returns a list of the generated images.
+        output_images = pipe(
             **self.pipe_params.get_pipe_kwargs(),
             output_type="pil",
-            callback_on_step_end=callback_on_step_end,
-        ).images[0]
-        self.pipe_params.publish_output_image(output_image_pil)
+            #callback_on_step_end=callback_on_step_end,
+        )[0]
+        for image in output_images:
+            self.pipe_params.publish_output_image(image)
         self.log_params.append_to_logs("Done.\n")

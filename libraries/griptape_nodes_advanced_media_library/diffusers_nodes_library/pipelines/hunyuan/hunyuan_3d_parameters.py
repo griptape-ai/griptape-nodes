@@ -8,7 +8,7 @@ from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[rep
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -112,13 +112,14 @@ class HunyuanPipelineParameters:
         self._seed_parameter.add_input_parameters()
 
     def add_output_parameters(self) -> None:
-        self._node.add_parameter(
-            ParameterList(
+        self.output_list = ParameterList(
                 name="output_image",
                 output_type="ImageArtifact",
                 tooltip="The output image",
                 allowed_modes={ParameterMode.OUTPUT},
             )
+        self._node.add_parameter(
+            self.output_list
         )
 
     def validate_before_node_run(self) -> list[Exception] | None:
@@ -185,13 +186,13 @@ class HunyuanPipelineParameters:
 
         return kwargs
 
-    def latents_to_image_pil(self, pipe: diffusers.StableDiffusionPipeline, latents: Any) -> Image:
+    def latents_to_image_pil(self, pipe: diffusers.HunyuanDiTPipeline, latents: Any) -> Image:
         latents = 1 / pipe.vae.config.scaling_factor * latents
         image = pipe.vae.decode(latents, return_dict=False)[0]
         intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
         return intermediate_pil_image
 
-    def publish_output_image_preview_latents(self, pipe: diffusers.StableDiffusionPipeline, latents: Any) -> None:
+    def publish_output_image_preview_latents(self, pipe: diffusers.HunyuanDiTPipeline, latents: Any) -> None:
         preview_image_pil = self.latents_to_image_pil(pipe, latents)
         preview_image_artifact = pil_to_image_artifact(
             preview_image_pil, directory_path=self._get_temp_directory_path()
@@ -199,6 +200,7 @@ class HunyuanPipelineParameters:
         self._node.publish_update_to_parameter("output_image", preview_image_artifact)
 
     def publish_output_image(self, output_image_pil: Image) -> None:
+        param = self.output_list.add_child_parameter()
         image_artifact = pil_to_image_artifact(output_image_pil)
-        self._node.set_parameter_value("output_image", image_artifact)
-        self._node.parameter_output_values["output_image"] = image_artifact
+        self._node.set_parameter_value(param.name, image_artifact)
+        self._node.parameter_output_values[param.name] = image_artifact
