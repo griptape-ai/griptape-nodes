@@ -500,6 +500,15 @@
         "description": "Generate images with Cosmos2 text-to-image via 🤗 Diffusers.",
         "display_name": "Cosmos2 Text2Image"
       }
+    },
+    {
+      "class_name": "Hunyuan3dPipeline",
+      "file_path": "diffusers_nodes_library/pipelines/hunyuan/hunyuan_3d_pipeline.py",
+      "metadata": {
+        "category": "image/hunyuan",
+        "description": "Generate images with Hunyuan 3D via 🤗 Diffusers.",
+        "display_name": "Hunyuan 3D"
+      }
     }
   ]
 }
