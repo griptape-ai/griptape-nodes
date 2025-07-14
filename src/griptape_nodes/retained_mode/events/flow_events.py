@@ -17,6 +17,20 @@ from griptape_nodes.retained_mode.events.workflow_events import ImportWorkflowAs
 @dataclass(kw_only=True)
 @PayloadRegistry.register
 class CreateFlowRequest(RequestPayload):
+    """Create a new flow (sub-workflow) within a parent flow.
+
+    Use when: Creating sub-workflows, organizing complex workflows into components,
+    implementing reusable workflow patterns, building hierarchical workflows.
+
+    Args:
+        parent_flow_name: Name of the parent flow to create the new flow within
+        flow_name: Name for the new flow (None for auto-generated)
+        set_as_new_context: Whether to set this flow as the new current context
+        metadata: Initial metadata for the flow
+
+    Results: CreateFlowResultSuccess (with flow name) | CreateFlowResultFailure (parent not found, name conflicts)
+    """
+
     parent_flow_name: str | None
     flow_name: str | None = None
     # When True, this Flow will be pushed as the new Current Context.
@@ -27,18 +41,35 @@ class CreateFlowRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class CreateFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Flow created successfully.
+
+    Args:
+        flow_name: Name assigned to the new flow
+    """
+
     flow_name: str
 
 
 @dataclass
 @PayloadRegistry.register
 class CreateFlowResultFailure(ResultPayloadFailure):
-    pass
+    """Flow creation failed. Common causes: parent flow not found, name conflicts, invalid parameters."""
 
 
 @dataclass
 @PayloadRegistry.register
 class DeleteFlowRequest(RequestPayload):
+    """Delete a flow and all its contents.
+
+    Use when: Removing unused sub-workflows, cleaning up complex workflows,
+    implementing flow management features. Cascades to delete all nodes and sub-flows.
+
+    Args:
+        flow_name: Name of the flow to delete (None for current context flow)
+
+    Results: DeleteFlowResultSuccess | DeleteFlowResultFailure (flow not found, deletion not allowed)
+    """
+
     # If None is passed, assumes we're deleting the flow in the Current Context.
     flow_name: str | None = None
 
@@ -46,18 +77,29 @@ class DeleteFlowRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class DeleteFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    pass
+    """Flow deleted successfully. All nodes and sub-flows removed."""
 
 
 @dataclass
 @PayloadRegistry.register
 class DeleteFlowResultFailure(ResultPayloadFailure):
-    pass
+    """Flow deletion failed. Common causes: flow not found, no current context, deletion not allowed."""
 
 
 @dataclass
 @PayloadRegistry.register
 class ListNodesInFlowRequest(RequestPayload):
+    """List all nodes in a specific flow.
+
+    Use when: Inspecting flow contents, building flow visualizations,
+    implementing flow management features, debugging workflow structure.
+
+    Args:
+        flow_name: Name of the flow to list nodes from (None for current context flow)
+
+    Results: ListNodesInFlowResultSuccess (with node names) | ListNodesInFlowResultFailure (flow not found)
+    """
+
     # If None is passed, assumes we're using the flow in the Current Context.
     flow_name: str | None = None
 
@@ -65,13 +107,19 @@ class ListNodesInFlowRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class ListNodesInFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Flow nodes listed successfully.
+
+    Args:
+        node_names: List of node names in the flow
+    """
+
     node_names: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
 class ListNodesInFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Flow nodes listing failed. Common causes: flow not found, no current context."""
 
 
 # We have two different ways to list flows:
@@ -277,6 +325,14 @@ class GetFlowDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 @dataclass
 @PayloadRegistry.register
 class GetFlowMetadataRequest(RequestPayload):
+    """Get metadata associated with a flow.
+
+    Use when: Retrieving flow layout information, getting custom flow properties,
+    implementing flow management features, debugging flow state.
+
+    Results: GetFlowMetadataResultSuccess (with metadata dict) | GetFlowMetadataResultFailure (flow not found)
+    """
+
     # If None is passed, assumes we're using the Flow in the Current Context
     flow_name: str | None = None
 
@@ -284,18 +340,32 @@ class GetFlowMetadataRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetFlowMetadataResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Flow metadata retrieved successfully.
+
+    Args:
+        metadata: Dictionary containing flow metadata
+    """
+
     metadata: dict
 
 
 @dataclass
 @PayloadRegistry.register
 class GetFlowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Flow metadata retrieval failed. Common causes: flow not found, no current context."""
 
 
 @dataclass
 @PayloadRegistry.register
 class SetFlowMetadataRequest(RequestPayload):
+    """Set metadata associated with a flow.
+
+    Use when: Updating flow layout information, storing custom flow properties,
+    implementing flow management features, saving flow state.
+
+    Results: SetFlowMetadataResultSuccess | SetFlowMetadataResultFailure (flow not found, metadata error)
+    """
+
     metadata: dict
     # If None is passed, assumes we're using the Flow in the Current Context
     flow_name: str | None = None
@@ -304,10 +374,10 @@ class SetFlowMetadataRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class SetFlowMetadataResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    pass
+    """Flow metadata updated successfully."""
 
 
 @dataclass
 @PayloadRegistry.register
 class SetFlowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Flow metadata update failed. Common causes: flow not found, no current context, invalid metadata."""
