@@ -29,6 +29,7 @@ from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -107,6 +108,14 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         self.flux_params.add_output_parameters()
         self.log_params.add_output_parameters()
 
+    def _get_temp_directory_path(self) -> str:
+        """Get the configured temp directory path for this library."""
+        # Get configured temp folder name, default to "intermediates"
+        temp_folder_name = GriptapeNodes.ConfigManager().get_config_value("advanced_media_library.temp_folder_name")
+        if temp_folder_name is None:
+            temp_folder_name = "intermediates"
+        return temp_folder_name
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         self.flux_params.after_value_set(parameter, value)
 
@@ -140,7 +149,8 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         # the size of the image preview on the node.
         preview_placeholder_image = PIL.Image.new("RGB", input_image_pil.size, color="black")
         self.publish_update_to_parameter(
-            "output_image", pil_to_image_artifact(preview_placeholder_image, use_temp_storage=True)
+            "output_image",
+            pil_to_image_artifact(preview_placeholder_image, directory_path=self._get_temp_directory_path()),
         )
 
         # Adjust tile size so that it is not much bigger than the input image.
@@ -202,7 +212,10 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                     # HERE -> need to update the tile by calling something in the tile processor.
                     preview_image_with_partial_tile = get_preview_image_with_partial_tile(intermediate_pil_image)
                     self.publish_update_to_parameter(
-                        "output_image", pil_to_image_artifact(preview_image_with_partial_tile, use_temp_storage=True)
+                        "output_image",
+                        pil_to_image_artifact(
+                            preview_image_with_partial_tile, directory_path=self._get_temp_directory_path()
+                        ),
                     )
                     self.append_value_to_parameter(
                         "logs", f"Finished inference step {i + 1} of {num_inference_steps}.\n"
@@ -240,7 +253,8 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         def callback_on_tile_end(i: int, preview_image_pil: Image) -> None:
             if i < num_tiles:
                 self.publish_update_to_parameter(
-                    "output_image", pil_to_image_artifact(preview_image_pil, use_temp_storage=True)
+                    "output_image",
+                    pil_to_image_artifact(preview_image_pil, directory_path=self._get_temp_directory_path()),
                 )
                 self.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")
                 self.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")

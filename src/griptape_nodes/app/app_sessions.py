@@ -157,10 +157,7 @@ def _serve_static_server() -> None:
             msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
             raise ValueError(msg)
 
-        print("HI KATE here is the file path", file_path)
-
         file_full_path = Path(static_dir / file_path)
-        print("HI KATE here is the file full path", file_full_path)
 
         # Create parent directories if they don't exist
         file_full_path.parent.mkdir(parents=True, exist_ok=True)
