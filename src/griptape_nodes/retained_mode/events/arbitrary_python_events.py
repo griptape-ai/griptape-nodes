@@ -20,6 +20,9 @@ class RunArbitraryPythonStringRequest(RequestPayload):
     Use when: Development/debugging, testing code snippets, prototyping,
     educational purposes. WARNING: This is configurable behavior that can be disabled.
 
+    Args:
+        python_string: Python code string to execute
+
     Results: RunArbitraryPythonStringResultSuccess (with output) | RunArbitraryPythonStringResultFailure (execution error)
     """
 

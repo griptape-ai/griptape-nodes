@@ -22,6 +22,10 @@ class ResolveNodeRequest(RequestPayload):
     Use when: Running individual nodes, testing node execution, debugging workflows,
     stepping through execution manually. Validates inputs and runs node logic.
 
+    Args:
+        node_name: Name of the node to resolve/execute
+        debug_mode: Whether to run in debug mode (default: False)
+
     Results: ResolveNodeResultSuccess | ResolveNodeResultFailure (with validation exceptions)
     """
 
@@ -54,6 +58,11 @@ class StartFlowRequest(RequestPayload):
 
     Use when: Running workflows, beginning automated execution, testing complete flows.
     Validates all nodes and begins execution from resolved nodes.
+
+    Args:
+        flow_name: Name of the flow to start (deprecated, use flow_node_name)
+        flow_node_name: Name of the flow node to start
+        debug_mode: Whether to run in debug mode (default: False)
 
     Results: StartFlowResultSuccess | StartFlowResultFailure (with validation exceptions)
     """
@@ -89,6 +98,9 @@ class CancelFlowRequest(RequestPayload):
 
     Use when: Stopping long-running workflows, handling user cancellation,
     stopping execution due to errors or changes. Cleanly terminates execution.
+
+    Args:
+        flow_name: Name of the flow to cancel (deprecated)
 
     Results: CancelFlowResultSuccess | CancelFlowResultFailure (cancellation error)
     """

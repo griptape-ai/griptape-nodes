@@ -87,6 +87,9 @@ class ListNodeTypesInLibraryRequest(RequestPayload):
     Use when: Discovering available nodes, building node creation UIs,
     validating node types, exploring library contents.
 
+    Args:
+        library: Name of the library to list node types for
+
     Results: ListNodeTypesInLibraryResultSuccess (with node types) | ListNodeTypesInLibraryResultFailure (library not found)
     """
 
@@ -118,6 +121,10 @@ class GetNodeMetadataFromLibraryRequest(RequestPayload):
 
     Use when: Inspecting node capabilities, validating node types, building node creation UIs,
     getting parameter definitions, checking node requirements.
+
+    Args:
+        library: Name of the library containing the node type
+        node_type: Name of the node type to get metadata for
 
     Results: GetNodeMetadataFromLibraryResultSuccess (with metadata) | GetNodeMetadataFromLibraryResultFailure (node not found)
     """
@@ -255,6 +262,10 @@ class RegisterLibraryFromFileRequest(RequestPayload):
 
     Use when: Loading custom libraries, adding new node types,
     registering development libraries, extending node capabilities.
+
+    Args:
+        file_path: Path to the library JSON file to register
+        load_as_default_library: Whether to load as the default library (default: False)
 
     Results: RegisterLibraryFromFileResultSuccess (with library name) | RegisterLibraryFromFileResultFailure (load error)
     """
@@ -453,6 +464,9 @@ class UnloadLibraryFromRegistryRequest(RequestPayload):
 
     Use when: Removing unused libraries, cleaning up library registry,
     preparing for library updates, troubleshooting library issues.
+
+    Args:
+        library_name: Name of the library to unload from the registry
 
     Results: UnloadLibraryFromRegistryResultSuccess | UnloadLibraryFromRegistryResultFailure (library not found, unload error)
     """

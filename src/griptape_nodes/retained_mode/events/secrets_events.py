@@ -18,6 +18,9 @@ class GetSecretValueRequest(RequestPayload):
     Use when: Retrieving API keys, database credentials, authentication tokens,
     accessing sensitive configuration values, implementing secure storage.
 
+    Args:
+        key: Name of the secret key to retrieve
+
     Results: GetSecretValueResultSuccess (with value) | GetSecretValueResultFailure (key not found)
     """
 
@@ -49,6 +52,10 @@ class SetSecretValueRequest(RequestPayload):
 
     Use when: Storing API keys, database credentials, authentication tokens,
     configuring secure settings, implementing secret management.
+
+    Args:
+        key: Name of the secret key to set
+        value: Secret value to store (handle with care)
 
     Results: SetSecretValueResultSuccess | SetSecretValueResultFailure (storage error)
     """
@@ -106,6 +113,9 @@ class DeleteSecretValueRequest(RequestPayload):
 
     Use when: Removing obsolete secrets, cleaning up configurations, implementing secret rotation,
     revoking access credentials, managing secret lifecycle.
+
+    Args:
+        key: Name of the secret key to delete
 
     Results: DeleteSecretValueResultSuccess | DeleteSecretValueResultFailure (key not found, deletion error)
     """

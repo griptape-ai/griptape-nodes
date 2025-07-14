@@ -18,6 +18,9 @@ class GetConfigValueRequest(RequestPayload):
     Use when: Reading application settings, checking node configurations, retrieving user preferences,
     accessing environment-specific values. Key format: "category.key" or "category.subcategory.key".
 
+    Args:
+        category_and_key: Configuration key in format "category.key" or "category.subcategory.key"
+
     Results: GetConfigValueResultSuccess (with value) | GetConfigValueResultFailure (key not found)
     """
 
@@ -50,6 +53,10 @@ class SetConfigValueRequest(RequestPayload):
     Use when: Updating application settings, configuring node behavior, storing user preferences,
     setting environment-specific values. Key format: "category.key" or "category.subcategory.key".
 
+    Args:
+        category_and_key: Configuration key in format "category.key" or "category.subcategory.key"
+        value: Value to set for the configuration key
+
     Results: SetConfigValueResultSuccess | SetConfigValueResultFailure (invalid key, value error)
     """
 
@@ -76,6 +83,9 @@ class GetConfigCategoryRequest(RequestPayload):
 
     Use when: Retrieving multiple related settings, displaying configuration sections in UIs,
     backing up/restoring configuration groups, bulk configuration operations.
+
+    Args:
+        category: Name of the configuration category (None for all categories)
 
     Results: GetConfigCategoryResultSuccess (with contents dict) | GetConfigCategoryResultFailure (category not found)
     """
@@ -108,6 +118,10 @@ class SetConfigCategoryRequest(RequestPayload):
 
     Use when: Bulk updating configuration settings, restoring configuration sections,
     applying configuration templates, batch configuration operations.
+
+    Args:
+        contents: Dictionary of key-value pairs to set in the category
+        category: Name of the configuration category (None for default)
 
     Results: SetConfigCategoryResultSuccess | SetConfigCategoryResultFailure (invalid category, value errors)
     """

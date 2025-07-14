@@ -18,6 +18,9 @@ class SetWorkflowContextRequest(RequestPayload):
     Use when: Switching between workflows, initializing workflow sessions,
     setting the active workflow for subsequent operations, workflow navigation.
 
+    Args:
+        workflow_name: Name of the workflow to set as current context
+
     Results: SetWorkflowContextSuccess | SetWorkflowContextFailure (workflow not found)
     """
 

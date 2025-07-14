@@ -17,6 +17,9 @@ class OpenAssociatedFileRequest(RequestPayload):
     Use when: Opening generated files, launching external applications,
     providing file viewing capabilities, implementing file associations.
 
+    Args:
+        path_to_file: Path to the file to open with the associated application
+
     Results: OpenAssociatedFileResultSuccess | OpenAssociatedFileResultFailure (file not found, no association)
     """
 

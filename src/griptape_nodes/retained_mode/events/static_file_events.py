@@ -60,10 +60,10 @@ class CreateStaticFileUploadUrlRequest(RequestPayload):
     Use when: Implementing file upload functionality, allowing direct client uploads,
     enabling large file transfers, implementing drag-and-drop uploads.
 
-    Results: CreateStaticFileUploadUrlResultSuccess (with URL and headers) | CreateStaticFileUploadUrlResultFailure (URL creation error)
-
     Args:
         file_name: Name of the file to be uploaded
+
+    Results: CreateStaticFileUploadUrlResultSuccess (with URL and headers) | CreateStaticFileUploadUrlResultFailure (URL creation error)
     """
 
     file_name: str
@@ -105,10 +105,10 @@ class CreateStaticFileDownloadUrlRequest(RequestPayload):
     Use when: Providing secure file access, implementing file sharing,
     enabling temporary download links, controlling file access permissions.
 
-    Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
-
     Args:
         file_name: Name of the file to be downloaded
+
+    Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
     """
 
     file_name: str

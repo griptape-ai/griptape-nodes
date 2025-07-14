@@ -18,6 +18,10 @@ class ValidateFlowDependenciesRequest(RequestPayload):
     Use when: Pre-flight checks before flow execution, preventing runtime failures,
     debugging dependency issues, validating flow readiness.
 
+    Args:
+        flow_name: Name of the flow to validate dependencies for
+        flow_node_name: Name of the flow node to validate (None for default)
+
     Results: ValidateFlowDependenciesResultSuccess (with validation status) | ValidateFlowDependenciesResultFailure (validation error)
     """
 
@@ -53,6 +57,9 @@ class ValidateNodeDependenciesRequest(RequestPayload):
 
     Use when: Pre-flight checks before node execution, preventing runtime failures,
     debugging node dependency issues, validating node readiness.
+
+    Args:
+        node_name: Name of the node to validate dependencies for
 
     Results: ValidateNodeDependenciesResultSuccess (with validation status) | ValidateNodeDependenciesResultFailure (validation error)
     """

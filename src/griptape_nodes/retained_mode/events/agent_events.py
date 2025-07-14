@@ -26,6 +26,10 @@ class RunAgentRequest(RequestPayload):
     Use when: Executing conversational AI interactions, processing user queries,
     running autonomous agents, handling multi-modal inputs with URLs.
 
+    Args:
+        input: Text input to send to the agent
+        url_artifacts: List of URL artifacts to include with the request
+
     Results: RunAgentResultStarted -> RunAgentResultSuccess (with output) | RunAgentResultFailure (execution error)
     """
 
@@ -100,6 +104,9 @@ class ConfigureAgentRequest(RequestPayload):
 
     Use when: Setting up agent parameters, changing model configurations,
     customizing agent behavior, updating agent settings.
+
+    Args:
+        prompt_driver: Dictionary of prompt driver configuration options
 
     Results: ConfigureAgentResultSuccess | ConfigureAgentResultFailure (configuration error)
     """

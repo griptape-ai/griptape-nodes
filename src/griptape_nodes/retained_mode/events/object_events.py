@@ -17,6 +17,11 @@ class RenameObjectRequest(RequestPayload):
     Use when: Organizing workflows, fixing naming conflicts, implementing rename features,
     improving readability. Can automatically find alternative names if requested name is taken.
 
+    Args:
+        object_name: Current name of the object to rename
+        requested_name: New name for the object
+        allow_next_closest_name_available: Whether to use alternative name if requested name is taken
+
     Results: RenameObjectResultSuccess (with final name) | RenameObjectResultFailure (rename failed)
     """
 
@@ -56,6 +61,9 @@ class ClearAllObjectStateRequest(RequestPayload):
 
     Use when: Resetting to clean state, recovering from corruption, starting fresh,
     implementing reset functionality. Requires explicit confirmation.
+
+    Args:
+        i_know_what_im_doing: Confirmation flag that must be set to True to proceed
 
     Results: ClearAllObjectStateResultSuccess | ClearAllObjectStateResultFailure (clear failed)
     """

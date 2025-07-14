@@ -19,6 +19,9 @@ class RunWorkflowFromScratchRequest(RequestPayload):
     Use when: Loading and executing saved workflows, testing workflows from files,
     running workflows in clean environments, batch processing workflows.
 
+    Args:
+        file_path: Path to the workflow file to load and execute
+
     Results: RunWorkflowFromScratchResultSuccess | RunWorkflowFromScratchResultFailure (file not found, load error)
     """
 
@@ -44,6 +47,9 @@ class RunWorkflowWithCurrentStateRequest(RequestPayload):
 
     Use when: Loading workflows while keeping existing node values, updating workflow structure
     without losing progress, iterative workflow development.
+
+    Args:
+        file_path: Path to the workflow file to load while preserving current state
 
     Results: RunWorkflowWithCurrentStateResultSuccess | RunWorkflowWithCurrentStateResultFailure (file not found, merge error)
     """
@@ -71,6 +77,10 @@ class RunWorkflowFromRegistryRequest(RequestPayload):
     Use when: Executing registered workflows, running workflows by name,
     using workflow templates, automated workflow execution.
 
+    Args:
+        workflow_name: Name of the workflow in the registry to execute
+        run_with_clean_slate: Whether to start with a clean state (default: True)
+
     Results: RunWorkflowFromRegistryResultSuccess | RunWorkflowFromRegistryResultFailure (workflow not found, execution error)
     """
 
@@ -97,6 +107,10 @@ class RegisterWorkflowRequest(RequestPayload):
 
     Use when: Publishing workflows for reuse, creating workflow templates,
     managing workflow libraries, making workflows available by name.
+
+    Args:
+        metadata: Workflow metadata containing name, description, and other properties
+        file_name: Name of the workflow file to register
 
     Results: RegisterWorkflowResultSuccess (with workflow name) | RegisterWorkflowResultFailure (registration error)
     """
@@ -161,6 +175,9 @@ class DeleteWorkflowRequest(RequestPayload):
     Use when: Removing obsolete workflows, cleaning up workflow libraries,
     unregistering workflows, workflow management.
 
+    Args:
+        name: Name of the workflow to delete from the registry
+
     Results: DeleteWorkflowResultSuccess | DeleteWorkflowResultFailure (workflow not found, deletion error)
     """
 
@@ -186,6 +203,10 @@ class RenameWorkflowRequest(RequestPayload):
 
     Use when: Updating workflow names, organizing workflow libraries,
     fixing naming conflicts, workflow management.
+
+    Args:
+        workflow_name: Current name of the workflow
+        requested_name: New name for the workflow
 
     Results: RenameWorkflowResultSuccess | RenameWorkflowResultFailure (workflow not found, name conflict)
     """
@@ -213,6 +234,10 @@ class SaveWorkflowRequest(RequestPayload):
 
     Use when: Persisting workflow changes, creating workflow backups,
     exporting workflows, saving before major changes.
+
+    Args:
+        file_name: Name of the file to save the workflow to (None for auto-generated)
+        image_path: Path to save workflow image/thumbnail (None for no image)
 
     Results: SaveWorkflowResultSuccess (with file path) | SaveWorkflowResultFailure (save error)
     """
@@ -280,6 +305,9 @@ class LoadWorkflowMetadata(RequestPayload):
 
     Use when: Inspecting workflow properties, validating workflow files,
     displaying workflow information, workflow management.
+
+    Args:
+        file_name: Name of the workflow file to load metadata from
 
     Results: LoadWorkflowMetadataResultSuccess (with metadata) | LoadWorkflowMetadataResultFailure (load error)
     """

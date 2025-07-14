@@ -25,6 +25,24 @@ class AddParameterToNodeRequest(RequestPayload):
     Use when: Dynamically adding inputs/outputs to nodes, customizing node interfaces,
     building configurable nodes. Supports type validation, tooltips, and mode restrictions.
 
+    Args:
+        node_name: Name of the node to add parameter to (None for current context)
+        parameter_name: Name of the new parameter (None for auto-generated)
+        default_value: Default value for the parameter
+        tooltip: General tooltip text or structured tooltip
+        tooltip_as_input: Tooltip when parameter is used as input
+        tooltip_as_property: Tooltip when parameter is used as property
+        tooltip_as_output: Tooltip when parameter is used as output
+        type: Parameter type string
+        input_types: List of allowed input types
+        output_type: Output type for the parameter
+        ui_options: UI configuration options
+        mode_allowed_input: Whether parameter can be used as input
+        mode_allowed_property: Whether parameter can be used as property
+        mode_allowed_output: Whether parameter can be used as output
+        parent_container_name: Name of parent container if nested
+        initial_setup: Skip setup work when loading from file
+
     Results: AddParameterToNodeResultSuccess (with parameter name) | AddParameterToNodeResultFailure
     """
 
@@ -88,6 +106,10 @@ class RemoveParameterFromNodeRequest(RequestPayload):
     Use when: Cleaning up unused parameters, dynamically restructuring node interfaces,
     removing deprecated parameters. Handles cleanup of connections and values.
 
+    Args:
+        parameter_name: Name of the parameter to remove
+        node_name: Name of the node to remove parameter from (None for current context)
+
     Results: RemoveParameterFromNodeResultSuccess | RemoveParameterFromNodeResultFailure
     """
 
@@ -115,6 +137,14 @@ class SetParameterValueRequest(RequestPayload):
 
     Use when: Configuring node inputs, setting property values, loading saved workflows,
     updating parameter values programmatically. Handles type validation and conversion.
+
+    Args:
+        parameter_name: Name of the parameter to set
+        value: Value to set for the parameter
+        node_name: Name of the node containing the parameter (None for current context)
+        data_type: Expected data type for validation (None for auto-detection)
+        initial_setup: Skip setup work when loading from file
+        is_output: Whether this is an output value (used when loading workflows)
 
     Results: SetParameterValueResultSuccess (with finalized value) | SetParameterValueResultFailure
     """
@@ -161,6 +191,10 @@ class GetParameterDetailsRequest(RequestPayload):
 
     Use when: Inspecting parameter configuration, validating parameter properties,
     building UIs that display parameter details, understanding parameter capabilities.
+
+    Args:
+        parameter_name: Name of the parameter to get details for
+        node_name: Name of the node containing the parameter (None for current context)
 
     Results: GetParameterDetailsResultSuccess (with full details) | GetParameterDetailsResultFailure
     """
@@ -213,6 +247,32 @@ class GetParameterDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 @dataclass
 @PayloadRegistry.register
 class AlterParameterDetailsRequest(RequestPayload):
+    """Alter the details and configuration of a parameter.
+
+    Use when: Modifying parameter types, updating tooltips, changing allowed modes,
+    configuring UI options, updating parameter constraints after creation.
+
+    Args:
+        parameter_name: Name of the parameter to alter
+        node_name: Name of the node containing the parameter (None for current context)
+        type: New parameter type
+        input_types: New list of accepted input types
+        output_type: New output type when used as output
+        default_value: New default value
+        tooltip: New general tooltip text
+        tooltip_as_input: New tooltip when used as input
+        tooltip_as_property: New tooltip when used as property
+        tooltip_as_output: New tooltip when used as output
+        mode_allowed_input: Whether parameter can be used as input
+        mode_allowed_property: Whether parameter can be used as property
+        mode_allowed_output: Whether parameter can be used as output
+        ui_options: New UI configuration options
+        traits: Set of parameter traits
+        initial_setup: Skip setup work when loading from file
+
+    Results: AlterParameterDetailsResultSuccess | AlterParameterDetailsResultFailure
+    """
+
     parameter_name: str
     # If node name is None, use the Current Context
     node_name: str | None = None
@@ -289,6 +349,10 @@ class GetParameterValueRequest(RequestPayload):
     Use when: Reading parameter values, debugging workflow state, displaying current values in UIs,
     validating parameter states before execution.
 
+    Args:
+        parameter_name: Name of the parameter to get value for
+        node_name: Name of the node containing the parameter (None for current context)
+
     Results: GetParameterValueResultSuccess (with value and type info) | GetParameterValueResultFailure
     """
 
@@ -338,6 +402,11 @@ class GetCompatibleParametersRequest(RequestPayload):
     Use when: Creating connections between nodes, validating connection compatibility,
     building connection UIs, discovering available connection targets.
 
+    Args:
+        parameter_name: Name of the parameter to find compatible parameters for
+        is_output: Whether the parameter is an output parameter
+        node_name: Name of the node containing the parameter (None for current context)
+
     Results: GetCompatibleParametersResultSuccess (with compatible parameters) | GetCompatibleParametersResultFailure
     """
 
@@ -373,6 +442,18 @@ class GetCompatibleParametersResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 @dataclass
 @PayloadRegistry.register
 class GetNodeElementDetailsRequest(RequestPayload):
+    """Get detailed information about a node element.
+
+    Use when: Inspecting node structure, debugging element configuration,
+    building advanced UIs, understanding node composition.
+
+    Args:
+        node_name: Name of the node to get element details for (None for current context)
+        specific_element_id: ID of specific element to get details for (None for root)
+
+    Results: GetNodeElementDetailsResultSuccess (with element details) | GetNodeElementDetailsResultFailure
+    """
+
     # If node name is None, use the Current Context
     node_name: str | None = None
     specific_element_id: str | None = None  # Pass None to use the root
@@ -404,6 +485,12 @@ class RenameParameterRequest(RequestPayload):
 
     Use when: Refactoring parameter names, improving parameter clarity, updating parameter
     naming conventions. Handles updating connections and references.
+
+    Args:
+        parameter_name: Current name of the parameter
+        new_parameter_name: New name for the parameter
+        node_name: Name of the node containing the parameter (None for current context)
+        initial_setup: Skip setup work when loading from file
 
     Results: RenameParameterResultSuccess (with old and new names) | RenameParameterResultFailure
     """

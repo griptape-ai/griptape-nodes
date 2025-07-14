@@ -18,6 +18,13 @@ class CreateConnectionRequest(RequestPayload):
     Use when: Connecting node outputs to inputs, building data flow between nodes,
     loading saved workflows. Validates type compatibility and connection rules.
 
+    Args:
+        source_parameter_name: Name of the parameter providing the data
+        target_parameter_name: Name of the parameter receiving the data
+        source_node_name: Name of the source node (None for current context)
+        target_node_name: Name of the target node (None for current context)
+        initial_setup: Skip setup work when loading from file
+
     Results: CreateConnectionResultSuccess | CreateConnectionResultFailure (incompatible types, invalid nodes/parameters)
     """
 
@@ -54,6 +61,12 @@ class DeleteConnectionRequest(RequestPayload):
     Use when: Removing unwanted connections, restructuring workflows, disconnecting nodes,
     updating data flow. Cleans up connection state and updates node resolution.
 
+    Args:
+        source_parameter_name: Name of the parameter providing the data
+        target_parameter_name: Name of the parameter receiving the data
+        source_node_name: Name of the source node (None for current context)
+        target_node_name: Name of the target node (None for current context)
+
     Results: DeleteConnectionResultSuccess | DeleteConnectionResultFailure (connection not found, nodes/parameters not found)
     """
 
@@ -83,6 +96,9 @@ class ListConnectionsForNodeRequest(RequestPayload):
 
     Use when: Inspecting node connectivity, building connection visualizations,
     debugging data flow, validating workflow structure.
+
+    Args:
+        node_name: Name of the node to list connections for (None for current context)
 
     Results: ListConnectionsForNodeResultSuccess (with connection lists) | ListConnectionsForNodeResultFailure (node not found)
     """

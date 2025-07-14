@@ -36,6 +36,16 @@ class CreateNodeRequest(RequestPayload):
     Use when: Building workflows programmatically, responding to user requests ("add a CSV reader"),
     loading saved workflows. Validates node type exists, generates unique name if needed.
 
+    Args:
+        node_type: Class name of the node to create
+        specific_library_name: Library to search for the node type (None for any library)
+        node_name: Desired name for the node (None for auto-generated)
+        override_parent_flow_name: Flow to create the node in (None for current context)
+        metadata: Initial metadata for the node (position, display properties)
+        resolution: Initial resolution state (defaults to UNRESOLVED)
+        initial_setup: Skip setup work when loading from file (defaults to False)
+        set_as_new_context: Set this node as current context after creation (defaults to False)
+
     Results: CreateNodeResultSuccess (with assigned name) | CreateNodeResultFailure (invalid type, missing library, flow not found)
     """
 
@@ -86,6 +96,9 @@ class DeleteNodeRequest(RequestPayload):
     Use when: Removing obsolete nodes, cleaning up failed nodes, restructuring workflows,
     implementing undo. Handles cascading cleanup of connections and execution cancellation.
 
+    Args:
+        node_name: Name of the node to delete (None for current context node)
+
     Results: DeleteNodeResultSuccess | DeleteNodeResultFailure (node not found, cleanup failed)
     """
 
@@ -116,6 +129,9 @@ class GetNodeResolutionStateRequest(RequestPayload):
 
     Use when: Checking if node is ready to execute, monitoring execution progress,
     workflow orchestration, debugging. States: UNRESOLVED -> RESOLVED -> EXECUTING -> COMPLETED/FAILED
+
+    Args:
+        node_name: Name of the node to check (None for current context node)
 
     Results: GetNodeResolutionStateResultSuccess (with state) | GetNodeResolutionStateResultFailure (node not found)
     """
@@ -150,6 +166,9 @@ class ListParametersOnNodeRequest(RequestPayload):
     Use when: Parameter discovery, validation before setting values, generating UIs,
     implementing completion features. Names can be used with GetParameterValue, SetParameterValue, connections.
 
+    Args:
+        node_name: Name of the node to list parameters for (None for current context node)
+
     Results: ListParametersOnNodeResultSuccess (with parameter names) | ListParametersOnNodeResultFailure (node not found)
     """
 
@@ -182,6 +201,9 @@ class GetNodeMetadataRequest(RequestPayload):
 
     Use when: Getting node position for layout, retrieving custom properties, implementing selection,
     saving/loading workflow layout. Metadata doesn't affect execution but provides workflow context.
+
+    Args:
+        node_name: Name of the node to get metadata for (None for current context node)
 
     Results: GetNodeMetadataResultSuccess (with metadata dict) | GetNodeMetadataResultFailure (node not found)
     """
@@ -216,6 +238,10 @@ class SetNodeMetadataRequest(RequestPayload):
     Use when: Updating node position, storing custom properties/annotations, implementing styling,
     saving user preferences. Metadata doesn't affect execution but provides workflow context.
 
+    Args:
+        metadata: Dictionary of metadata to set (position, display properties, custom data)
+        node_name: Name of the node to update metadata for (None for current context node)
+
     Results: SetNodeMetadataResultSuccess | SetNodeMetadataResultFailure (node not found, update error)
     """
 
@@ -245,6 +271,9 @@ class GetAllNodeInfoRequest(RequestPayload):
 
     Use when: Populating UIs, implementing node inspection/debugging, gathering complete state
     for serialization, optimizing performance. Batches metadata, resolution state, connections, parameters.
+
+    Args:
+        node_name: Name of the node to get information for (None for current context node)
 
     Results: GetAllNodeInfoResultSuccess (with comprehensive info) | GetAllNodeInfoResultFailure (node not found)
     """
@@ -381,16 +410,17 @@ class SerializedParameterValueTracker:
 @dataclass
 @PayloadRegistry.register
 class SerializeNodeToCommandsRequest(RequestPayload):
-    """Request payload to serialize a node into a sequence of commands.
+    """Serialize a node into a sequence of commands.
 
-    Attributes:
-        node_name (str | None): The name of the node to serialize. If None, the node in the current context is used.
-        unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Mapping of
-            UUIDs to unique parameter values. Serialization will check a parameter's value against these, inserting
-            new values if necessary. NOTE that it modifies the dict in-place.
-        serialized_parameter_value_tracker (SerializedParameterValueTracker): Mapping of hash values to unique parameter
-            value UUIDs. If serialization adds new unique values, they are added to this map. Unserializable values
-            are preserved to prevent duplicate serialization attempts.
+    Use when: Implementing copy/paste, exporting nodes, creating templates, backing up nodes.
+    Captures complete node state including parameters and connections.
+
+    Args:
+        node_name: Name of the node to serialize (None for current context node)
+        unique_parameter_uuid_to_values: Mapping of UUIDs to unique parameter values (modified in-place)
+        serialized_parameter_value_tracker: Tracks serialization state of parameter values
+
+    Results: SerializeNodeToCommandsResultSuccess (with commands) | SerializeNodeToCommandsResultFailure (serialization error)
     """
 
     node_name: str | None = None
@@ -458,6 +488,9 @@ class SerializeSelectedNodesToCommandsRequest(WorkflowNotAlteredMixin, RequestPa
     Use when: Implementing copy/paste, exporting workflow sections, creating templates,
     backing up workflows, transferring configurations. Preserves nodes and interconnections.
 
+    Args:
+        nodes_to_serialize: List of node identifiers (each containing [node_name, timestamp])
+
     Results: SerializeSelectedNodesToCommandsResultSuccess (with commands) | SerializeSelectedNodesToCommandsResultFailure (node not found, serialization error)
     """
 
@@ -498,6 +531,9 @@ class DeserializeSelectedNodesFromCommandsRequest(WorkflowNotAlteredMixin, Reque
     Use when: Implementing paste functionality, importing configurations, restoring from backups,
     duplicating complex structures. Creates new nodes with unique names and restores parameters/connections.
 
+    Args:
+        positions: List of positions for the recreated nodes (None for default positions)
+
     Results: DeserializeSelectedNodesFromCommandsResultSuccess (with node names) | DeserializeSelectedNodesFromCommandsResultFailure (deserialization error)
     """
 
@@ -533,6 +569,9 @@ class DeserializeNodeFromCommandsRequest(RequestPayload):
 
     Use when: Restoring individual nodes from backups/templates, implementing node-level copy/paste,
     loading configurations, creating from templates. Creates new node with unique name and restores parameters.
+
+    Args:
+        serialized_node_commands: Serialized node commands containing complete node state
 
     Results: DeserializeNodeFromCommandsResultSuccess (with node name) | DeserializeNodeFromCommandsResultFailure (deserialization error)
     """
@@ -570,6 +609,10 @@ class DuplicateSelectedNodesRequest(WorkflowNotAlteredMixin, RequestPayload):
     Use when: Implementing duplicate functionality, creating multiple instances of same configuration,
     expanding workflows by replicating patterns, quick copying without serialization overhead.
     Preserves connections between duplicated nodes.
+
+    Args:
+        nodes_to_duplicate: List of node identifiers to duplicate (each containing [node_name, timestamp])
+        positions: List of positions for the duplicated nodes (None for default positions)
 
     Results: DuplicateSelectedNodesResultSuccess (with node names) | DuplicateSelectedNodesResultFailure (duplication error)
     """
