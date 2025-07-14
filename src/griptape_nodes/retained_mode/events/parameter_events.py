@@ -20,6 +20,14 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @dataclass
 @PayloadRegistry.register
 class AddParameterToNodeRequest(RequestPayload):
+    """Add a new parameter to a node.
+
+    Use when: Dynamically adding inputs/outputs to nodes, customizing node interfaces,
+    building configurable nodes. Supports type validation, tooltips, and mode restrictions.
+
+    Results: AddParameterToNodeResultSuccess (with parameter name) | AddParameterToNodeResultFailure
+    """
+
     # If node name is None, use the Current Context
     node_name: str | None = None
     parameter_name: str | None = None
@@ -53,6 +61,14 @@ class AddParameterToNodeRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class AddParameterToNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Parameter added successfully to node.
+
+    Args:
+        parameter_name: Name of the new parameter
+        type: Type of the parameter
+        node_name: Name of the node parameter was added to
+    """
+
     parameter_name: str
     type: str
     node_name: str
@@ -61,12 +77,20 @@ class AddParameterToNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess
 @dataclass
 @PayloadRegistry.register
 class AddParameterToNodeResultFailure(ResultPayloadFailure):
-    pass
+    """Parameter addition failed. Common causes: node not found, invalid parameter name, type conflicts."""
 
 
 @dataclass
 @PayloadRegistry.register
 class RemoveParameterFromNodeRequest(RequestPayload):
+    """Remove a parameter from a node.
+
+    Use when: Cleaning up unused parameters, dynamically restructuring node interfaces,
+    removing deprecated parameters. Handles cleanup of connections and values.
+
+    Results: RemoveParameterFromNodeResultSuccess | RemoveParameterFromNodeResultFailure
+    """
+
     parameter_name: str
     # If node name is None, use the Current Context
     node_name: str | None = None
@@ -75,18 +99,26 @@ class RemoveParameterFromNodeRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class RemoveParameterFromNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    pass
+    """Parameter removed successfully from node. Connections and values cleaned up."""
 
 
 @dataclass
 @PayloadRegistry.register
 class RemoveParameterFromNodeResultFailure(ResultPayloadFailure):
-    pass
+    """Parameter removal failed. Common causes: node not found, parameter not found, removal not allowed."""
 
 
 @dataclass
 @PayloadRegistry.register
 class SetParameterValueRequest(RequestPayload):
+    """Set the value of a parameter on a node.
+
+    Use when: Configuring node inputs, setting property values, loading saved workflows,
+    updating parameter values programmatically. Handles type validation and conversion.
+
+    Results: SetParameterValueResultSuccess (with finalized value) | SetParameterValueResultFailure
+    """
+
     parameter_name: str
     value: Any
     # If node name is None, use the Current Context
@@ -101,6 +133,13 @@ class SetParameterValueRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class SetParameterValueResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Parameter value set successfully. Value may have been processed or converted.
+
+    Args:
+        finalized_value: The actual value stored after processing
+        data_type: The determined data type of the value
+    """
+
     finalized_value: Any
     data_type: str
 
@@ -108,12 +147,24 @@ class SetParameterValueResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess)
 @dataclass
 @PayloadRegistry.register
 class SetParameterValueResultFailure(ResultPayloadFailure):
-    pass
+    """Parameter value setting failed.
+
+    Common causes: node not found, parameter not found,
+    type validation error, value conversion error.
+    """
 
 
 @dataclass
 @PayloadRegistry.register
 class GetParameterDetailsRequest(RequestPayload):
+    """Get detailed information about a parameter.
+
+    Use when: Inspecting parameter configuration, validating parameter properties,
+    building UIs that display parameter details, understanding parameter capabilities.
+
+    Results: GetParameterDetailsResultSuccess (with full details) | GetParameterDetailsResultFailure
+    """
+
     parameter_name: str
     # If node name is None, use the Current Context
     node_name: str | None = None
@@ -122,6 +173,21 @@ class GetParameterDetailsRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetParameterDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Parameter details retrieved successfully.
+
+    Args:
+        element_id: Unique identifier for the parameter
+        type: Parameter type
+        input_types: Accepted input types
+        output_type: Output type when used as output
+        default_value: Default value if any
+        tooltip: General tooltip text
+        tooltip_as_input/property/output: Mode-specific tooltips
+        mode_allowed_input/property/output: Which modes are allowed
+        is_user_defined: Whether this is a user-defined parameter
+        ui_options: UI configuration options
+    """
+
     element_id: str
     type: str
     input_types: list[str]
@@ -141,7 +207,7 @@ class GetParameterDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuc
 @dataclass
 @PayloadRegistry.register
 class GetParameterDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Parameter details retrieval failed. Common causes: node not found, parameter not found."""
 
 
 @dataclass
@@ -218,6 +284,14 @@ class AlterParameterDetailsResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetParameterValueRequest(RequestPayload):
+    """Get the current value of a parameter.
+
+    Use when: Reading parameter values, debugging workflow state, displaying current values in UIs,
+    validating parameter states before execution.
+
+    Results: GetParameterValueResultSuccess (with value and type info) | GetParameterValueResultFailure
+    """
+
     parameter_name: str
     # If node name is None, use the Current Context
     node_name: str | None = None
@@ -226,6 +300,15 @@ class GetParameterValueRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetParameterValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Parameter value retrieved successfully.
+
+    Args:
+        input_types: Accepted input types
+        type: Current parameter type
+        output_type: Output type when used as output
+        value: Current parameter value
+    """
+
     input_types: list[str]
     type: str
     output_type: str
@@ -235,7 +318,7 @@ class GetParameterValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucce
 @dataclass
 @PayloadRegistry.register
 class GetParameterValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Parameter value retrieval failed. Common causes: node not found, parameter not found."""
 
 
 @dataclass
@@ -250,6 +333,14 @@ class OnParameterValueChanged(WorkflowAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class GetCompatibleParametersRequest(RequestPayload):
+    """Get parameters that are compatible for connections.
+
+    Use when: Creating connections between nodes, validating connection compatibility,
+    building connection UIs, discovering available connection targets.
+
+    Results: GetCompatibleParametersResultSuccess (with compatible parameters) | GetCompatibleParametersResultFailure
+    """
+
     parameter_name: str
     is_output: bool
     # If node name is None, use the Current Context
@@ -264,13 +355,19 @@ class ParameterAndMode(NamedTuple):
 @dataclass
 @PayloadRegistry.register
 class GetCompatibleParametersResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Compatible parameters retrieved successfully.
+
+    Args:
+        valid_parameters_by_node: Dictionary mapping node names to lists of compatible parameters
+    """
+
     valid_parameters_by_node: dict[str, list[ParameterAndMode]]
 
 
 @dataclass
 @PayloadRegistry.register
 class GetCompatibleParametersResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Compatible parameters retrieval failed. Common causes: node not found, parameter not found."""
 
 
 @dataclass
@@ -303,6 +400,14 @@ class AlterElementEvent(ExecutionPayload):
 @dataclass
 @PayloadRegistry.register
 class RenameParameterRequest(RequestPayload):
+    """Rename a parameter on a node.
+
+    Use when: Refactoring parameter names, improving parameter clarity, updating parameter
+    naming conventions. Handles updating connections and references.
+
+    Results: RenameParameterResultSuccess (with old and new names) | RenameParameterResultFailure
+    """
+
     parameter_name: str
     new_parameter_name: str
     # If node name is None, use the Current Context
@@ -314,6 +419,14 @@ class RenameParameterRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class RenameParameterResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Parameter renamed successfully. Connections and references updated.
+
+    Args:
+        old_parameter_name: Previous parameter name
+        new_parameter_name: New parameter name
+        node_name: Name of the node containing the parameter
+    """
+
     old_parameter_name: str
     new_parameter_name: str
     node_name: str
@@ -322,7 +435,11 @@ class RenameParameterResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class RenameParameterResultFailure(ResultPayloadFailure):
-    pass
+    """Parameter rename failed.
+
+    Common causes: node not found, parameter not found,
+    name already exists, invalid new name.
+    """
 
 
 @dataclass

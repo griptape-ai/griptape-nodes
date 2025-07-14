@@ -20,60 +20,108 @@ if TYPE_CHECKING:
 @dataclass
 @PayloadRegistry.register
 class ListRegisteredLibrariesRequest(RequestPayload):
-    pass
+    """List all currently registered libraries.
+
+    Use when: Displaying available libraries, checking library availability,
+    building library selection UIs, debugging library registration.
+
+    Results: ListRegisteredLibrariesResultSuccess (with library names) | ListRegisteredLibrariesResultFailure (system error)
+    """
 
 
 @dataclass
 @PayloadRegistry.register
 class ListRegisteredLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Registered libraries listed successfully.
+
+    Args:
+        libraries: List of registered library names
+    """
+
     libraries: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
 class ListRegisteredLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Library listing failed. Common causes: registry not initialized, system error."""
 
 
 @dataclass
 @PayloadRegistry.register
 class ListCapableLibraryEventHandlersRequest(RequestPayload):
+    """List libraries capable of handling a specific event type.
+
+    Use when: Finding libraries that can process specific events, implementing event routing,
+    library capability discovery, debugging event handling.
+
+    Results: ListCapableLibraryEventHandlersResultSuccess (with handler names) | ListCapableLibraryEventHandlersResultFailure (query error)
+    """
+
     request_type: str
 
 
 @dataclass
 @PayloadRegistry.register
 class ListCapableLibraryEventHandlersResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Event handlers listed successfully.
+
+    Args:
+        handlers: List of library names capable of handling the event type
+    """
+
     handlers: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
 class ListCapableLibraryEventHandlersResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Event handlers listing failed. Common causes: invalid event type, registry error."""
 
 
 @dataclass
 @PayloadRegistry.register
 class ListNodeTypesInLibraryRequest(RequestPayload):
+    """List all node types available in a specific library.
+
+    Use when: Discovering available nodes, building node creation UIs,
+    validating node types, exploring library contents.
+
+    Results: ListNodeTypesInLibraryResultSuccess (with node types) | ListNodeTypesInLibraryResultFailure (library not found)
+    """
+
     library: str
 
 
 @dataclass
 @PayloadRegistry.register
 class ListNodeTypesInLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Node types in library listed successfully.
+
+    Args:
+        node_types: List of node type names available in the library
+    """
+
     node_types: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
 class ListNodeTypesInLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Node types listing failed. Common causes: library not found, library not loaded."""
 
 
 @dataclass
 @PayloadRegistry.register
 class GetNodeMetadataFromLibraryRequest(RequestPayload):
+    """Get metadata for a specific node type from a library.
+
+    Use when: Inspecting node capabilities, validating node types, building node creation UIs,
+    getting parameter definitions, checking node requirements.
+
+    Results: GetNodeMetadataFromLibraryResultSuccess (with metadata) | GetNodeMetadataFromLibraryResultFailure (node not found)
+    """
+
     library: str
     node_type: str
 
@@ -81,13 +129,19 @@ class GetNodeMetadataFromLibraryRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetNodeMetadataFromLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Node metadata retrieved successfully from library.
+
+    Args:
+        metadata: Complete node metadata including parameters, description, requirements
+    """
+
     metadata: NodeMetadata
 
 
 @dataclass
 @PayloadRegistry.register
 class GetNodeMetadataFromLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Node metadata retrieval failed. Common causes: library not found, node type not found, library not loaded."""
 
 
 @dataclass
@@ -197,6 +251,14 @@ class LoadMetadataForAllLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPa
 @dataclass
 @PayloadRegistry.register
 class RegisterLibraryFromFileRequest(RequestPayload):
+    """Register a library from a JSON file.
+
+    Use when: Loading custom libraries, adding new node types,
+    registering development libraries, extending node capabilities.
+
+    Results: RegisterLibraryFromFileResultSuccess (with library name) | RegisterLibraryFromFileResultFailure (load error)
+    """
+
     file_path: str
     load_as_default_library: bool = False
 
@@ -204,18 +266,32 @@ class RegisterLibraryFromFileRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class RegisterLibraryFromFileResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Library registered successfully from file.
+
+    Args:
+        library_name: Name of the registered library
+    """
+
     library_name: str
 
 
 @dataclass
 @PayloadRegistry.register
 class RegisterLibraryFromFileResultFailure(ResultPayloadFailure):
-    pass
+    """Library registration from file failed. Common causes: file not found, invalid format, load error."""
 
 
 @dataclass
 @PayloadRegistry.register
 class RegisterLibraryFromRequirementSpecifierRequest(RequestPayload):
+    """Register a library from a requirement specifier (e.g., package name).
+
+    Use when: Installing libraries from package managers, adding dependencies,
+    registering third-party libraries, dynamic library loading.
+
+    Results: RegisterLibraryFromRequirementSpecifierResultSuccess (with library name) | RegisterLibraryFromRequirementSpecifierResultFailure (install error)
+    """
+
     requirement_specifier: str
     library_config_name: str = "griptape_nodes_library.json"
 
@@ -223,61 +299,111 @@ class RegisterLibraryFromRequirementSpecifierRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class RegisterLibraryFromRequirementSpecifierResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Library registered successfully from requirement specifier.
+
+    Args:
+        library_name: Name of the registered library
+    """
+
     library_name: str
 
 
 @dataclass
 @PayloadRegistry.register
 class RegisterLibraryFromRequirementSpecifierResultFailure(ResultPayloadFailure):
-    pass
+    """Library registration from requirement specifier failed. Common causes: package not found, installation error, invalid specifier."""
 
 
 @dataclass
 @PayloadRegistry.register
 class ListCategoriesInLibraryRequest(RequestPayload):
+    """List all categories available in a library.
+
+    Use when: Building category-based UIs, organizing node selection,
+    browsing library contents, implementing filters.
+
+    Results: ListCategoriesInLibraryResultSuccess (with categories) | ListCategoriesInLibraryResultFailure (library not found)
+    """
+
     library: str
 
 
 @dataclass
 @PayloadRegistry.register
 class ListCategoriesInLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library categories listed successfully.
+
+    Args:
+        categories: List of category dictionaries with names, descriptions, and metadata
+    """
+
     categories: list[dict]
 
 
 @dataclass
 @PayloadRegistry.register
 class ListCategoriesInLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Library categories listing failed. Common causes: library not found, library not loaded."""
 
 
 @dataclass
 @PayloadRegistry.register
 class GetLibraryMetadataRequest(RequestPayload):
+    """Get metadata for a specific library.
+
+    Use when: Inspecting library properties, displaying library information,
+    checking library versions, validating library compatibility.
+
+    Results: GetLibraryMetadataResultSuccess (with metadata) | GetLibraryMetadataResultFailure (library not found)
+    """
+
     library: str
 
 
 @dataclass
 @PayloadRegistry.register
 class GetLibraryMetadataResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library metadata retrieved successfully.
+
+    Args:
+        metadata: Complete library metadata including version, description, dependencies
+    """
+
     metadata: LibraryMetadata
 
 
 @dataclass
 @PayloadRegistry.register
 class GetLibraryMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Library metadata retrieval failed. Common causes: library not found, library not loaded."""
 
 
 # "Jumbo" event for getting all things say, a GUI might want w/r/t a Library.
 @dataclass
 @PayloadRegistry.register
 class GetAllInfoForLibraryRequest(RequestPayload):
+    """Get comprehensive information for a library in a single call.
+
+    Use when: Populating library UIs, implementing library inspection,
+    gathering complete library state, optimizing multiple info requests.
+
+    Results: GetAllInfoForLibraryResultSuccess (with comprehensive info) | GetAllInfoForLibraryResultFailure (library not found)
+    """
+
     library: str
 
 
 @dataclass
 @PayloadRegistry.register
 class GetAllInfoForLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Comprehensive library information retrieved successfully.
+
+    Args:
+        library_metadata_details: Library metadata and version information
+        category_details: All categories available in the library
+        node_type_name_to_node_metadata_details: Complete node metadata for each node type
+    """
+
     library_metadata_details: GetLibraryMetadataResultSuccess
     category_details: ListCategoriesInLibraryResultSuccess
     node_type_name_to_node_metadata_details: dict[str, GetNodeMetadataFromLibraryResultSuccess]
@@ -286,44 +412,64 @@ class GetAllInfoForLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSu
 @dataclass
 @PayloadRegistry.register
 class GetAllInfoForLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Comprehensive library information retrieval failed. Common causes: library not found, library not loaded, partial failure."""
 
 
 # The "Jumbo-est" of them all. Grabs all info for all libraries in one fell swoop.
 @dataclass
 @PayloadRegistry.register
 class GetAllInfoForAllLibrariesRequest(RequestPayload):
-    pass
+    """Get comprehensive information for all libraries in a single call.
+
+    Use when: Populating complete library catalogs, implementing library browsers,
+    gathering system-wide library state, optimizing bulk library operations.
+
+    Results: GetAllInfoForAllLibrariesResultSuccess (with all library info) | GetAllInfoForAllLibrariesResultFailure (system error)
+    """
 
 
 @dataclass
 @PayloadRegistry.register
 class GetAllInfoForAllLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Comprehensive information for all libraries retrieved successfully.
+
+    Args:
+        library_name_to_library_info: Complete information for each registered library
+    """
+
     library_name_to_library_info: dict[str, GetAllInfoForLibraryResultSuccess]
 
 
 @dataclass
 @PayloadRegistry.register
 class GetAllInfoForAllLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Comprehensive information retrieval for all libraries failed. Common causes: registry not initialized, system error."""
 
 
 @dataclass
 @PayloadRegistry.register
 class UnloadLibraryFromRegistryRequest(RequestPayload):
+    """Unload a library from the registry.
+
+    Use when: Removing unused libraries, cleaning up library registry,
+    preparing for library updates, troubleshooting library issues.
+
+    Results: UnloadLibraryFromRegistryResultSuccess | UnloadLibraryFromRegistryResultFailure (library not found, unload error)
+    """
+
     library_name: str
 
 
 @dataclass
 @PayloadRegistry.register
 class UnloadLibraryFromRegistryResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    pass
+    """Library unloaded successfully from registry."""
 
 
 @dataclass
 @PayloadRegistry.register
 class UnloadLibraryFromRegistryResultFailure(ResultPayloadFailure):
-    pass
+    """Library unload failed. Common causes: library not found, library in use, unload error."""
 
 
 @dataclass
@@ -343,10 +489,10 @@ class ReloadAllLibrariesRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class ReloadAllLibrariesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    pass
+    """All libraries reloaded successfully. All workflow state has been cleared."""
 
 
 @dataclass
 @PayloadRegistry.register
 class ReloadAllLibrariesResultFailure(ResultPayloadFailure):
-    pass
+    """Library reload failed. Common causes: library loading errors, system constraints, initialization failures."""
