@@ -10,9 +10,6 @@ from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import (
-    ResultDetailDebug,
-    ResultDetailError,
-    ResultDetailInfo,
     ResultDetails,
     ResultPayload,
 )
@@ -361,35 +358,35 @@ class ConfigManager:
             contents = self.merged_config
             details = "Successfully returned the entire config dictionary."
             return GetConfigCategoryResultSuccess(
-                contents=contents, details=ResultDetails(ResultDetailDebug(details), logger=logger)
+                contents=contents, details=ResultDetails(message=details, level="DEBUG")
             )
 
         # See if we got something valid.
         find_results = self.get_config_value(request.category)
         if find_results is None:
             details = f"Attempted to get config details for category '{request.category}'. Failed because no such category could be found."
-            return GetConfigCategoryResultFailure(details=ResultDetails(ResultDetailError(details), logger=logger))
+            return GetConfigCategoryResultFailure(details=ResultDetails(message=details, level="ERROR"))
 
         if not isinstance(find_results, dict):
             details = f"Attempted to get config details for category '{request.category}'. Failed because this was was not a dictionary."
-            return GetConfigCategoryResultFailure(details=ResultDetails(ResultDetailError(details), logger=logger))
+            return GetConfigCategoryResultFailure(details=ResultDetails(message=details, level="ERROR"))
 
         details = f"Successfully returned the config dictionary for section '{request.category}'."
         return GetConfigCategoryResultSuccess(
-            contents=find_results, details=ResultDetails(ResultDetailDebug(details), logger=logger)
+            contents=find_results, details=ResultDetails(message=details, level="DEBUG")
         )
 
     def on_handle_set_config_category_request(self, request: SetConfigCategoryRequest) -> ResultPayload:
         # Validate the value is a dict
         if not isinstance(request.contents, dict):
             details = f"Attempted to set config details for category '{request.category}'. Failed because the contents provided were not a dictionary."
-            return SetConfigCategoryResultFailure(details=ResultDetails(ResultDetailError(details), logger=logger))
+            return SetConfigCategoryResultFailure(details=ResultDetails(message=details, level="ERROR"))
 
         if request.category is None or request.category == "":
             # Assign the whole shebang.
             self._write_user_config_delta(request.contents)
             details = "Successfully assigned the entire config dictionary."
-            return SetConfigCategoryResultSuccess(details=ResultDetails(ResultDetailDebug(details), logger=logger))
+            return SetConfigCategoryResultSuccess(details=ResultDetails(message=details, level="DEBUG"))
 
         self.set_config_value(key=request.category, value=request.contents)
 
@@ -400,28 +397,26 @@ class ConfigManager:
             self._update_secret_from_env_var(after_env_var)
 
         details = f"Successfully assigned the config dictionary for section '{request.category}'."
-        return SetConfigCategoryResultSuccess(details=ResultDetails(ResultDetailDebug(details), logger=logger))
+        return SetConfigCategoryResultSuccess(details=ResultDetails(message=details, level="DEBUG"))
 
     def on_handle_get_config_value_request(self, request: GetConfigValueRequest) -> ResultPayload:
         if request.category_and_key == "":
             details = "Attempted to get config value but no category or key was specified."
-            return GetConfigValueResultFailure(details=ResultDetails(ResultDetailError(details), logger=logger))
+            return GetConfigValueResultFailure(details=ResultDetails(message=details, level="ERROR"))
 
         # See if we got something valid.
         find_results = self.get_config_value(request.category_and_key)
         if find_results is None:
             details = f"Attempted to get config value for category.key '{request.category_and_key}'. Failed because no such category.key could be found."
-            return GetConfigValueResultFailure(details=ResultDetails(ResultDetailError(details), logger=logger))
+            return GetConfigValueResultFailure(details=ResultDetails(message=details, level="ERROR"))
 
         details = f"Successfully returned the config value for section '{request.category_and_key}'."
-        return GetConfigValueResultSuccess(
-            value=find_results, details=ResultDetails(ResultDetailDebug(details), logger=logger)
-        )
+        return GetConfigValueResultSuccess(value=find_results, details=ResultDetails(message=details, level="DEBUG"))
 
     def on_handle_get_config_path_request(self, request: GetConfigPathRequest) -> ResultPayload:  # noqa: ARG002
         details = "Successfully returned the config path."
         return GetConfigPathResultSuccess(
-            config_path=str(USER_CONFIG_PATH), details=ResultDetails(ResultDetailDebug(details), logger=logger)
+            config_path=str(USER_CONFIG_PATH), details=ResultDetails(message=details, level="DEBUG")
         )
 
     def on_handle_reset_config_request(self, request: ResetConfigRequest) -> ResultPayload:  # noqa: ARG002
@@ -431,10 +426,10 @@ class ConfigManager:
             self.workspace_path = Path(self.merged_config["workspace_directory"])
 
             details = "Successfully reset user configuration."
-            return ResetConfigResultSuccess(details=ResultDetails(ResultDetailInfo(details), logger=logger))
+            return ResetConfigResultSuccess(details=ResultDetails(message=details, level="INFO"))
         except Exception as e:
             details = f"Attempted to reset user configuration but failed: {e}."
-            return ResetConfigResultFailure(details=ResultDetails(ResultDetailError(details), logger=logger))
+            return ResetConfigResultFailure(details=ResultDetails(message=details, level="ERROR"))
 
     def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
         """Generate a diff between the old and new values."""
@@ -475,7 +470,7 @@ class ConfigManager:
     def on_handle_set_config_value_request(self, request: SetConfigValueRequest) -> ResultPayload:
         if request.category_and_key == "":
             details = "Attempted to set config value but no category or key was specified."
-            return SetConfigValueResultFailure(details=ResultDetails(ResultDetailError(details), logger=logger))
+            return SetConfigValueResultFailure(details=ResultDetails(message=details, level="ERROR"))
 
         # Fetch the existing value (don't go to the env vars directly; we want the key)
         old_value = self.get_config_value(request.category_and_key, should_load_env_var_if_detected=False)
@@ -509,7 +504,7 @@ class ConfigManager:
         else:
             details = f"Successfully assigned the config value for '{request.category_and_key}':\n\tFROM '{old_value_copy}'\n\tTO: '{request.value}'"
 
-        return SetConfigValueResultSuccess(details=ResultDetails(ResultDetailDebug(details), logger=logger))
+        return SetConfigValueResultSuccess(details=ResultDetails(message=details, level="DEBUG"))
 
     def _write_user_config_delta(self, user_config_delta: dict) -> None:
         """Write the user configuration to the config file.

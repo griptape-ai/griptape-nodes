@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, TypeVar
 
 from griptape.artifacts import BaseArtifact
 from griptape.events import BaseEvent as GtBaseEvent
@@ -20,48 +21,8 @@ if TYPE_CHECKING:
 class ResultDetail:
     """A single detail about an operation result, including logging level and human readable message."""
 
-    level: Any  # Accept logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
     message: str
-
-
-@dataclass
-class ResultDetailDebug(ResultDetail):
-    """A debug-level result detail."""
-
-    def __init__(self, message: str):
-        import logging
-
-        super().__init__(level=logging.DEBUG, message=message)
-
-
-@dataclass
-class ResultDetailInfo(ResultDetail):
-    """An info-level result detail."""
-
-    def __init__(self, message: str):
-        import logging
-
-        super().__init__(level=logging.INFO, message=message)
-
-
-@dataclass
-class ResultDetailWarning(ResultDetail):
-    """A warning-level result detail."""
-
-    def __init__(self, message: str):
-        import logging
-
-        super().__init__(level=logging.WARNING, message=message)
-
-
-@dataclass
-class ResultDetailError(ResultDetail):
-    """An error-level result detail."""
-
-    def __init__(self, message: str):
-        import logging
-
-        super().__init__(level=logging.ERROR, message=message)
 
 
 @dataclass
@@ -70,17 +31,45 @@ class ResultDetails:
 
     details: list[ResultDetail]
 
-    def __init__(self, *details: ResultDetail, logger: Any | None = None):
-        """Initialize with one or more ResultDetail objects, optionally logging them."""
-        if not details:
-            err_str = "ResultDetails requires at least one ResultDetail"
-            raise ValueError(err_str)
-        self.details = list(details)
+    def __init__(
+        self,
+        *details: ResultDetail,
+        message: str | None = None,
+        level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None = None,
+        logger: Any | None = "default",
+    ):
+        """Initialize with ResultDetail objects or create a single one from message/level.
+
+        Args:
+            *details: Variable number of ResultDetail objects
+            message: If provided, creates a single ResultDetail with this message
+            level: Logging level for the single ResultDetail (required if message is provided)
+            logger: Logger to use for auto-logging. "default" uses griptape_nodes logger,
+                   None skips logging, or pass a custom logger
+        """
+        # Handle single message/level convenience
+        if message is not None:
+            if level is None:
+                err_msg = "level is required when message is provided"
+                raise ValueError(err_msg)
+            if details:
+                err_msg = "Cannot provide both details and message/level"
+                raise ValueError(err_msg)
+            self.details = [ResultDetail(level=level, message=message)]
+        else:
+            if not details:
+                err_msg = "ResultDetails requires at least one ResultDetail or message/level"
+                raise ValueError(err_msg)
+            self.details = list(details)
 
         # Auto-log if logger is provided
+        if logger == "default":
+            logger = logging.getLogger("griptape_nodes")
+
         if logger:
             for detail in self.details:
-                logger.log(detail.level, detail.message)
+                numeric_level = getattr(logging, detail.level)
+                logger.log(numeric_level, detail.message)
 
 
 # The Payload class is a marker interface
