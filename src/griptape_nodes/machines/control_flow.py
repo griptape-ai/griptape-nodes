@@ -32,20 +32,21 @@ class ControlFlowContext:
     selected_output: Parameter | None
     paused: bool = False
 
-    def __init__(self, flow: ControlFlow) -> None:
-        self.resolution_machine = NodeResolutionMachine(flow)
-        self.flow = flow
+    def __init__(self) -> None:
+        self.resolution_machine = NodeResolutionMachine()
         self.current_node = None
 
     def get_next_node(self, output_parameter: Parameter) -> BaseNode | None:
         if self.current_node is not None:
-            node = self.flow.connections.get_connected_node(self.current_node, output_parameter)
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            node = GriptapeNodes.FlowManager().get_connections().get_connected_node(self.current_node, output_parameter)
             if node is not None:
                 node, _ = node
-            # Continue Execution to the next node that needs to be executed.
-            elif not self.flow.flow_queue.empty():
-                node = self.flow.flow_queue.get()
-                self.flow.flow_queue.task_done()
+            # Continue Execution to the next node that needs to be executed using global execution queue
+            else:
+                # Get the next node in the execution queue, or None if queue is empty
+                node = GriptapeNodes.FlowManager().get_next_node_from_execution_queue()
             return node
         return None
 
@@ -124,9 +125,11 @@ class NextNodeState(State):
                     )
                 )
             )
-        elif not context.flow.flow_queue.empty():
-            next_node = context.flow.flow_queue.get()
-            context.flow.flow_queue.task_done()
+        else:
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            # Get the next node in the execution queue, or None if queue is empty
+            next_node = GriptapeNodes.FlowManager().get_next_node_from_execution_queue()
         # The parameter that will be evaluated next
         if next_node is None:
             # If no node attached
@@ -168,8 +171,8 @@ class CompleteState(State):
 
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
-    def __init__(self, flow: ControlFlow) -> None:
-        context = ControlFlowContext(flow)
+    def __init__(self) -> None:
+        context = ControlFlowContext()
         super().__init__(context)
 
     def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002

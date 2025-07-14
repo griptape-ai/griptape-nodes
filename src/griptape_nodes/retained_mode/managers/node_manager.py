@@ -185,23 +185,24 @@ class NodeManager:
         # Get all connections for this node and update them.
         flow_name = self.get_node_parent_flow_by_name(old_name)
         flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+        connections = GriptapeNodes.FlowManager().get_connections()
         # Get all incoming and outgoing connections and update them.
-        if old_name in flow.connections.incoming_index:
-            incoming_connections = flow.connections.incoming_index[old_name]
+        if old_name in connections.incoming_index:
+            incoming_connections = connections.incoming_index[old_name]
             for connection_ids in incoming_connections.values():
                 for connection_id in connection_ids:
-                    connection = flow.connections.connections[connection_id]
+                    connection = connections.connections[connection_id]
                     connection.target_node.name = new_name
-            temp = flow.connections.incoming_index.pop(old_name)
-            flow.connections.incoming_index[new_name] = temp
-        if old_name in flow.connections.outgoing_index:
-            outgoing_connections = flow.connections.outgoing_index[old_name]
+            temp = connections.incoming_index.pop(old_name)
+            connections.incoming_index[new_name] = temp
+        if old_name in connections.outgoing_index:
+            outgoing_connections = connections.outgoing_index[old_name]
             for connection_ids in outgoing_connections.values():
                 for connection_id in connection_ids:
-                    connection = flow.connections.connections[connection_id]
+                    connection = connections.connections[connection_id]
                     connection.source_node.name = new_name
-            temp = flow.connections.outgoing_index.pop(old_name)
-            flow.connections.outgoing_index[new_name] = temp
+            temp = connections.outgoing_index.pop(old_name)
+            connections.outgoing_index[new_name] = temp
         # update the node in the flow!
         flow.remove_node(old_name)
         node.name = new_name
@@ -395,11 +396,11 @@ class NodeManager:
             This method also clears the flow queue regardless of whether cancellation occurred,
             to ensure the specified node is not processed in the future.
         """
-        if parent_flow.check_for_existing_running_flow():
+        if GriptapeNodes.FlowManager().check_for_existing_running_flow():
             # get the current node executing / resolving
             # if it's in connected nodes, cancel flow.
             # otherwise, leave it.
-            control_node_name, resolving_node_name = parent_flow.flow_state()
+            control_node_name, resolving_node_name = GriptapeNodes.FlowManager().flow_state(parent_flow)
             connected_nodes = parent_flow.get_all_connected_nodes(node)
             cancelled = False
             if control_node_name is not None:
@@ -423,8 +424,8 @@ class NodeManager:
                         )
                         logger.error(details)
                         return DeleteNodeResultFailure()
-            # Clear the queue, because we don't want to his this node eventually.
-            parent_flow.clear_flow_queue()
+            # Clear the execution queue, because we don't want to hit this node eventually.
+            parent_flow.clear_execution_queue()
         return None
 
     def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911 (complex logic, lots of edge cases)
@@ -640,7 +641,7 @@ class NodeManager:
 
         parent_flow_name = self._name_to_parent_flow_name[node_name]
         try:
-            parent_flow = GriptapeNodes.FlowManager().get_flow_by_name(parent_flow_name)
+            GriptapeNodes.FlowManager().get_flow_by_name(parent_flow_name)
         except KeyError as err:
             details = f"Attempted to list Connections for a Node '{node_name}'. Error: {err}"
             logger.error(details)
@@ -649,7 +650,7 @@ class NodeManager:
             return result
 
         # Kinda gross, but let's do it
-        connection_mgr = parent_flow.connections
+        connection_mgr = GriptapeNodes.FlowManager().get_connections()
         # get outgoing connections
         outgoing_connections_list = []
         if node_name in connection_mgr.outgoing_index:
@@ -1429,7 +1430,7 @@ class NodeManager:
             return SetParameterValueResultFailure()
         if not request.initial_setup and modified:
             try:
-                parent_flow.connections.unresolve_future_nodes(node)
+                GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(node)
             except Exception as err:
                 details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
                 logger.error(details)
@@ -1752,12 +1753,12 @@ class NodeManager:
             details = f'Failed to fetch parent flow for "{node_name}"'
             logger.error(details)
             return ResolveNodeResultFailure(validation_exceptions=[])
-        if flow.check_for_existing_running_flow():
+        if GriptapeNodes.FlowManager().check_for_existing_running_flow():
             details = f"Failed to resolve from node '{node_name}'. Flow is already running."
             logger.error(details)
             return ResolveNodeResultFailure(validation_exceptions=[])
         try:
-            flow.connections.unresolve_future_nodes(node)
+            GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(node)
         except Exception as e:
             details = f'Failed to mark future nodes dirty. Unable to kick off flow from "{node_name}": {e}'
             logger.error(details)
@@ -1783,7 +1784,7 @@ class NodeManager:
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[e])
         try:
-            flow.resolve_singular_node(node, debug_mode)
+            GriptapeNodes.FlowManager().resolve_singular_node(flow, node, debug_mode)
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             logger.error(details)
@@ -2098,15 +2099,16 @@ class NodeManager:
             parameter_commands[result.serialized_node_commands.node_uuid] = result.set_parameter_value_commands
             try:
                 flow_name = self.get_node_parent_flow_by_name(node_name)
-                flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+                GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
             except Exception:
                 details = f"Attempted to serialize a selection of Nodes. Failed to get the flow of node {node_name}. Cannot serialize connections for this node."
                 logger.warning(details)
                 continue
-            if node_name in flow.connections.outgoing_index:
+            connections = GriptapeNodes.FlowManager().get_connections()
+            if node_name in connections.outgoing_index:
                 node_connections = [
-                    flow.connections.connections[connection_id]
-                    for category_dict in flow.connections.outgoing_index[node_name].values()
+                    connections.connections[connection_id]
+                    for category_dict in connections.outgoing_index[node_name].values()
                     for connection_id in category_dict
                 ]
                 for connection in node_connections:
@@ -2420,22 +2422,23 @@ class NodeManager:
 
         # Get all connections for this node
         flow_name = self.get_node_parent_flow_by_name(node_name)
-        flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+        GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+        connections = GriptapeNodes.FlowManager().get_connections()
 
         # Update connections that reference this parameter
-        if node_name in flow.connections.incoming_index:
-            incoming_connections = flow.connections.incoming_index[node_name]
+        if node_name in connections.incoming_index:
+            incoming_connections = connections.incoming_index[node_name]
             for connection_ids in incoming_connections.values():
                 for connection_id in connection_ids:
-                    connection = flow.connections.connections[connection_id]
+                    connection = connections.connections[connection_id]
                     if connection.target_parameter.name == request.parameter_name:
                         connection.target_parameter.name = request.new_parameter_name
 
-        if node_name in flow.connections.outgoing_index:
-            outgoing_connections = flow.connections.outgoing_index[node_name]
+        if node_name in connections.outgoing_index:
+            outgoing_connections = connections.outgoing_index[node_name]
             for connection_ids in outgoing_connections.values():
                 for connection_id in connection_ids:
-                    connection = flow.connections.connections[connection_id]
+                    connection = connections.connections[connection_id]
                     if connection.source_parameter.name == request.parameter_name:
                         connection.source_parameter.name = request.new_parameter_name
 

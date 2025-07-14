@@ -80,7 +80,9 @@ class ForLoopStartNode(ForEachStartNode):
             self.current_index = 0  # Start at 0 for proper end node synchronization
 
         # Unresolve all future nodes at the start of processing
-        self._flow.connections.unresolve_future_nodes(self)
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(self)
 
         # Get the current value and pass it along
         step = self.get_parameter_value("step")
