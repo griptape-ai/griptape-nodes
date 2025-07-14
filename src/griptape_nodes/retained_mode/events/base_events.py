@@ -70,7 +70,7 @@ class ResultDetails:
                 for detail in self.details:
                     numeric_level = getattr(logging, detail.level)
                     logger.log(numeric_level, detail.message)
-            except Exception:
+            except Exception:  # noqa: S110
                 # If logging fails for any reason, don't let it break the ResultDetails creation
                 pass
 
