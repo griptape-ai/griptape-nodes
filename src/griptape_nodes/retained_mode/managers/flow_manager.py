@@ -1971,7 +1971,6 @@ class FlowManager:
                     connections.append((connection.source_node, connection.source_parameter))
         return connections
 
-
     def get_connections_on_node(self, flow: ControlFlow, node: BaseNode) -> list[BaseNode] | None:  # noqa: ARG002
         connections = self.get_connections()
         # get all of the connection ids
