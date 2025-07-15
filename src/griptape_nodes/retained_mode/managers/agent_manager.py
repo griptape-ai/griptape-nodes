@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import threading
 import uuid
 from typing import TYPE_CHECKING
@@ -51,6 +52,7 @@ logger = logging.getLogger("griptape_nodes")
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
+GRIPTAPE_NODES_MCP_SERVER_PORT = int(os.getenv("GRIPTAPE_NODES_MCP_SERVER_PORT", "9927"))
 
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
@@ -127,7 +129,7 @@ class AgentManager:
 
         connection: StreamableHttpConnection = {  # type: ignore[reportAssignmentType]
             "transport": "streamable_http",
-            "url": "http://localhost:9927/mcp/",
+            "url": f"http://localhost:{GRIPTAPE_NODES_MCP_SERVER_PORT}/mcp/",
         }
         return MCPTool(connection=connection)
 
@@ -215,7 +217,7 @@ class AgentManager:
             return RunAgentResultFailure(ErrorArtifact(last_event).to_dict())
         except Exception as e:
             err_msg = f"Error running agent: {e}"
-            logger.exception(err_msg)
+            logger.error(err_msg)
             return RunAgentResultFailure(ErrorArtifact(e).to_dict())
 
     def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:

@@ -1,6 +1,7 @@
 import contextlib
 import json
 import logging
+import os
 from collections.abc import AsyncIterator
 
 from mcp.server.lowlevel import Server
@@ -57,6 +58,7 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
 }
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
+GRIPTAPE_NODES_MCP_SERVER_PORT = int(os.getenv("GRIPTAPE_NODES_MCP_SERVER_PORT", "9927"))
 
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
@@ -133,6 +135,6 @@ def main() -> int:
 
     import uvicorn
 
-    uvicorn.run(starlette_app, host="127.0.0.1", port=9927)
+    uvicorn.run(starlette_app, host="127.0.0.1", port=GRIPTAPE_NODES_MCP_SERVER_PORT)
 
     return 0
