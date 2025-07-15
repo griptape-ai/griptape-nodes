@@ -122,11 +122,6 @@ class AgentManager:
         )
 
     def _initialize_mcp_tool(self) -> MCPTool:
-        api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
-        if not api_key:
-            msg = f"Secret '{API_KEY_ENV_VAR}' not found"
-            raise ValueError(msg)
-
         connection: StreamableHttpConnection = {  # type: ignore[reportAssignmentType]
             "transport": "streamable_http",
             "url": f"http://localhost:{GRIPTAPE_NODES_MCP_SERVER_PORT}/mcp/",
