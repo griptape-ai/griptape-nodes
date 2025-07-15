@@ -112,6 +112,3 @@ exclude = [
 ]
 pythonVersion = "3.12"
 reportIncompatibleMethodOverride = false
-
-[tool.uv.sources]
-griptape = { git = "https://github.com/griptape-ai/griptape", rev = "feature/mcp_tool" }
