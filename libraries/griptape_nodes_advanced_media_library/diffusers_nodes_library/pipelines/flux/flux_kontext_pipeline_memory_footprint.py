@@ -69,6 +69,12 @@ def optimize_flux_kontext_pipeline_memory_footprint(pipe: diffusers.FluxKontextP
     if device.type == "cuda":
         _log_memory_info(pipe, device)
 
+        logger.info("Enabling fp8 layerwise casting for transformer")
+        pipe.transformer.enable_layerwise_casting(
+            storage_dtype=torch.float8_e4m3fn,
+            compute_dtype=torch.bfloat16,
+        )
+
         if _check_cuda_memory_sufficient(pipe, device):
             logger.info("Sufficient memory on %s for Pipeline.", device)
             logger.info("Moving pipeline to %s", device)
@@ -76,13 +82,6 @@ def optimize_flux_kontext_pipeline_memory_footprint(pipe: diffusers.FluxKontextP
             return
 
         logger.warning("Insufficient memory on %s for Pipeline. Applying VRAM optimizations.", device)
-
-        # Apply fp8 layerwise caching
-        logger.info("Enabling fp8 layerwise caching for transformer")
-        pipe.transformer.enable_layerwise_casting(
-            storage_dtype=torch.float8_e4m3fn,
-            compute_dtype=torch.bfloat16,
-        )
 
         if _check_cuda_memory_sufficient(pipe, device):
             logger.info("Sufficient memory after fp8 optimization. Moving pipeline to %s", device)
