@@ -20,41 +20,30 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @dataclass
 @PayloadRegistry.register
 class AddParameterToNodeRequest(RequestPayload):
-    """Adds a parameter on a node.
+    """Add a new parameter to a node.
 
-    This method can be used to either add a new parameter.
-    Parameters can have different modes (input, property, output) and can include
-    tooltips and UI options.
+    Use when: Dynamically adding inputs/outputs to nodes, customizing node interfaces,
+    building configurable nodes. Supports type validation, tooltips, and mode restrictions.
 
     Args:
-        node_name (str): Name of the node to add the parameter on.
-        parameter_name (str): Name of the parameter.
-        default_value (Any, optional): Default value for the parameter.
-        tooltip (str | list[dict]): Tooltip text or structured tooltip data.
-        type (str, optional): Type of the parameter.
-        input_types (list[str], optional): List of allowed input types.
-        output_type (str, optional): Expected output type.
-        tooltip_as_input (str | list[dict], optional): Tooltip specific to input mode.
-        tooltip_as_property (str | list[dict], optional): Tooltip specific to property mode.
-        tooltip_as_output (str | list[dict], optional): Tooltip specific to output mode.
-        ui_options (dict, optional): Additional UI configuration options.
-        mode_allowed_input (bool, optional): Whether parameter can be used as input.
-        mode_allowed_property (bool, optional): Whether parameter can be used as property.
-        mode_allowed_output (bool, optional): Whether parameter can be used as output.
-        **kwargs: Additional keyword arguments that may be passed to the parameter creation/modification.
+        node_name: Name of the node to add parameter to (None for current context)
+        parameter_name: Name of the new parameter (None for auto-generated)
+        default_value: Default value for the parameter
+        tooltip: General tooltip text or structured tooltip
+        tooltip_as_input: Tooltip when parameter is used as input
+        tooltip_as_property: Tooltip when parameter is used as property
+        tooltip_as_output: Tooltip when parameter is used as output
+        type: Parameter type string
+        input_types: List of allowed input types
+        output_type: Output type for the parameter
+        ui_options: UI configuration options
+        mode_allowed_input: Whether parameter can be used as input
+        mode_allowed_property: Whether parameter can be used as property
+        mode_allowed_output: Whether parameter can be used as output
+        parent_container_name: Name of parent container if nested
+        initial_setup: Skip setup work when loading from file
 
-    Returns:
-        ResultPayload: Contains the result of the parameter operation.
-
-    Example:
-        # Add a new parameter
-        result = AddParameterToNodeRequest(
-            node_name="my_node",
-            parameter_name="my_param",
-            default_value="default",
-            tooltip="My parameter tooltip",
-            type="string"
-        )
+    Results: AddParameterToNodeResultSuccess (with parameter name) | AddParameterToNodeResultFailure
     """
 
     # If node name is None, use the Current Context
@@ -90,6 +79,14 @@ class AddParameterToNodeRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class AddParameterToNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Parameter added successfully to node.
+
+    Args:
+        parameter_name: Name of the new parameter
+        type: Type of the parameter
+        node_name: Name of the node parameter was added to
+    """
+
     parameter_name: str
     type: str
     node_name: str
@@ -98,24 +95,22 @@ class AddParameterToNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess
 @dataclass
 @PayloadRegistry.register
 class AddParameterToNodeResultFailure(ResultPayloadFailure):
-    pass
+    """Parameter addition failed. Common causes: node not found, invalid parameter name, type conflicts."""
 
 
 @dataclass
 @PayloadRegistry.register
 class RemoveParameterFromNodeRequest(RequestPayload):
-    """Removes a parameter from a node.
+    """Remove a parameter from a node.
+
+    Use when: Cleaning up unused parameters, dynamically restructuring node interfaces,
+    removing deprecated parameters. Handles cleanup of connections and values.
 
     Args:
-        node_name (str): Name of the node containing the parameter.
-        parameter_name (str): Name of the parameter to remove.
+        parameter_name: Name of the parameter to remove
+        node_name: Name of the node to remove parameter from (None for current context)
 
-    Returns:
-        ResultPayload: Contains the result of the parameter deletion operation.
-
-    Example:
-        # Remove a parameter
-        result = RemoveParameterFromNodeRequest("my_node", "my_param")
+    Results: RemoveParameterFromNodeResultSuccess | RemoveParameterFromNodeResultFailure
     """
 
     parameter_name: str
@@ -126,36 +121,32 @@ class RemoveParameterFromNodeRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class RemoveParameterFromNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    pass
+    """Parameter removed successfully from node. Connections and values cleaned up."""
 
 
 @dataclass
 @PayloadRegistry.register
 class RemoveParameterFromNodeResultFailure(ResultPayloadFailure):
-    pass
+    """Parameter removal failed. Common causes: node not found, parameter not found, removal not allowed."""
 
 
 @dataclass
 @PayloadRegistry.register
 class SetParameterValueRequest(RequestPayload):
-    """Sets the value of a parameter on a node.
+    """Set the value of a parameter on a node.
+
+    Use when: Configuring node inputs, setting property values, loading saved workflows,
+    updating parameter values programmatically. Handles type validation and conversion.
 
     Args:
-        parameter_name (str): Name of the parameter to set.
-        value (Any): The value to set for the parameter.
-        node_name (str | None): Name of the node to set the parameter on. If None, uses the Current Context.
-        data_type (str | None): The data type of the parameter value. If None, the type is inferred.
-        initial_setup (bool): If True, prevents unnecessary work when loading a workflow from a file.
-        is_output (bool): If True, indicates that the value being set is from an output value, used when loading a workflow from a file
-    Returns:
-        ResultPayload: Contains the result of the parameter value setting operation.
+        parameter_name: Name of the parameter to set
+        value: Value to set for the parameter
+        node_name: Name of the node containing the parameter (None for current context)
+        data_type: Expected data type for validation (None for auto-detection)
+        initial_setup: Skip setup work when loading from file
+        is_output: Whether this is an output value (used when loading workflows)
 
-    Example:
-        result = SetParameterValueRequest(
-            parameter_name="my_param",
-            value="new_value",
-            node_name="my_node"
-        )
+    Results: SetParameterValueResultSuccess (with finalized value) | SetParameterValueResultFailure
     """
 
     parameter_name: str
@@ -172,6 +163,13 @@ class SetParameterValueRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class SetParameterValueResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Parameter value set successfully. Value may have been processed or converted.
+
+    Args:
+        finalized_value: The actual value stored after processing
+        data_type: The determined data type of the value
+    """
+
     finalized_value: Any
     data_type: str
 
@@ -179,28 +177,26 @@ class SetParameterValueResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess)
 @dataclass
 @PayloadRegistry.register
 class SetParameterValueResultFailure(ResultPayloadFailure):
-    pass
+    """Parameter value setting failed.
+
+    Common causes: node not found, parameter not found,
+    type validation error, value conversion error.
+    """
 
 
 @dataclass
 @PayloadRegistry.register
 class GetParameterDetailsRequest(RequestPayload):
-    """Gets detailed information about a parameter.
+    """Get detailed information about a parameter.
+
+    Use when: Inspecting parameter configuration, validating parameter properties,
+    building UIs that display parameter details, understanding parameter capabilities.
 
     Args:
-        node (str): Name of the node containing the parameter.
-        param (str): Name of the parameter to get info for.
-        **kwargs: Additional arguments.
+        parameter_name: Name of the parameter to get details for
+        node_name: Name of the node containing the parameter (None for current context)
 
-    Returns:
-        Any: Contains detailed parameter information.
-
-    Example:
-        # Get parameter info using node.param format
-        info = GetParameterDetailsRequest("my_node.my_param")
-
-        # Get parameter info using keyword arguments
-        info = GetParameterDetailsRequest(node="my_node", param="my_param")
+    Results: GetParameterDetailsResultSuccess (with full details) | GetParameterDetailsResultFailure
     """
 
     parameter_name: str
@@ -211,6 +207,21 @@ class GetParameterDetailsRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetParameterDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Parameter details retrieved successfully.
+
+    Args:
+        element_id: Unique identifier for the parameter
+        type: Parameter type
+        input_types: Accepted input types
+        output_type: Output type when used as output
+        default_value: Default value if any
+        tooltip: General tooltip text
+        tooltip_as_input/property/output: Mode-specific tooltips
+        mode_allowed_input/property/output: Which modes are allowed
+        is_user_defined: Whether this is a user-defined parameter
+        ui_options: UI configuration options
+    """
+
     element_id: str
     type: str
     input_types: list[str]
@@ -230,46 +241,36 @@ class GetParameterDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuc
 @dataclass
 @PayloadRegistry.register
 class GetParameterDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Parameter details retrieval failed. Common causes: node not found, parameter not found."""
 
 
 @dataclass
 @PayloadRegistry.register
 class AlterParameterDetailsRequest(RequestPayload):
-    """Modifies a parameter on a node.
+    """Alter the details and configuration of a parameter.
 
-    This method can be used to either modify an existing parameter.
-    Parameters can have different modes (input, property, output) and can include
-    tooltips and UI options.
+    Use when: Modifying parameter types, updating tooltips, changing allowed modes,
+    configuring UI options, updating parameter constraints after creation.
 
     Args:
-        node_name (str): Name of the node to modify the parameter on.
-        parameter_name (str): Name of the parameter.
-        default_value (Any, optional): Default value for the parameter.
-        tooltip (str | list[dict]): Tooltip text or structured tooltip data.
-        type (str, optional): Type of the parameter.
-        input_types (list[str], optional): List of allowed input types.
-        output_type (str, optional): Expected output type.
-        tooltip_as_input (str | list[dict], optional): Tooltip specific to input mode.
-        tooltip_as_property (str | list[dict], optional): Tooltip specific to property mode.
-        tooltip_as_output (str | list[dict], optional): Tooltip specific to output mode.
-        ui_options (dict, optional): Additional UI configuration options.
-        mode_allowed_input (bool, optional): Whether parameter can be used as input.
-        mode_allowed_property (bool, optional): Whether parameter can be used as property.
-        mode_allowed_output (bool, optional): Whether parameter can be used as output.
-        **kwargs: Additional keyword arguments that may be passed to the parameter creation/modification.
+        parameter_name: Name of the parameter to alter
+        node_name: Name of the node containing the parameter (None for current context)
+        type: New parameter type
+        input_types: New list of accepted input types
+        output_type: New output type when used as output
+        default_value: New default value
+        tooltip: New general tooltip text
+        tooltip_as_input: New tooltip when used as input
+        tooltip_as_property: New tooltip when used as property
+        tooltip_as_output: New tooltip when used as output
+        mode_allowed_input: Whether parameter can be used as input
+        mode_allowed_property: Whether parameter can be used as property
+        mode_allowed_output: Whether parameter can be used as output
+        ui_options: New UI configuration options
+        traits: Set of parameter traits
+        initial_setup: Skip setup work when loading from file
 
-    Returns:
-        ResultPayload: Contains the result of the parameter operation.
-
-    Example:
-        # Modify an existing parameter
-        result = AlterParameterDetailsRequest(
-            node_name="my_node",
-            parameter_name="my_param",
-            default_value="new_default",
-            tooltip="Updated tooltip",
-        )
+    Results: AlterParameterDetailsResultSuccess | AlterParameterDetailsResultFailure
     """
 
     parameter_name: str
@@ -343,21 +344,16 @@ class AlterParameterDetailsResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetParameterValueRequest(RequestPayload):
-    """Retrieves the value of a parameter on a node.
+    """Get the current value of a parameter.
+
+    Use when: Reading parameter values, debugging workflow state, displaying current values in UIs,
+    validating parameter states before execution.
 
     Args:
-        parameter_name (str): Name of the parameter to retrieve.
-        node_name (str | None): Name of the node to retrieve the parameter from. If None, uses the Current Context.
+        parameter_name: Name of the parameter to get value for
+        node_name: Name of the node containing the parameter (None for current context)
 
-    Returns:
-        ResultPayload: Contains the result of the parameter value retrieval operation.
-
-    Example:
-        # Retrieve the value of a parameter
-        result = GetParameterValueRequest(
-            parameter_name="my_param",
-            node_name="my_node",
-        )
+    Results: GetParameterValueResultSuccess (with value and type info) | GetParameterValueResultFailure
     """
 
     parameter_name: str
@@ -368,6 +364,15 @@ class GetParameterValueRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetParameterValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Parameter value retrieved successfully.
+
+    Args:
+        input_types: Accepted input types
+        type: Current parameter type
+        output_type: Output type when used as output
+        value: Current parameter value
+    """
+
     input_types: list[str]
     type: str
     output_type: str
@@ -377,7 +382,7 @@ class GetParameterValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucce
 @dataclass
 @PayloadRegistry.register
 class GetParameterValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Parameter value retrieval failed. Common causes: node not found, parameter not found."""
 
 
 @dataclass
@@ -392,6 +397,19 @@ class OnParameterValueChanged(WorkflowAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class GetCompatibleParametersRequest(RequestPayload):
+    """Get parameters that are compatible for connections.
+
+    Use when: Creating connections between nodes, validating connection compatibility,
+    building connection UIs, discovering available connection targets.
+
+    Args:
+        parameter_name: Name of the parameter to find compatible parameters for
+        is_output: Whether the parameter is an output parameter
+        node_name: Name of the node containing the parameter (None for current context)
+
+    Results: GetCompatibleParametersResultSuccess (with compatible parameters) | GetCompatibleParametersResultFailure
+    """
+
     parameter_name: str
     is_output: bool
     # If node name is None, use the Current Context
@@ -406,18 +424,36 @@ class ParameterAndMode(NamedTuple):
 @dataclass
 @PayloadRegistry.register
 class GetCompatibleParametersResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Compatible parameters retrieved successfully.
+
+    Args:
+        valid_parameters_by_node: Dictionary mapping node names to lists of compatible parameters
+    """
+
     valid_parameters_by_node: dict[str, list[ParameterAndMode]]
 
 
 @dataclass
 @PayloadRegistry.register
 class GetCompatibleParametersResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Compatible parameters retrieval failed. Common causes: node not found, parameter not found."""
 
 
 @dataclass
 @PayloadRegistry.register
 class GetNodeElementDetailsRequest(RequestPayload):
+    """Get detailed information about a node element.
+
+    Use when: Inspecting node structure, debugging element configuration,
+    building advanced UIs, understanding node composition.
+
+    Args:
+        node_name: Name of the node to get element details for (None for current context)
+        specific_element_id: ID of specific element to get details for (None for root)
+
+    Results: GetNodeElementDetailsResultSuccess (with element details) | GetNodeElementDetailsResultFailure
+    """
+
     # If node name is None, use the Current Context
     node_name: str | None = None
     specific_element_id: str | None = None  # Pass None to use the root
@@ -445,6 +481,20 @@ class AlterElementEvent(ExecutionPayload):
 @dataclass
 @PayloadRegistry.register
 class RenameParameterRequest(RequestPayload):
+    """Rename a parameter on a node.
+
+    Use when: Refactoring parameter names, improving parameter clarity, updating parameter
+    naming conventions. Handles updating connections and references.
+
+    Args:
+        parameter_name: Current name of the parameter
+        new_parameter_name: New name for the parameter
+        node_name: Name of the node containing the parameter (None for current context)
+        initial_setup: Skip setup work when loading from file
+
+    Results: RenameParameterResultSuccess (with old and new names) | RenameParameterResultFailure
+    """
+
     parameter_name: str
     new_parameter_name: str
     # If node name is None, use the Current Context
@@ -456,6 +506,14 @@ class RenameParameterRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class RenameParameterResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Parameter renamed successfully. Connections and references updated.
+
+    Args:
+        old_parameter_name: Previous parameter name
+        new_parameter_name: New parameter name
+        node_name: Name of the node containing the parameter
+    """
+
     old_parameter_name: str
     new_parameter_name: str
     node_name: str
@@ -464,7 +522,11 @@ class RenameParameterResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class RenameParameterResultFailure(ResultPayloadFailure):
-    pass
+    """Parameter rename failed.
+
+    Common causes: node not found, parameter not found,
+    name already exists, invalid new name.
+    """
 
 
 @dataclass

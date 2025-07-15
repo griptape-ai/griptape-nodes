@@ -7,6 +7,7 @@ engine ID and name operations.
 import logging
 from pathlib import Path
 
+from griptape_nodes.retained_mode.events.base_events import BaseEvent
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
 
@@ -52,6 +53,7 @@ class EngineIdentityManager:
         """Initialize the engine ID if not already set."""
         if cls._active_engine_id is None:
             engine_id = EngineIdentity.get_engine_id()
+            BaseEvent._engine_id = engine_id
             cls._active_engine_id = engine_id
             logger.debug("Initialized engine ID: %s", engine_id)
 

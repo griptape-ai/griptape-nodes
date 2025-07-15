@@ -13,26 +13,19 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @dataclass
 @PayloadRegistry.register
 class CreateConnectionRequest(RequestPayload):
-    """Creates a connection between two parameters.
+    """Create a connection between two node parameters.
+
+    Use when: Connecting node outputs to inputs, building data flow between nodes,
+    loading saved workflows. Validates type compatibility and connection rules.
 
     Args:
-        source_parameter_name (str): Name of the source parameter.
-        target_parameter_name (str): Name of the target parameter.
-        source_node_name (str | None): Name of the source node. If None, uses the Current Context.
-        target_node_name (str | None): Name of the target node. If None, uses the Current Context.
-        initial_setup (bool): If True, prevents unnecessary work when loading a workflow from a file.
+        source_parameter_name: Name of the parameter providing the data
+        target_parameter_name: Name of the parameter receiving the data
+        source_node_name: Name of the source node (None for current context)
+        target_node_name: Name of the target node (None for current context)
+        initial_setup: Skip setup work when loading from file
 
-    Returns:
-        ResultPayload: Contains the result of the creation.
-
-    Example:
-        # Create a connection between two parameters
-        CreateConnectionRequest(
-            source_parameter_name="source_param",
-            target_parameter_name="target_param",
-            source_node_name="source_node",
-            target_node_name="target_node"
-        )
+    Results: CreateConnectionResultSuccess | CreateConnectionResultFailure (incompatible types, invalid nodes/parameters)
     """
 
     source_parameter_name: str
@@ -47,37 +40,34 @@ class CreateConnectionRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class CreateConnectionResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    pass
+    """Connection created successfully between parameters."""
 
 
 @dataclass
 @PayloadRegistry.register
 class CreateConnectionResultFailure(ResultPayloadFailure):
-    pass
+    """Connection creation failed.
+
+    Common causes: incompatible types, nodes/parameters not found,
+    connection already exists, circular dependency.
+    """
 
 
 @dataclass
 @PayloadRegistry.register
 class DeleteConnectionRequest(RequestPayload):
-    """Deletes a connection between two parameters.
+    """Delete a connection between two node parameters.
+
+    Use when: Removing unwanted connections, restructuring workflows, disconnecting nodes,
+    updating data flow. Cleans up connection state and updates node resolution.
 
     Args:
-        source_parameter_name (str): Name of the source parameter.
-        target_parameter_name (str): Name of the target parameter.
-        source_node_name (str | None): Name of the source node. If None, uses the Current Context.
-        target_node_name (str | None): Name of the target node. If None, uses the Current Context.
+        source_parameter_name: Name of the parameter providing the data
+        target_parameter_name: Name of the parameter receiving the data
+        source_node_name: Name of the source node (None for current context)
+        target_node_name: Name of the target node (None for current context)
 
-    Returns:
-        ResultPayload: Contains the result of the deletion.
-
-    Example:
-        # Delete a connection between two parameters
-        DeleteConnectionRequest(
-            source_parameter_name="source_param",
-            target_parameter_name="target_param",
-            source_node_name="source_node",
-            target_node_name="target_node"
-        )
+    Results: DeleteConnectionResultSuccess | DeleteConnectionResultFailure (connection not found, nodes/parameters not found)
     """
 
     source_parameter_name: str
@@ -90,31 +80,27 @@ class DeleteConnectionRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class DeleteConnectionResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    pass
+    """Connection deleted successfully. Connection state cleaned up."""
 
 
 @dataclass
 @PayloadRegistry.register
 class DeleteConnectionResultFailure(ResultPayloadFailure):
-    pass
+    """Connection deletion failed. Common causes: connection not found, nodes/parameters not found."""
 
 
 @dataclass
 @PayloadRegistry.register
 class ListConnectionsForNodeRequest(RequestPayload):
-    """Gets the current connections for a node.
+    """List all connections for a specific node.
 
-    This includes both incoming and outgoing connections.
+    Use when: Inspecting node connectivity, building connection visualizations,
+    debugging data flow, validating workflow structure.
 
     Args:
-        node_name (str): Name of the node to check.
+        node_name: Name of the node to list connections for (None for current context)
 
-    Returns:
-        ResultPayload: Contains the connections for the node.
-
-    Example:
-        # List connections for a node
-        ListConnectionsForNodeRequest("my_node")
+    Results: ListConnectionsForNodeResultSuccess (with connection lists) | ListConnectionsForNodeResultFailure (node not found)
     """
 
     # If node name is None, use the Current Context
@@ -138,6 +124,13 @@ class OutgoingConnection:
 @dataclass
 @PayloadRegistry.register
 class ListConnectionsForNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Node connections retrieved successfully.
+
+    Args:
+        incoming_connections: List of connections feeding into this node
+        outgoing_connections: List of connections from this node to others
+    """
+
     incoming_connections: list[IncomingConnection]
     outgoing_connections: list[OutgoingConnection]
 
@@ -145,4 +138,4 @@ class ListConnectionsForNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayload
 @dataclass
 @PayloadRegistry.register
 class ListConnectionsForNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Node connections listing failed. Common causes: node not found, no current context."""
