@@ -1306,15 +1306,6 @@
       }
     },
     {
-      "class_name": "PublishedWorkflow",
-      "file_path": "griptape_nodes_library/workflows/published_workflow.py",
-      "metadata": {
-        "category": "workflows",
-        "description": "Use a published workflow within your graph",
-        "display_name": "Published Workflow"
-      }
-    },
-    {
       "class_name": "LoadGLTF",
       "file_path": "griptape_nodes_library/three_d/load_gltf.py",
       "metadata": {
