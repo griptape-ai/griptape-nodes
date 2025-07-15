@@ -5,12 +5,14 @@ from collections import defaultdict
 from collections.abc import Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+from sqlite3 import connect
+from this import d
 from typing import Any
 from collections import defaultdict
 from griptape.events import EventBus
 from griptape.utils import with_contextvars
 
-from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin, Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
@@ -64,90 +66,63 @@ class Focus:
 
 # This is on a per-node basis
 class ResolutionContext:
-    focus_stack: list[Focus]
+    root_node_resolving: BaseNode | None
     paused: bool
+    DAG: DAG
 
     def __init__(self) -> None:
-        self.focus_stack = []
+        self.root_node_resolving = None
+        self.DAG = DAG()
         self.paused = False
 
     def reset(self) -> None:
-        if self.focus_stack:
-            node = self.focus_stack[-1].node
-            # clear the data node being resolved.
-            node.clear_node()
-            self.focus_stack[-1].process_generator = None
-            self.focus_stack[-1].scheduled_value = None
-        self.focus_stack.clear()
+        # If a DAG exists, clear all nodes in the DAG
+        if self.DAG is not None:
+            for node in self.DAG.graph:
+                node.clear_node()
+            self.DAG.graph.clear()
+            self.DAG.in_degree.clear()
         self.paused = False
-
-
-class InitializeSpotlightState(State):
-    @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:
-        # If the focus stack is empty
-        current_node = context.focus_stack[-1].node
-        EventBus.publish_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=current_node.name))
-            )
-        )
-        if not context.paused:
-            return InitializeSpotlightState
-        return None
-
-    @staticmethod
-    def on_update(context: ResolutionContext) -> type[State] | None:
-        # If the focus stack is empty
-        if not len(context.focus_stack):
-            return CompleteState
-        current_node = context.focus_stack[-1].node
-        if current_node.state == NodeResolutionState.UNRESOLVED:
-            # Mark all future nodes unresolved.
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/862
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(current_node)
-            current_node.initialize_spotlight()
-        # Set node to resolving - we are now resolving this node.
-        current_node.state = NodeResolutionState.RESOLVING
-        # Advance to next port if we do not have one ATM!
-        if current_node.get_current_parameter() is None:
-            # Advance to next port
-            if current_node.advance_parameter():
-                # if true, we advanced the port!
-                return EvaluateParameterState
-            # if not true, we have no ports left to advance to or none at all
-            return ExecuteNodeState
-        # We are already set here
-        return EvaluateParameterState  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/863
 
 
 class EvaluateParameterState(State):
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:
-        current_node = context.focus_stack[-1].node
-        current_parameter = current_node.get_current_parameter()
-        if current_parameter is None:
-            return ExecuteNodeState
-        # if not in debug mode - keep going!
-        EventBus.publish_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(
-                    payload=ParameterSpotlightEvent(
-                        node_name=current_node.name,
-                        parameter_name=current_parameter.name,
-                    )
-                )
-            )
-        )
-        if not context.paused:
-            return EvaluateParameterState
-        return None
+
+    def initialize_spotlight(current_node):
+        if current_node.state == NodeResolutionState.UNRESOLVED:
+            """Mark all future nodes unresolved and initialize spotlight"""
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(current_node)
+            current_node.initialize_spotlight()
+
+    def add_dependencies_to_graph(self, current_node: BaseNode, context: ResolutionContext):
+        self.initialize_spotlight(current_node)
+        while current_node.current_spotlight_parameter is not None:
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+            connections = GriptapeNodes.FlowManager().get_connections()
+
+            connected_node_and_parameter: tuple[BaseNode, Parameter] | None = connections.get_connected_node(current_node, current_node.current_spotlight_parameter)
+            if connected_node_and_parameter is None:
+                # Guess the connected node didn't exist, so continuing the loop
+                continue
+            (connected_node, _) = connected_node_and_parameter
+            if connected_node in context.DAG.graph.keys():
+                raise RuntimeError(f"Cycle detected between node {current_node.name} and {connected_node.name}")
+            # Update DAG
+            context.DAG.add_node(connected_node)
+            context.DAG.add_edge(connected_node, current_node)
+            # Recursion
+            self.add_dependencies_to_graph(connected_node, context)
+            current_node.advance_parameter()
 
     @staticmethod
-    def on_update(context: ResolutionContext) -> type[State] | None:
-        current_node = context.focus_stack[-1].node
+    def on_enter(context: ResolutionContext) -> type[State] | None:
+        pass
+
+    def on_update(self, context: ResolutionContext) -> type[State] | None:
+        if isinstance(context.root_node_resolving, BaseNode):
+            self.add_dependencies_to_graph(context.root_node_resolving, context)
         current_parameter = current_node.get_current_parameter()
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -476,8 +451,8 @@ class NodeResolutionMachine(FSM[ResolutionContext]):
         super().__init__(resolution_context)
 
     def resolve_node(self, node: BaseNode) -> None:
-        self._context.focus_stack.append(Focus(node=node))
-        self.start(InitializeSpotlightState)
+        self._context.root_node_resolving = node
+        self.start(EvaluateParameterState)
 
     def change_debug_mode(self, debug_mode: bool) -> None:  # noqa: FBT001
         self._context.paused = debug_mode
