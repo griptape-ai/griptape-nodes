@@ -100,7 +100,7 @@ class WebSocketConnectionManager:
             del self.request_handlers[request_id]
 
 
-class AsyncRequestManager(Generic[T]):
+class AsyncRequestManager(Generic[T]): # noqa: UP046
     def __init__(self, connection_manager: WebSocketConnectionManager, api_key: str):
         self.connection_manager = connection_manager
         self.api_key = api_key

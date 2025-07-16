@@ -417,6 +417,7 @@ def _determine_response_topic() -> str | None:
     # Default to generic response topic
     return "response"
 
+
 def _determine_request_topic() -> str | None:
     """Determine the request topic based on session_id and engine_id in the payload."""
     engine_id = GriptapeNodes.get_engine_id()
@@ -433,6 +434,7 @@ def _determine_request_topic() -> str | None:
 
     # Default to generic request topic
     return "request"
+
 
 def subscribe_to_topic(topic: str) -> None:
     """Subscribe to a specific topic in the message bus."""
