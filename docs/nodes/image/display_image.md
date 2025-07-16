@@ -51,4 +51,4 @@ A common workflow pattern:
 
 - **Image not displaying**: Check that your image source is properly connected and producing valid image data
 - **Dimensions showing as 0**: This may indicate an issue with the image data or connection
-- **Slow performance with URLs**: Large images from URLs may take time to fetch and process for dimension calculation 
+- **Slow performance with URLs**: Large images from URLs may take time to fetch and process for dimension calculation
