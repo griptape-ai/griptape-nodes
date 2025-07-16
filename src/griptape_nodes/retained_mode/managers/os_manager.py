@@ -242,7 +242,7 @@ class OSManager:
         Returns:
             Total size in GB
         """
-        total_size = 0
+        total_size = 0.0
 
         if not path.exists():
             logger.error("Directory %s does not exist. Skipping cleanup.", path)
