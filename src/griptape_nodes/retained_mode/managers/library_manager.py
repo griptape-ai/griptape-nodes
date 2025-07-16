@@ -1499,8 +1499,46 @@ class LibraryManager:
         return node_class
 
     def load_all_libraries_from_config(self) -> None:
-        # Load libraries using the new provenance-based system
-        self._load_libraries_from_provenance_system()
+        # Comment out lines 1503-1545 and call the _load libraries from provenance system to test the other functionality.
+
+        # Load metadata for all libraries to determine which ones can be safely loaded
+        metadata_request = LoadMetadataForAllLibrariesRequest()
+        metadata_result = self.load_metadata_for_all_libraries_request(metadata_request)
+
+        # Check if metadata loading succeeded
+        if not isinstance(metadata_result, LoadMetadataForAllLibrariesResultSuccess):
+            logger.error("Failed to load metadata for all libraries, skipping library registration")
+            return
+
+        # Record all failed libraries in our tracking immediately
+        for failed_library in metadata_result.failed_libraries:
+            self._library_file_path_to_info[failed_library.library_path] = LibraryManager.LibraryInfo(
+                library_path=failed_library.library_path,
+                library_name=failed_library.library_name,
+                status=failed_library.status,
+                problems=failed_library.problems,
+            )
+
+        # Use metadata results to selectively load libraries
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+
+        # Load libraries that had successful metadata loading
+        for library_result in metadata_result.successful_libraries:
+            if library_result.library_schema.name == LibraryManager.SANDBOX_LIBRARY_NAME:
+                # Handle sandbox library - use the schema we already have
+                self._attempt_generate_sandbox_library_from_schema(
+                    library_schema=library_result.library_schema, sandbox_directory=library_result.file_path
+                )
+            else:
+                # Handle config-based library - register it directly using the file path
+                register_request = RegisterLibraryFromFileRequest(
+                    file_path=library_result.file_path, load_as_default_library=False
+                )
+                register_result = self.register_library_from_file_request(register_request)
+                if isinstance(register_result, RegisterLibraryFromFileResultFailure):
+                    # Registration failed - the failure info is already recorded in _library_file_path_to_info
+                    # by register_library_from_file_request, so we just log it here for visibility
+                    logger.warning(f"Failed to register library from {library_result.file_path}")  # noqa: G004
 
         # Print 'em all pretty
         self.print_library_load_status()
