@@ -13,6 +13,17 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @dataclass
 @PayloadRegistry.register
 class AppStartSessionRequest(RequestPayload):
+    """Start a new application session.
+
+    Use when: Initializing client connections, beginning new workflow sessions,
+    setting up isolated execution environments, managing session state.
+
+    Args:
+        session_id: Specific session ID to use (None for auto-generated)
+
+    Results: AppStartSessionResultSuccess (with session ID) | AppStartSessionResultFailure (session creation error)
+    """
+
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1600
     session_id: str | None = None
 
@@ -20,48 +31,80 @@ class AppStartSessionRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class AppStartSessionResultSuccess(ResultPayloadSuccess):
+    """Session started successfully.
+
+    Args:
+        session_id: Unique identifier for the created session
+    """
+
     session_id: str
 
 
 @dataclass
 @PayloadRegistry.register
 class AppStartSessionResultFailure(ResultPayloadFailure):
-    pass
+    """Session start failed. Common causes: resource constraints, initialization error."""
 
 
 @dataclass
 @PayloadRegistry.register
 class AppGetSessionRequest(RequestPayload):
-    pass
+    """Get the current session information.
+
+    Use when: Checking session status, retrieving session details,
+    validating session state, debugging session issues.
+
+    Results: AppGetSessionResultSuccess (with session ID) | AppGetSessionResultFailure (session error)
+    """
 
 
 @dataclass
 @PayloadRegistry.register
 class AppGetSessionResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Session information retrieved successfully.
+
+    Args:
+        session_id: Current session identifier (None if no active session)
+    """
+
     session_id: str | None
 
 
 @dataclass
 @PayloadRegistry.register
 class AppGetSessionResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Session information retrieval failed. Common causes: session not found, access error."""
 
 
 @dataclass
 @PayloadRegistry.register
 class AppInitializationComplete(AppPayload):
-    pass
+    """Application initialization completed successfully. All subsystems ready."""
 
 
 @dataclass
 @PayloadRegistry.register
 class GetEngineVersionRequest(RequestPayload):
-    pass
+    """Get the engine version information.
+
+    Use when: Checking compatibility, displaying version info,
+    debugging engine issues, validating engine capabilities.
+
+    Results: GetEngineVersionResultSuccess (with version numbers) | GetEngineVersionResultFailure (version error)
+    """
 
 
 @dataclass
 @PayloadRegistry.register
 class GetEngineVersionResultSuccess(ResultPayloadSuccess):
+    """Engine version retrieved successfully.
+
+    Args:
+        major: Major version number
+        minor: Minor version number
+        patch: Patch version number
+    """
+
     major: int
     minor: int
     patch: int
@@ -70,25 +113,37 @@ class GetEngineVersionResultSuccess(ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class GetEngineVersionResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Engine version retrieval failed. Common causes: version not available, system error."""
 
 
 @dataclass
 @PayloadRegistry.register
 class AppEndSessionRequest(RequestPayload):
-    pass
+    """End the current application session.
+
+    Use when: Closing client connections, cleaning up session resources,
+    terminating workflow sessions, implementing logout functionality.
+
+    Results: AppEndSessionResultSuccess (with session ID) | AppEndSessionResultFailure (cleanup error)
+    """
 
 
 @dataclass
 @PayloadRegistry.register
 class AppEndSessionResultSuccess(ResultPayloadSuccess):
+    """Session ended successfully.
+
+    Args:
+        session_id: Identifier of the ended session (None if no session was active)
+    """
+
     session_id: str | None
 
 
 @dataclass
 @PayloadRegistry.register
 class AppEndSessionResultFailure(ResultPayloadFailure):
-    pass
+    """Session end failed. Common causes: session not found, cleanup error."""
 
 
 @dataclass
@@ -100,13 +155,13 @@ class SessionHeartbeatRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class SessionHeartbeatResultSuccess(ResultPayloadSuccess):
-    pass
+    """Session heartbeat successful. Session is active and responsive."""
 
 
 @dataclass
 @PayloadRegistry.register
 class SessionHeartbeatResultFailure(ResultPayloadFailure):
-    pass
+    """Session heartbeat failed. Common causes: session inactive, network error, timeout."""
 
 
 @dataclass
@@ -125,6 +180,25 @@ class EngineHeartbeatRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
+    """Engine heartbeat successful with comprehensive status information.
+
+    Args:
+        heartbeat_id: Unique identifier correlating with the request
+        engine_version: Current engine version string
+        engine_id: Unique engine identifier (None if not set)
+        session_id: Current session identifier (None if no session)
+        timestamp: Heartbeat timestamp
+        instance_type: Cloud instance type (None if not applicable)
+        instance_region: Cloud instance region (None if not applicable)
+        instance_provider: Cloud provider name (None if not applicable)
+        deployment_type: Type of deployment (None if not applicable)
+        public_ip: Public IP address (None if not available)
+        current_workflow: Name of active workflow (None if none)
+        workflow_file_path: Path to workflow file (None if none)
+        has_active_flow: Whether there's an active flow running
+        engine_name: Human-readable engine name
+    """
+
     heartbeat_id: str
     engine_version: str
     engine_id: str | None
@@ -144,40 +218,87 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class EngineHeartbeatResultFailure(ResultPayloadFailure):
+    """Engine heartbeat failed.
+
+    Args:
+        heartbeat_id: Unique identifier correlating with the request
+    """
+
     heartbeat_id: str
 
 
 @dataclass
 @PayloadRegistry.register
 class SetEngineNameRequest(RequestPayload):
+    """Set the human-readable engine name.
+
+    Use when: Customizing engine identification, setting up engine instances,
+    implementing engine management, branding engine instances.
+
+    Args:
+        engine_name: New name for the engine
+
+    Results: SetEngineNameResultSuccess (with name) | SetEngineNameResultFailure (validation error)
+    """
+
     engine_name: str
 
 
 @dataclass
 @PayloadRegistry.register
 class SetEngineNameResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Engine name set successfully.
+
+    Args:
+        engine_name: The name that was set for the engine
+    """
+
     engine_name: str
 
 
 @dataclass
 @PayloadRegistry.register
 class SetEngineNameResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Engine name setting failed.
+
+    Args:
+        error_message: Detailed error message describing the failure
+    """
+
     error_message: str
 
 
 @dataclass
 @PayloadRegistry.register
 class GetEngineNameRequest(RequestPayload):
-    pass
+    """Get the current engine name.
+
+    Use when: Displaying engine information, checking engine identity,
+    implementing engine management UIs, debugging engine issues.
+
+    Results: GetEngineNameResultSuccess (with name) | GetEngineNameResultFailure (retrieval error)
+    """
 
 
 @dataclass
 @PayloadRegistry.register
 class GetEngineNameResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Engine name retrieved successfully.
+
+    Args:
+        engine_name: Current engine name
+    """
+
     engine_name: str
 
 
 @dataclass
 @PayloadRegistry.register
 class GetEngineNameResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Engine name retrieval failed.
+
+    Args:
+        error_message: Detailed error message describing the failure
+    """
+
     error_message: str
