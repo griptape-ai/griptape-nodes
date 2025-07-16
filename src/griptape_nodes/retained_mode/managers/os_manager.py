@@ -14,7 +14,6 @@ from griptape_nodes.retained_mode.events.os_events import (
     OpenAssociatedFileResultFailure,
     OpenAssociatedFileResultSuccess,
 )
-from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 console = Console()
@@ -36,17 +35,11 @@ class OSManager:
     This lays the groundwork to exclude specific functionality on a configuration basis.
     """
 
-    static_files_directory: Path
-    config_manager: ConfigManager
-
-    def __init__(self, config_manager: ConfigManager, event_manager: EventManager | None = None):
+    def __init__(self, event_manager: EventManager | None = None):
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(
                 request_type=OpenAssociatedFileRequest, callback=self.on_open_associated_file_request
             )
-        self.config_manager = config_manager
-        static_files_directory = config_manager.get_config_value("static_files_directory", default="staticfiles")
-        self.static_files_directory = config_manager.workspace_path / static_files_directory
 
     @staticmethod
     def platform() -> str:
@@ -206,56 +199,50 @@ class OSManager:
         except OSError:
             return f"Disk space error at {path}. Unable to retrieve disk space information."
 
-    def cleanup_directory_if_needed(self, directory_path: str, library_name: str) -> bool:
+    @staticmethod
+    def cleanup_directory_if_needed(
+        full_directory_path: Path, max_size_gb: float = 1.0, *, cleanup_enabled: bool = False
+    ) -> bool:
         """Check directory size and cleanup old files if needed.
 
         Args:
-            directory_path: Path to the directory to check and clean
-            library_name: Name of the library to get the settings from (e.g., "advanced_media_library")
+            full_directory_path: Path to the directory to check and clean
+            max_size_gb: Target size in GB
+            cleanup_enabled: Whether cleanup is enabled
 
         Returns:
             True if cleanup was performed, False otherwise
         """
-        # Get configuration values with library prefix
-        max_size_gb = self.config_manager.get_config_value(f"{library_name}.max_directory_size_gb")
-        cleanup_enabled = self.config_manager.get_config_value(f"{library_name}.enable_directory_cleanup")
-
-        # Default values if not configured
-        if max_size_gb is None:
-            max_size_gb = 1  # 1GB default
-        if cleanup_enabled is None:
-            cleanup_enabled = False
-
         if not cleanup_enabled:
             return False
 
         # Calculate current directory size
-        current_size_gb = self._get_directory_size_gb(directory_path)
+        current_size_gb = OSManager._get_directory_size_gb(full_directory_path)
 
         if current_size_gb <= max_size_gb:
             return False
 
         logger.info(
             "Directory %s size (%.1f GB) exceeds limit (%s GB). Starting cleanup...",
-            directory_path,
+            full_directory_path,
             current_size_gb,
             max_size_gb,
         )
 
         # Perform cleanup
-        return self._cleanup_old_files(directory_path, max_size_gb)
+        return OSManager._cleanup_old_files(full_directory_path, max_size_gb)
 
-    def _get_directory_size_gb(self, directory_path: str) -> float:
+    @staticmethod
+    def _get_directory_size_gb(path: Path) -> float:
         """Get total size of directory in GB.
 
         Args:
-            directory_path: Path to the directory
+            path: Path to the directory
 
         Returns:
             Total size in GB
         """
         total_size = 0
-        path = self.static_files_directory / directory_path
 
         if not path.exists():
             logger.error("Directory %s does not exist. Skipping cleanup.", path)
@@ -268,25 +255,25 @@ class OSManager:
                     total_size += fp.stat().st_size
         return total_size / (1024 * 1024 * 1024)  # Convert to GB
 
-    def _cleanup_old_files(self, directory_path: str, target_size_gb: float) -> bool:
+    @staticmethod
+    def _cleanup_old_files(static_files_directory_path: Path, target_size_gb: float) -> bool:
         """Remove oldest files until directory is under target size.
 
         Args:
-            directory_path: Path to the directory to clean
+            static_files_directory_path: Path to the directory to clean
             target_size_gb: Target size in GB
 
         Returns:
             True if files were removed, False otherwise
         """
-        path = self.static_files_directory / directory_path
-        if not path.exists():
-            logger.error("Directory %s does not exist. Skipping cleanup.", path)
+        if not static_files_directory_path.exists():
+            logger.error("Directory %s does not exist. Skipping cleanup.", static_files_directory_path)
             return False
 
         # Get all files with their modification times
         files_with_times: list[tuple[Path, float]] = []
 
-        for file_path in path.rglob("*"):
+        for file_path in static_files_directory_path.rglob("*"):
             if file_path.is_file():
                 try:
                     mtime = file_path.stat().st_mtime
@@ -311,7 +298,7 @@ class OSManager:
                 removed_count += 1
 
                 # Check if we're now under the target size
-                current_size_gb = self._get_directory_size_gb(directory_path)
+                current_size_gb = OSManager._get_directory_size_gb(static_files_directory_path)
                 if current_size_gb <= target_size_gb:
                     break
 
@@ -320,11 +307,11 @@ class OSManager:
                 logger.error("Could not delete file %s. Skipping this file.", file_path)
 
         if removed_count > 0:
-            final_size_gb = self._get_directory_size_gb(directory_path)
+            final_size_gb = OSManager._get_directory_size_gb(static_files_directory_path)
             logger.info(
                 "Cleaned up %d old files from %s. Directory size reduced to %.1f GB",
                 removed_count,
-                directory_path,
+                static_files_directory_path,
                 final_size_gb,
             )
 

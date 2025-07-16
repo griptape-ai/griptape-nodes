@@ -172,7 +172,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         if not hasattr(self, "_event_manager"):
             self._event_manager = EventManager()
             self._config_manager = ConfigManager(self._event_manager)
-            self._os_manager = OSManager(self._config_manager, self._event_manager)
+            self._os_manager = OSManager(self._event_manager)
             self._secrets_manager = SecretsManager(self._config_manager, self._event_manager)
             self._object_manager = ObjectManager(self._event_manager)
             self._node_manager = NodeManager(self._event_manager)

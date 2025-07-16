@@ -78,7 +78,7 @@ class InitConfig:
 
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
-os_manager = OSManager(config_manager)
+os_manager = OSManager()
 
 
 def main() -> None:
