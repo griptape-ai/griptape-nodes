@@ -351,7 +351,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             raise ValueError(msg)
 
     def on_app_connection_established(self, _payload: AppConnectionEstablished) -> None:
-        from griptape_nodes.app.app_sessions import subscribe_to_topic
+        from griptape_nodes.app.app import subscribe_to_topic
 
         logger.info("API connection successfully established.")
 
@@ -391,7 +391,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             return GetEngineVersionResultFailure()
 
     def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:  # noqa: ARG002
-        from griptape_nodes.app.app_sessions import subscribe_to_topic
+        from griptape_nodes.app.app import subscribe_to_topic
 
         current_session_id = GriptapeNodes.SessionManager().get_active_session_id()
         if current_session_id is None:
@@ -410,7 +410,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return AppStartSessionResultSuccess(current_session_id)
 
     def handle_session_end_request(self, _: AppEndSessionRequest) -> ResultPayload:
-        from griptape_nodes.app.app_sessions import unsubscribe_from_topic
+        from griptape_nodes.app.app import unsubscribe_from_topic
 
         try:
             previous_session_id = GriptapeNodes.SessionManager().get_active_session_id()
