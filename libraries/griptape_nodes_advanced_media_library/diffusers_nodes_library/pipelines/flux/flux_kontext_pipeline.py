@@ -3,7 +3,7 @@ from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
-from fp8_ops import replace_attention_layers_with_fp8, replace_linear_with_fp8
+from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.utils.fp8_ops import replace_attention_layers_with_fp8, replace_linear_with_fp8
 
 from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
     LogParameter,  # type: ignore[reportMissingImports]

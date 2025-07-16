@@ -1,14 +1,14 @@
 from typing import Any
 
 import torch
-import torch.nn.functional as F
 from torch import nn
+from torch.nn import functional
 
 
 class FP8Linear(nn.Module):
     """FP8 Linear layer that performs computation in FP8 precision using scaled matrix multiplication."""
 
-    def __init__(self, in_features: int, out_features: int, bias: bool = True, device=None):
+    def __init__(self, in_features: int, out_features: int, *, bias: bool = True, device: str | None = None):
         super().__init__()
 
         # Check FP8 support - fail fast if not supported
@@ -47,19 +47,7 @@ class FP8Linear(nn.Module):
             torch._scaled_mm(test_input, test_weight.t(), scale_a=test_scale, scale_b=test_scale)
         except Exception as e:
             msg = f"FP8 operations not supported on this system: {e}"
-            raise RuntimeError(msg)
-
-    def reset_parameters(self) -> None:
-        # # Initialize with standard normal distribution, then convert to FP8
-        # with torch.no_grad():
-        #     weight_init = torch.randn(self.out_features, self.in_features, dtype=torch.float32)
-        #     self.weight.copy_(weight_init.to(torch.float8_e4m3fn))
-
-        #     if self.bias is not None:
-        #         bias_init = torch.zeros(self.out_features, dtype=torch.float32)
-        #         self.bias.copy_(bias_init.to(torch.float8_e4m3fn))
-
-        return None
+            raise RuntimeError(msg) from e
 
     def _invalidate_cache(self) -> None:
         """Invalidate cached tensors when weights change."""
@@ -67,14 +55,14 @@ class FP8Linear(nn.Module):
         self._shape_cache.clear()
         self._last_input_shape = None
 
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        original_dtype = input.dtype
-        input_shape = input.shape
-
+    def forward(self, input_val: torch.Tensor) -> torch.Tensor:
+        original_dtype = input_val.dtype
+        input_shape = input_val.shape
+        inputs_for_two_d = 2
         # Fast path for 2D inputs (most common case)
-        if len(input_shape) == 2:
+        if len(input_shape) == inputs_for_two_d:
             # Direct conversion to FP8 without reshaping
-            input_fp8 = input.to(torch.float8_e4m3fn)
+            input_fp8 = input_val.to(torch.float8_e4m3fn)
 
             # Cache transposed weight for repeated operations
             if self._cached_weight_t is None:
@@ -102,9 +90,7 @@ class FP8Linear(nn.Module):
         # Validate input features
         if input_shape[-1] != self.in_features:
             msg = f"Input last dimension {input_shape[-1]} doesn't match layer in_features {self.in_features}"
-            raise RuntimeError(
-                msg
-            )
+            raise RuntimeError(msg)
 
         # Check if we can reuse cached reshape info
         shape_key = input_shape[:-1]
@@ -114,11 +100,11 @@ class FP8Linear(nn.Module):
             self._shape_cache["batch_size"] = input_shape[:-1].numel() if hasattr(input_shape[:-1], "numel") else 1
             for i, dim in enumerate(input_shape[:-1]):
                 self._shape_cache["batch_size"] *= dim if i == 0 else 1
-            self._shape_cache["batch_size"] = input.numel() // input_shape[-1]
+            self._shape_cache["batch_size"] = input_val.numel() // input_shape[-1]
 
         # Efficient reshape using cached batch size
         batch_size = self._shape_cache["batch_size"]
-        input_2d = input.view(batch_size, input_shape[-1])
+        input_2d = input_val.view(batch_size, input_shape[-1])
 
         # Convert to FP8
         input_fp8 = input_2d.to(torch.float8_e4m3fn)
@@ -160,7 +146,7 @@ def replace_linear_with_fp8(module: nn.Module, name: str = "") -> nn.Module:
         if isinstance(child, nn.Linear):
             # Replace Linear layer with FP8Linear
             fp8_linear = FP8Linear(
-                child.in_features, child.out_features, child.bias is not None, device=child.weight.device
+                child.in_features, child.out_features, bias=child.bias is not None, device=child.weight.device
             )
 
             # Batch copy weights and bias for efficiency
@@ -181,11 +167,11 @@ def replace_linear_with_fp8(module: nn.Module, name: str = "") -> nn.Module:
 
 
 class FP8LinearCompatible(FP8Linear):
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
+    def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
         # Store original dtype
 
         # Convert input to FP8
-        input_fp8 = input.to(torch.float8_e4m3fn)
+        input_fp8 = input_tensor.to(torch.float8_e4m3fn)
 
         # Use torch._scaled_mm for FP8 computation, but always output bfloat16
         bias_compute = self.bias.to(torch.bfloat16) if self.bias is not None else None
@@ -200,10 +186,11 @@ class FP8LinearCompatible(FP8Linear):
 
 
 def replace_linear_with_fp8_compatible(module: nn.Module, name: str = "") -> nn.Module:
+    """Replace all Linear layers in a module with FP8LinearCompatible layers."""
     for attr_name, child in module.named_children():
         if isinstance(child, nn.Linear):
             # Replace Linear layer with FP8LinearCompatible
-            fp8_linear = FP8LinearCompatible(child.in_features, child.out_features, child.bias is not None)
+            fp8_linear = FP8LinearCompatible(child.in_features, child.out_features, bias=child.bias is not None)
 
             # Batch copy weights and bias for efficiency
             with torch.no_grad():
@@ -222,7 +209,8 @@ def replace_linear_with_fp8_compatible(module: nn.Module, name: str = "") -> nn.
     return module
 
 
-def enable_fp8_linear_layers_compatible(pipeline) -> Any:
+def enable_fp8_linear_layers_compatible(pipeline: Any) -> Any:
+    """Enable FP8LinearCompatible layers in all modules of a pipeline."""
     expected_modules, _ = pipeline._get_signature_keys(pipeline.__class__)
 
     for module_name in expected_modules:
@@ -236,6 +224,7 @@ def enable_fp8_linear_layers_compatible(pipeline) -> Any:
 
 def replace_attention_layers_with_fp8(module: nn.Module, name: str = "") -> nn.Module:
     """Replace only attention-related Linear layers with FP8Linear layers.
+
     Uses named_modules() to find all Linear layers in the hierarchy.
     """
     attention_keywords = {
@@ -273,12 +262,12 @@ def replace_attention_layers_with_fp8(module: nn.Module, name: str = "") -> nn.M
                 modules_to_replace.append((parent, attr_name, child_module, full_path))
 
     # Replace the modules
-    for parent, attr_name, child_module, full_path in modules_to_replace:
+    for parent, attr_name, child_module, _full_path in modules_to_replace:
         if not isinstance(getattr(parent, attr_name), FP8Linear):  # Don't replace twice
             fp8_linear = FP8Linear(
                 child_module.in_features,
                 child_module.out_features,
-                child_module.bias is not None,
+                bias=child_module.bias is not None,
                 device=child_module.weight.device,
             )
 
@@ -295,7 +284,8 @@ def replace_attention_layers_with_fp8(module: nn.Module, name: str = "") -> nn.M
     return module
 
 
-def enable_fp8_linear_layers(pipeline) -> Any:
+def enable_fp8_linear_layers(pipeline: Any) -> Any:
+    """Enable FP8Linear layers in all modules of a pipeline."""
     expected_modules, _ = pipeline._get_signature_keys(pipeline.__class__)
 
     for module_name in expected_modules:
@@ -318,9 +308,10 @@ class FP8ElementwiseOps:
             test_b = torch.randn(16, 16, dtype=torch.bfloat16, device="cuda").to(torch.float8_e4m3fn)
             test_scale = torch.ones(1, dtype=torch.float32, device="cuda")
             torch._scaled_mm(test_a, test_b, scale_a=test_scale, scale_b=test_scale)
-            return True
         except Exception:
             return False
+        else:
+            return True
 
     @staticmethod
     def add(a: torch.Tensor, b: torch.Tensor, alpha: float = 1.0, out_dtype: torch.dtype = None) -> torch.Tensor:
@@ -422,7 +413,7 @@ class FP8Activations:
         x_bf16 = x_fp8.to(torch.bfloat16)
 
         # Compute GELU in BF16
-        result = F.gelu(x_bf16, approximate=approximate)
+        result = functional.gelu(x_bf16, approximate=approximate)
         return result.to(out_dtype)
 
     @staticmethod
@@ -436,7 +427,7 @@ class FP8Activations:
         x_bf16 = x_fp8.to(torch.bfloat16)
 
         # Compute SiLU in BF16
-        result = F.silu(x_bf16)
+        result = functional.silu(x_bf16)
         return result.to(out_dtype)
 
     @staticmethod
@@ -450,7 +441,7 @@ class FP8Activations:
         x_bf16 = x_fp8.to(torch.bfloat16)
 
         # Compute ReLU in BF16
-        result = F.relu(x_bf16)
+        result = functional.relu(x_bf16)
         return result.to(out_dtype)
 
 
@@ -459,11 +450,14 @@ class FP8Normalization:
 
     @staticmethod
     def layer_norm(
-        x: torch.Tensor, normalized_shape, weight=None, bias=None, eps: float = 1e-5, out_dtype: torch.dtype = None
+        x: torch.Tensor,
+        normalized_shape: tuple[int, ...],
+        weight: torch.Tensor | None = None,
+        bias: torch.Tensor | None = None,
+        eps: float = 1e-5,
     ) -> torch.Tensor:
         """FP8-storage optimized layer normalization."""
-        if out_dtype is None:
-            out_dtype = x.dtype if x.dtype != torch.float8_e4m3fn else torch.bfloat16
+        out_dtype = x.dtype if x.dtype != torch.float8_e4m3fn else torch.bfloat16
 
         # Convert to FP8 for memory efficiency, then back to BF16 for computation
         x_fp8 = x.to(torch.float8_e4m3fn)
@@ -474,7 +468,7 @@ class FP8Normalization:
         bias_bf16 = bias.to(torch.bfloat16) if bias is not None else None
 
         # Compute layer norm in BF16
-        result = F.layer_norm(x_bf16, normalized_shape, weight_bf16, bias_bf16, eps)
+        result = functional.layer_norm(x_bf16, normalized_shape, weight_bf16, bias_bf16, eps)
         return result.to(out_dtype)
 
     @staticmethod
@@ -509,17 +503,21 @@ def enable_fp8_elementwise_ops(module: nn.Module) -> nn.Module:
         module._fp8_ops_enabled = True
 
         # Monkey patch tensor operations
-        def fp8_add(input, other, *, alpha=1, out=None):
+        def fp8_add(
+            input_tensor: torch.Tensor, other: torch.Tensor, *, alpha: float = 1, out: torch.Tensor | None = None
+        ) -> torch.Tensor:
             if out is not None:
                 msg = "FP8 add with out parameter not supported"
                 raise NotImplementedError(msg)
-            return FP8ElementwiseOps.add(input, other, alpha)
+            return FP8ElementwiseOps.add(input_tensor, other, alpha)
 
-        def fp8_mul(input, other, *, out=None):
+        def fp8_mul(
+            input_tensor: torch.Tensor, other: torch.Tensor, *, out: torch.Tensor | None = None
+        ) -> torch.Tensor:
             if out is not None:
                 msg = "FP8 mul with out parameter not supported"
                 raise NotImplementedError(msg)
-            return FP8ElementwiseOps.mul(input, other)
+            return FP8ElementwiseOps.mul(input_tensor, other)
 
         # Replace operations
         torch.add = fp8_add
