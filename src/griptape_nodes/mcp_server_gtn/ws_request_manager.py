@@ -101,21 +101,56 @@ class WebSocketConnectionManager:
 
 
 class AsyncRequestManager(Generic[T]):
-    def __init__(self, connection_manager: WebSocketConnectionManager):
+    def __init__(self, connection_manager: WebSocketConnectionManager, api_key: str):
         self.connection_manager = connection_manager
+        self.api_key = api_key
+
+    async def _subscribe_to_topic(self, topic: str) -> None:
+        """Subscribe to a specific topic in the message bus."""
+        if self.connection_manager.websocket is None:
+            logger.warning("WebSocket connection not available for subscribing to topic")
+            return
+
+        try:
+            body = {"type": "subscribe", "topic": topic, "payload": {}}
+            await self.connection_manager.websocket.send(json.dumps(body))
+            logger.debug("Subscribed to topic: %s", topic)
+        except websockets.exceptions.WebSocketException as e:
+            logger.error("Error subscribing to topic %s: %s", topic, e)
+        except Exception as e:
+            logger.error("Unexpected error while subscribing to topic %s: %s", topic, e)
+
+    async def _subscribe_to_topics(self) -> None:
+        from griptape_nodes.retained_mode.managers.session_manager import SessionManager
+        from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
+
+        # Subscribe to response topic (engine discovery)
+        await self._subscribe_to_topic("response")
+
+        # Get engine ID and subscribe to engine_id/response
+        engine_id = EngineIdentity.get_engine_id()
+        if engine_id:
+            await self._subscribe_to_topic(f"engines/{engine_id}/response")
+        else:
+            logger.warning("Engine ID not available for subscription")
+
+        # Get session ID and subscribe to session_id/response if available
+        session_id = SessionManager.get_saved_session_id()
+        if session_id:
+            topic = f"sessions/{session_id}/response"
+            await self._subscribe_to_topic(topic)
+        else:
+            logger.info("No session ID available for subscription")
 
     async def connect(self) -> None:
         """Connect to the WebSocket server."""
-        from griptape_nodes.app.app_sessions import (
-            _create_async_websocket_connection,
-            _subscribe_to_engine_and_session_responses,
-        )
+        from griptape_nodes.app.app import _create_websocket_connection
 
         try:
-            self.connection_manager.websocket = await _create_async_websocket_connection()
+            self.connection_manager.websocket = await _create_websocket_connection(self.api_key)
             logger.debug("🟢 WebSocket connection established: %s", self.connection_manager.websocket)
 
-            await _subscribe_to_engine_and_session_responses(self.connection_manager.websocket)
+            await self._subscribe_to_topics()
 
             # Start processing messages
             self.connection_manager._process_task = asyncio.create_task(self.connection_manager._process_messages())
@@ -155,7 +190,7 @@ class AsyncRequestManager(Generic[T]):
 
     async def create_event(self, request_type: str, payload: dict[str, Any]) -> None:
         """Send an event to the API without waiting for a response."""
-        from griptape_nodes.app.app_sessions import _determine_request_topic
+        from griptape_nodes.app.app import _determine_request_topic
 
         logger.debug("📝 Creating Event: %s - %s", request_type, json.dumps(payload))
 

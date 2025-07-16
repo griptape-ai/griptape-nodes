@@ -63,7 +63,7 @@ config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
 
 
-def main() -> int:
+def main(api_key: str) -> int:
     """Main entry point for the Griptape Nodes MCP server."""
     mcp_server_logger = logging.getLogger("griptape_nodes_mcp_server")
     mcp_server_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
@@ -72,7 +72,7 @@ def main() -> int:
 
     # Give these a session ID
     connection_manager = WebSocketConnectionManager()
-    request_manager = AsyncRequestManager(connection_manager)
+    request_manager = AsyncRequestManager(connection_manager, api_key)
 
     app = Server("mcp-gtn")
 
