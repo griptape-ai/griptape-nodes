@@ -69,18 +69,18 @@ class DirectoryManager:
             Total size in MB
         """
         total_size = 0
-        workspace_directory = self.config_manager.get_config_value("workspace_directory")
-        path = Path(workspace_directory) / directory_path
+        static_files_directory = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
+        path = Path(self.config_manager.workspace_path / static_files_directory / directory_path)
 
         if not path.exists():
             return 0.0
 
         for _, _, files in os.walk(path):
             for f in files:
-                fp = os.path.join(path, f)
-                if not os.path.islink(fp):
-                    total_size += os.path.getsize(fp)
-        return total_size / (1024 * 1024) # Convert to MB
+                fp = path / f
+                if not fp.is_symlink():
+                    total_size += fp.stat().st_size
+        return total_size / (1024 * 1024)  # Convert to MB
 
     def _cleanup_old_files(self, directory_path: str, target_size_mb: float) -> bool:
         """Remove oldest files until directory is under target size.
@@ -92,8 +92,8 @@ class DirectoryManager:
         Returns:
             True if files were removed, False otherwise
         """
-        workspace_directory = self.config_manager.get_config_value("workspace_directory")
-        path = Path(workspace_directory) / directory_path
+        static_files_directory = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
+        path = self.config_manager.workspace_path / static_files_directory / directory_path
         if not path.exists():
             return False
 
