@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -73,15 +74,12 @@ class DirectoryManager:
         if not path.exists():
             return 0.0
 
-        for file_path in path.rglob("*"):
-            if file_path.is_file():
-                try:
-                    total_size += file_path.stat().st_size
-                except (OSError, FileNotFoundError):
-                    # Skip files that can't be accessed
-                    continue
-
-        return total_size / (1024 * 1024)  # Convert to MB
+        for _, _, files in os.walk(directory_path):
+            for f in files:
+                fp = os.path.join(directory_path, f)
+                if not os.path.islink(fp):
+                    total_size += os.path.getsize(fp)
+        return total_size / (1024 * 1024) # Convert to MB
 
     def _cleanup_old_files(self, directory_path: str, target_size_mb: float) -> bool:
         """Remove oldest files until directory is under target size.
