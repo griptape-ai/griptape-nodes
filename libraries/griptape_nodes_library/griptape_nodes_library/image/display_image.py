@@ -10,6 +10,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.retained_mode.griptape_nodes import logger
 
 
 class DisplayImage(DataNode):
@@ -75,6 +76,8 @@ class DisplayImage(DataNode):
             image_data = response.content
             pil_image = Image.open(BytesIO(image_data))
             return pil_image.width, pil_image.height
+        if image:
+            logger.warning(f"{self.name}: Could not determine image dimensions, as it is not a valid image")
         return 0, 0
 
     def process(self) -> None:
