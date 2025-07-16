@@ -57,7 +57,6 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "SetParameterValueRequest": SetParameterValueRequest,
 }
 
-API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 GRIPTAPE_NODES_MCP_SERVER_PORT = int(os.getenv("GRIPTAPE_NODES_MCP_SERVER_PORT", "9927"))
 
 config_manager = ConfigManager()
@@ -70,11 +69,6 @@ def main() -> int:
     mcp_server_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
     mcp_server_logger.setLevel(logging.INFO)
     mcp_server_logger.info("Starting MCP GTN server...")
-
-    api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
-    if not api_key:
-        msg = f"Secret '{API_KEY_ENV_VAR}' not found, required for GTN MCP server startup."
-        raise ValueError(msg)
 
     # Give these a session ID
     connection_manager = WebSocketConnectionManager()
@@ -97,7 +91,7 @@ def main() -> int:
 
         request_payload = SUPPORTED_REQUEST_EVENTS[name](**arguments)
 
-        await request_manager.connect(token=api_key)
+        await request_manager.connect()
         result = await request_manager.create_request_event(
             request_payload.__class__.__name__, request_payload.__dict__, timeout_ms=5000
         )

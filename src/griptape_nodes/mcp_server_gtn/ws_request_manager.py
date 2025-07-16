@@ -34,7 +34,7 @@ class WebSocketConnectionManager:
 
     async def send(self, data: dict[str, Any]) -> None:
         """Send a message to the WebSocket server."""
-        if not self.connected or not self.websocket:
+        if not self.websocket:
             msg = "Not connected to WebSocket server"
             raise ConnectionError(msg)
 
@@ -103,59 +103,19 @@ class WebSocketConnectionManager:
 class AsyncRequestManager(Generic[T]):
     def __init__(self, connection_manager: WebSocketConnectionManager):
         self.connection_manager = connection_manager
-        self.engine_id = None
-        self.session_id = None
 
-    async def _subscribe_to_topic(self, ws_connection: Any, topic: str) -> None:
-        """Subscribe to a specific topic in the message bus."""
-        if ws_connection is None:
-            logger.warning("WebSocket connection not available for subscribing to topic")
-            return
-
-        try:
-            body = {"type": "subscribe", "topic": topic, "payload": {}}
-            await ws_connection.send(json.dumps(body))
-            logger.info("Subscribed to topic: %s", topic)
-        except websockets.exceptions.WebSocketException as e:
-            logger.error("Error subscribing to topic %s: %s", topic, e)
-        except Exception as e:
-            logger.error("Unexpected error while subscribing to topic %s: %s", topic, e)
-
-    async def _subscribe_to_engine_and_session(self, ws_connection: Any) -> None:
-        """Subscribe to engine ID, session ID, and request topics on WebSocket connection."""
-        # Subscribe to response topic (engine discovery)
-        await self._subscribe_to_topic(ws_connection, "response")
-
-        if self.engine_id:
-            await self._subscribe_to_topic(ws_connection, f"engines/{self.engine_id}/response")
-        else:
-            logger.warning("Engine ID not available for subscription")
-
-        if self.session_id:
-            topic = f"sessions/{self.session_id}/response"
-            await self._subscribe_to_topic(ws_connection, topic)
-        else:
-            logger.info("No session ID available for subscription")
-
-    async def connect(self, token: str | None = None) -> None:
+    async def connect(self) -> None:
         """Connect to the WebSocket server."""
-        from griptape_nodes.retained_mode.managers.session_manager import SessionManager
-        from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
-
-        headers = {}
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
+        from griptape_nodes.app.app_sessions import (
+            _create_async_websocket_connection,
+            _subscribe_to_engine_and_session_responses,
+        )
 
         try:
-            self.connection_manager.websocket = await websockets.connect(
-                self.connection_manager.websocket_url, additional_headers=headers
-            )
-            self.connection_manager.connected = True
+            self.connection_manager.websocket = await _create_async_websocket_connection()
             logger.debug("🟢 WebSocket connection established: %s", self.connection_manager.websocket)
 
-            self.engine_id = EngineIdentity.get_engine_id()
-            self.session_id = SessionManager.get_saved_session_id()
-            await self._subscribe_to_engine_and_session(self.connection_manager.websocket)
+            await _subscribe_to_engine_and_session_responses(self.connection_manager.websocket)
 
             # Start processing messages
             self.connection_manager._process_task = asyncio.create_task(self.connection_manager._process_messages())
@@ -193,26 +153,14 @@ class AsyncRequestManager(Generic[T]):
             logger.error("Unexpected error sending API message: %s", e)
             raise
 
-    def _determine_request_topic(self) -> str | None:
-        """Determine the request topic based on session_id and engine_id in the payload."""
-        # Normal topic determination logic
-        # Check for session_id first (highest priority)
-        if self.session_id:
-            return f"sessions/{self.session_id}/request"
-
-        # Check for engine_id if no session_id
-        if self.engine_id:
-            return f"engines/{self.engine_id}/request"
-
-        # Default to generic request topic
-        return "request"
-
     async def create_event(self, request_type: str, payload: dict[str, Any]) -> None:
         """Send an event to the API without waiting for a response."""
+        from griptape_nodes.app.app_sessions import _determine_request_topic
+
         logger.debug("📝 Creating Event: %s - %s", request_type, json.dumps(payload))
 
         data = {"event_type": "EventRequest", "request_type": request_type, "request": payload}
-        topic = self._determine_request_topic()
+        topic = _determine_request_topic()
 
         request_data = {"payload": data, "type": data["event_type"], "topic": topic}
 

@@ -10,7 +10,7 @@ import sys
 import threading
 from pathlib import Path
 from queue import Queue
-from typing import Any, cast
+from typing import Any, Literal, cast
 from urllib.parse import urljoin
 
 import uvicorn
@@ -231,7 +231,7 @@ async def _alisten_for_api_requests() -> None:
     logger.info("Listening for events from Nodes API via async WebSocket")
 
     # Auto reconnect https://websockets.readthedocs.io/en/stable/reference/asyncio/client.html#opening-a-connection
-    connection_stream = __create_async_websocket_connection()
+    connection_stream = _create_async_websocket_connection()
     initialized = False
     async for ws_connection in connection_stream:
         try:
@@ -242,7 +242,7 @@ async def _alisten_for_api_requests() -> None:
                 initialized = True
 
             # Subscribe to engine ID and session ID on every new connection
-            await __subscribe_to_engine_and_session(ws_connection)
+            await _subscribe_to_engine_and_session_requests(ws_connection)
 
             async for message in ws_connection:
                 try:
@@ -363,7 +363,7 @@ def _process_event_queue() -> None:
         event_queue.task_done()
 
 
-def __create_async_websocket_connection() -> Any:
+def _create_async_websocket_connection() -> Any:
     """Create an async WebSocket connection to the Nodes API."""
     secrets_manager = GriptapeNodes.SecretsManager()
     api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY")
@@ -431,6 +431,24 @@ def _determine_response_topic() -> str | None:
     return "response"
 
 
+def _determine_request_topic() -> str | None:
+    """Determine the request topic based on session_id and engine_id in the payload."""
+    engine_id = GriptapeNodes.get_engine_id()
+    session_id = GriptapeNodes.get_session_id()
+
+    # Normal topic determination logic
+    # Check for session_id first (highest priority)
+    if session_id:
+        return f"sessions/{session_id}/request"
+
+    # Check for engine_id if no session_id
+    if engine_id:
+        return f"engines/{engine_id}/request"
+
+    # Default to generic request topic
+    return "request"
+
+
 async def __subscribe_to_topic(ws_connection: Any, topic: str) -> None:
     """Subscribe to a specific topic in the message bus."""
     if ws_connection is None:
@@ -463,22 +481,32 @@ async def __unsubscribe_from_topic(ws_connection: Any, topic: str) -> None:
         logger.error("Unexpected error while unsubscribing from topic %s: %s", topic, e)
 
 
-async def __subscribe_to_engine_and_session(ws_connection: Any) -> None:
+async def _subscribe_to_engine_and_session_requests(ws_connection: Any) -> None:
+    """Subscribe to engine ID, session ID, and request topics on WebSocket connection."""
+    await __subscribe_to_engine_and_session(ws_connection, "request")
+
+
+async def _subscribe_to_engine_and_session_responses(ws_connection: Any) -> None:
+    """Subscribe to engine ID, session ID, and response topics on WebSocket connection."""
+    await __subscribe_to_engine_and_session(ws_connection, "response")
+
+
+async def __subscribe_to_engine_and_session(ws_connection: Any, direction: Literal["request", "response"]) -> None:
     """Subscribe to engine ID, session ID, and request topics on WebSocket connection."""
     # Subscribe to request topic (engine discovery)
-    await __subscribe_to_topic(ws_connection, "request")
+    await __subscribe_to_topic(ws_connection, direction)
 
-    # Get engine ID and subscribe to engine_id/request
+    # Get engine ID and subscribe to engine_id/{direction}
     engine_id = GriptapeNodes.get_engine_id()
     if engine_id:
-        await __subscribe_to_topic(ws_connection, f"engines/{engine_id}/request")
+        await __subscribe_to_topic(ws_connection, f"engines/{engine_id}/{direction}")
     else:
         logger.warning("Engine ID not available for subscription")
 
-    # Get session ID and subscribe to session_id/request if available
+    # Get session ID and subscribe to session_id/{direction} if available
     session_id = GriptapeNodes.get_session_id()
     if session_id:
-        topic = f"sessions/{session_id}/request"
+        topic = f"sessions/{session_id}/{direction}"
         await __subscribe_to_topic(ws_connection, topic)
         logger.info("Subscribed to session topic: %s", topic)
     else:
