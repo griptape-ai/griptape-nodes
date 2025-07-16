@@ -220,11 +220,20 @@ def enable_fp8_linear_layers_compatible(pipeline: Any) -> Any:
     return pipeline
 
 
-def replace_attention_layers_with_fp8(module: nn.Module, name: str = "") -> nn.Module:
+def replace_attention_layers_with_fp8(module: nn.Module, name: str = "") -> nn.Module:  # noqa: C901, PLR0912 Wanted to keep it from becoming a recursive function.
     """Replace only attention-related Linear layers with FP8Linear layers.
 
     Uses named_modules() to find all Linear layers in the hierarchy.
     """
+    # Store original module attributes to preserve them
+    original_attrs = {}
+    for attr_name in dir(module):
+        if not attr_name.startswith("_") and not callable(getattr(module, attr_name)):
+            try:
+                original_attrs[attr_name] = getattr(module, attr_name)
+            except (AttributeError, RuntimeError):
+                # Skip attributes that can't be accessed
+                continue
     attention_keywords = {
         "to_q",
         "to_k",
@@ -278,6 +287,14 @@ def replace_attention_layers_with_fp8(module: nn.Module, name: str = "") -> nn.M
 
             # Replace the module
             setattr(parent, attr_name, fp8_linear)
+
+    for attr_name, attr_value in original_attrs.items():
+        if not hasattr(module, attr_name) or getattr(module, attr_name) is None:
+            try:
+                setattr(module, attr_name, attr_value)
+            except (AttributeError, RuntimeError):
+                # Skip attributes that can't be set
+                continue
 
     return module
 
