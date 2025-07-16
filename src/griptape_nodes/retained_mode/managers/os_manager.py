@@ -14,6 +14,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     OpenAssociatedFileResultFailure,
     OpenAssociatedFileResultSuccess,
 )
+from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 console = Console()
@@ -36,18 +37,16 @@ class OSManager:
     """
 
     static_files_directory: Path
+    config_manager: ConfigManager
 
-    def __init__(self, event_manager: EventManager | None = None):
+    def __init__(self, config_manager: ConfigManager, event_manager: EventManager | None = None):
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(
                 request_type=OpenAssociatedFileRequest, callback=self.on_open_associated_file_request
             )
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        static_files_directory = GriptapeNodes.ConfigManager().get_config_value(
-            "static_files_directory", default="staticfiles"
-        )
-        self.static_files_directory = GriptapeNodes.ConfigManager().workspace_path / static_files_directory
+        self.config_manager = config_manager
+        static_files_directory = config_manager.get_config_value("static_files_directory", default="staticfiles")
+        self.static_files_directory = config_manager.workspace_path / static_files_directory
 
     @staticmethod
     def platform() -> str:
@@ -218,10 +217,8 @@ class OSManager:
             True if cleanup was performed, False otherwise
         """
         # Get configuration values with library prefix
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        max_size_gb = GriptapeNodes.ConfigManager().get_config_value(f"{config_prefix}.max_directory_size_gb")
-        cleanup_enabled = GriptapeNodes.ConfigManager().get_config_value(f"{config_prefix}.enable_directory_cleanup")
+        max_size_gb = self.config_manager.get_config_value(f"{config_prefix}.max_directory_size_gb")
+        cleanup_enabled = self.config_manager.get_config_value(f"{config_prefix}.enable_directory_cleanup")
 
         # Default values if not configured
         if max_size_gb is None:
