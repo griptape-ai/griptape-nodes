@@ -200,22 +200,16 @@ class OSManager:
             return f"Disk space error at {path}. Unable to retrieve disk space information."
 
     @staticmethod
-    def cleanup_directory_if_needed(
-        full_directory_path: Path, max_size_gb: float = 1.0, *, cleanup_enabled: bool = False
-    ) -> bool:
+    def cleanup_directory_if_needed(full_directory_path: Path, max_size_gb: float = 5.0) -> bool:
         """Check directory size and cleanup old files if needed.
 
         Args:
             full_directory_path: Path to the directory to check and clean
             max_size_gb: Target size in GB
-            cleanup_enabled: Whether cleanup is enabled
 
         Returns:
             True if cleanup was performed, False otherwise
         """
-        if not cleanup_enabled:
-            return False
-
         # Calculate current directory size
         current_size_gb = OSManager._get_directory_size_gb(full_directory_path)
 
