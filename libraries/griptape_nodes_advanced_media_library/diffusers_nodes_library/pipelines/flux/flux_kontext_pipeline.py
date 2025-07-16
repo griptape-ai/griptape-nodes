@@ -3,7 +3,6 @@ from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.utils.fp8_ops import replace_attention_layers_with_fp8, replace_linear_with_fp8
 
 from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
     LogParameter,  # type: ignore[reportMissingImports]
@@ -18,6 +17,10 @@ from diffusers_nodes_library.pipelines.flux.flux_kontext_pipeline_parameters imp
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.utils.fp8_ops import (
+    replace_attention_layers_with_fp8,
+    replace_linear_with_fp8,
+)
 
 logger = logging.getLogger("diffusers_nodes_library")
 
