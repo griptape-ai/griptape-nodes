@@ -33,8 +33,6 @@ class FP8Linear(nn.Module):
         self._last_input_shape = None
         self._cached_weight_t = None
 
-        self.reset_parameters()
-
     def _check_fp8_support(self) -> None:
         """Check if FP8 operations are supported on this system."""
         try:
