@@ -30,7 +30,6 @@ from websockets.exceptions import ConnectionClosed, WebSocketException
 
 # This import is necessary to register all events, even if not technically used
 from griptape_nodes.retained_mode.events import app_events, execution_events
-from griptape_nodes.retained_mode.events.app_events import AppEndSessionResultSuccess, AppStartSessionResultSuccess
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
     EventRequest,
@@ -50,7 +49,10 @@ event_queue = Queue()
 
 # Global WebSocket connection for sending events
 ws_connection_for_sending = None
-event_loop = None
+
+# Event to signal when WebSocket connection is ready
+ws_ready_event = threading.Event()
+
 
 # Whether to enable the static server
 STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
@@ -100,21 +102,45 @@ def start_app() -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: sys.exit(0))
 
-    # SSE subscription pushes events into event_queue
-    threading.Thread(target=_listen_for_api_events, daemon=True).start()
+    api_key = _ensure_api_key()
+    threading.Thread(target=_listen_for_api_events, args=(api_key,), daemon=True).start()
 
     if STATIC_SERVER_ENABLED:
-        threading.Thread(target=_serve_static_server, daemon=True).start()
+        static_dir = _build_static_dir()
+        threading.Thread(target=_serve_static_server, args=(static_dir,), daemon=True).start()
 
     _process_event_queue()
 
 
-def _serve_static_server() -> None:
-    """Run FastAPI with Uvicorn in order to serve static files produced by nodes."""
-    config_manager = GriptapeNodes.ConfigManager()
-    app = FastAPI()
+def _ensure_api_key() -> str:
+    secrets_manager = GriptapeNodes.SecretsManager()
+    api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY")
+    if api_key is None:
+        message = Panel(
+            Align.center(
+                "[bold red]Nodes API key is not set, please run [code]gtn init[/code] with a valid key: [/bold red]"
+                "[code]gtn init --api-key <your key>[/code]\n"
+                "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
+            ),
+            title="🔑 ❌ Missing Nodes API Key",
+            border_style="red",
+            padding=(1, 4),
+        )
+        console.print(message)
+        sys.exit(1)
 
-    static_dir = config_manager.workspace_path / config_manager.merged_config["static_files_directory"]
+    return api_key
+
+
+def _build_static_dir() -> Path:
+    """Build the static directory path based on the workspace configuration."""
+    config_manager = GriptapeNodes.ConfigManager()
+    return config_manager.workspace_path / config_manager.merged_config["static_files_directory"]
+
+
+def _serve_static_server(static_dir: Path) -> None:
+    """Run FastAPI with Uvicorn in order to serve static files produced by nodes."""
+    app = FastAPI()
 
     if not static_dir.exists():
         static_dir.mkdir(parents=True, exist_ok=True)
@@ -170,7 +196,7 @@ def _serve_static_server() -> None:
             logger.error(msg)
             raise HTTPException(status_code=400, detail=msg) from e
         except (OSError, PermissionError) as e:
-            msg = f"Failed to write file {file_path} to {config_manager.workspace_path}: {e}"
+            msg = f"Failed to write file {file_path} to {static_dir}: {e}"
             logger.error(msg)
             raise HTTPException(status_code=500, detail=msg) from e
 
@@ -219,26 +245,24 @@ def _init_event_listeners() -> None:
     )
 
 
-async def _alisten_for_api_requests() -> None:
+async def _alisten_for_api_requests(api_key: str) -> None:
     """Listen for events from the Nodes API and process them asynchronously."""
-    global ws_connection_for_sending, event_loop  # noqa: PLW0603
-    event_loop = asyncio.get_running_loop()  # Store the event loop reference
-    nodes_app_url = os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai")
+    global ws_connection_for_sending  # noqa: PLW0603
     logger.info("Listening for events from Nodes API via async WebSocket")
 
     # Auto reconnect https://websockets.readthedocs.io/en/stable/reference/asyncio/client.html#opening-a-connection
-    connection_stream = __create_async_websocket_connection()
+    connection_stream = __create_websocket_connection(api_key)
     initialized = False
     async for ws_connection in connection_stream:
         try:
             ws_connection_for_sending = ws_connection  # Store for sending events
+            ws_ready_event.set()  # Signal that WebSocket is ready for sending
 
             if not initialized:
-                __broadcast_app_initialization_complete(nodes_app_url)
+                event_queue.put(AppEvent(payload=app_events.AppInitializationComplete()))
                 initialized = True
 
-            # Subscribe to engine ID and session ID on every new connection
-            await __subscribe_to_engine_and_session(ws_connection)
+            event_queue.put(AppEvent(payload=app_events.AppConnectionEstablished()))
 
             async for message in ws_connection:
                 try:
@@ -254,9 +278,9 @@ async def _alisten_for_api_requests() -> None:
             await asyncio.sleep(2)
 
 
-def _listen_for_api_events() -> None:
+def _listen_for_api_events(api_key: str) -> None:
     """Run the async WebSocket listener in an event loop."""
-    asyncio.run(_alisten_for_api_requests())
+    asyncio.run(_alisten_for_api_requests(api_key))
 
 
 def __process_node_event(event: GriptapeNodeEvent) -> None:
@@ -265,37 +289,13 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
     result_event = event.wrapped_event
     if isinstance(result_event, EventResultSuccess):
         dest_socket = "success_result"
-        # Handle session start events specially
-        __handle_session_events(result_event)
     elif isinstance(result_event, EventResultFailure):
         dest_socket = "failure_result"
     else:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."
         raise TypeError(msg) from None
 
-    # Don't send events over the wire that don't have a request_id set (e.g. engine-internal events)
-    __schedule_async_task(__emit_message(dest_socket, result_event.json(), topic=result_event.response_topic))
-
-
-def __handle_session_events(result_event: EventResultSuccess) -> None:
-    """Handle session start/end events by managing subscriptions."""
-    global ws_connection_for_sending  # noqa: PLW0602
-
-    if isinstance(result_event.result, AppStartSessionResultSuccess):
-        # Subscribe to the new session topic
-        session_id = result_event.result.session_id
-        if session_id and ws_connection_for_sending:
-            topic = f"sessions/{session_id}/request"
-            __schedule_async_task(__subscribe_to_topic(ws_connection_for_sending, topic))
-            logger.info("Subscribed to new session topic: %s", topic)
-
-    elif isinstance(result_event.result, AppEndSessionResultSuccess):
-        # Unsubscribe from the ended session topic
-        session_id = result_event.result.session_id
-        if session_id and ws_connection_for_sending:
-            topic = f"sessions/{session_id}/request"
-            __schedule_async_task(__unsubscribe_from_topic(ws_connection_for_sending, topic))
-            logger.info("Unsubscribed from ended session topic: %s", topic)
+    asyncio.run(__emit_message(dest_socket, result_event.json(), topic=result_event.response_topic))
 
 
 def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
@@ -316,7 +316,7 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
             msg = "Node start and finish do not match."
             raise KeyError(msg) from None
         GriptapeNodes.EventManager().current_active_node = None
-    __schedule_async_task(__emit_message("execution_event", result_event.json()))
+    asyncio.run(__emit_message("execution_event", result_event.json()))
 
 
 def __process_progress_event(gt_event: ProgressEvent) -> None:
@@ -328,7 +328,7 @@ def __process_progress_event(gt_event: ProgressEvent) -> None:
             node_name=node_name, parameter_name=gt_event.parameter_name, type=type(gt_event).__name__, value=value
         )
         event_to_emit = ExecutionEvent(payload=payload)
-        __schedule_async_task(__emit_message("execution_event", event_to_emit.json()))
+        asyncio.run(__emit_message("execution_event", event_to_emit.json()))
 
 
 def __process_app_event(event: AppEvent) -> None:
@@ -336,7 +336,7 @@ def __process_app_event(event: AppEvent) -> None:
     # Let Griptape Nodes broadcast it.
     GriptapeNodes.broadcast_app_event(event.payload)
 
-    __schedule_async_task(__emit_message("app_event", event.json()))
+    asyncio.run(__emit_message("app_event", event.json()))
 
 
 def _process_event_queue() -> None:
@@ -344,6 +344,9 @@ def _process_event_queue() -> None:
 
     Event queue will be populated by background threads listening for events from the Nodes API.
     """
+    # Wait for WebSocket connection to be established before processing events
+    ws_ready_event.wait()
+
     while True:
         event = event_queue.get(block=True)
         if isinstance(event, EventRequest):
@@ -359,24 +362,8 @@ def _process_event_queue() -> None:
         event_queue.task_done()
 
 
-def __create_async_websocket_connection() -> Any:
+def __create_websocket_connection(api_key: str) -> Any:
     """Create an async WebSocket connection to the Nodes API."""
-    secrets_manager = GriptapeNodes.SecretsManager()
-    api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY")
-    if api_key is None:
-        message = Panel(
-            Align.center(
-                "[bold red]Nodes API key is not set, please run [code]gtn init[/code] with a valid key: [/bold red]"
-                "[code]gtn init --api-key <your key>[/code]\n"
-                "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
-            ),
-            title="🔑 ❌ Missing Nodes API Key",
-            border_style="red",
-            padding=(1, 4),
-        )
-        console.print(message)
-        sys.exit(1)
-
     endpoint = urljoin(
         os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai").replace("http", "ws"),
         "/ws/engines/events?version=v2",
@@ -427,15 +414,25 @@ def _determine_response_topic() -> str | None:
     return "response"
 
 
-async def __subscribe_to_topic(ws_connection: Any, topic: str) -> None:
+def subscribe_to_topic(topic: str) -> None:
     """Subscribe to a specific topic in the message bus."""
-    if ws_connection is None:
+    asyncio.run(_asubscribe_to_topic(topic))
+
+
+def unsubscribe_from_topic(topic: str) -> None:
+    """Unsubscribe from a specific topic in the message bus."""
+    asyncio.run(_aunsubscribe_from_topic(topic))
+
+
+async def _asubscribe_to_topic(topic: str) -> None:
+    """Subscribe to a specific topic in the message bus."""
+    if ws_connection_for_sending is None:
         logger.warning("WebSocket connection not available for subscribing to topic")
         return
 
     try:
         body = {"type": "subscribe", "topic": topic, "payload": {}}
-        await ws_connection.send(json.dumps(body))
+        await ws_connection_for_sending.send(json.dumps(body))
         logger.info("Subscribed to topic: %s", topic)
     except WebSocketException as e:
         logger.error("Error subscribing to topic %s: %s", topic, e)
@@ -443,85 +440,20 @@ async def __subscribe_to_topic(ws_connection: Any, topic: str) -> None:
         logger.error("Unexpected error while subscribing to topic %s: %s", topic, e)
 
 
-async def __unsubscribe_from_topic(ws_connection: Any, topic: str) -> None:
+async def _aunsubscribe_from_topic(topic: str) -> None:
     """Unsubscribe from a specific topic in the message bus."""
-    if ws_connection is None:
+    if ws_connection_for_sending is None:
         logger.warning("WebSocket connection not available for unsubscribing from topic")
         return
 
     try:
         body = {"type": "unsubscribe", "topic": topic, "payload": {}}
-        await ws_connection.send(json.dumps(body))
+        await ws_connection_for_sending.send(json.dumps(body))
         logger.info("Unsubscribed from topic: %s", topic)
     except WebSocketException as e:
         logger.error("Error unsubscribing from topic %s: %s", topic, e)
     except Exception as e:
         logger.error("Unexpected error while unsubscribing from topic %s: %s", topic, e)
-
-
-async def __subscribe_to_engine_and_session(ws_connection: Any) -> None:
-    """Subscribe to engine ID, session ID, and request topics on WebSocket connection."""
-    # Subscribe to request topic (engine discovery)
-    await __subscribe_to_topic(ws_connection, "request")
-
-    # Get engine ID and subscribe to engine_id/request
-    engine_id = GriptapeNodes.get_engine_id()
-    if engine_id:
-        await __subscribe_to_topic(ws_connection, f"engines/{engine_id}/request")
-    else:
-        logger.warning("Engine ID not available for subscription")
-
-    # Get session ID and subscribe to session_id/request if available
-    session_id = GriptapeNodes.get_session_id()
-    if session_id:
-        topic = f"sessions/{session_id}/request"
-        await __subscribe_to_topic(ws_connection, topic)
-        logger.info("Subscribed to session topic: %s", topic)
-    else:
-        logger.info("No session ID available for subscription")
-
-
-def __schedule_async_task(coro: Any) -> None:
-    """Schedule an async coroutine to run in the event loop from a sync context."""
-    if event_loop and event_loop.is_running():
-        asyncio.run_coroutine_threadsafe(coro, event_loop)
-    else:
-        logger.warning("Event loop not available for scheduling async task")
-
-
-def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
-    """Broadcast the AppInitializationComplete event to all listeners.
-
-    This is used to notify the GUI that the app is ready to receive events.
-    """
-    # Broadcast this to anybody who wants a callback on "hey, the app's ready to roll"
-    payload = app_events.AppInitializationComplete()
-    app_event = AppEvent(payload=payload)
-    __process_app_event(app_event)
-
-    engine_version_request = app_events.GetEngineVersionRequest()
-    engine_version_result = GriptapeNodes.get_instance().handle_engine_version_request(engine_version_request)
-    if isinstance(engine_version_result, app_events.GetEngineVersionResultSuccess):
-        engine_version = f"v{engine_version_result.major}.{engine_version_result.minor}.{engine_version_result.patch}"
-    else:
-        engine_version = "<UNKNOWN ENGINE VERSION>"
-
-    # Get current session ID
-    session_id = GriptapeNodes.get_session_id()
-    session_info = f" | Session: {session_id[:8]}..." if session_id else " | No Session"
-
-    message = Panel(
-        Align.center(
-            f"[bold green]Engine is ready to receive events[/bold green]\n"
-            f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link] to access the Workflow Editor[/bold blue]",
-            vertical="middle",
-        ),
-        title="🚀 Griptape Nodes Engine Started",
-        subtitle=f"[green]{engine_version}{session_info}[/green]",
-        border_style="green",
-        padding=(1, 4),
-    )
-    console.print(message)
 
 
 def __process_api_event(event: dict) -> None:
