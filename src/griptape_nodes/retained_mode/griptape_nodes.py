@@ -294,6 +294,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._config_manager
 
     @classmethod
+    def OSManager(cls) -> OSManager:
+        return GriptapeNodes.get_instance()._os_manager
+
+    @classmethod
     def SecretsManager(cls) -> SecretsManager:
         return GriptapeNodes.get_instance()._secrets_manager
 
