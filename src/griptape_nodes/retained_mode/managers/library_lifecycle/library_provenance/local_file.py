@@ -45,7 +45,23 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
 
     def inspect(self) -> InspectionResult:
         """Inspect this local file to extract schema and identify issues."""
-        return self._inspect_library_schema()
+        issues = []
+
+        # File system validation
+        if not self._validate_file_exists():
+            issues.append(
+                LifecycleIssue(
+                    message=f"Library file does not exist or is not readable: {self.file_path}",
+                    severity=LibraryStatus.UNUSABLE,
+                )
+            )
+            return InspectionResult(schema=None, issues=issues)
+
+        # Schema validation
+        schema, schema_issues = self._validate_library_schema()
+        issues.extend(schema_issues)
+
+        return InspectionResult(schema=schema, issues=issues)
 
     def evaluate(self) -> list[str]:
         """Evaluate this local file for conflicts/issues."""
@@ -56,7 +72,19 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
             problems.append(f"Library file is no longer accessible: {self.file_path}")
             return problems
 
-        # Local files don't typically have conflicts
+        # Get schema (assume it's valid since inspection passed)
+        schema, _schema_issues = self._validate_library_schema()
+        if not schema:
+            problems.append("No valid schema found during evaluation")
+            return problems
+
+        # Version compatibility validation
+        version_issues = self._validate_version_compatibility(schema)
+        problems.extend([issue.message for issue in version_issues])
+
+        # NOTE: Library name conflicts are checked at the manager level
+        # across all evaluated libraries, not here
+
         return problems
 
     def install(self, library_name: str) -> InstallationData:
@@ -113,67 +141,69 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
             logger.error("Failed to validate file %s: %s", self.file_path, e)
             return False
 
-    def _inspect_library_schema(self) -> InspectionResult:
-        """Inspect and validate library schema from the local file."""
+    def _validate_library_schema(self) -> tuple[LibrarySchema | None, list[LifecycleIssue]]:
+        """Validate and parse library schema from the local file."""
         issues = []
-
-        if not self._validate_file_exists():
-            return InspectionResult(
-                schema=None,
-                issues=[
-                    LifecycleIssue(
-                        message=f"Library file does not exist or is not readable: {self.file_path}",
-                        severity=LibraryStatus.UNUSABLE,
-                    )
-                ],
-            )
 
         try:
             with Path(self.file_path).open(encoding="utf-8") as f:
                 raw_data = json.load(f)
         except json.JSONDecodeError as e:
-            return InspectionResult(
-                schema=None,
-                issues=[LifecycleIssue(message=f"Invalid JSON in library file: {e}", severity=LibraryStatus.UNUSABLE)],
-            )
+            issues.append(LifecycleIssue(message=f"Invalid JSON in library file: {e}", severity=LibraryStatus.UNUSABLE))
+            return None, issues
         except Exception as e:
-            return InspectionResult(
-                schema=None,
-                issues=[LifecycleIssue(message=f"Failed to read library file: {e}", severity=LibraryStatus.UNUSABLE)],
-            )
+            issues.append(LifecycleIssue(message=f"Failed to read library file: {e}", severity=LibraryStatus.UNUSABLE))
+            return None, issues
 
-        # Validate library schema
+        # Validate library schema structure
         try:
             library_schema = LibrarySchema.model_validate(raw_data)
         except ValidationError as e:
-            return InspectionResult(
-                schema=None,
-                issues=[LifecycleIssue(message=f"Invalid library schema: {e}", severity=LibraryStatus.UNUSABLE)],
+            for error in e.errors():
+                loc = " -> ".join(map(str, error["loc"]))
+                msg = error["msg"]
+                error_type = error["type"]
+                problem = f"Error in section '{loc}': {error_type}, {msg}"
+                issues.append(LifecycleIssue(message=problem, severity=LibraryStatus.UNUSABLE))
+            return None, issues
+
+        return library_schema, issues
+
+    def _validate_version_compatibility(self, schema: LibrarySchema) -> list[LifecycleIssue]:
+        """Validate version compatibility using the existing VersionCompatibilityManager."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        issues = []
+        try:
+            version_compatibility_manager = GriptapeNodes.VersionCompatibilityManager()
+            version_issues = version_compatibility_manager.check_library_version_compatibility(schema)
+
+            for issue in version_issues:
+                # Convert LibraryManager.LibraryStatus to lifecycle LibraryStatus
+                lifecycle_severity = LibraryStatus(issue.severity.value)
+                issues.append(LifecycleIssue(message=issue.message, severity=lifecycle_severity))
+        except Exception as e:
+            issues.append(
+                LifecycleIssue(message=f"Failed to check version compatibility: {e}", severity=LibraryStatus.FLAWED)
             )
 
-        # Schema validation successful - metadata is guaranteed to be present
-        # (Pydantic validation would have failed if metadata was missing)
-        return InspectionResult(schema=library_schema, issues=issues)
+        return issues
 
     def _install_dependencies(self, venv_path: str) -> list[str]:  # noqa: C901
         """Install dependencies for the local file library."""
         problems = []
 
         # Load metadata to get dependencies
-        inspection_result = self._inspect_library_schema()
-        if inspection_result.issues:
-            problems.extend([issue.message for issue in inspection_result.issues])
+        schema, schema_issues = self._validate_library_schema()
+        if schema_issues:
+            problems.extend([issue.message for issue in schema_issues])
             return problems
 
-        if (
-            not inspection_result.schema
-            or not inspection_result.schema.metadata
-            or not inspection_result.schema.metadata.dependencies
-        ):
+        if not schema or not schema.metadata or not schema.metadata.dependencies:
             # No dependencies to install
             return problems
 
-        dependencies = inspection_result.schema.metadata.dependencies
+        dependencies = schema.metadata.dependencies
         if not dependencies.pip_dependencies:
             # No pip dependencies
             return problems

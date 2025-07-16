@@ -1,10 +1,12 @@
 """Library provenance implementations."""
 
-from .base import LibraryProvenance
-from .github import LibraryProvenanceGitHub
-from .local_file import LibraryProvenanceLocalFile
-from .package import LibraryProvenancePackage
-from .sandbox import LibraryProvenanceSandbox
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.base import LibraryProvenance
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.github import LibraryProvenanceGitHub
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.local_file import (
+    LibraryProvenanceLocalFile,
+)
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.package import LibraryProvenancePackage
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.sandbox import LibraryProvenanceSandbox
 
 __all__ = [
     "LibraryProvenance",

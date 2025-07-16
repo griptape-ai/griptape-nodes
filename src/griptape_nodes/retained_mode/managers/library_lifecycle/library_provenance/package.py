@@ -14,9 +14,8 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import 
     LifecycleIssue,
     LoadedLibraryData,
 )
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.base import LibraryProvenance
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
-
-from .base import LibraryProvenance
 
 
 @dataclass(frozen=True)

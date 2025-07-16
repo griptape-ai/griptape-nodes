@@ -5,18 +5,24 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, NamedTuple
 
-from .library_status import LibraryStatus
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema
-
-    from .library_provenance import LibraryProvenance
+    from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance import LibraryProvenance
 
 
 class LibraryByType(NamedTuple):
     """A library entry with its name, organized by provenance type."""
 
     name: str
+    entry: LibraryEntry
+
+
+class LibraryCandidate(NamedTuple):
+    """A library candidate with its provenance and entry."""
+
+    provenance: LibraryProvenance
     entry: LibraryEntry
 
 

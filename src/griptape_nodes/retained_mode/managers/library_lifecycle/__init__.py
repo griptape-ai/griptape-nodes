@@ -1,6 +1,6 @@
 """Library lifecycle management subsystem."""
 
-from .data_models import (
+from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import (
     EvaluationResult,
     InspectionResult,
     InstallationData,
@@ -12,16 +12,19 @@ from .data_models import (
     LifecycleIssue,
     LoadedLibraryData,
 )
-from .library_directory import LibraryDirectory
-from .library_fsm import LibraryLifecycleContext, LibraryLifecycleFSM
-from .library_provenance import (
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_directory import LibraryDirectory
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_fsm import (
+    LibraryLifecycleContext,
+    LibraryLifecycleFSM,
+)
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance import (
     LibraryProvenance,
     LibraryProvenanceGitHub,
     LibraryProvenanceLocalFile,
     LibraryProvenancePackage,
     LibraryProvenanceSandbox,
 )
-from .library_status import LibraryStatus
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 __all__ = [
     "EvaluationResult",

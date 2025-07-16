@@ -7,20 +7,18 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from griptape_nodes.machines.fsm import FSM, State
-
-from .data_models import (
+from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import (
     EvaluationResult,
     InspectionResult,
     InstallationResult,
     LibraryLoadedResult,
     LifecycleIssue,
 )
-from .library_status import LibraryStatus
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibrarySchema
-
-    from .library_provenance import LibraryProvenance
+    from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance import LibraryProvenance
 
 StateType = type[State]
 
@@ -90,9 +88,7 @@ class CandidateState(State):
 
     @staticmethod
     def on_enter(context: LibraryLifecycleContext) -> StateType | None:
-        schema = context.get_library_schema()
-        library_name = schema.name if schema else "unknown"
-        logger.info("Library %s is now a candidate for processing", library_name)
+        logger.info("Library %s is now a candidate for processing", context.provenance.get_display_name())
         return None  # Wait for explicit transition to InspectingState
 
     @staticmethod
@@ -124,7 +120,7 @@ class InspectingState(State):
             logger.warning("Failed to load metadata for library %s", context.provenance.get_display_name())
 
         # Check if inspection result is disqualifying
-        if not context.inspection_result.is_usable:
+        if not context.inspection_result.is_usable():
             logger.error(
                 "Library %s inspection failed with disqualifying issues: %s",
                 context.provenance.get_display_name(),
@@ -144,7 +140,7 @@ class InspectedState(State):
     def get_allowed_transitions_for_context(context: LibraryLifecycleContext) -> set[StateType]:
         """Get context-specific allowed transitions."""
         # If inspection result is unusable, block all transitions
-        if context.inspection_result and not context.inspection_result.is_usable:
+        if context.inspection_result and not context.inspection_result.is_usable():
             return set()
         return {EvaluatingState}
 
