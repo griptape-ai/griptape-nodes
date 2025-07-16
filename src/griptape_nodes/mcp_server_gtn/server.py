@@ -124,5 +124,3 @@ def main() -> int:
     mcp_server_app.mount("/mcp", app=handle_streamable_http)
 
     uvicorn.run(mcp_server_app, host="127.0.0.1", port=GRIPTAPE_NODES_MCP_SERVER_PORT)
-
-    return 0
