@@ -1,3 +1,6 @@
-from griptape_nodes.mcp_server_gtn import main
+"""Runs the Griptape Nodes MCP server."""
 
-main()
+from .server import main
+
+if __name__ == "__main__":
+    main()

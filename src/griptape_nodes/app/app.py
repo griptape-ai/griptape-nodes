@@ -28,7 +28,7 @@ from rich.panel import Panel
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
-from griptape_nodes.mcp_server_gtn import main as mcp_server_gtn
+from griptape_nodes.mcp_server_gtn.server import main as mcp_server_gtn
 
 # This import is necessary to register all events, even if not technically used
 from griptape_nodes.retained_mode.events import app_events, execution_events
