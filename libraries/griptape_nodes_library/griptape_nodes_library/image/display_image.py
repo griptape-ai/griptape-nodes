@@ -9,7 +9,7 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
 )
-from griptape_nodes.exe_types.node_types import BaseNode, DataNode
+from griptape_nodes.exe_types.node_types import DataNode
 
 
 class DisplayImage(DataNode):
@@ -54,18 +54,16 @@ class DisplayImage(DataNode):
             )
         )
 
-    def after_incoming_connection(
-        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
-    ) -> None:
-        image = self.get_parameter_value("image")
-        if image:
-            width, height = self.get_image_dimensions(image)
-            self.parameter_output_values["width"] = width
-            self.parameter_output_values["height"] = height
-        else:
-            self.parameter_output_values["width"] = 0
-            self.parameter_output_values["height"] = 0
-        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "image":
+            self._update_dimensions(value)
+        return super().after_value_set(parameter, value)
+
+    def _update_dimensions(self, image: ImageArtifact | ImageUrlArtifact | None) -> None:
+        """Update width and height output values based on the image."""
+        width, height = self.get_image_dimensions(image) if image else (0, 0)
+        self.parameter_output_values["width"] = width
+        self.parameter_output_values["height"] = height
 
     def get_image_dimensions(self, image: ImageArtifact | ImageUrlArtifact) -> tuple[int, int]:
         """Get image dimensions from either ImageArtifact or ImageUrlArtifact."""
@@ -81,8 +79,5 @@ class DisplayImage(DataNode):
 
     def process(self) -> None:
         image = self.get_parameter_value("image")
-        width, height = self.get_image_dimensions(image)
-
+        self._update_dimensions(image)
         self.parameter_output_values["image"] = image
-        self.parameter_output_values["width"] = width
-        self.parameter_output_values["height"] = height
