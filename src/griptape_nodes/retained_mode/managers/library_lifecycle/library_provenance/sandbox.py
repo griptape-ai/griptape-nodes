@@ -6,18 +6,23 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
 from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema
 from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import (
+    EvaluationResult,
     InspectionResult,
-    InstallationData,
+    InstallationResult,
+    LibraryLoadedResult,
     LifecycleIssue,
-    LoadedLibraryData,
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.base import LibraryProvenance
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.managers.library_lifecycle.library_fsm import LibraryLifecycleContext
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -83,14 +88,19 @@ class LibraryProvenanceSandbox(LibraryProvenance):
 
         return InspectionResult(schema=schema, issues=[])
 
-    def evaluate(self) -> list[str]:
+    def evaluate(self, context: LibraryLifecycleContext) -> EvaluationResult:  # noqa: ARG002
         """Evaluate this sandbox for conflicts/issues."""
-        problems = []
+        issues = []
 
         # Check if sandbox is still accessible
         if not self._validate_sandbox_path():
-            problems.append(f"Sandbox directory is no longer accessible: {self.sandbox_path}")
-            return problems
+            issues.append(
+                LifecycleIssue(
+                    message=f"Sandbox directory is no longer accessible: {self.sandbox_path}",
+                    severity=LibraryStatus.UNUSABLE,
+                )
+            )
+            return EvaluationResult(issues=issues)
 
         # TODO: Add sandbox-specific evaluation logic (https://github.com/griptape-ai/griptape-nodes/issues/1234)
         # This could include:
@@ -98,26 +108,31 @@ class LibraryProvenanceSandbox(LibraryProvenance):
         # - Validating node implementations
         # - Checking for missing dependencies
 
-        return problems
+        return EvaluationResult(issues=issues)
 
-    def install(self, library_name: str) -> InstallationData:  # noqa: ARG002
+    def install(self, context: LibraryLifecycleContext) -> InstallationResult:  # noqa: ARG002
         """Install this sandbox library."""
-        problems = []
+        issues = []
 
         # Sandbox libraries don't need complex installation
         # They're loaded directly from the sandbox directory
-        return InstallationData(
+        return InstallationResult(
             installation_path=self.sandbox_path,
             venv_path="",
-            installation_problems=problems,
+            issues=issues,
         )
 
-    def load_library(self, library_schema: LibrarySchema) -> LoadedLibraryData:
+    def load_library(self, library_schema: LibrarySchema) -> LibraryLoadedResult:
         """Load this sandbox library into the registry."""
-        problems = []
+        issues = []
 
         if not library_schema.metadata:
-            problems.append("No metadata available for loading")
+            issues.append(
+                LifecycleIssue(
+                    message="No metadata available for loading",
+                    severity=LibraryStatus.FLAWED,
+                )
+            )
 
         # TODO: Actually register the sandbox library with the LibraryRegistry (https://github.com/griptape-ai/griptape-nodes/issues/1234)
         # This would involve:
@@ -125,14 +140,14 @@ class LibraryProvenanceSandbox(LibraryProvenance):
         # 2. Adding it to the LibraryRegistry
         # 3. Handling any registration conflicts or errors
 
-        return LoadedLibraryData(
+        return LibraryLoadedResult(
             metadata=library_schema.metadata
             or LibraryMetadata(
                 author="unknown", description="unknown", library_version="unknown", engine_version="unknown", tags=[]
             ),
-            load_problems=problems,
             enabled=True,
             name_override=None,
+            issues=issues,
         )
 
     def _validate_sandbox_path(self) -> bool:

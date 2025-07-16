@@ -35,103 +35,82 @@ class LifecycleIssue:
 
 
 @dataclass
-class InspectionResult:
+class Result:
+    """Base class for all library lifecycle result objects."""
+
+    issues: list[LifecycleIssue] = field(default_factory=list)
+
+    def get_status(self) -> LibraryStatus:
+        """Determine overall status based on issues."""
+        if any(issue.severity == LibraryStatus.UNUSABLE for issue in self.issues):
+            return LibraryStatus.UNUSABLE
+        if any(issue.severity == LibraryStatus.FLAWED for issue in self.issues):
+            return LibraryStatus.FLAWED
+        return LibraryStatus.GOOD
+
+    def is_usable(self) -> bool:
+        """Check if result is usable despite issues."""
+        return self.get_status() in [LibraryStatus.GOOD, LibraryStatus.FLAWED]
+
+
+@dataclass
+class InspectionResult(Result):
     """Result of library inspection with structured issues and severity levels."""
 
-    schema: LibrarySchema | None  # type: ignore[name-defined]
-    issues: list[LifecycleIssue] = field(default_factory=list)
+    schema: LibrarySchema | None = None
+
+    def __init__(self, schema: LibrarySchema | None = None, issues: list[LifecycleIssue] | None = None):
+        super().__init__(issues=issues or [])
+        self.schema = schema
 
     def get_status(self) -> LibraryStatus:
-        """Determine overall status based on issues."""
+        """Determine overall status based on issues and schema availability."""
         if not self.schema:
             return LibraryStatus.UNUSABLE
-        if any(issue.severity == LibraryStatus.UNUSABLE for issue in self.issues):
-            return LibraryStatus.UNUSABLE
-        if any(issue.severity == LibraryStatus.FLAWED for issue in self.issues):
-            return LibraryStatus.FLAWED
-        return LibraryStatus.GOOD
-
-    def is_usable(self) -> bool:
-        """Check if library can be registered despite issues."""
-        return self.get_status() in [LibraryStatus.GOOD, LibraryStatus.FLAWED]
+        return super().get_status()
 
 
 @dataclass
-class EvaluationResult:
+class EvaluationResult(Result):
     """Result of library evaluation with structured issues and severity levels."""
 
-    issues: list[LifecycleIssue] = field(default_factory=list)
-
-    def get_status(self) -> LibraryStatus:
-        """Determine overall status based on issues."""
-        if any(issue.severity == LibraryStatus.UNUSABLE for issue in self.issues):
-            return LibraryStatus.UNUSABLE
-        if any(issue.severity == LibraryStatus.FLAWED for issue in self.issues):
-            return LibraryStatus.FLAWED
-        return LibraryStatus.GOOD
-
-    def is_usable(self) -> bool:
-        """Check if library can be registered despite issues."""
-        return self.get_status() in [LibraryStatus.GOOD, LibraryStatus.FLAWED]
+    def __init__(self, issues: list[LifecycleIssue] | None = None):
+        super().__init__(issues=issues or [])
 
 
 @dataclass
-class InstallationData:
-    """Data about successful installation."""
-
-    installation_path: str  # Where the library files are
-    venv_path: str  # Where the virtual environment is
-    installation_problems: list[str] = field(default_factory=list)
-
-
-@dataclass
-class InstallationResult:
+class InstallationResult(Result):
     """Result of library installation with structured issues and severity levels."""
 
-    installation_data: InstallationData | None
-    issues: list[LifecycleIssue] = field(default_factory=list)
+    installation_path: str = ""  # Where the library files are
+    venv_path: str = ""  # Where the virtual environment is
 
-    def get_status(self) -> LibraryStatus:
-        """Determine overall status based on issues."""
-        if any(issue.severity == LibraryStatus.UNUSABLE for issue in self.issues):
-            return LibraryStatus.UNUSABLE
-        if any(issue.severity == LibraryStatus.FLAWED for issue in self.issues):
-            return LibraryStatus.FLAWED
-        return LibraryStatus.GOOD
-
-    def is_usable(self) -> bool:
-        """Check if library can be loaded despite issues."""
-        return self.get_status() in [LibraryStatus.GOOD, LibraryStatus.FLAWED]
+    def __init__(self, installation_path: str = "", venv_path: str = "", issues: list[LifecycleIssue] | None = None):
+        super().__init__(issues=issues or [])
+        self.installation_path = installation_path
+        self.venv_path = venv_path
 
 
 @dataclass
-class LoadedLibraryData:
-    """Data about successfully loaded library."""
+class LibraryLoadedResult(Result):
+    """Result of library loading with structured issues and severity levels."""
 
-    metadata: LibraryMetadata
-    load_problems: list[str] = field(default_factory=list)
+    metadata: LibraryMetadata | None = None
     enabled: bool = True
     name_override: str | None = None
 
-
-@dataclass
-class LibraryLoadedResult:
-    """Result of library loading with structured issues and severity levels."""
-
-    loaded_library_data: LoadedLibraryData | None
-    issues: list[LifecycleIssue] = field(default_factory=list)
-
-    def get_status(self) -> LibraryStatus:
-        """Determine overall status based on issues."""
-        if any(issue.severity == LibraryStatus.UNUSABLE for issue in self.issues):
-            return LibraryStatus.UNUSABLE
-        if any(issue.severity == LibraryStatus.FLAWED for issue in self.issues):
-            return LibraryStatus.FLAWED
-        return LibraryStatus.GOOD
-
-    def is_usable(self) -> bool:
-        """Check if library can be used despite issues."""
-        return self.get_status() in [LibraryStatus.GOOD, LibraryStatus.FLAWED]
+    def __init__(
+        self,
+        metadata: LibraryMetadata | None = None,
+        *,
+        enabled: bool = True,
+        name_override: str | None = None,
+        issues: list[LifecycleIssue] | None = None,
+    ):
+        super().__init__(issues=issues or [])
+        self.metadata = metadata
+        self.enabled = enabled
+        self.name_override = name_override
 
 
 @dataclass

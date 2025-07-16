@@ -169,7 +169,7 @@ class LibraryDirectory:
             return blockers
 
         # Check if library is in evaluated state
-        if not isinstance(fsm.get_current_state(), EvaluatedState):
+        if fsm.get_current_state() != EvaluatedState:
             blockers.append(
                 LifecycleIssue(
                     message=f"Library not in evaluated state: {fsm.get_current_state_name()}",

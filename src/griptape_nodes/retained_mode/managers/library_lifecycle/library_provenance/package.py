@@ -4,18 +4,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema
 from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import (
+    EvaluationResult,
     InspectionResult,
-    InstallationData,
+    InstallationResult,
+    LibraryLoadedResult,
     LifecycleIssue,
-    LoadedLibraryData,
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.base import LibraryProvenance
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.managers.library_lifecycle.library_fsm import LibraryLifecycleContext
 
 
 @dataclass(frozen=True)
@@ -46,16 +51,26 @@ class LibraryProvenancePackage(LibraryProvenance):
             ],
         )
 
-    def evaluate(self) -> list[str]:
+    def evaluate(self, context: LibraryLifecycleContext) -> EvaluationResult:  # noqa: ARG002
         """Evaluate this package for conflicts/issues."""
-        problems = []
-        problems.append("Package evaluation not yet implemented")
-        return problems
+        issues = []
+        issues.append(
+            LifecycleIssue(
+                message="Package evaluation not yet implemented",
+                severity=LibraryStatus.UNUSABLE,
+            )
+        )
+        return EvaluationResult(issues=issues)
 
-    def install(self, library_name: str) -> InstallationData:  # noqa: ARG002
+    def install(self, context: LibraryLifecycleContext) -> InstallationResult:  # noqa: ARG002
         """Install this package library."""
-        problems = []
-        problems.append("Package installation not yet implemented")
+        issues = []
+        issues.append(
+            LifecycleIssue(
+                message="Package installation not yet implemented",
+                severity=LibraryStatus.UNUSABLE,
+            )
+        )
 
         # TODO: Implement package installation (https://github.com/griptape-ai/griptape-nodes/issues/1234)
         # This should:
@@ -63,25 +78,30 @@ class LibraryProvenancePackage(LibraryProvenance):
         # 2. Install package using pip
         # 3. Extract library files from installed package
 
-        return InstallationData(
+        return InstallationResult(
             installation_path="",
             venv_path="",
-            installation_problems=problems,
+            issues=issues,
         )
 
-    def load_library(self, library_schema: LibrarySchema) -> LoadedLibraryData:
+    def load_library(self, library_schema: LibrarySchema) -> LibraryLoadedResult:
         """Load this package library into the registry."""
-        problems = []
-        problems.append("Package loading not yet implemented")
+        issues = []
+        issues.append(
+            LifecycleIssue(
+                message="Package loading not yet implemented",
+                severity=LibraryStatus.UNUSABLE,
+            )
+        )
 
-        return LoadedLibraryData(
+        return LibraryLoadedResult(
             metadata=library_schema.metadata
             or LibraryMetadata(
                 author="unknown", description="unknown", library_version="unknown", engine_version="unknown", tags=[]
             ),
-            load_problems=problems,
             enabled=True,
             name_override=None,
+            issues=issues,
         )
 
     def _get_base_venv_directory(self) -> str:

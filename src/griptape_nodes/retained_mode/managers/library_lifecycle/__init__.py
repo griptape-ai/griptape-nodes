@@ -3,14 +3,12 @@
 from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import (
     EvaluationResult,
     InspectionResult,
-    InstallationData,
     InstallationResult,
     LibraryByType,
     LibraryEntry,
     LibraryLoadedResult,
     LibraryPreferences,
     LifecycleIssue,
-    LoadedLibraryData,
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_directory import LibraryDirectory
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_fsm import (
@@ -29,7 +27,6 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_status impo
 __all__ = [
     "EvaluationResult",
     "InspectionResult",
-    "InstallationData",
     "InstallationResult",
     "LibraryByType",
     "LibraryDirectory",
@@ -45,5 +42,4 @@ __all__ = [
     "LibraryProvenanceSandbox",
     "LibraryStatus",
     "LifecycleIssue",
-    "LoadedLibraryData",
 ]

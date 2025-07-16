@@ -170,11 +170,7 @@ class EvaluatingState(State):
     def on_enter(context: LibraryLifecycleContext) -> StateType | None:
         logger.info("Evaluating library %s", context.provenance.get_display_name())
 
-        problems = context.provenance.evaluate()
-
-        # Convert string problems to LifecycleIssues
-        issues = [LifecycleIssue(message=problem, severity=LibraryStatus.FLAWED) for problem in problems]
-        context.evaluation_result = EvaluationResult(issues=issues)
+        context.evaluation_result = context.provenance.evaluate(context)
 
         # Auto-transition to EvaluatedState
         return EvaluatedState
@@ -218,28 +214,12 @@ class InstallingState(State):
         # Check if user has disabled this library
         if not context.get_effective_active_state():
             issues = [LifecycleIssue(message="Library disabled by user", severity=LibraryStatus.FLAWED)]
-            context.installation_result = InstallationResult(installation_data=None, issues=issues)
+            context.installation_result = InstallationResult(installation_path="", venv_path="", issues=issues)
             logger.info("Library %s installation skipped - disabled by user", context.provenance.get_display_name())
             return InstalledState
 
         # Perform installation using delegation
-        schema = context.get_library_schema()
-        if not schema:
-            issues = [
-                LifecycleIssue(message="No library schema available for installation", severity=LibraryStatus.UNUSABLE)
-            ]
-            context.installation_result = InstallationResult(installation_data=None, issues=issues)
-            return InstalledState
-
-        installation_data = context.provenance.install(schema.name)
-
-        # Convert string problems to LifecycleIssues
-        issues = [
-            LifecycleIssue(message=problem, severity=LibraryStatus.FLAWED)
-            for problem in installation_data.installation_problems
-        ]
-
-        context.installation_result = InstallationResult(installation_data=installation_data, issues=issues)
+        context.installation_result = context.provenance.install(context)
 
         # Auto-transition to InstalledState
         return InstalledState
@@ -283,28 +263,19 @@ class LoadingState(State):
         # Check if user has disabled this library
         if not context.get_effective_active_state():
             issues = [LifecycleIssue(message="Library disabled by user", severity=LibraryStatus.FLAWED)]
-            context.library_loaded_result = LibraryLoadedResult(loaded_library_data=None, issues=issues)
+            context.library_loaded_result = LibraryLoadedResult(metadata=None, issues=issues)
             logger.info("Library %s loading skipped - disabled by user", context.provenance.get_display_name())
             return LoadedState
 
         # Load the library into the registry using delegation
         schema = context.get_library_schema()
-        if not schema:
-            issues = [
-                LifecycleIssue(message="No library schema available for loading", severity=LibraryStatus.UNUSABLE)
-            ]
-            context.library_loaded_result = LibraryLoadedResult(loaded_library_data=None, issues=issues)
+        if schema is None:
+            issues = [LifecycleIssue(message="No schema available for loading", severity=LibraryStatus.UNUSABLE)]
+            context.library_loaded_result = LibraryLoadedResult(metadata=None, issues=issues)
+            logger.error("Cannot load library %s - no schema available", context.provenance.get_display_name())
             return LoadedState
 
-        loaded_library_data = context.provenance.load_library(schema)
-
-        # Convert string problems to LifecycleIssues
-        issues = [
-            LifecycleIssue(message=problem, severity=LibraryStatus.FLAWED)
-            for problem in loaded_library_data.load_problems
-        ]
-
-        context.library_loaded_result = LibraryLoadedResult(loaded_library_data=loaded_library_data, issues=issues)
+        context.library_loaded_result = context.provenance.load_library(schema)
 
         logger.info("Successfully loaded library %s", context.provenance.get_display_name())
 
@@ -424,13 +395,11 @@ class LibraryLifecycleFSM(FSM[LibraryLifecycleContext]):
                 f"Allowed transitions: {allowed_names}",
             )
 
-        # Special validation for LoadingState - requires installation data
-        installation_data = (
-            self._context.installation_result.installation_data if self._context.installation_result else None
-        )
-        if target_state is LoadingState and not installation_data:
+        # Special validation for LoadingState - requires installation result
+        installation_result = self._context.installation_result
+        if target_state is LoadingState and not installation_result:
             raise InvalidStateTransitionError(
-                self._current_state, target_state, "Installation data is required before loading"
+                self._current_state, target_state, "Installation result is required before loading"
             )
 
     def can_transition_to(self, target_state: StateType) -> bool:

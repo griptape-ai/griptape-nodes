@@ -7,14 +7,16 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import (
+    EvaluationResult,
     InspectionResult,
-    InstallationData,
+    InstallationResult,
     LibraryEntry,
-    LoadedLibraryData,
+    LibraryLoadedResult,
 )
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibrarySchema
+    from griptape_nodes.retained_mode.managers.library_lifecycle.library_fsm import LibraryLifecycleContext
 
 
 @dataclass(frozen=True)
@@ -48,31 +50,34 @@ class LibraryProvenance(ABC):
         """
 
     @abstractmethod
-    def evaluate(self) -> list[str]:
+    def evaluate(self, context: LibraryLifecycleContext) -> EvaluationResult:
         """Evaluate this provenance for conflicts/issues.
 
+        Args:
+            context: Lifecycle context containing inspection results
+
         Returns:
-            List of problems encountered during evaluation
+            EvaluationResult with structured issues and severity levels
         """
 
     @abstractmethod
-    def install(self, library_name: str) -> InstallationData:
+    def install(self, context: LibraryLifecycleContext) -> InstallationResult:
         """Install this provenance.
 
         Args:
-            library_name: The library name from inspection, if available
+            context: Lifecycle context containing inspection results
 
         Returns:
-            Installation data with paths and any problems
+            InstallationResult with structured issues and severity levels
         """
 
     @abstractmethod
-    def load_library(self, library_schema: LibrarySchema) -> LoadedLibraryData:
+    def load_library(self, library_schema: LibrarySchema) -> LibraryLoadedResult:
         """Load this provenance into the registry.
 
         Args:
             library_schema: The library schema from inspection containing name and metadata
 
         Returns:
-            Loaded library data with any problems
+            LibraryLoadedResult with structured issues and severity levels
         """
