@@ -7,7 +7,7 @@
       "category": "advanced_media_library",
       "contents": {
         "temp_folder_name": "intermediates",
-        "max_directory_size_mb": 1000,
+        "max_directory_size_gb": 1,
         "enable_directory_cleanup": false
       }
     }

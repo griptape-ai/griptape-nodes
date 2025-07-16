@@ -31,42 +31,42 @@ class DirectoryManager:
             True if cleanup was performed, False otherwise
         """
         # Get configuration values with library prefix
-        max_size_mb = self.config_manager.get_config_value(f"{config_prefix}.max_directory_size_mb")
+        max_size_gb = self.config_manager.get_config_value(f"{config_prefix}.max_directory_size_gb")
         cleanup_enabled = self.config_manager.get_config_value(f"{config_prefix}.enable_directory_cleanup")
 
         # Default values if not configured
-        if max_size_mb is None:
-            max_size_mb = 1000  # 1GB default
+        if max_size_gb is None:
+            max_size_gb = 1  # 1GB default
         if cleanup_enabled is None:
-            cleanup_enabled = True
+            cleanup_enabled = False
 
         if not cleanup_enabled:
             return False
 
         # Calculate current directory size
-        current_size_mb = self._get_directory_size_mb(directory_path)
+        current_size_gb = self._get_directory_size_gb(directory_path)
 
-        if current_size_mb <= max_size_mb:
+        if current_size_gb <= max_size_gb:
             return False
 
         logger.info(
-            "Directory %s size (%.1f MB) exceeds limit (%s MB). Starting cleanup...",
+            "Directory %s size (%.1f GB) exceeds limit (%s GB). Starting cleanup...",
             directory_path,
-            current_size_mb,
-            max_size_mb,
+            current_size_gb,
+            max_size_gb,
         )
 
         # Perform cleanup
-        return self._cleanup_old_files(directory_path, max_size_mb)
+        return self._cleanup_old_files(directory_path, max_size_gb)
 
-    def _get_directory_size_mb(self, directory_path: str) -> float:
-        """Get total size of directory in MB.
+    def _get_directory_size_gb(self, directory_path: str) -> float:
+        """Get total size of directory in GB.
 
         Args:
             directory_path: Path to the directory
 
         Returns:
-            Total size in MB
+            Total size in GB
         """
         total_size = 0
         static_files_directory = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
@@ -80,14 +80,14 @@ class DirectoryManager:
                 fp = path / f
                 if not fp.is_symlink():
                     total_size += fp.stat().st_size
-        return total_size / (1024 * 1024)  # Convert to MB
+        return total_size / (1024 * 1024 * 1024)  # Convert to GB
 
-    def _cleanup_old_files(self, directory_path: str, target_size_mb: float) -> bool:
+    def _cleanup_old_files(self, directory_path: str, target_size_gb: float) -> bool:
         """Remove oldest files until directory is under target size.
 
         Args:
             directory_path: Path to the directory to clean
-            target_size_mb: Target size in MB
+            target_size_gb: Target size in GB
 
         Returns:
             True if files were removed, False otherwise
@@ -95,6 +95,7 @@ class DirectoryManager:
         static_files_directory = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
         path = self.config_manager.workspace_path / static_files_directory / directory_path
         if not path.exists():
+            logger.error("Directory %s does not exist. Skipping cleanup.", path)
             return False
 
         # Get all files with their modification times
@@ -107,6 +108,7 @@ class DirectoryManager:
                     files_with_times.append((file_path, mtime))
                 except (OSError, FileNotFoundError):
                     # Skip files that can't be accessed
+                    logger.error("Could not dele file %s. Skipping this file.", file_path)
                     continue
 
         if not files_with_times:
@@ -117,7 +119,6 @@ class DirectoryManager:
 
         # Remove files until we're under the target size
         removed_count = 0
-        target_cleanup_size = target_size_mb * 0.8  # Clean to 80% of target to avoid frequent cleanups
 
         for file_path, _ in files_with_times:
             try:
@@ -125,21 +126,21 @@ class DirectoryManager:
                 removed_count += 1
 
                 # Check if we're now under the target size
-                current_size_mb = self._get_directory_size_mb(directory_path)
-                if current_size_mb <= target_cleanup_size:
+                current_size_gb = self._get_directory_size_gb(directory_path)
+                if current_size_gb <= target_size_gb:
                     break
 
             except (OSError, FileNotFoundError):
                 # Skip files that can't be deleted
-                continue
+                logger.error("Could not delete file %s. Skipping this file.", file_path)
 
         if removed_count > 0:
-            final_size_mb = self._get_directory_size_mb(directory_path)
+            final_size_gb = self._get_directory_size_gb(directory_path)
             logger.info(
-                "Cleaned up %d old files from %s. Directory size reduced to %.1f MB",
+                "Cleaned up %d old files from %s. Directory size reduced to %.1f GB",
                 removed_count,
                 directory_path,
-                final_size_mb,
+                final_size_gb,
             )
 
         return removed_count > 0
