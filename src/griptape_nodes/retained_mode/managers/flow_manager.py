@@ -1824,9 +1824,9 @@ class FlowManager:
             if self._global_control_flow_machine._context.current_node is not None
             else None
         )
-        focus_stack_for_node = self._global_control_flow_machine._context.resolution_machine._context.focus_stack
-        current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
-        return current_control_node, current_resolving_node
+        current_resolving_node = self._global_control_flow_machine._context.resolution_machine._context.root_node_resolving
+        if current_resolving_node is not None:
+            return current_control_node, current_resolving_node.name
 
     def get_start_node_from_node(self, flow: ControlFlow, node: BaseNode) -> BaseNode | None:
         # backwards chain in control outputs.
