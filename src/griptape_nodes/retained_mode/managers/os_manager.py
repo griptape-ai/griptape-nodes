@@ -35,11 +35,19 @@ class OSManager:
     This lays the groundwork to exclude specific functionality on a configuration basis.
     """
 
+    static_files_directory: Path
+
     def __init__(self, event_manager: EventManager | None = None):
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(
                 request_type=OpenAssociatedFileRequest, callback=self.on_open_associated_file_request
             )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        static_files_directory = GriptapeNodes.ConfigManager().get_config_value(
+            "static_files_directory", default="staticfiles"
+        )
+        self.static_files_directory = GriptapeNodes.ConfigManager().workspace_path / static_files_directory
 
     @staticmethod
     def platform() -> str:
@@ -199,9 +207,7 @@ class OSManager:
         except OSError:
             return f"Disk space error at {path}. Unable to retrieve disk space information."
 
-
-    @staticmethod
-    def cleanup_directory_if_needed(directory_path: str, config_prefix: str) -> bool:
+    def cleanup_directory_if_needed(self, directory_path: str, config_prefix: str) -> bool:
         """Check directory size and cleanup old files if needed.
 
         Args:
@@ -211,8 +217,9 @@ class OSManager:
         Returns:
             True if cleanup was performed, False otherwise
         """
-    # Get configuration values with library prefix
+        # Get configuration values with library prefix
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         max_size_gb = GriptapeNodes.ConfigManager().get_config_value(f"{config_prefix}.max_directory_size_gb")
         cleanup_enabled = GriptapeNodes.ConfigManager().get_config_value(f"{config_prefix}.enable_directory_cleanup")
 
@@ -226,7 +233,7 @@ class OSManager:
             return False
 
         # Calculate current directory size
-        current_size_gb = OSManager._get_directory_size_gb(directory_path)
+        current_size_gb = self._get_directory_size_gb(directory_path)
 
         if current_size_gb <= max_size_gb:
             return False
@@ -239,10 +246,9 @@ class OSManager:
         )
 
         # Perform cleanup
-        return OSManager._cleanup_old_files(directory_path, max_size_gb)
+        return self._cleanup_old_files(directory_path, max_size_gb)
 
-    @staticmethod
-    def _get_directory_size_gb(directory_path: str) -> float:
+    def _get_directory_size_gb(self, directory_path: str) -> float:
         """Get total size of directory in GB.
 
         Args:
@@ -251,10 +257,8 @@ class OSManager:
         Returns:
             Total size in GB
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
         total_size = 0
-        static_files_directory = GriptapeNodes.ConfigManager().get_config_value("static_files_directory", default="staticfiles")
-        path = Path(GriptapeNodes.ConfigManager().workspace_path / static_files_directory / directory_path)
+        path = self.static_files_directory / directory_path
 
         if not path.exists():
             logger.error("Directory %s does not exist. Skipping cleanup.", path)
@@ -267,8 +271,7 @@ class OSManager:
                     total_size += fp.stat().st_size
         return total_size / (1024 * 1024 * 1024)  # Convert to GB
 
-    @staticmethod
-    def _cleanup_old_files(directory_path: str, target_size_gb: float) -> bool:
+    def _cleanup_old_files(self, directory_path: str, target_size_gb: float) -> bool:
         """Remove oldest files until directory is under target size.
 
         Args:
@@ -278,9 +281,7 @@ class OSManager:
         Returns:
             True if files were removed, False otherwise
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-        static_files_directory = GriptapeNodes.ConfigManager().get_config_value("static_files_directory", default="staticfiles")
-        path = GriptapeNodes.ConfigManager().workspace_path / static_files_directory / directory_path
+        path = self.static_files_directory / directory_path
         if not path.exists():
             logger.error("Directory %s does not exist. Skipping cleanup.", path)
             return False
@@ -313,7 +314,7 @@ class OSManager:
                 removed_count += 1
 
                 # Check if we're now under the target size
-                current_size_gb = OSManager._get_directory_size_gb(directory_path)
+                current_size_gb = self._get_directory_size_gb(directory_path)
                 if current_size_gb <= target_size_gb:
                     break
 
@@ -322,7 +323,7 @@ class OSManager:
                 logger.error("Could not delete file %s. Skipping this file.", file_path)
 
         if removed_count > 0:
-            final_size_gb = OSManager._get_directory_size_gb(directory_path)
+            final_size_gb = self._get_directory_size_gb(directory_path)
             logger.info(
                 "Cleaned up %d old files from %s. Directory size reduced to %.1f GB",
                 removed_count,
