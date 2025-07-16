@@ -4,6 +4,8 @@ import logging
 import os
 from collections.abc import AsyncIterator
 
+import uvicorn
+from fastapi import FastAPI
 from mcp.server.lowlevel import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import (
@@ -12,8 +14,6 @@ from mcp.types import (
 )
 from pydantic import TypeAdapter
 from rich.logging import RichHandler
-from starlette.applications import Starlette
-from starlette.routing import Mount
 from starlette.types import Receive, Scope, Send
 
 from griptape_nodes.mcp_server_gtn.ws_request_manager import AsyncRequestManager, WebSocketConnectionManager
@@ -110,12 +110,8 @@ def main() -> int:
         app=app,
     )
 
-    # ASGI handler for streamable HTTP connections
-    async def handle_streamable_http(scope: Scope, receive: Receive, send: Send) -> None:
-        await session_manager.handle_request(scope, receive, send)
-
     @contextlib.asynccontextmanager
-    async def lifespan(_: Starlette) -> AsyncIterator[None]:
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         """Context manager for managing session manager lifecycle."""
         async with session_manager.run():
             mcp_server_logger.info("GTN MCP server started with StreamableHTTP session manager!")
@@ -125,16 +121,14 @@ def main() -> int:
                 mcp_server_logger.info("GTN MCP server shutting down...")
 
     # Create an ASGI application using the transport
-    starlette_app = Starlette(
-        debug=True,
-        routes=[
-            Mount("/mcp", app=handle_streamable_http),
-        ],
-        lifespan=lifespan,
-    )
+    mcp_server_app = FastAPI(lifespan=lifespan)
 
-    import uvicorn
+    # ASGI handler for streamable HTTP connections
+    async def handle_streamable_http(scope: Scope, receive: Receive, send: Send) -> None:
+        await session_manager.handle_request(scope, receive, send)
 
-    uvicorn.run(starlette_app, host="127.0.0.1", port=GRIPTAPE_NODES_MCP_SERVER_PORT)
+    mcp_server_app.mount("/mcp", app=handle_streamable_http)
+
+    uvicorn.run(mcp_server_app, host="127.0.0.1", port=GRIPTAPE_NODES_MCP_SERVER_PORT)
 
     return 0
