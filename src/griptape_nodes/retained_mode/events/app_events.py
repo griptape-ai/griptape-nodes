@@ -90,6 +90,20 @@ class AppConnectionEstablished(AppPayload):
 
 @dataclass
 @PayloadRegistry.register
+class AppWorkflowChanged(AppPayload):
+    """Notification that a workflow has been changed via CRDT updates.
+    
+    Args:
+        workflow_name: Name of the workflow that was changed
+        update_bytes: The CRDT update bytes containing the changes
+    """
+    
+    workflow_name: str
+    update_bytes: bytes
+
+
+@dataclass
+@PayloadRegistry.register
 class GetEngineVersionRequest(RequestPayload):
     """Get the engine version information.
 

@@ -403,10 +403,12 @@ def deserialize_event(json_data: str | dict | Any) -> BaseEvent:
     # Get payload types from embedded type information
     request_type_name = data.get("request_type")
     result_type_name = data.get("result_type")
+    payload_type = data.get("payload_type")
 
     # Look up the actual payload types
     request_type = PayloadRegistry.get_type(request_type_name) if request_type_name else None
     result_type = PayloadRegistry.get_type(result_type_name) if result_type_name else None
+    payload_type = PayloadRegistry.get_type(payload_type) if payload_type else None
 
     # Determine the event class based on event_type and deserialize
     if event_type == "EventRequest":
@@ -423,6 +425,11 @@ def deserialize_event(json_data: str | dict | Any) -> BaseEvent:
         if request_type and result_type:
             return EventResultFailure.from_dict(data, request_type, result_type)
         msg = f"Cannot deserialize EventResultFailure: unknown payload types request={request_type_name}, result={result_type_name}"
+        raise ValueError(msg)
+    if event_type == "AppEvent":
+        if payload_type:
+            return AppEvent.from_dict(data, payload_type)
+        msg = f"Cannot deserialize AppEvent: unknown payload type '{payload_type}'"
         raise ValueError(msg)
     msg = f"Unknown/unsupported event type '{event_type}' encountered."
     raise TypeError(msg)
@@ -492,6 +499,7 @@ class ExecutionEvent[E: ExecutionPayload](BaseEvent):
 # Events sent as part of the lifecycle of the Griptape Nodes application.
 class AppEvent[A: AppPayload](BaseEvent):
     payload: A
+    topic: str | None = None
 
     def __init__(self, **data) -> None:
         """Initialize an AppEvent, inferring the generic type if needed."""
@@ -522,7 +530,7 @@ class AppEvent[A: AppPayload](BaseEvent):
         return self.payload
 
     @classmethod
-    def from_dict(cls, data: builtins.dict[str, Any], payload_type: type[E]) -> AppEvent:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def from_dict(cls, data: builtins.dict[str, Any], payload_type: type[A]) -> AppEvent:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Create an event from a dictionary."""
         # Make a copy to avoid modifying the input
         event_data = data.copy()

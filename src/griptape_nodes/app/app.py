@@ -337,7 +337,7 @@ def __process_app_event(event: AppEvent) -> None:
     # Let Griptape Nodes broadcast it.
     GriptapeNodes.broadcast_app_event(event.payload)
 
-    asyncio.run(__emit_message("app_event", event.json()))
+    asyncio.run(__emit_message("app_event", event.json(), event.topic))
 
 
 def _process_event_queue() -> None:
@@ -461,27 +461,21 @@ def __process_api_event(event: dict) -> None:
     """Process API events and send them to the event queue."""
     payload = event.get("payload", {})
 
-    try:
-        payload["request"]
-    except KeyError:
-        msg = "Error: 'request' was expected but not found."
-        raise RuntimeError(msg) from None
+    event_type = payload.get("event_type")
 
-    try:
-        event_type = payload["event_type"]
-        if event_type != "EventRequest":
-            msg = "Error: 'event_type' was found on request, but did not match 'EventRequest' as expected."
+    if event_type == "EventRequest":
+        try:
+            deserialized_event = cast("EventRequest", deserialize_event(json_data=payload))
+        except Exception as e:
+            msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{e}'"
             raise RuntimeError(msg) from None
-    except KeyError:
-        msg = "Error: 'event_type' not found in request."
-        raise RuntimeError(msg) from None
-
-    # Now attempt to convert it into an EventRequest.
-    try:
-        request_event: EventRequest = cast("EventRequest", deserialize_event(json_data=payload))
-    except Exception as e:
-        msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{e}'"
-        raise RuntimeError(msg) from None
+    elif event_type == "AppEvent":
+        deserialized_event = cast("AppEvent", deserialize_event(json_data=payload))
+        print(deserialized_event)
+        if deserialized_event.engine_id == GriptapeNodes.get_engine_id():
+            return
+    else:
+        raise ValueError(f"Unknown event type '{event_type}' encountered. Expected 'EventRequest' or 'app_event'.")
 
     # Add the event to the queue
-    event_queue.put(request_event)
+    event_queue.put(deserialized_event)

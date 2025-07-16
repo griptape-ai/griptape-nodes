@@ -20,6 +20,8 @@ dependencies = [
   "python-multipart>=0.0.20",
   "json-repair>=0.46.1",
   "imageio-ffmpeg>=0.6.0",
+  "pycrdt>=0.12.26",
+  "watchdog>=6.0.0",
 ]
 
 [project.optional-dependencies]
