@@ -453,7 +453,7 @@ test = [
 requires-dist = [
     { name = "austin-dist", marker = "extra == 'profiling'", specifier = ">=3.7.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "griptape", extras = ["drivers-prompt-amazon-bedrock", "drivers-prompt-anthropic", "drivers-prompt-cohere", "drivers-prompt-ollama", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "drivers-web-search-exa", "loaders-image"], git = "https://github.com/griptape-ai/griptape.git?branch=main" },
+    { name = "griptape", extras = ["drivers-prompt-amazon-bedrock", "drivers-prompt-anthropic", "drivers-prompt-cohere", "drivers-prompt-ollama", "drivers-web-scraper-trafilatura", "drivers-web-search-duckduckgo", "drivers-web-search-exa", "loaders-image"], git = "https://github.com/griptape-ai/griptape?rev=main" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "imageio-ffmpeg", specifier = ">=0.6.0" },
     { name = "json-repair", specifier = ">=0.46.1" },
