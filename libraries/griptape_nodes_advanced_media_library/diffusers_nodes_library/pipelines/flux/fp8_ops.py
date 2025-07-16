@@ -1,7 +1,8 @@
+from typing import Any
+
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from typing import Any, Dict, Optional
+from torch import nn
 
 
 class FP8Linear(nn.Module):
@@ -34,7 +35,7 @@ class FP8Linear(nn.Module):
 
         self.reset_parameters()
 
-    def _check_fp8_support(self):
+    def _check_fp8_support(self) -> None:
         """Check if FP8 operations are supported on this system."""
         try:
             # Create test tensors in bfloat16 first, then convert to FP8
@@ -45,9 +46,10 @@ class FP8Linear(nn.Module):
             test_scale = torch.ones(1, dtype=torch.float32, device="cuda")
             torch._scaled_mm(test_input, test_weight.t(), scale_a=test_scale, scale_b=test_scale)
         except Exception as e:
-            raise RuntimeError(f"FP8 operations not supported on this system: {e}")
+            msg = f"FP8 operations not supported on this system: {e}"
+            raise RuntimeError(msg)
 
-    def reset_parameters(self):
+    def reset_parameters(self) -> None:
         # # Initialize with standard normal distribution, then convert to FP8
         # with torch.no_grad():
         #     weight_init = torch.randn(self.out_features, self.in_features, dtype=torch.float32)
@@ -59,7 +61,7 @@ class FP8Linear(nn.Module):
 
         return None
 
-    def _invalidate_cache(self):
+    def _invalidate_cache(self) -> None:
         """Invalidate cached tensors when weights change."""
         self._cached_weight_t = None
         self._shape_cache.clear()
@@ -94,12 +96,14 @@ class FP8Linear(nn.Module):
 
         # Optimized path for multi-dimensional inputs
         if len(input_shape) == 1:
-            raise RuntimeError(f"FP8Linear requires at least 2D input, got 1D shape {input_shape}")
+            msg = f"FP8Linear requires at least 2D input, got 1D shape {input_shape}"
+            raise RuntimeError(msg)
 
         # Validate input features
         if input_shape[-1] != self.in_features:
+            msg = f"Input last dimension {input_shape[-1]} doesn't match layer in_features {self.in_features}"
             raise RuntimeError(
-                f"Input last dimension {input_shape[-1]} doesn't match layer in_features {self.in_features}"
+                msg
             )
 
         # Check if we can reuse cached reshape info
@@ -143,8 +147,7 @@ class FP8Linear(nn.Module):
 
 
 def replace_linear_with_fp8(module: nn.Module, name: str = "") -> nn.Module:
-    """
-    Recursively replace all Linear layers in a module with FP8Linear layers.
+    """Recursively replace all Linear layers in a module with FP8Linear layers.
 
     Args:
         module: The module to modify
@@ -170,7 +173,6 @@ def replace_linear_with_fp8(module: nn.Module, name: str = "") -> nn.Module:
 
             # Replace the module
             setattr(module, attr_name, fp8_linear)
-            print(".", end="", flush=True)  # Indicate replacement in the console
         else:
             # Recursively process child modules
             replace_linear_with_fp8(child, f"{name}.{attr_name}" if name else attr_name)
@@ -181,7 +183,6 @@ def replace_linear_with_fp8(module: nn.Module, name: str = "") -> nn.Module:
 class FP8LinearCompatible(FP8Linear):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         # Store original dtype
-        original_dtype = input.dtype
 
         # Convert input to FP8
         input_fp8 = input.to(torch.float8_e4m3fn)
@@ -214,7 +215,6 @@ def replace_linear_with_fp8_compatible(module: nn.Module, name: str = "") -> nn.
 
             # Replace the module
             setattr(module, attr_name, fp8_linear)
-            print(".", end="", flush=True)  # Replacement indicator
         else:
             # Recursively process child modules
             replace_linear_with_fp8_compatible(child, f"{name}.{attr_name}" if name else attr_name)
@@ -223,23 +223,19 @@ def replace_linear_with_fp8_compatible(module: nn.Module, name: str = "") -> nn.
 
 
 def enable_fp8_linear_layers_compatible(pipeline) -> Any:
-    print("Enabling FP8 Linear layers (compatible) in pipeline...")
     expected_modules, _ = pipeline._get_signature_keys(pipeline.__class__)
 
     for module_name in expected_modules:
         if hasattr(pipeline, module_name):
             component = getattr(pipeline, module_name)
             if isinstance(component, torch.nn.Module):
-                print(f"Replacing Linear layers in {module_name} with FP8LinearCompatible ", end="", flush=True)
                 replace_linear_with_fp8_compatible(component, module_name)
-                print()
 
     return pipeline
 
 
 def replace_attention_layers_with_fp8(module: nn.Module, name: str = "") -> nn.Module:
-    """
-    Replace only attention-related Linear layers with FP8Linear layers.
+    """Replace only attention-related Linear layers with FP8Linear layers.
     Uses named_modules() to find all Linear layers in the hierarchy.
     """
     attention_keywords = {
@@ -295,23 +291,18 @@ def replace_attention_layers_with_fp8(module: nn.Module, name: str = "") -> nn.M
 
             # Replace the module
             setattr(parent, attr_name, fp8_linear)
-            print("A", end="", flush=True)  # Attention layer replaced
-            print(f"\n  Replaced: {full_path}")
 
     return module
 
 
 def enable_fp8_linear_layers(pipeline) -> Any:
-    print("Enabling FP8 Linear layers in pipeline...")
     expected_modules, _ = pipeline._get_signature_keys(pipeline.__class__)
 
     for module_name in expected_modules:
         if hasattr(pipeline, module_name):
             component = getattr(pipeline, module_name)
             if isinstance(component, torch.nn.Module):
-                print(f"Replacing Linear layers in {module_name} with FP8Linear ", end="", flush=True)
                 replace_linear_with_fp8(component, module_name)
-                print()
 
     return pipeline
 
@@ -320,7 +311,7 @@ class FP8ElementwiseOps:
     """FP8-storage with BF16 computation element-wise operations."""
 
     @staticmethod
-    def _check_fp8_support():
+    def _check_fp8_support() -> bool | None:
         """Check if FP8 operations are supported."""
         try:
             test_a = torch.randn(16, 16, dtype=torch.bfloat16, device="cuda").to(torch.float8_e4m3fn)
@@ -374,7 +365,7 @@ class FP8ElementwiseOps:
 
     @staticmethod
     def fused_mul_add(a: torch.Tensor, b: torch.Tensor, c: torch.Tensor, out_dtype: torch.dtype = None) -> torch.Tensor:
-        """FP8-storage optimized fused multiply-add: a * b + c"""
+        """FP8-storage optimized fused multiply-add: a * b + c."""
         if out_dtype is None:
             out_dtype = a.dtype if a.dtype != torch.float8_e4m3fn else torch.bfloat16
 
@@ -397,7 +388,7 @@ class FP8ElementwiseOps:
     def modulation(
         x: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor, out_dtype: torch.dtype = None
     ) -> torch.Tensor:
-        """FP8-storage optimized modulation: x * (1 + scale) + shift"""
+        """FP8-storage optimized modulation: x * (1 + scale) + shift."""
         if out_dtype is None:
             out_dtype = x.dtype if x.dtype != torch.float8_e4m3fn else torch.bfloat16
 
@@ -511,7 +502,6 @@ class FP8Normalization:
 
 def enable_fp8_elementwise_ops(module: nn.Module) -> nn.Module:
     """Enable FP8 element-wise operations in a module by monkey-patching."""
-
     # Store original functions
     if not hasattr(module, "_original_add"):
         module._original_add = torch.add
@@ -521,12 +511,14 @@ def enable_fp8_elementwise_ops(module: nn.Module) -> nn.Module:
         # Monkey patch tensor operations
         def fp8_add(input, other, *, alpha=1, out=None):
             if out is not None:
-                raise NotImplementedError("FP8 add with out parameter not supported")
+                msg = "FP8 add with out parameter not supported"
+                raise NotImplementedError(msg)
             return FP8ElementwiseOps.add(input, other, alpha)
 
         def fp8_mul(input, other, *, out=None):
             if out is not None:
-                raise NotImplementedError("FP8 mul with out parameter not supported")
+                msg = "FP8 mul with out parameter not supported"
+                raise NotImplementedError(msg)
             return FP8ElementwiseOps.mul(input, other)
 
         # Replace operations
@@ -538,7 +530,6 @@ def enable_fp8_elementwise_ops(module: nn.Module) -> nn.Module:
 
 def disable_fp8_elementwise_ops(module: nn.Module) -> nn.Module:
     """Disable FP8 element-wise operations by restoring original functions."""
-
     if hasattr(module, "_fp8_ops_enabled") and module._fp8_ops_enabled:
         # Restore original functions
         torch.add = module._original_add

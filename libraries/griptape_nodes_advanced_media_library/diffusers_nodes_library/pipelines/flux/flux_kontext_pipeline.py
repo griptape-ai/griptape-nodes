@@ -67,7 +67,6 @@ class FluxKontextPipeline(ControlNode):
             pipe.transformer = replace_linear_with_fp8(pipe.transformer)
             pipe.transformer = replace_attention_layers_with_fp8(pipe.transformer)
 
-
         with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
             optimize_flux_kontext_pipeline_memory_footprint(pipe)
 
