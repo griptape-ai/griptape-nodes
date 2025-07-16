@@ -73,7 +73,7 @@ def main() -> int:
 
     api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
     if not api_key:
-        msg = f"Secret '{API_KEY_ENV_VAR}' not found"
+        msg = f"Secret '{API_KEY_ENV_VAR}' not found, required for GTN MCP server startup."
         raise ValueError(msg)
 
     # Give these a session ID
@@ -118,11 +118,11 @@ def main() -> int:
     async def lifespan(_: Starlette) -> AsyncIterator[None]:
         """Context manager for managing session manager lifecycle."""
         async with session_manager.run():
-            mcp_server_logger.info("Application started with StreamableHTTP session manager!")
+            mcp_server_logger.info("GTN MCP server started with StreamableHTTP session manager!")
             try:
                 yield
             finally:
-                mcp_server_logger.info("Application shutting down...")
+                mcp_server_logger.info("GTN MCP server shutting down...")
 
     # Create an ASGI application using the transport
     starlette_app = Starlette(
