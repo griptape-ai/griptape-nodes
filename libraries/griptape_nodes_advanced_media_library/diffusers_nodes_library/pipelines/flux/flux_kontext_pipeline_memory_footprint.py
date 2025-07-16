@@ -32,7 +32,7 @@ def _check_cuda_memory_sufficient(pipe: diffusers.FluxKontextPipeline, device: t
     model_memory = get_total_memory_footprint(pipe, FLUX_KONTEXT_PIPELINE_COMPONENT_NAMES)
     total_memory = torch.cuda.get_device_properties(device).total_memory
     free_memory = total_memory - torch.cuda.memory_allocated(device)
-    return model_memory <= free_memory
+    return model_memory <= free_memory - 4 * 1024**3
 
 
 def _check_mps_memory_sufficient(pipe: diffusers.FluxKontextPipeline) -> bool:
@@ -70,11 +70,12 @@ def optimize_flux_kontext_pipeline_memory_footprint(pipe: diffusers.FluxKontextP
         _log_memory_info(pipe, device)
 
         logger.info("Enabling fp8 layerwise casting for transformer")
+        # TODO: UPdate, but for now just enable cpu offload immediately.
         pipe.transformer.enable_layerwise_casting(
             storage_dtype=torch.float8_e4m3fn,
             compute_dtype=torch.bfloat16,
         )
-
+        pipe.enable_sequential_cpu_offload()
         if _check_cuda_memory_sufficient(pipe, device):
             logger.info("Sufficient memory on %s for Pipeline.", device)
             logger.info("Moving pipeline to %s", device)
@@ -90,7 +91,6 @@ def optimize_flux_kontext_pipeline_memory_footprint(pipe: diffusers.FluxKontextP
 
         # Apply sequential CPU offload
         logger.info("Still insufficient memory. Enabling sequential cpu offload")
-        pipe.enable_sequential_cpu_offload()
 
         if _check_cuda_memory_sufficient(pipe, device):
             logger.info("Sufficient memory after sequential cpu offload")
