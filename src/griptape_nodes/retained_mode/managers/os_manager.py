@@ -206,19 +206,19 @@ class OSManager:
         except OSError:
             return f"Disk space error at {path}. Unable to retrieve disk space information."
 
-    def cleanup_directory_if_needed(self, directory_path: str, config_prefix: str) -> bool:
+    def cleanup_directory_if_needed(self, directory_path: str, library_name: str) -> bool:
         """Check directory size and cleanup old files if needed.
 
         Args:
             directory_path: Path to the directory to check and clean
-            config_prefix: Configuration prefix for the library (e.g., "advanced_media_library")
+            library_name: Name of the library to get the settings from (e.g., "advanced_media_library")
 
         Returns:
             True if cleanup was performed, False otherwise
         """
         # Get configuration values with library prefix
-        max_size_gb = self.config_manager.get_config_value(f"{config_prefix}.max_directory_size_gb")
-        cleanup_enabled = self.config_manager.get_config_value(f"{config_prefix}.enable_directory_cleanup")
+        max_size_gb = self.config_manager.get_config_value(f"{library_name}.max_directory_size_gb")
+        cleanup_enabled = self.config_manager.get_config_value(f"{library_name}.enable_directory_cleanup")
 
         # Default values if not configured
         if max_size_gb is None:
