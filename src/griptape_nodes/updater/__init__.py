@@ -38,7 +38,7 @@ def _download_and_run_installer() -> None:
     """Runs the update commands for the engine."""
     console.print("[bold green]Updating self...[/bold green]")
     try:
-        subprocess.run(  # noqa: S603
+        subprocess.run(
             ["uv", "tool", "upgrade", "griptape-nodes"],  # noqa: S607
             text=True,
             capture_output=True,
@@ -57,7 +57,7 @@ def _sync_libraries() -> None:
     """Syncs the libraries for the engine."""
     console.print("[bold green]Syncing libraries...[/bold green]")
     try:
-        subprocess.run(  # noqa: S603
+        subprocess.run(
             ["griptape-nodes", "libraries", "sync"],  # noqa: S607
             text=True,
             capture_output=True,
