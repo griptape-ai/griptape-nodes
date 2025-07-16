@@ -119,6 +119,10 @@ class Version:
         """Equality comparison."""
         return (self.major, self.minor, self.patch) == (other.major, other.minor, other.patch)
 
+    def __hash__(self) -> int:
+        """Hash function for Version."""
+        return hash((self.major, self.minor, self.patch))
+
 
 class GriptapeNodes(metaclass=SingletonMeta):
     _event_manager: EventManager
