@@ -9,7 +9,6 @@ import subprocess
 import sys
 import sysconfig
 from dataclasses import dataclass, field
-from enum import StrEnum
 from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -94,6 +93,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_directory i
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.local_file import (
     LibraryProvenanceLocalFile,
 )
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 if TYPE_CHECKING:
@@ -125,14 +125,6 @@ def _find_griptape_uv_bin() -> str:
 class LibraryManager:
     SANDBOX_LIBRARY_NAME = "Sandbox Library"
 
-    class LibraryStatus(StrEnum):
-        """Status of the library that was attempted to be loaded."""
-
-        GOOD = "GOOD"  # No errors detected during loading. Registered.
-        FLAWED = "FLAWED"  # Some errors detected, but recoverable. Registered.
-        UNUSABLE = "UNUSABLE"  # Errors detected and not recoverable. Not registered.
-        MISSING = "MISSING"  # File not found. Not registered.
-
     @dataclass
     class LibraryInfo:
         """Information about a library that was attempted to be loaded.
@@ -140,7 +132,7 @@ class LibraryManager:
         Includes the status of the library, the file path, and any problems encountered during loading.
         """
 
-        status: LibraryManager.LibraryStatus
+        status: LibraryStatus
         library_path: str
         library_name: str | None = None
         library_version: str | None = None
@@ -260,10 +252,10 @@ class LibraryManager:
 
         # Status emojis mapping
         status_emoji = {
-            LibraryManager.LibraryStatus.GOOD: "✅",
-            LibraryManager.LibraryStatus.FLAWED: "🟡",
-            LibraryManager.LibraryStatus.UNUSABLE: "❌",
-            LibraryManager.LibraryStatus.MISSING: "❓",
+            LibraryStatus.GOOD: "✅",
+            LibraryStatus.FLAWED: "🟡",
+            LibraryStatus.UNUSABLE: "❌",
+            LibraryStatus.MISSING: "❓",
         }
 
         # Add rows for each library info
@@ -414,7 +406,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
-                status=LibraryManager.LibraryStatus.MISSING,
+                status=LibraryStatus.MISSING,
                 problems=[
                     "Library could not be found at the file path specified. It will be removed from the configuration."
                 ],
@@ -430,7 +422,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=["Library file not formatted as proper JSON."],
             )
         except Exception as err:
@@ -439,7 +431,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=[f"Exception occurred when attempting to load the library: {err}."],
             )
 
@@ -463,7 +455,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=library_name,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=problems,
             )
         except Exception as err:
@@ -472,7 +464,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=library_name,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=[f"Library file did not match the library schema specified due to: {err}"],
             )
 
@@ -546,7 +538,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=sandbox_library_dir_as_posix,
                 library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
-                status=LibraryManager.LibraryStatus.MISSING,
+                status=LibraryStatus.MISSING,
                 problems=["Sandbox directory does not exist."],
             )
 
@@ -601,7 +593,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=sandbox_library_dir_as_posix,
                 library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=["Could not get engine version for sandbox library generation."],
             )
 
@@ -685,7 +677,7 @@ class LibraryManager:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=None,
-                status=LibraryManager.LibraryStatus.MISSING,
+                status=LibraryStatus.MISSING,
                 problems=[
                     "Library could not be found at the file path specified. It will be removed from the configuration."
                 ],
@@ -719,7 +711,7 @@ class LibraryManager:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=library_data.name,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=[
                     f"Library's version string '{library_data.metadata.library_version}' wasn't valid. Must be in major.minor.patch format."
                 ],
@@ -746,7 +738,7 @@ class LibraryManager:
                     library_path=file_path,
                     library_name=library_data.name,
                     library_version=library_version,
-                    status=LibraryManager.LibraryStatus.UNUSABLE,
+                    status=LibraryStatus.UNUSABLE,
                     problems=[
                         f"Failed to load Advanced Library module from '{library_data.advanced_library_path}': {err}"
                     ],
@@ -770,7 +762,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=library_data.name,
                 library_version=library_version,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=[
                     "Failed because a library with this name was already registered. Check the Settings to ensure duplicate libraries are not being loaded."
                 ],
@@ -799,7 +791,7 @@ class LibraryManager:
                         library_path=file_path,
                         library_name=library_data.name,
                         library_version=library_version,
-                        status=LibraryManager.LibraryStatus.UNUSABLE,
+                        status=LibraryStatus.UNUSABLE,
                         problems=[str(e)],
                     )
                     details = f"Attempted to load Library JSON file from '{json_path}'. Failed when creating the virtual environment: {e}."
@@ -821,7 +813,7 @@ class LibraryManager:
                             library_path=file_path,
                             library_name=library_data.name,
                             library_version=library_version,
-                            status=LibraryManager.LibraryStatus.UNUSABLE,
+                            status=LibraryStatus.UNUSABLE,
                             problems=[
                                 f"Insufficient disk space for dependencies (requires {min_space_gb} GB): {error_msg}"
                             ],
@@ -862,7 +854,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=library_data.name,
                 library_version=library_version,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=[f"Dependency installation failed: {error_details}"],
             )
             details = f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {error_details}"
@@ -917,15 +909,15 @@ class LibraryManager:
         self._library_file_path_to_info[file_path] = library_load_results
 
         match library_load_results.status:
-            case LibraryManager.LibraryStatus.GOOD:
+            case LibraryStatus.GOOD:
                 details = f"Successfully loaded Library '{library_data.name}' from JSON file at {json_path}"
                 logger.info(details)
                 return RegisterLibraryFromFileResultSuccess(library_name=library_data.name)
-            case LibraryManager.LibraryStatus.FLAWED:
+            case LibraryStatus.FLAWED:
                 details = f"Successfully loaded Library JSON file from '{json_path}', but one or more nodes failed to load. Check the log for more details."
                 logger.warning(details)
                 return RegisterLibraryFromFileResultSuccess(library_name=library_data.name)
-            case LibraryManager.LibraryStatus.UNUSABLE:
+            case LibraryStatus.UNUSABLE:
                 details = f"Attempted to load Library JSON file from '{json_path}'. Failed because no nodes were loaded. Check the log for more details."
                 logger.error(details)
                 return RegisterLibraryFromFileResultFailure()
@@ -1714,7 +1706,7 @@ class LibraryManager:
         has_disqualifying_issues = False
         for issue in version_issues:
             problems.append(issue.message)
-            if issue.severity == LibraryManager.LibraryStatus.UNUSABLE:
+            if issue.severity == LibraryStatus.UNUSABLE:
                 has_disqualifying_issues = True
 
         # Early exit if any version issues are disqualifying
@@ -1723,7 +1715,7 @@ class LibraryManager:
                 library_path=library_file_path,
                 library_name=library_data.name,
                 library_version=library_version,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=problems,
             )
 
@@ -1790,13 +1782,13 @@ class LibraryManager:
 
         # Create a LibraryInfo object based on load successes and problem count.
         if not any_nodes_loaded_successfully:
-            status = LibraryManager.LibraryStatus.UNUSABLE
+            status = LibraryStatus.UNUSABLE
         elif problems:
             # Success, but errors.
-            status = LibraryManager.LibraryStatus.FLAWED
+            status = LibraryStatus.FLAWED
         else:
             # Flawless victory.
-            status = LibraryManager.LibraryStatus.GOOD
+            status = LibraryStatus.GOOD
 
         # Create a LibraryInfo object based on load successes and problem count.
         return LibraryManager.LibraryInfo(
@@ -1888,7 +1880,7 @@ class LibraryManager:
                 library_path=sandbox_library_dir_as_posix,
                 library_name=library_data.name,
                 library_version=library_data.metadata.library_version,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=[
                     "Failed because a library with this name was already registered. Check the Settings to ensure duplicate libraries are not being loaded."
                 ],
@@ -1943,7 +1935,7 @@ class LibraryManager:
 
         paths_to_remove = set()
         for library_path, library_info in self._library_file_path_to_info.items():
-            if library_info.status == LibraryManager.LibraryStatus.MISSING:
+            if library_info.status == LibraryStatus.MISSING:
                 # Remove this file path from the config.
                 paths_to_remove.add(library_path.lower())
 

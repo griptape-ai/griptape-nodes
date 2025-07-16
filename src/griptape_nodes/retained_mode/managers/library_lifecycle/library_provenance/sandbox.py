@@ -122,11 +122,14 @@ class LibraryProvenanceSandbox(LibraryProvenance):
             issues=issues,
         )
 
-    def load_library(self, library_schema: LibrarySchema) -> LibraryLoadedResult:
+    def load_library(self, context: LibraryLifecycleContext) -> LibraryLoadedResult:
         """Load this sandbox library into the registry."""
         issues = []
 
-        if not library_schema.metadata:
+        # Get library schema from context
+        library_schema = context.inspection_result.schema if context.inspection_result else None
+
+        if not library_schema or not library_schema.metadata:
             issues.append(
                 LifecycleIssue(
                     message="No metadata available for loading",
@@ -140,15 +143,7 @@ class LibraryProvenanceSandbox(LibraryProvenance):
         # 2. Adding it to the LibraryRegistry
         # 3. Handling any registration conflicts or errors
 
-        return LibraryLoadedResult(
-            metadata=library_schema.metadata
-            or LibraryMetadata(
-                author="unknown", description="unknown", library_version="unknown", engine_version="unknown", tags=[]
-            ),
-            enabled=True,
-            name_override=None,
-            issues=issues,
-        )
+        return LibraryLoadedResult(issues=issues)
 
     def _validate_sandbox_path(self) -> bool:
         """Validate that the sandbox path exists and is readable."""

@@ -263,7 +263,7 @@ class LoadingState(State):
         # Check if user has disabled this library
         if not context.get_effective_active_state():
             issues = [LifecycleIssue(message="Library disabled by user", severity=LibraryStatus.FLAWED)]
-            context.library_loaded_result = LibraryLoadedResult(metadata=None, issues=issues)
+            context.library_loaded_result = LibraryLoadedResult(issues=issues)
             logger.info("Library %s loading skipped - disabled by user", context.provenance.get_display_name())
             return LoadedState
 
@@ -271,11 +271,11 @@ class LoadingState(State):
         schema = context.get_library_schema()
         if schema is None:
             issues = [LifecycleIssue(message="No schema available for loading", severity=LibraryStatus.UNUSABLE)]
-            context.library_loaded_result = LibraryLoadedResult(metadata=None, issues=issues)
+            context.library_loaded_result = LibraryLoadedResult(issues=issues)
             logger.error("Cannot load library %s - no schema available", context.provenance.get_display_name())
             return LoadedState
 
-        context.library_loaded_result = context.provenance.load_library(schema)
+        context.library_loaded_result = context.provenance.load_library(context)
 
         logger.info("Successfully loaded library %s", context.provenance.get_display_name())
 

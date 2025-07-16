@@ -13,7 +13,13 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, ValidationError
 
-from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema
+from griptape_nodes.node_library.library_registry import LibraryRegistry, LibrarySchema
+from griptape_nodes.retained_mode.events.config_events import (
+    GetConfigCategoryRequest,
+    GetConfigCategoryResultSuccess,
+    SetConfigCategoryRequest,
+    SetConfigCategoryResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import (
     EvaluationResult,
@@ -93,7 +99,9 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
         issues = []
 
         # Get schema from context (guaranteed to be valid at this point)
+        assert context.inspection_result is not None  # noqa: S101
         schema = context.inspection_result.schema
+        assert schema is not None  # noqa: S101
 
         # Version compatibility validation
         version_issues = GriptapeNodes.VersionCompatibilityManager().check_library_version_compatibility(schema)
@@ -115,7 +123,9 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
         library_manager = GriptapeNodes.LibraryManager()
 
         # Get library schema from context (guaranteed to be valid at this point)
+        assert context.inspection_result is not None  # noqa: S101
         library_data = context.inspection_result.schema
+        assert library_data is not None  # noqa: S101
 
         # If no dependencies are specified, early out
         if not (
@@ -214,33 +224,123 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
             issues=problems,
         )
 
-    def load_library(self, library_schema: LibrarySchema) -> LibraryLoadedResult:
+    def load_library(self, context: LibraryLifecycleContext) -> LibraryLoadedResult:
         """Load this local file library into the registry."""
         issues = []
 
-        if not library_schema.metadata:
+        # Get the LibraryManager instance to use its methods
+        library_manager = GriptapeNodes.LibraryManager()
+
+        # Get library schema from context (guaranteed to be valid at this point)
+        assert context.inspection_result is not None  # noqa: S101
+        library_data = context.inspection_result.schema
+        assert library_data is not None  # noqa: S101
+
+        # Use the file path from this provenance
+        file_path = self.file_path
+        base_dir = Path(file_path).parent
+
+        # Load advanced library module if specified
+        advanced_library_instance = None
+        if library_data.advanced_library_path:
+            try:
+                advanced_library_instance = library_manager._load_advanced_library_module(
+                    library_data=library_data,
+                    base_dir=base_dir,
+                )
+            except Exception as err:
+                issues.append(
+                    LifecycleIssue(
+                        message=f"Failed to load Advanced Library module from '{library_data.advanced_library_path}': {err}",
+                        severity=LibraryStatus.UNUSABLE,
+                    )
+                )
+                return LibraryLoadedResult(issues=issues)
+
+        # Create or get the library
+        library = None
+        try:
+            # Try to create a new library
+            library = LibraryRegistry.generate_new_library(
+                library_data=library_data,
+                mark_as_default_library=False,  # TODO(#1234): determine if this should be configurable
+                advanced_library=advanced_library_instance,
+            )
+        except KeyError:
+            # Library already exists
             issues.append(
                 LifecycleIssue(
-                    message="No metadata available for loading",
+                    message="Failed because a library with this name was already registered. Check the Settings to ensure duplicate libraries are not being loaded.",
                     severity=LibraryStatus.UNUSABLE,
                 )
             )
+            return LibraryLoadedResult(issues=issues)
 
-        # TODO: Actually register the library with the LibraryRegistry (https://github.com/griptape-ai/griptape-nodes/issues/1234)
-        # This would involve:
-        # 1. Creating a Library instance from the metadata
-        # 2. Adding it to the LibraryRegistry
-        # 3. Handling any registration conflicts or errors
+        # Handle library settings
+        if library_data.settings is not None:
+            # Assign them into the config space
+            for library_data_setting in library_data.settings:
+                # Does the category exist?
+                get_category_request = GetConfigCategoryRequest(category=library_data_setting.category)
+                get_category_result = GriptapeNodes.handle_request(get_category_request)
+                if not isinstance(get_category_result, GetConfigCategoryResultSuccess):
+                    # That's OK, we'll invent it. Or at least we'll try.
+                    create_new_category_request = SetConfigCategoryRequest(
+                        category=library_data_setting.category, contents=library_data_setting.contents
+                    )
+                    create_new_category_result = GriptapeNodes.handle_request(create_new_category_request)
+                    if not isinstance(create_new_category_result, SetConfigCategoryResultSuccess):
+                        issues.append(
+                            LifecycleIssue(
+                                message=f"Failed to create new config category '{library_data_setting.category}'.",
+                                severity=LibraryStatus.FLAWED,
+                            )
+                        )
+                        continue  # SKIP IT
+                else:
+                    # We had an existing category. Union our changes into it (not replacing anything that matched).
+                    existing_category_contents = get_category_result.contents
+                    existing_category_contents.update(library_data_setting.contents)
+                    set_category_request = SetConfigCategoryRequest(
+                        category=library_data_setting.category, contents=existing_category_contents
+                    )
+                    set_category_result = GriptapeNodes.handle_request(set_category_request)
+                    if not isinstance(set_category_result, SetConfigCategoryResultSuccess):
+                        issues.append(
+                            LifecycleIssue(
+                                message=f"Failed to update config category '{library_data_setting.category}'.",
+                                severity=LibraryStatus.FLAWED,
+                            )
+                        )
+                        continue  # SKIP IT
 
-        return LibraryLoadedResult(
-            metadata=library_schema.metadata
-            or LibraryMetadata(
-                author="unknown", description="unknown", library_version="unknown", engine_version="unknown", tags=[]
-            ),
-            enabled=True,
-            name_override=None,
-            issues=issues,
+        # Get library version from schema metadata
+        library_version = library_data.metadata.library_version
+
+        # Add the directory to the Python path to allow for relative imports
+        sys.path.insert(0, str(base_dir))
+
+        # Attempt to load nodes from the library
+        library_load_results = library_manager._attempt_load_nodes_from_library(
+            library_data=library_data,
+            library=library,
+            base_dir=base_dir,
+            library_file_path=file_path,
+            library_version=library_version,
+            problems=[],  # We'll handle problems through issues instead
         )
+
+        # Convert any problems from library_load_results to issues
+        if library_load_results.problems:
+            collated_problems = "\n".join(library_load_results.problems)
+            issues.append(
+                LifecycleIssue(
+                    message=collated_problems,
+                    severity=library_load_results.status,
+                )
+            )
+
+        return LibraryLoadedResult(issues=issues)
 
     def _validate_file_exists(self) -> bool:
         """Validate that the library file exists and is readable."""

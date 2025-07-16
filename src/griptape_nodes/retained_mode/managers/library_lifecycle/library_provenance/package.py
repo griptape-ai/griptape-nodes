@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 from xdg_base_dirs import xdg_data_home
 
-from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema
 from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import (
     EvaluationResult,
     InspectionResult,
@@ -84,7 +83,7 @@ class LibraryProvenancePackage(LibraryProvenance):
             issues=issues,
         )
 
-    def load_library(self, library_schema: LibrarySchema) -> LibraryLoadedResult:
+    def load_library(self, context: LibraryLifecycleContext) -> LibraryLoadedResult:  # noqa: ARG002
         """Load this package library into the registry."""
         issues = []
         issues.append(
@@ -94,15 +93,7 @@ class LibraryProvenancePackage(LibraryProvenance):
             )
         )
 
-        return LibraryLoadedResult(
-            metadata=library_schema.metadata
-            or LibraryMetadata(
-                author="unknown", description="unknown", library_version="unknown", engine_version="unknown", tags=[]
-            ),
-            enabled=True,
-            name_override=None,
-            issues=issues,
-        )
+        return LibraryLoadedResult(issues=issues)
 
     def _get_base_venv_directory(self) -> str:
         """Get the base directory for virtual environments."""

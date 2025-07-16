@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 if TYPE_CHECKING:
-    from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema
+    from griptape_nodes.node_library.library_registry import LibrarySchema
     from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance import LibraryProvenance
 
 
@@ -95,22 +95,8 @@ class InstallationResult(Result):
 class LibraryLoadedResult(Result):
     """Result of library loading with structured issues and severity levels."""
 
-    metadata: LibraryMetadata | None = None
-    enabled: bool = True
-    name_override: str | None = None
-
-    def __init__(
-        self,
-        metadata: LibraryMetadata | None = None,
-        *,
-        enabled: bool = True,
-        name_override: str | None = None,
-        issues: list[LifecycleIssue] | None = None,
-    ):
+    def __init__(self, issues: list[LifecycleIssue] | None = None):
         super().__init__(issues=issues or [])
-        self.metadata = metadata
-        self.enabled = enabled
-        self.name_override = name_override
 
 
 @dataclass

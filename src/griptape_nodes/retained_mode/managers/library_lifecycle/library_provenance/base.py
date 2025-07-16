@@ -15,7 +15,6 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import 
 )
 
 if TYPE_CHECKING:
-    from griptape_nodes.node_library.library_registry import LibrarySchema
     from griptape_nodes.retained_mode.managers.library_lifecycle.library_fsm import LibraryLifecycleContext
 
 
@@ -72,11 +71,11 @@ class LibraryProvenance(ABC):
         """
 
     @abstractmethod
-    def load_library(self, library_schema: LibrarySchema) -> LibraryLoadedResult:
+    def load_library(self, context: LibraryLifecycleContext) -> LibraryLoadedResult:
         """Load this provenance into the registry.
 
         Args:
-            library_schema: The library schema from inspection containing name and metadata
+            context: Lifecycle context containing inspection results
 
         Returns:
             LibraryLoadedResult with structured issues and severity levels
