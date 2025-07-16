@@ -69,14 +69,15 @@ class DirectoryManager:
             Total size in MB
         """
         total_size = 0
-        path = Path(directory_path)
+        workspace_directory = self.config_manager.get_config_value("workspace_directory")
+        path = Path(workspace_directory) / directory_path
 
         if not path.exists():
             return 0.0
 
-        for _, _, files in os.walk(directory_path):
+        for _, _, files in os.walk(path):
             for f in files:
-                fp = os.path.join(directory_path, f)
+                fp = os.path.join(path, f)
                 if not os.path.islink(fp):
                     total_size += os.path.getsize(fp)
         return total_size / (1024 * 1024) # Convert to MB
@@ -91,7 +92,8 @@ class DirectoryManager:
         Returns:
             True if files were removed, False otherwise
         """
-        path = Path(directory_path)
+        workspace_directory = self.config_manager.get_config_value("workspace_directory")
+        path = Path(workspace_directory) / directory_path
         if not path.exists():
             return False
 
