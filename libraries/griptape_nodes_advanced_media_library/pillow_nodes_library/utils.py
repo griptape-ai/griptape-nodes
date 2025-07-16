@@ -22,7 +22,7 @@ def pil_to_image_artifact(pil_image: Image, directory_path: str = "") -> ImageUr
 
     if directory_path:
         # Perform cleanup if needed before saving new file
-        GriptapeNodes.DirectoryManager().cleanup_directory_if_needed(directory_path)
+        GriptapeNodes._os_manager.cleanup_directory_if_needed(directory_path, "advanced_media_library")
         filename = f"{directory_path}/{uuid.uuid4()}.png"
     else:
         # No directory prefix - direct storage

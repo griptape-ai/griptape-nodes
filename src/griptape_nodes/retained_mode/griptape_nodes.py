@@ -55,7 +55,6 @@ if TYPE_CHECKING:
     )
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.context_manager import ContextManager
-    from griptape_nodes.retained_mode.managers.directory_manager import DirectoryManager
     from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
@@ -139,7 +138,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _version_compatibility_manager: VersionCompatibilityManager
     _session_manager: SessionManager
     _engine_identity_manager: EngineIdentityManager
-    _directory_manager: DirectoryManager
 
     def __init__(self) -> None:
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
@@ -148,7 +146,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
         )
         from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
-        from griptape_nodes.retained_mode.managers.directory_manager import DirectoryManager
         from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
         from griptape_nodes.retained_mode.managers.event_manager import EventManager
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
@@ -192,7 +189,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._version_compatibility_manager = VersionCompatibilityManager(self._event_manager)
             self._session_manager = SessionManager(self._event_manager)
             self._engine_identity_manager = EngineIdentityManager(self._event_manager)
-            self._directory_manager = DirectoryManager(self._config_manager)
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -324,10 +320,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def EngineIdentityManager(cls) -> EngineIdentityManager:
         return GriptapeNodes.get_instance()._engine_identity_manager
-
-    @classmethod
-    def DirectoryManager(cls) -> DirectoryManager:
-        return GriptapeNodes.get_instance()._directory_manager
 
     @classmethod
     def clear_data(cls) -> None:
