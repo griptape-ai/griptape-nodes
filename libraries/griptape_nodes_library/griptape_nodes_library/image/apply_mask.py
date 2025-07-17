@@ -52,6 +52,11 @@ class ApplyMask(DataNode):
             )
         )
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        if self.get_parameter_value("input_image") is None or self.get_parameter_value("input_mask") is None:
+            return [Exception(f"{self.name}: Input image and mask are required")]
+        return super().validate_before_node_run()
+
     def process(self) -> None:
         # Get input image
         input_image = self.get_parameter_value("input_image")
