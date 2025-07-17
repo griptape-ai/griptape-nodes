@@ -19,8 +19,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the InvertImage node to your workflow
-2. Connect an image source to the "input_image" input
-3. The inverted image will be available at the "output" parameter
+1. Connect an image source to the "input_image" input
+1. The inverted image will be available at the "output" parameter
 
 ### Parameters
 
@@ -35,9 +35,9 @@ Use this node when you want to:
 A common workflow pattern:
 
 1. Generate or load an image using nodes like GenerateImage or LoadImage
-2. Connect that image to the InvertImage node's "input_image" parameter
-3. The InvertImage node will create a negative version of the image
-4. Connect the "output" to DisplayImage to view the result, or to other processing nodes
+1. Connect that image to the InvertImage node's "input_image" parameter
+1. The InvertImage node will create a negative version of the image
+1. Connect the "output" to DisplayImage to view the result, or to other processing nodes
 
 ## Important Notes
 
@@ -55,6 +55,7 @@ A common workflow pattern:
 ## Technical Details
 
 The node handles different image modes intelligently:
+
 - **RGBA**: Inverts RGB channels, preserves alpha channel
 - **RGB**: Direct inversion of all color values
-- **Other modes**: Converts to RGB first, then inverts 
+- **Other modes**: Converts to RGB first, then inverts
