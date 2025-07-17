@@ -100,11 +100,11 @@ You'll be prompted to enter your token.
 
 Each Hugging Face node is designed to work with specific models. While some nodes work with only one model, others are compatible with multiple options. The table below outlines which models can be used with each node:
 
-| Node                      | Compatible Model(s)        |
-| ------------------------- | -------------------------- |
-| SPAN Upscale              | 4x-ClearRealityV1.pth      |
-| Flux                      | FLUX.1-dev, FLUX.1-schnell |
-| Flux Post Upscale         | FLUX.1-dev, FLUX.1-schnell |
+| Node              | Compatible Model(s)        |
+| ----------------- | -------------------------- |
+| SPAN Upscale      | 4x-ClearRealityV1.pth      |
+| Flux              | FLUX.1-dev, FLUX.1-schnell |
+| Flux Post Upscale | FLUX.1-dev, FLUX.1-schnell |
 
 ## Model Installation Considerations
 
