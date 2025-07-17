@@ -49,6 +49,7 @@ event_queue = Queue()
 
 # Global WebSocket connection for sending events
 ws_connection_for_sending = None
+event_loop = None
 
 # Event to signal when WebSocket connection is ready
 ws_ready_event = threading.Event()
@@ -248,7 +249,8 @@ def _init_event_listeners() -> None:
 
 async def _alisten_for_api_requests(api_key: str) -> None:
     """Listen for events from the Nodes API and process them asynchronously."""
-    global ws_connection_for_sending  # noqa: PLW0603
+    global ws_connection_for_sending, event_loop  # noqa: PLW0603
+    event_loop = asyncio.get_running_loop()  # Store the event loop reference
     logger.info("Listening for events from Nodes API via async WebSocket")
 
     # Auto reconnect https://websockets.readthedocs.io/en/stable/reference/asyncio/client.html#opening-a-connection
@@ -296,7 +298,7 @@ def __process_node_event(event: GriptapeNodeEvent) -> None:
         msg = f"Unknown/unsupported result event type encountered: '{type(result_event)}'."
         raise TypeError(msg) from None
 
-    asyncio.run(__emit_message(dest_socket, result_event.json(), topic=result_event.response_topic))
+    __schedule_async_task(__emit_message(dest_socket, result_event.json(), topic=result_event.response_topic))
 
 
 def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
@@ -317,7 +319,7 @@ def __process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
             msg = "Node start and finish do not match."
             raise KeyError(msg) from None
         GriptapeNodes.EventManager().current_active_node = None
-    asyncio.run(__emit_message("execution_event", result_event.json()))
+    __schedule_async_task(__emit_message("execution_event", result_event.json()))
 
 
 def __process_progress_event(gt_event: ProgressEvent) -> None:
@@ -329,7 +331,7 @@ def __process_progress_event(gt_event: ProgressEvent) -> None:
             node_name=node_name, parameter_name=gt_event.parameter_name, type=type(gt_event).__name__, value=value
         )
         event_to_emit = ExecutionEvent(payload=payload)
-        asyncio.run(__emit_message("execution_event", event_to_emit.json()))
+        __schedule_async_task(__emit_message("execution_event", event_to_emit.json()))
 
 
 def __process_app_event(event: AppEvent) -> None:
@@ -337,7 +339,7 @@ def __process_app_event(event: AppEvent) -> None:
     # Let Griptape Nodes broadcast it.
     GriptapeNodes.broadcast_app_event(event.payload)
 
-    asyncio.run(__emit_message("app_event", event.json()))
+    __schedule_async_task(__emit_message("app_event", event.json()))
 
 
 def _process_event_queue() -> None:
@@ -417,12 +419,12 @@ def _determine_response_topic() -> str | None:
 
 def subscribe_to_topic(topic: str) -> None:
     """Subscribe to a specific topic in the message bus."""
-    asyncio.run(_asubscribe_to_topic(topic))
+    __schedule_async_task(_asubscribe_to_topic(topic))
 
 
 def unsubscribe_from_topic(topic: str) -> None:
     """Unsubscribe from a specific topic in the message bus."""
-    asyncio.run(_aunsubscribe_from_topic(topic))
+    __schedule_async_task(_aunsubscribe_from_topic(topic))
 
 
 async def _asubscribe_to_topic(topic: str) -> None:
@@ -455,6 +457,14 @@ async def _aunsubscribe_from_topic(topic: str) -> None:
         logger.error("Error unsubscribing from topic %s: %s", topic, e)
     except Exception as e:
         logger.error("Unexpected error while unsubscribing from topic %s: %s", topic, e)
+
+
+def __schedule_async_task(coro: Any) -> None:
+    """Schedule an async coroutine to run in the event loop from a sync context."""
+    if event_loop and event_loop.is_running():
+        asyncio.run_coroutine_threadsafe(coro, event_loop)
+    else:
+        logger.warning("Event loop not available for scheduling async task")
 
 
 def __process_api_event(event: dict) -> None:
