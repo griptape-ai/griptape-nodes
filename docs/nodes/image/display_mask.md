@@ -55,7 +55,8 @@ A common workflow pattern:
 ## Technical Details
 
 The node uses the `create_alpha_mask` utility function to:
+
 - Load the input image from its URL
 - Extract the alpha channel
 - Convert it to a grayscale mask
-- Save the result as a new image artifact 
+- Save the result as a new image artifact

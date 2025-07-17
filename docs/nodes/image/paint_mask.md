@@ -66,4 +66,4 @@ The node handles mask generation and editing through several key processes:
 - **Initial Mask Creation**: Extracts the alpha channel from the input image and converts it to a grayscale mask
 - **Mask Editing**: Provides an interactive interface for painting on the mask
 - **Mask Application**: Uses the red channel of the painted mask as the alpha channel for the final image
-- **Persistence**: Tracks whether the mask has been manually edited to determine when to regenerate vs. preserve edits 
+- **Persistence**: Tracks whether the mask has been manually edited to determine when to regenerate vs. preserve edits

@@ -69,6 +69,7 @@ The node processes the mask and image through several steps:
 - **Output Generation**: Saves the result as a new RGBA image artifact
 
 The node handles different mask formats:
+
 - **RGB**: Uses the red channel directly
 - **RGBA**: Uses the red channel (ignores the original alpha)
-- **Other formats**: Converts to RGB first, then uses the red channel 
+- **Other formats**: Converts to RGB first, then uses the red channel

@@ -61,4 +61,4 @@ The node handles different image modes intelligently:
 - **Grayscale (L)**: Direct inversion of grayscale values
 - **Other modes**: Converts to grayscale first, then inverts
 
-The inversion is performed using the formula: `255 - original_value`, which flips the brightness values. 
+The inversion is performed using the formula: `255 - original_value`, which flips the brightness values.
