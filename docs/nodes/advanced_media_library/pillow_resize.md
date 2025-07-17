@@ -1,8 +1,8 @@
-# PillowResize
+# Rescale Image
 
 ## What is it?
 
-The PillowResize node is used to resize images using the Pillow library. It allows you to scale images by a specified factor and choose from various resampling strategies to maintain image quality.
+The Rescale Image node is used to resize images using the Pillow library. It allows you to scale images by a specified factor and choose from various resampling strategies to maintain image quality.
 
 ## When would I use it?
 
@@ -16,7 +16,7 @@ Use this node when you need to:
 
 ### Basic Setup
 
-1. Add the PillowResize node to your workflow
+1. Add the Rescale Image node to your workflow
 1. Connect an image source to the "input_image" parameter
 1. Set the desired scale factor in the "scale" parameter
 1. Choose a resampling strategy from the "resample_strategy" parameter
