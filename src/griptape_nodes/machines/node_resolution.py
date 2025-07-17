@@ -7,8 +7,10 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from sqlite3 import connect
 from this import d
+from turtle import done
 from typing import Any
-from collections import defaultdict
+import time
+
 from griptape.events import EventBus
 from griptape.utils import with_contextvars
 
@@ -59,14 +61,20 @@ class DAG:
 
     def mark_processed(self, node: BaseNode):
         """Mark a node as processed, decrementing in-degree of its dependents."""
+        # Remove outgoing edges from this node
         for dependent in self.graph[node]:
             self.in_degree[dependent] -= 1
+        self.graph.pop(node, None)
+        self.in_degree.pop(node, None)
+
 
 @dataclass
 class Focus:
     """Represents a node currently being resolved, with optional scheduled value and generator."""
     node: BaseNode
     scheduled_value: Any | None = None
+    updated: bool = True
+    first_time: bool = True
     process_generator: Generator | None = None
 
 
@@ -104,7 +112,6 @@ class EvaluateParameterState(State):
         while current_node.current_spotlight_parameter is not None:
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
             connections = GriptapeNodes.FlowManager().get_connections()
-            print(current_node.current_spotlight_parameter)
             connected_node_and_parameter: tuple[BaseNode, Parameter] | None = connections.get_connected_node(current_node, current_node.current_spotlight_parameter)
             if connected_node_and_parameter is not None:
                 (connected_node, _) = connected_node_and_parameter
@@ -133,6 +140,7 @@ class EvaluateParameterState(State):
         print("get ready nodes")
         for node in context.DAG.get_ready_nodes():
             print(node.name)
+        return ExecuteNodeState
 
 class ExecuteNodeState(State):
     executor: ThreadPoolExecutor = ThreadPoolExecutor()
@@ -182,53 +190,75 @@ class ExecuteNodeState(State):
 
     @staticmethod
     def on_update(context: ResolutionContext) -> type[State] | None:
-        context.current_focuses = []
         ready_nodes = context.DAG.get_ready_nodes()
         # Prepare a list of current focuses, not the focus stack, just the ones we want to run in parallel
         for node in ready_nodes:
-            ExecuteNodeState.before_node(context, node)
-            focus_obj = Focus(node, scheduled_value=None, process_generator=None)
-            context.current_focuses.append(focus_obj)
-        for focus in context.current_focuses:
-            done_yet = ExecuteNodeState.do_ui_tasks_and_run_node(context, focus)
-            # If it isn't done, then process node will be called again until node is done (i hope oh god)
-            if done_yet:
+            if node not in [focus.node for focus in context.current_focuses]:
+                ExecuteNodeState.before_node(context, node)
+                focus_obj = Focus(node, scheduled_value=None, process_generator=None)
+                context.current_focuses.append(focus_obj)
+                node.make_node_unresolved(
+                current_states_to_trigger_change_event=set(
+                    {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+                )
+                )   
+            
+        for focus in context.current_focuses.copy():
+            # if we are calling it for the first time or there is an update in the scheduled value, run it
+            done = False
+            if focus.updated:
+                try:
+                    done = ExecuteNodeState.do_ui_tasks_and_run_node(context, focus)
+                except Exception as e:
+                    raise e
+                focus.updated = False
+            # If the node is done
+            if done:
                 context.DAG.mark_processed(focus.node)
+                context.current_focuses.remove(focus)
         if context.DAG.get_ready_nodes() == []:
             return CompleteState
+        time.sleep(0.1)
+        return ExecuteNodeState
 
 
     @staticmethod
     def before_node(context: ResolutionContext, current_node):
         # Clear all of the current output values
         ExecuteNodeState.clear_parameter_output_values(context, current_node)
+        # Iterate over all parameters of the current node
         for parameter in current_node.parameters:
+            # Skip parameters that are of control type (not data parameters)
             if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
                 continue
+            # If the parameter value is not already set
             if parameter.name not in current_node.parameter_values:
-                # If a parameter value is not already set
+                # Try to get the parameter's value (could be from a default or connection)
                 value = current_node.get_parameter_value(parameter.name)
                 if value is not None:
+                    # If a value is found, set it in the node's parameter values
                     current_node.set_parameter_value(parameter.name, value)
 
-                if parameter.name in current_node.parameter_values:
-                    parameter_value = current_node.get_parameter_value(parameter.name)
-                    data_type = parameter.type
-                    if data_type is None:
-                        data_type = ParameterTypeBuiltin.NONE.value
-                    EventBus.publish_event(
-                        ExecutionGriptapeNodeEvent(
-                            wrapped_event=ExecutionEvent(
-                                payload=ParameterValueUpdateEvent(
-                                    node_name=current_node.name,
-                                    parameter_name=parameter.name,
-                                    # this is because the type is currently IN the parameter.
-                                    data_type=data_type,
-                                    value=TypeValidator.safe_serialize(parameter_value),
-                                )
+            # If the parameter value is now set (either previously or just above)
+            if parameter.name in current_node.parameter_values:
+                parameter_value = current_node.get_parameter_value(parameter.name)
+                data_type = parameter.type
+                if data_type is None:
+                    data_type = ParameterTypeBuiltin.NONE.value
+                # Publish an event to update the UI/system with the parameter's value
+                EventBus.publish_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(
+                            payload=ParameterValueUpdateEvent(
+                                node_name=current_node.name,
+                                parameter_name=parameter.name,
+                                # this is because the type is currently IN the parameter.
+                                data_type=data_type,
+                                value=TypeValidator.safe_serialize(parameter_value),
                             )
                         )
                     )
+                )
         exceptions = current_node.validate_before_node_run()
         if exceptions:
             msg = f"Canceling flow run. Node '{current_node.name}' encountered problems: {exceptions}"
@@ -368,19 +398,21 @@ class ExecuteNodeState(State):
 
             Stores the result of the future in the node's context, and publishes an event to resume the flow.
             """
+            current_focus.updated = True
             try:
                 current_focus.scheduled_value = future.result()
             except Exception as e:
                 logger.debug("Error in future: %s", e)
                 current_focus.scheduled_value = e
             finally:
+                pass
                 # If it hasn't been cancelled.
-                if current_focus.process_generator:
-                    EventBus.publish_event(
-                        ExecutionGriptapeNodeEvent(
-                            wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
-                        )
-                    )
+                #if current_focus.process_generator:
+                    #EventBus.publish_event(
+                    #    ExecutionGriptapeNodeEvent(
+                    #        wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
+                    #    )
+                    #)
 
         current_node = current_focus.node
         # Only start the processing if we don't already have a generator
@@ -429,11 +461,13 @@ class CompleteState(State):
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: ARG004
         """Enter the CompleteState."""
+        print("Enter the CompleteState")
         return None
 
     @staticmethod
     def on_update(context: ResolutionContext) -> type[State] | None:  # noqa: ARG004
         """Update the CompleteState (no-op)."""
+        print("Update the complete state")
         return None
 
 class NodeResolutionMachine(FSM[ResolutionContext]):
@@ -455,7 +489,7 @@ class NodeResolutionMachine(FSM[ResolutionContext]):
 
     def is_complete(self) -> bool:
         """Return True if the resolution is complete."""
-        return isinstance(self._current_state, CompleteState)
+        return (self._current_state == CompleteState)
 
     def is_started(self) -> bool:
         """Return True if the resolution has started."""

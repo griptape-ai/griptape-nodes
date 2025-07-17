@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from doctest import debug
 import logging
 from queue import Queue
 from typing import TYPE_CHECKING, cast
+import concurrent.futures
 
 from griptape.events import EventBus
 
@@ -132,6 +134,8 @@ class FlowManager:
     _global_single_node_resolution: bool
 
     def __init__(self, event_manager: EventManager) -> None:
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self._threadpool_executor = executor
         event_manager.assign_manager_to_request_type(CreateFlowRequest, self.on_create_flow_request)
         event_manager.assign_manager_to_request_type(DeleteFlowRequest, self.on_delete_flow_request)
         event_manager.assign_manager_to_request_type(ListNodesInFlowRequest, self.on_list_nodes_in_flow_request)
@@ -1011,7 +1015,7 @@ class FlowManager:
         try:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
-            details = f"Cannot start flow. Error: {err}"
+            details = f"Cannot start flow. KeyError: {err}"
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[err])
         # Check to see if the flow is already running.
@@ -1065,7 +1069,13 @@ class FlowManager:
             return StartFlowResultFailure(validation_exceptions=[e])
         # By now, it has been validated with no exceptions.
         try:
-            self.start_flow(flow, start_node, debug_mode)
+            # Run start_flow in a background thread
+            executor = getattr(self, "_threadpool_executor", None)
+            if executor is None:
+                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                self._threadpool_executor = executor
+            executor.submit(self.start_flow, flow, start_node, debug_mode)
+            #self.start_flow(flow, start_node, debug_mode)
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             logger.error(details)
@@ -1827,6 +1837,7 @@ class FlowManager:
         current_resolving_node = self._global_control_flow_machine._context.resolution_machine._context.root_node_resolving
         if current_resolving_node is not None:
             return current_control_node, current_resolving_node.name
+        return current_control_node, None
 
     def get_start_node_from_node(self, flow: ControlFlow, node: BaseNode) -> BaseNode | None:
         # backwards chain in control outputs.

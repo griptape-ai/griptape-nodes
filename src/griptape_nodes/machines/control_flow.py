@@ -86,7 +86,6 @@ class ResolveNodeState(State):
         if context.current_node is None:
             # We don't have anything else to do. Move back to Complete State so it has to restart.
             return CompleteState
-
         # Mark the node unresolved, and broadcast an event to the GUI.
         context.current_node.make_node_unresolved(
             current_states_to_trigger_change_event=set(
@@ -113,7 +112,8 @@ class ResolveNodeState(State):
             return CompleteState
         if context.current_node.state != NodeResolutionState.RESOLVED:
             context.resolution_machine.resolve_node(context.current_node)
-
+        print("i am in resolvenodestate onupdate")
+        print("current state", context.resolution_machine.get_current_state())
         if context.resolution_machine.is_complete():
             return NextNodeState
         return None
