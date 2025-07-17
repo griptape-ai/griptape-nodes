@@ -200,7 +200,7 @@ class OSManager:
             return f"Disk space error at {path}. Unable to retrieve disk space information."
 
     @staticmethod
-    def cleanup_directory_if_needed(full_directory_path: Path, max_size_gb: float = 5.0) -> bool:
+    def cleanup_directory_if_needed(full_directory_path: Path, max_size_gb: float) -> bool:
         """Check directory size and cleanup old files if needed.
 
         Args:
@@ -250,34 +250,41 @@ class OSManager:
         return total_size / (1024 * 1024 * 1024)  # Convert to GB
 
     @staticmethod
-    def _cleanup_old_files(static_files_directory_path: Path, target_size_gb: float) -> bool:
+    def _cleanup_old_files(directory_path: Path, target_size_gb: float) -> bool:
         """Remove oldest files until directory is under target size.
 
         Args:
-            static_files_directory_path: Path to the directory to clean
+            directory_path: Path to the directory to clean
             target_size_gb: Target size in GB
 
         Returns:
             True if files were removed, False otherwise
         """
-        if not static_files_directory_path.exists():
-            logger.error("Directory %s does not exist. Skipping cleanup.", static_files_directory_path)
+        if not directory_path.exists():
+            logger.error("Directory %s does not exist. Skipping cleanup.", directory_path)
             return False
 
         # Get all files with their modification times
         files_with_times: list[tuple[Path, float]] = []
 
-        for file_path in static_files_directory_path.rglob("*"):
+        for file_path in directory_path.rglob("*"):
             if file_path.is_file():
                 try:
                     mtime = file_path.stat().st_mtime
                     files_with_times.append((file_path, mtime))
-                except (OSError, FileNotFoundError):
+                except (OSError, FileNotFoundError) as err:
                     # Skip files that can't be accessed
-                    logger.error("Could not dele file %s. Skipping this file.", file_path)
+                    logger.error(
+                        "While cleaning up old files, saw file %s. File could not be accessed; skipping. Error: %s",
+                        file_path,
+                        err,
+                    )
                     continue
 
         if not files_with_times:
+            logger.error(
+                "Attempted to clean up files to get below a target directory size, but no suitable files were found that could be deleted."
+            )
             return False
 
         # Sort by modification time (oldest first)
@@ -288,25 +295,34 @@ class OSManager:
 
         for file_path, _ in files_with_times:
             try:
+                # Delete the file.
                 file_path.unlink()
                 removed_count += 1
 
                 # Check if we're now under the target size
-                current_size_gb = OSManager._get_directory_size_gb(static_files_directory_path)
+                current_size_gb = OSManager._get_directory_size_gb(directory_path)
                 if current_size_gb <= target_size_gb:
+                    # We're done!
                     break
 
-            except (OSError, FileNotFoundError):
+            except (OSError, FileNotFoundError) as err:
                 # Skip files that can't be deleted
-                logger.error("Could not delete file %s. Skipping this file.", file_path)
+                logger.error(
+                    "While cleaning up old files, attempted to delete file %s. File could not be deleted; skipping. Deletion error: %s",
+                    file_path,
+                    err,
+                )
 
         if removed_count > 0:
-            final_size_gb = OSManager._get_directory_size_gb(static_files_directory_path)
+            final_size_gb = OSManager._get_directory_size_gb(directory_path)
             logger.info(
                 "Cleaned up %d old files from %s. Directory size reduced to %.1f GB",
                 removed_count,
-                static_files_directory_path,
+                directory_path,
                 final_size_gb,
             )
+        else:
+            # None deleted.
+            logger.error("Attempted to clean up old files from %s, but no files could be deleted.")
 
         return removed_count > 0

@@ -22,16 +22,19 @@ def pil_to_image_artifact(pil_image: Image, directory_path: str = "") -> ImageUr
 
     if directory_path:
         # Perform cleanup if needed before saving new file
-        max_size_gb = GriptapeNodes.ConfigManager().get_config_value("advanced_media_library.max_directory_size_gb")
         cleanup_enabled = GriptapeNodes.ConfigManager().get_config_value(
             "advanced_media_library.enable_directory_cleanup"
         )
-        static_files_directory = GriptapeNodes.ConfigManager().get_config_value(
-            "static_files_directory", default="staticfiles"
-        )
-        path = GriptapeNodes.ConfigManager().workspace_path / static_files_directory / directory_path
         if cleanup_enabled:
+            static_files_directory = GriptapeNodes.ConfigManager().get_config_value(
+                "static_files_directory", default="staticfiles"
+            )
+            path = GriptapeNodes.ConfigManager().workspace_path / static_files_directory / directory_path
+
+            max_size_gb = GriptapeNodes.ConfigManager().get_config_value("advanced_media_library.max_directory_size_gb")
             GriptapeNodes.OSManager().cleanup_directory_if_needed(full_directory_path=path, max_size_gb=max_size_gb)
+
+        # Now set the file name.
         filename = f"{directory_path}/{uuid.uuid4()}.png"
     else:
         # No directory prefix - direct storage
