@@ -2,7 +2,7 @@
 
 ## What is it?
 
-The ApplyMask node applies a mask to an input image to create transparency effects. It takes an image and a mask, then uses the red channel of the mask as the alpha channel for the final image. This allows you to selectively make parts of an image transparent based on the mask.
+The ApplyMask node applies a mask to an input image to create transparency effects. It takes an image and a mask, then uses the appropriate channel from the mask as the alpha channel for the final image. The node intelligently handles different mask formats: alpha channels for RGBA/LA images, red channels for RGB images, and grayscale intensity for L (grayscale) images. This allows you to selectively make parts of an image transparent based on the mask.
 
 ## When would I use it?
 
@@ -45,7 +45,12 @@ A common workflow pattern:
 
 ## Important Notes
 
-- **Red Channel Usage**: The node uses the red channel of the mask as the alpha channel for the final image
+- **Mask Channel Usage**: The node intelligently selects the appropriate channel based on mask format:
+
+  - **RGBA/LA images**: Uses the alpha channel for transparency
+  - **RGB images**: Uses the red channel (compatible with PaintMask output)
+  - **L (grayscale) images**: Uses the grayscale intensity directly
+  
 - **Mask Processing**: The mask is automatically resized to match the input image dimensions
 - **RGBA Output**: The final image is converted to RGBA format to support transparency
 - **Real-time Processing**: The node processes immediately when both inputs are available
@@ -56,20 +61,25 @@ A common workflow pattern:
 - **No Output**: Check that both "input_image" and "input_mask" are properly connected
 - **Unexpected Transparency**: Remember that white areas in the mask become opaque, black areas become transparent
 - **Mask Size Mismatch**: The mask is automatically resized to match the input image, but this may affect quality
-- **Color Mask**: The node uses only the red channel of the mask, so color information in the mask is ignored
+- **Color Mask**: The node prioritizes alpha channels when available, uses red channels for RGB images (like PaintMask output), and uses grayscale intensity for L images. Other color information in the mask is ignored.
 
 ## Technical Details
 
 The node processes the mask and image through several steps:
 
 - **Image Loading**: Loads both the input image and mask from their URLs
-- **Channel Extraction**: Extracts the red channel from the mask to use as the alpha channel
+- **Channel Extraction**: Intelligently extracts the appropriate channel based on mask format:
+  - RGBA/LA: Uses alpha channel
+  - RGB: Uses red channel  
+  - L: Uses grayscale intensity
 - **Resizing**: Resizes the alpha channel to match the input image dimensions
 - **Alpha Application**: Applies the alpha channel to the input image using `putalpha()`
 - **Output Generation**: Saves the result as a new RGBA image artifact
 
 The node handles different mask formats:
 
-- **RGB**: Uses the red channel directly
-- **RGBA**: Uses the red channel (ignores the original alpha)
+- **RGBA**: Uses the alpha channel (4th channel) - highest priority
+- **LA**: Uses the alpha channel (2nd channel) - grayscale with alpha
+- **RGB**: Uses the red channel (1st channel) - compatible with PaintMask output
+- **L**: Uses the grayscale intensity directly - pure grayscale
 - **Other formats**: Converts to RGB first, then uses the red channel

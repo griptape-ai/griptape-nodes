@@ -110,22 +110,30 @@ class ApplyMask(DataNode):
         # Load mask
         mask_pil = self.load_pil_from_url(mask_artifact.value)
 
-        # Extract red channel and use as alpha
-        if mask_pil.mode == "RGB":
-            # Get red channel
-            r, _, _ = mask_pil.split()
-            alpha = r
-        elif mask_pil.mode == "RGBA":
-            # Get red channel
-            r, _, _, _ = mask_pil.split()
-            alpha = r
-        else:
-            # Convert to RGB first
-            mask_pil = mask_pil.convert("RGB")
-            r, _, _ = mask_pil.split()
-            alpha = r
+        # Extract appropriate channel as alpha
+        match mask_pil.mode:
+            case "RGB":
+                # For RGB masks (like PaintMask output), use red channel
+                r, _, _ = mask_pil.split()
+                alpha = r
+            case "RGBA":
+                # For RGBA masks, use alpha channel (proper approach)
+                _, _, _, a = mask_pil.split()
+                alpha = a
+            case "L":
+                # Grayscale image - use the grayscale channel directly
+                alpha = mask_pil
+            case "LA":
+                # Grayscale with alpha - use alpha channel
+                _, a = mask_pil.split()
+                alpha = a
+            case _:
+                # Convert to RGB first
+                mask_pil = mask_pil.convert("RGB")
+                r, _, _ = mask_pil.split()
+                alpha = r
 
-        # Resize alpha to match input image size
+                # Resize alpha to match input image size
         alpha = alpha.resize(input_pil.size, Image.Resampling.NEAREST)
 
         # Apply alpha channel to input image
