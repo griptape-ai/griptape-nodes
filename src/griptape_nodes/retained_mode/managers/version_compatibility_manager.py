@@ -15,7 +15,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, Version
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibrarySchema
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
-    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+    from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -24,7 +24,7 @@ class LibraryVersionCompatibilityIssue(NamedTuple):
     """Represents a library version compatibility issue found in a library."""
 
     message: str
-    severity: LibraryManager.LibraryStatus
+    severity: LibraryStatus
 
 
 class LibraryVersionCompatibilityCheck(ABC):
