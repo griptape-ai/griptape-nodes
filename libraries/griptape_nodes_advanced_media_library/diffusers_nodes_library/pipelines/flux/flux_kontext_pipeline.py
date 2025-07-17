@@ -18,6 +18,7 @@ from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLora
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.utils.fp8_ops import (
+    is_fp8_converted,
     replace_attention_layers_with_fp8,
     replace_linear_with_fp8,
 )
@@ -66,9 +67,13 @@ class FluxKontextPipeline(ControlNode):
                 torch_dtype=torch.bfloat16,
                 local_files_only=True,
             )
-            # Cast layers to fp8
-            pipe.transformer = replace_linear_with_fp8(pipe.transformer)
-            pipe.transformer = replace_attention_layers_with_fp8(pipe.transformer)
+            # Cast layers to fp8 if not already converted
+            if not is_fp8_converted(pipe.transformer):
+                self.log_params.append_to_logs("Converting transformer layers to FP8...\n")
+                pipe.transformer = replace_linear_with_fp8(pipe.transformer)
+                pipe.transformer = replace_attention_layers_with_fp8(pipe.transformer)
+            else:
+                self.log_params.append_to_logs("Transformer already converted to FP8, skipping conversion...\n")
 
         with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
             optimize_flux_kontext_pipeline_memory_footprint(pipe)

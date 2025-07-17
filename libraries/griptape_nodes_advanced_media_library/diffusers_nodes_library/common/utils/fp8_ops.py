@@ -5,6 +5,67 @@ from torch import nn
 from torch.nn import functional
 
 
+def is_fp8_converted(module: nn.Module) -> bool:
+    """Check if a module has already been converted to FP8.
+    
+    Args:
+        module: The module to check
+        
+    Returns:
+        True if the module contains FP8 layers, False otherwise
+    """
+    for child in module.modules():
+        if isinstance(child, (FP8Linear, FP8LinearCompatible)):
+            return True
+        if isinstance(child, nn.Linear):
+            # Check if weights are in FP8 format
+            if child.weight.dtype == torch.float8_e4m3fn:
+                return True
+    return False
+
+
+def has_fp8_layers(module: nn.Module) -> bool:
+    """Check if a module contains any FP8 layers (alias for is_fp8_converted)."""
+    return is_fp8_converted(module)
+
+
+def get_fp8_conversion_info(module: nn.Module) -> dict[str, Any]:
+    """Get detailed information about FP8 conversion status.
+    
+    Args:
+        module: The module to analyze
+        
+    Returns:
+        Dictionary with conversion information
+    """
+    fp8_layers = 0
+    fp8_linear_layers = 0
+    fp8_compatible_layers = 0
+    regular_linear_layers = 0
+    
+    for child in module.modules():
+        if isinstance(child, FP8Linear):
+            fp8_layers += 1
+            fp8_linear_layers += 1
+        elif isinstance(child, FP8LinearCompatible):
+            fp8_layers += 1
+            fp8_compatible_layers += 1
+        elif isinstance(child, nn.Linear):
+            if child.weight.dtype == torch.float8_e4m3fn:
+                fp8_layers += 1
+            else:
+                regular_linear_layers += 1
+    
+    return {
+        "is_fp8_converted": fp8_layers > 0,
+        "fp8_layers": fp8_layers,
+        "fp8_linear_layers": fp8_linear_layers,
+        "fp8_compatible_layers": fp8_compatible_layers,
+        "regular_linear_layers": regular_linear_layers,
+        "total_layers": fp8_layers + regular_linear_layers,
+    }
+
+
 class FP8Linear(nn.Module):
     """FP8 Linear layer that performs computation in FP8 precision using scaled matrix multiplication."""
 
@@ -140,8 +201,16 @@ def replace_linear_with_fp8(module: nn.Module, name: str = "") -> nn.Module:
     Returns:
         The modified module with FP8Linear layers
     """
+    # Skip if already converted to avoid double-conversion
+    if is_fp8_converted(module):
+        return module
+        
     for attr_name, child in module.named_children():
         if isinstance(child, nn.Linear):
+            # Don't replace if already FP8Linear
+            if isinstance(child, (FP8Linear, FP8LinearCompatible)):
+                continue
+                
             # Replace Linear layer with FP8Linear
             fp8_linear = FP8Linear(
                 child.in_features, child.out_features, bias=child.bias is not None, device=child.weight.device
@@ -185,8 +254,16 @@ class FP8LinearCompatible(FP8Linear):
 
 def replace_linear_with_fp8_compatible(module: nn.Module, name: str = "") -> nn.Module:
     """Replace all Linear layers in a module with FP8LinearCompatible layers."""
+    # Skip if already converted to avoid double-conversion
+    if is_fp8_converted(module):
+        return module
+        
     for attr_name, child in module.named_children():
         if isinstance(child, nn.Linear):
+            # Don't replace if already FP8Linear
+            if isinstance(child, (FP8Linear, FP8LinearCompatible)):
+                continue
+                
             # Replace Linear layer with FP8LinearCompatible
             fp8_linear = FP8LinearCompatible(child.in_features, child.out_features, bias=child.bias is not None)
 
@@ -220,20 +297,15 @@ def enable_fp8_linear_layers_compatible(pipeline: Any) -> Any:
     return pipeline
 
 
-def replace_attention_layers_with_fp8(module: nn.Module, name: str = "") -> nn.Module:  # noqa: C901, PLR0912 Wanted to keep it from becoming a recursive function.
+def replace_attention_layers_with_fp8(module: nn.Module, name: str = "") -> nn.Module:
     """Replace only attention-related Linear layers with FP8Linear layers.
 
     Uses named_modules() to find all Linear layers in the hierarchy.
     """
-    # Store original module attributes to preserve them
-    original_attrs = {}
-    for attr_name in dir(module):
-        if not attr_name.startswith("_") and not callable(getattr(module, attr_name)):
-            try:
-                original_attrs[attr_name] = getattr(module, attr_name)
-            except (AttributeError, RuntimeError):
-                # Skip attributes that can't be accessed
-                continue
+    # Skip if already converted to avoid double-conversion
+    if is_fp8_converted(module):
+        return module
+        
     attention_keywords = {
         "to_q",
         "to_k",
@@ -250,6 +322,10 @@ def replace_attention_layers_with_fp8(module: nn.Module, name: str = "") -> nn.M
     modules_to_replace = []
     for child_name, child_module in module.named_modules():
         if isinstance(child_module, nn.Linear):
+            # Don't replace if already FP8Linear
+            if isinstance(child_module, (FP8Linear, FP8LinearCompatible)):
+                continue
+                
             # Check if this path contains attention keywords
             full_path = f"{name}.{child_name}" if name else child_name
             if any(keyword in full_path.lower() for keyword in attention_keywords):
@@ -270,31 +346,22 @@ def replace_attention_layers_with_fp8(module: nn.Module, name: str = "") -> nn.M
 
     # Replace the modules
     for parent, attr_name, child_module, _full_path in modules_to_replace:
-        if not isinstance(getattr(parent, attr_name), FP8Linear):  # Don't replace twice
-            fp8_linear = FP8Linear(
-                child_module.in_features,
-                child_module.out_features,
-                bias=child_module.bias is not None,
-                device=child_module.weight.device,
-            )
+        fp8_linear = FP8Linear(
+            child_module.in_features,
+            child_module.out_features,
+            bias=child_module.bias is not None,
+            device=child_module.weight.device,
+        )
 
-            # Batch copy weights and bias for efficiency
-            with torch.no_grad():
-                # Direct copy without intermediate conversions
-                fp8_linear.weight.data.copy_(child_module.weight.data.to(torch.float8_e4m3fn))
-                if child_module.bias is not None:
-                    fp8_linear.bias.data.copy_(child_module.bias.data.to(torch.float8_e4m3fn))
+        # Batch copy weights and bias for efficiency
+        with torch.no_grad():
+            # Direct copy without intermediate conversions
+            fp8_linear.weight.data.copy_(child_module.weight.data.to(torch.float8_e4m3fn))
+            if child_module.bias is not None:
+                fp8_linear.bias.data.copy_(child_module.bias.data.to(torch.float8_e4m3fn))
 
-            # Replace the module
-            setattr(parent, attr_name, fp8_linear)
-
-    for attr_name, attr_value in original_attrs.items():
-        if not hasattr(module, attr_name) or getattr(module, attr_name) is None:
-            try:
-                setattr(module, attr_name, attr_value)
-            except (AttributeError, RuntimeError):
-                # Skip attributes that can't be set
-                continue
+        # Replace the module
+        setattr(parent, attr_name, fp8_linear)
 
     return module
 
