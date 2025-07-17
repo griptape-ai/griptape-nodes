@@ -246,7 +246,7 @@ wheels = [
 
 [[package]]
 name = "exa-py"
-version = "1.14.16"
+version = "1.14.17"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -255,9 +255,9 @@ dependencies = [
     { name = "requests" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bd/68/20210185644f6cbf76e27ab5be671e70e902bc7b5350781c681d1b32af19/exa_py-1.14.16.tar.gz", hash = "sha256:6404775afe9eac83fdfb8cdf558f5206164c5550e54de90502a05fe96646c508", size = 34348, upload-time = "2025-07-10T01:47:42.384Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cd/93/e32ef50a86db487a5a8b5de9faf362dd84fbf657c87a32059b9a639a603b/exa_py-1.14.17.tar.gz", hash = "sha256:054513e12e513feb3037701f04387e1021d1145fc42c224dbbfd77eb55ed6171", size = 34961, upload-time = "2025-07-17T04:45:08.487Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/96/a75209c07e5da6b3b1baed29e1482f957067d8a20096e587a40a08232d79/exa_py-1.14.16-py3-none-any.whl", hash = "sha256:9774a5fe4113d1e4fc51cea1cfb1ae633cfcaf39d388dc54bd10b731a9524587", size = 44029, upload-time = "2025-07-10T01:47:40.916Z" },
+    { url = "https://files.pythonhosted.org/packages/37/17/6e7cbc7a0e290ea939ed050b55d24a2e1d1d1fa42c547c03b6a962417401/exa_py-1.14.17-py3-none-any.whl", hash = "sha256:e6893616cb33a970415f27921c1f2215bbf5930673dc79e3546ffa31d0e6038f", size = 44612, upload-time = "2025-07-17T04:45:07.075Z" },
 ]
 
 [[package]]
@@ -351,7 +351,7 @@ wheels = [
 [[package]]
 name = "griptape"
 version = "1.8.0"
-source = { git = "https://github.com/griptape-ai/griptape?rev=main#9bd5d21c6d6ebf2892f90586fb36550ba252bc12" }
+source = { git = "https://github.com/griptape-ai/griptape?rev=main#da865595748cceeda3230a1b38d474dd8395becd" }
 dependencies = [
     { name = "attrs" },
     { name = "filetype" },
@@ -664,11 +664,11 @@ wheels = [
 
 [[package]]
 name = "json-repair"
-version = "0.47.7"
+version = "0.47.8"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/8f/91/4fb4e2c3d4d1a59252ca1b32936b883d0cd9f1e03f07edb6005aed1dc4bc/json_repair-0.47.7.tar.gz", hash = "sha256:04a5469e50f7f61c7756ddf3370a56fa21cebc1258e3f6a1a3de988e521d5eb8", size = 34567, upload-time = "2025-07-13T08:46:21.739Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/17/01/3740b5c8b071ede9407d3cc03391821c8efebb106b511c11bc755d0babc0/json_repair-0.47.8.tar.gz", hash = "sha256:b8d04163d7d5a628278796c8ccbc199bf234e1d365b10c809485416def796944", size = 34703, upload-time = "2025-07-17T08:48:16.988Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d4/ae/c8ac14cf7922be8908da2490ce5e37a69c593017ec57698afe04cd1567dc/json_repair-0.47.7-py3-none-any.whl", hash = "sha256:b2b5c9432289434730ef8b134a73602325fa689db323d6021249f363a7dd23c0", size = 26189, upload-time = "2025-07-13T08:46:20.639Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/db/ac81144b2bf914c46d878d47082984e5617e41a3be01006fea4c2ad54268/json_repair-0.47.8-py3-none-any.whl", hash = "sha256:13c487ff3f4e27f72774146525b7528e36d9108a0bf71934f94e334f7a46c67c", size = 26311, upload-time = "2025-07-17T08:48:15.895Z" },
 ]
 
 [[package]]
