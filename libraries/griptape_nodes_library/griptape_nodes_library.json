@@ -904,6 +904,16 @@
       }
     },
     {
+      "class_name": "ApplyMask",
+      "file_path": "griptape_nodes_library/image/apply_mask.py",
+      "metadata": {
+        "category": "image",
+        "description": "Apply a mask to an image.",
+        "display_name": "Apply Mask",
+        "group": "mask"
+      }
+    },
+    {
       "class_name": "PaintMask",
       "file_path": "griptape_nodes_library/image/paint_mask.py",
       "metadata": {
