@@ -176,8 +176,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
         # Initialize only if our managers haven't been created yet
         if not hasattr(self, "_event_manager"):
             self._event_manager = EventManager()
-            self._os_manager = OSManager(self._event_manager)
             self._config_manager = ConfigManager(self._event_manager)
+            self._os_manager = OSManager(self._event_manager)
             self._secrets_manager = SecretsManager(self._config_manager, self._event_manager)
             self._object_manager = ObjectManager(self._event_manager)
             self._node_manager = NodeManager(self._event_manager)
@@ -298,6 +298,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def ConfigManager(cls) -> ConfigManager:
         return GriptapeNodes.get_instance()._config_manager
+
+    @classmethod
+    def OSManager(cls) -> OSManager:
+        return GriptapeNodes.get_instance()._os_manager
 
     @classmethod
     def SecretsManager(cls) -> SecretsManager:
