@@ -353,8 +353,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
     def on_app_connection_established(self, _payload: AppConnectionEstablished) -> None:
         from griptape_nodes.app.app import subscribe_to_topic
 
-        logger.info("API connection successfully established.")
-
         # Subscribe to request topic (engine discovery)
         subscribe_to_topic("request")
 
