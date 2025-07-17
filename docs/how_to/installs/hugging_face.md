@@ -102,9 +102,9 @@ Each Hugging Face node is designed to work with specific models. While some node
 
 | Node                      | Compatible Model(s)        |
 | ------------------------- | -------------------------- |
-| SPAN Upscale    | 4x-ClearRealityV1.pth      |
-| Flux              | FLUX.1-dev, FLUX.1-schnell |
-| Flux Post Upscale | FLUX.1-dev, FLUX.1-schnell |
+| SPAN Upscale              | 4x-ClearRealityV1.pth      |
+| Flux                      | FLUX.1-dev, FLUX.1-schnell |
+| Flux Post Upscale         | FLUX.1-dev, FLUX.1-schnell |
 
 ## Model Installation Considerations
 
