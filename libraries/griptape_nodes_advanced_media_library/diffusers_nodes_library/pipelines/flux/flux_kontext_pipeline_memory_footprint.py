@@ -32,7 +32,7 @@ def _check_cuda_memory_sufficient(pipe: diffusers.FluxKontextPipeline, device: t
     model_memory = get_total_memory_footprint(pipe, FLUX_KONTEXT_PIPELINE_COMPONENT_NAMES)
     total_memory = torch.cuda.get_device_properties(device).total_memory
     free_memory = total_memory - torch.cuda.memory_allocated(device)
-    return model_memory <= free_memory
+    return model_memory * 3 <= free_memory
 
 
 def _check_mps_memory_sufficient(pipe: diffusers.FluxKontextPipeline) -> bool:
@@ -40,7 +40,7 @@ def _check_mps_memory_sufficient(pipe: diffusers.FluxKontextPipeline) -> bool:
     model_memory = get_total_memory_footprint(pipe, FLUX_KONTEXT_PIPELINE_COMPONENT_NAMES)
     recommended_max_memory = torch.mps.recommended_max_memory()
     free_memory = recommended_max_memory - torch.mps.current_allocated_memory()
-    return model_memory <= free_memory
+    return model_memory * 3 <= free_memory
 
 
 def _log_memory_info(pipe: diffusers.FluxKontextPipeline, device: torch.device) -> None:
@@ -69,6 +69,11 @@ def optimize_flux_kontext_pipeline_memory_footprint(pipe: diffusers.FluxKontextP
     if device.type == "cuda":
         _log_memory_info(pipe, device)
 
+        logger.info("Enabling fp8 layerwise casting for transformer")
+        pipe.transformer.enable_layerwise_casting(
+            storage_dtype=torch.float8_e4m3fn,
+            compute_dtype=torch.bfloat16,
+        )
         if _check_cuda_memory_sufficient(pipe, device):
             logger.info("Sufficient memory on %s for Pipeline.", device)
             logger.info("Moving pipeline to %s", device)
@@ -76,13 +81,6 @@ def optimize_flux_kontext_pipeline_memory_footprint(pipe: diffusers.FluxKontextP
             return
 
         logger.warning("Insufficient memory on %s for Pipeline. Applying VRAM optimizations.", device)
-
-        # Apply fp8 layerwise caching
-        logger.info("Enabling fp8 layerwise caching for transformer")
-        pipe.transformer.enable_layerwise_casting(
-            storage_dtype=torch.float8_e4m3fn,
-            compute_dtype=torch.bfloat16,
-        )
 
         if _check_cuda_memory_sufficient(pipe, device):
             logger.info("Sufficient memory after fp8 optimization. Moving pipeline to %s", device)
