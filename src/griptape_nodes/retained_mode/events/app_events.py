@@ -84,6 +84,12 @@ class AppInitializationComplete(AppPayload):
 
 @dataclass
 @PayloadRegistry.register
+class AppConnectionEstablished(AppPayload):
+    """Notification that a connection to the API has been established."""
+
+
+@dataclass
+@PayloadRegistry.register
 class GetEngineVersionRequest(RequestPayload):
     """Get the engine version information.
 
