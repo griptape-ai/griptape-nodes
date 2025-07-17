@@ -210,6 +210,12 @@ class OSManager:
         Returns:
             True if cleanup was performed, False otherwise
         """
+        if max_size_gb < 0:
+            logger.warning(
+                "Asked to clean up directory to be below a negative threshold. Overriding to a size of 0 GB."
+            )
+            max_size_gb = 0
+
         # Calculate current directory size
         current_size_gb = OSManager._get_directory_size_gb(full_directory_path)
 
