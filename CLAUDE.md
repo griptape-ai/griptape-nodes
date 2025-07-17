@@ -142,9 +142,7 @@ The `RetainedMode` class in `retained_mode/retained_mode.py` provides the script
 
 **Bootstrap System:**
 
-- `bootstrap/register_libraries_script.py` handles library discovery and registration
-- Workflow runners in `bootstrap/workflow_runners/` for different execution contexts
-- Structure defined in `bootstrap/structure_config.yaml`
+- Workflow executors in `bootstrap/workflow_executors/` for different execution contexts
 
 ## Profiling (Optional)
 
