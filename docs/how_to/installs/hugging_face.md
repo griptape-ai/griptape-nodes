@@ -102,9 +102,9 @@ Each Hugging Face node is designed to work with specific models. While some node
 
 | Node                      | Compatible Model(s)        |
 | ------------------------- | -------------------------- |
-| TilingSpandrelPipeline    | 4x-ClearRealityV1.pth      |
-| FluxPipeline              | FLUX.1-dev, FLUX.1-schnell |
-| TilingFluxImg2ImgPipeline | FLUX.1-dev, FLUX.1-schnell |
+| SPAN Upscale    | 4x-ClearRealityV1.pth      |
+| Flux              | FLUX.1-dev, FLUX.1-schnell |
+| Flux Post Upscale | FLUX.1-dev, FLUX.1-schnell |
 
 ## Model Installation Considerations
 
@@ -140,13 +140,13 @@ You have two options for model installation. Your choice depends on your specifi
     - HF_HUB_CACHE: /Users/jason/.cache/huggingface/hub
     ```
 
-#### For TilingSpandrelPipeline
+#### For SPAN Upscale
 
 ```bash
 huggingface-cli download skbhadra/ClearRealityV1 4x-ClearRealityV1.pth
 ```
 
-#### For FluxPipeline and TilingFluxImg2ImgPipeline
+#### For Flux and Flux Post Upscale
 
 ```bash
 huggingface-cli download black-forest-labs/FLUX.1-schnell
