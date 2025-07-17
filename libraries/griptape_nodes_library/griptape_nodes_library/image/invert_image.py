@@ -5,6 +5,7 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
@@ -64,28 +65,35 @@ class InvertImage(DataNode):
 
     def _invert_image(self, image_artifact: ImageUrlArtifact) -> None:
         """Invert the input image and set as output."""
-        # Load image
-        image_pil = load_pil_from_url(image_artifact.value)
+        try:
+            # Load image
+            image_pil = load_pil_from_url(image_artifact.value)
 
-        # Invert the image based on its mode
-        if image_pil.mode == "RGBA":
-            # For RGBA images, invert RGB channels but keep alpha
-            rgb_image = image_pil.convert("RGB")
-            inverted_rgb = Image.eval(rgb_image, lambda x: 255 - x)
-            # Convert back to RGBA and preserve original alpha
-            inverted_image = inverted_rgb.convert("RGBA")
-            # Copy original alpha channel
-            original_alpha = image_pil.getchannel("A")
-            inverted_image.putalpha(original_alpha)
-        elif image_pil.mode != "RGB":
-            # Convert to RGB for other modes
-            image_to_invert = image_pil.convert("RGB")
-            inverted_image = Image.eval(image_to_invert, lambda x: 255 - x)
-        else:
-            # Already RGB, invert directly
-            inverted_image = Image.eval(image_pil, lambda x: 255 - x)
+            # Invert the image based on its mode
+            match image_pil.mode:
+                case "RGBA":
+                    # For RGBA images, invert RGB channels but keep alpha
+                    rgb_image = image_pil.convert("RGB")
+                    inverted_rgb = Image.eval(rgb_image, lambda x: 255 - x)
+                    # Convert back to RGBA and preserve original alpha
+                    inverted_image = inverted_rgb.convert("RGBA")
+                    # Copy original alpha channel
+                    original_alpha = image_pil.getchannel("A")
+                    inverted_image.putalpha(original_alpha)
+                case "RGB":
+                    # Already RGB, invert directly
+                    inverted_image = Image.eval(image_pil, lambda x: 255 - x)
+                case _:
+                    # Convert to RGB for other modes
+                    image_to_invert = image_pil.convert("RGB")
+                    inverted_image = Image.eval(image_to_invert, lambda x: 255 - x)
 
-        # Save output image and create URL artifact
-        output_artifact = save_pil_image_to_static_file(inverted_image, image_format="PNG")
-        self.set_parameter_value("output", output_artifact)
-        self.publish_update_to_parameter("output", output_artifact)
+            # Save output image and create URL artifact
+            output_artifact = save_pil_image_to_static_file(inverted_image, image_format="PNG")
+            self.set_parameter_value("output", output_artifact)
+            self.publish_update_to_parameter("output", output_artifact)
+
+        except Exception as e:
+            # Log the error and set a meaningful error message
+            error_msg = f"Failed to invert image: {e!s}"
+            logger.error(f"{self.name}: {error_msg}")
