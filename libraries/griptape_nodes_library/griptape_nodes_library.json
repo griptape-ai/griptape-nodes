@@ -873,6 +873,16 @@
       }
     },
     {
+      "class_name": "InvertImage",
+      "file_path": "griptape_nodes_library/image/invert_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Invert a full image (creates a negative).",
+        "display_name": "Invert Image",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "LoadImage",
       "file_path": "griptape_nodes_library/image/load_image.py",
       "metadata": {

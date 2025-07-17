@@ -119,6 +119,7 @@ nav:
         - Generate Image: nodes/image/create_image.md
         - Describe Image: nodes/image/describe_image.md
         - Display Image: nodes/image/display_image.md
+        - Invert Image: nodes/image/invert_image.md
     - Lists:
         - Create List: nodes/lists/create_list.md
         - Add To List: nodes/lists/add_to_list.md

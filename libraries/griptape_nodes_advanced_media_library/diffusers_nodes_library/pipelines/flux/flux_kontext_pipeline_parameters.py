@@ -9,13 +9,13 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
     pil_to_image_artifact,
 )
+from utils.directory_utils import check_cleanup_intermediates_directory, get_intermediates_directory_path
 from utils.image_utils import load_image_from_url_artifact
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -31,14 +31,6 @@ class FluxKontextPipelineParameters:
             ],
         )
         self._seed_parameter = SeedParameter(node)
-
-    def _get_temp_directory_path(self) -> str:
-        """Get the configured temp directory path for this library."""
-        # Get configured temp folder name, default to "intermediates"
-        temp_folder_name = GriptapeNodes.ConfigManager().get_config_value("advanced_media_library.temp_folder_name")
-        if temp_folder_name is None:
-            temp_folder_name = "intermediates"
-        return temp_folder_name
 
     def add_input_parameters(self) -> None:
         self._huggingface_repo_parameter.add_input_parameters()
@@ -289,11 +281,15 @@ class FluxKontextPipelineParameters:
         }
 
     def publish_output_image_preview_placeholder(self) -> None:
+        # Check to ensure there's enough space in the intermediates directory
+        # if that setting is enabled.
+        check_cleanup_intermediates_directory()
+
         width, height = self.get_effective_size()
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
         self._node.publish_update_to_parameter(
             "output_image",
-            pil_to_image_artifact(preview_placeholder_image, directory_path=self._get_temp_directory_path()),
+            pil_to_image_artifact(preview_placeholder_image, directory_path=get_intermediates_directory_path()),
         )
 
     def latents_to_image_pil(self, pipe: diffusers.FluxKontextPipeline, latents: Any) -> Image:
@@ -305,9 +301,13 @@ class FluxKontextPipelineParameters:
         return intermediate_pil_image
 
     def publish_output_image_preview_latents(self, pipe: diffusers.FluxKontextPipeline, latents: Any) -> None:
+        # Check to ensure there's enough space in the intermediates directory
+        # if that setting is enabled.
+        check_cleanup_intermediates_directory()
+
         preview_image_pil = self.latents_to_image_pil(pipe, latents)
         preview_image_artifact = pil_to_image_artifact(
-            preview_image_pil, directory_path=self._get_temp_directory_path()
+            preview_image_pil, directory_path=get_intermediates_directory_path()
         )
         self._node.publish_update_to_parameter("output_image", preview_image_artifact)
 

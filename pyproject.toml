@@ -49,8 +49,8 @@ griptape-nodes = "griptape_nodes:main"
 gtn = "griptape_nodes:main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build"]
+build-backend = "uv_build"
 
 [tool.ruff]
 line-length = 120

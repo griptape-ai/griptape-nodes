@@ -10,6 +10,7 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,  # type: ignore[reportMissingImports]
     pil_to_image_artifact,  # type: ignore[reportMissingImports]
 )
+from utils.directory_utils import check_cleanup_intermediates_directory, get_intermediates_directory_path
 from utils.image_utils import load_image_from_url_artifact
 
 from diffusers_nodes_library.common.misc.tiling_image_processor import (
@@ -29,7 +30,6 @@ from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -108,14 +108,6 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         self.flux_params.add_output_parameters()
         self.log_params.add_output_parameters()
 
-    def _get_temp_directory_path(self) -> str:
-        """Get the configured temp directory path for this library."""
-        # Get configured temp folder name, default to "intermediates"
-        temp_folder_name = GriptapeNodes.ConfigManager().get_config_value("advanced_media_library.temp_folder_name")
-        if temp_folder_name is None:
-            temp_folder_name = "intermediates"
-        return temp_folder_name
-
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         self.flux_params.after_value_set(parameter, value)
 
@@ -144,13 +136,17 @@ class TilingFluxImg2ImgPipeline(ControlNode):
         input_image_pil = image_artifact_to_pil(input_image_artifact)
         input_image_pil = input_image_pil.convert("RGB")
 
+        # Check to ensure there's enough space in the intermediates directory
+        # if that setting is enabled.
+        check_cleanup_intermediates_directory()
+
         # The output image will be the same size as the input image.
         # Immediately set a preview placeholder image to make it react quickly and adjust
         # the size of the image preview on the node.
         preview_placeholder_image = PIL.Image.new("RGB", input_image_pil.size, color="black")
         self.publish_update_to_parameter(
             "output_image",
-            pil_to_image_artifact(preview_placeholder_image, directory_path=self._get_temp_directory_path()),
+            pil_to_image_artifact(preview_placeholder_image, directory_path=get_intermediates_directory_path()),
         )
 
         # Adjust tile size so that it is not much bigger than the input image.
@@ -202,6 +198,11 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                     # Generate a preview image if this is not yet the last step.
                     # That would be redundant, since the pipeline automatically
                     # does that for the last step.
+
+                    # Check to ensure there's enough space in the intermediates directory
+                    # if that setting is enabled.
+                    check_cleanup_intermediates_directory()
+
                     latents = callback_kwargs["latents"]
                     latents = pipe._unpack_latents(latents, tile_size, tile_size, pipe.vae_scale_factor)
                     latents = (latents / pipe.vae.config.scaling_factor) + pipe.vae.config.shift_factor
@@ -214,7 +215,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
                     self.publish_update_to_parameter(
                         "output_image",
                         pil_to_image_artifact(
-                            preview_image_with_partial_tile, directory_path=self._get_temp_directory_path()
+                            preview_image_with_partial_tile, directory_path=get_intermediates_directory_path()
                         ),
                     )
                     self.append_value_to_parameter(
@@ -252,9 +253,13 @@ class TilingFluxImg2ImgPipeline(ControlNode):
 
         def callback_on_tile_end(i: int, preview_image_pil: Image) -> None:
             if i < num_tiles:
+                # Check to ensure there's enough space in the intermediates directory
+                # if that setting is enabled.
+                check_cleanup_intermediates_directory()
+
                 self.publish_update_to_parameter(
                     "output_image",
-                    pil_to_image_artifact(preview_image_pil, directory_path=self._get_temp_directory_path()),
+                    pil_to_image_artifact(preview_image_pil, directory_path=get_intermediates_directory_path()),
                 )
                 self.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")
                 self.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")

@@ -1,4 +1,4 @@
-# TilingSpandrelPipeline
+# SPAN Upscale
 
 !!! warning "You need to perform setup steps to use Hugging Face nodes"
 
@@ -6,7 +6,7 @@
 
 ## What is it?
 
-The TilingSpandrelPipeline node is designed to upscale images using the Spandrel model with a tiling approach. It processes images by dividing them into smaller tiles, applying the model to each tile, and then reconstructing the final upscaled image.
+The SPAN Upscale node is designed to upscale images using the Spandrel model with a tiling approach. It processes images by dividing them into smaller tiles, applying the model to each tile, and then reconstructing the final upscaled image.
 
 ## When would I use it?
 
@@ -21,7 +21,7 @@ Use this node when you need to:
 
 ### Basic Setup
 
-1. Add the TilingSpandrelPipeline node to your workflow
+1. Add the SPAN Upscale node to your workflow
 1. Connect an image source to the "input_image" parameter
 1. Set the desired model in the "model" parameter
 1. Optionally configure additional parameters such as "scale", "tile_size", "tile_overlap", and "tile_strategy"
