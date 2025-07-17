@@ -72,11 +72,11 @@ class ApplyMask(DataNode):
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name in ["input_image", "input_mask"] and value is not None:
-            self._handle_parameter_change(parameter.name, value)
+            self._handle_parameter_change()
 
         return super().after_value_set(parameter, value)
 
-    def _handle_parameter_change(self, parameter_name: str, value: Any) -> None:
+    def _handle_parameter_change(self) -> None:
         # Get both current values
         input_image = self.get_parameter_value("input_image")
         input_mask = self.get_parameter_value("input_mask")
