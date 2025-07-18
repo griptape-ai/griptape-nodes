@@ -105,7 +105,7 @@ def load_image_from_url_artifact(image_url_artifact: ImageUrlArtifact) -> ImageA
     return ImageLoader().parse(image_bytes)
 
 
-def extract_channel_from_image(image: Image.Image, channel: str, context_name: str = "image") -> Image.Image:
+def extract_channel_from_image(image: Image.Image, channel: str, context_name: str = "image") -> Image.Image:  # noqa: C901, PLR0911, PLR0912
     """Extract the specified channel from an image.
 
     Args:
