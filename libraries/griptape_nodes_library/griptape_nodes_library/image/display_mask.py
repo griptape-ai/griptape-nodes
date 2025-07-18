@@ -139,8 +139,8 @@ class DisplayMask(DataNode):
                     _, a = image_pil.split()
                     return a
                 # Use grayscale channel
-                l, _ = image_pil.split()
-                return l
+                gray, _ = image_pil.split()
+                return gray
             case _:
                 msg = f"{self.name}: Unsupported image mode: {image_pil.mode}"
                 raise ValueError(msg)

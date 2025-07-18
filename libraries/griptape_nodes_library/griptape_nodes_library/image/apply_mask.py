@@ -155,8 +155,8 @@ class ApplyMask(DataNode):
                     _, a = mask_pil.split()
                     return a
                 # Use grayscale channel
-                l, _ = mask_pil.split()
-                return l
+                gray, _ = mask_pil.split()
+                return gray
             case _:
                 msg = f"{self.name}: Unsupported mask mode: {mask_pil.mode}"
                 raise ValueError(msg)
