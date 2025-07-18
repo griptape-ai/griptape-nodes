@@ -28,13 +28,15 @@ Use this node when you want to:
 ### Parameters
 
 - **input_image**: The image to apply the mask to (can be connected from other image nodes)
+
 - **input_mask**: The mask to apply (can be connected from mask nodes like DisplayMask, PaintMask, or InvertMask)
+
 - **channel**: Which channel to use from the mask image:
 
-  - **red**: Use the red channel (default, compatible with PaintMask output)
-  - **green**: Use the green channel
-  - **blue**: Use the blue channel  
-  - **alpha**: Use the alpha channel (when available)
+    - **red**: Use the red channel (default, compatible with PaintMask output)
+    - **green**: Use the green channel
+    - **blue**: Use the blue channel
+    - **alpha**: Use the alpha channel (when available)
 
 ### Outputs
 
@@ -56,13 +58,16 @@ A common workflow pattern:
 
 - **Channel Selection**: Choose the channel that contains your mask data:
 
-  - **PaintMask output**: Usually use "red" channel
-  - **RGBA masks with alpha data**: Use "alpha" channel
-  - **Custom masks**: Try different channels to see which works best
-  
+    - **PaintMask output**: Usually use "red" channel
+    - **RGBA masks with alpha data**: Use "alpha" channel
+    - **Custom masks**: Try different channels to see which works best
+
 - **Mask Processing**: The mask is automatically resized to match the input image dimensions
+
 - **RGBA Output**: The final image is converted to RGBA format to support transparency
+
 - **Real-time Processing**: The node processes immediately when both inputs are available
+
 - **Output Format**: The masked image is saved as a PNG file to preserve transparency
 
 ## Common Issues
@@ -77,15 +82,18 @@ A common workflow pattern:
 The node processes the mask and image through several steps:
 
 - **Image Loading**: Loads both the input image and mask from their URLs
+
 - **Channel Extraction**: Extracts the specified channel from the mask image:
 
-  - RGB images: Can extract red, green, or blue channels
-  - RGBA images: Can extract red, green, blue, or alpha channels
-  - L (grayscale) images: Uses the grayscale channel directly
-  - LA images: Can extract alpha or grayscale channels
-  
+    - RGB images: Can extract red, green, or blue channels
+    - RGBA images: Can extract red, green, blue, or alpha channels
+    - L (grayscale) images: Uses the grayscale channel directly
+    - LA images: Can extract alpha or grayscale channels
+
 - **Resizing**: Resizes the extracted channel to match the input image dimensions
+
 - **Alpha Application**: Applies the channel as the alpha channel to the input image using `putalpha()`
+
 - **Output Generation**: Saves the result as a new RGBA image artifact
 
 The node handles different mask formats:

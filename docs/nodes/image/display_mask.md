@@ -47,7 +47,7 @@ A common workflow pattern:
 
 - **alpha**: Extracts the transparency channel (default) - useful for seeing which parts of an image are transparent
 - **red**: Extracts the red color channel - useful for isolating red elements in an image
-- **green**: Extracts the green color channel - useful for isolating green elements in an image  
+- **green**: Extracts the green color channel - useful for isolating green elements in an image
 - **blue**: Extracts the blue color channel - useful for isolating blue elements in an image
 
 ## Important Notes
