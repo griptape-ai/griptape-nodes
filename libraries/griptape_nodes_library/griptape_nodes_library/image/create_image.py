@@ -18,6 +18,7 @@ API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 MODEL_CHOICES = [
     "dall-e-3",
+    "gpt-image-1"
 ]
 DEFAULT_MODEL = MODEL_CHOICES[0]
 DEFAULT_QUALITY = "hd"
