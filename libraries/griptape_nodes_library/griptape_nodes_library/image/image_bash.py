@@ -31,7 +31,6 @@ class ImageBash(DataNode):
         self.base_canvas = Parameter(
             name="base_canvas",
             default_value=BASE_CANVAS_OPTIONS[0],
-            input_types=["string", "ImageArtifact", "ImageUrlArtifact"],
             type="string",
             tooltip="The size of the image to create, or connect a base image to use as a canvas",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -366,10 +365,12 @@ class ImageBash(DataNode):
         if parameter.name == "base_canvas":
             if value == "custom":
                 width_ui_options = self.canvas_width.ui_options
+                self.canvas_width.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY}
                 width_ui_options["ghost"] = False
                 self.canvas_width.ui_options = width_ui_options
 
                 height_ui_options = self.canvas_height.ui_options
+                self.canvas_height.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY}
                 height_ui_options["ghost"] = False
                 self.canvas_height.ui_options = height_ui_options
 
@@ -377,10 +378,12 @@ class ImageBash(DataNode):
                 self.publish_update_to_parameter("height", self.canvas_height.default_value)
             elif isinstance(value, str) and value in CANVAS_DIMENSIONS:
                 width_ui_options = self.canvas_width.ui_options
+                self.canvas_width.allowed_modes = {ParameterMode.PROPERTY}
                 width_ui_options["ghost"] = True
                 self.canvas_width.ui_options = width_ui_options
 
                 height_ui_options = self.canvas_height.ui_options
+                self.canvas_height.allowed_modes = {ParameterMode.PROPERTY}
                 height_ui_options["ghost"] = True
                 self.canvas_height.ui_options = height_ui_options
 
