@@ -1,5 +1,5 @@
-from typing import Any
 import uuid
+from typing import Any
 
 import requests
 from griptape.artifacts import BaseArtifact, ImageUrlArtifact
