@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, cast
 import uv
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import ValidationError
+from rich.align import Align
 from rich.box import HEAVY_EDGE
 from rich.console import Console
 from rich.panel import Panel
@@ -101,6 +102,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
+console = Console()
 
 
 def _find_griptape_uv_bin() -> str:
@@ -1548,6 +1550,9 @@ class LibraryManager:
         self._remove_missing_libraries_from_config(config_category=user_libraries_section)
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+        GriptapeNodes.EngineIdentityManager().initialize_engine_id()
+        GriptapeNodes.SessionManager().get_saved_session_id()
+
         # App just got init'd. See if there are library JSONs to load!
         self.load_all_libraries_from_config()
 
@@ -1585,6 +1590,34 @@ class LibraryManager:
 
         # Go tell the Workflow Manager that it's turn is now.
         GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
+
+        # Print the engine ready message
+        engine_version_request = GetEngineVersionRequest()
+        engine_version_result = GriptapeNodes.get_instance().handle_engine_version_request(engine_version_request)
+        if isinstance(engine_version_result, GetEngineVersionResultSuccess):
+            engine_version = (
+                f"v{engine_version_result.major}.{engine_version_result.minor}.{engine_version_result.patch}"
+            )
+        else:
+            engine_version = "<UNKNOWN ENGINE VERSION>"
+
+        # Get current session ID
+        session_id = GriptapeNodes.get_session_id()
+        session_info = f" | Session: {session_id[:8]}..." if session_id else " | No Session"
+
+        nodes_app_url = os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai")
+        message = Panel(
+            Align.center(
+                f"[bold green]Engine is ready to receive events[/bold green]\n"
+                f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link] to access the Workflow Editor[/bold blue]",
+                vertical="middle",
+            ),
+            title="🚀 Griptape Nodes Engine Started",
+            subtitle=f"[green]{engine_version}{session_info}[/green]",
+            border_style="green",
+            padding=(1, 4),
+        )
+        console.print(message)
 
     def _load_advanced_library_module(
         self,

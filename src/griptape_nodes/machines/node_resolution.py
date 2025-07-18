@@ -4,7 +4,7 @@ import logging
 from collections.abc import Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from griptape.events import EventBus
 from griptape.utils import with_contextvars
@@ -31,10 +31,6 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
 
-if TYPE_CHECKING:
-    from griptape_nodes.exe_types.flow import ControlFlow
-
-
 logger = logging.getLogger("griptape_nodes")
 
 
@@ -47,12 +43,10 @@ class Focus:
 
 # This is on a per-node basis
 class ResolutionContext:
-    flow: ControlFlow
     focus_stack: list[Focus]
     paused: bool
 
-    def __init__(self, flow: ControlFlow) -> None:
-        self.flow = flow
+    def __init__(self) -> None:
         self.focus_stack = []
         self.paused = False
 
@@ -90,7 +84,9 @@ class InitializeSpotlightState(State):
         if current_node.state == NodeResolutionState.UNRESOLVED:
             # Mark all future nodes unresolved.
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/862
-            context.flow.connections.unresolve_future_nodes(current_node)
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(current_node)
             current_node.initialize_spotlight()
         # Set node to resolving - we are now resolving this node.
         current_node.state = NodeResolutionState.RESOLVING
@@ -132,7 +128,9 @@ class EvaluateParameterState(State):
     def on_update(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         current_parameter = current_node.get_current_parameter()
-        connections = context.flow.connections
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections = GriptapeNodes.FlowManager().get_connections()
         if current_parameter is None:
             msg = "No current parameter set."
             raise ValueError(msg)
@@ -270,7 +268,10 @@ class ExecuteNodeState(State):
             )
             current_focus.process_generator = None
             current_focus.scheduled_value = None
-            context.flow.cancel_flow_run()
+
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            GriptapeNodes.FlowManager().cancel_flow_run()
 
             EventBus.publish_event(
                 ExecutionGriptapeNodeEvent(
@@ -320,7 +321,7 @@ class ExecuteNodeState(State):
                 )
             )
             # Pass the value through to the new nodes.
-            conn_output_nodes = context.flow.get_connected_output_parameters(current_node, parameter)
+            conn_output_nodes = GriptapeNodes.FlowManager().get_connected_output_parameters(current_node, parameter)
             for target_node, target_parameter in conn_output_nodes:
                 GriptapeNodes.get_instance().handle_request(
                     SetParameterValueRequest(
@@ -416,6 +417,7 @@ class ExecuteNodeState(State):
 
                 # Once we've passed on the scheduled value, we should clear it out just in case
                 current_focus.scheduled_value = None
+
                 future = ExecuteNodeState.executor.submit(with_contextvars(func))
                 future.add_done_callback(with_contextvars(on_future_done))
             except StopIteration:
@@ -445,8 +447,8 @@ class CompleteState(State):
 class NodeResolutionMachine(FSM[ResolutionContext]):
     """State machine for resolving node dependencies."""
 
-    def __init__(self, flow: ControlFlow) -> None:
-        resolution_context = ResolutionContext(flow)  # Gets the flow
+    def __init__(self) -> None:
+        resolution_context = ResolutionContext()
         super().__init__(resolution_context)
 
     def resolve_node(self, node: BaseNode) -> None:

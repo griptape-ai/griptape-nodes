@@ -79,7 +79,9 @@ class ForEachStartNode(StartLoopNode):
                 self._items = []
         # Get the current item and pass it along.
         # I need to unresolve all future nodes (all of them in the for each loop).
-        self._flow.connections.unresolve_future_nodes(self)
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(self)
         current_item_value = self._items[self.current_index]
         self.parameter_output_values["current_item"] = current_item_value
         self.set_parameter_value("index", self.current_index)

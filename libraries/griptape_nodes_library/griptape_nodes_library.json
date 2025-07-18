@@ -873,6 +873,16 @@
       }
     },
     {
+      "class_name": "InvertImage",
+      "file_path": "griptape_nodes_library/image/invert_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Invert a full image (creates a negative).",
+        "display_name": "Invert Image",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "LoadImage",
       "file_path": "griptape_nodes_library/image/load_image.py",
       "metadata": {
@@ -1313,15 +1323,6 @@
         "category": "convert",
         "description": "Convert an agent into a tool that another agent can use",
         "display_name": "Agent To Tool"
-      }
-    },
-    {
-      "class_name": "PublishedWorkflow",
-      "file_path": "griptape_nodes_library/workflows/published_workflow.py",
-      "metadata": {
-        "category": "workflows",
-        "description": "Use a published workflow within your graph",
-        "display_name": "Published Workflow"
       }
     },
     {

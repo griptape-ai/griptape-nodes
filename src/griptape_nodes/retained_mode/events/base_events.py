@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from griptape.artifacts import BaseArtifact
 from griptape.events import BaseEvent as GtBaseEvent
@@ -101,7 +101,7 @@ class AppPayload(Payload):
 
 
 # Type variables for our generic payloads
-P = TypeVar("P", bound=Payload)
+P = TypeVar("P", bound=RequestPayload)
 R = TypeVar("R", bound=ResultPayload)
 E = TypeVar("E", bound=ExecutionPayload)
 A = TypeVar("A", bound=AppPayload)
@@ -111,29 +111,11 @@ class BaseEvent(BaseModel, ABC):
     """Abstract base class for all events."""
 
     # Instance fields for engine and session identification
-    engine_id: str | None = Field(default=None)
-    session_id: str | None = Field(default=None)
+    _engine_id: ClassVar[str | None] = None
+    _session_id: ClassVar[str | None] = None
 
-    def model_post_init(self, _context: Any) -> None:
-        """Post-initialization hook to auto-populate session_id and engine_id if not provided.
-
-        context: The context in which the model is being initialized.
-
-        """
-        # Auto-populate engine_id from class variable if not explicitly provided
-        if self.engine_id is None:
-            # Import here to avoid circular imports
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            self.engine_id = GriptapeNodes.EngineIdentityManager().initialize_engine_id()
-
-        # Auto-populate session_id from class variable if not explicitly provided
-        if self.session_id is None:
-            # Import here to avoid circular imports
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            # Get current session ID
-            self.session_id = GriptapeNodes.SessionManager().get_saved_session_id()
+    engine_id: str | None = Field(default_factory=lambda: BaseEvent._engine_id)
+    session_id: str | None = Field(default_factory=lambda: BaseEvent._session_id)
 
     # Custom JSON encoder for the payload
     class Config:
@@ -199,7 +181,7 @@ class BaseEvent(BaseModel, ABC):
         """
 
 
-class EventRequest(BaseEvent, Generic[P]):
+class EventRequest[P: Payload](BaseEvent):
     """Request event."""
 
     request: P
@@ -263,7 +245,7 @@ class EventRequest(BaseEvent, Generic[P]):
         return cls(request=request_payload, **event_data)
 
 
-class EventResult(BaseEvent, Generic[P, R], ABC):
+class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
     """Abstract base class for result events."""
 
     request: P
@@ -447,7 +429,7 @@ def deserialize_event(json_data: str | dict | Any) -> BaseEvent:
 
 
 # EXECUTION EVENT BASE (this event type is used for the execution of a Griptape Nodes flow)
-class ExecutionEvent(BaseEvent, Generic[E]):
+class ExecutionEvent[E: ExecutionPayload](BaseEvent):
     payload: E
 
     def __init__(self, **data) -> None:
@@ -508,7 +490,7 @@ class ExecutionEvent(BaseEvent, Generic[E]):
 
 
 # Events sent as part of the lifecycle of the Griptape Nodes application.
-class AppEvent(BaseEvent, Generic[A]):
+class AppEvent[A: AppPayload](BaseEvent):
     payload: A
 
     def __init__(self, **data) -> None:

@@ -12,16 +12,27 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @dataclass
 @PayloadRegistry.register
 class OpenAssociatedFileRequest(RequestPayload):
+    """Open a file using the operating system's associated application.
+
+    Use when: Opening generated files, launching external applications,
+    providing file viewing capabilities, implementing file associations.
+
+    Args:
+        path_to_file: Path to the file to open with the associated application
+
+    Results: OpenAssociatedFileResultSuccess | OpenAssociatedFileResultFailure (file not found, no association)
+    """
+
     path_to_file: str
 
 
 @dataclass
 @PayloadRegistry.register
 class OpenAssociatedFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    pass
+    """File opened successfully with associated application."""
 
 
 @dataclass
 @PayloadRegistry.register
 class OpenAssociatedFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """File opening failed. Common causes: file not found, no associated application, permission denied."""

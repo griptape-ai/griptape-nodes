@@ -1,6 +1,6 @@
 [project]
 name = "griptape-nodes"
-version = "0.41.0"
+version = "0.42.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12.0, <3.13"
@@ -61,27 +61,28 @@ exclude = [".venv"]
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-  "TD002",  # Intentional
-  "FIX002", # Intentional
-  "D101",   # Intentional
-  "D102",   # Intentional
-  "D107",   # Intentional
-  "ANN002", # Intentional
-  "ANN003", # Intentional
-  "ANN401", # Intentional
-  "COM812", # Intentional
-  "E501",   # TODO: https://github.com/griptape-ai/griptape-nodes/issues/834 
-  "D100",   # TODO: https://github.com/griptape-ai/griptape-nodes/issues/835 
-  "BLE001", # TODO: https://github.com/griptape-ai/griptape-nodes/issues/839
-  "B026",   # TODO: https://github.com/griptape-ai/griptape-nodes/issues/836 
-  "SLF001", # TODO :https://github.com/griptape-ai/griptape-nodes/issues/838 
-  "SIM108", # Intentional
-  "SIM110", # Intentional
-  "D105",   # Intentional
-  "N802",   # TODO: https://github.com/griptape-ai/griptape-nodes/issues/840
-  "TRY400", # Intentional
-  "FBT003", # Intentional
-  "RET504", # Intentional
+  "TD002",   # Intentional
+  "FIX002",  # Intentional
+  "D101",    # Intentional
+  "D102",    # Intentional
+  "D107",    # Intentional
+  "ANN002",  # Intentional
+  "ANN003",  # Intentional
+  "ANN401",  # Intentional
+  "COM812",  # Intentional
+  "E501",    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/834 
+  "D100",    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/835 
+  "BLE001",  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/839
+  "B026",    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/836 
+  "SLF001",  # TODO :https://github.com/griptape-ai/griptape-nodes/issues/838 
+  "SIM108",  # Intentional
+  "SIM110",  # Intentional
+  "D105",    # Intentional
+  "N802",    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/840
+  "TRY400",  # Intentional
+  "FBT003",  # Intentional
+  "RET504",  # Intentional
+  "PLC0415", # Intentional
 ]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
