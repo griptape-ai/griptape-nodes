@@ -10,6 +10,7 @@ from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
+    extract_channel_from_image,
     save_pil_image_to_static_file,
 )
 
@@ -115,52 +116,6 @@ class ApplyMask(DataNode):
         response.raise_for_status()
         return Image.open(BytesIO(response.content))
 
-    def _extract_channel_as_alpha(self, mask_pil: Image.Image, channel: str) -> Image.Image:  # noqa: C901, PLR0911, PLR0912
-        """Extract the specified channel from the mask image."""
-        match mask_pil.mode:
-            case "RGB":
-                if channel == "red":
-                    r, _, _ = mask_pil.split()
-                    return r
-                if channel == "green":
-                    _, g, _ = mask_pil.split()
-                    return g
-                if channel == "blue":
-                    _, _, b = mask_pil.split()
-                    return b
-                # alpha not available in RGB, use red as fallback
-                r, _, _ = mask_pil.split()
-                return r
-            case "RGBA":
-                if channel == "red":
-                    r, _, _, _ = mask_pil.split()
-                    return r
-                if channel == "green":
-                    _, g, _, _ = mask_pil.split()
-                    return g
-                if channel == "blue":
-                    _, _, b, _ = mask_pil.split()
-                    return b
-                if channel == "alpha":
-                    _, _, _, a = mask_pil.split()
-                    return a
-                # Fallback to red channel
-                r, _, _, _ = mask_pil.split()
-                return r
-            case "L":
-                # Grayscale image - use directly
-                return mask_pil
-            case "LA":
-                if channel == "alpha":
-                    _, a = mask_pil.split()
-                    return a
-                # Use grayscale channel
-                gray, _ = mask_pil.split()
-                return gray
-            case _:
-                msg = f"{self.name}: Unsupported mask mode: {mask_pil.mode}"
-                raise ValueError(msg)
-
     def _apply_mask_to_input(self, input_image: ImageUrlArtifact, mask_artifact: Any, channel: str) -> None:
         """Apply mask to input image using specified channel as alpha and set as output_image."""
         # Load input image
@@ -174,7 +129,7 @@ class ApplyMask(DataNode):
         mask_pil = self.load_pil_from_url(mask_artifact.value)
 
         # Extract the specified channel as alpha
-        alpha = self._extract_channel_as_alpha(mask_pil, channel)
+        alpha = extract_channel_from_image(mask_pil, channel, "mask")
 
         # Resize alpha to match input image size
         alpha = alpha.resize(input_pil.size, Image.Resampling.NEAREST)

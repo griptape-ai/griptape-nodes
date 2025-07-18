@@ -7,6 +7,7 @@ from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
+    extract_channel_from_image,
     load_pil_from_url,
     save_pil_image_to_static_file,
 )
@@ -15,6 +16,9 @@ from griptape_nodes_library.utils.image_utils import (
 class DisplayMask(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+
+        # Default output parameter name
+        self._output_param_name = "output_mask"
 
         self.add_parameter(
             Parameter(
@@ -41,7 +45,7 @@ class DisplayMask(DataNode):
 
         self.add_parameter(
             Parameter(
-                name="output_mask",
+                name=self._output_param_name,
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageUrlArtifact",
                 tooltip="Generated mask image.",
@@ -49,6 +53,14 @@ class DisplayMask(DataNode):
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
+
+    def _set_output_parameter_name(self, name: str) -> None:
+        """Set the name of the output parameter. Must be called before adding the output parameter."""
+        self._output_param_name = name
+
+    def _get_output_parameter_name(self) -> str:
+        """Get the name of the output parameter."""
+        return self._output_param_name
 
     def process(self) -> None:
         # Get input image and channel
@@ -63,7 +75,7 @@ class DisplayMask(DataNode):
             input_image = dict_to_image_url_artifact(input_image)
 
         # Create mask from image
-        self._create_mask(input_image, channel)
+        self._extract_channel(input_image, channel)
 
     def after_incoming_connection(
         self,
@@ -88,7 +100,7 @@ class DisplayMask(DataNode):
             image_artifact = value
 
         # Create mask from image
-        self._create_mask(image_artifact, channel)
+        self._extract_channel(image_artifact, channel)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name in ["input_image", "channel"] and value is not None:
@@ -99,61 +111,16 @@ class DisplayMask(DataNode):
 
         return super().after_value_set(parameter, value)
 
-    def _extract_channel_as_mask(self, image_pil: Any, channel: str) -> Any:  # noqa: C901, PLR0911, PLR0912
-        """Extract the specified channel from the image as a mask."""
-        match image_pil.mode:
-            case "RGB":
-                if channel == "red":
-                    r, _, _ = image_pil.split()
-                    return r
-                if channel == "green":
-                    _, g, _ = image_pil.split()
-                    return g
-                if channel == "blue":
-                    _, _, b = image_pil.split()
-                    return b
-                # alpha not available in RGB, use red as fallback
-                r, _, _ = image_pil.split()
-                return r
-            case "RGBA":
-                if channel == "red":
-                    r, _, _, _ = image_pil.split()
-                    return r
-                if channel == "green":
-                    _, g, _, _ = image_pil.split()
-                    return g
-                if channel == "blue":
-                    _, _, b, _ = image_pil.split()
-                    return b
-                if channel == "alpha":
-                    _, _, _, a = image_pil.split()
-                    return a
-                # Fallback to red channel
-                r, _, _, _ = image_pil.split()
-                return r
-            case "L":
-                # Grayscale image - use directly
-                return image_pil
-            case "LA":
-                if channel == "alpha":
-                    _, a = image_pil.split()
-                    return a
-                # Use grayscale channel
-                gray, _ = image_pil.split()
-                return gray
-            case _:
-                msg = f"{self.name}: Unsupported image mode: {image_pil.mode}"
-                raise ValueError(msg)
-
-    def _create_mask(self, image_artifact: ImageUrlArtifact, channel: str) -> None:
-        """Create a mask from the input image using the specified channel and set as output_mask."""
+    def _extract_channel(self, image_artifact: ImageUrlArtifact, channel: str) -> None:
+        """Extract a channel from the input image and set as output."""
         # Load image
         image_pil = load_pil_from_url(image_artifact.value)
 
         # Extract the specified channel as mask
-        mask = self._extract_channel_as_mask(image_pil, channel)
+        mask = extract_channel_from_image(image_pil, channel, "image")
 
         # Save output mask and create URL artifact
         output_artifact = save_pil_image_to_static_file(mask)
-        self.set_parameter_value("output_mask", output_artifact)
-        self.publish_update_to_parameter("output_mask", output_artifact)
+        output_param_name = self._get_output_parameter_name()
+        self.set_parameter_value(output_param_name, output_artifact)
+        self.publish_update_to_parameter(output_param_name, output_artifact)
