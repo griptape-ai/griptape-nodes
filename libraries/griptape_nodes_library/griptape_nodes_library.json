@@ -1217,6 +1217,16 @@
       }
     },
     {
+      "class_name": "SnowflakeCortex",
+      "file_path": "griptape_nodes_library/tools/snowflake_cortex_tool.py",
+      "metadata": {
+        "category": "agents/tools",
+        "description": "Give an agent the ability to run Snowflake Cortex Agents",
+        "display_name": "Snowflake Cortex Agent",
+        "icon": "snowflake"
+      }
+    },
+    {
       "class_name": "StartFlow",
       "file_path": "griptape_nodes_library/workflows/start_flow.py",
       "metadata": {
