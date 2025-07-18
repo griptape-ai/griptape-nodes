@@ -6,6 +6,7 @@ import PIL.Image
 import torch  # type: ignore[reportMissingImports]
 from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
+from utils.directory_utils import check_cleanup_intermediates_directory, get_intermediates_directory_path
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (  # type: ignore[reportMissingImports]
     HuggingFaceRepoParameter,
@@ -13,7 +14,6 @@ from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -32,14 +32,6 @@ class AmusedPipelineParameters:
             parameter_name="model",
         )
         self._seed_parameter = SeedParameter(node)
-
-    def _get_temp_directory_path(self) -> str:
-        """Get the configured temp directory path for this library."""
-        # Get configured temp folder name, default to "intermediates"
-        temp_folder_name = GriptapeNodes.ConfigManager().get_config_value("advanced_media_library.temp_folder_name")
-        if temp_folder_name is None:
-            temp_folder_name = "intermediates"
-        return temp_folder_name
 
     # ------------------------------------------------------------------
     # Parameter registration helpers
@@ -184,9 +176,13 @@ class AmusedPipelineParameters:
         width = self.get_width()
         height = self.get_height()
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
+
+        # Check to ensure there's enough space in the intermediates directory
+        # if that setting is enabled.
+        check_cleanup_intermediates_directory()
         self._node.publish_update_to_parameter(
             "output_image",
-            pil_to_image_artifact(preview_placeholder_image, directory_path=self._get_temp_directory_path()),
+            pil_to_image_artifact(preview_placeholder_image, directory_path=get_intermediates_directory_path()),
         )
 
     def latents_to_image_pil(self, pipe: diffusers.AmusedPipeline, latents: torch.Tensor) -> Image:
@@ -220,8 +216,13 @@ class AmusedPipelineParameters:
     def publish_output_image_preview_latents(self, pipe: diffusers.AmusedPipeline, latents: torch.Tensor) -> None:
         """Publish preview image from latents during inference."""
         preview_image_pil = self.latents_to_image_pil(pipe, latents)
+
+        # Check to ensure there's enough space in the intermediates directory
+        # if that setting is enabled.
+        check_cleanup_intermediates_directory()
+
         preview_image_artifact = pil_to_image_artifact(
-            preview_image_pil, directory_path=self._get_temp_directory_path()
+            preview_image_pil, directory_path=get_intermediates_directory_path()
         )
         self._node.publish_update_to_parameter("output_image", preview_image_artifact)
 
