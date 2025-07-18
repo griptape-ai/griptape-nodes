@@ -28,6 +28,8 @@ from rich.panel import Panel
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
+from griptape_nodes.mcp_server_gtn.server import main as mcp_server_gtn
+
 # This import is necessary to register all events, even if not technically used
 from griptape_nodes.retained_mode.events import app_events, execution_events
 from griptape_nodes.retained_mode.events.base_events import (
@@ -105,6 +107,7 @@ def start_app() -> None:
         signal.signal(sig, lambda *_: sys.exit(0))
 
     api_key = _ensure_api_key()
+    threading.Thread(target=mcp_server_gtn, args=(api_key,), daemon=True).start()
     threading.Thread(target=_listen_for_api_events, args=(api_key,), daemon=True).start()
 
     if STATIC_SERVER_ENABLED:
@@ -254,7 +257,7 @@ async def _alisten_for_api_requests(api_key: str) -> None:
     logger.info("Listening for events from Nodes API via async WebSocket")
 
     # Auto reconnect https://websockets.readthedocs.io/en/stable/reference/asyncio/client.html#opening-a-connection
-    connection_stream = __create_websocket_connection(api_key)
+    connection_stream = _create_websocket_connection(api_key)
     initialized = False
     async for ws_connection in connection_stream:
         try:
@@ -365,7 +368,7 @@ def _process_event_queue() -> None:
         event_queue.task_done()
 
 
-def __create_websocket_connection(api_key: str) -> Any:
+def _create_websocket_connection(api_key: str) -> Any:
     """Create an async WebSocket connection to the Nodes API."""
     endpoint = urljoin(
         os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai").replace("http", "ws"),
@@ -415,6 +418,24 @@ def _determine_response_topic() -> str | None:
 
     # Default to generic response topic
     return "response"
+
+
+def _determine_request_topic() -> str | None:
+    """Determine the request topic based on session_id and engine_id in the payload."""
+    engine_id = GriptapeNodes.get_engine_id()
+    session_id = GriptapeNodes.get_session_id()
+
+    # Normal topic determination logic
+    # Check for session_id first (highest priority)
+    if session_id:
+        return f"sessions/{session_id}/request"
+
+    # Check for engine_id if no session_id
+    if engine_id:
+        return f"engines/{engine_id}/request"
+
+    # Default to generic request topic
+    return "request"
 
 
 def subscribe_to_topic(topic: str) -> None:
@@ -480,6 +501,7 @@ def __process_api_event(event: dict) -> None:
     try:
         event_type = payload["event_type"]
         if event_type != "EventRequest":
+            logger.error("Unsupported event_type received: %s", event_type)
             msg = "Error: 'event_type' was found on request, but did not match 'EventRequest' as expected."
             raise RuntimeError(msg) from None
     except KeyError:
