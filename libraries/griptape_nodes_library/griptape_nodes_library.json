@@ -913,6 +913,7 @@
         "group": "mask"
       }
     },
+
     {
       "class_name": "PaintMask",
       "file_path": "griptape_nodes_library/image/paint_mask.py",
