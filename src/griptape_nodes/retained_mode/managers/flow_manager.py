@@ -1070,11 +1070,8 @@ class FlowManager:
         # By now, it has been validated with no exceptions.
         try:
             # Run start_flow in a background thread
-            executor = getattr(self, "_threadpool_executor", None)
-            if executor is None:
-                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-                self._threadpool_executor = executor
-            executor.submit(self.start_flow, flow, start_node, debug_mode)
+            self._threadpool_executor.submit(self.start_flow, flow, start_node, debug_mode)
+            #self.start_flow(flow, start_node, debug_mode)
             #self.start_flow(flow, start_node, debug_mode)
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "

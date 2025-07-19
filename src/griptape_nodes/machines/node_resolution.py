@@ -46,26 +46,30 @@ class DAG:
         self.graph = defaultdict(set)        # adjacency list
         self.in_degree = defaultdict(int)    # number of unmet dependencies
 
-    def add_node(self, node: BaseNode):
+    def add_node(self, node: BaseNode) -> None:
         """Ensure the node exists in the graph."""
         self.graph[node]
 
-    def add_edge(self, from_node: BaseNode, to_node: BaseNode):
+    def add_edge(self, from_node: BaseNode, to_node: BaseNode) -> None:
         """Add a directed edge from 'from_node' to 'to_node'."""
         self.graph[from_node].add(to_node)
         self.in_degree[to_node] += 1
 
-    def get_ready_nodes(self):
+    def get_ready_nodes(self) -> list[BaseNode]:
         """Return nodes with no unmet dependencies (in-degree 0)."""
         return [node for node in self.graph if self.in_degree[node] == 0]
 
-    def mark_processed(self, node: BaseNode):
+    def mark_processed(self, node: BaseNode) -> None:
         """Mark a node as processed, decrementing in-degree of its dependents."""
         # Remove outgoing edges from this node
         for dependent in self.graph[node]:
             self.in_degree[dependent] -= 1
         self.graph.pop(node, None)
         self.in_degree.pop(node, None)
+
+    def get_all_nodes(self) -> list[BaseNode]:
+        """Return a list of all nodes currently in the DAG."""
+        return list(self.graph.keys())
 
 
 @dataclass
@@ -135,8 +139,10 @@ class EvaluateParameterState(State):
             print("adding dependencies to graph")
             EvaluateParameterState.add_dependencies_to_graph(context.root_node_resolving, context)
         print("all nodes")
-        for node in context.DAG.graph.keys():
+        # print debug info and unresolve the nodes
+        for node in context.DAG.get_all_nodes():
             print(node.name)
+            #print(node.state)
         print("get ready nodes")
         for node in context.DAG.get_ready_nodes():
             print(node.name)
@@ -193,15 +199,11 @@ class ExecuteNodeState(State):
         ready_nodes = context.DAG.get_ready_nodes()
         # Prepare a list of current focuses, not the focus stack, just the ones we want to run in parallel
         for node in ready_nodes:
+            # if it is not already in the current focuses
             if node not in [focus.node for focus in context.current_focuses]:
                 ExecuteNodeState.before_node(context, node)
                 focus_obj = Focus(node, scheduled_value=None, process_generator=None)
                 context.current_focuses.append(focus_obj)
-                node.make_node_unresolved(
-                current_states_to_trigger_change_event=set(
-                    {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-                )
-                )   
             
         for focus in context.current_focuses.copy():
             # if we are calling it for the first time or there is an update in the scheduled value, run it
@@ -216,7 +218,7 @@ class ExecuteNodeState(State):
             if done:
                 context.DAG.mark_processed(focus.node)
                 context.current_focuses.remove(focus)
-        if context.DAG.get_ready_nodes() == []:
+        if context.DAG.get_all_nodes() == []:
             return CompleteState
         time.sleep(0.1)
         return ExecuteNodeState
@@ -271,6 +273,13 @@ class ExecuteNodeState(State):
     @staticmethod
     def do_ui_tasks_and_run_node(context: ResolutionContext, current_focus: Focus) -> bool:
         current_node = current_focus.node
+        if current_node.state == NodeResolutionState.UNRESOLVED:
+            # Mark all future nodes unresolved.
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/862
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(current_node)
+            current_node.initialize_spotlight()
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
         # To set the event manager without circular import errors
         EventBus.publish_event(
@@ -407,11 +416,12 @@ class ExecuteNodeState(State):
             finally:
                 pass
                 # If it hasn't been cancelled.
-                #if current_focus.process_generator:
+                if current_focus.process_generator:
+                    pass
                     #EventBus.publish_event(
-                    #    ExecutionGriptapeNodeEvent(
-                    #        wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
-                    #    )
+                        #ExecutionGriptapeNodeEvent(
+                            #wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
+                        #)
                     #)
 
         current_node = current_focus.node

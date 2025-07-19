@@ -208,6 +208,19 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         start_node.set_entry_control_parameter(None)
         # Set up to debug
         self._context.paused = debug_mode
+        # Get the flow and make all nodes unresolved
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        parent_flow_str = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(start_node.name)
+        print(parent_flow_str)
+        parent_flow = None
+
+        if parent_flow_str is not None:
+            parent_flow = GriptapeNodes.FlowManager().get_flow_by_name(parent_flow_str)
+            all_nodes = list(parent_flow.nodes.values())
+            for node_to_unresolve in all_nodes:
+                # make it unresolved if it is resolved:
+                node_to_unresolve.make_node_unresolved({NodeResolutionState.RESOLVED})
+        
         self.start(ResolveNodeState)  # Begins the flow
 
     def update(self) -> None:
