@@ -3,12 +3,11 @@ from io import BytesIO
 from typing import Any
 
 import httpx
-from griptape.artifacts import ImageUrlArtifact
+from griptape.artifacts import ImageUrlArtifact, JsonArtifact
 from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
 
@@ -68,7 +67,6 @@ class ImageBash(DataNode):
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 tooltip="The images to use for the image",
-                # ui_options={"expander": True, "edit_images": True},
                 allowed_modes={ParameterMode.INPUT},
             )
         )
@@ -93,11 +91,15 @@ class ImageBash(DataNode):
                         "viewport": {"x": 0, "y": 0, "scale": 1.0, "center_x": 960, "center_y": 540},
                     },
                 },
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageArtifact",
-                tooltip="The excalidraw image to use for the image",
-                ui_options={"expander": True, "edit_excalidraw": True},
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+                type="JsonArtifact",
+                tooltip="Open the editor to create an image",
+                ui_options={
+                    "button": True,
+                    "button_icon": "brush",
+                    "button_label": "Open Editor",
+                    "modal": "PaintBashModal",
+                },
+                allowed_modes={ParameterMode.PROPERTY},
             )
         )
         self.add_parameter(
@@ -164,7 +166,6 @@ class ImageBash(DataNode):
             }
             self.set_parameter_value("bash_image", bash_image_value)
             self.parameter_output_values["bash_image"] = bash_image_value
-            logger.info(f"✅ Updated canvas size metadata: {canvas_width}x{canvas_height}")
         else:
             # For ImageUrlArtifact, update its metadata
             meta = getattr(bash_image_value, "meta", {})
@@ -188,21 +189,16 @@ class ImageBash(DataNode):
             self.set_parameter_value("bash_image", bash_image_value)
             self.publish_update_to_parameter("bash_image", bash_image_value)
             self.parameter_output_values["bash_image"] = bash_image_value
-            logger.info(f"✅ Updated canvas size metadata: {canvas_width}x{canvas_height}")
 
     def _sync_metadata_with_input_images(self) -> None:
         """Sync the bash_image metadata with the current input_images state."""
-        logger.info("🔄 Syncing metadata with input_images...")
-
         bash_image_value = self.get_parameter_value("bash_image")
         if bash_image_value is None:
-            logger.info("❌ No bash_image found, creating new one...")
             self._create_new_bash_image()
             return
 
         # Get current input_images
         current_input_images = self.get_parameter_value("input_images") or []
-        logger.info(f"📊 Current input_images count: {len(current_input_images)}")
 
         # Get existing metadata
         if isinstance(bash_image_value, dict):
@@ -226,17 +222,14 @@ class ImageBash(DataNode):
                 img_artifact = img
             elif isinstance(img, list):
                 # Skip lists - they shouldn't be here
-                logger.warning(f"⚠️ Skipping list item at index {i}: {img}")
                 continue
             else:
-                logger.warning(f"⚠️ Unknown image type at index {i}: {type(img)}")
                 continue
 
             # Get the image URL
             try:
                 image_url = img_artifact.value
             except AttributeError:
-                logger.error(f"❌ Failed to get value from image artifact: {img_artifact}")
                 continue
 
             # Try to preserve existing name, otherwise generate new one
@@ -288,7 +281,6 @@ class ImageBash(DataNode):
             )
 
             if is_brush_layer:
-                logger.info(f"🖌️ Preserving brush layer: {existing_id}")
                 konva_images.append(existing_img.copy())
 
         # Then, create/update konva layers for current input_images
@@ -305,7 +297,6 @@ class ImageBash(DataNode):
                 konva_img = existing_konva_img.copy()
                 konva_img["source_id"] = input_img["id"]
                 konva_images.append(konva_img)
-                logger.info(f"🔄 Preserved existing layer for: {input_img['name']}")
             else:
                 # Create new layer
                 width, height = self._get_image_dimensions(input_img["url"])
@@ -326,7 +317,6 @@ class ImageBash(DataNode):
                         "scaleY": 1.0,
                     }
                 )
-                logger.info(f"🆕 Created new layer for: {input_img['name']}")
 
         # Update metadata
         if isinstance(bash_image_value, dict):
@@ -371,15 +361,10 @@ class ImageBash(DataNode):
             bash_image_value.meta = meta
             self.set_parameter_value("bash_image", bash_image_value)
 
-        logger.info(f"✅ Synced metadata - {len(input_images)} input images, {len(konva_images)} konva layers")
-
     def _handle_input_images_removed(self) -> None:
         """Handle the case when all input images are removed."""
-        logger.info("🗑️ All input images removed, cleaning up metadata...")
-
         bash_image_value = self.get_parameter_value("bash_image")
         if bash_image_value is None:
-            logger.info("❌ No bash_image found, nothing to clean up")
             return
 
         # Get canvas dimensions
@@ -424,7 +409,6 @@ class ImageBash(DataNode):
 
                 if is_brush_layer:
                     brush_layers.append(img.copy())
-                    logger.info(f"🖌️ Preserving brush layer: {existing_id}")
 
             # Update metadata
             bash_image_value["value"] = new_placeholder_url
@@ -440,7 +424,6 @@ class ImageBash(DataNode):
                 "center_y": canvas_height // 2,
             }
             self.set_parameter_value("bash_image", bash_image_value)
-            logger.info("✅ Cleaned up metadata - removed input images, preserved brush layers")
         else:
             # For ImageUrlArtifact, update its metadata
             meta = getattr(bash_image_value, "meta", {})
@@ -467,7 +450,6 @@ class ImageBash(DataNode):
 
                 if is_brush_layer:
                     brush_layers.append(img.copy())
-                    logger.info(f"🖌️ Preserving brush layer: {existing_id}")
 
             # Update metadata
             bash_image_value.value = new_placeholder_url
@@ -484,11 +466,8 @@ class ImageBash(DataNode):
             }
             bash_image_value.meta = meta
             self.set_parameter_value("bash_image", bash_image_value)
-            logger.info("✅ Cleaned up metadata - removed input images, preserved brush layers")
 
     def _create_new_bash_image(self) -> None:
-        logger.info("🆕 Creating new bash image...")
-
         # Get the list of images from the ParameterList
         images_list = self.get_parameter_value("input_images") or []
 
@@ -521,8 +500,6 @@ class ImageBash(DataNode):
         # Get canvas dimensions from parameters
         canvas_width, canvas_height = self._get_canvas_dimensions()
         canvas_background_color = "#ffffff"  # Default background color
-
-        logger.info(f"🎨 Canvas dimensions: {canvas_width}x{canvas_height}, background: {canvas_background_color}")
 
         # Create basic Konva JSON structure with image elements
         konva_images = []
@@ -558,21 +535,24 @@ class ImageBash(DataNode):
 </svg>"""
         placeholder_url = f"data:image/svg+xml;base64,{base64.b64encode(svg_content.encode('utf-8')).decode('utf-8')}"
 
-        bash_image_artifact = ImageUrlArtifact(
-            placeholder_url,
-            meta={
-                "input_images": input_images,
-                "konva_json": konva_json,
-                "canvas_size": {"width": canvas_width, "height": canvas_height},
-                "canvas_background_color": canvas_background_color,
-                "viewport": {
-                    "x": 0,
-                    "y": 0,
-                    "scale": 1.0,
-                    "center_x": canvas_width // 2,
-                    "center_y": canvas_height // 2,
+        bash_image_artifact = JsonArtifact(
+            {
+                "value": placeholder_url,
+                "name": "Canvas Project",
+                "meta": {
+                    "input_images": input_images,
+                    "konva_json": konva_json,
+                    "canvas_size": {"width": canvas_width, "height": canvas_height},
+                    "canvas_background_color": canvas_background_color,
+                    "viewport": {
+                        "x": 0,
+                        "y": 0,
+                        "scale": 1.0,
+                        "center_x": canvas_width // 2,
+                        "center_y": canvas_height // 2,
+                    },
                 },
-            },
+            }
         )
         self.set_parameter_value("bash_image", bash_image_artifact)
 
@@ -618,11 +598,9 @@ class ImageBash(DataNode):
             # When input_images changes, sync the metadata
             if value is None or len(value) == 0:
                 # All images were removed, clean up the metadata
-                logger.info("🗑️ No input images, cleaning up metadata")
                 self._handle_input_images_removed()
             else:
                 # Images were added/removed/reordered, sync metadata
-                logger.info(f"📸 Syncing metadata for {len(value)} input images")
                 self._sync_metadata_with_input_images()
 
         if parameter.name == "bash_image" and value is not None:
@@ -641,8 +619,6 @@ class ImageBash(DataNode):
                 current_width, current_height = self._get_canvas_dimensions()
 
                 if metadata_width != current_width or metadata_height != current_height:
-                    logger.info(f"📏 Syncing canvas dimensions from metadata: {metadata_width}x{metadata_height}")
-
                     # Set canvas_size to custom
                     self.set_parameter_value("canvas_size", "custom")
 
@@ -674,24 +650,20 @@ class ImageBash(DataNode):
                     "center_y": canvas_height // 2,
                 }
                 self.set_parameter_value("bash_image", bash_image_value)
-                logger.info("✅ Updated bash_image metadata with current parameters")
 
         return super().after_value_set(parameter, value)
 
     def after_incoming_connection_removed(self, parameter: Parameter) -> None:
         """Handle when a connection is removed from a parameter."""
         if "input_images" in parameter.name:
-            logger.info("🔌 Connection removed from input_images, syncing metadata...")
             # Get current input_images value after the connection removal
             current_input_images = self.get_parameter_value("input_images") or []
 
             if len(current_input_images) == 0:
                 # All images were removed, clean up
-                logger.info("🗑️ All images removed, cleaning up metadata")
                 self._handle_input_images_removed()
             else:
                 # Some images remain, sync metadata
-                logger.info(f"📸 Syncing metadata for remaining {len(current_input_images)} images")
                 self._sync_metadata_with_input_images()
 
     def _update_output_image(self) -> None:
@@ -700,16 +672,13 @@ class ImageBash(DataNode):
         if bash_image is not None:
             # Extract the value from bash_image and create output_image
             if isinstance(bash_image, dict):
-                logger.info(f"🔍 Bash image dict: {bash_image}")
                 image_value = bash_image.get("value")
             else:
-                logger.info(f"🔍 Bash image not dict: {bash_image}")
                 image_value = bash_image.value
 
             # Only output if the image value is not a placeholder SVG
             # Placeholder SVGs start with "data:image/svg+xml;base64,"
             if image_value and not image_value.startswith("data:image/svg+xml;base64,"):
-                logger.info(f"🔍 Outputting image: {image_value}")
                 self.set_parameter_value("output_image", ImageUrlArtifact(image_value))
                 self.publish_update_to_parameter("output_image", ImageUrlArtifact(image_value))
 
