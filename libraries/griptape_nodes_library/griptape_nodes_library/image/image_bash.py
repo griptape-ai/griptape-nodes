@@ -165,9 +165,8 @@ class ImageBash(DataNode):
                 "center_y": canvas_height // 2,
             }
             self.set_parameter_value("bash_image", bash_image_value)
-            self.parameter_output_values["bash_image"] = bash_image_value
+            self.publish_update_to_parameter("bash_image", bash_image_value)
         else:
-            # For ImageUrlArtifact, update its metadata
             meta = getattr(bash_image_value, "meta", {})
             if not isinstance(meta, dict):
                 meta = {}
@@ -252,7 +251,7 @@ class ImageBash(DataNode):
                             image_name = filename.split(".")[0]
                         else:
                             image_name = f"Image {i + 1}"
-                    except:
+                    except Exception:
                         image_name = f"Image {i + 1}"
 
             input_images.append(
