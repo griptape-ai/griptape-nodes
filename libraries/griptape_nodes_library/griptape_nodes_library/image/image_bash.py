@@ -710,7 +710,8 @@ class ImageBash(DataNode):
             # Placeholder SVGs start with "data:image/svg+xml;base64,"
             if image_value and not image_value.startswith("data:image/svg+xml;base64,"):
                 logger.info(f"🔍 Outputting image: {image_value}")
-                self.parameter_output_values["output_image"] = ImageUrlArtifact(image_value)
+                self.set_parameter_value("output_image", ImageUrlArtifact(image_value))
+                self.publish_update_to_parameter("output_image", ImageUrlArtifact(image_value))
 
     def process(self) -> None:
         self._update_output_image()
