@@ -75,7 +75,7 @@ class ImageBash(DataNode):
 
         # Create a proper default placeholder SVG
         default_svg = """<svg width="1920" height="1080" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1920" height="1080" fill="#ffffff"/>
+  <rect width="1920" height="1080" fill="#fffffa"/>
 </svg>"""
         default_svg_base64 = base64.b64encode(default_svg.encode("utf-8")).decode("utf-8")
 
@@ -87,7 +87,7 @@ class ImageBash(DataNode):
                     "name": "Canvas Project",
                     "meta": {
                         "canvas_size": {"width": 1920, "height": 1080},
-                        "canvas_background_color": "#ffffff",
+                        "canvas_background_color": "#fffffa",
                         "input_images": [],
                         "konva_json": {"images": [], "lines": []},
                         "viewport": {"x": 0, "y": 0, "scale": 1.0, "center_x": 960, "center_y": 540},
