@@ -146,7 +146,6 @@ class ImageBash(DataNode):
             return
 
         canvas_width, canvas_height = self._get_canvas_dimensions()
-
         if isinstance(bash_image_value, dict):
             if "meta" not in bash_image_value:
                 bash_image_value["meta"] = {}
@@ -612,7 +611,6 @@ class ImageBash(DataNode):
             canvas_size_meta = meta.get("canvas_size", {})
             metadata_width = canvas_size_meta.get("width")
             metadata_height = canvas_size_meta.get("height")
-
             if metadata_width and metadata_height:
                 # Get current canvas dimensions from parameters
                 current_width, current_height = self._get_canvas_dimensions()
@@ -625,6 +623,10 @@ class ImageBash(DataNode):
                     self.set_parameter_value("width", metadata_width)
                     self.set_parameter_value("height", metadata_height)
 
+                    # publish the changes
+                    self.publish_update_to_parameter("canvas_size", "custom")
+                    self.publish_update_to_parameter("width", metadata_width)
+                    self.publish_update_to_parameter("height", metadata_height)
                 # Initialize bash_image metadata with current parameters if it's still using default values
             self._update_output_image()
         if parameter.name == "canvas_size" and value is not None:
