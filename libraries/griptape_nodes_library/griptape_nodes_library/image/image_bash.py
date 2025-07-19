@@ -757,30 +757,25 @@ class ImageBash(DataNode):
         # Initialize bash_image with current parameters if it's still using default values
         if parameter.name in ["canvas_size", "canvas_background_color"] and value is not None:
             bash_image_value = self.get_parameter_value("bash_image")
-            if bash_image_value is not None:
-                # Check if this is the first time setting these parameters
-                if (
-                    isinstance(bash_image_value, dict)
-                    and bash_image_value.get("meta", {}).get("canvas_background_color") == "#ffffff"
-                ):
-                    # Update the bash_image to reflect current parameters
-                    canvas_width, canvas_height = self._get_canvas_dimensions()
-                    canvas_background_color = self.get_parameter_value("canvas_background_color") or "#ffffff"
+            if bash_image_value is not None and isinstance(bash_image_value, dict):
+                # Update the bash_image to reflect current parameters
+                canvas_width, canvas_height = self._get_canvas_dimensions()
+                canvas_background_color = self.get_parameter_value("canvas_background_color") or "#ffffff"
 
-                    # Create new placeholder with current parameters
-                    new_placeholder_url = f"data:image/svg+xml;base64,{self._create_placeholder_svg_base64(canvas_width, canvas_height, canvas_background_color)}"
+                # Create new placeholder with current parameters
+                new_placeholder_url = f"data:image/svg+xml;base64,{self._create_placeholder_svg_base64(canvas_width, canvas_height, canvas_background_color)}"
 
-                    bash_image_value["value"] = new_placeholder_url
-                    bash_image_value["meta"]["canvas_size"] = {"width": canvas_width, "height": canvas_height}
-                    bash_image_value["meta"]["canvas_background_color"] = canvas_background_color
-                    bash_image_value["meta"]["viewport"] = {
-                        "x": 0,
-                        "y": 0,
-                        "scale": 1.0,
-                        "center_x": canvas_width // 2,
-                        "center_y": canvas_height // 2,
-                    }
-                    self.set_parameter_value("bash_image", bash_image_value)
+                bash_image_value["value"] = new_placeholder_url
+                bash_image_value["meta"]["canvas_size"] = {"width": canvas_width, "height": canvas_height}
+                bash_image_value["meta"]["canvas_background_color"] = canvas_background_color
+                bash_image_value["meta"]["viewport"] = {
+                    "x": 0,
+                    "y": 0,
+                    "scale": 1.0,
+                    "center_x": canvas_width // 2,
+                    "center_y": canvas_height // 2,
+                }
+                self.set_parameter_value("bash_image", bash_image_value)
 
         return super().after_value_set(parameter, value)
 
@@ -807,13 +802,16 @@ class ImageBash(DataNode):
         if bash_image is not None:
             # Extract the value from bash_image and create output_image
             if isinstance(bash_image, dict):
+                logger.info(f"🔍 Bash image dict: {bash_image}")
                 image_value = bash_image.get("value")
                 meta = bash_image.get("meta", {})
             else:
+                logger.info(f"🔍 Bash image not dict: {bash_image}")
                 image_value = bash_image.value
                 meta = getattr(bash_image, "meta", {})
 
             # Only output if the image value is not a placeholder SVG
             # Placeholder SVGs start with "data:image/svg+xml;base64,"
             if image_value and not image_value.startswith("data:image/svg+xml;base64,"):
+                logger.info(f"🔍 Outputting image: {image_value}")
                 self.parameter_output_values["output_image"] = ImageUrlArtifact(image_value)
