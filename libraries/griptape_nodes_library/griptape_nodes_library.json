@@ -194,6 +194,14 @@
       }
     },
     {
+      "json": {
+        "color": "border-cyan-500",
+        "title": "JSON",
+        "description": "JSON data manipulation nodes",
+        "icon": "Braces"
+      }
+    },
+    {
       "utils": {
         "color": "border-gray-500",
         "title": "Utility",
@@ -596,6 +604,49 @@
       }
     },
     {
+      "class_name": "JsonExtractValue",
+      "file_path": "griptape_nodes_library/json/json_extract_value.py",
+      "metadata": {
+        "category": "json",
+        "description": "Extract a value from JSON using dot notation path",
+        "display_name": "JSON Extract Value",
+        "icon": "search",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "JsonInput",
+      "file_path": "griptape_nodes_library/json/json_input.py",
+      "metadata": {
+        "category": "json",
+        "description": "Create a JSON node from input data",
+        "display_name": "JSON Input",
+        "icon": "file-json"
+      }
+    },
+    {
+      "class_name": "DisplayJson",
+      "file_path": "griptape_nodes_library/json/display_json.py",
+      "metadata": {
+        "category": "json",
+        "description": "Display JSON data with automatic repair and formatting",
+        "display_name": "Display JSON",
+        "icon": "eye",
+        "group": "display"
+      }
+    },
+    {
+      "class_name": "JsonReplace",
+      "file_path": "griptape_nodes_library/json/json_replace.py",
+      "metadata": {
+        "category": "json",
+        "description": "Replace values in JSON using dot notation paths",
+        "display_name": "JSON Replace",
+        "icon": "edit",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "ToFloat",
       "file_path": "griptape_nodes_library/convert/to_float.py",
       "metadata": {
@@ -621,6 +672,15 @@
         "category": "convert",
         "description": "Converts incoming value to text",
         "display_name": "To Text"
+      }
+    },
+    {
+      "class_name": "ToJson",
+      "file_path": "griptape_nodes_library/convert/to_json.py",
+      "metadata": {
+        "category": "convert",
+        "description": "Converts incoming value to JSON data using json-repair",
+        "display_name": "To JSON"
       }
     },
     {
