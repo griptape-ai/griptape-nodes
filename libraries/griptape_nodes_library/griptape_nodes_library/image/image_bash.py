@@ -61,15 +61,6 @@ class ImageBash(DataNode):
         self.add_parameter(self.canvas_width)
         self.add_parameter(self.canvas_height)
 
-        self.canvas_background_color = Parameter(
-            name="canvas_background_color",
-            default_value="#ffffff",
-            type="string",
-            tooltip="The background color of the canvas (supports hex, rgb, hsv, etc.)",
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-        )
-        self.add_parameter(self.canvas_background_color)
-
         self.add_parameter(
             ParameterList(
                 name="input_images",
@@ -146,85 +137,6 @@ class ImageBash(DataNode):
         dimensions = CANVAS_DIMENSIONS["HD"]
         return (dimensions["width"], dimensions["height"])
 
-    def _parse_color_to_rgb(self, color_str: str) -> tuple[int, int, int, int]:
-        """Parse color string to RGB values with alpha channel."""
-        import re
-
-        # Default to white with full opacity
-        if not color_str:
-            return (255, 255, 255, 255)
-
-        color_str = color_str.strip().lower()
-
-        # Handle hex colors (#ffffff, #fff)
-        if color_str.startswith("#"):
-            hex_color = color_str[1:]
-            if len(hex_color) == 3:
-                # Expand 3-digit hex to 6-digit
-                hex_color = "".join([c + c for c in hex_color])
-            if len(hex_color) == 6:
-                r = int(hex_color[0:2], 16)
-                g = int(hex_color[2:4], 16)
-                b = int(hex_color[4:6], 16)
-                return (r, g, b, 255)
-
-        # Handle rgb(r, g, b) format
-        rgb_match = re.match(r"rgb\((\d+),\s*(\d+),\s*(\d+)\)", color_str)
-        if rgb_match:
-            r = int(rgb_match.group(1))
-            g = int(rgb_match.group(2))
-            b = int(rgb_match.group(3))
-            return (r, g, b, 255)
-
-        # Handle rgba(r, g, b, a) format
-        rgba_match = re.match(r"rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)", color_str)
-        if rgba_match:
-            r = int(rgba_match.group(1))
-            g = int(rgba_match.group(2))
-            b = int(rgba_match.group(3))
-            a = int(float(rgba_match.group(4)) * 255)
-            return (r, g, b, a)
-
-        # Handle named colors (basic support)
-        named_colors = {
-            "white": (255, 255, 255, 255),
-            "black": (0, 0, 0, 255),
-            "red": (255, 0, 0, 255),
-            "green": (0, 255, 0, 255),
-            "blue": (0, 0, 255, 255),
-            "yellow": (255, 255, 0, 255),
-            "cyan": (0, 255, 255, 255),
-            "magenta": (255, 0, 255, 255),
-            "gray": (128, 128, 128, 255),
-            "grey": (128, 128, 128, 255),
-            "transparent": (255, 255, 255, 0),
-        }
-
-        if color_str in named_colors:
-            return named_colors[color_str]
-
-        # Fallback to white
-        logger.info(f"⚠️  Unknown color format: {color_str}, using white")
-        return (255, 255, 255, 255)
-
-    def _create_placeholder_svg_base64(self, width: int, height: int, background_color: str) -> str:
-        """Create a base64-encoded SVG placeholder with the specified dimensions and background color."""
-        logger.info(f"🎨 Creating placeholder SVG: {width}x{height} with color {background_color}")
-
-        # Convert color to hex for SVG
-        r, g, b, a = self._parse_color_to_rgb(background_color)
-        hex_color = f"#{r:02x}{g:02x}{b:02x}"
-
-        logger.info(f"🎨 Parsed color {background_color} to RGB({r},{g},{b}) -> hex {hex_color}")
-
-        # Create SVG with the specified dimensions and background color
-        svg_content = f"""<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg">
-  <rect width="{width}" height="{height}" fill="{hex_color}"/>
-</svg>"""
-
-        # Encode to base64
-        return base64.b64encode(svg_content.encode("utf-8")).decode("utf-8")
-
     def _update_bash_image_canvas_size(self) -> None:
         """Update the bash_image metadata with the current canvas dimensions."""
         bash_image_value = self.get_parameter_value("bash_image")
@@ -232,18 +144,17 @@ class ImageBash(DataNode):
             return
 
         canvas_width, canvas_height = self._get_canvas_dimensions()
-        canvas_background_color = self.get_parameter_value("canvas_background_color") or "#ffffff"
 
         if isinstance(bash_image_value, dict):
             if "meta" not in bash_image_value:
                 bash_image_value["meta"] = {}
 
-            # Update konva_json with new canvas dimensions
-            konva_json = bash_image_value["meta"].get("konva_json", {"images": [], "lines": []})
-
-            bash_image_value["meta"]["konva_json"] = konva_json
+            # Only update metadata, preserve existing konva_json and background color
+            existing_konva = bash_image_value["meta"].get("konva_json", {"images": [], "lines": []})
+            existing_background_color = bash_image_value["meta"].get("canvas_background_color", "#ffffff")
+            bash_image_value["meta"]["konva_json"] = existing_konva
             bash_image_value["meta"]["canvas_size"] = {"width": canvas_width, "height": canvas_height}
-            bash_image_value["meta"]["canvas_background_color"] = canvas_background_color
+            bash_image_value["meta"]["canvas_background_color"] = existing_background_color
             bash_image_value["meta"]["viewport"] = {
                 "x": 0,
                 "y": 0,
@@ -252,18 +163,20 @@ class ImageBash(DataNode):
                 "center_y": canvas_height // 2,
             }
             self.set_parameter_value("bash_image", bash_image_value)
+            self.parameter_output_values["bash_image"] = bash_image_value
+            logger.info(f"✅ Updated canvas size metadata: {canvas_width}x{canvas_height}")
         else:
             # For ImageUrlArtifact, update its metadata
             meta = getattr(bash_image_value, "meta", {})
             if not isinstance(meta, dict):
                 meta = {}
 
-            # Update konva_json with new canvas dimensions
-            konva_json = meta.get("konva_json", {"images": [], "lines": []})
-
-            meta["konva_json"] = konva_json
+            # Only update metadata, preserve existing konva_json and background color
+            existing_konva = meta.get("konva_json", {"images": [], "lines": []})
+            existing_background_color = meta.get("canvas_background_color", "#ffffff")
+            meta["konva_json"] = existing_konva
             meta["canvas_size"] = {"width": canvas_width, "height": canvas_height}
-            meta["canvas_background_color"] = canvas_background_color
+            meta["canvas_background_color"] = existing_background_color
             meta["viewport"] = {
                 "x": 0,
                 "y": 0,
@@ -273,6 +186,9 @@ class ImageBash(DataNode):
             }
             bash_image_value.meta = meta
             self.set_parameter_value("bash_image", bash_image_value)
+            self.publish_update_to_parameter("bash_image", bash_image_value)
+            self.parameter_output_values["bash_image"] = bash_image_value
+            logger.info(f"✅ Updated canvas size metadata: {canvas_width}x{canvas_height}")
 
     def _sync_metadata_with_input_images(self) -> None:
         """Sync the bash_image metadata with the current input_images state."""
@@ -297,9 +213,8 @@ class ImageBash(DataNode):
         existing_konva = existing_meta.get("konva_json", {"images": [], "lines": []})
         existing_input_images = existing_meta.get("input_images", [])
 
-        # Get canvas dimensions and background color
+        # Get canvas dimensions
         canvas_width, canvas_height = self._get_canvas_dimensions()
-        canvas_background_color = self.get_parameter_value("canvas_background_color") or "#ffffff"
 
         # Create new input_images array from current input_images
         input_images = []
@@ -418,10 +333,13 @@ class ImageBash(DataNode):
             if "meta" not in bash_image_value:
                 bash_image_value["meta"] = {}
 
+            # Preserve existing background color from metadata
+            existing_background_color = existing_meta.get("canvas_background_color", "#ffffff")
+
             bash_image_value["meta"]["input_images"] = input_images
             bash_image_value["meta"]["konva_json"] = {"images": konva_images, "lines": existing_konva.get("lines", [])}
             bash_image_value["meta"]["canvas_size"] = {"width": canvas_width, "height": canvas_height}
-            bash_image_value["meta"]["canvas_background_color"] = canvas_background_color
+            bash_image_value["meta"]["canvas_background_color"] = existing_background_color
             bash_image_value["meta"]["viewport"] = {
                 "x": 0,
                 "y": 0,
@@ -436,10 +354,13 @@ class ImageBash(DataNode):
             if not isinstance(meta, dict):
                 meta = {}
 
+            # Preserve existing background color from metadata
+            existing_background_color = meta.get("canvas_background_color", "#ffffff")
+
             meta["input_images"] = input_images
             meta["konva_json"] = {"images": konva_images, "lines": existing_konva.get("lines", [])}
             meta["canvas_size"] = {"width": canvas_width, "height": canvas_height}
-            meta["canvas_background_color"] = canvas_background_color
+            meta["canvas_background_color"] = existing_background_color
             meta["viewport"] = {
                 "x": 0,
                 "y": 0,
@@ -461,12 +382,23 @@ class ImageBash(DataNode):
             logger.info("❌ No bash_image found, nothing to clean up")
             return
 
-        # Get canvas dimensions and background color
+        # Get canvas dimensions
         canvas_width, canvas_height = self._get_canvas_dimensions()
-        canvas_background_color = self.get_parameter_value("canvas_background_color") or "#ffffff"
 
-        # Create new placeholder with current parameters
-        new_placeholder_url = f"data:image/svg+xml;base64,{self._create_placeholder_svg_base64(canvas_width, canvas_height, canvas_background_color)}"
+        # Get existing background color from metadata
+        existing_background_color = "#ffffff"
+        if isinstance(bash_image_value, dict):
+            existing_background_color = bash_image_value.get("meta", {}).get("canvas_background_color", "#ffffff")
+        else:
+            existing_background_color = getattr(bash_image_value, "meta", {}).get("canvas_background_color", "#ffffff")
+
+        # Create new placeholder with existing background color
+        svg_content = f"""<svg width="{canvas_width}" height="{canvas_height}" xmlns="http://www.w3.org/2000/svg">
+  <rect width="{canvas_width}" height="{canvas_height}" fill="{existing_background_color}"/>
+</svg>"""
+        new_placeholder_url = (
+            f"data:image/svg+xml;base64,{base64.b64encode(svg_content.encode('utf-8')).decode('utf-8')}"
+        )
 
         if isinstance(bash_image_value, dict):
             if "meta" not in bash_image_value:
@@ -499,7 +431,7 @@ class ImageBash(DataNode):
             bash_image_value["meta"]["input_images"] = []
             bash_image_value["meta"]["konva_json"] = {"images": brush_layers, "lines": existing_konva.get("lines", [])}
             bash_image_value["meta"]["canvas_size"] = {"width": canvas_width, "height": canvas_height}
-            bash_image_value["meta"]["canvas_background_color"] = canvas_background_color
+            bash_image_value["meta"]["canvas_background_color"] = existing_background_color
             bash_image_value["meta"]["viewport"] = {
                 "x": 0,
                 "y": 0,
@@ -542,7 +474,7 @@ class ImageBash(DataNode):
             meta["input_images"] = []
             meta["konva_json"] = {"images": brush_layers, "lines": existing_konva.get("lines", [])}
             meta["canvas_size"] = {"width": canvas_width, "height": canvas_height}
-            meta["canvas_background_color"] = canvas_background_color
+            meta["canvas_background_color"] = existing_background_color
             meta["viewport"] = {
                 "x": 0,
                 "y": 0,
@@ -588,7 +520,7 @@ class ImageBash(DataNode):
 
         # Get canvas dimensions from parameters
         canvas_width, canvas_height = self._get_canvas_dimensions()
-        canvas_background_color = self.get_parameter_value("canvas_background_color") or "#ffffff"
+        canvas_background_color = "#ffffff"  # Default background color
 
         logger.info(f"🎨 Canvas dimensions: {canvas_width}x{canvas_height}, background: {canvas_background_color}")
 
@@ -621,8 +553,10 @@ class ImageBash(DataNode):
         konva_json = {"images": konva_images, "lines": []}
 
         # Use a simple placeholder URL - the actual canvas is defined by canvas_size and konva_json
-        canvas_background_color = self.get_parameter_value("canvas_background_color") or "#ffffff"
-        placeholder_url = f"data:image/svg+xml;base64,{self._create_placeholder_svg_base64(canvas_width, canvas_height, canvas_background_color)}"
+        svg_content = f"""<svg width="{canvas_width}" height="{canvas_height}" xmlns="http://www.w3.org/2000/svg">
+  <rect width="{canvas_width}" height="{canvas_height}" fill="{canvas_background_color}"/>
+</svg>"""
+        placeholder_url = f"data:image/svg+xml;base64,{base64.b64encode(svg_content.encode('utf-8')).decode('utf-8')}"
 
         bash_image_artifact = ImageUrlArtifact(
             placeholder_url,
@@ -680,36 +614,6 @@ class ImageBash(DataNode):
             # Update bash_image canvas size when width/height changes
             self._update_bash_image_canvas_size()
 
-        # Update bash image when canvas background color changes
-        elif parameter.name == "canvas_background_color" and value is not None:
-            logger.info(f"🎨 Updating background color to: {value}")
-            # Update bash_image metadata with new background color
-            bash_image_value = self.get_parameter_value("bash_image")
-            if bash_image_value is not None:
-                # Get current canvas dimensions
-                canvas_width, canvas_height = self._get_canvas_dimensions()
-
-                # Create new placeholder with updated background color
-                new_placeholder_url = f"data:image/svg+xml;base64,{self._create_placeholder_svg_base64(canvas_width, canvas_height, value)}"
-                logger.info(f"🎨 Created new placeholder URL with background color: {value}")
-
-                if isinstance(bash_image_value, dict):
-                    if "meta" not in bash_image_value:
-                        bash_image_value["meta"] = {}
-                    bash_image_value["value"] = new_placeholder_url
-                    bash_image_value["meta"]["canvas_background_color"] = value
-                    self.set_parameter_value("bash_image", bash_image_value)
-                    logger.info("✅ Updated bash_image dict with new background color")
-                else:
-                    meta = getattr(bash_image_value, "meta", {})
-                    if not isinstance(meta, dict):
-                        meta = {}
-                    bash_image_value.value = new_placeholder_url
-                    meta["canvas_background_color"] = value
-                    bash_image_value.meta = meta
-                    self.set_parameter_value("bash_image", bash_image_value)
-                    logger.info("✅ Updated bash_image artifact with new background color")
-
         if "input_images" in parameter.name:
             # When input_images changes, sync the metadata
             if value is None or len(value) == 0:
@@ -722,20 +626,12 @@ class ImageBash(DataNode):
                 self._sync_metadata_with_input_images()
 
         if parameter.name == "bash_image" and value is not None:
-            # Check if canvas_background_color has changed in the metadata
+            # Check if canvas dimensions have changed in the metadata
             if isinstance(value, dict):
                 meta = value.get("meta", {})
             else:
                 meta = getattr(value, "meta", {})
 
-            metadata_background_color = meta.get("canvas_background_color")
-            current_parameter_color = self.get_parameter_value("canvas_background_color")
-
-            if metadata_background_color and metadata_background_color != current_parameter_color:
-                logger.info(f"🎨 Syncing canvas_background_color from metadata: {metadata_background_color}")
-                self.set_parameter_value("canvas_background_color", metadata_background_color)
-
-            # Check if canvas dimensions have changed in the metadata
             canvas_size_meta = meta.get("canvas_size", {})
             metadata_width = canvas_size_meta.get("width")
             metadata_height = canvas_size_meta.get("height")
@@ -754,20 +650,22 @@ class ImageBash(DataNode):
                     self.set_parameter_value("width", metadata_width)
                     self.set_parameter_value("height", metadata_height)
 
-        # Initialize bash_image with current parameters if it's still using default values
-        if parameter.name in ["canvas_size", "canvas_background_color"] and value is not None:
+                # Initialize bash_image metadata with current parameters if it's still using default values
+            self._update_output_image()
+        if parameter.name == "canvas_size" and value is not None:
             bash_image_value = self.get_parameter_value("bash_image")
             if bash_image_value is not None and isinstance(bash_image_value, dict):
-                # Update the bash_image to reflect current parameters
+                # Only update metadata, don't replace the bash_image value
                 canvas_width, canvas_height = self._get_canvas_dimensions()
-                canvas_background_color = self.get_parameter_value("canvas_background_color") or "#ffffff"
 
-                # Create new placeholder with current parameters
-                new_placeholder_url = f"data:image/svg+xml;base64,{self._create_placeholder_svg_base64(canvas_width, canvas_height, canvas_background_color)}"
+                if "meta" not in bash_image_value:
+                    bash_image_value["meta"] = {}
 
-                bash_image_value["value"] = new_placeholder_url
+                # Preserve existing background color
+                existing_background_color = bash_image_value["meta"].get("canvas_background_color", "#ffffff")
+
                 bash_image_value["meta"]["canvas_size"] = {"width": canvas_width, "height": canvas_height}
-                bash_image_value["meta"]["canvas_background_color"] = canvas_background_color
+                bash_image_value["meta"]["canvas_background_color"] = existing_background_color
                 bash_image_value["meta"]["viewport"] = {
                     "x": 0,
                     "y": 0,
@@ -776,6 +674,7 @@ class ImageBash(DataNode):
                     "center_y": canvas_height // 2,
                 }
                 self.set_parameter_value("bash_image", bash_image_value)
+                logger.info("✅ Updated bash_image metadata with current parameters")
 
         return super().after_value_set(parameter, value)
 
@@ -795,8 +694,7 @@ class ImageBash(DataNode):
                 logger.info(f"📸 Syncing metadata for remaining {len(current_input_images)} images")
                 self._sync_metadata_with_input_images()
 
-    def process(self) -> None:
-        # Get bash_image value and set it as output_image
+    def _update_output_image(self) -> None:
         bash_image = self.get_parameter_value("bash_image")
 
         if bash_image is not None:
@@ -804,14 +702,15 @@ class ImageBash(DataNode):
             if isinstance(bash_image, dict):
                 logger.info(f"🔍 Bash image dict: {bash_image}")
                 image_value = bash_image.get("value")
-                meta = bash_image.get("meta", {})
             else:
                 logger.info(f"🔍 Bash image not dict: {bash_image}")
                 image_value = bash_image.value
-                meta = getattr(bash_image, "meta", {})
 
             # Only output if the image value is not a placeholder SVG
             # Placeholder SVGs start with "data:image/svg+xml;base64,"
             if image_value and not image_value.startswith("data:image/svg+xml;base64,"):
                 logger.info(f"🔍 Outputting image: {image_value}")
                 self.parameter_output_values["output_image"] = ImageUrlArtifact(image_value)
+
+    def process(self) -> None:
+        self._update_output_image()
