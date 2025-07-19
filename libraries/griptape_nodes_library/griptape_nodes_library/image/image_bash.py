@@ -6,7 +6,7 @@ import httpx
 from griptape.artifacts import ImageUrlArtifact, JsonArtifact
 from PIL import Image
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
@@ -29,36 +29,38 @@ class ImageBash(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self.canvas_size = Parameter(
-            name="canvas_size",
-            default_value=BASE_CANVAS_OPTIONS[0],
-            type="string",
-            tooltip="The size of the canvas to create",
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-        )
-        self.add_parameter(self.canvas_size)
-        self.canvas_size.add_trait(Options(choices=BASE_CANVAS_OPTIONS))
-        self.canvas_width = Parameter(
-            name="width",
-            default_value=1920,
-            input_types=["int"],
-            type="int",
-            tooltip="The width of the image to create",
-            allowed_modes={ParameterMode.PROPERTY},
-            ui_options={"ghost": True},
-        )
+        with ParameterGroup(name="canvas_details", ui_options={"collapsed": True}) as canvas_details_group:
+            self.canvas_size = Parameter(
+                name="canvas_size",
+                default_value=BASE_CANVAS_OPTIONS[0],
+                type="string",
+                tooltip="The size of the canvas to create",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+            # self.add_parameter(self.canvas_size)
+            self.canvas_size.add_trait(Options(choices=BASE_CANVAS_OPTIONS))
+            self.canvas_width = Parameter(
+                name="width",
+                default_value=1920,
+                input_types=["int"],
+                type="int",
+                tooltip="The width of the image to create",
+                allowed_modes={ParameterMode.PROPERTY},
+                ui_options={"ghost": True},
+            )
 
-        self.canvas_height = Parameter(
-            name="height",
-            default_value=1080,
-            input_types=["int"],
-            type="int",
-            tooltip="The height of the image to create",
-            allowed_modes={ParameterMode.PROPERTY},
-            ui_options={"ghost": True},
-        )
-        self.add_parameter(self.canvas_width)
-        self.add_parameter(self.canvas_height)
+            self.canvas_height = Parameter(
+                name="height",
+                default_value=1080,
+                input_types=["int"],
+                type="int",
+                tooltip="The height of the image to create",
+                allowed_modes={ParameterMode.PROPERTY},
+                ui_options={"ghost": True},
+            )
+        # self.add_parameter(self.canvas_width)
+        # self.add_parameter(self.canvas_height)
+        self.add_node_element(canvas_details_group)
 
         self.add_parameter(
             ParameterList(
