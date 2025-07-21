@@ -500,7 +500,7 @@ def __broadcast_app_initialization_complete(nodes_app_url: str) -> None:
     __process_app_event(app_event)
 
     engine_version_request = app_events.GetEngineVersionRequest()
-    engine_version_result = GriptapeNodes.get_instance().handle_engine_version_request(engine_version_request)
+    engine_version_result = GriptapeNodes.EnginesManager().handle_engine_version_request(engine_version_request)
     if isinstance(engine_version_result, app_events.GetEngineVersionResultSuccess):
         engine_version = f"v{engine_version_result.major}.{engine_version_result.minor}.{engine_version_result.patch}"
     else:

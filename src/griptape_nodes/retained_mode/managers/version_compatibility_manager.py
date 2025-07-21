@@ -10,7 +10,8 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, Version
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.engines_manager import Version
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibrarySchema

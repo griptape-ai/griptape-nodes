@@ -6,7 +6,8 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, Version
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.engines_manager import Version
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
     LibraryVersionCompatibilityCheck,

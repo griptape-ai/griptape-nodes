@@ -78,10 +78,8 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowResultFailure,
     SaveWorkflowResultSuccess,
 )
-from griptape_nodes.retained_mode.griptape_nodes import (
-    GriptapeNodes,
-    Version,
-)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.engines_manager import Version
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 if TYPE_CHECKING:

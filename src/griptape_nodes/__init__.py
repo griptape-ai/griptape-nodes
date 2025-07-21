@@ -28,8 +28,9 @@ with console.status("Loading Griptape Nodes...") as status:
     from griptape_nodes.app import start_app
     from griptape_nodes.drivers.storage import StorageBackend
     from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, engine_version
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+    from griptape_nodes.retained_mode.managers.engines_manager import engine_version
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
