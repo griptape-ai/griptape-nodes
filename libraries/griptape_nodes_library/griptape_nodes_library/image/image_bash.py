@@ -45,7 +45,7 @@ class ImageBash(DataNode):
             self.canvas_size.add_trait(Options(choices=BASE_CANVAS_OPTIONS))
             self.canvas_width = Parameter(
                 name="width",
-                default_value=1920,
+                default_value=CANVAS_DIMENSIONS[BASE_CANVAS_OPTIONS[0]]["width"],
                 input_types=["int"],
                 type="int",
                 tooltip="The width of the image to create",
@@ -55,7 +55,7 @@ class ImageBash(DataNode):
 
             self.canvas_height = Parameter(
                 name="height",
-                default_value=1080,
+                default_value=CANVAS_DIMENSIONS[BASE_CANVAS_OPTIONS[0]]["height"],
                 input_types=["int"],
                 type="int",
                 tooltip="The height of the image to create",
