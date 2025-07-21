@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import cv2  # type: ignore[reportMissingImports]
-import huggingface_hub
+import huggingface_hub  # pyright: ignore[reportMissingImports]
 import imageio  # type: ignore[reportMissingImports]
 import numpy as np
 import requests

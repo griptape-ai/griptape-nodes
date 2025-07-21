@@ -7,7 +7,7 @@ Amazon Bedrock specific model options, requires a Amazon API Keys via
 node configuration, and instantiates the `AmazonBedrockPromptDriver`.
 """
 
-import boto3
+import boto3  # pyright: ignore[reportMissingImports]
 from griptape.drivers.prompt.amazon_bedrock import AmazonBedrockPromptDriver as GtAmazonBedrockPromptDriver
 
 from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
