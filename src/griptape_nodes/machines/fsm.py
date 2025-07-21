@@ -1,4 +1,4 @@
-from typing import Any, Generic, TypeVar
+from typing import Any, TypeVar
 
 T = TypeVar("T")
 
@@ -20,7 +20,7 @@ class State:
         return
 
 
-class FSM(Generic[T]):
+class FSM[T]:
     def __init__(self, context: T) -> None:
         self._context = context
         self._current_state = None

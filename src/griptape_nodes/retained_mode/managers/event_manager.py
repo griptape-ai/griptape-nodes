@@ -117,7 +117,7 @@ class EventManager:
                     # If the result is a success, and the WorkflowAlteredMixin is present, that means the flow has been changed in some way.
                     # In that case, we need to flush the element changes, so we add one to the event queue.
                     if isinstance(result_event.result, WorkflowAlteredMixin) and not self._flush_in_queue:
-                        from griptape_nodes.app.app_sessions import event_queue
+                        from griptape_nodes.app.app import event_queue
 
                         event_queue.put(EventRequest(request=FlushParameterChangesRequest()))
                         self._flush_in_queue = True

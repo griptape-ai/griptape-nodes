@@ -14,6 +14,7 @@ import httpx
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
+    AppConnectionEstablished,
     AppEndSessionRequest,
     AppEndSessionResultFailure,
     AppEndSessionResultSuccess,
@@ -119,6 +120,10 @@ class Version:
         """Equality comparison."""
         return (self.major, self.minor, self.patch) == (other.major, other.minor, other.patch)
 
+    def __hash__(self) -> int:
+        """Hash function for Version."""
+        return hash((self.major, self.minor, self.patch))
+
 
 class GriptapeNodes(metaclass=SingletonMeta):
     _event_manager: EventManager
@@ -171,8 +176,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
         # Initialize only if our managers haven't been created yet
         if not hasattr(self, "_event_manager"):
             self._event_manager = EventManager()
-            self._os_manager = OSManager(self._event_manager)
             self._config_manager = ConfigManager(self._event_manager)
+            self._os_manager = OSManager(self._event_manager)
             self._secrets_manager = SecretsManager(self._config_manager, self._event_manager)
             self._object_manager = ObjectManager(self._event_manager)
             self._node_manager = NodeManager(self._event_manager)
@@ -198,6 +203,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 AppStartSessionRequest, self.handle_session_start_request
             )
             self._event_manager.assign_manager_to_request_type(AppEndSessionRequest, self.handle_session_end_request)
+            self._event_manager.add_listener_to_app_event(AppConnectionEstablished, self.on_app_connection_established)
             self._event_manager.assign_manager_to_request_type(AppGetSessionRequest, self.handle_get_session_request)
             self._event_manager.assign_manager_to_request_type(
                 SessionHeartbeatRequest, self.handle_session_heartbeat_request
@@ -294,6 +300,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._config_manager
 
     @classmethod
+    def OSManager(cls) -> OSManager:
+        return GriptapeNodes.get_instance()._os_manager
+
+    @classmethod
     def SecretsManager(cls) -> SecretsManager:
         return GriptapeNodes.get_instance()._secrets_manager
 
@@ -344,6 +354,27 @@ class GriptapeNodes(metaclass=SingletonMeta):
             msg = "Failed to successfully delete all objects"
             raise ValueError(msg)
 
+    def on_app_connection_established(self, _payload: AppConnectionEstablished) -> None:
+        from griptape_nodes.app.app import subscribe_to_topic
+
+        # Subscribe to request topic (engine discovery)
+        subscribe_to_topic("request")
+
+        # Get engine ID and subscribe to engine_id/request
+        engine_id = GriptapeNodes.get_engine_id()
+        if engine_id:
+            subscribe_to_topic(f"engines/{engine_id}/request")
+        else:
+            logger.warning("Engine ID not available for subscription")
+
+        # Get session ID and subscribe to session_id/request if available
+        session_id = GriptapeNodes.get_session_id()
+        if session_id:
+            topic = f"sessions/{session_id}/request"
+            subscribe_to_topic(topic)
+        else:
+            logger.info("No session ID available for subscription")
+
     def handle_engine_version_request(self, request: GetEngineVersionRequest) -> ResultPayload:  # noqa: ARG002
         try:
             engine_ver = Version.from_string(engine_version)
@@ -362,6 +393,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
             return GetEngineVersionResultFailure()
 
     def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:  # noqa: ARG002
+        from griptape_nodes.app.app import subscribe_to_topic
+
         current_session_id = GriptapeNodes.SessionManager().get_active_session_id()
         if current_session_id is None:
             # Client wants a new session
@@ -372,9 +405,15 @@ class GriptapeNodes(metaclass=SingletonMeta):
         else:
             details = f"Session '{current_session_id}' already active. Joining..."
 
+        topic = f"sessions/{current_session_id}/request"
+        subscribe_to_topic(topic)
+        logger.info("Subscribed to new session topic: %s", topic)
+
         return AppStartSessionResultSuccess(current_session_id)
 
     def handle_session_end_request(self, _: AppEndSessionRequest) -> ResultPayload:
+        from griptape_nodes.app.app import unsubscribe_from_topic
+
         try:
             previous_session_id = GriptapeNodes.SessionManager().get_active_session_id()
             if previous_session_id is None:
@@ -384,6 +423,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 details = f"Session '{previous_session_id}' ended at {datetime.now(tz=UTC)}."
                 logger.info(details)
                 GriptapeNodes.SessionManager().clear_saved_session()
+
+            unsubscribe_topic = f"sessions/{previous_session_id}/request"
+            unsubscribe_from_topic(unsubscribe_topic)
 
             return AppEndSessionResultSuccess(session_id=previous_session_id)
         except Exception as err:

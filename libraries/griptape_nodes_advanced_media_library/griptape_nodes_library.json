@@ -8,6 +8,14 @@
       "contents": {
         "temp_folder_name": "intermediates"
       }
+    },
+    {
+      "description": "Configuration settings for cleaning up the Advanced Media Library temporary file storage",
+      "category": "advanced_media_library",
+      "contents": {
+        "max_directory_size_gb": 5,
+        "enable_directory_cleanup": false
+      }
     }
   ],
   "metadata": {

@@ -1,4 +1,4 @@
-# FluxPipeline
+# Flux
 
 !!! warning "You need to perform setup steps to use Hugging Face nodes"
 
@@ -6,7 +6,7 @@
 
 ## What is it?
 
-The FluxPipeline node is designed to generate images from text prompts using the FLUX.1 model. It integrates with Hugging Face's diffusers library to create high-quality images based on specified prompts and parameters.
+The Flux node is designed to generate images from text prompts using the FLUX.1 model. It integrates with Hugging Face's diffusers library to create high-quality images based on specified prompts and parameters.
 
 ## When would I use it?
 
@@ -20,7 +20,7 @@ Use this node when you need to:
 
 ### Basic Setup
 
-1. Add the FluxPipeline node to your workflow
+1. Add the Flux node to your workflow
 1. Set the desired model in the "model" parameter
 1. Provide a text prompt in the "prompt" parameter
 1. Optionally configure additional parameters such as "width", "height", and "guidance_scale"
