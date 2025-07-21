@@ -14,7 +14,7 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema, NodeMetadata
-    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+    from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 
 @dataclass
@@ -207,7 +207,7 @@ class LoadLibraryMetadataFromFileResultFailure(WorkflowNotAlteredMixin, ResultPa
 
     library_path: str
     library_name: str | None
-    status: LibraryManager.LibraryStatus
+    status: LibraryStatus
     problems: list[str]
 
 
