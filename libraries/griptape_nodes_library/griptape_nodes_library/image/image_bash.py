@@ -254,25 +254,29 @@ class ImageBash(DataNode):
 
     def _get_image_name(self, img_artifact: Any, image_url: str, i: int, existing_input_images: list) -> str:
         """Get or generate a name for an image."""
-        # Try to preserve existing name
+        # Try to preserve existing name from previous metadata
         for existing_input in existing_input_images:
             if existing_input.get("url") == image_url:
-                return existing_input.get("name")
+                existing_name = existing_input.get("name")
+                # Only preserve if it's not a UUID
+                if existing_name and not (
+                    len(existing_name) == 32 and all(c in "0123456789abcdef" for c in existing_name)
+                ):
+                    return existing_name
 
-        # Generate new name
-        image_name = getattr(img_artifact, "name", None)
-        if not image_name:
-            try:
-                from urllib.parse import urlparse
+        # Generate new name from filename
+        try:
+            from urllib.parse import unquote, urlparse
 
-                parsed_url = urlparse(image_url)
-                filename = parsed_url.path.split("/")[-1]
-                if filename and "." in filename:
-                    image_name = filename.split(".")[0]
-                else:
-                    image_name = f"Image {i + 1}"
-            except Exception:
+            parsed_url = urlparse(image_url)
+            filename = unquote(parsed_url.path.split("/")[-1])
+            # Remove extension and query params
+            if filename and "." in filename:
+                image_name = filename.split(".")[0].split("?")[0]
+            else:
                 image_name = f"Image {i + 1}"
+        except Exception:
+            image_name = f"Image {i + 1}"
 
         return image_name
 
@@ -289,11 +293,52 @@ class ImageBash(DataNode):
             or existing_id.startswith("layer-")
         )
 
+    def _calculate_image_fit_and_position(
+        self, img_width: int, img_height: int, canvas_width: int, canvas_height: int
+    ) -> tuple[float, float, float, float]:
+        """Calculate the scale and position to fit an image within the canvas while maintaining aspect ratio."""
+        # Calculate the scale needed to fit the image within the canvas
+        # Leave some padding (10% of canvas size) to ensure the image doesn't touch the edges
+        padding_factor = 0.1
+        max_width = canvas_width * (1 - padding_factor)
+        max_height = canvas_height * (1 - padding_factor)
+
+        # Calculate scale factors for both dimensions
+        scale_x = max_width / img_width if img_width > max_width else 1.0
+        scale_y = max_height / img_height if img_height > max_height else 1.0
+
+        # Use the smaller scale to maintain aspect ratio
+        scale = min(scale_x, scale_y)
+
+        # Calculate the scaled dimensions
+        scaled_width = img_width * scale
+        scaled_height = img_height * scale
+
+        # Calculate position to center the image
+        # In Konva, x and y represent the center point of the image
+        x = canvas_width / 2  # Center of canvas horizontally
+        y = canvas_height / 2  # Center of canvas vertically
+
+        return scale, scale, x, y
+
     def _create_konva_layer(self, input_img: dict, i: int, canvas_width: int, canvas_height: int) -> dict:
         """Create a new konva layer for an input image."""
-        width, height = self._get_image_dimensions(input_img["url"])
-        x = canvas_width // 2
-        y = canvas_height // 2
+        img_width, img_height = self._get_image_dimensions(input_img["url"])
+        scale_x, scale_y, x, y = self._calculate_image_fit_and_position(
+            img_width, img_height, canvas_width, canvas_height
+        )
+
+        # Extract filename from URL for the layer name
+        try:
+            from urllib.parse import unquote, urlparse
+
+            parsed_url = urlparse(input_img["url"])
+            filename = unquote(parsed_url.path.split("/")[-1])
+            # Remove extension and query params
+            layer_name = filename.split(".")[0].split("?")[0]
+        except Exception:
+            # Fallback name if URL parsing fails
+            layer_name = f"Image Layer {i + 1}"
 
         return {
             "id": f"canvas-img-{i + 1}",
@@ -301,11 +346,16 @@ class ImageBash(DataNode):
             "src": input_img["url"],
             "x": x,
             "y": y,
-            "width": width,
-            "height": height,
+            "width": img_width,  # Keep original dimensions
+            "height": img_height,  # Keep original dimensions
             "rotation": 0,
-            "scaleX": 1.0,
-            "scaleY": 1.0,
+            "scaleX": scale_x,  # Apply scaling to fit canvas
+            "scaleY": scale_y,  # Apply scaling to fit canvas
+            "type": "image",  # Required to distinguish from brush layers
+            "name": layer_name,  # Display name based on filename
+            "opacity": 1,  # Full opacity by default
+            "visible": True,  # Visible by default
+            "order": i + 1,  # Layer order based on index
         }
 
     def _build_konva_images(
