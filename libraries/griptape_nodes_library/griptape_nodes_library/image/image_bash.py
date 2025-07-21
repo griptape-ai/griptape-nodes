@@ -310,10 +310,6 @@ class ImageBash(DataNode):
         # Use the smaller scale to maintain aspect ratio
         scale = min(scale_x, scale_y)
 
-        # Calculate the scaled dimensions
-        scaled_width = img_width * scale
-        scaled_height = img_height * scale
-
         # Calculate position to center the image
         # In Konva, x and y represent the center point of the image
         x = canvas_width / 2  # Center of canvas horizontally
