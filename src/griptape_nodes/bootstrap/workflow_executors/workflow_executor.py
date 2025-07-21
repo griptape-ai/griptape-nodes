@@ -9,5 +9,11 @@ logger = logging.getLogger(__name__)
 
 class WorkflowExecutor(ABC):
     @abstractmethod
-    def run(self, workflow_name: str, flow_input: Any, storage_backend: StorageBackend = StorageBackend.LOCAL) -> None:
+    def run(
+        self,
+        workflow_name: str,
+        flow_input: Any,
+        storage_backend: StorageBackend = StorageBackend.LOCAL,
+        **kwargs: Any,
+    ) -> None:
         pass
