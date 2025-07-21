@@ -24,6 +24,11 @@ CANVAS_DIMENSIONS = {
 }
 BASE_CANVAS_OPTIONS = [*list(CANVAS_DIMENSIONS.keys())]
 
+default_svg = """<svg width="1920" height="1080" xmlns="http://www.w3.org/2000/svg">
+<rect width="1920" height="1080" fill="#fffffa"/>
+</svg>"""
+default_svg_base64 = base64.b64encode(default_svg.encode("utf-8")).decode("utf-8")
+
 
 class ImageBash(DataNode):
     def __init__(self, **kwargs) -> None:
@@ -81,10 +86,6 @@ class ImageBash(DataNode):
         )
 
         # Create a proper default placeholder SVG
-        default_svg = """<svg width="1920" height="1080" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1920" height="1080" fill="#fffffa"/>
-</svg>"""
-        default_svg_base64 = base64.b64encode(default_svg.encode("utf-8")).decode("utf-8")
 
         self.add_parameter(
             Parameter(
