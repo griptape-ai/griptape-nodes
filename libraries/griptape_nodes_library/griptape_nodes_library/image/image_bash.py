@@ -107,7 +107,7 @@ class ImageBash(DataNode):
                     "button": True,
                     "button_icon": "brush",
                     "button_label": "Open Image Bash Editor",
-                    "modal": "PaintBashModal",
+                    "modal": "ImageBashModal",
                 },
                 allowed_modes={ParameterMode.PROPERTY},
             )
