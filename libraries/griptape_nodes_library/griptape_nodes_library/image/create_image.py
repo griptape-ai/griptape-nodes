@@ -1,4 +1,5 @@
 import uuid
+from typing import Any
 
 import requests
 from griptape.artifacts import BaseArtifact, ImageUrlArtifact
@@ -16,14 +17,11 @@ from griptape_nodes_library.utils.error_utils import try_throw_error
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
-MODEL_CHOICES = [
-    "dall-e-3",
-]
+MODEL_CHOICES = ["dall-e-3", "gpt-image-1"]
+GPT_IMAGE_SIZES = ["1024x1024", "1536x1024", "1024x1536"]
+DALL_E_3_SIZES = ["1024x1024", "1024x1792", "1792x1024"]
 DEFAULT_MODEL = MODEL_CHOICES[0]
-DEFAULT_QUALITY = "hd"
-DEFAULT_STYLE = "natural"
-AVAILABLE_SIZES = ["1024x1024", "1024x1792", "1792x1024"]
-DEFAULT_SIZE = AVAILABLE_SIZES[0]
+DEFAULT_SIZE = DALL_E_3_SIZES[0]
 
 
 class GenerateImage(ControlNode):
@@ -75,7 +73,7 @@ class GenerateImage(ControlNode):
                 default_value=DEFAULT_SIZE,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="Select the size of the generated image.",
-                traits={Options(choices=AVAILABLE_SIZES)},
+                traits={Options(choices=DALL_E_3_SIZES)},
             )
         )
 
@@ -134,6 +132,27 @@ class GenerateImage(ControlNode):
             exceptions.append(prompt_error)
 
         return exceptions if exceptions else None
+
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
+        """Certain options are only available for certain models."""
+        if parameter.name == "output_format":
+            if value == "jpeg":
+                self.show_parameter_by_name("output_compression")
+            else:
+                self.hide_parameter_by_name("output_compression")
+
+        if parameter.name == "model":
+            # If the model is gpt-image-1, update the size options accordingly
+            if value == "gpt-image-1":
+                self._update_option_choices(param="image_size", choices=GPT_IMAGE_SIZES, default=GPT_IMAGE_SIZES[0])
+            elif value == "dall-e-3":
+                self._update_option_choices(param="image_size", choices=DALL_E_3_SIZES, default=DALL_E_3_SIZES[0])
+
+        return super().after_value_set(parameter, value)
 
     def process(self) -> AsyncResult:
         # Get the parameters from the node

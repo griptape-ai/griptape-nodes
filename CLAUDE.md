@@ -200,3 +200,9 @@ NEVER proactively create documentation files (\*.md) or README files. Only creat
     else:
         value = None
     ```
+
+**Avoid lazy imports** - Prefer importing modules at the top of the file as a standard practice:
+
+- Put imports at the top of the file in the standard order whenever possible
+- Only use lazy imports (imports inside functions) as a last resort when necessary to avoid circular imports or other import-time issues
+- This improves readability, makes dependencies clear, and avoids most import-time problems
