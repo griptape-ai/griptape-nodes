@@ -853,6 +853,16 @@
       }
     },
     {
+      "class_name": "DisplayChannel",
+      "file_path": "griptape_nodes_library/image/display_channel.py",
+      "metadata": {
+        "category": "image",
+        "description": "Display a channel from an image's color channels (red, green, blue, or alpha). Defaults to red channel. Outputs to 'output' parameter.",
+        "display_name": "Display Channel",
+        "group": "general"
+      }
+    },
+    {
       "class_name": "GenerateImage",
       "file_path": "griptape_nodes_library/image/create_image.py",
       "metadata": {
@@ -903,6 +913,17 @@
         "group": "edit"
       }
     },
+    {
+      "class_name": "ApplyMask",
+      "file_path": "griptape_nodes_library/image/apply_mask.py",
+      "metadata": {
+        "category": "image",
+        "description": "Apply a mask to an image.",
+        "display_name": "Apply Mask",
+        "group": "mask"
+      }
+    },
+
     {
       "class_name": "PaintMask",
       "file_path": "griptape_nodes_library/image/paint_mask.py",
