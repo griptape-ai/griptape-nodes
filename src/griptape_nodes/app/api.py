@@ -124,6 +124,31 @@ async def _list_static_files(static_directory: Annotated[Path, Depends(get_stati
         return {"files": file_names}
 
 
+@app.delete("/static-uploads/{file_path:path}")
+async def _delete_static_file(
+    _request: Request, file_path: str, static_directory: Annotated[Path, Depends(get_static_dir)]
+) -> dict:
+    """Delete a static file from the static server."""
+    if not STATIC_SERVER_ENABLED:
+        msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
+        raise HTTPException(status_code=500, detail=msg)
+
+    file_full_path = Path(static_directory / file_path)
+
+    try:
+        if file_full_path.exists():
+            file_full_path.unlink()
+            logger.info("Successfully deleted static file: %s", file_path)
+            return {"message": f"File {file_path} deleted successfully"}
+        msg = f"File {file_path} not found"
+        logger.warning(msg)
+        raise HTTPException(status_code=404, detail=msg)
+    except (OSError, PermissionError) as e:
+        msg = f"Failed to delete file {file_path}: {e}"
+        logger.error(msg)
+        raise HTTPException(status_code=500, detail=msg) from e
+
+
 @app.post("/engines/request")
 async def _create_event(request: Request, queue: Annotated[Queue, Depends(get_event_queue)]) -> None:
     body = await request.json()

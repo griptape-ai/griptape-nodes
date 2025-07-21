@@ -45,6 +45,10 @@ class Settings(BaseModel):
         default="staticfiles",
         description="Path to the static files directory, relative to the workspace directory.",
     )
+    workflows_directory: str = Field(
+        default="workflows",
+        description="Path to the workflows directory for sync operations.",
+    )
     sandbox_library_directory: str = Field(
         default="sandbox_library",
         description="Path to the sandbox library directory (useful while developing nodes). If presented as just a directory (e.g., 'sandbox_library') it will be interpreted as being relative to the workspace directory.",

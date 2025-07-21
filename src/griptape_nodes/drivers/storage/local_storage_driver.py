@@ -53,3 +53,39 @@ class LocalStorageDriver(BaseStorageDriver):
         # Add a cache-busting query parameter to the URL so that the browser always reloads the file
         cache_busted_url = f"{url}?t={int(time.time())}"
         return cache_busted_url
+
+    def delete_file(self, file_name: str) -> None:
+        """Delete a file from local static storage.
+
+        Args:
+            file_name: The name of the file to delete.
+
+        Raises:
+            ValueError: If the file could not be deleted.
+        """
+        delete_url = urljoin(self.base_url, f"/static-uploads/{file_name}")
+        try:
+            response = httpx.delete(delete_url)
+            response.raise_for_status()
+            logger.info("Successfully deleted file from local storage: %s", file_name)
+        except httpx.HTTPStatusError as e:
+            msg = f"Failed to delete file {file_name} from local storage: {e}"
+            logger.error(msg)
+            raise ValueError(msg) from e
+
+    def list_files(self) -> list[str]:
+        """List all files available in local static storage.
+
+        Returns:
+            List of file names available in storage.
+        """
+        list_url = urljoin(self.base_url, "/static-uploads/")
+        try:
+            response = httpx.get(list_url)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            logger.error("Failed to list files from local storage: %s", e)
+            return []
+
+        response_data = response.json()
+        return response_data.get("files", [])

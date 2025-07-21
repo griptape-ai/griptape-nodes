@@ -364,3 +364,51 @@ class PublishWorkflowResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class PublishWorkflowResultFailure(ResultPayloadFailure):
     """Workflow publish failed. Common causes: workflow not found, publish error, file system error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SyncUpWorkflowsRequest(RequestPayload):
+    """Sync up all workflow files from workspace to storage backend.
+
+    Use when: Uploading local workflow files to cloud storage, backing up workflows,
+    preparing for collaborative editing, syncing changes to remote.
+
+    Results: SyncUpWorkflowsResultSuccess (with uploaded files list) | SyncUpWorkflowsResultFailure (upload error)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class SyncUpWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """All workflow files synced up successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SyncUpWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workflow sync up failed. Common causes: storage error, network issue, permission denied."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SyncDownWorkflowsRequest(RequestPayload):
+    """Sync down workflow files from storage backend to workspace.
+
+    Use when: Downloading workflow files from cloud storage, restoring from backup,
+    pulling changes from collaborative editing, syncing remote changes.
+
+    Results: SyncDownWorkflowsResultSuccess | SyncDownWorkflowsResultFailure (download error)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class SyncDownWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """All workflow files synced down successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SyncDownWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workflow sync down failed. Common causes: storage error, network issue, permission denied."""

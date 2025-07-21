@@ -19,7 +19,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         base_url: str | None = None,
         api_key: str | None = None,
         headers: dict | None = None,
-        static_files_directory: str | None = None,
+        working_dir: str | None = None,
     ) -> None:
         """Initialize the GriptapeCloudStorageDriver.
 
@@ -28,7 +28,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             base_url: The base URL for the Griptape Cloud API. If not provided, it will be retrieved from the environment variable "GT_CLOUD_BASE_URL" or default to "https://cloud.griptape.ai".
             api_key: The API key for authentication. If not provided, it will be retrieved from the environment variable "GT_CLOUD_API_KEY".
             headers: Additional headers to include in the requests. If not provided, the default headers will be used.
-            static_files_directory: The directory path prefix for static files. If provided, file names will be prefixed with this path.
+            working_dir: The directory path prefix for files. If provided, file names will be prefixed with this path.
         """
         self.base_url = (
             base_url if base_url is not None else os.environ.get("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
@@ -43,19 +43,19 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         )
 
         self.bucket_id = bucket_id
-        self.static_files_directory = static_files_directory
+        self.working_dir = working_dir
 
     def _get_full_file_path(self, file_name: str) -> str:
-        """Get the full file path including the static files directory prefix.
+        """Get the full file path including the working directory prefix.
 
         Args:
             file_name: The base file name.
 
         Returns:
-            The full file path with static files directory prefix if configured.
+            The full file path with working directory prefix if configured.
         """
-        if self.static_files_directory:
-            return f"{self.static_files_directory}/{file_name}"
+        if self.working_dir:
+            return f"{self.working_dir}/{file_name}"
         return file_name
 
     def create_signed_upload_url(self, file_name: str) -> CreateSignedUploadUrlResponse:
@@ -101,6 +101,26 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             raise ValueError(msg) from e
 
         return response.json()["name"]
+
+    def delete_file(self, file_name: str) -> None:
+        """Delete a file from Griptape Cloud storage.
+
+        Args:
+            file_name: The name of the file to delete.
+
+        Raises:
+            ValueError: If the file could not be deleted.
+        """
+        full_file_path = self._get_full_file_path(file_name)
+        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets/{full_file_path}")
+        try:
+            response = httpx.delete(url, headers=self.headers)
+            response.raise_for_status()
+            logger.info("Successfully deleted file from Griptape Cloud storage: %s", file_name)
+        except httpx.HTTPStatusError as e:
+            msg = f"Failed to delete file {file_name} from Griptape Cloud storage: {e}"
+            logger.error(msg)
+            raise ValueError(msg) from e
 
     @staticmethod
     def create_bucket(bucket_name: str, *, base_url: str, api_key: str) -> str:
@@ -158,3 +178,29 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             raise RuntimeError(msg) from e
 
         return response.json().get("buckets", [])
+
+    def list_files(self) -> list[str]:
+        """List all files available in the bucket.
+
+        Returns:
+            List of file names available in storage, with working_dir prefix removed if applicable.
+        """
+        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets")
+        try:
+            response = httpx.get(url, headers=self.headers)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            logger.error("Failed to list files from Griptape Cloud storage: %s", e)
+            return []
+
+        assets = response.json().get("assets", [])
+        file_names = []
+
+        for asset in assets:
+            asset_name = asset.get("name", "")
+            if self.working_dir and asset_name.startswith(f"{self.working_dir}/"):
+                file_names.append(asset_name[len(f"{self.working_dir}/") :])
+            elif not self.working_dir:
+                file_names.append(asset_name)
+
+        return file_names
