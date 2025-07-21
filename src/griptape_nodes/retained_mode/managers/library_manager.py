@@ -888,7 +888,9 @@ class LibraryManager:
                 else:
                     # We had an existing category. Union our changes into it (not replacing anything that matched).
                     existing_category_contents = get_category_result.contents
-                    existing_category_contents.update(library_data_setting.contents)
+                    existing_category_contents |= {
+                        k: v for k, v in library_data_setting.contents.items() if k not in existing_category_contents
+                    }
                     set_category_request = SetConfigCategoryRequest(
                         category=library_data_setting.category, contents=existing_category_contents
                     )
